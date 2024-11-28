@@ -429,6 +429,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         static_metadata.misc.version_major = font.version_major;
         static_metadata.misc.version_minor = font.version_minor;
+        if let Some(lowest_rec_ppm) = font.custom_parameters.lowest_rec_ppem {
+            static_metadata.misc.lowest_rec_ppm = lowest_rec_ppm as _;
+        }
 
         static_metadata.misc.created = font
             .date
@@ -607,6 +610,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             set_metric!(HheaAscender, hhea_ascender);
             set_metric!(HheaDescender, hhea_descender);
             set_metric!(HheaLineGap, hhea_line_gap);
+            set_metric!(CaretSlopeRun, hhea_caret_slope_run);
+            set_metric!(CaretSlopeRise, hhea_caret_slope_rise);
+            set_metric!(CaretOffset, hhea_caret_offset);
             // 50.0 is the Glyphs default <https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/custom_params.py#L1136-L1156>
             set_metric!(UnderlineThickness, underline_thickness, 50.0);
             // -100.0 is the Glyphs default <https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/custom_params.py#L1136-L1156>
@@ -1843,5 +1849,20 @@ mod tests {
             Some([2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into()),
             context.static_metadata.get().misc.panose
         );
+    }
+
+    #[test]
+    fn capture_unsual_params() {
+        // both parameters; value under short name should be preferred
+        let (_, context) = build_static_metadata(glyphs3_dir().join("UnusualCustomParams.glyphs"));
+        let meta = context.static_metadata.get();
+        assert_eq!(meta.misc.lowest_rec_ppm, 7);
+
+        // some of these end up as metrics:
+        let (_, context) = build_global_metrics(glyphs3_dir().join("UnusualCustomParams.glyphs"));
+        let metrics = context.global_metrics.get();
+        assert_eq!(unique_value(&metrics, GlobalMetric::CaretOffset), 2.);
+        assert_eq!(unique_value(&metrics, GlobalMetric::CaretSlopeRise), 1.);
+        assert_eq!(unique_value(&metrics, GlobalMetric::CaretSlopeRun), 5.);
     }
 }
