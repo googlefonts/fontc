@@ -1548,6 +1548,16 @@ impl Glyph {
         self.sources.get_mut(loc)
     }
 
+    /// Iterate over the names of all components in all instances.
+    ///
+    /// This will return duplicates if multiple instances have identical
+    /// components (which is normal)
+    pub(crate) fn component_names(&self) -> impl Iterator<Item = &GlyphName> {
+        self.sources
+            .values()
+            .flat_map(|inst| inst.components.iter().map(|comp| &comp.base))
+    }
+
     /// Does the Glyph use the same components, (name, 2x2 transform), for all instances?
     ///
     /// The (glyphname, 2x2 transform) pair is considered for uniqueness. Note that
