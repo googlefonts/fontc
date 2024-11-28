@@ -36,7 +36,7 @@ impl Work<Context, AnyWorkId, Error> for CmapWork {
 
         let mappings = glyph_order
             .iter()
-            .map(|glyph_name| context.ir.glyphs.get(&FeWorkId::Glyph(glyph_name.clone())))
+            .map(|glyph_name| context.ir.get_glyph(glyph_name.clone()))
             .enumerate()
             .flat_map(|(gid, glyph)| {
                 glyph

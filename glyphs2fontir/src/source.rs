@@ -1300,8 +1300,7 @@ mod tests {
             expected_locations.insert(loc);
         }
         let actual_locations = context
-            .glyphs
-            .get(&WorkId::Glyph(glyph_name))
+            .get_glyph(glyph_name)
             .sources()
             .keys()
             .map(|c| c.to_user(&axes))
@@ -1333,8 +1332,7 @@ mod tests {
             expected_locations.insert(loc);
         }
         let actual_locations = context
-            .glyphs
-            .get(&WorkId::Glyph(glyph_name))
+            .get_glyph(glyph_name)
             .sources()
             .keys()
             .cloned()
@@ -1602,7 +1600,7 @@ mod tests {
         for test_dir in &[glyphs2_dir(), glyphs3_dir()] {
             let (source, context) = build_static_metadata(test_dir.join("QCurve.glyphs"));
             build_glyphs(&source, &context, &[&glyph_name.into()]).unwrap();
-            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.into()));
+            let glyph = context.get_glyph(glyph_name);
             let default_instance = glyph
                 .sources()
                 .get(context.static_metadata.get().default_location())
