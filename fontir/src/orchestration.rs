@@ -496,4 +496,9 @@ impl Context {
     pub fn read_only(&self) -> Context {
         self.copy(AccessControlList::read_only())
     }
+
+    pub fn get_glyph(&self, name: impl Into<GlyphName>) -> Arc<ir::Glyph> {
+        let id = WorkId::Glyph(name.into());
+        self.glyphs.get(&id)
+    }
 }

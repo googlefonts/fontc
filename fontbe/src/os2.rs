@@ -506,14 +506,7 @@ fn codepoints(context: &Context) -> HashSet<u32> {
 
     let mut codepoints = HashSet::new();
     for glyph_name in glyph_order.iter() {
-        codepoints.extend(
-            context
-                .ir
-                .glyphs
-                .get(&FeWorkId::Glyph(glyph_name.clone()))
-                .codepoints
-                .iter(),
-        );
+        codepoints.extend(context.ir.get_glyph(glyph_name.clone()).codepoints.iter());
     }
     codepoints
 }

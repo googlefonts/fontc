@@ -191,7 +191,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
             continue;
         }
 
-        let referenced_glyph = context.glyphs.get(&WorkId::Glyph(component_base));
+        let referenced_glyph = context.get_glyph(component_base.clone());
         frontier.extend(
             components(&referenced_glyph, component_affine)
                 .iter()
@@ -286,7 +286,7 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
         let mut frontier = VecDeque::new();
         frontier.extend(inst.components.split_off(0));
         while let Some(component) = frontier.pop_front() {
-            let ref_glyph = context.glyphs.get(&WorkId::Glyph(component.base.clone()));
+            let ref_glyph = context.get_glyph(component.base.clone());
             let ref_inst = ref_glyph.sources().get(loc).ok_or_else(|| {
                 BadGlyph::new(
                     ref_glyph.name.clone(),
@@ -334,7 +334,7 @@ fn apply_optional_transformations(
         .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS)
     {
         for glyph_name in glyph_order.iter() {
-            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
+            let glyph = context.get_glyph(glyph_name.clone());
             if glyph.has_nonidentity_2x2() {
                 convert_components_to_contours(context, &glyph)?;
             }
@@ -343,7 +343,7 @@ fn apply_optional_transformations(
 
     if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
         for glyph_name in glyph_order.iter() {
-            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
+            let glyph = context.get_glyph(glyph_name.clone());
             flatten_glyph(context, &glyph)?;
         }
     }
@@ -411,7 +411,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         let current_glyph_order = &*arc_current;
         let original_glyphs: HashMap<_, _> = current_glyph_order
             .iter()
-            .map(|gn| (gn, context.glyphs.get(&WorkId::Glyph(gn.clone()))))
+            .map(|gn| (gn, context.get_glyph(gn.clone())))
             .collect();
 
         // Anything the source specifically said not to retain shouldn't end up in the final font
@@ -458,7 +458,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // See https://github.com/googlefonts/fontc/issues/532
         for glyph_name in new_glyph_order.iter() {
             // We are only int
-            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
+            let glyph = context.get_glyph(glyph_name.clone());
             for component in glyph.default_instance().components.iter() {
                 if !new_glyph_order.contains(&component.base) {
                     convert_components_to_contours(context, &glyph)?;
@@ -731,7 +731,7 @@ mod tests {
         context.glyphs.set(contour_glyph("component"));
 
         convert_components_to_contours(&context, &coalesce_me).unwrap();
-        let simple = context.glyphs.get(&WorkId::Glyph(coalesce_me.name));
+        let simple = context.get_glyph(coalesce_me.name.clone());
         assert_simple(&simple);
 
         // Our sample is unimaginative; both weights are identical
@@ -781,7 +781,7 @@ mod tests {
         let nested_components = nested_components.build().unwrap();
 
         convert_components_to_contours(&context, &nested_components).unwrap();
-        let simple = context.glyphs.get(&WorkId::Glyph(nested_components.name));
+        let simple = context.get_glyph(nested_components.name.clone());
         assert_simple(&simple);
         assert_eq!(1, simple.sources().len());
         let inst = simple.default_instance();
@@ -833,7 +833,7 @@ mod tests {
 
         let glyph = glyph.build().unwrap();
         convert_components_to_contours(&context, &glyph).unwrap();
-        let simple = context.glyphs.get(&WorkId::Glyph(glyph.name));
+        let simple = context.get_glyph(glyph.name.clone());
         assert_simple(&simple);
         assert_eq!(1, simple.sources().len());
         let inst = simple.sources().values().next().unwrap();
@@ -890,7 +890,7 @@ mod tests {
         context.glyphs.set(contour_glyph("component"));
 
         convert_components_to_contours(&context, &glyph).unwrap();
-        let simple = context.glyphs.get(&WorkId::Glyph(glyph.name));
+        let simple = context.get_glyph(glyph.name.clone());
         assert_simple(&simple);
     }
 
@@ -903,7 +903,7 @@ mod tests {
         context.glyphs.set(contour_glyph("component"));
 
         convert_components_to_contours(&context, &glyph).unwrap();
-        let simple = context.glyphs.get(&WorkId::Glyph(glyph.name));
+        let simple = context.get_glyph(glyph.name.clone());
         assert_simple(&simple);
     }
 
@@ -916,7 +916,7 @@ mod tests {
     }
 
     fn assert_is_simple_glyph(context: &Context, glyph_name: GlyphName) {
-        let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name));
+        let glyph = context.get_glyph(glyph_name);
         assert!(glyph
             .sources()
             .values()
@@ -924,7 +924,7 @@ mod tests {
     }
 
     fn assert_is_flattened_component(context: &Context, glyph_name: GlyphName) {
-        let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name));
+        let glyph = context.get_glyph(glyph_name);
         for (loc, inst) in glyph.sources().iter() {
             assert!(!inst.components.is_empty());
             for component in inst.components.iter() {

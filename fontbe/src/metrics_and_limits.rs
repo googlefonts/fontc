@@ -246,8 +246,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                 let gid = GlyphId16::new(gid as u16);
                 let advance: u16 = context
                     .ir
-                    .glyphs
-                    .get(&FeWorkId::Glyph(gn.clone()))
+                    .get_glyph(gn.clone())
                     .default_instance()
                     .width
                     .ot_round();

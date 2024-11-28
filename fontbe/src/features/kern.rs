@@ -396,7 +396,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
             .enumerate()
             .map(|(i, glyphname)| {
                 (
-                    context.ir.glyphs.get(&FeWorkId::Glyph(glyphname.clone())),
+                    context.ir.get_glyph(glyphname.clone()),
                     GlyphId16::new(i as u16),
                 )
             })
