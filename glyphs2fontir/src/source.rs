@@ -863,7 +863,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
                 Some(((side1, side2), pos_adjust))
             })
             .for_each(|(participants, (_, value))| {
-                *kerning.kerns.entry(participants).or_default() = (value.0 as f32).into();
+                *kerning.kerns.entry(participants).or_default() = value;
             });
 
         context.kerning_at.set(kerning);

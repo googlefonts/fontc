@@ -418,9 +418,11 @@ impl TupleBuilder {
         for tag in axis_order {
             let tent = region.get(tag).unwrap();
             builder.axes.push(*tag);
-            builder.min.push(F2Dot14::from_f32(tent.min.to_f32()));
-            builder.peak.push(F2Dot14::from_f32(tent.peak.to_f32()));
-            builder.max.push(F2Dot14::from_f32(tent.max.to_f32()));
+            builder.min.push(F2Dot14::from_f32(tent.min.to_f64() as _));
+            builder
+                .peak
+                .push(F2Dot14::from_f32(tent.peak.to_f64() as _));
+            builder.max.push(F2Dot14::from_f32(tent.max.to_f64() as _));
         }
         trace!("{builder:?}");
         builder
@@ -510,7 +512,7 @@ impl Persistable for FeaAst {
 }
 
 /// Kerning adjustments at various locations
-pub type KernAdjustments = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
+pub type KernAdjustments = BTreeMap<NormalizedLocation, OrderedFloat<f64>>;
 
 /// Every kerning pair we have, taking from IR.
 ///

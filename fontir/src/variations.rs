@@ -50,13 +50,6 @@ impl RoundTiesEven for f64 {
     }
 }
 
-impl RoundTiesEven for f32 {
-    #[inline]
-    fn round_ties_even(self) -> f32 {
-        self.round_ties_even()
-    }
-}
-
 impl RoundTiesEven for kurbo::Vec2 {
     #[inline]
     fn round_ties_even(self) -> kurbo::Vec2 {
@@ -64,8 +57,8 @@ impl RoundTiesEven for kurbo::Vec2 {
     }
 }
 
-const ZERO: OrderedFloat<f32> = OrderedFloat(0.0);
-const ONE: OrderedFloat<f32> = OrderedFloat(1.0);
+const ZERO: OrderedFloat<f64> = OrderedFloat(0.0);
+const ONE: OrderedFloat<f64> = OrderedFloat(1.0);
 
 /// A model of how variation space is subdivided into regions to create deltas.
 ///
@@ -88,7 +81,7 @@ pub struct VariationModel {
     influence: Vec<VariationRegion>,
 
     // [n] gives a vec of (master index, scale for deltas from that master)
-    delta_weights: Vec<Vec<(usize, OrderedFloat<f32>)>>,
+    delta_weights: Vec<Vec<(usize, OrderedFloat<f64>)>>,
 }
 
 impl VariationModel {
@@ -276,7 +269,7 @@ impl VariationModel {
                             Some((delta, master_weight.into_inner()))
                         })
                         .fold(initial_vector, |acc, (other, other_weight)| {
-                            acc - *other * other_weight.into()
+                            acc - *other * other_weight
                         })
                         // deltas will be stored as integers in the VarStore hence must be rounded at
                         // some point; this is the correct place to round them, instead of at the end,
@@ -313,7 +306,7 @@ impl VariationModel {
     {
         deltasets
             .iter()
-            .map(|(region, deltas)| (region.scalar_at(location).0 as f64, deltas))
+            .map(|(region, deltas)| (region.scalar_at(location).0, deltas))
             .filter(|(scalar, _deltas)| *scalar != 0.0)
             .fold(None, |result, (scalar, deltas)| {
                 let contribution = deltas.iter().map(|d| *d * scalar);
@@ -491,7 +484,7 @@ struct LocationSortKey {
     // signs of positions on axes in ordered_axes order
     axis_value_signs: Vec<i8>,
     // abs values of positions on axes in ordered_axes order
-    axis_value_abs: Vec<OrderedFloat<f32>>,
+    axis_value_abs: Vec<OrderedFloat<f64>>,
 }
 
 /// A chunk of variation space characterized by a set of per-axis tents.
@@ -510,7 +503,7 @@ impl VariationRegion {
     ///
     /// In Python, supportScalar. We only implement the ot=True, extrapolate=False paths.
     /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L123>.
-    pub fn scalar_at(&self, location: &NormalizedLocation) -> OrderedFloat<f32> {
+    pub fn scalar_at(&self, location: &NormalizedLocation) -> OrderedFloat<f64> {
         let scalar = self.axis_tents.iter().filter(|(_, ar)| ar.validate()).fold(
             ONE,
             |scalar, (tag, tent)| {
@@ -647,9 +640,9 @@ impl Tent {
     /// Create an equivalent [RegionAxisCoordinates] instance.
     pub fn to_region_axis_coords(&self) -> RegionAxisCoordinates {
         RegionAxisCoordinates {
-            start_coord: F2Dot14::from_f32(self.min.to_f32()),
-            peak_coord: F2Dot14::from_f32(self.peak.to_f32()),
-            end_coord: F2Dot14::from_f32(self.max.to_f32()),
+            start_coord: F2Dot14::from_f32(self.min.to_f64() as _),
+            peak_coord: F2Dot14::from_f32(self.peak.to_f64() as _),
+            end_coord: F2Dot14::from_f32(self.max.to_f64() as _),
         }
     }
 }
@@ -674,8 +667,8 @@ impl Display for Tent {
     }
 }
 
-impl From<(f32, f32, f32)> for Tent {
-    fn from(value: (f32, f32, f32)) -> Self {
+impl From<(f64, f64, f64)> for Tent {
+    fn from(value: (f64, f64, f64)) -> Self {
         Tent::new(
             NormalizedCoord::new(value.0),
             NormalizedCoord::new(value.1),
@@ -802,7 +795,7 @@ fn master_influence(axis_order: &[Tag], regions: &[VariationRegion]) -> Vec<Vari
 fn delta_weights(
     locations: &[NormalizedLocation],
     influencers: &[VariationRegion],
-) -> Vec<Vec<(usize, OrderedFloat<f32>)>> {
+) -> Vec<Vec<(usize, OrderedFloat<f64>)>> {
     if log_enabled!(log::Level::Trace) {
         for (l, i) in locations.iter().zip(influencers) {
             trace!("{:?}", l);
@@ -868,9 +861,9 @@ mod tests {
             "axis" => ("Axis", "axis", 0, 0, 1),
             _ => panic!("No definition for {tag}, add it?"),
         };
-        let min = UserCoord::new(min as f32);
-        let default = UserCoord::new(default as f32);
-        let max = UserCoord::new(max as f32);
+        let min = UserCoord::new(min as f64);
+        let default = UserCoord::new(default as f64);
+        let max = UserCoord::new(max as f64);
         Axis {
             name: name.to_string(),
             tag: Tag::from_str(tag).unwrap(),
@@ -889,7 +882,7 @@ mod tests {
         }
     }
 
-    fn default_master_weight() -> Vec<(usize, OrderedFloat<f32>)> {
+    fn default_master_weight() -> Vec<(usize, OrderedFloat<f64>)> {
         // no locations are contributing deltas
         Vec::new()
     }
@@ -1330,7 +1323,7 @@ mod tests {
         );
     }
 
-    fn region(spec: &[(&str, f32, f32, f32)]) -> VariationRegion {
+    fn region(spec: &[(&str, f64, f64, f64)]) -> VariationRegion {
         let mut region = VariationRegion::new();
         for (tag, min, peak, max) in spec {
             region.insert(Tag::from_str(tag).unwrap(), (*min, *peak, *max).into());
@@ -1456,7 +1449,7 @@ mod tests {
         let num_locations = 31;
         let num_samples = 251;
         let locations: Vec<_> = (0..num_locations + 1)
-            .map(|i| NormalizedLocation::for_pos(&[("axis", i as f32 / num_locations as f32)]))
+            .map(|i| NormalizedLocation::for_pos(&[("axis", i as f64 / num_locations as f64)]))
             .collect();
         let master_values: HashMap<_, _> = locations
             .iter()
@@ -1474,7 +1467,7 @@ mod tests {
 
         let mut num_bad_errors = 0;
         for i in 0..num_samples {
-            let loc = NormalizedLocation::for_pos(&[("axis", i as f32 / num_samples as f32)]);
+            let loc = NormalizedLocation::for_pos(&[("axis", i as f64 / num_samples as f64)]);
 
             // unrounded float deltas
             let deltas_float: Vec<_> = model

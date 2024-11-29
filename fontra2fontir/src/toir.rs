@@ -28,9 +28,9 @@ pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<Static
         })
         .map(|a| {
             let a = a?;
-            let min = UserCoord::new(a.min_value as f32);
-            let default = UserCoord::new(a.default_value as f32);
-            let max = UserCoord::new(a.max_value as f32);
+            let min = UserCoord::new(a.min_value);
+            let default = UserCoord::new(a.default_value);
+            let max = UserCoord::new(a.max_value);
 
             if min > default || max < default {
                 return Err(Error::InconsistentAxisDefinitions(format!("{a:?}")));
@@ -41,10 +41,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<Static
                     .mapping
                     .iter()
                     .map(|[raw_user, raw_design]| {
-                        (
-                            UserCoord::new(*raw_user as f32),
-                            DesignCoord::new(*raw_design as f32),
-                        )
+                        (UserCoord::new(*raw_user), DesignCoord::new(*raw_design))
                     })
                     .collect();
                 let has_min_max = examples.iter().any(|(u, _)| *u == min)
@@ -121,7 +118,7 @@ fn to_ir_glyph(
             .map(|(name, tag)| {
                 (
                     *tag,
-                    NormalizedCoord::new(location.get(name).copied().unwrap_or_default() as f32),
+                    NormalizedCoord::new(location.get(name).copied().unwrap_or_default()),
                 )
             })
             .collect();
@@ -240,9 +237,9 @@ mod tests {
                 (
                     a.name.as_str(),
                     a.tag,
-                    a.min.to_f32() as f64,
-                    a.default.to_f32() as f64,
-                    a.max.to_f32() as f64,
+                    a.min.to_f64(),
+                    a.default.to_f64(),
+                    a.max.to_f64(),
                 )
             })
             .collect::<Vec<_>>()

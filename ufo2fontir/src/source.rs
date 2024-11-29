@@ -538,7 +538,7 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designsp
         .map(|a| {
             let tag = Tag::from_str(&a.tag).unwrap();
             let converter = &axes.get(&tag).unwrap().converter;
-            (tag, UserCoord::new(a.default).to_design(converter))
+            (tag, UserCoord::new(a.default as f64).to_design(converter))
         })
         .collect();
     designspace
@@ -1525,7 +1525,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
                 continue;
             };
 
-            *kerns.kerns.entry((side1, side2)).or_default() = (adjustment as f32).into();
+            *kerns.kerns.entry((side1, side2)).or_default() = adjustment.into();
         }
 
         debug!("{:?} has {} kern entries", self.location, kerns.kerns.len());
@@ -1782,7 +1782,7 @@ mod tests {
         add_to: &mut HashMap<PathBuf, Vec<DesignLocation>>,
         glif_file: &str,
         tag: Tag,
-        pos: f32,
+        pos: f64,
     ) {
         let mut loc = DesignLocation::new();
         loc.insert(tag, DesignCoord::new(pos));

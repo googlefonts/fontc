@@ -98,11 +98,11 @@ pub struct MockVariationInfo {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AxisLocation {
     /// A position in the user coordinate space
-    User(OrderedFloat<f32>),
+    User(OrderedFloat<f64>),
     /// A position in the design coordinate space
-    Design(OrderedFloat<f32>),
+    Design(OrderedFloat<f64>),
     /// A normalized position
-    Normalized(OrderedFloat<f32>),
+    Normalized(OrderedFloat<f64>),
 }
 
 /// Create an axis where user coords == design coords

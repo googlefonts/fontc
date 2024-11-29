@@ -56,7 +56,7 @@ impl Paths {
         let filename = "kern_".to_string()
             + &location
                 .iter()
-                .map(|(tag, pos)| format!("{tag}_{:.2}", pos.to_f32()))
+                .map(|(tag, pos)| format!("{tag}_{:.2}", pos.to_f64()))
                 .collect::<Vec<_>>()
                 .join("_")
             + ".yml";

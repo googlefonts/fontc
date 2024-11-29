@@ -36,7 +36,7 @@ const V3_METRIC_NAMES: [&str; 6] = [
 pub struct UserToDesignMapping(BTreeMap<String, AxisUserToDesignMap>);
 
 #[derive(Clone, Debug, Default, PartialEq, Hash)]
-pub struct AxisUserToDesignMap(Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>);
+pub struct AxisUserToDesignMap(Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>);
 
 /// A tidied up font from a plist.
 ///
@@ -1590,7 +1590,7 @@ impl RawFont {
                 let Some(value) = opt.as_ref() else {
                     continue;
                 };
-                if f32::from_str(value).is_ok() {
+                if f64::from_str(value).is_ok() {
                     continue;
                 };
                 let Some(value) = lookup_class_value(tag, value) else {
@@ -1753,12 +1753,10 @@ fn user_to_design_from_axis_mapping(
         };
         let axis_name = &from.axes.get(axis_index).unwrap().name;
         for (user, design) in mapping.user_to_design.iter() {
-            let user: f32 = user.0 as f32;
-            let design = design.0 as f32;
             axis_mappings
                 .entry(axis_name.clone())
                 .or_default()
-                .add_if_new(user.into(), design.into());
+                .add_if_new(*user, *design);
         }
     }
     Some(axis_mappings)
@@ -1791,13 +1789,13 @@ fn user_to_design_from_axis_location(
             let Some(axis_index) = axis_index(from, |a| a.name == axis_location.axis_name) else {
                 panic!("Axis has no index {axis_location:?}");
             };
-            let user = axis_location.location.0 as f32;
-            let design = master.axes_values[axis_index].into_inner() as f32;
+            let user = axis_location.location;
+            let design = master.axes_values[axis_index];
 
             axis_mappings
                 .entry(axis_location.axis_name.clone())
                 .or_default()
-                .add_if_new(user.into(), design.into());
+                .add_if_new(user, design);
         }
     }
     Some(axis_mappings)
@@ -1810,14 +1808,14 @@ impl AxisUserToDesignMap {
         }
     }
 
-    fn add_if_new(&mut self, user: OrderedFloat<f32>, design: OrderedFloat<f32>) {
+    fn add_if_new(&mut self, user: OrderedFloat<f64>, design: OrderedFloat<f64>) {
         if self.0.iter().any(|(u, d)| *u == user || *d == design) {
             return;
         }
         self.0.push((user, design));
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &(OrderedFloat<f32>, OrderedFloat<f32>)> {
+    pub fn iter(&self) -> impl Iterator<Item = &(OrderedFloat<f64>, OrderedFloat<f64>)> {
         self.0.iter()
     }
 
@@ -1877,11 +1875,10 @@ impl UserToDesignMapping {
     fn add_master_mappings_if_new(&mut self, from: &RawFont) {
         for master in from.font_master.iter() {
             for (axis, value) in from.axes.iter().zip(&master.axes_values) {
-                let value = OrderedFloat(value.0 as f32);
                 self.0
                     .entry(axis.name.clone())
                     .or_default()
-                    .add_if_new(value, value);
+                    .add_if_new(*value, *value);
             }
         }
     }
@@ -2197,12 +2194,11 @@ fn add_mapping_if_new(
     let Some(design) = axes_values.get(idx) else {
         return;
     };
-    let user = OrderedFloat(value as f32);
 
     axis_mappings
         .entry(axis.name.clone())
         .or_default()
-        .add_if_new(user, OrderedFloat(design.into_inner() as f32));
+        .add_if_new(value.into(), *design);
 }
 
 impl Instance {
@@ -2236,7 +2232,7 @@ impl Instance {
                 .width_class
                 .as_ref()
                 .map(|v| match WidthClass::try_from(u16::from_str(v).unwrap()) {
-                    Ok(width_class) => width_class.to_percent() as f64,
+                    Ok(width_class) => width_class.to_percent(),
                     Err(err) => {
                         warn!("{}", err);
                         100.0
@@ -3250,7 +3246,7 @@ mod tests {
                     font.axes
                         .iter()
                         .zip(&inst.axes_values)
-                        .map(|(a, v)| (a.name.as_str(), v.0 as f32))
+                        .map(|(a, v)| (a.name.as_str(), v.0))
                         .collect::<Vec<_>>()
                 ))
                 .collect::<Vec<_>>()

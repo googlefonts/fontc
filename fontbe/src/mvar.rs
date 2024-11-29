@@ -179,7 +179,7 @@ mod tests {
 
     use super::*;
 
-    fn axis(tag: &str, min: f32, default: f32, max: f32) -> Axis {
+    fn axis(tag: &str, min: f64, default: f64, max: f64) -> Axis {
         let min = UserCoord::new(min);
         let default = UserCoord::new(default);
         let max = UserCoord::new(max);
@@ -203,11 +203,11 @@ mod tests {
     fn add_sources(
         builder: &mut MvarBuilder,
         mvar_tag: &str,
-        sources: &[(&NormalizedLocation, f32)],
+        sources: &[(&NormalizedLocation, f64)],
     ) {
         let sources = sources
             .iter()
-            .map(|(loc, value)| ((*loc).clone(), (*value as f64).into()))
+            .map(|(loc, value)| ((*loc).clone(), { *value }.into()))
             .collect::<HashMap<_, _>>();
         builder
             .add_sources(Tag::from_str(mvar_tag).unwrap(), &sources)
@@ -283,11 +283,11 @@ mod tests {
             Self { mvar }
         }
 
-        fn metric_delta(&self, mvar_tag: &str, coords: &[f32]) -> f64 {
+        fn metric_delta(&self, mvar_tag: &str, coords: &[f64]) -> f64 {
             let mvar_tag = Tag::from_str(mvar_tag).unwrap();
             let coords: Vec<F2Dot14> = coords
                 .iter()
-                .map(|coord| F2Dot14::from_f32(*coord))
+                .map(|coord| F2Dot14::from_f32(*coord as _))
                 .collect();
             self.mvar.metric_delta(mvar_tag, &coords).unwrap().to_f64()
         }

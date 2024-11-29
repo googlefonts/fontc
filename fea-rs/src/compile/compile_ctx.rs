@@ -1985,10 +1985,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 ConditionFormat1 {
                     axis_index: axis_index as u16,
                     filter_range_min_value: F2Dot14::from_f32(
-                        min.to_normalized(&axis.converter).to_f32(),
+                        min.to_normalized(&axis.converter).to_f64() as _,
                     ),
                     filter_range_max_value: F2Dot14::from_f32(
-                        max.to_normalized(&axis.converter).to_f32(),
+                        max.to_normalized(&axis.converter).to_f64() as _,
                     ),
                 }
                 .into()

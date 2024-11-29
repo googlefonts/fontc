@@ -70,7 +70,7 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
                             .get(axis.tag)
                             .unwrap_or(axis.default)
                             .into_inner();
-                        Fixed::from_f64(loc.into_inner() as f64)
+                        Fixed::from_f64(loc.into_inner())
                     })
                     .collect(),
                 ..Default::default()

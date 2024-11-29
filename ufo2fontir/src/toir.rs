@@ -22,7 +22,7 @@ pub(crate) fn to_design_location(
         .map(|d| {
             (
                 *tags_by_name.get(d.name.as_str()).unwrap(),
-                DesignCoord::new(d.xvalue.unwrap()),
+                DesignCoord::new(d.xvalue.unwrap() as f64),
             )
         })
         .collect()
@@ -120,15 +120,20 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
     })?;
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
-    let min = UserCoord::new(axis.minimum.unwrap());
-    let default = UserCoord::new(axis.default);
-    let max = UserCoord::new(axis.maximum.unwrap());
+    let min = UserCoord::new(axis.minimum.unwrap() as f64);
+    let default = UserCoord::new(axis.default as f64);
+    let max = UserCoord::new(axis.maximum.unwrap() as f64);
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#map-element>
     let converter = if let Some(mappings) = &axis.map {
         let examples: Vec<_> = mappings
             .iter()
-            .map(|map| (UserCoord::new(map.input), DesignCoord::new(map.output)))
+            .map(|map| {
+                (
+                    UserCoord::new(map.input as f64),
+                    DesignCoord::new(map.output as f64),
+                )
+            })
             .collect();
 
         // make sure we have min/max/default mappings:

@@ -1773,7 +1773,7 @@ mod tests {
         )
     }
 
-    fn assert_named_instances(source: &str, expected: Vec<(String, Vec<(&str, f32)>)>) {
+    fn assert_named_instances(source: &str, expected: Vec<(String, Vec<(&str, f64)>)>) {
         let result = TestCompile::compile_source(source);
         let font = result.font();
 
@@ -1798,7 +1798,7 @@ mod tests {
                     inst.coordinates
                         .iter()
                         .enumerate()
-                        .map(|(i, coord)| { (axis_names[i].as_str(), coord.get().to_f64() as f32) })
+                        .map(|(i, coord)| { (axis_names[i].as_str(), coord.get().to_f64()) })
                         .collect(),
                 ))
                 .collect::<Vec<_>>()
@@ -2035,7 +2035,7 @@ mod tests {
         groups.sort();
 
         let wght = Tag::new(b"wght");
-        let mut kerns: HashMap<KernPair, Vec<(String, f32)>> = HashMap::new();
+        let mut kerns: HashMap<KernPair, Vec<(String, f64)>> = HashMap::new();
         for kern_loc in kerning_groups.locations.iter() {
             assert_eq!(
                 vec![wght],
@@ -2050,7 +2050,7 @@ mod tests {
                 kerns.entry(pair.clone()).or_default().push((
                     format!(
                         "wght {}",
-                        kern_loc.iter().map(|(_, v)| *v).next().unwrap().to_f32()
+                        kern_loc.iter().map(|(_, v)| *v).next().unwrap().to_f64()
                     ),
                     adjustment.0,
                 ));
@@ -2505,7 +2505,7 @@ mod tests {
             let gid = self.glyph_order.glyph_id(&name).unwrap();
             let coords: Vec<F2Dot14> = coords
                 .iter()
-                .map(|coord| F2Dot14::from_f32(coord.into_inner().into()))
+                .map(|coord| F2Dot14::from_f32(coord.to_f64() as _))
                 .collect();
             self.hvar
                 .advance_width_delta(gid.into(), &coords)
