@@ -101,9 +101,11 @@ fn make_html(
             body {
                 h1 { "fontc_crater" }
                 div #explain {
-                    "compiling a large number of target fonts with both fontc and fontmake, \
-                        comparing the results.
-                        "
+                    "compiling a large number of target fonts with both "
+                    {a href = "https://github.com/googlefonts/fontc" { "fontc" } }
+                    " and "
+                    {a href = "https://github.com/googlefonts/fontmake" { "fontmake" } }
+                    ", comparing the results."
                 }
                 (table)
                 (detailed_report)
