@@ -94,3 +94,7 @@ td.rev {
 .diff_info {
   padding: 10px 20px;
 }
+
+.hidden_row {
+  display: none;
+}
