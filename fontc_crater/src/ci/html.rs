@@ -85,6 +85,11 @@ fn make_html(
                 console.error(error.message);
             }
         }
+
+        function showAllResults() {
+            document.querySelectorAll(\".hidden_row\").forEach(e => e.classList.remove(\"hidden_row\"));
+            document.querySelector(\"#show_all_row\").classList.add(\"hidden_row\");
+        }
         </script>
     ",
     );
@@ -131,7 +136,12 @@ fn tidy_html(raw_html: &str) -> Result<String, Error> {
 }
 
 fn make_table_body(runs: &[RunSummary]) -> Markup {
-    fn make_row(run: &RunSummary, prev: Option<&RunSummary>, is_most_recent: bool) -> Markup {
+    fn make_row(
+        run: &RunSummary,
+        prev: Option<&RunSummary>,
+        is_most_recent: bool,
+        default_visible: bool,
+    ) -> Markup {
         let total_diff = make_delta_decoration(
             run.stats.total_targets as i32,
             prev.map(|p| p.stats.total_targets as i32),
@@ -192,8 +202,9 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             }
         };
         let elapsed = super::format_elapsed_time(&run.began, &run.finished);
+        let class = (!default_visible).then_some("hidden_row");
         html! {
-            tr.run {
+            tr class=[class] {
                 td.date { (run.began.format("%Y-%m-%d %H%M")) span.elapsed { " (" (elapsed) ")"} }
                 td.rev { a href=(diff_url) { (short_rev) } }
                 td.total {  ( run.stats.total_targets) " " (total_diff) }
@@ -208,11 +219,17 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
     let iter = runs.iter().enumerate().map(|(i, run)| {
         let prev = (i > 0).then(|| &runs[i - 1]);
         let is_last = i == runs.len() - 1;
-        make_row(run, prev, is_last)
+        let default_visibility = i >= runs.len() - 16;
+        make_row(run, prev, is_last, default_visibility)
     });
 
     html! {
         tbody {
+            tr {
+                td id="show_all_row" {
+                    a href = "" onclick = "event.preventDefault(); showAllResults();" { "Show all " (runs.len()) " results" }
+                }
+            }
             @for run in iter {
                 (run)
             }
