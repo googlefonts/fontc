@@ -1201,17 +1201,17 @@ mod tests {
                 ],
                 vec![
                     (0_usize, OrderedFloat(1.0)),
-                    (3_usize, OrderedFloat(0.7555555)),
-                    (4_usize, OrderedFloat(0.24444449)),
+                    (3_usize, OrderedFloat(0.7555555555555555)),
+                    (4_usize, OrderedFloat(0.24444444444444444)),
                     (5_usize, OrderedFloat(1.0)),
                     (6_usize, OrderedFloat(0.66))
                 ],
                 vec![
                     (0_usize, OrderedFloat(1.0)),
-                    (3_usize, OrderedFloat(0.7555555)),
-                    (4_usize, OrderedFloat(0.24444449)),
+                    (3_usize, OrderedFloat(0.7555555555555555)),
+                    (4_usize, OrderedFloat(0.24444444444444444)),
                     (5_usize, OrderedFloat(0.66)),
-                    (6_usize, OrderedFloat(0.43560004)),
+                    (6_usize, OrderedFloat(0.43560000000000004)),
                     (7_usize, OrderedFloat(0.66))
                 ],
             ],
@@ -1304,17 +1304,17 @@ mod tests {
                 vec![(0_usize, OrderedFloat(1.0))],
                 vec![
                     (0_usize, OrderedFloat(1.0)),
-                    (1_usize, OrderedFloat(0.33333334))
+                    (1_usize, OrderedFloat(1.0 / 3.0))
                 ],
                 vec![(0_usize, OrderedFloat(1.0))],
                 vec![(0_usize, OrderedFloat(1.0))],
                 vec![
                     (0_usize, OrderedFloat(1.0)),
-                    (4_usize, OrderedFloat(0.6666667))
+                    (4_usize, OrderedFloat(2.0 / 3.0))
                 ],
                 vec![
                     (0_usize, OrderedFloat(1.0)),
-                    (4_usize, OrderedFloat(0.33333334)),
+                    (4_usize, OrderedFloat(1.0 / 3.0)),
                     (5_usize, OrderedFloat(0.5))
                 ],
                 vec![(0_usize, OrderedFloat(1.0))],

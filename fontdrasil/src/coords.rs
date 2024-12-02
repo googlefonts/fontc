@@ -557,7 +557,11 @@ mod tests {
         assert_eq!(5.5, UserCoord::new(300.0).to_design(&converter));
         assert_eq!(10.0, UserCoord::new(400.0).to_design(&converter));
 
-        assert_eq!(-0.45, UserCoord::new(300.0).to_normalized(&converter));
+        // this used to look like the others but was failing after switch to f64
+        assert!(
+            (-0.45 - UserCoord::new(300.0).to_normalized(&converter).to_f64()).abs()
+                <= f64::EPSILON
+        );
         assert_eq!(0.0, UserCoord::new(400.0).to_normalized(&converter));
     }
 

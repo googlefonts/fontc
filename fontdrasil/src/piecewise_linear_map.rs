@@ -88,6 +88,7 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use ordered_float::OrderedFloat;
+    use write_fonts::types::Fixed;
 
     use super::PiecewiseLinearMap;
 
@@ -135,10 +136,10 @@ mod tests {
         ];
         let plm = PiecewiseLinearMap::new(from_to);
 
-        assert_eq!(plm.map(OrderedFloat(200_f64)), OrderedFloat(-0.6666667_f64));
-        assert_eq!(
-            plm.reverse().map(OrderedFloat(-0.6666667_f64)),
-            OrderedFloat(200_f64)
-        );
+        let map_to = plm.map(OrderedFloat(200_f64));
+        assert_eq!(Fixed::from_f64(map_to.0), Fixed::from_f64(-2f64 / 3f64));
+
+        let map_from = plm.reverse().map(map_to);
+        assert_eq!(Fixed::from_f64(map_from.0), Fixed::from_f64(200.0));
     }
 }
