@@ -266,7 +266,7 @@ impl Source for GlyphsIrSource {
 fn try_name_id(name: &str) -> Option<NameId> {
     match name {
         "copyrights" => Some(NameId::COPYRIGHT_NOTICE),
-        "familyNames" => Some(NameId::TYPOGRAPHIC_FAMILY_NAME),
+        "familyNames" => Some(NameId::FAMILY_NAME),
         "uniqueID" => Some(NameId::UNIQUE_ID),
         "postscriptFullName" => Some(NameId::FULL_NAME),
         "version" => Some(NameId::VERSION_STRING),
@@ -289,7 +289,7 @@ fn try_name_id(name: &str) -> Option<NameId> {
     }
 }
 
-fn names(font: &Font) -> HashMap<NameKey, String> {
+fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     let mut builder = NameBuilder::default();
     builder.set_version(font.version_major, font.version_minor);
     for (name, value) in font.names.iter() {
@@ -297,10 +297,44 @@ fn names(font: &Font) -> HashMap<NameKey, String> {
             builder.add(name_id, value.clone());
         }
     }
+
+    // Family name needs to include style, with some mutilation (drop last Regular, Bold, Italic)
+    // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da540d646b0784ae6d2c3ca834/Lib/glyphsLib/builder/names.py#L92>
+    let typographic_family = builder.get(NameId::FAMILY_NAME).unwrap_or_default();
+    let mut family = vec![typographic_family];
+    family.extend(font.default_master().name.split_ascii_whitespace());
+    while matches!(
+        family.last().copied(),
+        Some("Regular") | Some("Bold") | Some("Italic")
+    ) {
+        family.pop();
+    }
+    let family = family.join(" ");
+
+    if typographic_family != family {
+        builder.add(
+            NameId::TYPOGRAPHIC_FAMILY_NAME,
+            typographic_family.to_string(),
+        );
+    }
+
+    builder.add(NameId::FAMILY_NAME, family);
+    let subfamily = if flags.contains(SelectionFlags::BOLD | SelectionFlags::ITALIC) {
+        "Bold Italic"
+    } else if flags.contains(SelectionFlags::BOLD) {
+        "Bold"
+    } else if flags.contains(SelectionFlags::ITALIC) {
+        "Italic"
+    } else {
+        "Regular"
+    };
+    builder.add(NameId::SUBFAMILY_NAME, subfamily.to_string());
+
     builder.add(
         NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
         font.default_master().name.clone(),
     );
+
     let vendor = font
         .vendor_id()
         .map(|v| v.as_str())
@@ -362,21 +396,6 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         let number_values = get_number_values(font_info, font);
 
-        let selection_flags = match font.custom_parameters.use_typo_metrics.unwrap_or_default() {
-            true => SelectionFlags::USE_TYPO_METRICS,
-            false => SelectionFlags::empty(),
-        } | match font.custom_parameters.has_wws_names.unwrap_or_default() {
-            true => SelectionFlags::WWS,
-            false => SelectionFlags::empty(),
-        } |
-        // https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/names.py#L27
-        match font.default_master().name.to_ascii_lowercase().as_str() {
-            "italic" => SelectionFlags::ITALIC,
-            "bold" => SelectionFlags::BOLD,
-            "bold italic" => SelectionFlags::BOLD | SelectionFlags::ITALIC,
-            _ => SelectionFlags::REGULAR,
-        };
-
         // negate the italic angle because it's clockwise in Glyphs.app whereas it's
         // counter-clockwise in UFO/OpenType and our GlobalMetrics follow the latter
         // https://github.com/googlefonts/glyphsLib/blob/f162e7/Lib/glyphsLib/builder/masters.py#L36
@@ -385,11 +404,38 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .italic_angle()
             .map(|v| -v)
             .unwrap_or(0.0);
+
+        let mut selection_flags = match font.custom_parameters.use_typo_metrics.unwrap_or_default() {
+            true => SelectionFlags::USE_TYPO_METRICS,
+            false => SelectionFlags::empty(),
+        } | match font.custom_parameters.has_wws_names.unwrap_or_default() {
+            true => SelectionFlags::WWS,
+            false => SelectionFlags::empty(),
+        } |
+        // if there is an italic angle we're italic
+        // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da540d646b0784ae6d2c3ca834/Lib/glyphsLib/builder/names.py#L25>
+        match italic_angle {
+            0.0 => SelectionFlags::empty(),
+            _ => SelectionFlags::ITALIC,
+        } |
+        // https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/names.py#L27
+        match font.default_master().name.to_ascii_lowercase().as_str() {
+            "italic" => SelectionFlags::ITALIC,
+            "bold" => SelectionFlags::BOLD,
+            "bold italic" => SelectionFlags::BOLD | SelectionFlags::ITALIC,
+            _ => SelectionFlags::empty(),
+        };
+        if selection_flags.intersection(SelectionFlags::ITALIC | SelectionFlags::BOLD)
+            == SelectionFlags::empty()
+        {
+            selection_flags |= SelectionFlags::REGULAR;
+        }
+
         let categories = make_glyph_categories(font);
 
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
-            names(font),
+            names(font, selection_flags),
             axes,
             named_instances,
             global_locations,
@@ -1427,7 +1473,7 @@ mod tests {
     #[test]
     fn name_table() {
         let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
-        let mut names: Vec<_> = names(&font).into_iter().collect();
+        let mut names: Vec<_> = names(&font, SelectionFlags::BOLD).into_iter().collect();
         names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
         // typographic family name == family name and should NOT be present
         assert_eq!(
@@ -1514,7 +1560,7 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         assert_eq!(
             "New Value",
-            names(&font)
+            names(&font, SelectionFlags::empty())
                 .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
                 .unwrap()
         );
@@ -1525,7 +1571,7 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("VersionMajorMinor.glyphs")).unwrap();
         assert_eq!(
             "Version 42.043",
-            names(&font)
+            names(&font, SelectionFlags::empty())
                 .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
                 .unwrap()
         );
@@ -1536,7 +1582,7 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("infinity.glyphs")).unwrap();
         assert_eq!(
             "Version 0.000",
-            names(&font)
+            names(&font, SelectionFlags::empty())
                 .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
                 .unwrap()
         );
@@ -1864,5 +1910,41 @@ mod tests {
         assert_eq!(unique_value(&metrics, GlobalMetric::CaretOffset), 2.);
         assert_eq!(unique_value(&metrics, GlobalMetric::CaretSlopeRise), 1.);
         assert_eq!(unique_value(&metrics, GlobalMetric::CaretSlopeRun), 5.);
+    }
+
+    // <https://github.com/googlefonts/fontc/issues/1157>
+    #[test]
+    fn identifies_italicness() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("An-Italic.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let selection_flags = static_metadata.misc.selection_flags;
+        let name = |id: NameId| {
+            static_metadata
+                .names
+                .get(&NameKey::new_bmp_only(id))
+                .map(|s| s.as_str())
+                .unwrap_or_default()
+        };
+
+        assert_eq!(
+            (
+                name(NameId::FAMILY_NAME),
+                name(NameId::SUBFAMILY_NAME),
+                name(NameId::UNIQUE_ID),
+                name(NameId::FULL_NAME),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME),
+                name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+                selection_flags
+            ),
+            (
+                "An Light",
+                "Italic",
+                "1.000;NONE;An-LightItalic",
+                "An Light Italic",
+                "An",
+                "Light Italic",
+                SelectionFlags::ITALIC
+            )
+        );
     }
 }

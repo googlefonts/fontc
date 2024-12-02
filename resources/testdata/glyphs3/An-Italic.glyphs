@@ -1,0 +1,51 @@
+{
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+
+familyName = An;
+
+fontMaster = (
+{
+custom = Italic;
+id = "light";
+italicAngle = 8;
+weight = Light;
+weightValue = 58;
+},
+
+{
+custom = "Extra Italic";
+id = "bold";
+italicAngle = 8;
+name = "ExtraBold Italic";
+weight = Bold;
+weightValue = 147;
+}
+);
+
+glyphs = (
+{
+glyphname = .notdef;
+layers = (
+{
+layerId = "light";
+},
+{
+layerId = "bold";
+}
+);
+}
+);
+
+unitsPerEm = 1000;
+versionMajor = 1;
+}
