@@ -106,13 +106,25 @@ fn make_html(
             body {
                 h1 { "fontc_crater" }
                 div #explain {
-                    "compiling a large number of target fonts with both "
+                    "Compiling all known Google Fonts that have sources with both "
                     {a href = "https://github.com/googlefonts/fontc" { "fontc" } }
                     " and "
                     {a href = "https://github.com/googlefonts/fontmake" { "fontmake" } }
                     ", comparing the results."
                 }
                 (table)
+                div #explain {
+                    "Jump to "
+                    {a href = "#summary-report" { "summary" } }
+                    ", "
+                    {a href = "#diff-report" { "per-target diffs" } }
+                    ", or compile failures for "
+                    {a href = "#fontc-failures" { "fontc only" } }
+                    ", "
+                    {a href = "#fontmake-failures" { "fontmake only" } }
+                    ", "
+                    {a href = "#both-failures" { "both compilers" } }
+                }
                 (detailed_report)
             }
         }
@@ -274,11 +286,15 @@ fn make_detailed_report(
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
-    let error_report = make_error_report(current, prev, sources);
-    let diff_report = make_diff_report(current, prev, sources);
+    let reports = vec![
+        make_diff_report(current, prev, sources),
+        make_summary_report(current),
+        make_error_report(current, prev, sources),
+    ];
     html! {
-        (diff_report)
-        (error_report)
+        @for report in reports {
+            (report)
+        }
     }
 }
 
@@ -333,6 +349,50 @@ fn n_families_and_n_identical(run: &DiffResults) -> (usize, usize) {
         .filter(|(_, (total, perfect))| total == perfect)
         .count();
     (total_families, num_perfect)
+}
+
+/// Count # targets impacted by each diff type (e.g. table or table size)
+fn make_summary_report(current: &DiffResults) -> Markup {
+    let mut results = current
+        .success
+        .values()
+        .filter_map(|diff| match diff {
+            DiffOutput::Diffs(diffs) => Some(diffs),
+            DiffOutput::Identical => None,
+        })
+        .flat_map(|diff| diff.iter().filter(|(k, _)| *k != "total"))
+        .fold(HashMap::<&str, i32>::new(), |mut acc, e| {
+            *acc.entry(e.0).or_default() += 1;
+            acc
+        })
+        .into_iter()
+        .collect::<Vec<_>>();
+    results.sort_by_key(|(_, count)| -*count);
+
+    if results.is_empty() {
+        return html!();
+    }
+
+    html! {
+        div.summary_report {
+            h3 id="summary-report" { "Summary" }
+            table {
+                thead {
+                    tr {
+                        th { "Tag" }
+                        th { "Targets with diff" }
+                    }
+                }
+                @for (tag, count) in results {
+                    tr {
+                        td { (tag) }
+                        td { (count) }
+                    }
+                }
+            }
+        }
+
+    }
 }
 
 /// make the list of fonts that were both compiled successfully.
@@ -417,7 +477,7 @@ fn make_diff_report(
     let matching_familes = make_matching_families_info(current, prev, sources);
     html! {
         div.diff_report {
-            h3 { "results" }
+            h3 id="diff-report" { "Diffs" }
             div.matching_families { (matching_familes) }
             @for item in items {
                 (item)
