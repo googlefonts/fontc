@@ -1,0 +1,56 @@
+{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = vendorID;
+value = WRNG;
+}
+);
+
+familyName = FamilyName;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+properties = (
+{
+key = vendorID;
+value = RGHT;
+},
+);
+unitsPerEm = 1000;
+}

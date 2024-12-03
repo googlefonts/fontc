@@ -1951,4 +1951,11 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn prefer_vendorid_in_properties() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("MultipleVendorIDs.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(Tag::new(b"RGHT"), static_metadata.misc.vendor_id);
+    }
 }
