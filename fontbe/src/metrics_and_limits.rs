@@ -112,8 +112,8 @@ impl FontLimits {
 
         let glyph_info = match &glyph.data {
             RawGlyph::Simple(simple) => {
-                let num_points = simple.contours().iter().map(Contour::len).sum::<usize>() as u16;
-                let num_contours = simple.contours().len() as u16;
+                let num_points = simple.contours.iter().map(Contour::len).sum::<usize>() as u16;
+                let num_contours = simple.contours.len() as u16;
                 self.max_points = max(self.max_points, num_points);
                 self.max_contours = max(self.max_contours, num_contours);
                 GlyphInfo {
