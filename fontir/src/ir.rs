@@ -1548,6 +1548,16 @@ impl Glyph {
         self.sources.get_mut(loc)
     }
 
+    /// Iterate over the names of all components in all instances.
+    ///
+    /// This will return duplicates if multiple instances have identical
+    /// components (which is normal)
+    pub(crate) fn component_names(&self) -> impl Iterator<Item = &GlyphName> {
+        self.sources
+            .values()
+            .flat_map(|inst| inst.components.iter().map(|comp| &comp.base))
+    }
+
     /// Does the Glyph use the same components, (name, 2x2 transform), for all instances?
     ///
     /// The (glyphname, 2x2 transform) pair is considered for uniqueness. Note that
@@ -1790,6 +1800,28 @@ pub struct GlyphInstance {
     pub contours: Vec<BezPath>,
     /// List of glyph components.
     pub components: Vec<Component>,
+}
+
+impl GlyphInstance {
+    /// Returns the concatenation of the element types for each outline.
+    ///
+    /// These are 'M' for moveto, 'L' for lineto, 'Q' for quadto, 'C' for
+    /// curveto and 'Z' for closepath.
+    pub fn path_elements(&self) -> String {
+        fn path_el_type(el: &PathEl) -> &'static str {
+            match el {
+                PathEl::MoveTo(..) => "M",
+                PathEl::LineTo(..) => "L",
+                PathEl::QuadTo(..) => "Q",
+                PathEl::CurveTo(..) => "C",
+                PathEl::ClosePath => "Z",
+            }
+        }
+        self.contours
+            .iter()
+            .flat_map(|c| c.elements().iter().map(path_el_type))
+            .collect()
+    }
 }
 
 /// A single glyph component, reference to another glyph.

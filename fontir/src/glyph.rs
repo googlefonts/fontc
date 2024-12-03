@@ -3,7 +3,10 @@
 //! Notably includes splitting glyphs with contours and components into one new glyph with
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
+};
 
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -166,6 +169,54 @@ fn components(
             )
         })
         .collect()
+}
+
+// Operations performed on glyphs with mixed contours/components
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlyphOp {
+    // convert comonents in this mixed glyph into contours
+    ConvertToContour,
+    // move contours in this mixed glyph into components
+    MoveContoursToComponent,
+}
+
+/// Fix glyphs with mixed components/contours.
+///
+/// We presume component cycles are checked elsewhere and do not check for them here
+fn resolve_inconsistencies(
+    context: &Context,
+    mut todo: VecDeque<(GlyphOp, Arc<Glyph>)>,
+    order: &mut GlyphOrder,
+    mut apply_fix: impl FnMut(GlyphOp, &Glyph, &mut GlyphOrder) -> Result<(), BadGlyph>,
+) -> Result<(), BadGlyph> {
+    let mut pending = todo
+        .iter()
+        .map(|(_, g)| g.name.clone())
+        .collect::<HashSet<_>>();
+    let mut curr_components = Vec::with_capacity(8); // avoid inner reallocs
+    'next_todo: while let Some((op, glyph)) = todo.pop_front() {
+        // Only fix curr if nothing else that needs fixing is reachable
+        curr_components.clear();
+        curr_components.extend(glyph.component_names().cloned());
+        while let Some(component_name) = curr_components.pop() {
+            if pending.contains(&component_name) {
+                // We can't got yet
+                todo.push_back((op, glyph));
+                continue 'next_todo;
+            }
+            let glyph = context.glyphs.get(&WorkId::Glyph(component_name));
+            curr_components.extend(glyph.component_names().cloned());
+        }
+
+        // Our component graph doesn't reach any pending component, we are a go!
+        debug!("{op:?} {}", glyph.name);
+        apply_fix(op, &glyph, order)?;
+
+        // I ain't a-gonna pend no more
+        pending.remove(&glyph.name);
+    }
+
+    Ok(())
 }
 
 /// Convert a glyph with contours and components to a contour-only, aka simple, glyph
@@ -423,32 +474,44 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
             }
         }
 
-        // Glyphs with paths and components, and glyphs whose component 2x2 transforms vary over designspace
-        // are not directly supported in fonts. To resolve we must do one of:
+        // Glyphs with paths and components, and glyphs whose component 2x2
+        // transforms vary over designspace are not directly supported in fonts.
+        // To resolve we must do one of:
         // 1) need to push their paths to a new glyph that is a component
         // 2) collapse such glyphs into a simple (contour-only) glyph
-        // fontmake (Python) prefers option 2.
-        for glyph_name in new_glyph_order.clone().iter() {
+        //    fontmake (Python) prefers option 2.
+        let mut todo = VecDeque::new();
+        for glyph_name in new_glyph_order.iter() {
             let glyph = original_glyphs.get(glyph_name).unwrap();
-            let inconsistent_components = !glyph.has_consistent_components();
-            if inconsistent_components || has_components_and_contours(glyph) {
-                if inconsistent_components {
+            if !glyph.has_consistent_components() {
+                debug!(
+                    "Coalescing '{glyph_name}' into a simple glyph because \
+                        component 2x2s vary across the designspace"
+                );
+                todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
+            } else if has_components_and_contours(glyph) {
+                if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
+                    todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
                     debug!(
-                        "Coalescing'{0}' into a simple glyph because component 2x2s vary across the designspace",
-                        glyph.name
+                        "Coalescing '{glyph_name} into a simple glyph; it has \
+                            contours and components and prefer simple glyphs is set",
                     );
-                    convert_components_to_contours(context, glyph)?;
-                } else if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
-                    debug!(
-                        "Coalescing '{0}' into a simple glyph because it has contours and components and prefer simple glyphs is set",
-                        glyph.name
-                    );
-                    convert_components_to_contours(context, glyph)?;
                 } else {
-                    move_contours_to_new_component(context, &mut new_glyph_order, glyph)?;
+                    todo.push_back((GlyphOp::MoveContoursToComponent, glyph.clone()));
                 }
             }
         }
+        resolve_inconsistencies(
+            context,
+            todo,
+            &mut new_glyph_order,
+            |op, glyph, order| match op {
+                GlyphOp::ConvertToContour => convert_components_to_contours(context, glyph),
+                GlyphOp::MoveContoursToComponent => {
+                    move_contours_to_new_component(context, order, glyph)
+                }
+            },
+        )?;
         drop(original_glyphs); // lets not accidentally use that from here on
 
         apply_optional_transformations(context, &new_glyph_order)?;
@@ -981,5 +1044,70 @@ mod tests {
         // because the non-id 2x2 transform of the shallow_component would have
         // infected the deep_component and caused it to be decomposed.
         assert_is_flattened_component(&context, test_data.deep_component.name);
+    }
+
+    #[derive(Default)]
+    struct GlyphOrderBuilder(Vec<Arc<Glyph>>);
+
+    impl GlyphOrderBuilder {
+        fn add_glyph<const N: usize>(&mut self, name: &str, components: [&str; N]) {
+            let instance = GlyphInstance {
+                components: components
+                    .into_iter()
+                    .map(|name| Component {
+                        base: name.into(),
+                        transform: Default::default(),
+                    })
+                    .collect(),
+                ..Default::default()
+            };
+            let loc = NormalizedLocation::for_pos(&[("axis", 0.0)]);
+            let glyph = Glyph::new(
+                name.into(),
+                true,
+                Default::default(),
+                HashMap::from([(loc, instance)]),
+            )
+            .unwrap();
+            self.0.push(Arc::new(glyph))
+        }
+    }
+
+    #[test]
+    fn component_sorting() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph("a", ["b", "c"]);
+        builder.add_glyph("b", ["z"]);
+        builder.add_glyph("c", ["d"]);
+        builder.add_glyph("d", ["x", "y"]);
+        builder.add_glyph("e", ["z"]);
+
+        let mut order: GlyphOrder = builder.0.iter().map(|g| g.name.clone()).collect();
+        let context = test_context();
+        for glyph in builder.0.iter() {
+            context.glyphs.set((**glyph).clone());
+            for component_name in glyph.component_names() {
+                if order.contains(component_name) {
+                    continue;
+                }
+                context.glyphs.set(contour_glyph(component_name.as_str()));
+                order.insert(component_name.clone());
+            }
+        }
+        let todo = builder
+            .0
+            .into_iter()
+            .map(|g| (GlyphOp::ConvertToContour, g))
+            .collect();
+
+        let mut fix_order = Vec::new();
+
+        resolve_inconsistencies(&context, todo, &mut order, |_op, glyph, _order| {
+            fix_order.push(glyph.name.clone());
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(fix_order, ["b", "d", "e", "c", "a"]);
     }
 }
