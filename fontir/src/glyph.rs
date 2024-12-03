@@ -172,7 +172,7 @@ fn components(
 }
 
 // Operations performed on glyphs with mixed contours/components
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GlyphOp {
     // convert comonents in this mixed glyph into contours
     ConvertToContour,
@@ -182,88 +182,41 @@ enum GlyphOp {
 
 /// Fix glyphs with mixed components/contours.
 ///
-/// If there are component relationships between these glyphs the leaves have
-/// to be handled first.
+/// We presume component cycles are checked elsewhere and do not check for them here
 fn resolve_inconsistencies(
     context: &Context,
-    todo: Vec<(GlyphOp, Arc<Glyph>)>,
+    mut todo: VecDeque<(GlyphOp, Arc<Glyph>)>,
     order: &mut GlyphOrder,
+    mut apply_fix: impl FnMut(GlyphOp, &Glyph, &mut GlyphOrder) -> Result<(), BadGlyph>,
 ) -> Result<(), BadGlyph> {
-    let items = todo
-        .into_iter()
-        .map(|(op, glyph)| (glyph.name.clone(), (op, glyph)))
-        .collect::<HashMap<_, _>>();
-
-    for name in component_ordering_within_glyphs(items.values().map(|(_, g)| g.clone())) {
-        let (op, glyph) = items.get(&name).unwrap();
-        match op {
-            GlyphOp::ConvertToContour => convert_components_to_contours(context, glyph)?,
-            GlyphOp::MoveContoursToComponent => {
-                move_contours_to_new_component(context, order, glyph)?
+    let mut pending = todo
+        .iter()
+        .map(|(_, g)| g.name.clone())
+        .collect::<HashSet<_>>();
+    let mut curr_components = Vec::with_capacity(8); // avoid inner reallocs
+    'next_todo: while let Some((op, glyph)) = todo.pop_front() {
+        // Only fix curr if nothing else that needs fixing is reachable
+        curr_components.clear();
+        curr_components.extend(glyph.component_names().cloned());
+        while let Some(component_name) = curr_components.pop() {
+            if pending.contains(&component_name) {
+                // We can't got yet
+                todo.push_back((op, glyph));
+                continue 'next_todo;
             }
+            let glyph = context.glyphs.get(&WorkId::Glyph(component_name));
+            curr_components.extend(glyph.component_names().cloned());
         }
+
+        // Our component graph doesn't reach any pending component, we are a go!
+        debug!("{op:?} {}", glyph.name);
+        apply_fix(op, &glyph, order)?;
+
+        // I ain't a-gonna pend no more
+        pending.remove(&glyph.name);
     }
+
     Ok(())
-}
-
-// given a sequence of glyphs, return an ordering such that any glyph that
-// is a component of another glyph in the input set occurs before it.
-//
-// this has a funny signature so I can unit test it.
-fn component_ordering_within_glyphs(
-    glyphs: impl Iterator<Item = Arc<Glyph>>,
-) -> impl Iterator<Item = GlyphName> {
-    // first figure out our order:
-    let items = glyphs
-        .map(|glyph| (glyph.name.clone(), glyph))
-        .collect::<HashMap<_, _>>();
-
-    // depth of components within the todo list only.
-    let mut depths = HashMap::new();
-    let mut depth_work_queue = Vec::new();
-
-    // an initial pass to find if any glyphs here use any others as components
-    for (name, glyph) in &items {
-        if glyph.component_names().any(|name| items.contains_key(name)) {
-            depth_work_queue.push(name.clone());
-        } else {
-            depths.insert(name.clone(), 0);
-        }
-    }
-
-    let mut progress = depth_work_queue.len();
-    while progress > 0 {
-        progress = depth_work_queue.len();
-        depth_work_queue.retain(|next| {
-            let glyph = items.get(next).unwrap();
-            let deepest_component = glyph
-                .component_names()
-                .filter(|comp| items.contains_key(*comp))
-                .map(|comp| depths.get(comp).copied())
-                .try_fold(0, |acc, e| e.map(|e| acc.max(e)));
-            match deepest_component {
-                Some(depth) => {
-                    depths.insert(next.clone(), depth + 1);
-                    false
-                }
-                None => true,
-            }
-        });
-        progress -= depth_work_queue.len();
-    }
-
-    if !depth_work_queue.is_empty() {
-        log::warn!("component cycle involving glyphs {depth_work_queue:?}");
-        // keep going for now, we'll error out later
-        depths.extend(depth_work_queue.into_iter().map(|g| (g, i32::MAX)));
-    }
-
-    let mut work_order = depths
-        .into_iter()
-        .map(|(name, depth)| (depth, name))
-        .collect::<Vec<_>>();
-    work_order.sort();
-    work_order.into_iter().map(|(_, name)| name)
 }
 
 /// Convert a glyph with contours and components to a contour-only, aka simple, glyph
@@ -527,7 +480,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // 1) need to push their paths to a new glyph that is a component
         // 2) collapse such glyphs into a simple (contour-only) glyph
         //    fontmake (Python) prefers option 2.
-        let mut todo = Vec::new();
+        let mut todo = VecDeque::new();
         for glyph_name in new_glyph_order.iter() {
             let glyph = original_glyphs.get(glyph_name).unwrap();
             if !glyph.has_consistent_components() {
@@ -535,20 +488,30 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
                     "Coalescing '{glyph_name}' into a simple glyph because \
                         component 2x2s vary across the designspace"
                 );
-                todo.push((GlyphOp::ConvertToContour, glyph.clone()));
+                todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
             } else if has_components_and_contours(glyph) {
                 if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
-                    todo.push((GlyphOp::ConvertToContour, glyph.clone()));
+                    todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
                     debug!(
                         "Coalescing '{glyph_name} into a simple glyph; it has \
                             contours and components and prefer simple glyphs is set",
                     );
                 } else {
-                    todo.push((GlyphOp::MoveContoursToComponent, glyph.clone()));
+                    todo.push_back((GlyphOp::MoveContoursToComponent, glyph.clone()));
                 }
             }
         }
-        resolve_inconsistencies(context, todo, &mut new_glyph_order)?;
+        resolve_inconsistencies(
+            context,
+            todo,
+            &mut new_glyph_order,
+            |op, glyph, order| match op {
+                GlyphOp::ConvertToContour => convert_components_to_contours(context, glyph),
+                GlyphOp::MoveContoursToComponent => {
+                    move_contours_to_new_component(context, order, glyph)
+                }
+            },
+        )?;
         drop(original_glyphs); // lets not accidentally use that from here on
 
         apply_optional_transformations(context, &new_glyph_order)?;
@@ -1119,22 +1082,32 @@ mod tests {
         builder.add_glyph("d", ["x", "y"]);
         builder.add_glyph("e", ["z"]);
 
-        let sorted = component_ordering_within_glyphs(builder.0.into_iter()).collect::<Vec<_>>();
+        let mut order: GlyphOrder = builder.0.iter().map(|g| g.name.clone()).collect();
+        let context = test_context();
+        for glyph in builder.0.iter() {
+            context.glyphs.set((**glyph).clone());
+            for component_name in glyph.component_names() {
+                if order.contains(component_name) {
+                    continue;
+                }
+                context.glyphs.set(contour_glyph(component_name.as_str()));
+                order.insert(component_name.clone());
+            }
+        }
+        let todo = builder
+            .0
+            .into_iter()
+            .map(|g| (GlyphOp::ConvertToContour, g))
+            .collect();
 
-        assert_eq!(sorted, ["b", "d", "e", "c", "a"]);
-    }
+        let mut fix_order = Vec::new();
 
-    // all we care about here is that we don't deadlock
-    #[test]
-    fn component_sorting_with_cycle() {
-        let mut builder = GlyphOrderBuilder::default();
-        builder.add_glyph("a", ["z"]);
-        builder.add_glyph("b", ["c"]);
-        builder.add_glyph("c", ["d"]);
-        builder.add_glyph("z", ["a"]); // a cycle
-                                       //
-        let sorted = component_ordering_within_glyphs(builder.0.into_iter()).collect::<Vec<_>>();
+        resolve_inconsistencies(&context, todo, &mut order, |_op, glyph, _order| {
+            fix_order.push(glyph.name.clone());
+            Ok(())
+        })
+        .unwrap();
 
-        assert_eq!(sorted, ["c", "b", "a", "z"]);
+        assert_eq!(fix_order, ["b", "d", "e", "c", "a"]);
     }
 }
