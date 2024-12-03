@@ -687,6 +687,12 @@ struct RawName {
     values: Vec<RawNameValue>,
 }
 
+impl RawName {
+    fn is_empty(&self) -> bool {
+        self.value.is_none() && self.values.is_empty()
+    }
+}
+
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
 struct RawNameValue {
     language: String,
@@ -1558,6 +1564,11 @@ impl RawFont {
         );
 
         let mut v2_to_v3_param = |v2_name: &str, v3_name: &str| {
+            if let Some(v3) = properties.iter().find(|n| n.key == v3_name) {
+                if !v3.is_empty() {
+                    return;
+                }
+            }
             if let Some(value) = self.custom_parameters.string(v2_name) {
                 v2_to_v3_name(&mut properties, Some(value), v3_name);
             }
