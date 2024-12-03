@@ -1,0 +1,99 @@
+{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+
+customParameters = (
+{
+name = panose;
+value = (
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10
+);
+}
+);
+
+familyName = FamilyName;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+customParameters = (
+{
+name = panose;
+value = (
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11
+);
+}
+);
+},
+
+{
+axesValues = (
+700
+);
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+name = Bold;
+customParameters = (
+{
+name = panose;
+value = (
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12
+);
+}
+);
+}
+);
+
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+}
