@@ -468,7 +468,13 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .as_ref()
             .map(|bits| bits.iter().copied().collect());
 
-        if let Some(raw_panose) = font.custom_parameters.panose.as_ref() {
+        if let Some(raw_panose) = font
+            .default_master()
+            .custom_parameters
+            .panose
+            .as_ref()
+            .or(font.custom_parameters.panose.as_ref())
+        {
             let mut bytes = [0u8; 10];
             bytes
                 .iter_mut()
@@ -1051,7 +1057,7 @@ mod tests {
     };
     use glyphs_reader::{glyphdata::Category, Font};
     use indexmap::IndexSet;
-    use ir::test_helpers::Round2;
+    use ir::{test_helpers::Round2, Panose};
     use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
@@ -1964,5 +1970,15 @@ mod tests {
         let (_, context) = build_static_metadata(glyphs3_dir().join("MultipleVendorIDs.glyphs"));
         let static_metadata = context.static_metadata.get();
         assert_eq!(Tag::new(b"RGHT"), static_metadata.misc.vendor_id);
+    }
+
+    #[test]
+    fn prefer_default_master_panose() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("MultiplePanose.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(
+            Some(Panose::from([2u8, 3, 4, 5, 6, 7, 8, 9, 10, 11])),
+            static_metadata.misc.panose
+        );
     }
 }
