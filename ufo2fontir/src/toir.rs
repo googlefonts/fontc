@@ -114,7 +114,10 @@ pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<Vec<fontdrasil::types::A
 }
 
 pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, Error> {
-    let tag = Tag::from_str(&axis.tag).map_err(Error::InvalidTag)?;
+    let tag = Tag::from_str(&axis.tag).map_err(|cause| Error::InvalidTag {
+        raw_tag: axis.tag.clone(),
+        cause,
+    })?;
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
     let min = UserCoord::new(axis.minimum.unwrap());

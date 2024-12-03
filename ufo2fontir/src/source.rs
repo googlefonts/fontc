@@ -30,7 +30,7 @@ use norad::{
 };
 use write_fonts::{
     tables::{gdef::GlyphClassDef, os2::SelectionFlags},
-    types::{InvalidTag, NameId, Tag},
+    types::{NameId, Tag},
     OtRound,
 };
 
@@ -305,8 +305,15 @@ impl Source for DesignSpaceIrSource {
             .designspace
             .axes
             .iter()
-            .map(|a| Tag::from_str(&a.tag).map(|tag| (a.name.as_str(), tag)))
-            .collect::<Result<HashMap<&str, Tag>, InvalidTag>>()?;
+            .map(|a| {
+                Tag::from_str(&a.tag)
+                    .map(|tag| (a.name.as_str(), tag))
+                    .map_err(|cause| Error::InvalidTag {
+                        cause,
+                        raw_tag: a.tag.clone(),
+                    })
+            })
+            .collect::<Result<HashMap<&str, Tag>, _>>()?;
         for (idx, source) in sources_default_first.iter().enumerate() {
             // Track files within each UFO
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
@@ -952,7 +959,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
         if let Some(vendor_id) = &font_info_at_default.open_type_os2_vendor_id {
-            static_metadata.misc.vendor_id = Tag::from_str(vendor_id).map_err(Error::InvalidTag)?;
+            static_metadata.misc.vendor_id =
+                Tag::from_str(vendor_id).map_err(|cause| Error::InvalidTag {
+                    raw_tag: vendor_id.to_owned(),
+                    cause,
+                })?;
         }
 
         // <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
