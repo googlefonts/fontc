@@ -160,6 +160,7 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::Name) => "name",
         AnyWorkId::Be(BeWorkIdentifier::Os2) => "OS/2",
         AnyWorkId::Be(BeWorkIdentifier::Post) => "post",
+        AnyWorkId::Be(BeWorkIdentifier::Meta) => "meta",
         AnyWorkId::Be(BeWorkIdentifier::Stat) => "STAT",
         AnyWorkId::Be(BeWorkIdentifier::ExtraFeaTables) => "ExtraFeaTables",
         AnyWorkId::InternalTiming(name) => name,

@@ -102,10 +102,42 @@ pub struct CustomParameters {
     pub vhea_caret_slope_run: Option<i64>,
     pub vhea_caret_slope_rise: Option<i64>,
     pub vhea_caret_offset: Option<i64>,
+    pub meta_table: Option<MetaTableValues>,
     // these fields are parsed via the config, but are stored
     // in the top-level `Font` struct
     pub virtual_masters: Option<Vec<BTreeMap<String, OrderedFloat<f64>>>>,
     pub glyph_order: Option<Vec<SmolStr>>,
+}
+
+/// Values for the 'meta Table' custom parameter
+#[derive(Clone, Debug, PartialEq, Hash, Default)]
+pub struct MetaTableValues {
+    pub dlng: Vec<SmolStr>,
+    pub slng: Vec<SmolStr>,
+}
+
+impl MetaTableValues {
+    fn from_plist(plist: &Plist) -> Option<Self> {
+        let mut ret = MetaTableValues::default();
+        let as_array = plist.as_array()?;
+        for item in as_array {
+            let tag = item.get("tag").and_then(Plist::as_str)?;
+            let data = item.get("data").and_then(Plist::as_str)?;
+            let data = data.split(',').map(SmolStr::new).collect();
+
+            match tag {
+                "dlng" => ret.dlng = data,
+                "slng" => ret.slng = data,
+                _ => log::warn!("Unknown meta table tag '{tag}'"),
+            }
+        }
+
+        if ret.dlng.len() + ret.slng.len() > 0 {
+            Some(ret)
+        } else {
+            None
+        }
+    }
 }
 
 /// master id => { (name or class, name or class) => adjustment }
@@ -612,6 +644,9 @@ impl RawCustomParameters {
                 }
                 "openTypeVheaCaretOffset" => {
                     add_and_report_issues!(vhea_caret_offset, Plist::as_i64)
+                }
+                "meta Table" => {
+                    add_and_report_issues!(meta_table, MetaTableValues::from_plist)
                 }
                 // these might need to be handled? they're in the same list as
                 // the items above:

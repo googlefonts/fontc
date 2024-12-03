@@ -18,8 +18,8 @@ use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
     ir::{
         self, AnchorBuilder, GdefCategories, GlobalMetric, GlobalMetrics, GlyphInstance,
-        GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey,
-        NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+        GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues,
+        NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
     source::{Input, Source},
@@ -495,6 +495,13 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 parsed.ok()
             })
             .or(static_metadata.misc.created);
+
+        if let Some(meta_table) = &font.custom_parameters.meta_table {
+            static_metadata.misc.meta_table = Some(MetaTableValues {
+                dlng: meta_table.dlng.clone(),
+                slng: meta_table.slng.clone(),
+            });
+        }
 
         context.static_metadata.set(static_metadata);
 

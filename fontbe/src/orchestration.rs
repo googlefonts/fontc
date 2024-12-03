@@ -52,6 +52,7 @@ use write_fonts::{
         hvar::Hvar,
         loca::LocaFormat,
         maxp::Maxp,
+        meta::Meta,
         mvar::Mvar,
         name::Name,
         os2::Os2,
@@ -92,6 +93,7 @@ pub enum WorkId {
     Hhea,
     Hmtx,
     Hvar,
+    Meta,
     GatherIrKerning,
     KernFragment(KernBlock),
     GatherBeKerning,
@@ -119,6 +121,7 @@ impl Identifier for WorkId {
     fn discriminant(&self) -> IdentifierDiscriminant {
         match self {
             WorkId::Features => "BeFeatures",
+            WorkId::Meta => "BeMeta",
             WorkId::FeaturesAst => "BeFeaturesAst",
             WorkId::Avar => "BeAvar",
             WorkId::Cmap => "BeCmap",
@@ -809,6 +812,7 @@ pub struct Context {
     pub gdef: BeContextItem<Gdef>,
     pub gvar: BeContextItem<Bytes>,
     pub post: BeContextItem<Post>,
+    pub meta: BeContextItem<Meta>,
     pub loca: BeContextItem<Bytes>,
     pub loca_format: BeContextItem<LocaFormatWrapper>,
     pub maxp: BeContextItem<Maxp>,
@@ -857,6 +861,7 @@ impl Context {
             hmtx: self.hmtx.clone_with_acl(acl.clone()),
             hvar: self.hvar.clone_with_acl(acl.clone()),
             mvar: self.mvar.clone_with_acl(acl.clone()),
+            meta: self.meta.clone_with_acl(acl.clone()),
             all_kerning_pairs: self.all_kerning_pairs.clone_with_acl(acl.clone()),
             kern_fragments: self.kern_fragments.clone_with_acl(acl.clone()),
             fea_rs_kerns: self.fea_rs_kerns.clone_with_acl(acl.clone()),
@@ -903,6 +908,7 @@ impl Context {
             hmtx: ContextItem::new(WorkId::Hmtx.into(), acl.clone(), persistent_storage.clone()),
             hvar: ContextItem::new(WorkId::Hvar.into(), acl.clone(), persistent_storage.clone()),
             mvar: ContextItem::new(WorkId::Mvar.into(), acl.clone(), persistent_storage.clone()),
+            meta: ContextItem::new(WorkId::Meta.into(), acl.clone(), persistent_storage.clone()),
             all_kerning_pairs: ContextItem::new(
                 WorkId::GatherIrKerning.into(),
                 acl.clone(),
