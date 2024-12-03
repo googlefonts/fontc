@@ -21,7 +21,7 @@ attrs==24.2.0
     #   ufolib2
 axisregistry==0.4.11
     # via gftools
-babelfont==3.1.0
+babelfont==3.1.1
     # via gftools
 beautifulsoup4==4.12.3
     # via gftools
@@ -57,7 +57,7 @@ charset-normalizer==3.4.0
     # via requests
 compreffor==0.5.6
     # via ufo2ft
-cryptography==43.0.3
+cryptography==44.0.0
     # via pyjwt
 defcon[lxml,pens]==0.10.3
     # via
@@ -66,7 +66,7 @@ defcon[lxml,pens]==0.10.3
     #   glyphsets
     #   mutatormath
     #   ufoprocessor
-deprecated==1.2.14
+deprecated==1.2.15
     # via pygithub
 font-v==2.1.0
     # via gftools
@@ -88,7 +88,7 @@ fontparts==0.12.3
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.55.0
+fonttools[lxml,repacker,ufo,unicode,woff]==4.55.1
     # via
     #   -r resources/scripts/requirements.in
     #   afdko
@@ -121,7 +121,7 @@ fs==2.4.16
     # via
     #   fontfeatures
     #   fonttools
-gflanguages==0.7.0
+gflanguages==0.7.1
     # via
     #   gftools
     #   glyphsets
@@ -145,9 +145,7 @@ glyphslib==6.9.5
 idna==3.10
     # via requests
 importlib-resources==6.4.5
-    # via
-    #   gflanguages
-    #   gfsubsets
+    # via gfsubsets
 jinja2==3.1.4
     # via gftools
 lxml==5.3.0
@@ -170,7 +168,7 @@ nanoemoji==0.15.1
     # via gftools
 networkx==3.4.2
     # via gftools
-ninja==1.11.1.1
+ninja==1.11.1.2
     # via
     #   gftools
     #   nanoemoji
@@ -181,7 +179,7 @@ openstep-plist==0.4.0
     #   glyphslib
 opentype-sanitizer==9.2.0
     # via gftools
-orjson==3.10.11
+orjson==3.10.12
     # via
     #   babelfont
     #   ufolib2
@@ -210,7 +208,7 @@ pygithub==2.5.0
     # via gftools
 pygments==2.18.0
     # via rich
-pyjwt[crypto]==2.9.0
+pyjwt[crypto]==2.10.1
     # via pygithub
 pynacl==1.5.0
     # via pygithub
@@ -257,7 +255,7 @@ tabulate==0.9.0
     # via gftools
 toml==0.10.2
     # via nanoemoji
-tqdm==4.67.0
+tqdm==4.67.1
     # via afdko
 ttfautohint-py==0.5.1
     # via gftools
@@ -267,7 +265,7 @@ ufo2ft[cffsubr,compreffor]==3.3.1
     # via
     #   fontmake
     #   nanoemoji
-ufolib2[json]==0.16.1
+ufolib2[json]==0.17.0
     # via
     #   babelfont
     #   bumpfontversion
@@ -282,9 +280,9 @@ ufomerge==1.8.2
     #   gftools
 ufonormalizer==0.6.2
     # via afdko
-ufoprocessor==1.13.1
+ufoprocessor==1.13.2
     # via afdko
-uharfbuzz==0.42.0
+uharfbuzz==0.43.0
     # via
     #   fonttools
     #   vharfbuzz
@@ -302,7 +300,7 @@ vharfbuzz==0.3.1
     # via gftools
 vttlib==0.12.0
     # via gftools
-wrapt==1.16.0
+wrapt==1.17.0
     # via deprecated
 zopfli==0.2.3.post1
     # via
