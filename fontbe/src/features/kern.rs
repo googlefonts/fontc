@@ -252,7 +252,7 @@ fn align_kerning(
 
 fn align_instance(
     all_pairs: &HashSet<ir::KernPair>,
-    instance: &mut BTreeMap<ir::KernPair, OrderedFloat<f32>>,
+    instance: &mut BTreeMap<ir::KernPair, OrderedFloat<f64>>,
     side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
     side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
 ) {
@@ -274,10 +274,10 @@ fn align_instance(
 // <https://github.com/fonttools/fonttools/blob/a3b9eddcafca/Lib/fontTools/ufoLib/kerning.py#L1>
 fn lookup_kerning_value(
     pair: &ir::KernPair,
-    kerning: &BTreeMap<ir::KernPair, OrderedFloat<f32>>,
+    kerning: &BTreeMap<ir::KernPair, OrderedFloat<f64>>,
     side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
     side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
-) -> OrderedFloat<f32> {
+) -> OrderedFloat<f64> {
     // if already a group, return it, else look for group for glyph
     fn get_group_if_glyph(
         side: &ir::KernSide,
@@ -1328,7 +1328,7 @@ mod tests {
         // run a few times because triggering depended on hashmap iteration order
         for _ in 0..20 {
             align_instance(&all_pairs, &mut kerns, &side1_glyphs, &side2_glyphs);
-            assert_eq!(kerns.get(&glyph_glyph).map(|x| x.0), Some(10.0f32));
+            assert_eq!(kerns.get(&glyph_glyph).map(|x| x.0), Some(10.0f64));
         }
     }
 

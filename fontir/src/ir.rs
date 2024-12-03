@@ -305,7 +305,7 @@ pub struct KerningInstance {
     ///
     /// Used for both LTR and RTL. The BE application differs but the concept
     /// is the same.
-    pub kerns: BTreeMap<KernPair, OrderedFloat<f32>>,
+    pub kerns: BTreeMap<KernPair, OrderedFloat<f64>>,
 }
 
 /// A named set of glyphs with common kerning behaviour
@@ -1718,10 +1718,10 @@ impl GlyphBuilder {
     pub fn new_notdef(
         default_location: NormalizedLocation,
         upem: u16,
-        ascender: f32,
-        descender: f32,
+        ascender: f64,
+        descender: f64,
     ) -> Self {
-        let upem = upem as f32;
+        let upem = upem as f64;
         let width: u16 = (upem * 0.5).ot_round();
         let width = width as f64;
         let stroke: u16 = (upem * 0.05).ot_round();
@@ -1732,8 +1732,8 @@ impl GlyphBuilder {
         // outer box
         let x_min = stroke;
         let x_max = width - stroke;
-        let y_max = ascender as f64;
-        let y_min = descender as f64;
+        let y_max = ascender;
+        let y_min = descender;
         path.move_to((x_min, y_min));
         path.line_to((x_max, y_min));
         path.line_to((x_max, y_max));

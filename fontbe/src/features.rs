@@ -156,7 +156,7 @@ impl<'a> FeaVariationInfo<'a> {
 //except they have slightly different inputs?
 pub(crate) fn resolve_variable_metric<'a>(
     static_metadata: &StaticMetadata,
-    values: impl Iterator<Item = (&'a NormalizedLocation, &'a OrderedFloat<f32>)>,
+    values: impl Iterator<Item = (&'a NormalizedLocation, &'a OrderedFloat<f64>)>,
 ) -> Result<(i16, Vec<(VariationRegion, i16)>), DeltaError> {
     let point_seqs: HashMap<_, _> = values
         .into_iter()
@@ -166,8 +166,8 @@ pub(crate) fn resolve_variable_metric<'a>(
             // a VF at the masters' location is expected to be equivalent to building
             // individual masters as static fonts. fontmake does the same, see
             // https://github.com/googlefonts/fontc/issues/1043
-            let value: f32 = value.into_inner().ot_round();
-            (pos.to_owned(), vec![value as f64])
+            let value: f64 = value.into_inner().ot_round();
+            (pos.to_owned(), vec![value])
         })
         .collect();
     let locations: HashSet<_> = point_seqs.keys().collect();
@@ -202,10 +202,10 @@ pub(crate) fn resolve_variable_metric<'a>(
             let scaler = region.scalar_at(&var_model.default).into_inner();
             match scaler {
                 scaler if scaler == 0.0 => None,
-                scaler => Some(scaler * *value as f32),
+                scaler => Some(scaler * { *value }),
             }
         })
-        .sum::<f32>()
+        .sum::<f64>()
         .ot_round();
 
     let mut deltas = Vec::with_capacity(raw_deltas.len());
@@ -340,10 +340,10 @@ impl VariationInfo for FeaVariationInfo<'_> {
                 let scaler = region.scalar_at(&var_model.default).into_inner();
                 match scaler {
                     scaler if scaler == 0.0 => None,
-                    scaler => Some(scaler * *value as f32),
+                    scaler => Some(scaler * { *value }),
                 }
             })
-            .sum::<f32>()
+            .sum::<f64>()
             .ot_round();
 
         // Produce the desired delta type
@@ -659,7 +659,7 @@ mod tests {
 
     use super::*;
 
-    fn weight_variable_static_metadata(min: f32, def: f32, max: f32) -> StaticMetadata {
+    fn weight_variable_static_metadata(min: f64, def: f64, max: f64) -> StaticMetadata {
         let min_wght_user = UserCoord::new(min);
         let def_wght_user = UserCoord::new(def);
         let max_wght_user = UserCoord::new(max);

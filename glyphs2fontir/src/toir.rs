@@ -135,7 +135,7 @@ pub(crate) fn design_location(
 ) -> DesignLocation {
     axes.iter()
         .zip(axes_values.iter())
-        .map(|(axis, pos)| (axis.tag, DesignCoord::new(pos.into_inner() as f32)))
+        .map(|(axis, pos)| (axis.tag, DesignCoord::new(*pos)))
         .collect()
 }
 
@@ -165,22 +165,14 @@ fn to_ir_axis(
     default_idx: usize,
     axis: &glyphs_reader::Axis,
 ) -> Result<fontdrasil::types::Axis, Error> {
-    let min = axis_values
-        .iter()
-        .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
-        .min()
-        .unwrap();
-    let max = axis_values
-        .iter()
-        .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
-        .max()
-        .unwrap();
-    let default = OrderedFloat(axis_values[default_idx].into_inner() as f32);
+    let min = axis_values.iter().min().unwrap();
+    let max = axis_values.iter().max().unwrap();
+    let default = axis_values[default_idx];
 
     // Given in design coords based on a sample file
     let default = DesignCoord::new(default);
-    let min = DesignCoord::new(min);
-    let max = DesignCoord::new(max);
+    let min = DesignCoord::new(*min);
+    let max = DesignCoord::new(*max);
 
     let converter = if font.axis_mappings.contains(&axis.name)
         && !font.axis_mappings.get(&axis.name).unwrap().is_identity()

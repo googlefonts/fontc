@@ -14,24 +14,11 @@ pub struct PiecewiseLinearMap {
     to: Vec<OrderedFloat<f64>>,   // sorted, ||'s from
 }
 
-#[inline]
-fn as_of64(value: OrderedFloat<f32>) -> OrderedFloat<f64> {
-    (value.into_inner() as f64).into()
-}
-
-#[inline]
-fn as_of32(value: OrderedFloat<f64>) -> OrderedFloat<f32> {
-    (value.into_inner() as f32).into()
-}
-
 impl PiecewiseLinearMap {
     /// Create a new map from a series of (from, to) values.
-    pub fn new(mut mappings: Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>) -> PiecewiseLinearMap {
+    pub fn new(mut mappings: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>) -> PiecewiseLinearMap {
         mappings.sort();
-        let (from, to): (Vec<_>, Vec<_>) = mappings
-            .into_iter()
-            .map(|(k, v)| (as_of64(k), as_of64(v)))
-            .unzip();
+        let (from, to): (Vec<_>, Vec<_>) = mappings.into_iter().unzip();
         PiecewiseLinearMap { from, to }
     }
 
@@ -43,29 +30,22 @@ impl PiecewiseLinearMap {
         let mappings = self
             .to
             .iter()
-            .zip(self.from.iter())
-            .map(|(k, v)| (as_of32(*k), as_of32(*v)))
+            .copied()
+            .zip(self.from.iter().copied())
             .collect();
         PiecewiseLinearMap::new(mappings)
     }
 
     /// An iterator over (from, to) values.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (f32, f32)> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (f64, f64)> + '_ {
         self.from
             .iter()
             .zip(self.to.iter())
-            .map(|(from, to)| (from.into_inner() as f32, to.into_inner() as f32))
+            .map(|(from, to)| (from.0, to.0))
     }
 
     /// Based on <https://github.com/fonttools/fonttools/blob/5a0dc4bc8dfaa0c7da146cf902395f748b3cebe5/Lib/fontTools/varLib/models.py#L502>
-    pub fn map(&self, value: OrderedFloat<f32>) -> OrderedFloat<f32> {
-        // perform internal computations in f64 to increase precision but keep
-        // the current interface in f32; avoids issues like this:
-        // https://github.com/googlefonts/fontc/issues/1117
-        as_of32(self.map_impl(as_of64(value)))
-    }
-
-    fn map_impl(&self, value: OrderedFloat<f64>) -> OrderedFloat<f64> {
+    pub fn map(&self, value: OrderedFloat<f64>) -> OrderedFloat<f64> {
         match self.from.binary_search(&value) {
             Ok(idx) => self.to[idx], // This value is just right
             Err(idx) => {
@@ -108,6 +88,7 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use ordered_float::OrderedFloat;
+    use write_fonts::types::Fixed;
 
     use super::PiecewiseLinearMap;
 
@@ -115,50 +96,50 @@ mod tests {
     fn single_segment_map() {
         // User likes to use 0..10 in their sources to mean wght 0..1000 in userspace
         let from_to = vec![
-            (OrderedFloat(0_f32), OrderedFloat(0_f32)),
-            (OrderedFloat(10_f32), OrderedFloat(1000_f32)),
+            (OrderedFloat(0_f64), OrderedFloat(0_f64)),
+            (OrderedFloat(10_f64), OrderedFloat(1000_f64)),
         ];
         let plm = PiecewiseLinearMap::new(from_to);
 
-        assert_eq!(plm.map(OrderedFloat(0_f32)), OrderedFloat(0_f32));
-        assert_eq!(plm.map(OrderedFloat(5_f32)), OrderedFloat(500_f32));
-        assert_eq!(plm.map(OrderedFloat(10_f32)), OrderedFloat(1000_f32));
+        assert_eq!(plm.map(OrderedFloat(0_f64)), OrderedFloat(0_f64));
+        assert_eq!(plm.map(OrderedFloat(5_f64)), OrderedFloat(500_f64));
+        assert_eq!(plm.map(OrderedFloat(10_f64)), OrderedFloat(1000_f64));
 
         // walk off the end, why not
-        assert_eq!(plm.map(OrderedFloat(-1_f32)), OrderedFloat(-1_f32));
-        assert_eq!(plm.map(OrderedFloat(20_f32)), OrderedFloat(1010_f32));
+        assert_eq!(plm.map(OrderedFloat(-1_f64)), OrderedFloat(-1_f64));
+        assert_eq!(plm.map(OrderedFloat(20_f64)), OrderedFloat(1010_f64));
     }
 
     #[test]
     fn multi_segment_map() {
         // We obviously want to map -1..0 to 100.400 and 0..10 to 400..700.
         let from_to = vec![
-            (OrderedFloat(-1_f32), OrderedFloat(100_f32)),
-            (OrderedFloat(0_f32), OrderedFloat(400_f32)),
-            (OrderedFloat(10_f32), OrderedFloat(700_f32)),
+            (OrderedFloat(-1_f64), OrderedFloat(100_f64)),
+            (OrderedFloat(0_f64), OrderedFloat(400_f64)),
+            (OrderedFloat(10_f64), OrderedFloat(700_f64)),
         ];
         let plm = PiecewiseLinearMap::new(from_to);
 
-        assert_eq!(plm.map(OrderedFloat(-1_f32)), OrderedFloat(100_f32));
-        assert_eq!(plm.map(OrderedFloat(0_f32)), OrderedFloat(400_f32));
-        assert_eq!(plm.map(OrderedFloat(5_f32)), OrderedFloat(550_f32));
-        assert_eq!(plm.map(OrderedFloat(10_f32)), OrderedFloat(700_f32));
+        assert_eq!(plm.map(OrderedFloat(-1_f64)), OrderedFloat(100_f64));
+        assert_eq!(plm.map(OrderedFloat(0_f64)), OrderedFloat(400_f64));
+        assert_eq!(plm.map(OrderedFloat(5_f64)), OrderedFloat(550_f64));
+        assert_eq!(plm.map(OrderedFloat(10_f64)), OrderedFloat(700_f64));
     }
 
     #[test]
     fn float_precision() {
         // https://github.com/googlefonts/fontc/issues/1117
         let from_to = vec![
-            (OrderedFloat(100_f32), OrderedFloat(-1_f32)),
-            (OrderedFloat(400_f32), OrderedFloat(0_f32)),
-            (OrderedFloat(900_f32), OrderedFloat(1_f32)),
+            (OrderedFloat(100_f64), OrderedFloat(-1_f64)),
+            (OrderedFloat(400_f64), OrderedFloat(0_f64)),
+            (OrderedFloat(900_f64), OrderedFloat(1_f64)),
         ];
         let plm = PiecewiseLinearMap::new(from_to);
 
-        assert_eq!(plm.map(OrderedFloat(200_f32)), OrderedFloat(-0.6666667_f32));
-        assert_eq!(
-            plm.reverse().map(OrderedFloat(-0.6666667_f32)),
-            OrderedFloat(200_f32)
-        );
+        let map_to = plm.map(OrderedFloat(200_f64));
+        assert_eq!(Fixed::from_f64(map_to.0), Fixed::from_f64(-2f64 / 3f64));
+
+        let map_from = plm.reverse().map(map_to);
+        assert_eq!(Fixed::from_f64(map_from.0), Fixed::from_f64(200.0));
     }
 }

@@ -644,19 +644,19 @@ impl Number {
 }
 
 impl Float {
-    pub(crate) fn parse(&self) -> f32 {
+    pub(crate) fn parse(&self) -> f64 {
         self.text().parse().unwrap()
     }
 
     pub(crate) fn parse_fixed(&self) -> Fixed {
-        Fixed::from_f64(self.parse() as _)
+        Fixed::from_f64(self.parse())
     }
 }
 
 impl FloatLike {
-    pub(crate) fn parse(&self) -> f32 {
+    pub(crate) fn parse(&self) -> f64 {
         match self {
-            FloatLike::Number(n) => n.parse_signed() as f32,
+            FloatLike::Number(n) => n.parse_signed() as _,
             FloatLike::Float(n) => n.parse(),
         }
     }
@@ -1336,10 +1336,10 @@ impl AxisLocation {
         }
     }
 
-    fn value(&self) -> f32 {
+    fn value(&self) -> f64 {
         let raw = self.iter().next().unwrap();
         Number::cast(raw)
-            .map(|num| num.parse_signed() as f32)
+            .map(|num| num.parse_signed() as f64)
             .or_else(|| Float::cast(raw).map(|num| num.parse()))
             .unwrap()
     }

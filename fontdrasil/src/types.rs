@@ -165,7 +165,7 @@ impl TryFrom<u16> for WidthClass {
 
 impl WidthClass {
     // Lookup percent using the assigned value of the WidthClass
-    const _PERCENT_LUT: [f32; 10] = [
+    const _PERCENT_LUT: [f64; 10] = [
         0.0, // no width class has value 0, never used
         50.0, 62.5, 75.0, 87.5, 100.0, 112.5, 125.0, 150.0, 200.0,
     ];
@@ -184,12 +184,12 @@ impl WidthClass {
         ]
     }
 
-    pub fn to_percent(&self) -> f32 {
+    pub fn to_percent(&self) -> f64 {
         Self::_PERCENT_LUT[*self as usize]
     }
 
     /// Returns the WidthClass with the nearest percent width
-    pub fn nearest(percent: f32) -> Self {
+    pub fn nearest(percent: f64) -> Self {
         Self::all_values()
             .iter()
             .map(|v| (*v, (v.to_percent() - percent).abs()))

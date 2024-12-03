@@ -58,7 +58,7 @@ pub struct NormalizedSpace;
 /// A coordinate in some coordinate space.
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Coord<Space> {
-    coord: OrderedFloat<f32>,
+    coord: OrderedFloat<f64>,
     // we want to be covariant but also Send + Sync. See
     // <https://doc.rust-lang.org/1.74.0/nomicon/phantom-data.html#table-of-phantomdata-patterns>
     space: PhantomData<fn() -> Space>,
@@ -75,18 +75,18 @@ impl<Space> Coord<Space> {
     /// Create a new coordinate.
     ///
     /// Note that we do *not* impl From because we want conversion to be explicit.
-    pub fn new(value: impl Into<OrderedFloat<f32>>) -> Self {
+    pub fn new(value: impl Into<OrderedFloat<f64>>) -> Self {
         Coord {
             coord: value.into(),
             space: PhantomData,
         }
     }
 
-    pub fn into_inner(self) -> OrderedFloat<f32> {
+    pub fn into_inner(self) -> OrderedFloat<f64> {
         self.coord
     }
 
-    pub fn to_f32(&self) -> f32 {
+    pub fn to_f64(&self) -> f64 {
         self.coord.into_inner()
     }
 
@@ -247,13 +247,13 @@ impl CoordConverter {
 
 impl From<UserCoord> for Fixed {
     fn from(value: UserCoord) -> Self {
-        Fixed::from_f64(value.to_f32() as f64)
+        Fixed::from_f64(value.to_f64())
     }
 }
 
 impl From<NormalizedCoord> for F2Dot14 {
     fn from(value: NormalizedCoord) -> Self {
-        F2Dot14::from_f32(value.to_f32())
+        F2Dot14::from_f32(value.to_f64() as _)
     }
 }
 
@@ -261,7 +261,7 @@ impl<Space> Sub<Coord<Space>> for Coord<Space> {
     type Output = Coord<Space>;
 
     fn sub(self, rhs: Coord<Space>) -> Self::Output {
-        Coord::new(self.to_f32() - rhs.to_f32())
+        Coord::new(self.to_f64() - rhs.to_f64())
     }
 }
 
@@ -284,7 +284,7 @@ impl<Space> Location<Space> {
 
     /// For testing only, make a location from raw tags + values
     #[doc(hidden)]
-    pub fn for_pos(positions: &[(&str, f32)]) -> Self {
+    pub fn for_pos(positions: &[(&str, f64)]) -> Self {
         positions
             .iter()
             .map(|(tag, value)| {
@@ -337,11 +337,11 @@ impl<Space> Location<Space> {
 // methods we only want available on NormalizedSpace
 impl Location<NormalizedSpace> {
     pub fn has_non_zero(&self, tag: Tag) -> bool {
-        self.get(tag).unwrap_or_default().to_f32() != 0.0
+        self.get(tag).unwrap_or_default().to_f64() != 0.0
     }
 
     pub fn has_any_non_zero(&self) -> bool {
-        self.0.values().any(|v| v.to_f32() != 0.0)
+        self.0.values().any(|v| v.to_f64() != 0.0)
     }
 
     /// Returns true if all normalized coordinates are zero
@@ -398,13 +398,13 @@ impl<T> Clone for Coord<T> {
 
 impl<T> Copy for Coord<T> {}
 
-impl<Space> PartialEq<f32> for Coord<Space> {
-    fn eq(&self, other: &f32) -> bool {
+impl<Space> PartialEq<f64> for Coord<Space> {
+    fn eq(&self, other: &f64) -> bool {
         self.coord.as_ref() == other
     }
 }
 
-impl<Space> PartialEq<Coord<Space>> for f32 {
+impl<Space> PartialEq<Coord<Space>> for f64 {
     fn eq(&self, other: &Coord<Space>) -> bool {
         other == self
     }
@@ -417,7 +417,7 @@ impl<Space> Serialize for Location<Space> {
     {
         let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
         for (key, value) in &self.0 {
-            seq.serialize_element(&(key, value.to_f32()))?;
+            seq.serialize_element(&(key, value.to_f64()))?;
         }
         seq.end()
     }
@@ -428,7 +428,7 @@ impl<'de, Space> Deserialize<'de> for Location<Space> {
     where
         D: Deserializer<'de>,
     {
-        Vec::<(Tag, OrderedFloat<f32>)>::deserialize(deserializer).map(|vals| {
+        Vec::<(Tag, OrderedFloat<f64>)>::deserialize(deserializer).map(|vals| {
             Location(
                 vals.into_iter()
                     .map(|(tag, val)| (tag, Coord::new(val)))
@@ -441,7 +441,7 @@ impl<'de, Space> Deserialize<'de> for Location<Space> {
 fn format_location<'a, 'b>(
     name: &str,
     f: &mut std::fmt::Formatter<'a>,
-    items: impl Iterator<Item = (&'b Tag, OrderedFloat<f32>)>,
+    items: impl Iterator<Item = (&'b Tag, OrderedFloat<f64>)>,
 ) -> std::fmt::Result {
     f.write_str(name)?;
     f.write_str(" {")?;
@@ -557,7 +557,11 @@ mod tests {
         assert_eq!(5.5, UserCoord::new(300.0).to_design(&converter));
         assert_eq!(10.0, UserCoord::new(400.0).to_design(&converter));
 
-        assert_eq!(-0.45, UserCoord::new(300.0).to_normalized(&converter));
+        // this used to look like the others but was failing after switch to f64
+        assert!(
+            (-0.45 - UserCoord::new(300.0).to_normalized(&converter).to_f64()).abs()
+                <= f64::EPSILON
+        );
         assert_eq!(0.0, UserCoord::new(400.0).to_normalized(&converter));
     }
 

@@ -600,8 +600,8 @@ fn resolve_anchor_once(
         .iter()
         .map(|(loc, pt)| {
             (
-                (loc.clone(), OrderedFloat::from(pt.x as f32)),
-                (loc.clone(), OrderedFloat::from(pt.y as f32)),
+                (loc.clone(), OrderedFloat::from(pt.x)),
+                (loc.clone(), OrderedFloat::from(pt.y)),
             )
         })
         .unzip();
@@ -676,7 +676,7 @@ fn make_caret_value(
         .iter()
         .map(|(loc, pt)| {
             let pos = if is_vertical { pt.y } else { pt.x };
-            (loc.clone(), OrderedFloat::from(pos as f32))
+            (loc.clone(), OrderedFloat::from(pos))
         })
         .collect::<Vec<_>>();
 
@@ -824,7 +824,7 @@ mod tests {
 
     impl<const N: usize> MarksInput<N> {
         /// Create test input with `N` locations
-        fn new(locations: [&[f32]; N]) -> Self {
+        fn new(locations: [&[f64]; N]) -> Self {
             const TAG_NAMES: [Tag; 3] = [Tag::new(b"axs1"), Tag::new(b"axs2"), Tag::new(b"axs3")];
             let locations = locations
                 .iter()
