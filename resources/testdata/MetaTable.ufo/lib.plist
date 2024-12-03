@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>public.openTypeMeta</key>
+    <dict>
+      <key>dlng</key>
+      <array>
+        <string>en-latn</string>
+        <string>fr-latn</string>
+        <string>nl-Latn</string>
+      </array>
+      <key>slng</key>
+      <array>
+        <string>Latn,Cyrl</string>
+      </array>
+    </dict>
+  </dict>
+</plist>

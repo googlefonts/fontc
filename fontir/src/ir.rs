@@ -193,7 +193,7 @@ impl Panose {
 ///
 /// [meta]: https://learn.microsoft.com/en-us/typography/opentype/spec/meta
 /// [dlng slng]: https://learn.microsoft.com/en-us/typography/opentype/spec/meta#dlng-and-slng-design-and-supported-languages
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct MetaTableValues {
     /// ScriptLangTags for the design languages
     pub dlng: Vec<SmolStr>,

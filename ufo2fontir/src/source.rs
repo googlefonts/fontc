@@ -15,8 +15,8 @@ use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
         AnchorBuilder, FeaturesSource, GdefCategories, GlobalMetric, GlobalMetrics, GlyphOrder,
-        KernGroup, KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
-        Panose, PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
+        KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey,
+        NamedInstance, Panose, PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::{Input, Source},
@@ -1019,6 +1019,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             try_parse_date(font_info_at_default.open_type_head_created.as_ref())
                 .or(static_metadata.misc.created);
 
+        static_metadata.misc.meta_table = lib_plist
+            .get("public.openTypeMeta")
+            .and_then(parse_meta_table_values);
+
         context.preliminary_glyph_order.set(glyph_order);
         context.static_metadata.set(static_metadata);
         Ok(())
@@ -1028,6 +1032,39 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 fn is_glyph_only(source: &norad::designspace::Source) -> bool {
     // Sources that use layer= specifically should not contribute metrics, only glyphs
     source.layer.is_some()
+}
+
+fn parse_meta_table_values(plist: &plist::Value) -> Option<MetaTableValues> {
+    let plist = plist.as_dictionary()?;
+    let mut ret = MetaTableValues::default();
+    for (key, value) in plist {
+        match key.as_str() {
+            "dlng" => ret.dlng = parse_meta_scriptlangtags(value).map(Into::into).collect(),
+            "slng" => ret.slng = parse_meta_scriptlangtags(value).map(Into::into).collect(),
+            other => log::warn!("unhandled meta table tag '{other}'"),
+        }
+    }
+    if ret.dlng.len() + ret.slng.len() > 0 {
+        Some(ret)
+    } else {
+        None
+    }
+}
+
+fn parse_meta_scriptlangtags(plist: &plist::Value) -> impl Iterator<Item = &str> {
+    plist
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|val| val.as_string())
+        // although the spec[1] says that this should be an array of strs and each
+        // str should be a scriptlangtag, in practice[2] it seems like it often
+        // ends up stored as a single comma-separated list of scriptlangtag
+        //
+        // 1: https://unifiedfontobject.org/versions/ufo3/lib.plist/#publicopentypemeta
+        // 2: https://github.com/aaronbell/LxgwWenkaiTC/blob/fe7a4b88e91a02c097d69ba/sources/LXGWWenKaiTC-Regular.ufo/lib.plist#L1798-L1808
+        .flat_map(|s| s.split(','))
+        .map(str::trim)
 }
 
 fn set_default_underline_pos(
@@ -2374,5 +2411,25 @@ mod tests {
         let static_metadata = context.static_metadata.get();
         let expected: Panose = [2_u8, 11, 5, 2, 4, 5, 4, 2, 2, 4].into();
         assert_eq!(Some(expected), static_metadata.misc.panose);
+    }
+
+    #[test]
+    fn parse_meta_table_values() {
+        let (_, context) = build_static_metadata("MetaTable.ufo", default_test_flags());
+        let static_meta = context.static_metadata.get();
+        let meta_table = static_meta.misc.meta_table.as_ref().unwrap();
+        assert_eq!(meta_table.dlng, ["en-latn", "fr-latn", "nl-Latn"]);
+        assert_eq!(meta_table.slng, ["Latn", "Cyrl"]);
+    }
+
+    #[test]
+    fn ignore_empty_meta_table_values() {
+        let mut plist = plist::Dictionary::new();
+        plist.insert(
+            "public.openTypeMeta".into(),
+            plist::Value::Array(Default::default()),
+        );
+
+        assert!(super::parse_meta_table_values(&plist::Value::Dictionary(plist)).is_none())
     }
 }
