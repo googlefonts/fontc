@@ -29,6 +29,7 @@ use fontbe::{
     gvar::create_gvar_work,
     head::create_head_work,
     hvar::create_hvar_work,
+    meta::create_meta_work,
     metrics_and_limits::create_metric_and_limit_work,
     mvar::create_mvar_work,
     name::create_name_work,
@@ -375,6 +376,12 @@ fn add_stat_be_job(workload: &mut Workload) -> Result<(), Error> {
     Ok(())
 }
 
+fn add_meta_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_meta_work().into();
+    workload.add(work, workload.change_detector.static_metadata_ir_change());
+    Ok(())
+}
+
 fn add_fvar_be_job(workload: &mut Workload) -> Result<(), Error> {
     let work = create_fvar_work().into();
     workload.add(work, workload.change_detector.fvar_be_change());
@@ -507,6 +514,7 @@ pub fn create_workload(
     add_glyf_loca_be_job(&mut workload)?;
     add_avar_be_job(&mut workload)?;
     add_stat_be_job(&mut workload)?;
+    add_meta_be_job(&mut workload)?;
     add_cmap_be_job(&mut workload)?;
     add_fvar_be_job(&mut workload)?;
     add_gvar_be_job(&mut workload)?;
@@ -598,6 +606,7 @@ mod tests {
             gdef::GlyphClassDef,
             glyf::{Bbox, Glyph as RawGlyph},
             loca::LocaFormat,
+            meta::{DataMapRecord, Metadata, ScriptLangTag},
         },
     };
     use write_fonts::{
@@ -822,6 +831,7 @@ mod tests {
             BeWorkIdentifier::LocaFormat.into(),
             BeWorkIdentifier::Marks.into(),
             BeWorkIdentifier::Maxp.into(),
+            BeWorkIdentifier::Meta.into(),
             BeWorkIdentifier::Mvar.into(),
             BeWorkIdentifier::Name.into(),
             BeWorkIdentifier::Os2.into(),
@@ -3399,5 +3409,39 @@ mod tests {
                 (NameId::DESIGNER, "Joachim Müller-Lancé".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn generate_meta_table() {
+        let result = TestCompile::compile_source("glyphs3/MetaTable.glyphs");
+        let meta = result.be_context.meta.get();
+        assert_eq!(
+            meta.data_maps,
+            [
+                DataMapRecord::new(
+                    Tag::new(b"dlng"),
+                    Metadata::ScriptLangTags(vec![ScriptLangTag::new("latn-en".into()).unwrap()]),
+                ),
+                DataMapRecord::new(
+                    Tag::new(b"slng"),
+                    Metadata::ScriptLangTags(vec![
+                        ScriptLangTag::new("latn".into()).unwrap(),
+                        ScriptLangTag::new("derp".into()).unwrap()
+                    ]),
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn dont_generate_meta_table_if_no_glyphs_param() {
+        let result = TestCompile::compile_source("glyphs3/NoMetaTable.glyphs");
+        assert!(result.be_context.meta.try_get().is_none())
+    }
+
+    #[test]
+    fn dont_generate_meta_table_if_empty_glyphs_param() {
+        let result = TestCompile::compile_source("glyphs3/EmptyMetaTable.glyphs");
+        assert!(result.be_context.meta.try_get().is_none())
     }
 }

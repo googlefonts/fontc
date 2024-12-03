@@ -130,6 +130,7 @@ pub struct MiscMetadata {
 
     // Allows source to explicitly control bits. <https://github.com/googlefonts/fontc/issues/1027>
     pub codepage_range_bits: Option<HashSet<u32>>,
+    pub meta_table: Option<MetaTableValues>,
 }
 
 /// PANOSE bytes
@@ -181,6 +182,23 @@ impl Panose {
             self.x_height,
         ]
     }
+}
+
+/// Records that will go in the '[meta]' table.
+///
+/// This can be used to specify explicit languages a font is designed for,
+/// as well as languages it is capable of supporting.
+///
+/// See [design and supported languages][dlng slng].
+///
+/// [meta]: https://learn.microsoft.com/en-us/typography/opentype/spec/meta
+/// [dlng slng]: https://learn.microsoft.com/en-us/typography/opentype/spec/meta#dlng-and-slng-design-and-supported-languages
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct MetaTableValues {
+    /// ScriptLangTags for the design languages
+    pub dlng: Vec<SmolStr>,
+    /// ScriptLangTags for the supported languages
+    pub slng: Vec<SmolStr>,
 }
 
 /// The name of every glyph, in the order it will be emitted
@@ -472,6 +490,7 @@ impl StaticMetadata {
                 panose: None,
                 unicode_range_bits: None,
                 codepage_range_bits: None,
+                meta_table: None,
             },
         })
     }
@@ -2134,6 +2153,7 @@ mod tests {
                 panose: None,
                 unicode_range_bits: None,
                 codepage_range_bits: None,
+                meta_table: None,
             },
             number_values: Default::default(),
         }

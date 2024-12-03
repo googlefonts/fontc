@@ -1,0 +1,32 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+customParameters = (
+{
+name = "meta Table";
+value = (
+);
+}
+);
+date = "2024-12-03 00:05:48 +0000";
+familyName = EmptyMetaTable;
+fontMaster = (
+{
+id = master01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+unitsPerEm = 1000;
+}
