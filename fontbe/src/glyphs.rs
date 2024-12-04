@@ -221,7 +221,7 @@ fn point_seqs_for_simple_glyph(
         .into_iter()
         .map(|(loc, glyph)| {
             let mut points = glyph
-                .contours()
+                .contours
                 .iter()
                 .flat_map(|c| c.iter())
                 .map(|cp| Point::new(cp.x as f64, cp.y as f64))
@@ -401,8 +401,8 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                     .set_unconditionally(Glyph::new(name.clone(), base_glyph.clone()));
 
                 let mut num_points = 0;
-                let mut contour_ends = Vec::with_capacity(base_glyph.contours().len());
-                for contour in base_glyph.contours() {
+                let mut contour_ends = Vec::with_capacity(base_glyph.contours.len());
+                for contour in &base_glyph.contours {
                     assert!(!contour.is_empty());
                     num_points += contour.len();
                     contour_ends.push(num_points - 1);
@@ -748,7 +748,7 @@ fn bbox_of_composite(
             RawGlyph::Empty => continue, // no impact on our bbox
             RawGlyph::Simple(ref_simple) => {
                 // Update our bbox to include the transformed points
-                for pt in ref_simple.contours().iter().flat_map(|c| c.iter()) {
+                for pt in ref_simple.contours.iter().flat_map(|c| c.iter()) {
                     let pt = affine * Point::new(pt.x as f64, pt.y as f64);
                     bbox = Some(if let Some(current) = bbox {
                         current.union_pt(pt)

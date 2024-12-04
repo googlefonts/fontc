@@ -1161,7 +1161,7 @@ mod tests {
         let RawGlyph::Simple(glyph) = read_be_glyph(&result.build_dir, glyph.name.as_str()) else {
             panic!("Expected a simple glyph");
         };
-        assert_eq!(2, glyph.contours().len());
+        assert_eq!(2, glyph.contours.len());
     }
 
     #[test]
@@ -1172,11 +1172,11 @@ mod tests {
             panic!("Expected a simple glyph");
         };
 
-        assert_eq!(1, glyph.contours().len());
+        assert_eq!(1, glyph.contours.len());
         assert_eq!(
             4_usize,
             glyph
-                .contours()
+                .contours
                 .iter()
                 .map(|c| c.iter().count())
                 .sum::<usize>()
@@ -2357,7 +2357,7 @@ mod tests {
                 CurvePoint::on_curve(131, 250),
             ],
             glyph
-                .contours()
+                .contours
                 .iter()
                 .flat_map(|c| c.iter())
                 .copied()
@@ -2385,7 +2385,7 @@ mod tests {
                 CurvePoint::on_curve(470, 330),
             ],
             glyph
-                .contours()
+                .contours
                 .iter()
                 .flat_map(|c| c.iter())
                 .copied()
