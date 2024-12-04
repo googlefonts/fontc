@@ -1,0 +1,34 @@
+{
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+familyName = "Master Names";
+fontMaster = (
+{
+custom = "Thin Italic";
+id = m01;
+italicAngle = 10;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 0020;
+}
+);
+unitsPerEm = 1000;
+}

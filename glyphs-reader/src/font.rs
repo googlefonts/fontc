@@ -1549,24 +1549,28 @@ impl RawFont {
             if master.name.is_some() {
                 continue;
             }
-            let width_name = master.width.take();
-            let weight_name = master.weight.take();
-            let custom_name = master.custom.take();
+
             // Remove Nones, empty strings and redundant occurrences of 'Regular'
-            let mut names: Vec<_> = [width_name, weight_name, custom_name]
-                .into_iter()
-                .flatten()
-                .filter(|x| !x.is_empty() && x != "Regular")
-                .collect();
+            let mut names = [
+                master.width.as_deref(),
+                master.weight.as_deref(),
+                master.custom.as_deref(),
+            ]
+            .iter()
+            .flatten()
+            .flat_map(|n| n.split_ascii_whitespace())
+            .filter(|x| *x != "Regular")
+            .collect::<Vec<_>>();
+
             // append "Italic" if italic angle != 0
             if let Some(italic_angle) = master.italic_angle {
                 if italic_angle != 0.0
                     && (names.is_empty()
                         || !names
                             .iter()
-                            .any(|name| name == "Italic" || name == "Oblique"))
+                            .any(|name| *name == "Italic" || *name == "Oblique"))
                 {
-                    names.push("Italic".into());
+                    names.push("Italic");
                 }
             }
             // if all are empty, default to "Regular"
@@ -3560,6 +3564,7 @@ mod tests {
             Some(&OrderedFloat(0f64))
         );
     }
+
     #[test]
     fn read_font_metrics() {
         let font =
@@ -3589,5 +3594,23 @@ mod tests {
         assert!(font.features[0]
             .content
             .contains("name 3 1 0x409 \"Alternate placeholder\""));
+    }
+
+    // <https://github.com/googlefonts/fontc/issues/1175>
+    #[test]
+    fn one_italic_is_enough() {
+        let font = Font::load(&glyphs2_dir().join("ItalicItalic.glyphs")).unwrap();
+        for master in font.masters {
+            let mut fragments = master.name.split_ascii_whitespace().collect::<Vec<_>>();
+            fragments.sort();
+            for words in fragments.windows(2) {
+                assert!(
+                    words[0] != words[1],
+                    "Multiple instances of {} in {}",
+                    words[0],
+                    master.name
+                );
+            }
+        }
     }
 }
