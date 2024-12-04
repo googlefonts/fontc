@@ -384,8 +384,15 @@ def normalize_glyf_contours(ttx):
             glyph.remove(contour)
         for contour in normalized:
             glyph.append(contour)
-    
-    
+
+
+# https://github.com/googlefonts/fontc/issues/1173
+def erase_type_from_stranded_points(ttx):
+    for contour in ttx.xpath("//glyf/TTGlyph/contour"):
+        points = contour.xpath("./pt")
+        if len(points) == 1:
+            points[0].attrib["on"] = "irrelevent"
+
 
 def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
     fontmake_num_coords = len(fontmake.xpath(f"//{container}/{coord_holder}"))
@@ -498,6 +505,8 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         remove_mark_and_kern_lookups(ttx)
 
         normalize_glyf_contours(ttx)
+
+        erase_type_from_stranded_points(ttx)
 
     allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
     allow_some_off_by_ones(
@@ -775,7 +784,7 @@ def main(argv):
     root = Path(".").resolve()
     if root.name != "fontc":
         sys.exit("Expected to be at the root of fontc")
-  
+
     fontc_bin_path = get_crate_path(FLAGS.fontc_path, root, "fontc")
     otl_bin_path = get_crate_path(FLAGS.normalizer_path, root, "otl-normalizer")
 
