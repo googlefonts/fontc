@@ -740,6 +740,7 @@ struct RawFeature {
     disabled: Option<i64>,
     name: Option<String>,
     tag: Option<String>,
+    notes: Option<String>,
     code: String,
     labels: Vec<RawNameValue>,
 
@@ -2131,31 +2132,29 @@ impl RawFeature {
         self.disabled == Some(1)
     }
 
+    /// Some glyphs sources store stylistic set names in the 'note' field
+    ///
+    /// See the little sidebar item here:
+    /// <https://glyphsapp.com/learn/stylistic-sets#g-names-for-stylistic-sets>
+    fn legacy_name_record_maybe(&self) -> Option<String> {
+        let name = self.notes.as_deref()?.strip_prefix("Name:")?.trim();
+        Some(format!("name 3 1 0x409 \"{name}\";"))
+    }
+
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L134
     fn feature_names(&self) -> String {
-        if self.labels.is_empty() {
-            return String::new();
-        }
         let labels = self
             .labels
             .iter()
-            .filter_map(|label| {
-                GLYPHS_TO_OPENTYPE_LANGUAGE_ID
-                    .binary_search_by_key(&label.language, |entry| entry.0.to_owned())
-                    .ok()
-                    .map(|index| {
-                        let language_id = &GLYPHS_TO_OPENTYPE_LANGUAGE_ID[index].1;
-                        let name = label.value.replace("\\", "\\005c").replace("\"", "\\0022");
-                        format!("  name 3 1 0x{:04X} \"{}\";", language_id, name)
-                    })
-                    .or_else(|| {
-                        warn!("Unknown feature label language: {}", label.language);
-                        None
-                    })
-            })
+            .filter_map(|label| label.to_fea())
+            .chain(self.legacy_name_record_maybe())
             .collect::<Vec<_>>()
             .join("\n");
-        format!("featureNames {{\n{}\n}};\n", labels)
+        if labels.is_empty() {
+            Default::default()
+        } else {
+            format!("featureNames {{\n{}\n}};\n", labels)
+        }
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L90
@@ -2187,6 +2186,24 @@ impl RawFeature {
             self.code
         );
         Ok(FeatureSnippet::new(code, self.disabled()))
+    }
+}
+
+impl RawNameValue {
+    fn to_fea(&self) -> Option<String> {
+        match GLYPHS_TO_OPENTYPE_LANGUAGE_ID
+            .binary_search_by_key(&self.language.as_str(), |entry| entry.0)
+        {
+            Ok(idx) => {
+                let language_id = GLYPHS_TO_OPENTYPE_LANGUAGE_ID[idx].1;
+                let name = self.value.replace("\\", "\\005c").replace("\"", "\\0022");
+                Some(format!("  name 3 1 0x{:04X} \"{}\";", language_id, name))
+            }
+            Err(_) => {
+                warn!("Unknown feature label language: {}", self.language);
+                None
+            }
+        }
     }
 }
 
@@ -3215,13 +3232,9 @@ mod tests {
     #[test]
     fn tags_make_excellent_names() {
         let raw = RawFeature {
-            name: None,
             tag: Some("aalt".to_string()),
-            automatic: None,
-            disabled: None,
             code: "blah".to_string(),
-            labels: vec![],
-            other_stuff: BTreeMap::new(),
+            ..Default::default()
         };
         assert_eq!("aalt", raw.name().unwrap());
     }
@@ -3567,5 +3580,14 @@ mod tests {
             Some(OrderedFloat(-300_f64)),
             font.custom_parameters.underline_position
         );
+    }
+
+    #[test]
+    fn parse_legacy_stylistic_set_name() {
+        let font = Font::load(&glyphs2_dir().join("FeaLegacyName.glyphs")).unwrap();
+        assert_eq!(font.features.len(), 1);
+        assert!(font.features[0]
+            .content
+            .contains("name 3 1 0x409 \"Alternate placeholder\""));
     }
 }

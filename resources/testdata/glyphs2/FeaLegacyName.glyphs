@@ -1,0 +1,40 @@
+{
+.appVersion = "3148";
+familyName = "legacy stylistic set names";
+features = (
+{
+automatic = 1;
+code = "sub a by a.ss01;";
+name = ss01;
+notes = "Name: Alternate placeholder";
+},
+);
+fontMaster = (
+{
+id = "m01";
+},
+);
+glyphs = (
+
+{
+glyphname = a;
+layers = (
+{
+layerId = "m01";
+width = 600;
+}
+);
+unicode = 97;
+},
+{
+glyphname = a.ss01;
+layers = (
+{
+layerId = "m01";
+width = 600;
+}
+);
+},
+);
+unitsPerEm = 1000;
+}
