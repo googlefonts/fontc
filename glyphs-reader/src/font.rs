@@ -1882,7 +1882,7 @@ impl UserToDesignMapping {
     fn new(from: &RawFont, instances: &[Instance]) -> Self {
         let from_axis_mapping = user_to_design_from_axis_mapping(from);
         let from_axis_location = user_to_design_from_axis_location(from);
-        let (result, add_instance_mappings) = match (from_axis_mapping, from_axis_location) {
+        let (result, incomplete_mapping) = match (from_axis_mapping, from_axis_location) {
             (Some(from_mapping), Some(..)) => {
                 warn!("Axis Mapping *and* Axis Location are defined; using Axis Mapping");
                 (from_mapping, false)
@@ -1892,10 +1892,10 @@ impl UserToDesignMapping {
             (None, None) => (BTreeMap::new(), true),
         };
         let mut result = Self(result);
-        if add_instance_mappings {
+        if incomplete_mapping {
             result.add_instance_mappings_if_new(instances);
+            result.add_master_mappings_if_new(from);
         }
-        result.add_master_mappings_if_new(from);
         result
     }
 
@@ -3621,5 +3621,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    // We had a bug where if a master wasn't at a mapping point the Axis Mapping was modified
+    #[test]
+    fn ignore_masters_if_axis_mapping() {
+        let font = Font::load(&glyphs2_dir().join("MasterNotMapped.glyphs")).unwrap();
+        let mapping = &font.axis_mappings.0.get("Weight").unwrap().0;
+        assert_eq!(
+            vec![
+                (OrderedFloat(400_f64), OrderedFloat(40.0)),
+                (OrderedFloat(700_f64), OrderedFloat(70.0))
+            ],
+            *mapping
+        );
     }
 }

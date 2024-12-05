@@ -1,0 +1,60 @@
+{
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+},
+{
+name = "Axis Mappings";
+value = {
+wght = {
+400 = 40;
+700 = 70;
+};
+};
+}
+);
+
+familyName = MnM;
+fontMaster = (
+{
+id = regular;
+weightValue = 40;
+},
+{
+id = "medium";
+weightValue = 50;
+},
+{
+id = "bold";
+weightValue = 70;
+}
+);
+
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = regular;
+width = 200;
+},
+{
+layerId = medium;
+width = 400;
+},
+{
+layerId = "bold";
+width = 600;
+}
+);
+unicode = 0020;
+}
+);
+unitsPerEm = 1000;
+}
