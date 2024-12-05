@@ -8,6 +8,12 @@ code = "sub a by a.ss01;";
 name = ss01;
 notes = "Name: Alternate placeholder";
 },
+{
+automatic = 1;
+code = "sub a by a.ss01;";
+name = ss02;
+notes = "Name: ";
+},
 );
 fontMaster = (
 {
