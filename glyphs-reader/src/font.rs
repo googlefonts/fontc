@@ -2142,7 +2142,11 @@ impl RawFeature {
     /// <https://glyphsapp.com/learn/stylistic-sets#g-names-for-stylistic-sets>
     fn legacy_name_record_maybe(&self) -> Option<String> {
         let name = self.notes.as_deref()?.strip_prefix("Name:")?.trim();
-        Some(format!("name 3 1 0x409 \"{name}\";"))
+        if name.is_empty() {
+            None
+        } else {
+            Some(format!("name 3 1 0x409 \"{name}\";"))
+        }
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L134
@@ -3590,10 +3594,15 @@ mod tests {
     #[test]
     fn parse_legacy_stylistic_set_name() {
         let font = Font::load(&glyphs2_dir().join("FeaLegacyName.glyphs")).unwrap();
-        assert_eq!(font.features.len(), 1);
-        assert!(font.features[0]
+        assert_eq!(font.features.len(), 2);
+        let [ss01, ss02] = font.features.as_slice() else {
+            panic!("wrong number of features");
+        };
+
+        assert!(ss01
             .content
             .contains("name 3 1 0x409 \"Alternate placeholder\""));
+        assert!(!ss02.content.contains("name 3 1"))
     }
 
     // <https://github.com/googlefonts/fontc/issues/1175>
