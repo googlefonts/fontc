@@ -14,12 +14,18 @@ pub(crate) struct NameBuilder {
     last_nonreserved_id: NameId,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct NameSpec {
     pub platform_id: u16,
     pub encoding_id: u16,
     pub language_id: u16,
     pub string: SmolStr,
+}
+
+impl NameSpec {
+    fn is_empty(&self) -> bool {
+        self.string.is_empty()
+    }
 }
 
 impl Default for NameBuilder {
@@ -40,8 +46,8 @@ impl NameBuilder {
 
     pub(crate) fn add_anon_group(&mut self, entries: &[NameSpec]) -> NameId {
         let name_id = self.next_name_id();
-        for name in entries {
-            self.add(name_id, name.clone());
+        for name_spec in entries.iter().filter(|n| !n.is_empty()) {
+            self.add(name_id, name_spec.clone());
         }
         name_id
     }
@@ -194,5 +200,24 @@ mod tests {
     fn parse_mac_str() {
         let inp = "M\\9fller";
         assert_eq!(parse_mac(inp), "Müller");
+    }
+
+    #[test]
+    fn ignore_empty_names() {
+        let blank = NameSpec {
+            platform_id: 3,
+            encoding_id: 1,
+            language_id: 0x409,
+            string: "".into(),
+        };
+        let mallard = NameSpec {
+            platform_id: 3,
+            encoding_id: 1,
+            language_id: 0x409,
+            string: "mallard".into(),
+        };
+        let mut nb = NameBuilder::default();
+        nb.add_anon_group(&[blank, mallard.clone()]);
+        assert_eq!(vec![(NameId::new(256), mallard)], nb.records);
     }
 }
