@@ -69,6 +69,7 @@ pub struct Font {
 #[derive(Clone, Debug, PartialEq, Hash, Default)]
 pub struct CustomParameters {
     pub use_typo_metrics: Option<bool>,
+    pub is_fixed_pitch: Option<bool>,
     pub fs_type: Option<u16>,
     pub has_wws_names: Option<bool>,
     pub typo_ascender: Option<i64>,
@@ -589,6 +590,7 @@ impl RawCustomParameters {
             }
             match name.as_str() {
                 "Use Typo Metrics" => add_and_report_issues!(use_typo_metrics, Plist::as_bool),
+                "isFixedPitch" => add_and_report_issues!(is_fixed_pitch, Plist::as_bool),
                 "Has WWS Names" => add_and_report_issues!(has_wws_names, Plist::as_bool),
                 "typoAscender" => add_and_report_issues!(typo_ascender, Plist::as_i64),
                 "typoDescender" => add_and_report_issues!(typo_descender, Plist::as_i64),

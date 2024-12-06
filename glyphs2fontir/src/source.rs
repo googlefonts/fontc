@@ -457,6 +457,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
         static_metadata.misc.fs_type = font.custom_parameters.fs_type.or(Some(1 << 3));
 
+        static_metadata.misc.is_fixed_pitch = font.custom_parameters.is_fixed_pitch;
+
         static_metadata.misc.unicode_range_bits = font
             .custom_parameters
             .unicode_range_bits
@@ -1980,5 +1982,21 @@ mod tests {
             Some(Panose::from([2u8, 3, 4, 5, 6, 7, 8, 9, 10, 11])),
             static_metadata.misc.panose
         );
+    }
+
+    fn assert_fixed_pitch(glyphs_file: PathBuf, expected: Option<bool>) {
+        let (_, context) = build_static_metadata(glyphs_file);
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(expected, static_metadata.misc.is_fixed_pitch);
+    }
+
+    #[test]
+    fn fixed_pitch_on() {
+        assert_fixed_pitch(glyphs3_dir().join("FixedPitch.glyphs"), Some(true));
+    }
+
+    #[test]
+    fn fixed_pitch_off() {
+        assert_fixed_pitch(glyphs3_dir().join("WghtVar.glyphs"), None);
     }
 }
