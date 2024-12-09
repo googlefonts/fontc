@@ -23,9 +23,9 @@ pub struct Args {
     #[arg(short, long)]
     source: Option<PathBuf>,
 
-    /// Whether to write IR to disk. Must be true if you want incremental compilation.
+    /// Whether to write IR to disk.
     #[arg(short, long, default_value = "false")]
-    pub incremental: bool,
+    pub emit_ir: bool,
 
     /// Output file name (default: build/font.ttf)
     #[arg(short, long)]
@@ -109,7 +109,7 @@ impl Args {
     pub fn flags(&self) -> Flags {
         let mut flags = Flags::default();
 
-        flags.set(Flags::EMIT_IR, self.incremental);
+        flags.set(Flags::EMIT_IR, self.emit_ir);
         flags.set(Flags::EMIT_DEBUG, self.emit_debug);
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
         flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
@@ -129,7 +129,7 @@ impl Args {
             glyph_name_filter: None,
             input_source: Some(input_source),
             source: None,
-            incremental: true,
+            emit_ir: false,
             output_file: None,
             emit_debug: false, // they get destroyed by test cleanup
             emit_timing: false,
@@ -152,7 +152,9 @@ impl Args {
         use crate::testdata_dir;
 
         let input_source = testdata_dir().join(source).canonicalize().unwrap();
-        Self::new(build_dir, input_source)
+        let mut result = Self::new(build_dir, input_source);
+        result.emit_ir = true;
+        result
     }
 
     /// The input source to compile.

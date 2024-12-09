@@ -13,6 +13,10 @@ use crate::Error;
 pub enum AnyWork {
     Fe(Box<IrWork>),
     Be(Box<BeWork>),
+    /// Used to get things marked completed w/o actually running. Skipping basically.
+    Nop(AnyWorkId, AnyAccess),
+    /// Used for work that isn't actually run, just gets marked complete on completion of some other work
+    AlsoComplete(AnyWorkId, AnyAccess),
 }
 
 impl From<Box<IrWork>> for AnyWork {
@@ -32,6 +36,7 @@ impl AnyWork {
         match self {
             AnyWork::Be(work) => work.id(),
             AnyWork::Fe(work) => work.id().into(),
+            AnyWork::Nop(id, ..) | AnyWork::AlsoComplete(id, ..) => id.clone(),
         }
     }
 
@@ -39,6 +44,7 @@ impl AnyWork {
         match self {
             AnyWork::Be(work) => work.read_access().into(),
             AnyWork::Fe(work) => work.read_access().into(),
+            AnyWork::Nop(.., access) | AnyWork::AlsoComplete(.., access) => access.clone(),
         }
     }
 
@@ -46,6 +52,7 @@ impl AnyWork {
         match self {
             AnyWork::Be(work) => work.write_access().into(),
             AnyWork::Fe(work) => work.write_access().into(),
+            AnyWork::Nop(..) | AnyWork::AlsoComplete(..) => AnyAccess::Fe(Access::None),
         }
     }
 
@@ -57,6 +64,7 @@ impl AnyWork {
                 .into_iter()
                 .map(|id| id.into())
                 .collect(),
+            AnyWork::Nop(..) | AnyWork::AlsoComplete(..) => Vec::new(),
         }
     }
 
@@ -64,6 +72,7 @@ impl AnyWork {
         match self {
             AnyWork::Be(work) => work.exec(context.unwrap_be()).map_err(|e| e.into()),
             AnyWork::Fe(work) => work.exec(context.unwrap_fe()).map_err(|e| e.into()),
+            AnyWork::Nop(..) | AnyWork::AlsoComplete(..) => Ok(()),
         }
     }
 }

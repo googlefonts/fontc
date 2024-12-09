@@ -1,6 +1,5 @@
 use std::{io, path::PathBuf};
 
-use fontir::error::TrackFileError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -19,8 +18,6 @@ pub enum Error {
     UnrecognizedSource(PathBuf),
     #[error(transparent)]
     YamlSerError(#[from] serde_yaml::Error),
-    #[error(transparent)]
-    TrackFile(#[from] TrackFileError),
     #[error(transparent)]
     FontIrError(#[from] fontir::error::Error),
     #[error(transparent)]

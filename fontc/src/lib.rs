@@ -1,61 +1,57 @@
 //! A font compiler with aspirations of being fast and safe.
 
 mod args;
-mod change_detector;
-mod config;
 mod error;
 mod timing;
 pub mod work;
 mod workload;
 
 pub use args::Args;
-pub use change_detector::ChangeDetector;
-pub use config::Config;
 pub use error::Error;
 
+use fontra2fontir::source::FontraIrSource;
+use glyphs2fontir::source::GlyphsIrSource;
 pub use timing::{create_timer, JobTimer};
+use ufo2fontir::source::DesignSpaceIrSource;
 use workload::Workload;
 
-use fontbe::{
-    avar::create_avar_work,
-    cmap::create_cmap_work,
-    features::{
-        create_gather_ir_kerning_work, create_kerns_work, create_mark_work, FeatureCompilationWork,
-        FeatureParsingWork,
-    },
-    font::create_font_work,
-    fvar::create_fvar_work,
-    glyphs::{create_glyf_loca_work, create_glyf_work},
-    gvar::create_gvar_work,
-    head::create_head_work,
-    hvar::create_hvar_work,
-    meta::create_meta_work,
-    metrics_and_limits::create_metric_and_limit_work,
-    mvar::create_mvar_work,
-    name::create_name_work,
-    orchestration::AnyWorkId,
-    os2::create_os2_work,
-    post::create_post_work,
-    stat::create_stat_work,
-};
+use fontbe::orchestration::AnyWorkId;
 use std::{
+    ffi::OsStr,
     fs::{self, OpenOptions},
     io::BufWriter,
     path::Path,
 };
 
-use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
 use fontir::{
-    glyph::create_glyph_order_work,
     orchestration::{Context as FeContext, Flags},
-    source::DeleteWork,
+    source::Source,
 };
 
 use fontbe::orchestration::Context as BeContext;
 use fontbe::paths::Paths as BePaths;
 use fontir::paths::Paths as IrPaths;
 
-use log::{debug, warn};
+use log::debug;
+
+/// Creates the implementation of [`Source`] that should be used for the provided path
+fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
+    if !source.exists() {
+        return Err(Error::FileExpected(source.to_path_buf()));
+    }
+    let ext = source
+        .extension()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| Error::UnrecognizedSource(source.to_path_buf()))?;
+    match ext {
+        "designspace" => Ok(Box::new(DesignSpaceIrSource::new(source)?)),
+        "ufo" => Ok(Box::new(DesignSpaceIrSource::new(source)?)),
+        "glyphs" => Ok(Box::new(GlyphsIrSource::new(source)?)),
+        "glyphspackage" => Ok(Box::new(GlyphsIrSource::new(source)?)),
+        "fontra" => Ok(Box::new(FontraIrSource::new(source)?)),
+        _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
+    }
+}
 
 /// Run the compiler with the provided arguments
 pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
@@ -63,30 +59,16 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
         .queued()
         .run();
     let (ir_paths, be_paths) = init_paths(&args)?;
-    let config = Config::new(args)?;
-    let prev_inputs = config.init()?;
     timer.add(time.complete());
 
-    let mut change_detector = ChangeDetector::new(
-        config.clone(),
-        ir_paths.clone(),
-        be_paths.clone(),
-        prev_inputs,
-        &mut timer,
-    )?;
+    let workload = Workload::new(args.clone(), timer)?;
 
-    let workload = create_workload(&mut change_detector, timer)?;
-
-    let fe_root = FeContext::new_root(
-        config.args.flags(),
-        ir_paths,
-        workload.current_inputs().clone(),
-    );
-    let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root);
+    let fe_root = FeContext::new_root(args.flags(), ir_paths);
+    let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
     let mut timing = workload.exec(&fe_root, &be_root)?;
 
-    if config.args.flags().contains(Flags::EMIT_TIMING) {
-        let path = config.args.build_dir.join("threads.svg");
+    if args.flags().contains(Flags::EMIT_TIMING) {
+        let path = args.build_dir.join("threads.svg");
         let out_file = OpenOptions::new()
             .write(true)
             .create(true)
@@ -102,9 +84,8 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
             .map_err(|source| Error::FileIo { path, source })?;
     }
 
-    change_detector.finish_successfully()?;
-
-    write_font_file(&config.args, &be_root)
+    // At long last!
+    write_font_file(&args, &be_root)
 }
 
 pub fn require_dir(dir: &Path) -> Result<(), Error> {
@@ -141,10 +122,10 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
 
     // the build dir stores the IR (for incremental builds) and the default output
     // file ('font.ttf') so we don't need to create one unless we're writing to it
-    if args.output_file.is_none() || args.incremental {
+    if args.output_file.is_none() || args.emit_ir {
         require_dir(&args.build_dir)?;
     }
-    if args.incremental {
+    if args.emit_ir {
         require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
         require_dir(be_paths.glyph_dir())?;
@@ -165,7 +146,7 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
 pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
     // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
     let font_file = be_context.font_file();
-    if !args.incremental {
+    if !args.emit_ir {
         fs::write(&font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
             path: font_file,
             source,
@@ -174,367 +155,6 @@ pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error>
         return Err(Error::FileExpected(font_file));
     }
     Ok(())
-}
-
-fn add_glyph_order_ir_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_glyph_order_work().into();
-    workload.add(work, workload.change_detector.glyph_order_ir_change());
-
-    Ok(())
-}
-
-fn add_feature_ir_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = workload
-        .change_detector
-        .ir_source()
-        .create_feature_ir_work(workload.change_detector.current_inputs())?
-        .into();
-    workload.add(
-        work,
-        workload.change_detector.feature_ir_change()
-            && !workload.change_detector.should_skip_features(),
-    );
-    Ok(())
-}
-
-fn add_feature_parse_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = FeatureParsingWork::create();
-
-    // copied from below
-    if workload.change_detector.feature_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE Features because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE Features because FEA compilation is disabled");
-        }
-    }
-
-    workload.add(
-        work.into(),
-        workload.change_detector.feature_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
-    );
-    Ok(())
-}
-
-fn add_feature_comp_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = FeatureCompilationWork::create();
-    // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.feature_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE Features because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE Features because FEA compilation is disabled");
-        }
-    }
-    workload.add(
-        work.into(),
-        workload.change_detector.feature_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
-    );
-    Ok(())
-}
-
-fn add_marks_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_mark_work();
-    // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.mark_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE marks because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE marks because FEA compilation is disabled");
-        }
-    }
-    workload.add(
-        work.into(),
-        workload.change_detector.mark_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
-    );
-    Ok(())
-}
-
-fn add_gather_ir_kerning_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_gather_ir_kerning_work();
-    // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.kerning_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE kerning because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE kerning because FEA compilation is disabled");
-        }
-    }
-    workload.add(
-        work.into(),
-        workload.change_detector.kerning_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
-    );
-    Ok(())
-}
-
-fn add_kerns_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_kerns_work();
-    // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.kerning_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE kerning because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE kerning because FEA compilation is disabled");
-        }
-    }
-    workload.add(
-        work.into(),
-        workload.change_detector.kerning_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
-    );
-    Ok(())
-}
-
-fn add_kerning_group_ir_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = workload
-        .change_detector
-        .ir_source()
-        .create_kerning_group_ir_work(workload.change_detector.current_inputs())?;
-    workload.add(
-        work.into(),
-        workload.change_detector.kerning_groups_ir_change()
-            && !workload.change_detector.should_skip_features(),
-    );
-    Ok(())
-}
-
-fn add_kern_instance_ir_job(workload: &mut Workload, at: NormalizedLocation) -> Result<(), Error> {
-    let work = workload
-        .change_detector
-        .ir_source()
-        .create_kerning_instance_ir_work(workload.current_inputs(), at.clone())?
-        .into();
-    workload.add(
-        work,
-        workload.change_detector.kerning_at_ir_change(at)
-            && !workload.change_detector.should_skip_features(),
-    );
-    Ok(())
-}
-
-fn add_glyph_ir_jobs(workload: &mut Workload) -> Result<(), Error> {
-    // Destroy IR for deleted glyphs. No dependencies.
-    for glyph_name in workload.change_detector.glyphs_deleted().iter() {
-        let work = DeleteWork::create(glyph_name.clone());
-        workload.add(work.into(), true);
-    }
-
-    // Generate IR for changed glyphs
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-    let glyph_work = workload
-        .change_detector
-        .ir_source()
-        .create_glyph_ir_work(glyphs_changed, workload.change_detector.current_inputs())?;
-    for work in glyph_work {
-        workload.add(work.into(), true);
-    }
-
-    Ok(())
-}
-
-fn add_glyph_be_jobs(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-    for glyph_name in glyphs_changed {
-        add_glyph_be_job(workload, glyph_name.clone());
-    }
-    Ok(())
-}
-
-fn add_glyf_loca_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If no glyph has changed there isn't a lot of merging to do
-    let work = create_glyf_loca_work().into();
-    workload.add(work, !glyphs_changed.is_empty());
-
-    Ok(())
-}
-
-fn add_avar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_avar_work().into();
-    workload.add(work, workload.change_detector.avar_be_change());
-    Ok(())
-}
-
-fn add_stat_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_stat_work().into();
-    workload.add(work, workload.change_detector.stat_be_change());
-    Ok(())
-}
-
-fn add_meta_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_meta_work().into();
-    workload.add(work, workload.change_detector.static_metadata_ir_change());
-    Ok(())
-}
-
-fn add_fvar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_fvar_work().into();
-    workload.add(work, workload.change_detector.fvar_be_change());
-    Ok(())
-}
-
-fn add_gvar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If no glyph has changed there isn't a lot of merging to do
-    let work = create_gvar_work().into();
-    workload.add(work, !glyphs_changed.is_empty());
-
-    Ok(())
-}
-
-fn add_cmap_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If no glyph has changed there isn't a lot of merging to do
-    let work = create_cmap_work().into();
-    workload.add(work, !glyphs_changed.is_empty());
-
-    Ok(())
-}
-
-fn add_post_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_post_work().into();
-    workload.add(work, workload.change_detector.post_be_change());
-    Ok(())
-}
-
-fn add_head_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_head_work().into();
-    workload.add(work, workload.change_detector.glyph_order_ir_change());
-    Ok(())
-}
-
-fn add_name_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_name_work().into();
-    workload.add(work, workload.change_detector.static_metadata_ir_change());
-    Ok(())
-}
-
-fn add_os2_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_os2_work().into();
-    workload.add(work, workload.change_detector.static_metadata_ir_change());
-    Ok(())
-}
-
-fn add_metric_and_limits_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If no glyph has changed there isn't a lot to do
-    let work = create_metric_and_limit_work().into();
-    workload.add(work, !glyphs_changed.is_empty());
-    Ok(())
-}
-
-fn add_hvar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    let work = create_hvar_work().into();
-    workload.add(
-        work,
-        // Static metadata contains VariationModel, if axes coordinates change
-        // we need to recompute variable tables such as HVAR.
-        // Glyph order matters because HVAR may choose to store variation items
-        // directly mapping to glyph indices. And glyph IR contains advance width
-        // among other things.
-        // TODO: ideally be more granular here e.g. by storing axes and advance widths
-        // in a separate IR file.
-        // https://github.com/googlefonts/fontc/issues/526
-        workload.change_detector.static_metadata_ir_change()
-            || workload.change_detector.glyph_order_ir_change()
-            || !glyphs_changed.is_empty(),
-    );
-    Ok(())
-}
-
-fn add_mvar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_mvar_work().into();
-    workload.add(
-        work,
-        workload.change_detector.static_metadata_ir_change()
-            || workload.change_detector.global_metrics_ir_change(),
-    );
-    Ok(())
-}
-
-fn add_font_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If glyphs or features changed we better do the thing
-    let work = create_font_work();
-    workload.add(
-        work.into(),
-        !glyphs_changed.is_empty() || workload.change_detector.feature_be_change(),
-    );
-    Ok(())
-}
-
-fn add_glyph_be_job(workload: &mut Workload, glyph_name: GlyphName) {
-    let work = create_glyf_work(glyph_name).into();
-    let should_run = workload.change_detector.simple_should_run(&work);
-    workload.add(work, should_run);
-}
-
-//FIXME: I should be a method on ChangeDetector
-pub fn create_workload(
-    change_detector: &mut ChangeDetector,
-    timer: JobTimer,
-) -> Result<Workload, Error> {
-    let time = create_timer(AnyWorkId::InternalTiming("Create workload"), 0)
-        .queued()
-        .run();
-    let mut workload = change_detector.create_workload(timer)?;
-
-    // FE: f(source) => IR
-    add_feature_ir_job(&mut workload)?;
-    add_kerning_group_ir_job(&mut workload)?;
-    add_glyph_ir_jobs(&mut workload)?;
-    add_glyph_order_ir_job(&mut workload)?;
-
-    // BE: f(IR, maybe other BE work) => binary
-
-    add_feature_parse_be_job(&mut workload)?;
-    add_feature_comp_be_job(&mut workload)?;
-    add_glyph_be_jobs(&mut workload)?;
-    add_glyf_loca_be_job(&mut workload)?;
-    add_avar_be_job(&mut workload)?;
-    add_stat_be_job(&mut workload)?;
-    add_meta_be_job(&mut workload)?;
-    add_cmap_be_job(&mut workload)?;
-    add_fvar_be_job(&mut workload)?;
-    add_gvar_be_job(&mut workload)?;
-    add_head_be_job(&mut workload)?;
-    add_gather_ir_kerning_be_job(&mut workload)?;
-    add_kerns_be_job(&mut workload)?;
-    add_marks_be_job(&mut workload)?;
-    add_metric_and_limits_job(&mut workload)?;
-    add_hvar_be_job(&mut workload)?;
-    add_mvar_be_job(&mut workload)?;
-    add_name_be_job(&mut workload)?;
-    add_os2_be_job(&mut workload)?;
-    add_post_be_job(&mut workload)?;
-
-    // Make a damn font
-    add_font_be_job(&mut workload)?;
-
-    workload.timer.add(time.complete());
-
-    Ok(workload)
 }
 
 #[cfg(test)]
@@ -569,7 +189,7 @@ mod tests {
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
     use fontdrasil::{
-        coords::NormalizedCoord,
+        coords::{NormalizedCoord, NormalizedLocation},
         paths::string_to_filename,
         types::{GlyphName, WidthClass},
     };
@@ -577,7 +197,6 @@ mod tests {
         ir::{self, GlobalMetric, GlyphOrder, KernGroup, KernPair, KernSide},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
     };
-    use indexmap::IndexSet;
     use kurbo::{Point, Rect};
     use log::info;
     use pretty_assertions::assert_eq;
@@ -630,10 +249,7 @@ mod tests {
         /// the directory is deleted.
         _temp_dir: TempDir,
         build_dir: PathBuf,
-        args: Args,
         work_executed: HashSet<AnyWorkId>,
-        glyphs_changed: IndexSet<GlyphName>,
-        glyphs_deleted: IndexSet<GlyphName>,
         fe_context: FeContext,
         be_context: BeContext,
         raw_font: Vec<u8>,
@@ -644,14 +260,8 @@ mod tests {
             TestCompile::compile(source, |args| args)
         }
 
-        fn compile_again(prior_compile: &TestCompile) -> TestCompile {
-            TestCompile::compile(prior_compile.args.source().to_str().unwrap(), |_| {
-                prior_compile.args.clone()
-            })
-        }
-
         fn compile(source: &str, adjust_args: impl Fn(Args) -> Args) -> TestCompile {
-            let mut timer = JobTimer::new(Instant::now());
+            let timer = JobTimer::new(Instant::now());
             let _ = env_logger::builder().is_test(true).try_init();
 
             let temp_dir = tempdir().unwrap();
@@ -661,46 +271,26 @@ mod tests {
             info!("Compile {args:?}");
 
             let (ir_paths, be_paths) = init_paths(&args).unwrap();
-            let config = Config::new(args).unwrap();
 
-            let prev_inputs = config.init().unwrap();
+            let build_dir = be_paths.build_dir().to_path_buf();
 
-            let mut change_detector = ChangeDetector::new(
-                config.clone(),
-                ir_paths.clone(),
-                be_paths.clone(),
-                prev_inputs,
-                &mut timer,
-            )
-            .unwrap();
-            let build_dir = change_detector.be_paths().build_dir().to_path_buf();
-
-            let fe_context = FeContext::new_root(
-                config.args.flags(),
-                ir_paths,
-                change_detector.current_inputs().clone(),
-            );
-            let be_context =
-                BeContext::new_root(config.args.flags(), be_paths, &fe_context.read_only());
+            let fe_context = FeContext::new_root(args.flags(), ir_paths);
+            let be_context = BeContext::new_root(args.flags(), be_paths, &fe_context.read_only());
             let mut result = TestCompile {
                 _temp_dir: temp_dir,
                 build_dir,
-                args: config.args.clone(),
                 work_executed: HashSet::new(),
-                glyphs_changed: change_detector.glyphs_changed().clone(),
-                glyphs_deleted: change_detector.glyphs_deleted().clone(),
                 fe_context,
                 be_context,
                 raw_font: Vec::new(),
             };
 
-            let mut workload = create_workload(&mut change_detector, timer).unwrap();
+            let mut workload = Workload::new(args.clone(), timer).unwrap();
             let completed = workload.run_for_test(&result.fe_context, &result.be_context);
 
-            change_detector.finish_successfully().unwrap();
             result.work_executed = completed;
 
-            write_font_file(&config.args, &result.be_context).unwrap();
+            write_font_file(&args, &result.be_context).unwrap();
 
             result.raw_font = fs::read(result.build_dir.join("font.ttf")).unwrap();
 
@@ -743,8 +333,8 @@ mod tests {
                     &mut File::open(build_dir.join("loca.format")).unwrap(),
                 )
                 .into(),
-                raw_glyf: read_file(&build_dir.join("glyf.table")),
-                raw_loca: read_file(&build_dir.join("loca.table")),
+                raw_glyf: read_file(build_dir, Path::new("glyf.table")),
+                raw_loca: read_file(build_dir, Path::new("loca.table")),
             }
         }
 
@@ -759,39 +349,6 @@ mod tests {
                 .map(|gid| loca.get_glyf(GlyphId16::new(gid as u16).into(), &glyf))
                 .map(|r| r.unwrap())
                 .collect()
-        }
-    }
-
-    /// Copy testdata => tempdir so the test can modify it
-    fn copy_testdata(from: impl IntoIterator<Item = impl AsRef<Path>>, to_dir: &Path) {
-        let from_dir = testdata_dir();
-
-        let mut from: VecDeque<PathBuf> = from.into_iter().map(|p| from_dir.join(p)).collect();
-        while let Some(source) = from.pop_back() {
-            let rel_source = source.strip_prefix(&from_dir).unwrap();
-            let dest = to_dir.join(rel_source);
-            assert!(
-                source.exists(),
-                "cannot copy '{source:?}'; it doesn't exist"
-            );
-
-            let dest_dir = if source.is_dir() {
-                dest.as_path()
-            } else {
-                dest.parent().unwrap()
-            };
-            if !dest_dir.exists() {
-                fs::create_dir_all(dest_dir).unwrap();
-            }
-
-            if source.is_file() {
-                fs::copy(&source, &dest).unwrap();
-            }
-            if source.is_dir() {
-                for entry in fs::read_dir(source).unwrap() {
-                    from.push_back(entry.unwrap().path());
-                }
-            }
         }
     }
 
@@ -890,114 +447,6 @@ mod tests {
         )
     }
 
-    #[test]
-    fn second_compile_is_nop() {
-        let result = TestCompile::compile_source("wght_var.designspace");
-        assert_eq!(
-            IndexSet::from(["bar".into(), "plus".into()]),
-            result.glyphs_changed
-        );
-        assert!(result.glyphs_deleted.is_empty());
-
-        let result = TestCompile::compile_again(&result);
-        assert!(result.work_executed.is_empty());
-        assert!(result.glyphs_changed.is_empty());
-        assert!(result.glyphs_deleted.is_empty());
-    }
-
-    #[test]
-    fn second_compile_only_glyph_ir() {
-        // glyph depends on static metadata, which isn't going to run
-        let result = TestCompile::compile_source("wght_var.designspace");
-        assert!(result.work_executed.len() > 1);
-
-        let glyph_ir_file = result.build_dir.join("glyph_ir/bar.yml");
-        fs::remove_file(&glyph_ir_file).unwrap();
-
-        let result = TestCompile::compile_again(&result);
-        assert!(glyph_ir_file.exists(), "{glyph_ir_file:?}");
-        let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
-        completed.sort();
-        assert_eq!(
-            vec![
-                AnyWorkId::Fe(FeWorkIdentifier::Glyph("bar".into())),
-                FeWorkIdentifier::Anchor("bar".into()).into(),
-                BeWorkIdentifier::Features.into(),
-                BeWorkIdentifier::FeaturesAst.into(),
-                BeWorkIdentifier::Cmap.into(),
-                BeWorkIdentifier::Font.into(),
-                BeWorkIdentifier::Glyf.into(),
-                BeWorkIdentifier::Gpos.into(),
-                BeWorkIdentifier::Gsub.into(),
-                BeWorkIdentifier::Gdef.into(),
-                BeWorkIdentifier::Gvar.into(),
-                BeWorkIdentifier::Hhea.into(),
-                BeWorkIdentifier::Hmtx.into(),
-                BeWorkIdentifier::Hvar.into(),
-                BeWorkIdentifier::Loca.into(),
-                BeWorkIdentifier::LocaFormat.into(),
-                BeWorkIdentifier::Marks.into(),
-                BeWorkIdentifier::Maxp.into(),
-                BeWorkIdentifier::ExtraFeaTables.into(),
-            ],
-            completed,
-            "{completed:#?}"
-        );
-    }
-
-    #[test]
-    fn second_compile_only_kerning() {
-        let result = TestCompile::compile_source("glyphs3/WghtVar.glyphs");
-        assert!(result.work_executed.len() > 1);
-
-        fs::remove_file(result.build_dir.join("kern_groups.yml")).unwrap();
-        fs::remove_file(result.build_dir.join("kern_wght_0.00.yml")).unwrap();
-        fs::remove_file(result.build_dir.join("kern_wght_1.00.yml")).unwrap();
-
-        let result = TestCompile::compile_again(&result);
-        let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
-        completed.sort();
-        assert_eq!(
-            vec![
-                AnyWorkId::Fe(FeWorkIdentifier::Features),
-                FeWorkIdentifier::KerningGroups.into(),
-                FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 0.0)]))
-                    .into(),
-                FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 1.0)]))
-                    .into(),
-                BeWorkIdentifier::Features.into(),
-                BeWorkIdentifier::FeaturesAst.into(),
-                BeWorkIdentifier::Font.into(),
-                BeWorkIdentifier::Gpos.into(),
-                BeWorkIdentifier::Gsub.into(),
-                BeWorkIdentifier::Gdef.into(),
-                BeWorkIdentifier::GatherIrKerning.into(),
-                BeWorkIdentifier::KernFragment(0).into(),
-                BeWorkIdentifier::GatherBeKerning.into(),
-                BeWorkIdentifier::ExtraFeaTables.into(),
-            ],
-            completed
-        );
-    }
-
-    #[test]
-    fn deleted_ir_recreated() {
-        let result = TestCompile::compile_source("wght_var.designspace");
-        assert_eq!(
-            IndexSet::from(["bar".into(), "plus".into()]),
-            result.glyphs_changed
-        );
-        assert!(result.glyphs_deleted.is_empty());
-
-        let bar_ir = result.build_dir.join("glyph_ir/bar.yml");
-        assert!(bar_ir.is_file(), "no file {bar_ir:#?}");
-        fs::remove_file(bar_ir).unwrap();
-
-        let result = TestCompile::compile_again(&result);
-        assert_eq!(IndexSet::from(["bar".into()]), result.glyphs_changed);
-        assert!(result.glyphs_deleted.is_empty());
-    }
-
     fn assert_compiles_with_gpos_and_gsub(
         source: &str,
         adjust_args: impl Fn(Args) -> Args,
@@ -1029,70 +478,9 @@ mod tests {
     fn compile_fea_with_includes_no_ir() {
         assert_compiles_with_gpos_and_gsub("fea_include.designspace", |mut args| {
             args.emit_debug = false;
-            args.incremental = false;
+            args.emit_ir = false;
             args
         });
-    }
-
-    #[test]
-    fn compile_fea_again_with_modified_include() {
-        let temp_dir = tempdir().unwrap();
-        let source_dir = temp_dir.path().join("sources");
-        let build_dir = temp_dir.path().join("build");
-        fs::create_dir(&source_dir).unwrap();
-        fs::create_dir(build_dir).unwrap();
-
-        copy_testdata(
-            [
-                "fea_include.designspace",
-                "fea_include_ufo/common.fea",
-                "fea_include_ufo/FeaInc-Regular.ufo",
-                "fea_include_ufo/FeaInc-Bold.ufo",
-            ],
-            &source_dir,
-        );
-
-        let source = source_dir
-            .join("fea_include.designspace")
-            .canonicalize()
-            .unwrap();
-        let result = TestCompile::compile_source(source.to_str().unwrap());
-
-        let shared_fea = source_dir.join("fea_include_ufo/common.fea");
-        fs::write(
-            &shared_fea,
-            fs::read_to_string(&shared_fea).unwrap() + "\n\nfeature k2 { pos bar bar -100; } k2;",
-        )
-        .unwrap();
-
-        let result = TestCompile::compile_again(&result);
-
-        // Features and things downstream of features should rebuild
-        let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
-        completed.sort();
-        assert_eq!(
-            vec![
-                AnyWorkId::Fe(FeWorkIdentifier::Features),
-                AnyWorkId::Fe(FeWorkIdentifier::KerningGroups),
-                AnyWorkId::Fe(FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(
-                    &[("wght", 0.0)]
-                ))),
-                AnyWorkId::Fe(FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(
-                    &[("wght", 1.0)]
-                ))),
-                BeWorkIdentifier::Features.into(),
-                BeWorkIdentifier::FeaturesAst.into(),
-                BeWorkIdentifier::Font.into(),
-                BeWorkIdentifier::Gpos.into(),
-                BeWorkIdentifier::Gsub.into(),
-                BeWorkIdentifier::Gdef.into(),
-                BeWorkIdentifier::GatherIrKerning.into(),
-                BeWorkIdentifier::KernFragment(0).into(),
-                BeWorkIdentifier::GatherBeKerning.into(),
-                BeWorkIdentifier::ExtraFeaTables.into(),
-            ],
-            completed
-        );
     }
 
     fn build_contour_and_composite_glyph(prefer_simple_glyphs: bool) -> (TestCompile, ir::Glyph) {
@@ -1110,7 +498,23 @@ mod tests {
         (result, (*glyph).clone())
     }
 
-    fn read_file(path: &Path) -> Vec<u8> {
+    fn read_file(build_dir: &Path, path: &Path) -> Vec<u8> {
+        assert!(build_dir.is_dir(), "{build_dir:?} isn't a directory?!");
+        let path = build_dir.join(path);
+        if !path.exists() {
+            // When a path is missing it's very helpful to know what's present
+            use std::io::Write;
+            let mut stderr = std::io::stderr().lock();
+            writeln!(stderr, "Build dir tree").unwrap();
+            let mut pending = VecDeque::new();
+            pending.push_back(build_dir);
+            while let Some(pending_dir) = pending.pop_front() {
+                for entry in fs::read_dir(pending_dir).unwrap() {
+                    let entry = entry.unwrap();
+                    writeln!(stderr, "{}", entry.path().to_str().unwrap()).unwrap();
+                }
+            }
+        }
         assert!(path.exists(), "{path:?} not found");
         let mut buf = Vec::new();
         File::open(path).unwrap().read_to_end(&mut buf).unwrap();
@@ -1119,18 +523,16 @@ mod tests {
 
     fn read_ir_glyph(build_dir: &Path, name: &str) -> ir::Glyph {
         let raw_glyph = read_file(
-            &build_dir
-                .join("glyph_ir")
-                .join(string_to_filename(name, ".yml")),
+            build_dir,
+            &Path::new("glyph_ir").join(string_to_filename(name, ".yml")),
         );
         ir::Glyph::read(&mut raw_glyph.as_slice())
     }
 
     fn read_be_glyph(build_dir: &Path, name: &str) -> RawGlyph {
         let raw_glyph = read_file(
-            &build_dir
-                .join("glyphs")
-                .join(string_to_filename(name, ".glyf")),
+            build_dir,
+            &Path::new("glyphs").join(string_to_filename(name, ".glyf")),
         );
         let read: &mut dyn Read = &mut raw_glyph.as_slice();
         Glyph::read(read).data
@@ -1710,7 +1112,7 @@ mod tests {
     #[test]
     fn compile_without_ir() {
         let result = TestCompile::compile("glyphs2/WghtVar.glyphs", |mut args| {
-            args.incremental = false;
+            args.emit_ir = false;
             args
         });
 
