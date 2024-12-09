@@ -9,7 +9,7 @@ use fontbe::{
 };
 use fontra2fontir::source::FontraIrSource;
 
-use crate::{create_timer, timing::JobTimer, work::AnyWork, workload::Workload, Config, Error};
+use crate::{create_timer, timing::JobTimer, workload::Workload, Config, Error};
 use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
 use fontir::{
     orchestration::WorkId as FeWorkIdentifier,
@@ -20,7 +20,6 @@ use glyphs2fontir::source::GlyphsIrSource;
 use ufo2fontir::source::DesignSpaceIrSource;
 
 use indexmap::IndexSet;
-use regex::Regex;
 
 bitflags! {
     #[derive(Clone, Copy, Debug)]
@@ -37,7 +36,6 @@ bitflags! {
 ///
 /// Uses [Source] to abstract over whether source in .glyphs, .designspace, etc.
 pub struct ChangeDetector {
-    glyph_name_filter: Option<Regex>,
     ir_paths: IrPaths,
     ir_source: Box<dyn Source>,
     prev_inputs: Input,
@@ -131,7 +129,6 @@ impl ChangeDetector {
         timer.add(time.complete());
 
         Ok(ChangeDetector {
-            glyph_name_filter,
             ir_paths,
             ir_source,
             prev_inputs,
@@ -144,10 +141,6 @@ impl ChangeDetector {
             glyphs_changed,
             glyphs_deleted,
         })
-    }
-
-    pub fn glyph_name_filter(&self) -> Option<&Regex> {
-        self.glyph_name_filter.as_ref()
     }
 
     pub fn current_inputs(&self) -> &Input {
@@ -166,59 +159,8 @@ impl ChangeDetector {
         &self.be_paths
     }
 
-    fn target_exists(&self, work_id: &AnyWorkId) -> bool {
-        match work_id {
-            AnyWorkId::Fe(work_id) => self.ir_paths.target_file(work_id).is_file(),
-            AnyWorkId::Be(work_id) => self.be_paths.target_file(work_id).is_file(),
-            AnyWorkId::InternalTiming(..) => false,
-        }
-    }
-
-    fn input_changed(&self, work_id: &AnyWorkId) -> bool {
-        match work_id {
-            AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => {
-                self.current_inputs.static_metadata != self.prev_inputs.static_metadata
-            }
-            AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => {
-                self.current_inputs.global_metrics != self.prev_inputs.global_metrics
-            }
-            AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name)) => {
-                self.current_inputs.glyphs.get(glyph_name)
-                    != self.prev_inputs.glyphs.get(glyph_name)
-            }
-            AnyWorkId::Be(BeWorkIdentifier::GvarFragment(glyph_name)) => {
-                self.current_inputs.glyphs.get(glyph_name)
-                    != self.prev_inputs.glyphs.get(glyph_name)
-            }
-            _ => panic!("input_changed does not yet support {work_id:?}"),
-        }
-    }
-
-    fn output_exists(&self, work: &AnyWork) -> bool {
-        self.target_exists(&work.id())
-            && work
-                .also_completes()
-                .iter()
-                .all(|id| self.target_exists(id))
-    }
-
     pub fn should_skip_features(&self) -> bool {
         self.skip_features
-    }
-
-    /// Not all work ... works ... with this method; notably muts support input_changed.
-    pub(crate) fn simple_should_run(&self, work: &AnyWork) -> bool {
-        let work_id = work.id();
-        !self.output_exists(work) || self.input_changed(&work_id)
-    }
-
-    /// Simple work has simple, static, dependencies. Anything that depends on all-of-type
-    /// (e.g. all glyph ir) is not (yet) amenable to this path.
-    pub fn add_simple_work(&self, workload: &mut Workload, work: AnyWork) {
-        let output_exists = self.output_exists(&work);
-        let input_changed = self.input_changed(&work.id());
-        let run = input_changed || !output_exists;
-        workload.add(work, run);
     }
 
     pub fn create_workload(&mut self, timer: JobTimer) -> Result<Workload, Error> {
@@ -231,18 +173,8 @@ impl ChangeDetector {
         let source = self.ir_source.as_ref();
 
         // Source => IR
-        self.add_simple_work(
-            &mut workload,
-            source
-                .create_static_metadata_work(&self.current_inputs)?
-                .into(),
-        );
-        self.add_simple_work(
-            &mut workload,
-            source
-                .create_global_metric_work(&self.current_inputs)?
-                .into(),
-        );
+        workload.add(source.create_static_metadata_work()?);
+        workload.add(source.create_global_metric_work()?);
 
         Ok(workload)
     }
@@ -343,14 +275,6 @@ impl ChangeDetector {
         self.static_metadata_ir_change()
             || self.glyph_order_ir_change()
             || !self.be_paths.target_file(&BeWorkIdentifier::Post).is_file()
-    }
-
-    pub fn glyphs_changed(&self) -> &IndexSet<GlyphName> {
-        &self.glyphs_changed
-    }
-
-    pub fn glyphs_deleted(&self) -> &IndexSet<GlyphName> {
-        &self.glyphs_deleted
     }
 
     pub fn finish_successfully(self) -> Result<(), Error> {

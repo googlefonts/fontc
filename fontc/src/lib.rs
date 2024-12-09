@@ -2,7 +2,6 @@
 
 mod args;
 mod change_detector;
-mod config;
 mod error;
 mod timing;
 pub mod work;
@@ -44,7 +43,7 @@ use std::{
     path::Path,
 };
 
-use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
+use fontdrasil::coords::NormalizedLocation;
 use fontir::{
     glyph::create_glyph_order_work,
     orchestration::{Context as FeContext, Flags},
@@ -55,7 +54,7 @@ use fontbe::orchestration::Context as BeContext;
 use fontbe::paths::Paths as BePaths;
 use fontir::paths::Paths as IrPaths;
 
-use log::{debug, warn};
+use log::debug;
 
 /// Run the compiler with the provided arguments
 pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
@@ -77,11 +76,7 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
 
     let workload = create_workload(&mut change_detector, timer)?;
 
-    let fe_root = FeContext::new_root(
-        config.args.flags(),
-        ir_paths,
-        workload.current_inputs().clone(),
-    );
+    let fe_root = FeContext::new_root(config.args.flags(), ir_paths);
     let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root);
     let mut timing = workload.exec(&fe_root, &be_root)?;
 
@@ -176,152 +171,68 @@ pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error>
     Ok(())
 }
 
-fn add_glyph_order_ir_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_glyph_order_work().into();
-    workload.add(work, workload.change_detector.glyph_order_ir_change());
-
-    Ok(())
-}
-
 fn add_feature_ir_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = workload
-        .change_detector
-        .ir_source()
-        .create_feature_ir_work(workload.change_detector.current_inputs())?
-        .into();
     workload.add(
-        work,
-        workload.change_detector.feature_ir_change()
-            && !workload.change_detector.should_skip_features(),
-    );
-    Ok(())
-}
-
-fn add_feature_parse_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = FeatureParsingWork::create();
-
-    // copied from below
-    if workload.change_detector.feature_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE Features because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE Features because FEA compilation is disabled");
-        }
-    }
-
-    workload.add(
-        work.into(),
-        workload.change_detector.feature_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
+        workload
+            .change_detector
+            .ir_source()
+            .create_feature_ir_work()?,
     );
     Ok(())
 }
 
 fn add_feature_comp_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = FeatureCompilationWork::create();
-    // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.feature_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE Features because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE Features because FEA compilation is disabled");
-        }
+    if !workload.change_detector.should_skip_features() {
+        workload.add(FeatureCompilationWork::create());
+    } else {
+        todo!("skip features; mark complete");
     }
-    workload.add(
-        work.into(),
-        workload.change_detector.feature_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
-    );
     Ok(())
 }
 
 fn add_marks_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_mark_work();
-    // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.mark_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE marks because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE marks because FEA compilation is disabled");
-        }
+    if !workload.change_detector.should_skip_features() {
+        workload.add(create_mark_work());
+    } else {
+        todo!("skip features; mark complete");
     }
-    workload.add(
-        work.into(),
-        workload.change_detector.mark_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
-    );
     Ok(())
 }
 
 fn add_gather_ir_kerning_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_gather_ir_kerning_work();
-    // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.kerning_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE kerning because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE kerning because FEA compilation is disabled");
-        }
+    if !workload.change_detector.should_skip_features() {
+        workload.add(create_gather_ir_kerning_work());
+    } else {
+        todo!("skip features; mark complete");
     }
-    workload.add(
-        work.into(),
-        workload.change_detector.kerning_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
-    );
     Ok(())
 }
 
 fn add_kerns_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_kerns_work();
-    // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.kerning_be_change() {
-        if workload.change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE kerning because a glyph name filter is active");
-        }
-        if workload.change_detector.should_skip_features() {
-            debug!("Not processing BE kerning because FEA compilation is disabled");
-        }
+    if !workload.change_detector.should_skip_features() {
+        workload.add(create_kerns_work());
+    } else {
+        todo!("skip features; mark complete");
     }
-    workload.add(
-        work.into(),
-        workload.change_detector.kerning_be_change()
-            && workload.change_detector.glyph_name_filter().is_none()
-            && !workload.change_detector.should_skip_features(),
-    );
     Ok(())
 }
 
 fn add_kerning_group_ir_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = workload
-        .change_detector
-        .ir_source()
-        .create_kerning_group_ir_work(workload.change_detector.current_inputs())?;
     workload.add(
-        work.into(),
-        workload.change_detector.kerning_groups_ir_change()
-            && !workload.change_detector.should_skip_features(),
+        workload
+            .change_detector
+            .ir_source()
+            .create_kerning_group_ir_work()?,
     );
     Ok(())
 }
 
 fn add_kern_instance_ir_job(workload: &mut Workload, at: NormalizedLocation) -> Result<(), Error> {
-    let work = workload
-        .change_detector
-        .ir_source()
-        .create_kerning_instance_ir_work(workload.current_inputs(), at.clone())?
-        .into();
     workload.add(
-        work,
-        workload.change_detector.kerning_at_ir_change(at)
-            && !workload.change_detector.should_skip_features(),
+        workload
+            .change_detector
+            .ir_source()
+            .create_kerning_instance_ir_work(at.clone())?,
     );
     Ok(())
 }
@@ -330,17 +241,16 @@ fn add_glyph_ir_jobs(workload: &mut Workload) -> Result<(), Error> {
     // Destroy IR for deleted glyphs. No dependencies.
     for glyph_name in workload.change_detector.glyphs_deleted().iter() {
         let work = DeleteWork::create(glyph_name.clone());
-        workload.add(work.into(), true);
+        workload.add(work);
     }
 
-    // Generate IR for changed glyphs
-    let glyphs_changed = workload.change_detector.glyphs_changed();
+    // Generate IR for glyphs
     let glyph_work = workload
         .change_detector
         .ir_source()
-        .create_glyph_ir_work(glyphs_changed, workload.change_detector.current_inputs())?;
+        .create_glyph_ir_work()?;
     for work in glyph_work {
-        workload.add(work.into(), true);
+        workload.add(work);
     }
 
     Ok(())
@@ -349,145 +259,9 @@ fn add_glyph_ir_jobs(workload: &mut Workload) -> Result<(), Error> {
 fn add_glyph_be_jobs(workload: &mut Workload) -> Result<(), Error> {
     let glyphs_changed = workload.change_detector.glyphs_changed();
     for glyph_name in glyphs_changed {
-        add_glyph_be_job(workload, glyph_name.clone());
+        workload.add(create_glyf_work(glyph_name.clone()))
     }
     Ok(())
-}
-
-fn add_glyf_loca_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If no glyph has changed there isn't a lot of merging to do
-    let work = create_glyf_loca_work().into();
-    workload.add(work, !glyphs_changed.is_empty());
-
-    Ok(())
-}
-
-fn add_avar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_avar_work().into();
-    workload.add(work, workload.change_detector.avar_be_change());
-    Ok(())
-}
-
-fn add_stat_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_stat_work().into();
-    workload.add(work, workload.change_detector.stat_be_change());
-    Ok(())
-}
-
-fn add_meta_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_meta_work().into();
-    workload.add(work, workload.change_detector.static_metadata_ir_change());
-    Ok(())
-}
-
-fn add_fvar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_fvar_work().into();
-    workload.add(work, workload.change_detector.fvar_be_change());
-    Ok(())
-}
-
-fn add_gvar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If no glyph has changed there isn't a lot of merging to do
-    let work = create_gvar_work().into();
-    workload.add(work, !glyphs_changed.is_empty());
-
-    Ok(())
-}
-
-fn add_cmap_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If no glyph has changed there isn't a lot of merging to do
-    let work = create_cmap_work().into();
-    workload.add(work, !glyphs_changed.is_empty());
-
-    Ok(())
-}
-
-fn add_post_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_post_work().into();
-    workload.add(work, workload.change_detector.post_be_change());
-    Ok(())
-}
-
-fn add_head_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_head_work().into();
-    workload.add(work, workload.change_detector.glyph_order_ir_change());
-    Ok(())
-}
-
-fn add_name_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_name_work().into();
-    workload.add(work, workload.change_detector.static_metadata_ir_change());
-    Ok(())
-}
-
-fn add_os2_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_os2_work().into();
-    workload.add(work, workload.change_detector.static_metadata_ir_change());
-    Ok(())
-}
-
-fn add_metric_and_limits_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If no glyph has changed there isn't a lot to do
-    let work = create_metric_and_limit_work().into();
-    workload.add(work, !glyphs_changed.is_empty());
-    Ok(())
-}
-
-fn add_hvar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    let work = create_hvar_work().into();
-    workload.add(
-        work,
-        // Static metadata contains VariationModel, if axes coordinates change
-        // we need to recompute variable tables such as HVAR.
-        // Glyph order matters because HVAR may choose to store variation items
-        // directly mapping to glyph indices. And glyph IR contains advance width
-        // among other things.
-        // TODO: ideally be more granular here e.g. by storing axes and advance widths
-        // in a separate IR file.
-        // https://github.com/googlefonts/fontc/issues/526
-        workload.change_detector.static_metadata_ir_change()
-            || workload.change_detector.glyph_order_ir_change()
-            || !glyphs_changed.is_empty(),
-    );
-    Ok(())
-}
-
-fn add_mvar_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_mvar_work().into();
-    workload.add(
-        work,
-        workload.change_detector.static_metadata_ir_change()
-            || workload.change_detector.global_metrics_ir_change(),
-    );
-    Ok(())
-}
-
-fn add_font_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let glyphs_changed = workload.change_detector.glyphs_changed();
-
-    // If glyphs or features changed we better do the thing
-    let work = create_font_work();
-    workload.add(
-        work.into(),
-        !glyphs_changed.is_empty() || workload.change_detector.feature_be_change(),
-    );
-    Ok(())
-}
-
-fn add_glyph_be_job(workload: &mut Workload, glyph_name: GlyphName) {
-    let work = create_glyf_work(glyph_name).into();
-    let should_run = workload.change_detector.simple_should_run(&work);
-    workload.add(work, should_run);
 }
 
 //FIXME: I should be a method on ChangeDetector
@@ -504,33 +278,33 @@ pub fn create_workload(
     add_feature_ir_job(&mut workload)?;
     add_kerning_group_ir_job(&mut workload)?;
     add_glyph_ir_jobs(&mut workload)?;
-    add_glyph_order_ir_job(&mut workload)?;
+    workload.add(create_glyph_order_work());
 
     // BE: f(IR, maybe other BE work) => binary
 
-    add_feature_parse_be_job(&mut workload)?;
+    workload.add(FeatureParsingWork::create()); // TODO obey create_x_work convention
     add_feature_comp_be_job(&mut workload)?;
     add_glyph_be_jobs(&mut workload)?;
-    add_glyf_loca_be_job(&mut workload)?;
-    add_avar_be_job(&mut workload)?;
-    add_stat_be_job(&mut workload)?;
-    add_meta_be_job(&mut workload)?;
-    add_cmap_be_job(&mut workload)?;
-    add_fvar_be_job(&mut workload)?;
-    add_gvar_be_job(&mut workload)?;
-    add_head_be_job(&mut workload)?;
+    workload.add(create_glyf_loca_work());
+    workload.add(create_avar_work());
+    workload.add(create_stat_work());
+    workload.add(create_meta_work());
+    workload.add(create_cmap_work());
+    workload.add(create_fvar_work());
+    workload.add(create_gvar_work());
+    workload.add(create_head_work());
     add_gather_ir_kerning_be_job(&mut workload)?;
     add_kerns_be_job(&mut workload)?;
     add_marks_be_job(&mut workload)?;
-    add_metric_and_limits_job(&mut workload)?;
-    add_hvar_be_job(&mut workload)?;
-    add_mvar_be_job(&mut workload)?;
-    add_name_be_job(&mut workload)?;
-    add_os2_be_job(&mut workload)?;
-    add_post_be_job(&mut workload)?;
+    workload.add(create_metric_and_limit_work());
+    workload.add(create_hvar_work());
+    workload.add(create_mvar_work());
+    workload.add(create_name_work());
+    workload.add(create_os2_work());
+    workload.add(create_post_work());
 
     // Make a damn font
-    add_font_be_job(&mut workload)?;
+    workload.add(create_font_work());
 
     workload.timer.add(time.complete());
 
@@ -675,11 +449,7 @@ mod tests {
             .unwrap();
             let build_dir = change_detector.be_paths().build_dir().to_path_buf();
 
-            let fe_context = FeContext::new_root(
-                config.args.flags(),
-                ir_paths,
-                change_detector.current_inputs().clone(),
-            );
+            let fe_context = FeContext::new_root(config.args.flags(), ir_paths);
             let be_context =
                 BeContext::new_root(config.args.flags(), be_paths, &fe_context.read_only());
             let mut result = TestCompile {

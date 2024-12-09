@@ -563,7 +563,6 @@ mod tests {
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
-        source::Input,
     };
 
     use super::*;
@@ -605,7 +604,7 @@ mod tests {
     fn test_context() -> Context {
         let mut flags = Flags::default();
         flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
-        Context::new_root(flags, Paths::new(Path::new("/fake/path")), Input::new())
+        Context::new_root(flags, Paths::new(Path::new("/fake/path")))
             .copy_for_work(Access::All, Access::All)
     }
 
