@@ -51,6 +51,7 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
                 .iter()
                 .map(|g| postscript_names.get(g).unwrap_or(g).as_str()),
         );
+        post.is_fixed_pitch = static_metadata.misc.is_fixed_pitch.unwrap_or_default() as u32;
         post.italic_angle = Fixed::from_f64(static_metadata.italic_angle.into_inner());
         post.underline_position = FWord::new(metrics.underline_position.ot_round());
         post.underline_thickness = FWord::new(metrics.underline_thickness.ot_round());

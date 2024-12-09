@@ -975,6 +975,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 .unwrap_or(1_u16 << 2),
         );
 
+        static_metadata.misc.is_fixed_pitch = font_info_at_default.postscript_is_fixed_pitch;
+
         static_metadata.misc.unicode_range_bits = font_info_at_default
             .open_type_os2_unicode_ranges
             .as_ref()
@@ -2431,5 +2433,21 @@ mod tests {
         );
 
         assert!(super::parse_meta_table_values(&plist::Value::Dictionary(plist)).is_none())
+    }
+
+    fn fixed_pitch_of(name: &str) -> Option<bool> {
+        let (_, context) = build_static_metadata(name, default_test_flags());
+        let static_metadata = context.static_metadata.get();
+        static_metadata.misc.is_fixed_pitch
+    }
+
+    #[test]
+    fn fixed_pitch_on() {
+        assert_eq!(Some(true), fixed_pitch_of("FixedPitch.designspace"));
+    }
+
+    #[test]
+    fn fixed_pitch_off() {
+        assert_eq!(None, fixed_pitch_of("wght_var.designspace"));
     }
 }

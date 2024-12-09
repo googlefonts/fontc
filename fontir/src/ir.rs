@@ -106,6 +106,11 @@ pub struct MiscMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#fstype>
     pub fs_type: Option<u16>,
 
+    /// If set, the value the source file specifically stated. Otherwise compiler can choose.
+    ///
+    /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/post#header>
+    pub is_fixed_pitch: Option<bool>,
+
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#fsselection>
     pub selection_flags: SelectionFlags,
 
@@ -477,6 +482,7 @@ impl StaticMetadata {
             number_values: glyphsapp_number_values.unwrap_or_default(),
             misc: MiscMetadata {
                 fs_type: None, // default is, sigh, inconsistent across source formats
+                is_fixed_pitch: None,
                 selection_flags: Default::default(),
                 vendor_id: DEFAULT_VENDOR_ID_TAG,
                 // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L353-L354
@@ -2175,6 +2181,7 @@ mod tests {
             },
             misc: MiscMetadata {
                 fs_type: None,
+                is_fixed_pitch: None,
                 selection_flags: SelectionFlags::default(),
                 vendor_id: Tag::from_be_bytes(*b"DUCK"),
                 version_major: 42,

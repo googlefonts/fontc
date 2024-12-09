@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="400" maximum="400" default="400"/>
+  </axes>
+  <sources>
+    <source filename="FixedPitch.ufo" name="FP Regular" familyname="FP" stylename="Regular">
+      <lib copy="1"/>
+      <groups copy="1"/>
+      <features copy="1"/>
+      <info copy="1"/>
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </source>
+  </sources>
+</designspace>
