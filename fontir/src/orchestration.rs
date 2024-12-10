@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{error::Error, ir, paths::Paths, source::Input};
+use crate::{error::Error, ir, paths::Paths};
 use bitflags::bitflags;
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -402,10 +402,6 @@ pub struct Context {
 
     pub(crate) persistent_storage: Arc<IrPersistentStorage>,
 
-    // The input we're working on. Note that change detection may mean we only process
-    // a subset of the full input.
-    pub input: Arc<Input>,
-
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
     pub static_metadata: FeContextItem<ir::StaticMetadata>,
@@ -430,7 +426,6 @@ impl Context {
         Context {
             flags: self.flags,
             persistent_storage: self.persistent_storage.clone(),
-            input: self.input.clone(),
             static_metadata: self.static_metadata.clone_with_acl(acl.clone()),
             preliminary_glyph_order: self.preliminary_glyph_order.clone_with_acl(acl.clone()),
             glyph_order: self.glyph_order.clone_with_acl(acl.clone()),
@@ -443,7 +438,7 @@ impl Context {
         }
     }
 
-    pub fn new_root(flags: Flags, paths: Paths, input: Input) -> Context {
+    pub fn new_root(flags: Flags, paths: Paths) -> Context {
         let acl = Arc::from(AccessControlList::read_only());
         let persistent_storage = Arc::from(IrPersistentStorage {
             active: flags.contains(Flags::EMIT_IR),
@@ -452,7 +447,6 @@ impl Context {
         Context {
             flags,
             persistent_storage: persistent_storage.clone(),
-            input: Arc::from(input),
             static_metadata: ContextItem::new(
                 WorkId::StaticMetadata,
                 acl.clone(),

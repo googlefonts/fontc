@@ -12,7 +12,7 @@ use fontir::{
     ir::StaticMetadata,
     orchestration::{Context, WorkId},
     source::{Input, Source},
-    stateset::StateSet,
+    stateset::PartialSource,
 };
 use log::debug;
 
@@ -51,10 +51,10 @@ impl FontraIrSource {
     }
 
     // When things like upem may have changed forget incremental and rebuild the whole thing
-    fn static_metadata_state(&self) -> Result<StateSet, Error> {
-        let mut font_info = StateSet::new();
-        font_info.track_file(&self.fontdata_file)?;
-        font_info.track_file(&self.glyphinfo_file)?;
+    fn static_metadata_state(&self) -> Result<PartialSource, Error> {
+        let mut font_info = PartialSource::new();
+        font_info.add_file(&self.fontdata_file)?;
+        font_info.add_file(&self.glyphinfo_file)?;
         Ok(font_info)
     }
 
@@ -121,11 +121,11 @@ impl FontraIrSource {
         Ok(())
     }
 
-    fn glyph_state(&mut self) -> Result<HashMap<GlyphName, StateSet>, Error> {
+    fn glyph_state(&mut self) -> Result<HashMap<GlyphName, PartialSource>, Error> {
         let mut glyph_state = HashMap::default();
         for (glyph_name, (glyph_file, _)) in self.glyph_info.iter() {
-            let mut tracker = StateSet::new();
-            tracker.track_file(glyph_file)?;
+            let mut tracker = PartialSource::new();
+            tracker.add_file(glyph_file)?;
             if glyph_state.insert(glyph_name.clone(), tracker).is_some() {
                 Err(BadSource::custom(
                     &self.glyphinfo_file,
@@ -144,7 +144,7 @@ impl Source for FontraIrSource {
         let glyphs = self.glyph_state()?;
 
         // Not sure how fontra features work
-        let features = StateSet::new();
+        let features = PartialSource::new();
 
         // fontinfo.plist spans static metadata and global metrics.
         // Just use the same change detection for both.

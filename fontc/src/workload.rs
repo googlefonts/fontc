@@ -12,6 +12,7 @@ use std::{
 use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
     features::create_kern_segment_work,
+    glyphs::create_glyf_work,
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
 };
 use fontdrasil::{
@@ -61,8 +62,6 @@ pub(crate) struct Job {
     pub(crate) read_access: AnyAccess,
     // Things our job needs write access to
     pub(crate) write_access: AnyAccess,
-    // Does this job actually need to execute?
-    pub(crate) run: bool,
     // is this job running right now?
     pub(crate) running: bool,
 }
@@ -124,8 +123,8 @@ impl<'a> Workload<'a> {
         self.change_detector.current_inputs()
     }
 
-    // TODO flags would be clearer than multiple bools
-    pub(crate) fn add(&mut self, work: AnyWork, should_run: bool) {
+    pub(crate) fn add(&mut self, work: impl Into<AnyWork>) {
+        let work = work.into();
         let id = work.id();
         let read_access = work.read_access();
         let write_access = work.write_access();
@@ -136,14 +135,12 @@ impl<'a> Workload<'a> {
                 work: Some(work),
                 read_access,
                 write_access,
-                run: should_run,
                 running: false,
             },
         );
     }
 
     pub(crate) fn insert(&mut self, id: AnyWorkId, job: Job) {
-        let run = job.run;
         let also_completes = job
             .work
             .as_ref()
@@ -159,7 +156,6 @@ impl<'a> Workload<'a> {
                     work: None, // we exist solely to be marked complete by also_complete
                     read_access: job.read_access.clone(), // We don't want to be deemed runnable prematurely
                     write_access: AnyAccess::Be(Access::None),
-                    run: true,
                     running: false,
                 },
             );
@@ -178,14 +174,6 @@ impl<'a> Workload<'a> {
 
         if !also_completes.is_empty() {
             self.also_completes.insert(id.clone(), also_completes);
-        }
-
-        if !run {
-            for counter in self.counters(&id) {
-                counter.fetch_sub(1, Ordering::AcqRel);
-            }
-            self.mark_also_completed(&id);
-            self.complete_one(id, true);
         }
     }
 
@@ -284,7 +272,7 @@ impl<'a> Workload<'a> {
                 .difference(&preliminary_glyph_order)
             {
                 debug!("Generating a BE job for {glyph_name}");
-                super::add_glyph_be_job(self, glyph_name.clone());
+                self.add(create_glyf_work(glyph_name.clone()));
 
                 // Glyph order is done so all IR must be done. Copy dependencies from the IR for the same name.
                 self.update_be_glyph_work(fe_root, glyph_name.clone());
@@ -312,7 +300,7 @@ impl<'a> Workload<'a> {
         if let AnyWorkId::Be(BeWorkIdentifier::GatherIrKerning) = success {
             let kern_pairs = be_root.all_kerning_pairs.get();
             for work in create_kern_segment_work(&kern_pairs) {
-                self.add(work.into(), true);
+                self.add(work);
             }
 
             // https://github.com/googlefonts/fontc/issues/647: it is now safe to set read access on segment gathering
@@ -488,8 +476,6 @@ impl<'a> Workload<'a> {
                         .queued()
                         .run();
 
-                    // count of launchable jobs that are runnable, i.e. excluding !run jobs
-                    let mut runnable_count = launchable.len();
                     {
                         let mut run_queue = run_queue.lock().unwrap();
 
@@ -499,19 +485,7 @@ impl<'a> Workload<'a> {
                             let job = self.jobs_pending.get_mut(id).unwrap();
                             log::trace!("Start {:?}", id);
                             job.running = true;
-                            if !job.run {
-                                if let Err(e) =
-                                    send.send((id.clone(), Ok(()), JobTime::nop(id.clone())))
-                                {
-                                    log::error!(
-                                        "Unable to write nop {id:?} to completion channel: {e}"
-                                    );
-                                    //FIXME: if we can't send messages it means the receiver has dropped,
-                                    //which means we should... return? abort?
-                                }
-                                runnable_count -= 1;
-                                continue;
-                            }
+
                             let work = job
                                 .work
                                 .take()
@@ -539,7 +513,7 @@ impl<'a> Workload<'a> {
                     let timing = create_timer(AnyWorkId::InternalTiming("spawn"), nth_wave)
                         .queued()
                         .run();
-                    for _ in 0..runnable_count {
+                    for _ in 0..launchable.len() {
                         let send = send.clone();
                         let run_queue = run_queue.clone();
                         let abort = abort_queued_jobs.clone();
@@ -778,39 +752,28 @@ impl<'a> Workload<'a> {
             let id = &launchable[0];
             let timing = create_timer(id.clone(), 0);
             let job = self.jobs_pending.remove(id).unwrap();
-            if job.run {
-                let timing = timing.queued();
-                let context =
-                    AnyContext::for_work(fe_root, be_root, id, job.read_access, job.write_access);
-                log::debug!("Exec {:?}", id);
-                let timing = timing.run();
-                job.work
-                    .unwrap_or_else(|| panic!("{id:?} should have work!"))
-                    .exec(context)
-                    .unwrap_or_else(|e| panic!("{id:?} failed: {e:?}"));
 
-                for counter in self.counters(id) {
-                    counter.fetch_sub(1, Ordering::AcqRel);
-                }
+            let timing = timing.queued();
+            let context =
+                AnyContext::for_work(fe_root, be_root, id, job.read_access, job.write_access);
+            log::debug!("Exec {:?}", id);
+            let timing = timing.run();
+            job.work
+                .unwrap_or_else(|| panic!("{id:?} should have work!"))
+                .exec(context)
+                .unwrap_or_else(|e| panic!("{id:?} failed: {e:?}"));
 
-                let timing = timing.complete();
-                assert!(
-                    self.success.insert(id.clone()),
-                    "We just did {id:?} a second time?"
-                );
-                self.handle_success(fe_root, be_root, id.clone(), timing)
-                    .unwrap_or_else(|e| panic!("Failed to handle success for {id:?}: {e}"));
-            } else {
-                for counter in self.counters(id) {
-                    counter.fetch_sub(1, Ordering::AcqRel);
-                }
-                if let Some(also_completes) = self.also_completes.get(id).cloned() {
-                    self.complete_one(id.clone(), false);
-                    for also in also_completes {
-                        self.complete_one(also, true);
-                    }
-                }
+            for counter in self.counters(id) {
+                counter.fetch_sub(1, Ordering::AcqRel);
             }
+
+            let timing = timing.complete();
+            assert!(
+                self.success.insert(id.clone()),
+                "We just did {id:?} a second time?"
+            );
+            self.handle_success(fe_root, be_root, id.clone(), timing)
+                .unwrap_or_else(|e| panic!("Failed to handle success for {id:?}: {e}"));
         }
         self.success.difference(&pre_success).cloned().collect()
     }
