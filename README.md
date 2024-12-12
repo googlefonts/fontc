@@ -6,7 +6,7 @@ Where in we pursue oxidizing [fontmake](https://github.com/googlefonts/fontmake)
 For context around where fontmake came from see
 [Mr B goes to Vartown](https://github.com/googlefonts/oxidize/blob/main/text/2023-10-18-mrb-goes-to-vartown.md).
 
-Converts source to IR, and then IR to font binary. Aims to be safe, incremental, and fast.
+Converts source to IR, and then IR to font binary. Aims to be safe and fast.
 
 References
 
