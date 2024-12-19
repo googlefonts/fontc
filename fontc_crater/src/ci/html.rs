@@ -367,7 +367,7 @@ fn make_summary_report(current: &DiffResults) -> Markup {
         })
         .into_iter()
         .collect::<Vec<_>>();
-    results.sort_by_key(|(_, count)| -*count);
+    results.sort_by_key(|(item, count)| (-*count, *item));
 
     if results.is_empty() {
         return html!();
