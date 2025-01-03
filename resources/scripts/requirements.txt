@@ -6,7 +6,7 @@
 #
 absl-py==2.1.0
     # via
-    #   -r resources/scripts/requirements.in
+    #   -r requirements.in
     #   gftools
     #   nanoemoji
     #   picosvg
@@ -43,7 +43,7 @@ cattrs==24.1.2
     #   statmake
     #   ufolib2
 cdifflib==1.2.6
-    # via -r resources/scripts/requirements.in
+    # via -r requirements.in
 certifi==2024.8.30
     # via requests
 cffi==1.17.1
@@ -74,7 +74,7 @@ fontfeatures==1.8.0
     # via gftools
 fontmake[json,repacker]==3.10.0
     # via
-    #   -r resources/scripts/requirements.in
+    #   -r requirements.in
     #   gftools
 fontmath==0.9.4
     # via
@@ -90,7 +90,7 @@ fontpens==0.2.4
     # via defcon
 fonttools[lxml,repacker,ufo,unicode,woff]==4.55.3
     # via
-    #   -r resources/scripts/requirements.in
+    #   -r requirements.in
     #   afdko
     #   axisregistry
     #   babelfont
@@ -128,7 +128,7 @@ gflanguages==0.7.1
 gfsubsets==2024.9.25
     # via gftools
 gftools==0.9.74
-    # via -r resources/scripts/requirements.in
+    # via -r requirements.in
 gitdb==4.0.11
     # via gitpython
 gitpython==3.1.43
@@ -137,7 +137,7 @@ glyphsets==1.0.0
     # via gftools
 glyphslib==6.9.5
     # via
-    #   -r resources/scripts/requirements.in
+    #   -r requirements.in
     #   bumpfontversion
     #   fontmake
     #   gftools
@@ -146,11 +146,11 @@ idna==3.10
     # via requests
 importlib-resources==6.4.5
     # via gfsubsets
-jinja2==3.1.4
+jinja2==3.1.5
     # via gftools
 lxml==5.3.0
     # via
-    #   -r resources/scripts/requirements.in
+    #   -r requirements.in
     #   afdko
     #   fontfeatures
     #   fonttools
