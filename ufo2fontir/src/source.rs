@@ -19,10 +19,8 @@ use fontir::{
         NamedInstance, Panose, PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
-    source::{Input, Source},
-    stateset::{StateIdentifier, StateSet},
+    source::Source,
 };
-use indexmap::IndexSet;
 use log::{debug, log_enabled, trace, warn, Level};
 use norad::{
     designspace::{self, DesignSpaceDocument},
@@ -39,46 +37,13 @@ use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph}
 const UFO_KERN1_PREFIX: &str = "public.kern1.";
 const UFO_KERN2_PREFIX: &str = "public.kern2.";
 
+#[derive(Clone, Debug)]
 pub struct DesignSpaceIrSource {
-    designspace_or_ufo: PathBuf,
-    designspace: DesignSpaceDocument,
-    designspace_dir: PathBuf,
-    cache: Option<Cache>,
-}
-
-// A cache of locations, valid provided no global metadata changes
-struct Cache {
-    static_metadata: StateSet,
-    locations: HashMap<PathBuf, Vec<DesignLocation>>,
-    designspace_file: PathBuf,
+    designspace_or_ufo: Arc<PathBuf>,
     designspace: Arc<DesignSpaceDocument>,
+    designspace_dir: Arc<PathBuf>,
+    glyphs: Arc<HashMap<GlyphName, HashMap<PathBuf, Vec<DesignLocation>>>>,
     fea_files: Arc<Vec<PathBuf>>,
-}
-
-impl Cache {
-    fn new(
-        static_metadata: StateSet,
-        locations: HashMap<PathBuf, Vec<DesignLocation>>,
-        designspace_file: PathBuf,
-        designspace: Arc<DesignSpaceDocument>,
-        feature_files: Vec<PathBuf>,
-    ) -> Cache {
-        Cache {
-            static_metadata,
-            locations,
-            designspace_file,
-            designspace,
-            fea_files: Arc::from(feature_files),
-        }
-    }
-
-    fn is_valid_for(&self, static_metadata: &StateSet) -> bool {
-        self.static_metadata == *static_metadata
-    }
-
-    fn location_of(&self, glif_file: &Path) -> Option<&Vec<DesignLocation>> {
-        self.locations.get(glif_file)
-    }
 }
 
 fn glif_files(
@@ -145,43 +110,71 @@ pub(crate) fn layer_dir<'a>(
 }
 
 impl DesignSpaceIrSource {
-    pub fn new(designspace_or_ufo: PathBuf) -> Result<DesignSpaceIrSource, Error> {
-        Self::load(designspace_or_ufo.clone())
-            .map_err(|kind| BadSource::new(designspace_or_ufo, kind).into())
-    }
+    fn create_work_for_one_glyph(
+        &self,
+        glyph_name: &GlyphName,
+        export: bool,
+    ) -> Result<GlyphIrWork, Error> {
+        // A single glif could be used by many source blocks that use the same layer
+        // *gasp*
+        // So resolve each file to 1..N locations in designspace
+        let Some(glif_files) = self.glyphs.get(glyph_name) else {
+            return Err(Error::NoLocationsForGlyph(glyph_name.clone()));
+        };
 
-    fn load(designspace_or_ufo: PathBuf) -> Result<DesignSpaceIrSource, BadSourceKind> {
-        let Some(designspace_dir) = designspace_or_ufo.parent().map(|d| d.to_path_buf()) else {
-            return Err(BadSourceKind::ExpectedParent);
-        };
-        let Some(ext) = designspace_or_ufo
-            .extension()
-            .map(|s| s.to_ascii_lowercase())
-        else {
-            return Err(BadSourceKind::UnrecognizedExtension);
-        };
-        let mut designspace = match ext.to_str() {
-            Some("designspace") => {
-                DesignSpaceDocument::load(&designspace_or_ufo).map_err(|e| match e {
-                    norad::error::DesignSpaceLoadError::Io(e) => BadSourceKind::Io(e),
-                    other => BadSourceKind::Custom(other.to_string()),
-                })?
-            }
-            Some("ufo") => {
-                let Some(filename) = designspace_or_ufo.file_name().and_then(|s| s.to_str()) else {
-                    return Err(BadSourceKind::ExpectedDirectory);
-                };
-                DesignSpaceDocument {
-                    format: 4.1,
-                    sources: vec![norad::designspace::Source {
-                        filename: filename.to_owned(),
-                        ..Default::default()
-                    }],
+        Ok(GlyphIrWork {
+            glyph_name: glyph_name.clone(),
+            export,
+            glif_files: glif_files.clone(),
+        })
+    }
+}
+
+fn load_designspace(
+    designspace_or_ufo: &Path,
+) -> Result<(PathBuf, DesignSpaceDocument), BadSourceKind> {
+    let Some(designspace_dir) = designspace_or_ufo.parent().map(|d| d.to_path_buf()) else {
+        return Err(BadSourceKind::ExpectedParent);
+    };
+
+    let Some(ext) = designspace_or_ufo
+        .extension()
+        .map(|s| s.to_ascii_lowercase())
+    else {
+        return Err(BadSourceKind::UnrecognizedExtension);
+    };
+    let designspace = match ext.to_str() {
+        Some("designspace") => {
+            DesignSpaceDocument::load(designspace_or_ufo).map_err(|e| match e {
+                norad::error::DesignSpaceLoadError::Io(e) => BadSourceKind::Io(e),
+                other => BadSourceKind::Custom(other.to_string()),
+            })?
+        }
+        Some("ufo") => {
+            let Some(filename) = designspace_or_ufo.file_name().and_then(|s| s.to_str()) else {
+                return Err(BadSourceKind::ExpectedDirectory);
+            };
+            DesignSpaceDocument {
+                format: 4.1,
+                sources: vec![norad::designspace::Source {
+                    filename: filename.to_owned(),
                     ..Default::default()
-                }
+                }],
+                ..Default::default()
             }
-            _ => return Err(BadSourceKind::UnrecognizedExtension),
-        };
+        }
+        _ => return Err(BadSourceKind::UnrecognizedExtension),
+    };
+    debug!("Loaded {ext:?} from {designspace_or_ufo:?}");
+    Ok((designspace_dir, designspace))
+}
+
+impl Source for DesignSpaceIrSource {
+    fn new(designspace_or_ufo_file: &Path) -> Result<Self, Error> {
+        let (designspace_dir, mut designspace) = load_designspace(designspace_or_ufo_file)
+            .map_err(|kind| {
+                Error::BadSource(BadSource::new(designspace_or_ufo_file.to_path_buf(), kind))
+            })?;
 
         for (i, source) in designspace.sources.iter_mut().enumerate() {
             if source.name.is_none() {
@@ -195,114 +188,7 @@ impl DesignSpaceIrSource {
             }
         }
 
-        Ok(DesignSpaceIrSource {
-            designspace_or_ufo,
-            designspace_dir,
-            cache: None,
-            designspace,
-        })
-    }
-
-    // When things like upem may have changed forget incremental and rebuild the whole thing
-    fn static_metadata_state(&self) -> Result<StateSet, Error> {
-        let mut font_info = StateSet::new();
-        font_info.track_file(&self.designspace_or_ufo)?;
-        let (default_master_idx, _) = default_master(&self.designspace)
-            .ok_or_else(|| Error::NoDefaultMaster(self.designspace_or_ufo.clone()))?;
-
-        for (idx, source) in self.designspace.sources.iter().enumerate() {
-            let ufo_dir = self.designspace_dir.join(&source.filename);
-            for filename in ["fontinfo.plist", "lib.plist"] {
-                // Only track lib.plist for the default master
-                if filename == "lib.plist" && idx != default_master_idx {
-                    continue;
-                }
-
-                let file = ufo_dir.join(filename);
-                if !file.is_file() {
-                    continue;
-                }
-                font_info.track_file(&file)?;
-            }
-        }
-        Ok(font_info)
-    }
-
-    fn check_static_metadata(&self, global_metadata: &StateSet) -> Result<(), Error> {
-        // Do we have the location of glifs written down?
-        // TODO: consider just recomputing here instead of failing
-        if !self
-            .cache
-            .as_ref()
-            .map(|gl| gl.is_valid_for(global_metadata))
-            .unwrap_or(false)
-        {
-            return Err(Error::InvalidGlobalMetadata);
-        }
-        Ok(())
-    }
-
-    fn create_work_for_one_glyph(
-        &self,
-        glyph_name: &GlyphName,
-        export: bool,
-        input: &Input,
-    ) -> Result<GlyphIrWork, Error> {
-        // A single glif could be used by many source blocks that use the same layer
-        // *gasp*
-        // So resolve each file to 1..N locations in designspace
-
-        let stateset = input
-            .glyphs
-            .get(glyph_name)
-            .ok_or_else(|| Error::NoStateForGlyph(glyph_name.clone()))?;
-        let mut glif_files = HashMap::new();
-        let cache = self.cache.as_ref().unwrap();
-        for state_key in stateset.keys() {
-            let StateIdentifier::File(glif_file) = state_key else {
-                return Err(Error::UnexpectedState);
-            };
-            let locations = cache
-                .location_of(glif_file)
-                .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;
-            glif_files.insert(glif_file.to_path_buf(), locations.clone());
-        }
-        Ok(GlyphIrWork {
-            glyph_name: glyph_name.clone(),
-            export,
-            glif_files,
-        })
-    }
-}
-
-impl Source for DesignSpaceIrSource {
-    fn inputs(&mut self) -> Result<Input, Error> {
-        let static_metadata = self.static_metadata_state()?;
-
-        // glif filenames are not reversible so we need to read contents.plist to figure out groups
-        // See https://github.com/unified-font-object/ufo-spec/issues/164.
-        let mut glyphs: HashMap<GlyphName, StateSet> = HashMap::new();
-
-        // UFO filename => map of layer
-        let mut layer_cache = HashMap::new();
-        let mut glif_locations: HashMap<PathBuf, Vec<DesignLocation>> = HashMap::new();
-        let mut glyph_names: HashSet<GlyphName> = HashSet::new();
-
-        let Some((default_master_idx, default_master)) = default_master(&self.designspace) else {
-            return Err(Error::NoDefaultMaster(self.designspace_or_ufo.clone()));
-        };
-        let mut sources_default_first = vec![default_master];
-        sources_default_first.extend(
-            self.designspace
-                .sources
-                .iter()
-                .enumerate()
-                .filter(|(idx, _)| *idx != default_master_idx)
-                .map(|(_, s)| s),
-        );
-
-        let tags_by_name = self
-            .designspace
+        let axis_tags_by_name = designspace
             .axes
             .iter()
             .map(|a| {
@@ -314,158 +200,119 @@ impl Source for DesignSpaceIrSource {
                     })
             })
             .collect::<Result<HashMap<&str, Tag>, _>>()?;
-        for (idx, source) in sources_default_first.iter().enumerate() {
+
+        // glif filenames are not reversible so we need to read contents.plist to figure out groups
+        // See https://github.com/unified-font-object/ufo-spec/issues/164.
+        // UFO filename => map of layer
+        let mut layer_cache = HashMap::new();
+
+        let mut glyphs = HashMap::<GlyphName, HashMap<PathBuf, Vec<DesignLocation>>>::new();
+
+        let Some((default_master_idx, _)) = default_master(&designspace) else {
+            return Err(Error::NoDefaultMaster(
+                designspace_or_ufo_file.to_path_buf(),
+            ));
+        };
+        let mut sources_indices_default_first = (0..designspace.sources.len()).collect::<Vec<_>>();
+        sources_indices_default_first.swap(0, default_master_idx);
+
+        for source_idx in sources_indices_default_first {
+            let source = &designspace.sources[source_idx];
             // Track files within each UFO
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
-            let ufo_dir = self.designspace_dir.join(&source.filename);
+            let ufo_dir = designspace_dir.join(&source.filename);
 
-            let location = to_design_location(&tags_by_name, &source.location);
-
+            let location = to_design_location(&axis_tags_by_name, &source.location);
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
                 if !glif_file.exists() {
                     return Err(BadSource::new(glif_file, BadSourceKind::ExpectedFile).into());
                 }
-                if idx > 0 && !glyph_names.contains(&glyph_name) {
+                // Default master went first, so if we've never seen this glyph before that's weird
+                if source_idx != default_master_idx && !glyphs.contains_key(&glyph_name) {
                     warn!("The glyph name '{:?}' exists in {} but not in the default master and will be ignored", glyph_name, source.filename);
                     continue;
                 }
-                glyph_names.insert(glyph_name.clone());
-                let glif_file = glif_file.clone();
+
                 glyphs
                     .entry(glyph_name)
                     .or_default()
-                    .track_file(&glif_file)?;
-                let glif_locations = glif_locations.entry(glif_file).or_default();
-                glif_locations.push(location.clone());
+                    .entry(glif_file)
+                    .or_default()
+                    .push(location.clone());
             }
         }
 
-        if glyph_names.is_empty() {
+        if glyphs.is_empty() {
             warn!("No glyphs identified");
         } else {
-            debug!("{} glyphs identified", glyph_names.len());
-        }
-
-        let ds_dir = self.designspace_or_ufo.parent().unwrap();
-
-        // We haven't parsed fea files yet, and we don't want to so make the educated guess that
-        // any feature file in designspace directory is an include instead of only looking at the
-        // ufo dir / features.fea files.
-        let mut features = StateSet::new();
-        let mut paths = vec![ds_dir.to_path_buf()];
-        while let Some(path) = paths.pop() {
-            if path.is_dir() {
-                for entry in path.read_dir().map_err(|e| BadSource::new(&path, e))? {
-                    let entry = entry.map_err(|e| BadSource::new(&path, e))?;
-                    paths.push(entry.path());
-                }
-            }
-            if path.is_file()
-                && path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.ends_with(".fea"))
-                    .unwrap_or_default()
-            {
-                trace!("Tracking {path:?} as a feature file");
-                features.track_file(&path)?;
-            }
+            debug!("{} glyphs identified", glyphs.len());
         }
 
         // For compilation purposes we start from ufo dir / features.fea
-        let fea_files: Vec<_> = self
-            .designspace
+        let fea_files: Vec<_> = designspace
             .sources
             .iter()
             .filter_map(|s| {
-                let fea_file = ds_dir.join(&s.filename).join("features.fea");
+                let fea_file = designspace_dir.join(&s.filename).join("features.fea");
                 fea_file.is_file().then_some(fea_file)
             })
             .collect();
 
-        self.cache = Some(Cache::new(
-            static_metadata.clone(),
-            glif_locations,
-            self.designspace_or_ufo.clone(),
-            Arc::from(self.designspace.clone()),
-            fea_files,
-        ));
-
-        // fontinfo.plist spans static metadata and global metrics.
-        // Just use the same change detection for both.
-        Ok(Input {
-            static_metadata: static_metadata.clone(),
-            global_metrics: static_metadata,
-            glyphs,
-            features,
+        Ok(DesignSpaceIrSource {
+            designspace_or_ufo: Arc::new(designspace_or_ufo_file.to_path_buf()),
+            designspace: Arc::new(designspace),
+            designspace_dir: Arc::new(designspace_dir),
+            glyphs: Arc::new(glyphs),
+            fea_files: Arc::new(fea_files),
         })
     }
 
-    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
-        self.check_static_metadata(&input.static_metadata)?;
-        let cache = self.cache.as_ref().unwrap();
-
-        let glyph_names = Arc::new(input.glyphs.keys().cloned().collect());
-
+    fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork {
-            designspace_file: cache.designspace_file.clone(),
-            designspace: cache.designspace.clone(),
-            glyph_names,
+            designspace_or_ufo: self.designspace_or_ufo.clone(),
+            designspace_dir: self.designspace_dir.clone(),
+            designspace: self.designspace.clone(),
+            glyph_names: Arc::new(self.glyphs.keys().cloned().collect()),
         }))
     }
 
-    fn create_global_metric_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
-        self.check_static_metadata(&input.static_metadata)?;
-        let cache = self.cache.as_ref().unwrap();
-
+    fn create_global_metric_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(GlobalMetricsWork {
-            designspace_file: cache.designspace_file.clone(),
-            designspace: cache.designspace.clone(),
+            designspace_or_ufo: self.designspace_or_ufo.clone(),
+            designspace_dir: self.designspace_dir.clone(),
+            designspace: self.designspace.clone(),
         }))
     }
 
-    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
-        self.check_static_metadata(&input.static_metadata)?;
-        let cache = self.cache.as_ref().unwrap();
-
+    fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        debug!("CREATE FEATURES");
         Ok(Box::new(FeatureWork {
-            designspace_file: cache.designspace_file.clone(),
-            fea_files: cache.fea_files.clone(),
+            designspace_or_ufo: self.designspace_or_ufo.clone(),
+            fea_files: self.fea_files.clone(),
         }))
     }
 
-    fn create_kerning_group_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
-        self.check_static_metadata(&input.static_metadata)?;
-        let cache = self.cache.as_ref().unwrap();
-
+    fn create_kerning_group_ir_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(KerningGroupWork {
-            designspace_file: cache.designspace_file.clone(),
-            designspace: cache.designspace.clone(),
+            designspace_or_ufo: self.designspace_or_ufo.clone(),
+            designspace_dir: self.designspace_dir.clone(),
+            designspace: self.designspace.clone(),
         }))
     }
 
     fn create_kerning_instance_ir_work(
         &self,
-        input: &Input,
         at: NormalizedLocation,
     ) -> Result<Box<IrWork>, Error> {
-        self.check_static_metadata(&input.static_metadata)?;
-        let cache = self.cache.as_ref().unwrap();
-
         Ok(Box::new(KerningInstanceWork {
-            designspace_file: cache.designspace_file.clone(),
-            designspace: cache.designspace.clone(),
+            designspace_or_ufo: self.designspace_or_ufo.clone(),
+            designspace_dir: self.designspace_dir.clone(),
+            designspace: self.designspace.clone(),
             location: at,
         }))
     }
 
-    fn create_glyph_ir_work(
-        &self,
-        glyph_names: &IndexSet<GlyphName>,
-        input: &Input,
-    ) -> Result<Vec<Box<IrWork>>, Error> {
-        self.check_static_metadata(&input.static_metadata)?;
-
+    fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
         let no_export: HashSet<GlyphName> = if let Some(plist::Value::Array(no_export)) =
             self.designspace.lib.get("public.skipExportGlyphs")
         {
@@ -483,11 +330,10 @@ impl Source for DesignSpaceIrSource {
         // So resolve each file to 1..N locations in designspace
         let mut work: Vec<Box<IrWork>> = Vec::new();
 
-        for glyph_name in glyph_names {
+        for glyph_name in self.glyphs.keys() {
             work.push(Box::new(self.create_work_for_one_glyph(
                 glyph_name,
                 !no_export.contains(glyph_name),
-                input,
             )?));
         }
 
@@ -497,32 +343,36 @@ impl Source for DesignSpaceIrSource {
 
 #[derive(Debug)]
 struct StaticMetadataWork {
-    designspace_file: PathBuf,
+    designspace_or_ufo: Arc<PathBuf>,
+    designspace_dir: Arc<PathBuf>,
     designspace: Arc<DesignSpaceDocument>,
     glyph_names: Arc<HashSet<GlyphName>>,
 }
 
 #[derive(Debug)]
 struct GlobalMetricsWork {
-    designspace_file: PathBuf,
+    designspace_or_ufo: Arc<PathBuf>,
+    designspace_dir: Arc<PathBuf>,
     designspace: Arc<DesignSpaceDocument>,
 }
 
 #[derive(Debug)]
 struct FeatureWork {
-    designspace_file: PathBuf,
+    designspace_or_ufo: Arc<PathBuf>,
     fea_files: Arc<Vec<PathBuf>>,
 }
 
 #[derive(Debug)]
 struct KerningGroupWork {
-    designspace_file: PathBuf,
+    designspace_or_ufo: Arc<PathBuf>,
+    designspace_dir: Arc<PathBuf>,
     designspace: Arc<DesignSpaceDocument>,
 }
 
 #[derive(Debug)]
 struct KerningInstanceWork {
-    designspace_file: PathBuf,
+    designspace_or_ufo: Arc<PathBuf>,
+    designspace_dir: Arc<PathBuf>,
     designspace: Arc<DesignSpaceDocument>,
     location: NormalizedLocation,
 }
@@ -840,10 +690,12 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        debug!("Static metadata for {:#?}", self.designspace_file);
-        let designspace_dir = self.designspace_file.parent().unwrap();
+        debug!("Static metadata for {:#?}", self.designspace_or_ufo);
+        let designspace_dir = self.designspace_dir.as_ref();
         let Some((_, default_master)) = default_master(&self.designspace) else {
-            return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
+            return Err(Error::NoDefaultMaster(
+                self.designspace_or_ufo.to_path_buf(),
+            ));
         };
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
         let font_info_at_default = font_infos.get(&default_master.filename).ok_or_else(|| {
@@ -1114,10 +966,10 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        debug!("Global metrics for {:#?}", self.designspace_file);
+        debug!("Global metrics for {:#?}", self.designspace_or_ufo);
         let static_metadata = context.static_metadata.get();
 
-        let designspace_dir = self.designspace_file.parent().unwrap();
+        let designspace_dir = self.designspace_dir.as_ref();
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
@@ -1283,7 +1135,7 @@ impl Work<Context, WorkId, Error> for FeatureWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        debug!("Features for {:#?}", self.designspace_file);
+        debug!("Features for {:#?}", self.designspace_or_ufo);
 
         let fea_files = self.fea_files.as_ref();
         for fea_file in fea_files.iter().skip(1) {
@@ -1397,15 +1249,17 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        debug!("Kerning groups for {:#?}", self.designspace_file);
+        debug!("Kerning groups for {:#?}", self.designspace_or_ufo);
 
-        let designspace_dir = self.designspace_file.parent().unwrap();
+        let designspace_dir = self.designspace_dir.as_ref();
         let glyph_order = context.glyph_order.get();
         let static_metadata = context.static_metadata.get();
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
         let Some((default_master_idx, default_master)) = default_master(&self.designspace) else {
-            return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
+            return Err(Error::NoDefaultMaster(
+                self.designspace_or_ufo.to_path_buf(),
+            ));
         };
 
         // Step 1: find the groups
@@ -1495,10 +1349,10 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!(
             "Kerning for {:#?} at {:?}",
-            self.designspace_file, self.location
+            self.designspace_or_ufo, self.location
         );
 
-        let designspace_dir = self.designspace_file.parent().unwrap();
+        let designspace_dir = self.designspace_dir.as_ref();
         let static_metadata = context.static_metadata.get();
         let glyph_order = context.glyph_order.get();
         let groups = context.kerning_groups.get();
@@ -1656,7 +1510,7 @@ mod tests {
         },
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
-        source::{Input, Source},
+        source::Source,
     };
     use norad::designspace;
 
@@ -1714,10 +1568,8 @@ mod tests {
         );
     }
 
-    fn load_designspace(name: &str) -> (DesignSpaceIrSource, Input) {
-        let mut source = DesignSpaceIrSource::new(testdata_dir().join(name)).unwrap();
-        let input = source.inputs().unwrap();
-        (source, input)
+    fn load_designspace(name: &str) -> DesignSpaceIrSource {
+        DesignSpaceIrSource::new(&testdata_dir().join(name)).unwrap()
     }
 
     fn default_test_flags() -> Flags {
@@ -1726,12 +1578,8 @@ mod tests {
 
     fn build_static_metadata(name: &str, flags: Flags) -> (impl Source, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
-        let (source, input) = load_designspace(name);
-        let context = Context::new_root(
-            flags,
-            Paths::new(Path::new("/nothing/should/write/here")),
-            input,
-        );
+        let source = load_designspace(name);
+        let context = Context::new_root(flags, Paths::new(Path::new("/nothing/should/write/here")));
         let task_context = context.copy_for_work(
             Access::None,
             AccessBuilder::new()
@@ -1740,7 +1588,7 @@ mod tests {
                 .build(),
         );
         source
-            .create_static_metadata_work(&context.input)
+            .create_static_metadata_work()
             .unwrap()
             .exec(&task_context)
             .unwrap();
@@ -1764,7 +1612,7 @@ mod tests {
             Access::Variant(WorkId::GlobalMetrics),
         );
         source
-            .create_global_metric_work(&context.input)
+            .create_global_metric_work()
             .unwrap()
             .exec(&task_context)
             .unwrap();
@@ -1783,13 +1631,13 @@ mod tests {
             .glyph_order
             .set((*context.preliminary_glyph_order.get()).clone());
 
-        let work = source.create_kerning_group_ir_work(&context.input).unwrap();
+        let work = source.create_kerning_group_ir_work().unwrap();
         work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
             .unwrap();
 
         for location in context.kerning_groups.get().locations.iter() {
             let work = source
-                .create_kerning_instance_ir_work(&context.input, location.clone())
+                .create_kerning_instance_ir_work(location.clone())
                 .unwrap();
             work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
                 .unwrap();
@@ -1802,10 +1650,9 @@ mod tests {
         let (source, context) = build_static_metadata(name, default_test_flags());
         build_glyph_order(&context);
 
-        let glyph_order = context.glyph_order.get().iter().cloned().collect();
         let task_context = context.copy_for_work(Access::All, Access::All);
         source
-            .create_glyph_ir_work(&glyph_order, &context.input)
+            .create_glyph_ir_work()
             .unwrap()
             .into_iter()
             .for_each(|w| w.exec(&task_context).unwrap());
@@ -1813,7 +1660,7 @@ mod tests {
         (source, context)
     }
 
-    fn load_wght_var() -> (DesignSpaceIrSource, Input) {
+    fn load_wght_var() -> DesignSpaceIrSource {
         load_designspace("wght_var.designspace")
     }
 
@@ -1833,10 +1680,10 @@ mod tests {
 
     #[test]
     pub fn create_work() {
-        let (ir_source, input) = load_wght_var();
+        let ir_source = load_wght_var();
 
         let work = ir_source
-            .create_work_for_one_glyph(&"bar".into(), true, &input)
+            .create_work_for_one_glyph(&"bar".into(), true)
             .unwrap();
 
         let mut expected_glif_files = HashMap::new();
@@ -1863,10 +1710,10 @@ mod tests {
 
     #[test]
     pub fn create_sparse_work() {
-        let (ir_source, input) = load_wght_var();
+        let ir_source = load_wght_var();
 
         let work = ir_source
-            .create_work_for_one_glyph(&"plus".into(), true, &input)
+            .create_work_for_one_glyph(&"plus".into(), true)
             .unwrap();
 
         // Note there is NOT a glyphs.{600} version of plus
@@ -1888,14 +1735,14 @@ mod tests {
 
     #[test]
     pub fn only_glyphs_present_in_default() {
-        let (_, inputs) = load_wght_var();
+        let source = load_wght_var();
         // bonus_bar is not present in the default master; should discard
-        assert!(!inputs.glyphs.contains_key("bonus_bar"));
+        assert!(!source.glyphs.contains_key("bonus_bar"));
     }
 
     #[test]
     pub fn find_default_master() {
-        let (source, _) = load_wght_var();
+        let source = load_wght_var();
         let tag = Tag::new(b"wght");
         let mut loc = DesignLocation::new();
         loc.insert(tag, DesignCoord::new(400.0));
@@ -1913,7 +1760,7 @@ mod tests {
     pub fn builds_glyph_order_for_wght_var() {
         // Only WghtVar-Regular.ufo has a lib.plist, and it only lists a subset of glyphs
         // Should still work.
-        let (source, _) = load_wght_var();
+        let source = load_wght_var();
         let (_, default_master) = default_master(&source.designspace).unwrap();
         let lib_plist = load_plist(
             &source.designspace_dir.join(&default_master.filename),
@@ -1955,14 +1802,14 @@ mod tests {
 
     #[test]
     pub fn fetches_upem() {
-        let (source, _) = load_wght_var();
+        let source = load_wght_var();
         let font_infos = font_infos(&source.designspace_dir, &source.designspace).unwrap();
         assert_eq!(1000, units_per_em(font_infos.values()).unwrap());
     }
 
     #[test]
     pub fn ot_rounds_upem() {
-        let (source, _) = load_designspace("float.designspace");
+        let source = load_designspace("float.designspace");
         let font_infos = font_infos(&source.designspace_dir, &source.designspace).unwrap();
         assert_eq!(
             256, // 255.5 rounded toward +infinity
@@ -1972,7 +1819,7 @@ mod tests {
 
     #[test]
     pub fn default_names_for_minimal() {
-        let (source, _) = load_designspace("float.designspace");
+        let source = load_designspace("float.designspace");
         let font_info = font_infos(&source.designspace_dir, &source.designspace)
             .unwrap()
             .get(&String::from("Float-Regular.ufo"))

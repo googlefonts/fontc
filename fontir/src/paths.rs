@@ -71,9 +71,6 @@ impl Paths {
             WorkId::GlyphOrder => self.build_dir.join("glyph_order.yml"),
             WorkId::GlobalMetrics => self.build_dir.join("global_metrics.yml"),
             WorkId::Glyph(name) => self.glyph_ir_file(name.as_str()),
-            WorkId::GlyphIrDelete(name) => {
-                self.build_dir.join(format!("delete-{}.yml", name.as_str()))
-            }
             WorkId::Features => self.build_dir.join("features.yml"),
             WorkId::KerningGroups => self.build_dir.join("kern_groups.yml"),
             WorkId::KernInstance(location) => self.kern_ir_file(location),

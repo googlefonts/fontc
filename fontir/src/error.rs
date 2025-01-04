@@ -14,9 +14,9 @@ pub enum Error {
     /// A source file was not understood
     #[error(transparent)]
     BadSource(#[from] BadSource),
-    /// An error occured while attempting to track a file
-    #[error(transparent)]
-    TrackFile(#[from] TrackFileError),
+    /// What path?!
+    #[error("{0} does not exist")]
+    NoSuchPath(PathBuf),
     /// An error occured while converting a glyph to IR
     #[error(transparent)]
     BadGlyph(#[from] BadGlyph),
@@ -97,14 +97,6 @@ pub enum BadSourceKind {
     Io(io::Error),
     /// Payload is a message to print; this error can originate from various parsers
     Custom(String),
-}
-
-/// An error that occurs when trying to access a file during change tracking
-#[derive(Debug, Error)]
-#[error("Error tracking '{path}': '{source}'")]
-pub struct TrackFileError {
-    path: PathBuf,
-    source: io::Error,
 }
 
 /// An error that occurs while trying to convert a glyph to IR.
@@ -208,15 +200,6 @@ impl BadSource {
     /// A catch-all constructor for additional kinds of errors, such as various parsing failures
     pub fn custom(path: impl Into<PathBuf>, msg: impl Display) -> Self {
         Self::new(path, BadSourceKind::Custom(msg.to_string()))
-    }
-}
-
-impl TrackFileError {
-    pub(crate) fn new(path: impl Into<PathBuf>, source: io::Error) -> Self {
-        TrackFileError {
-            path: path.into(),
-            source,
-        }
     }
 }
 

@@ -6,7 +6,7 @@ Where in we pursue oxidizing [fontmake](https://github.com/googlefonts/fontmake)
 For context around where fontmake came from see
 [Mr B goes to Vartown](https://github.com/googlefonts/oxidize/blob/main/text/2023-10-18-mrb-goes-to-vartown.md).
 
-Converts source to IR, and then IR to font binary. Aims to be safe, incremental, and fast.
+Converts source to IR, and then IR to font binary. Aims to be safe and fast.
 
 References
 
@@ -47,14 +47,13 @@ Install the latest version of Rust, https://www.rust-lang.org/tools/install.
 $ cargo run -p fontc -- resources/testdata/wght_var.designspace
 ```
 
-### Emit IR to enable incremental builds
+### Emit IR
 
-If you pass the `--incremental` (or `-i`) option, the IR will be written to disk inside
-the build working directory, so that the next time you run fontc with the same source file
-only what changed will be rebuilt.
+If you pass the `--emit-ir` option, the IR will be written to disk inside
+the build working directory. This can be helpful when troubleshooting.
 
 ```shell
-$ cargo run -p fontc -- --incremental resources/testdata/wght_var.designspace
+$ cargo run -p fontc -- --emit-ir resources/testdata/wght_var.designspace
 $ ls build/
 ```
 
