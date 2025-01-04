@@ -573,6 +573,8 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
             // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/outlineCompiler.py#L705
             us_break_char: Some(32),
 
+            s_family_class: static_metadata.misc.family_class.unwrap_or_default(),
+
             // Avoid "field must be present for version 2" caused by default to None
             us_default_char: Some(0),
             us_max_context: Some(0),

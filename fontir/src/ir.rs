@@ -129,6 +129,9 @@ pub struct MiscMetadata {
 
     pub created: Option<DateTime<Utc>>,
 
+    // <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#sfamilyclass>
+    pub family_class: Option<i16>,
+
     pub panose: Option<Panose>,
 
     // Allows source to explicitly control bits. <https://github.com/googlefonts/fontc/issues/1027>
@@ -503,6 +506,7 @@ impl StaticMetadata {
                 // <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L365>
                 head_flags: 3,
                 created: None,
+                family_class: None,
                 panose: None,
                 unicode_range_bits: None,
                 codepage_range_bits: None,
@@ -1968,6 +1972,7 @@ mod tests {
                 head_flags: 42,
                 lowest_rec_ppm: 42,
                 created: None,
+                family_class: None,
                 panose: None,
                 unicode_range_bits: None,
                 codepage_range_bits: None,

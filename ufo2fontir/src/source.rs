@@ -877,6 +877,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .map(|bit_indices| bit_indices.iter().map(|i| 1 << i).fold(0, |acc, e| acc | e))
             .unwrap_or(static_metadata.misc.head_flags);
 
+        static_metadata.misc.family_class = font_info_at_default
+            .open_type_os2_family_class
+            .as_ref()
+            .map(|v| (v.class_id as i16) << 8 | v.subclass_id as i16);
+
         static_metadata.misc.created =
             try_parse_date(font_info_at_default.open_type_head_created.as_ref())
                 .or(static_metadata.misc.created);

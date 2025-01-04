@@ -42,6 +42,11 @@
 		<array>
 			<integer>0</integer>
 			<integer>3</integer>
+    </array>
+		<key>openTypeOS2FamilyClass</key>
+		<array>
+			<integer>1</integer>
+			<integer>2</integer>
 		</array>
   </dict>
 </plist>
