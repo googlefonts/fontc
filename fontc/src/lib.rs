@@ -621,6 +621,13 @@ mod tests {
     }
 
     #[test]
+    fn compile_sets_xmin_eq_lsb_flag() {
+        let result = TestCompile::compile_source("fontinfo.designspace");
+        let head = result.font().head().unwrap();
+        assert_eq!(0b10, head.flags() & 0b10);
+    }
+
+    #[test]
     fn compile_variable_simple_glyph_with_implied_oncurves() {
         let result = TestCompile::compile_source("glyphs3/Oswald-O.glyphs");
 

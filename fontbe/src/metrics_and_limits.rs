@@ -350,6 +350,13 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
         head.y_min = bbox.y_min;
         head.x_max = bbox.x_max;
         head.y_max = bbox.y_max;
+
+        // If every glyph lsb == x_min we can set a flag in head
+        // Since we never set lsb to anything other than x_min it would appear we can *always* set this
+        // It's set by default so the only way it gets unset is when source explicitly sets head flags
+        // Ref <https://github.com/fonttools/fonttools/blob/7e374c53da9a7443d32b31138a0e5be478bcbab9/Lib/fontTools/ttLib/tables/_m_a_x_p.py#L81C9-L122>
+        head.flags |= 0b10;
+
         context.head.set(head);
 
         Ok(())
