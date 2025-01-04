@@ -137,6 +137,15 @@ pub struct MiscMetadata {
     // Allows source to explicitly control bits. <https://github.com/googlefonts/fontc/issues/1027>
     pub codepage_range_bits: Option<HashSet<u32>>,
     pub meta_table: Option<MetaTableValues>,
+
+    /// <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#usweightclass>
+    ///
+    /// If empty and there is a weight axis OS/2 will use the weight default
+    pub us_weight_class: Option<u16>,
+    /// <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#uswidthclass>
+    ///
+    /// If empty and there is a width axis OS/2 will use the width default
+    pub us_width_class: Option<u16>,
 }
 
 /// PANOSE bytes
@@ -498,6 +507,8 @@ impl StaticMetadata {
                 unicode_range_bits: None,
                 codepage_range_bits: None,
                 meta_table: None,
+                us_weight_class: None,
+                us_width_class: None,
             },
         })
     }
@@ -1961,6 +1972,8 @@ mod tests {
                 unicode_range_bits: None,
                 codepage_range_bits: None,
                 meta_table: None,
+                us_weight_class: None,
+                us_width_class: None,
             },
             number_values: Default::default(),
         }

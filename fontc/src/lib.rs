@@ -1292,6 +1292,15 @@ mod tests {
     }
 
     #[test]
+    fn prefers_explicit_os_x_class() {
+        let result = TestCompile::compile_source("fontinfo.designspace");
+        let font = result.font();
+        let os2 = font.os2().unwrap();
+
+        assert_eq!((800, 8), (os2.us_weight_class(), os2.us_width_class(),),);
+    }
+
+    #[test]
     fn glyphs_app_ir_categories() {
         let result = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
         let staticmeta = result.fe_context.static_metadata.get();
