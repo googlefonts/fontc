@@ -89,7 +89,7 @@ macro_rules! ast_node {
         #[derive(Clone, Debug)]
         #[allow(missing_docs)]
         pub struct $typ {
-            inner: Node,
+            pub(crate) inner: Node,
         }
 
         impl $typ {

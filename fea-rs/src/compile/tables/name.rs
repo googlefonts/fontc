@@ -89,7 +89,7 @@ impl NameSpec {
     }
 
     pub fn build(&self, name_id: NameId) -> write_fonts::tables::name::NameRecord {
-        let string = parse_string(self.platform_id, self.string.trim_matches('"'));
+        let string = parse_string(self.platform_id, &self.string);
         write_fonts::tables::name::NameRecord::new(
             self.platform_id,
             self.encoding_id,
