@@ -604,6 +604,7 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
             .into()
         }),
     );
+
     builder.add_if_present(NameId::UNIQUE_ID, &font_info.open_type_name_unique_id);
     builder.add_if_present(NameId::VERSION_STRING, &font_info.open_type_name_version);
     builder.add_if_present(NameId::POSTSCRIPT_NAME, &font_info.postscript_font_name);
@@ -817,6 +818,13 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                     cause,
                 })?;
         }
+
+        static_metadata.misc.us_weight_class = font_info_at_default
+            .open_type_os2_weight_class
+            .map(|v| v as u16);
+        static_metadata.misc.us_width_class = font_info_at_default
+            .open_type_os2_width_class
+            .map(|v| v as u16);
 
         // <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
         static_metadata.misc.fs_type = Some(

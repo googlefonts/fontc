@@ -533,20 +533,27 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
 
-        // We set the OS/2.us{Weight,Width}Class to the default value of 'wght'/'wdth' axes
+        // If the source doesn't explicitly assign a value then
+        // set the OS/2.us{Weight,Width}Class to the default value of 'wght'/'wdth' axes
         // in the same way fontmake does when building a VF:
         // https://github.com/fonttools/fonttools/blob/770917d8/Lib/fontTools/varLib/__init__.py#L1016-L1032
-        let default_wght = static_metadata
-            .axis(&Tag::new(b"wght"))
-            .map(|axis| axis.default.into_inner().0)
-            .unwrap_or(400.0);
-        let us_weight_class: u16 = default_wght.clamp(1.0, 1000.0).ot_round();
-
-        let default_wdth = static_metadata
-            .axis(&Tag::new(b"wdth"))
-            .map(|axis| axis.default.into_inner().0)
-            .unwrap_or(100.0);
-        let us_width_class = WidthClass::nearest(default_wdth) as u16;
+        let us_x_class = |misc_value: Option<u16>, axis_tag, default, clamp: fn(f64) -> u16| {
+            misc_value.unwrap_or_else(|| {
+                clamp(
+                    static_metadata
+                        .axis(&Tag::new(axis_tag))
+                        .map(|axis| axis.default.into_inner().0)
+                        .unwrap_or(default),
+                )
+            })
+        };
+        let us_weight_class =
+            us_x_class(static_metadata.misc.us_weight_class, b"wght", 400.0, |v| {
+                v.clamp(1.0, 1000.0).ot_round()
+            });
+        let us_width_class = us_x_class(static_metadata.misc.us_width_class, b"wdth", 100.0, |v| {
+            WidthClass::nearest(v) as u16
+        });
 
         let metrics = context
             .ir

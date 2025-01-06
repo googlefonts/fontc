@@ -34,5 +34,9 @@
     <integer>-290</integer>
     <key>openTypeHheaLineGap</key>
     <integer>43</integer>
+    <key>openTypeOS2WeightClass</key>
+    <integer>800</integer>
+    <key>openTypeOS2WidthClass</key>
+    <integer>8</integer>
   </dict>
 </plist>
