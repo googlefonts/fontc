@@ -153,15 +153,22 @@ graph
 Only relatively large changes are effectively detected this way:
 
 ```shell
-# On each branch, typically main and your branch run hyperfine:
-$ cargo build --release && hyperfine --warmup 3 --runs 250 --prepare 'rm -rf build/' 'target/release/fontc ../OswaldFont/sources/Oswald.glyphs'
+To compare current branch to main when building Oswald:
 
-# Ideally mean+σ of the improved branch is < mean-σ for main.
-# For example, p2s is probably faster here:
-# main Time (mean ± σ):     154.8 ms ±   8.2 ms
-# p2s Time (mean ± σ):     132.7 ms ±   6.4 ms
+$ hyperfine \
+  --parameter-list branch main,$(git rev-parse --abbrev-ref HEAD) \
+  --setup "git checkout {branch} && cargo build --release" \
+   --warmup 5 --runs 250 \
+   --prepare 'rm -rf build/' \
+   "target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs"
 
-# Report similar to ^ if claiming this as proof your branch is a win.
+...noise...
+
+Summary
+  target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs (branch = nocs) ran
+    1.09 ± 0.09 times faster than target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs (branch = main)
+
+# Yay, it seems to be faster!
 ```
 
 ## Running samply
