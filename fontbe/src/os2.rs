@@ -537,15 +537,13 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
         // set the OS/2.us{Weight,Width}Class to the default value of 'wght'/'wdth' axes
         // in the same way fontmake does when building a VF:
         // https://github.com/fonttools/fonttools/blob/770917d8/Lib/fontTools/varLib/__init__.py#L1016-L1032
+        // If variable prefer the axis as per <https://github.com/fonttools/fonttools/blob/cb159dea72703e88b42353a45757f629b9593ede/Lib/fontTools/varLib/__init__.py#L1031C5-L1053>
         let us_x_class = |misc_value: Option<u16>, axis_tag, default, clamp: fn(f64) -> u16| {
-            misc_value.unwrap_or_else(|| {
-                clamp(
-                    static_metadata
-                        .axis(&Tag::new(axis_tag))
-                        .map(|axis| axis.default.into_inner().0)
-                        .unwrap_or(default),
-                )
-            })
+            static_metadata
+                .axis(&Tag::new(axis_tag))
+                .map(|axis| clamp(axis.default.into_inner().0))
+                .or(misc_value)
+                .unwrap_or(clamp(default))
         };
         let us_weight_class =
             us_x_class(static_metadata.misc.us_weight_class, b"wght", 400.0, |v| {
