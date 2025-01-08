@@ -635,6 +635,17 @@ mod tests {
     }
 
     #[test]
+    fn compile_prefers_variable_default_to_fontinfo_value() {
+        let result = TestCompile::compile_source("fontinfo_var.designspace");
+        let os2 = result.font().os2().unwrap();
+        assert_eq!(
+            100,
+            os2.us_weight_class(),
+            "We should use wght default, NOT openTypeOS2WeightClass"
+        );
+    }
+
+    #[test]
     fn compile_variable_simple_glyph_with_implied_oncurves() {
         let result = TestCompile::compile_source("glyphs3/Oswald-O.glyphs");
 
