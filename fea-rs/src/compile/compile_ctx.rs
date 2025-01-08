@@ -1819,7 +1819,28 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn resolve_name_spec(&mut self, node: &typed::NameSpec) -> super::tables::NameSpec {
-        resolve_name_spec(node)
+        const WIN_DEFAULT_IDS: (u16, u16) = (1, 0x0409);
+        const MAC_DEFAULT_IDS: (u16, u16) = (0, 0);
+
+        let platform_id = node
+            .platform_id()
+            .map(|n| n.parse().unwrap())
+            .unwrap_or(tags::WIN_PLATFORM_ID);
+
+        let (encoding_id, language_id) = match node.platform_and_language_ids() {
+            Some((platform, language)) => (platform.parse().unwrap(), language.parse().unwrap()),
+            None => match platform_id {
+                tags::MAC_PLATFORM_ID => MAC_DEFAULT_IDS,
+                tags::WIN_PLATFORM_ID => WIN_DEFAULT_IDS,
+                _ => panic!("missed validation"),
+            },
+        };
+        super::tables::NameSpec {
+            platform_id,
+            encoding_id,
+            language_id,
+            string: node.string().into(),
+        }
     }
 
     fn resolve_lookup_ref(&mut self, lookup: typed::LookupRef) {
@@ -2119,43 +2140,6 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 }
 
-// testing and free fn's, friends forever
-fn resolve_name_spec(node: &typed::NameSpec) -> super::tables::NameSpec {
-    const WIN_DEFAULT_IDS: (u16, u16) = (1, 0x0409);
-    const MAC_DEFAULT_IDS: (u16, u16) = (0, 0);
-
-    let platform_id = node
-        .platform_id()
-        .map(|n| n.parse().unwrap())
-        .unwrap_or(tags::WIN_PLATFORM_ID);
-
-    let (encoding_id, language_id) = match node.platform_and_language_ids() {
-        Some((platform, language)) => (platform.parse().unwrap(), language.parse().unwrap()),
-        None => match platform_id {
-            tags::MAC_PLATFORM_ID => MAC_DEFAULT_IDS,
-            tags::WIN_PLATFORM_ID => WIN_DEFAULT_IDS,
-            _ => panic!("missed validation"),
-        },
-    };
-
-    // Drop wrapping quotes around names if present, it confuses subsequent processing of string
-    let string = match &node.string().text {
-        quoted if quoted.starts_with('"') && quoted.ends_with('"') && quoted.len() > 1 => quoted
-            .strip_prefix('"')
-            .unwrap()
-            .strip_suffix('"')
-            .unwrap()
-            .into(),
-        unquoted => unquoted.clone(),
-    };
-    super::tables::NameSpec {
-        platform_id,
-        encoding_id,
-        language_id,
-        string,
-    }
-}
-
 fn sequence_enumerator(sequence: &[GlyphOrClass]) -> Vec<Vec<GlyphId16>> {
     assert!(sequence.len() >= 2);
     let split = sequence.split_first();
@@ -2235,23 +2219,6 @@ mod tests {
                 glyph_id_vec([1, 3, 9]),
                 glyph_id_vec([1, 4, 8]),
                 glyph_id_vec([1, 4, 9]),
-            ]
-        );
-    }
-
-    fn parse_name_spec(fea: &str) -> crate::compile::tables::NameSpec {
-        resolve_name_spec(&typed::NameSpec {
-            inner: crate::parse::parse_string(fea).0.root,
-        })
-    }
-
-    #[test]
-    fn parse_name_spec_drop_quotes() {
-        assert_eq!(
-            vec!["", "duck"],
-            vec![
-                parse_name_spec("3 1 0x409 \"\"").string,
-                parse_name_spec("3 1 0x409 \"duck\"").string
             ]
         );
     }
