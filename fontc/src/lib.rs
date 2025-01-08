@@ -628,6 +628,13 @@ mod tests {
     }
 
     #[test]
+    fn compile_obeys_family_class() {
+        let result = TestCompile::compile_source("fontinfo.designspace");
+        let os2 = result.font().os2().unwrap();
+        assert_eq!(1 << 8 | 2, os2.s_family_class());
+    }
+
+    #[test]
     fn compile_variable_simple_glyph_with_implied_oncurves() {
         let result = TestCompile::compile_source("glyphs3/Oswald-O.glyphs");
 
