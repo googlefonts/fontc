@@ -27,7 +27,8 @@ use norad::{
     fontinfo::StyleMapStyle,
 };
 use write_fonts::{
-    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
+    read::tables::gasp::GaspRangeBehavior,
+    tables::{gasp::GaspRange, gdef::GlyphClassDef, os2::SelectionFlags},
     types::{NameId, Tag},
     OtRound,
 };
@@ -889,6 +890,21 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         static_metadata.misc.meta_table = lib_plist
             .get("public.openTypeMeta")
             .and_then(parse_meta_table_values);
+
+        if let Some(gasp_records) = font_info_at_default.open_type_gasp_range_records.as_ref() {
+            static_metadata.misc.gasp = gasp_records
+                .iter()
+                .map(|g| GaspRange {
+                    range_max_ppem: g.range_max_ppem as u16,
+                    range_gasp_behavior: GaspRangeBehavior::from_bits_truncate(
+                        g.range_gasp_behavior
+                            .iter()
+                            .map(|b| 1u16 << (*b as u8))
+                            .fold(0u16, |acc, e| acc | e),
+                    ),
+                })
+                .collect();
+        }
 
         context.preliminary_glyph_order.set(glyph_order);
         context.static_metadata.set(static_metadata);

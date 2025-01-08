@@ -1058,7 +1058,7 @@ pub enum InstanceType {
 
 impl From<&str> for InstanceType {
     fn from(value: &str) -> Self {
-        if value.to_ascii_lowercase() == "variable" {
+        if value.eq_ignore_ascii_case("variable") {
             InstanceType::Variable
         } else {
             InstanceType::Single
