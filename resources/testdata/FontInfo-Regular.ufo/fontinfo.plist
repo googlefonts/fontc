@@ -38,5 +38,10 @@
     <integer>800</integer>
     <key>openTypeOS2WidthClass</key>
     <integer>8</integer>
+		<key>openTypeHeadFlags</key>
+		<array>
+			<integer>0</integer>
+			<integer>3</integer>
+		</array>
   </dict>
 </plist>
