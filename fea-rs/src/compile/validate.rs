@@ -486,7 +486,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
 
         let platform = platform.unwrap_or(WIN_PLATFORM_ID);
 
-        if let Err((range, err)) = validate_name_string_encoding(platform, spec.string()) {
+        if let Err((range, err)) = validate_name_string_encoding(platform, spec.string_token()) {
             self.error(range, err);
         }
         if let Some((platspec, language)) = spec.platform_and_language_ids() {

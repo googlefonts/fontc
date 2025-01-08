@@ -1487,8 +1487,15 @@ impl NameSpec {
         }
     }
 
-    pub(crate) fn string(&self) -> &Token {
+    pub(crate) fn string_token(&self) -> &Token {
+        // There is always a string
         self.find_token(Kind::String).unwrap()
+    }
+
+    pub(crate) fn string(&self) -> &str {
+        // The value is always doublequoted so slice out the actual string
+        let s = self.string_token().as_str();
+        &s[1..s.len() - 1]
     }
 }
 

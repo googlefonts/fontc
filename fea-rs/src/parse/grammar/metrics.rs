@@ -516,4 +516,22 @@ mod tests {
         assert!(valrecord.advance().is_none());
         assert!(valrecord.placement().is_some());
     }
+
+    #[test]
+    fn name_string_omits_quotes() {
+        let parse_name = |fea| {
+            let (token, _err, _) = debug_parse_output(fea, |parser| {
+                expect_name_record(parser, TokenSet::EMPTY);
+            });
+
+            crate::typed::NameSpec::cast(&token).unwrap()
+        };
+        assert_eq!(
+            ["", "duck"],
+            [
+                parse_name("3 1 0x409 \"\"").string(),
+                parse_name("3 1 0x409 \"duck\"").string(),
+            ]
+        );
+    }
 }
