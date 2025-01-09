@@ -152,7 +152,22 @@ impl ErasureCandidate {
     ///
     /// If this is an open corner, the intersection point will be the new corner.
     fn intersection(&self) -> Option<Intersection> {
-        seg_seg_intersection(self.prev, self.next)
+        let candidate = seg_seg_intersection(self.prev, self.next)?;
+        // there is a bug in kurbo that can cause it to report spurious intersections
+        // (see https://github.com/linebender/kurbo/issues/411).
+        // as a temporary workaround here we check that the point of intersection
+        // on each segment are relatively close to one another, and discard
+        // if not.
+        let p1 = self.prev.eval(candidate.t0);
+        let p2 = self.next.eval(candidate.t1);
+        let dist = p1.distance(p2);
+        // the value of 0.2 was chosen experimentally (it lets our tests pass,
+        // but doesn't seem to hurt any fonts in crater)
+        if dist < 0.2 {
+            Some(candidate)
+        } else {
+            None
+        }
     }
 }
 
@@ -314,6 +329,8 @@ fn curve_curve_py_impl(
 
 #[cfg(test)]
 mod tests {
+
+    use kurbo::CubicBez;
 
     use super::*;
 
@@ -538,5 +555,23 @@ mod tests {
         let glyph = python_test_glyphs::largeCrossing();
         let after = erase_open_corners(&glyph).unwrap();
         assert!(after.elements().len() == glyph.elements().len() - 1);
+    }
+
+    // https://github.com/linebender/kurbo/issues/411
+    #[test]
+    fn kurbo_411() {
+        let candidate = ErasureCandidate {
+            ix: 0,
+            seg: Line::new((385.0, 146.0), (438.0, 243.0)),
+            prev: CubicBez::new(
+                (452.0, 240.0),
+                (462.667, 78.667),
+                (480.667, -146.333),
+                (506.0, -435.0),
+            )
+            .into(),
+            next: Line::new((385.0, 146.0), (438.0, 243.0)).into(),
+        };
+        assert!(candidate.intersection().is_none());
     }
 }
