@@ -5,6 +5,7 @@ pub mod error;
 pub mod features;
 pub mod font;
 pub mod fvar;
+pub mod gasp;
 pub mod glyphs;
 pub mod gvar;
 pub mod head;

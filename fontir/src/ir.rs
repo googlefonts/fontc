@@ -14,7 +14,7 @@ use ordered_float::OrderedFloat;
 use serde::{de::Error as _, Deserialize, Serialize};
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
+    tables::{gasp::GaspRange, gdef::GlyphClassDef, os2::SelectionFlags},
     types::{GlyphId16, NameId, Tag},
     OtRound,
 };
@@ -149,6 +149,9 @@ pub struct MiscMetadata {
     ///
     /// If empty and there is a width axis OS/2 will use the width default
     pub us_width_class: Option<u16>,
+
+    // <https://learn.microsoft.com/en-us/typography/opentype/spec/gasp>
+    pub gasp: Vec<GaspRange>,
 }
 
 /// PANOSE bytes
@@ -513,6 +516,7 @@ impl StaticMetadata {
                 meta_table: None,
                 us_weight_class: None,
                 us_width_class: None,
+                gasp: Vec::new(),
             },
         })
     }
@@ -1979,6 +1983,7 @@ mod tests {
                 meta_table: None,
                 us_weight_class: None,
                 us_width_class: None,
+                gasp: Vec::new(),
             },
             number_values: Default::default(),
         }

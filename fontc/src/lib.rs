@@ -208,6 +208,7 @@ mod tests {
         raw::{
             tables::{
                 cmap::{Cmap, CmapSubtable},
+                gasp::GaspRangeBehavior,
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
                 hmtx::Hmtx,
                 layout::FeatureParams,
@@ -371,6 +372,7 @@ mod tests {
             BeWorkIdentifier::Cmap.into(),
             BeWorkIdentifier::Font.into(),
             BeWorkIdentifier::Fvar.into(),
+            BeWorkIdentifier::Gasp.into(),
             BeWorkIdentifier::Glyf.into(),
             BeWorkIdentifier::Gpos.into(),
             BeWorkIdentifier::Gsub.into(),
@@ -632,6 +634,37 @@ mod tests {
         let result = TestCompile::compile_source("fontinfo.designspace");
         let os2 = result.font().os2().unwrap();
         assert_eq!(1 << 8 | 2, os2.s_family_class());
+    }
+
+    #[test]
+    fn compile_obeys_gasp_records() {
+        let result = TestCompile::compile_source("fontinfo.designspace");
+        let gasp = result.font().gasp().unwrap();
+        assert_eq!(
+            vec![
+                (
+                    7,
+                    GaspRangeBehavior::GASP_DOGRAY | GaspRangeBehavior::GASP_SYMMETRIC_SMOOTHING
+                ),
+                (
+                    65535,
+                    GaspRangeBehavior::GASP_GRIDFIT
+                        | GaspRangeBehavior::GASP_DOGRAY
+                        | GaspRangeBehavior::GASP_SYMMETRIC_GRIDFIT
+                        | GaspRangeBehavior::GASP_SYMMETRIC_SMOOTHING
+                ),
+            ],
+            gasp.gasp_ranges()
+                .iter()
+                .map(|r| (r.range_max_ppem(), r.range_gasp_behavior()))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn compile_gasp_only_from_default() {
+        let result = TestCompile::compile_source("fontinfo_var.designspace");
+        assert!(result.font().gasp().is_err());
     }
 
     #[test]

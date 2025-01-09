@@ -19,6 +19,7 @@ use fontbe::{
     },
     font::create_font_work,
     fvar::create_fvar_work,
+    gasp::create_gasp_work,
     glyphs::{create_glyf_loca_work, create_glyf_work},
     gvar::create_gvar_work,
     head::create_head_work,
@@ -157,6 +158,7 @@ impl Workload {
         // BE: f(IR, maybe other BE work) => binary
         workload.add_skippable_feature_work(FeatureParsingWork::create());
         workload.add_skippable_feature_work(FeatureCompilationWork::create());
+        workload.add(create_gasp_work());
         let ir_glyphs = workload
             .jobs_pending
             .keys()

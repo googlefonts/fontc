@@ -137,6 +137,7 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::FeaturesAst) => "fea.ast",
         AnyWorkId::Be(BeWorkIdentifier::Font) => "font",
         AnyWorkId::Be(BeWorkIdentifier::Fvar) => "fvar",
+        AnyWorkId::Be(BeWorkIdentifier::Gasp) => "gasp",
         AnyWorkId::Be(BeWorkIdentifier::Gdef) => "GDEF",
         AnyWorkId::Be(BeWorkIdentifier::Glyf) => "glyf",
         AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..)) => "glyf-frag",

@@ -6,9 +6,9 @@ use log::debug;
 use write_fonts::{
     read::TopLevelTable,
     tables::{
-        avar::Avar, cmap::Cmap, fvar::Fvar, gdef::Gdef, glyf::Glyf, gpos::Gpos, gsub::Gsub,
-        gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx, hvar::Hvar, loca::Loca, maxp::Maxp,
-        meta::Meta, mvar::Mvar, name::Name, os2::Os2, post::Post, stat::Stat,
+        avar::Avar, cmap::Cmap, fvar::Fvar, gasp::Gasp, gdef::Gdef, glyf::Glyf, gpos::Gpos,
+        gsub::Gsub, gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx, hvar::Hvar, loca::Loca,
+        maxp::Maxp, meta::Meta, mvar::Mvar, name::Name, os2::Os2, post::Post, stat::Stat,
     },
     types::Tag,
     FontBuilder,
@@ -38,6 +38,7 @@ const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
     (WorkId::Head, Head::TAG, TableType::Static),
     (WorkId::Hhea, Hhea::TAG, TableType::Static),
     (WorkId::Hmtx, Hmtx::TAG, TableType::Static),
+    (WorkId::Gasp, Gasp::TAG, TableType::Static),
     (WorkId::Glyf, Glyf::TAG, TableType::Static),
     (WorkId::Gpos, Gpos::TAG, TableType::Static),
     (WorkId::Gsub, Gsub::TAG, TableType::Static),
@@ -62,6 +63,7 @@ fn has(context: &Context, id: WorkId) -> bool {
         WorkId::Head => context.head.try_get().is_some(),
         WorkId::Hhea => context.hhea.try_get().is_some(),
         WorkId::Hmtx => context.hmtx.try_get().is_some(),
+        WorkId::Gasp => context.gasp.try_get().is_some(),
         WorkId::Glyf => context.glyf.try_get().is_some(),
         WorkId::Gpos => context.gpos.try_get().is_some(),
         WorkId::Gsub => context.gsub.try_get().is_some(),
@@ -89,6 +91,7 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
         WorkId::Head => to_bytes(context.head.get().as_ref()),
         WorkId::Hhea => to_bytes(context.hhea.get().as_ref()),
         WorkId::Hmtx => Some(context.hmtx.get().as_ref().get().to_vec()),
+        WorkId::Gasp => to_bytes(context.gasp.get().as_ref()),
         WorkId::Glyf => Some(context.glyf.get().as_ref().get().to_vec()),
         WorkId::Gpos => to_bytes(context.gpos.get().as_ref()),
         WorkId::Gsub => to_bytes(context.gsub.get().as_ref()),
@@ -121,6 +124,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
             .variant(WorkId::Head)
             .variant(WorkId::Hhea)
             .variant(WorkId::Hmtx)
+            .variant(WorkId::Gasp)
             .variant(WorkId::Glyf)
             .variant(WorkId::Gpos)
             .variant(WorkId::Gsub)
