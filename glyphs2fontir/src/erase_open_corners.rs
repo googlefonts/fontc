@@ -81,16 +81,26 @@ pub fn erase_open_corners(path: &BezPath) -> Option<BezPath> {
         ops[ix % segments.len()] = op;
     }
 
-    let mut els = Vec::with_capacity(path.elements().len());
-    let mut iter = segments
+    let segs = segments
         .iter()
         .zip(ops)
         .filter_map(|(seg, op)| op.apply(*seg))
-        .peekable();
+        .collect::<Vec<_>>();
 
-    // we will use `PathSeg::as_path_el` below, but that doesn't handle moveto
-    els.push(PathEl::MoveTo(iter.peek().unwrap().start()));
-    els.extend(iter.map(|seg| seg.as_path_el()));
+    let mut els = Vec::with_capacity(path.elements().len());
+
+    // now handle the move_to; for a closed path this is the last point,
+    // for an open path it was the start point of the first segment (which is
+    // ignored when converting segment->element)
+    let first_pt = if is_closed {
+        // unwrap is fine, we must have at least two segments if we had an open corner
+        segs.last().unwrap().end()
+    } else {
+        segs.first().unwrap().start()
+    };
+
+    els.push(PathEl::MoveTo(first_pt));
+    els.extend(segs.iter().map(PathSeg::as_path_el));
     if is_closed {
         els.push(PathEl::ClosePath);
     }
@@ -126,24 +136,32 @@ struct ErasureCandidate {
 }
 
 impl ErasureCandidate {
-    // https://github.com/googlefonts/glyphsLib/blob/74c63244fdb/Lib/glyphsLib/filters/eraseOpenCorners.py#L66-L71
     // Are the incoming point from the previous segment and the outgoing point
     // from the next segment both on the right side of the line?
     // (see discussion at https://github.com/googlefonts/glyphsLib/pull/663)
+    // https://github.com/googlefonts/glyphsLib/blob/74c63244fdb/Lib/glyphsLib/filters/eraseOpenCorners.py#L66-L71
     fn points_are_right_of_line(&self) -> bool {
-        // the last point in one segment is the first point in the next;
-        // so finding the prev or next point means ignoring the shared point.
-        let prev_point = match self.prev {
-            PathSeg::Line(line) => line.p0,
-            PathSeg::Quad(quad_bez) => quad_bez.p1,
-            PathSeg::Cubic(cubic_bez) => cubic_bez.p2,
-        };
-        let next_point = match self.next {
-            PathSeg::Line(line) => line.p1,
-            PathSeg::Quad(quad_bez) => quad_bez.p1,
-            PathSeg::Cubic(cubic_bez) => cubic_bez.p1,
-        };
+        // return the last point in this segment not shared with the next segment
+        // (i.e., ignoring the final point)
+        fn last_non_shared_point(seg: PathSeg) -> Point {
+            match seg {
+                PathSeg::Line(line) => line.p0,
+                PathSeg::Quad(quad_bez) => quad_bez.p1,
+                PathSeg::Cubic(cubic_bez) => cubic_bez.p2,
+            }
+        }
 
+        // return the first point in this segment not shared with the previous
+        // segment (i.e, ignoring the first point)
+        fn first_non_shared_point(seg: PathSeg) -> Point {
+            match seg {
+                PathSeg::Line(line) => line.p1,
+                PathSeg::Quad(quad_bez) => quad_bez.p1,
+                PathSeg::Cubic(cubic_bez) => cubic_bez.p1,
+            }
+        }
+        let prev_point = last_non_shared_point(self.prev);
+        let next_point = first_non_shared_point(self.next);
         !(point_is_left_of_line(self.seg, prev_point)
             || point_is_left_of_line(self.seg, next_point))
     }
@@ -435,15 +453,7 @@ mod tests {
 
     macro_rules! assert_approx {
         ($left:expr, $right:expr) => {
-            assert_approx!($left, $right, 1e-4)
-        };
-        ($left:expr, $right:expr, $accuracy:literal) => {
-            assert!(
-                ($left - $right).abs() < $accuracy,
-                "{} !~= {}",
-                $left,
-                $right
-            )
+            assert!(($left - $right).abs() < 1e-4, "{} !~= {}", $left, $right)
         };
     }
 
@@ -470,12 +480,13 @@ mod tests {
     fn test_curve_curve_glyph() {
         let glyph = python_test_glyphs::curvyCornerGlyph();
         let after = erase_open_corners(&glyph);
+
         let new_pt = after.unwrap().segments().next().unwrap().start();
         // teaching to the test: because our segment splitting impl is different
         // from fonttools', we get slightly different values here; we might get
         // a few off-by-ones but that's okay?
-        assert_approx!(new_pt.x, 406.4859, 0.2);
-        assert_approx!(new_pt.y, 104.5666, 0.2);
+        assert_approx!(new_pt.x, 406.4859);
+        assert_approx!(new_pt.y, 104.5666);
     }
 
     #[test]
