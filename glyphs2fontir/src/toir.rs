@@ -110,6 +110,7 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, PathCon
     };
 
     let path = path_builder.build()?;
+
     let path = match crate::erase_open_corners::erase_open_corners(&path) {
         Some(changes) => {
             log::debug!("erased open contours for {glyph_name}");
