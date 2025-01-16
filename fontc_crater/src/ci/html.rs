@@ -231,7 +231,7 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
     let iter = runs.iter().enumerate().map(|(i, run)| {
         let prev = (i > 0).then(|| &runs[i - 1]);
         let is_last = i == runs.len() - 1;
-        let default_visibility = i >= runs.len() - 16;
+        let default_visibility = i >= runs.len().saturating_sub(16);
         make_row(run, prev, is_last, default_visibility)
     });
 
