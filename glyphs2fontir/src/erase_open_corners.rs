@@ -86,10 +86,7 @@ impl<'a> CornerErasureCtx<'a> {
         // we don't use `for _ in 0..self.n_possible_candidates()` because
         // if we erase a corner the number of candidates changes
         while ix <= self.n_possible_candidates() {
-            if let Some((candidate, hit)) = self.open_corner_at(ix) {
-                self.erase_corner(candidate, hit);
-                made_changes = true;
-            }
+            made_changes |= self.erase_open_corner_if_present(ix);
             ix += 1;
         }
 
@@ -100,19 +97,19 @@ impl<'a> CornerErasureCtx<'a> {
         Some(BezPath::from_vec(self.els.into_owned()))
     }
 
-    /// Check for an open corner for the three segments starting at element `i`.
-    ///
-    /// The last point of the element at index `i` is the start point of
-    /// the middle segment, which must be a line for this operation to make sense.
-    ///
-    /// (This is complicated because of 'moveto', which is an element but which
-    /// is redundant in a closed path, which should finish at the same point.)
-    fn open_corner_at(&self, i: usize) -> Option<(PossibleCorner, Intersection)> {
-        let candidate = self.candidate_at_i(i)?;
-        if !candidate.points_are_right_of_line() {
-            return None;
+    /// Check for an open corner at a segment, and remove it if found.
+    fn erase_open_corner_if_present(&mut self, seg_ix: usize) -> bool {
+        let Some(maybe_corner) = self.possible_corner(seg_ix) else {
+            return false;
+        };
+        if !maybe_corner.points_are_right_of_line() {
+            return false;
         }
-        let intersection = candidate.intersection()?;
+
+        let Some(intersection) = maybe_corner.intersection() else {
+            return false;
+        };
+
         let Intersection { t0, t1, .. } = intersection;
         // invert value of t0 so for both values '0' means at the open corner
         // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da5/Lib/glyphsLib/filters/eraseOpenCorners.py#L105>
@@ -121,39 +118,31 @@ impl<'a> CornerErasureCtx<'a> {
             && t1 > 0.0001
             && t0_inv > 0.0001
         {
-            return Some((candidate, intersection));
+            // this looks like an open corner, so now do the deletion
+            let new_prev = maybe_corner.one.subsegment(0.0..intersection.t0);
+            let first_ix = maybe_corner.first_el_idx;
+            self.overwrite_el(first_ix, new_prev);
+
+            let new_next = maybe_corner.two.subsegment(intersection.t1..1.0);
+
+            let next_seg_el_ix = self.wrapping_el_idx(first_ix + 2);
+            // for the 'next' segment, the start point is the end point of 'prev', so we're good
+            self.overwrite_el(next_seg_el_ix, new_next);
+
+            // this is the open corner line, which we remove
+            let line_seg_el_ix = self.wrapping_el_idx(first_ix + 1);
+            self.els.to_mut().remove(line_seg_el_ix);
+
+            // finally always make sure that start/end line up in a closed curve:
+            if self.is_closed() {
+                let second_last = self.els.len() - 2;
+                let last_pt = self.els[second_last].end_point().unwrap();
+                *self.els.to_mut().get_mut(0).unwrap() = PathEl::MoveTo(last_pt);
+            }
+            return true;
         }
-        None
+        false
     }
-
-    /// Erase an open corner, in place.
-    ///
-    /// Called from the erase_corners loop; modifications made here are reflected
-    /// in subsequent passes of that loop.
-    fn erase_corner(&mut self, candidate: PossibleCorner, intersection: Intersection) {
-        // for the 'prev' segment, the start point doesn't change
-        let new_prev = candidate.one.subsegment(0.0..intersection.t0);
-        let first_ix = candidate.first_el_idx;
-        self.overwrite_el(first_ix, new_prev);
-
-        let new_next = candidate.two.subsegment(intersection.t1..1.0);
-
-        let next_seg_el_ix = self.wrapping_el_idx(first_ix + 2);
-        // for the 'next' segment, the start point is the end point of 'prev', so we're good
-        self.overwrite_el(next_seg_el_ix, new_next);
-
-        // this is the open corner line, which we remove
-        let line_seg_el_ix = self.wrapping_el_idx(first_ix + 1);
-        self.els.to_mut().remove(line_seg_el_ix);
-
-        // finally always make sure that start/end line up in a closed curve:
-        if self.is_closed() {
-            let second_last = self.els.len() - 2;
-            let last_pt = self.els[second_last].end_point().unwrap();
-            *self.els.to_mut().get_mut(0).unwrap() = PathEl::MoveTo(last_pt);
-        }
-    }
-
     fn overwrite_el(&mut self, el_ix: usize, new_seg: PathSeg) {
         match (new_seg, self.els.to_mut().get_mut(el_ix).unwrap()) {
             (PathSeg::Line(new), PathEl::LineTo(end)) => {
@@ -173,7 +162,17 @@ impl<'a> CornerErasureCtx<'a> {
         }
     }
 
-    fn candidate_at_i(&self, i: usize) -> Option<PossibleCorner> {
+    /// Return the previous & next segments if the segment at `i` is a line.
+    ///
+    /// A corner is possible anytime a line segment occurs between two other
+    /// path segments. This handles the annoying indexing logic of converting
+    /// from the raw `PathEl`s to the appropriate `PathSeg`s.
+    ///
+    /// The conversion between elements and segments is not super intuitive.
+    /// As a rule, the segment at `i` is the segment which begins at the end point
+    /// of element i; for instance segment 0 is the segment that starts at
+    /// the first (moveto) point in the curve.
+    fn possible_corner(&self, i: usize) -> Option<PossibleCorner> {
         // if we're a closed path, the second-last element (the element before 'close')
         // brings us back to the start, which we've already handled.
         // (in an open path there's no wrapping so this can also never be a candidate)
@@ -540,12 +539,12 @@ mod tests {
         path.line_to((30., 30.));
         path.line_to((40., 40.));
         let ctx = CornerErasureCtx::new(&path);
-        assert!(ctx.candidate_at_i(0).is_none());
-        let first = ctx.candidate_at_i(1).unwrap();
+        assert!(ctx.possible_corner(0).is_none());
+        let first = ctx.possible_corner(1).unwrap();
         assert_eq!(first.one, Line::new((10., 10.), (20., 20.)).into());
         assert_eq!(first.two, Line::new((30., 30.), (40., 40.,)).into());
         // not a closed path so we don't wrap around; only a single segment exists
-        assert!(ctx.candidate_at_i(2).is_none());
+        assert!(ctx.possible_corner(2).is_none());
     }
 
     #[test]
@@ -586,25 +585,25 @@ mod tests {
             PathEl::LineTo((30., 30.).into())
         );
 
-        let candi = ctx.candidate_at_i(0).unwrap();
+        let candi = ctx.possible_corner(0).unwrap();
         assert_eq!(candi.line(), Line::new((10., 10.), (20., 20.)));
         assert_eq!(candi.one.start(), (100., 100.).into());
         assert_eq!(candi.two.end(), (30., 30.).into());
 
-        let candi = ctx.candidate_at_i(1).unwrap();
+        let candi = ctx.possible_corner(1).unwrap();
         assert_eq!(candi.line(), Line::new((20., 20.), (30., 30.)));
         assert_eq!(candi.one.start(), (10., 10.).into());
         assert_eq!(candi.two.end(), (100., 100.).into());
 
         // no candidate, the middle seg is a quad not a line
-        assert!(ctx.candidate_at_i(2).is_none());
+        assert!(ctx.possible_corner(2).is_none());
 
-        let candi = ctx.candidate_at_i(3).unwrap();
+        let candi = ctx.possible_corner(3).unwrap();
         assert_eq!(candi.line(), Line::new((100., 100.), (10., 10.)));
         assert_eq!(candi.one.start(), (30., 30.).into());
         assert_eq!(candi.two.end(), (20., 20.).into());
 
-        assert!(ctx.candidate_at_i(4).is_none());
+        assert!(ctx.possible_corner(4).is_none());
     }
 
     #[test]
