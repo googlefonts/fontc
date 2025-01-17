@@ -425,8 +425,8 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
                     float(fontmake_el.attrib[attr]) - float(fontc_el.attrib[attr])
                 )
                 if 0.0 < delta_x <= 1.0:
-                    fontc_el.attrib["adjusted"] = "1"
-                    fontmake_el.attrib["adjusted"] = "1"
+                    fontc_el.attrib["diff_adjusted"] = "1"
+                    fontmake_el.attrib["diff_adjusted"] = "1"
                     fontc_el.attrib[attr] = fontmake_el.attrib[attr]
                     spent += 1
                 if spent >= off_by_one_budget:
