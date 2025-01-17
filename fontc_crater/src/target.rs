@@ -32,12 +32,11 @@ fn get_source_dir(source_path: &Path) -> Result<PathBuf, InvalidTargetPath> {
     loop {
         match result.file_name() {
             Some(name) if name == "sources" || name == "Sources" => return Ok(result),
-            Some(_) => {
+            Some(_) | None => {
                 if !result.pop() {
                     break;
                 }
             }
-            None => break,
         }
     }
     Err(InvalidTargetPath {
@@ -269,6 +268,18 @@ mod tests {
         let source = PathBuf::from("org/repo/not_sources/Mysource.glyphs");
         let target = Target::new(source, None, BuildType::Default);
         assert!(matches!(target, Err(e) if e.reason == BadPathReason::NoSourceDir));
+    }
+
+    #[test]
+    fn relative_source_path() {
+        let relpath = PathBuf::from("org/repo/sources/../source/dir/Mysource.designspace");
+
+        let target = Target::new(relpath, None, BuildType::Default).unwrap();
+        assert_eq!(target.source_dir.as_os_str(), "org/repo/sources",);
+        assert_eq!(
+            target.source.as_os_str(),
+            "../source/dir/Mysource.designspace"
+        );
     }
 
     #[test]
