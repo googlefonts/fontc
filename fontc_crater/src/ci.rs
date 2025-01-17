@@ -251,13 +251,19 @@ fn targets_for_source(
 }
 
 fn should_build_in_gftools_mode(src_path: &Path, config: &Config) -> bool {
+    let file_stem = src_path
+        .file_stem()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_default();
     // skip noto, which have an implicitly different recipe provider
     //https://github.com/googlefonts/oxidize/blob/main/text/2024-06-26-fixes-and-nonstandard-builds.md#noto
-    if src_path
-        .file_stem()
-        .and_then(|stem| stem.to_str().map(|s| s.to_lowercase().starts_with("noto")))
-        .unwrap_or(false)
-    {
+    if file_stem.to_lowercase().starts_with("noto") {
+        return false;
+    }
+
+    // skip Google Sans, which isn't built with gftools (but other fonts with
+    // names that begin with 'GoogleSans' might be!)
+    if ["GoogleSans", "GoogleSans-Italic"].contains(&file_stem.as_ref()) {
         return false;
     }
 

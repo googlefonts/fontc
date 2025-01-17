@@ -159,9 +159,10 @@ impl<T, E> Default for Results<T, E> {
 impl From<LoadRepoError> for SkipReason {
     fn from(value: LoadRepoError) -> Self {
         match value {
-            LoadRepoError::Io(_) | LoadRepoError::GitFail(_) | LoadRepoError::NoCommit { .. } => {
-                SkipReason::GitFail
-            }
+            LoadRepoError::Io(_)
+            | LoadRepoError::GitFail(_)
+            | LoadRepoError::NoCommit { .. }
+            | LoadRepoError::MissingAuth => SkipReason::GitFail,
             LoadRepoError::NoConfig => SkipReason::NoConfig,
             LoadRepoError::BadConfig(e) => SkipReason::BadConfig(e.to_string()),
         }
