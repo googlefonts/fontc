@@ -83,6 +83,8 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         super::try_create_dir(&args.out_dir)?;
     }
 
+    log_if_auth_or_not();
+
     let summary_file = args.out_dir.join(SUMMARY_FILE);
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
     // todo: fontc_repo should be checked out by us, and have a known path
@@ -181,12 +183,13 @@ fn make_targets(cache_dir: &Path, repos: &[RepoInfo]) -> (Vec<Target>, BTreeMap<
     let mut targets = Vec::new();
     let mut repo_list = BTreeMap::new();
     for repo in repos {
-        let Ok(iter) = repo.iter_configs(cache_dir) else {
-            log::warn!(
-                "error reading repo '{}'",
-                repo.repo_path(cache_dir).display()
-            );
-            continue;
+        let iter = match repo.iter_configs(cache_dir) {
+            Ok(iter) => iter,
+            Err(e) => {
+                let path = repo.repo_path(cache_dir);
+                log::warn!("error reading repo '{}': {e}", path.display());
+                continue;
+            }
         };
         for config_path in iter {
             let config = match Config::load(&config_path) {
@@ -330,4 +333,14 @@ fn expect_binary_target(name: &str) -> PathBuf {
         target.display()
     );
     target
+}
+
+fn log_if_auth_or_not() {
+    match std::env::var("GITHUB_TOKEN") {
+        Ok(token) => log::info!(
+            "authenticated with token ending '{}'",
+            &token[token.len() - 10..]
+        ),
+        Err(_) => log::warn!("no auth token set, private repos will be skipped"),
+    }
 }
