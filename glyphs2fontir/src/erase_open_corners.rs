@@ -77,8 +77,8 @@ impl<'a> CornerErasureCtx<'a> {
 
     /// loop through possible open corners, erasing any we find.
     fn erase_corners(mut self) -> Option<BezPath> {
-        if self.els.len() < 4 {
-            // we need at least four elements (including moveto) to have an open corner
+        // we need at least three line or curve elements to have an open corner
+        if (self.is_closed() && self.els.len() < 5) || self.els.len() < 4 {
             return None;
         }
         let mut made_changes = false;
@@ -774,5 +774,16 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(pts, [(341, 194), (485, 195), (494, 389)]);
+    }
+
+    #[test]
+    fn only_two_segments() {
+        let mut path = BezPath::new();
+        path.move_to((10., 10.));
+        path.line_to((13., 10.));
+        path.curve_to((11., 8.), (11., 8.), (10., 10.));
+        path.close_path();
+
+        assert!(erase_open_corners(&path).is_none());
     }
 }
