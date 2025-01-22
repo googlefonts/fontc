@@ -96,17 +96,20 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, PathCon
         }
         path_builder.move_to((first.pt.x, first.pt.y))?;
         add_to_path(&mut path_builder, src_path.nodes[1..].iter())?;
-    } else {
+    } else if src_path.nodes.iter().any(|node| node.is_on_curve()) {
         // In Glyphs.app, the starting node of a closed contour is always
         // stored at the end of the nodes list.
         // Rotate right by 1 by way of chaining iterators
+        let last_idx = src_path.nodes.len() - 1;
         add_to_path(
             &mut path_builder,
-            Iterator::chain(
-                src_path.nodes[src_path.nodes.len() - 1..].iter(),
-                src_path.nodes[..src_path.nodes.len() - 1].iter(),
-            ),
+            std::iter::once(&src_path.nodes[last_idx]).chain(&src_path.nodes[..last_idx]),
         )?;
+    } else {
+        // except if the contour contains only off-curve points (implied quadratic)
+        // in which case we're already in the correct order (this is very rare
+        // in glyphs sources and might be the result of bugs, but it exists)
+        add_to_path(&mut path_builder, src_path.nodes.iter())?;
     };
 
     let path = path_builder.build()?;
@@ -352,5 +355,28 @@ mod tests {
         });
         let bez = to_ir_path("test".into(), &path).unwrap();
         assert_eq!("M32,32 C64,64 64,0 32,32 Z", bez.to_svg());
+    }
+
+    // in a curve with only offcurves, the 'start' of the curve is the last implied
+    // on-curve (the interpolation of the first and last points)
+    #[test]
+    fn no_on_curve_path_order() {
+        let nodes = [(10., 0.), (10., 10.), (0., 10.), (0., 0.)]
+            .into_iter()
+            .map(|pt| Node {
+                pt: pt.into(),
+                node_type: glyphs_reader::NodeType::OffCurve,
+            })
+            .collect();
+        let path = Path {
+            closed: true,
+            nodes,
+        };
+
+        let bez = to_ir_path("hello".into(), &path).unwrap();
+        assert_eq!(
+            bez.elements().first(),
+            Some(&kurbo::PathEl::MoveTo((5., 0.).into()))
+        );
     }
 }

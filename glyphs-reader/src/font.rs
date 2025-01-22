@@ -888,6 +888,12 @@ pub struct Node {
     pub node_type: NodeType,
 }
 
+impl Node {
+    pub fn is_on_curve(&self) -> bool {
+        !matches!(self.node_type, NodeType::OffCurve)
+    }
+}
+
 impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
         Into::<PointForEqAndHash>::into(self.pt) == other.pt.into()
