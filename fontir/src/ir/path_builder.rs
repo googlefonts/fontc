@@ -188,7 +188,7 @@ impl GlyphPathBuilder {
     /// It's called automatically by `build()` thus can be
     /// omitted when building one BezPath per contour, but can be called manually in
     /// order to build multiple contours into a single BezPath.
-    pub fn end_path(&mut self) -> Result<(), PathConversionError> {
+    fn end_path(&mut self) -> Result<(), PathConversionError> {
         // a contour that does *not* start with a move is assumed to be closed
         // https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
         if !self.first_oncurve.is_some_and(|on| on.is_move()) {
