@@ -637,7 +637,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_obeys_gasp_records() {
+    fn compile_obeys_designspace_gasp_records() {
         let result = TestCompile::compile_source("fontinfo.designspace");
         let gasp = result.font().gasp().unwrap();
         assert_eq!(
@@ -645,6 +645,37 @@ mod tests {
                 (
                     7,
                     GaspRangeBehavior::GASP_DOGRAY | GaspRangeBehavior::GASP_SYMMETRIC_SMOOTHING
+                ),
+                (
+                    65535,
+                    GaspRangeBehavior::GASP_GRIDFIT
+                        | GaspRangeBehavior::GASP_DOGRAY
+                        | GaspRangeBehavior::GASP_SYMMETRIC_GRIDFIT
+                        | GaspRangeBehavior::GASP_SYMMETRIC_SMOOTHING
+                ),
+            ],
+            gasp.gasp_ranges()
+                .iter()
+                .map(|r| (r.range_max_ppem(), r.range_gasp_behavior()))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn compile_obeys_glyphs_gasp_records() {
+        let result = TestCompile::compile_source("glyphs3/WghtVarGasp.glyphs");
+        let gasp = result.font().gasp().unwrap();
+        assert_eq!(
+            vec![
+                (
+                    8,
+                    GaspRangeBehavior::GASP_DOGRAY | GaspRangeBehavior::GASP_SYMMETRIC_SMOOTHING
+                ),
+                (
+                    20,
+                    GaspRangeBehavior::GASP_GRIDFIT
+                        | GaspRangeBehavior::GASP_DOGRAY
+                        | GaspRangeBehavior::GASP_SYMMETRIC_GRIDFIT,
                 ),
                 (
                     65535,

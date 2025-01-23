@@ -1,0 +1,37 @@
+{
+.formatVersion = 3;
+customParameters = (
+{
+name = "gasp Table";
+value = {
+"20" = 7;
+"65535" = 15;
+"8" = 10;
+"65536" = 1;
+};
+},
+);
+familyName = WghtVar;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 32;
+}
+);
+
+unitsPerEm = 1234;
+versionMajor = 42;
+versionMinor = 42;
+}

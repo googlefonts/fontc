@@ -30,7 +30,11 @@ use glyphs_reader::{
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
+    tables::{
+        gasp::{GaspRange, GaspRangeBehavior},
+        gdef::GlyphClassDef,
+        os2::SelectionFlags,
+    },
     types::{NameId, Tag},
 };
 
@@ -359,6 +363,26 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 dlng: meta_table.dlng.clone(),
                 slng: meta_table.slng.clone(),
             });
+        }
+
+        if let Some(gasp) = &font.custom_parameters.gasp_table {
+            for (max_ppem, behavior) in gasp.iter() {
+                let Ok(range_max_ppem) = (*max_ppem).try_into() else {
+                    warn!(
+                        "Invalid gasp entry, rangeMaxPPEM {max_ppem} out of bounds, ignoring range"
+                    );
+                    continue;
+                };
+                let range_gasp_behavior = GaspRangeBehavior::from_bits_truncate(*behavior as u16);
+                if range_gasp_behavior == GaspRangeBehavior::empty() {
+                    warn!("Invalid gasp entry at rangeMaxPPEM {max_ppem}, no behavior bits set by {behavior}, ignoring range");
+                    continue;
+                }
+                static_metadata.misc.gasp.push(GaspRange {
+                    range_max_ppem,
+                    range_gasp_behavior,
+                });
+            }
         }
 
         context.static_metadata.set(static_metadata);
