@@ -108,6 +108,7 @@ pub struct CustomParameters {
     // in the top-level `Font` struct
     pub virtual_masters: Option<Vec<BTreeMap<String, OrderedFloat<f64>>>>,
     pub glyph_order: Option<Vec<SmolStr>>,
+    pub gasp_table: Option<BTreeMap<i64, i64>>,
 }
 
 /// Values for the 'meta Table' custom parameter
@@ -425,6 +426,7 @@ trait PlistParamsExt {
     fn as_axes(&self) -> Option<Vec<Axis>>;
     fn as_axis_mappings(&self) -> Option<Vec<AxisMapping>>;
     fn as_virtual_master(&self) -> Option<BTreeMap<String, OrderedFloat<f64>>>;
+    fn as_gasp_table(&self) -> Option<BTreeMap<i64, i64>>;
 }
 
 impl PlistParamsExt for Plist {
@@ -539,6 +541,15 @@ impl PlistParamsExt for Plist {
             .map(|b| codepage_range_bit(*b as _))
             .collect::<Result<_, _>>()
             .ok()
+    }
+
+    fn as_gasp_table(&self) -> Option<BTreeMap<i64, i64>> {
+        Some(
+            self.as_dict()?
+                .iter()
+                .filter_map(|(k, v)| k.parse::<i64>().ok().zip(v.as_i64()))
+                .collect(),
+        )
     }
 }
 
@@ -667,6 +678,7 @@ impl RawCustomParameters {
                 "panose" => panose = value.as_vec_of_ints(),
                 "openTypeOS2Panose" => panose_old = value.as_vec_of_ints(),
                 "glyphOrder" => add_and_report_issues!(glyph_order, Plist::as_vec_of_string),
+                "gasp Table" => add_and_report_issues!(gasp_table, Plist::as_gasp_table),
                 _ => log::warn!("unknown custom parameter '{name}'"),
             }
         }
