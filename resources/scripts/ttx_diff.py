@@ -387,10 +387,14 @@ def normalize_glyf_contours(ttx):
         normalized = sorted(contours, key=to_xml_string)
         if normalized == contours:
             continue
+        # normalized contours should be inserted before any other TTGlyph's
+        # subelements (e.g. instructions)
         for contour in contours:
             glyph.remove(contour)
-        for contour in normalized:
-            glyph.append(contour)
+        non_contours = list(glyph)
+        for el in non_contours:
+            glyph.remove(el)
+        glyph.extend(normalized + non_contours)
 
 
 # https://github.com/googlefonts/fontc/issues/1173
