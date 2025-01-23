@@ -112,6 +112,13 @@ flags.DEFINE_bool("json", False, "print results in machine-readable JSON format"
 flags.DEFINE_string("outdir", default=None, help="directory to store generated files")
 
 
+def to_xml_string(e) -> str:
+    xml = etree.tostring(e)
+    # some table diffs were mismatched because of inconsistency in ending newline
+    xml = xml.strip()
+    return xml
+
+
 # execute a command after logging it to stderr.
 # All additional kwargs are passed to subprocess.run
 def log_and_run(cmd: Sequence, cwd=None, **kwargs):
@@ -377,7 +384,7 @@ def normalize_glyf_contours(ttx):
         contours = glyph.xpath("./contour")
         if len(contours) < 2:
             continue
-        normalized = sorted(contours, key=lambda c: etree.tostring(c))
+        normalized = sorted(contours, key=to_xml_string)
         if normalized == contours:
             continue
         for contour in contours:
@@ -657,7 +664,7 @@ def extract_comparables(font_xml, build_dir: Path, compiler: str) -> dict[str, s
     comparables = dict()
     tables = {e.tag: e for e in font_xml.getroot()}
     for tag in sorted(e.tag for e in font_xml.getroot()):
-        table_str = etree.tostring(tables[tag])
+        table_str = to_xml_string(tables[tag])
         path = build_dir / f"{compiler}.{tag}.ttx"
         path.write_bytes(table_str)
         comparables[tag] = table_str
