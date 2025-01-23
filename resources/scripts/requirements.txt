@@ -68,7 +68,7 @@ defcon[lxml,pens]==0.10.3
     #   ufoprocessor
 deprecated==1.2.15
     # via pygithub
-filelock==3.16.1
+filelock==3.17.0
     # via youseedee
 font-v==2.1.0
     # via gftools
@@ -90,7 +90,7 @@ fontparts==0.12.3
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.55.4
+fonttools[lxml,repacker,ufo,unicode,woff]==4.55.5
     # via
     #   -r requirements.in
     #   afdko
@@ -250,7 +250,7 @@ smmap==5.0.2
     # via gitdb
 soupsieve==2.6
     # via beautifulsoup4
-statmake==0.6.0
+statmake==1.0.1
     # via gftools
 strictyaml==1.7.3
     # via gftools
