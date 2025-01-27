@@ -19,7 +19,7 @@ env_logger = "0.11.0"
 parking_lot = "0.12.1"
 clap = { version = "4.0.32", features = ["derive"] }
 rayon = "1.6"
-icu_properties = "1.4"
+icu_properties = "2.0.0-beta1"
 
 # fontations etc
 write-fonts = { version = "0.33.1", features = ["serde", "read"] }
