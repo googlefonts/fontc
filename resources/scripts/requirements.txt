@@ -14,7 +14,7 @@ afdko==4.0.2
     # via gftools
 appdirs==1.4.4
     # via fs
-attrs==24.3.0
+attrs==25.1.0
     # via
     #   cattrs
     #   statmake
@@ -66,7 +66,7 @@ defcon[lxml,pens]==0.10.3
     #   glyphsets
     #   mutatormath
     #   ufoprocessor
-deprecated==1.2.15
+deprecated==1.2.18
     # via pygithub
 filelock==3.17.0
     # via youseedee
@@ -90,7 +90,7 @@ fontparts==0.12.3
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.55.5
+fonttools[lxml,repacker,ufo,unicode,woff]==4.55.6
     # via
     #   -r requirements.in
     #   afdko
