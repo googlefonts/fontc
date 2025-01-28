@@ -2021,29 +2021,19 @@ impl TryFrom<RawShape> for Shape {
 /// It matches the output of the fontTools' Transform.rotate() used by glyphsLib.
 /// <https://github.com/fonttools/fonttools/blob/b7509b2/Lib/fontTools/misc/transform.py#L246-L258>
 fn normalized_rotation(angle_deg: f64) -> Affine {
-    // Direct port from
-    // <https://github.com/fonttools/fonttools/blob/b7509b2/Lib/fontTools/misc/transform.py#L65-L77>
-    fn norm_sin_cos(v: f64) -> f64 {
-        const EPSILON: f64 = 1e-15;
-        const ONE_EPSILON: f64 = 1.0 - EPSILON;
-        const MINUS_ONE_EPSILON: f64 = -1.0 + EPSILON;
+    const ROT_90: Affine = Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]);
+    const ROT_180: Affine = Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
+    const ROT_270: Affine = Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]);
+    // Normalize angle to [0, 360)
+    let normalized_angle = angle_deg.rem_euclid(360.0);
 
-        if v.abs() < EPSILON {
-            0.0
-        } else if v > ONE_EPSILON {
-            1.0
-        } else if v < MINUS_ONE_EPSILON {
-            -1.0
-        } else {
-            v
-        }
+    match normalized_angle {
+        0.0 => Affine::IDENTITY,
+        90.0 => ROT_90,
+        180.0 => ROT_180,
+        270.0 => ROT_270,
+        _ => Affine::rotate(angle_deg.to_radians()),
     }
-
-    Affine::new(
-        Affine::rotate(angle_deg.to_radians())
-            .as_coeffs()
-            .map(norm_sin_cos),
-    )
 }
 
 fn map_and_push_if_present<T, U>(dest: &mut Vec<T>, src: Vec<U>, map: fn(U) -> T) {
