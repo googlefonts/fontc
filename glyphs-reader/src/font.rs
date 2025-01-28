@@ -2011,24 +2011,6 @@ impl TryFrom<RawShape> for Shape {
     }
 }
 
-// Direct port from
-// <https://github.com/fonttools/fonttools/blob/b7509b2/Lib/fontTools/misc/transform.py#L65-L77>
-fn norm_sin_cos(v: f64) -> f64 {
-    const EPSILON: f64 = 1e-15;
-    const ONE_EPSILON: f64 = 1.0 - EPSILON;
-    const MINUS_ONE_EPSILON: f64 = -1.0 + EPSILON;
-
-    if v.abs() < EPSILON {
-        0.0
-    } else if v > ONE_EPSILON {
-        1.0
-    } else if v < MINUS_ONE_EPSILON {
-        -1.0
-    } else {
-        v
-    }
-}
-
 /// Return [kurbo::Affine] rotation around angle (in degrees) with normalized sin/cos.
 ///
 /// This ensures that for the four "cardinal" rotations (0, 90, 180, 270), the values
@@ -2039,6 +2021,24 @@ fn norm_sin_cos(v: f64) -> f64 {
 /// It matches the output of the fontTools' Transform.rotate() used by glyphsLib.
 /// <https://github.com/fonttools/fonttools/blob/b7509b2/Lib/fontTools/misc/transform.py#L246-L258>
 fn normalized_rotation(angle_deg: f64) -> Affine {
+    // Direct port from
+    // <https://github.com/fonttools/fonttools/blob/b7509b2/Lib/fontTools/misc/transform.py#L65-L77>
+    fn norm_sin_cos(v: f64) -> f64 {
+        const EPSILON: f64 = 1e-15;
+        const ONE_EPSILON: f64 = 1.0 - EPSILON;
+        const MINUS_ONE_EPSILON: f64 = -1.0 + EPSILON;
+
+        if v.abs() < EPSILON {
+            0.0
+        } else if v > ONE_EPSILON {
+            1.0
+        } else if v < MINUS_ONE_EPSILON {
+            -1.0
+        } else {
+            v
+        }
+    }
+
     Affine::new(
         Affine::rotate(angle_deg.to_radians())
             .as_coeffs()
