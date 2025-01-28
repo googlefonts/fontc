@@ -19,7 +19,7 @@ attrs==25.1.0
     #   cattrs
     #   statmake
     #   ufolib2
-axisregistry==0.4.11
+axisregistry==0.4.12
     # via gftools
 babelfont==3.1.2
     # via gftools
@@ -90,7 +90,7 @@ fontparts==0.12.3
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.55.6
+fonttools[lxml,repacker,ufo,unicode,woff]==4.55.7
     # via
     #   -r requirements.in
     #   afdko
@@ -137,7 +137,7 @@ gitpython==3.1.44
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.9.6
+glyphslib==6.10.0
     # via
     #   -r requirements.in
     #   bumpfontversion
