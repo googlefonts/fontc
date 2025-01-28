@@ -3692,33 +3692,41 @@ mod tests {
         );
     }
 
-    #[test]
-    fn cardinal_rotation_contain_exact_zeros_and_ones() {
+    #[rstest]
+    #[case::rotate_0(0.0, Affine::new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]))]
+    #[case::rotate_360(360.0, Affine::new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]))]
+    #[case::rotate_90(90.0, Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_minus_90(-90.0, Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_180(180.0, Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]))]
+    #[case::rotate_minus_180(-180.0, Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]))]
+    #[case::rotate_270(270.0, Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_minus_270(-270.0, Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_450(450.0, Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_540(540.0, Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]))]
+    fn cardinal_rotation_contain_exact_zeros_and_ones(
+        #[case] angle: f64,
+        #[case] expected: Affine,
+    ) {
         // When Glyphs 3 components are rotated by a 90, 180 or 270 degree angle,
         // we want to match fontTools Transform.rotate() and have the sine and
         // cosine terms rounded exactly to 0.0 or ±1.0 to avoid unnecessary diffs
         // upon rounding transformed coordinates to integer:
         // https://github.com/googlefonts/fontc/issues/1218
-        assert_eq!(
-            Affine::new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
-            normalized_rotation(0.0)
-        );
-        assert_eq!(
-            Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]),
-            normalized_rotation(90.0)
-        );
-        assert_eq!(
-            Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]),
-            normalized_rotation(180.0)
-        );
-        assert_eq!(
-            Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]),
-            normalized_rotation(270.0)
-        );
+        assert_eq!(expected, normalized_rotation(angle));
+    }
+
+    #[rstest]
+    #[case::rotate_30(30.0, 4, Affine::new([0.866, 0.5, -0.5, 0.866, 0.0, 0.0]))]
+    #[case::rotate_minus_30(-30.0, 4, Affine::new([0.866, -0.5, 0.5, 0.866, 0.0, 0.0]))]
+    #[case::rotate_almost_90(
+        90.01, 8, Affine::new([-0.00017453, 0.99999998, -0.99999998, -0.00017453, 0.0, 0.0])
+    )]
+    fn non_cardinal_rotation_left_untouched(
+        #[case] angle: f64,
+        #[case] precision: u8,
+        #[case] expected: Affine,
+    ) {
         // any other angles' sin and cos != (0, ±1) are passed through unchanged
-        assert_eq!(
-            Affine::new([0.866, 0.5, -0.5, 0.866, 0.0, 0.0]),
-            round(normalized_rotation(30.0), 4)
-        );
+        assert_eq!(expected, round(normalized_rotation(angle), precision));
     }
 }
