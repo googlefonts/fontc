@@ -2013,11 +2013,11 @@ impl TryFrom<RawShape> for Shape {
 
 // Direct port from
 // <https://github.com/fonttools/fonttools/blob/b7509b2/Lib/fontTools/misc/transform.py#L65-L77>
-const EPSILON: f64 = 1e-15;
-const ONE_EPSILON: f64 = 1.0 - EPSILON;
-const MINUS_ONE_EPSILON: f64 = -1.0 + EPSILON;
-
 fn norm_sin_cos(v: f64) -> f64 {
+    const EPSILON: f64 = 1e-15;
+    const ONE_EPSILON: f64 = 1.0 - EPSILON;
+    const MINUS_ONE_EPSILON: f64 = -1.0 + EPSILON;
+
     if v.abs() < EPSILON {
         0.0
     } else if v > ONE_EPSILON {
