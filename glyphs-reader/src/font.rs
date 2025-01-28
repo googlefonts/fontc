@@ -1983,7 +1983,7 @@ impl TryFrom<RawShape> for Shape {
                 transform *= Affine::translate((from.pos[0], from.pos[1]));
             }
             if let Some(angle) = from.angle {
-                transform *= Affine::rotate(angle.to_radians());
+                transform *= normalized_rotation(angle);
             }
             if !from.scale.is_empty() {
                 if from.scale.len() != 2 {
@@ -2008,6 +2008,31 @@ impl TryFrom<RawShape> for Shape {
             })
         };
         Ok(shape)
+    }
+}
+
+/// Return [kurbo::Affine] rotation around angle (in degrees) with normalized sin/cos.
+///
+/// This ensures that for the four "cardinal" rotations (0, 90, 180, 270), the values
+/// of sin(angle) and cos(angle) are rounded to *exactly* 0.0, +1.0 or -1.0, thus avoiding
+/// very small values (e.g. 1.2246467991473532e-16) whose effect may be amplified as some
+/// transformed point coordinates end up close to the 0.5 threshold before being rounded
+/// to integer later in the build.
+/// It matches the output of the fontTools' Transform.rotate() used by glyphsLib.
+/// <https://github.com/fonttools/fonttools/blob/b7509b2/Lib/fontTools/misc/transform.py#L246-L258>
+fn normalized_rotation(angle_deg: f64) -> Affine {
+    const ROT_90: Affine = Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]);
+    const ROT_180: Affine = Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
+    const ROT_270: Affine = Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]);
+    // Normalize angle to [0, 360)
+    let normalized_angle = angle_deg.rem_euclid(360.0);
+
+    match normalized_angle {
+        0.0 => Affine::IDENTITY,
+        90.0 => ROT_90,
+        180.0 => ROT_180,
+        270.0 => ROT_270,
+        _ => Affine::rotate(angle_deg.to_radians()),
     }
 }
 
@@ -2600,8 +2625,8 @@ impl From<Affine> for AffineForEqAndHash {
 mod tests {
     use crate::{
         font::{
-            default_master_idx, AxisUserToDesignMap, RawFeature, RawFont, RawFontMaster,
-            UserToDesignMapping,
+            default_master_idx, normalized_rotation, AxisUserToDesignMap, RawFeature, RawFont,
+            RawFontMaster, UserToDesignMapping,
         },
         glyphdata::{Category, GlyphData},
         plist::FromPlist,
@@ -3655,5 +3680,43 @@ mod tests {
             ],
             *mapping
         );
+    }
+
+    #[rstest]
+    #[case::rotate_0(0.0, Affine::new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]))]
+    #[case::rotate_360(360.0, Affine::new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]))]
+    #[case::rotate_90(90.0, Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_minus_90(-90.0, Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_180(180.0, Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]))]
+    #[case::rotate_minus_180(-180.0, Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]))]
+    #[case::rotate_270(270.0, Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_minus_270(-270.0, Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_450(450.0, Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]))]
+    #[case::rotate_540(540.0, Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]))]
+    fn cardinal_rotation_contain_exact_zeros_and_ones(
+        #[case] angle: f64,
+        #[case] expected: Affine,
+    ) {
+        // When Glyphs 3 components are rotated by a 90, 180 or 270 degree angle,
+        // we want to match fontTools Transform.rotate() and have the sine and
+        // cosine terms rounded exactly to 0.0 or ±1.0 to avoid unnecessary diffs
+        // upon rounding transformed coordinates to integer:
+        // https://github.com/googlefonts/fontc/issues/1218
+        assert_eq!(expected, normalized_rotation(angle));
+    }
+
+    #[rstest]
+    #[case::rotate_30(30.0, 4, Affine::new([0.866, 0.5, -0.5, 0.866, 0.0, 0.0]))]
+    #[case::rotate_minus_30(-30.0, 4, Affine::new([0.866, -0.5, 0.5, 0.866, 0.0, 0.0]))]
+    #[case::rotate_almost_90(
+        90.01, 8, Affine::new([-0.00017453, 0.99999998, -0.99999998, -0.00017453, 0.0, 0.0])
+    )]
+    fn non_cardinal_rotation_left_untouched(
+        #[case] angle: f64,
+        #[case] precision: u8,
+        #[case] expected: Affine,
+    ) {
+        // any other angles' sin and cos != (0, ±1) are passed through unchanged
+        assert_eq!(expected, round(normalized_rotation(angle), precision));
     }
 }
