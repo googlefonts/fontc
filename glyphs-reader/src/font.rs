@@ -1983,7 +1983,7 @@ impl TryFrom<RawShape> for Shape {
                 transform *= Affine::translate((from.pos[0], from.pos[1]));
             }
             if let Some(angle) = from.angle {
-                transform *= Affine::rotate(angle.to_radians());
+                transform *= normalized_rotation(angle);
             }
             if !from.scale.is_empty() {
                 if from.scale.len() != 2 {
@@ -2009,6 +2009,41 @@ impl TryFrom<RawShape> for Shape {
         };
         Ok(shape)
     }
+}
+
+// Direct port from
+// <https://github.com/fonttools/fonttools/blob/b7509b2/Lib/fontTools/misc/transform.py#L65-L77>
+const EPSILON: f64 = 1e-15;
+const ONE_EPSILON: f64 = 1.0 - EPSILON;
+const MINUS_ONE_EPSILON: f64 = -1.0 + EPSILON;
+
+fn norm_sin_cos(v: f64) -> f64 {
+    if v.abs() < EPSILON {
+        0.0
+    } else if v > ONE_EPSILON {
+        1.0
+    } else if v < MINUS_ONE_EPSILON {
+        -1.0
+    } else {
+        v
+    }
+}
+
+/// Return [kurbo::Affine] rotation around angle (in degrees) with normalized sin/cos.
+///
+/// This ensures that for the four "cardinal" rotations (0, 90, 180, 270), the values
+/// of sin(angle) and cos(angle) are rounded to *exactly* 0.0, +1.0 or -1.0, thus avoiding
+/// very small values (e.g. 1.2246467991473532e-16) whose effect may be amplified as some
+/// transformed point coordinates end up close to the 0.5 threshold before being rounded
+/// to integer later in the build.
+/// It matches the output of the fontTools' Transform.rotate() used by glyphsLib.
+/// <https://github.com/fonttools/fonttools/blob/b7509b2/Lib/fontTools/misc/transform.py#L246-L258>
+fn normalized_rotation(angle_deg: f64) -> Affine {
+    Affine::new(
+        Affine::rotate(angle_deg.to_radians())
+            .as_coeffs()
+            .map(norm_sin_cos),
+    )
 }
 
 fn map_and_push_if_present<T, U>(dest: &mut Vec<T>, src: Vec<U>, map: fn(U) -> T) {
@@ -2600,8 +2635,8 @@ impl From<Affine> for AffineForEqAndHash {
 mod tests {
     use crate::{
         font::{
-            default_master_idx, AxisUserToDesignMap, RawFeature, RawFont, RawFontMaster,
-            UserToDesignMapping,
+            default_master_idx, normalized_rotation, AxisUserToDesignMap, RawFeature, RawFont,
+            RawFontMaster, UserToDesignMapping,
         },
         glyphdata::{Category, GlyphData},
         plist::FromPlist,
@@ -3654,6 +3689,36 @@ mod tests {
                 (OrderedFloat(700_f64), OrderedFloat(70.0))
             ],
             *mapping
+        );
+    }
+
+    #[test]
+    fn cardinal_rotation_contain_exact_zeros_and_ones() {
+        // When Glyphs 3 components are rotated by a 90, 180 or 270 degree angle,
+        // we want to match fontTools Transform.rotate() and have the sine and
+        // cosine terms rounded exactly to 0.0 or ±1.0 to avoid unnecessary diffs
+        // upon rounding transformed coordinates to integer:
+        // https://github.com/googlefonts/fontc/issues/1218
+        assert_eq!(
+            Affine::new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+            normalized_rotation(0.0)
+        );
+        assert_eq!(
+            Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]),
+            normalized_rotation(90.0)
+        );
+        assert_eq!(
+            Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]),
+            normalized_rotation(180.0)
+        );
+        assert_eq!(
+            Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]),
+            normalized_rotation(270.0)
+        );
+        // any other angles' sin and cos != (0, ±1) are passed through unchanged
+        assert_eq!(
+            Affine::new([0.866, 0.5, -0.5, 0.866, 0.0, 0.0]),
+            round(normalized_rotation(30.0), 4)
         );
     }
 }
