@@ -90,7 +90,7 @@ fontparts==0.12.3
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.55.7
+fonttools[lxml,repacker,ufo,unicode,woff]==4.55.8
     # via
     #   -r requirements.in
     #   afdko
