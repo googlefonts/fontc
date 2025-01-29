@@ -15,7 +15,7 @@ use std::{
     str::FromStr,
 };
 
-use icu_properties::GeneralCategory;
+use icu_properties::props::GeneralCategory;
 
 use smol_str::SmolStr;
 
@@ -583,7 +583,7 @@ impl GlyphData {
 
 // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L261
 fn category_from_icu(c: char) -> (Category, Option<Subcategory>) {
-    match icu_properties::maps::general_category().get(c) {
+    match icu_properties::CodePointMapData::<GeneralCategory>::new().get(c) {
         GeneralCategory::Unassigned | GeneralCategory::OtherSymbol => (Category::Symbol, None),
         GeneralCategory::UppercaseLetter
         | GeneralCategory::LowercaseLetter

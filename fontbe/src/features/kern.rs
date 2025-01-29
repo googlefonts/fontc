@@ -23,7 +23,7 @@ use fontir::{
     ir::{self, Glyph, KernGroup, KerningGroups, KerningInstance},
     orchestration::WorkId as FeWorkId,
 };
-use icu_properties::BidiClass;
+use icu_properties::props::BidiClass;
 use log::debug;
 use ordered_float::OrderedFloat;
 use write_fonts::{
