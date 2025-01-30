@@ -1,0 +1,23 @@
+languagesystem DFLT dflt;
+languagesystem latn SRB;
+languagesystem cyrl MKD;
+
+feature aalt {
+    feature locl;
+} aalt;
+
+feature locl {
+    script latn;
+    language SRB;
+    lookup locl_1 {
+        # in aalt, this should occur before the rule below
+        sub a by b;
+    } locl_1;
+
+    # even though this script/language will sort ahead of latn/SRB
+    script cyrl;
+    language MKD;
+    lookup locl_2 {
+        sub a by c;
+    } locl_2;
+} locl;
