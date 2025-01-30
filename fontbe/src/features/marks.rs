@@ -680,11 +680,17 @@ fn make_caret_value(
         })
         .collect::<Vec<_>>();
 
-    let (default, deltas) = crate::features::resolve_variable_metric(
+    let (default, mut deltas) = crate::features::resolve_variable_metric(
         static_metadata,
         values.iter().map(|item| (&item.0, &item.1)),
     )
     .map_err(|err| Error::AnchorDeltaError(glyph_name.to_owned(), err))?;
+
+    // don't bother encoding all zero deltas
+    if deltas.iter().all(|d| d.1 == 0) {
+        deltas.clear();
+    }
+
     Ok(Some(CaretValue::Coordinate {
         default,
         deltas: deltas.into(),
@@ -1298,6 +1304,26 @@ mod tests {
             matches!(caret, RawCaretValue::Format1(t) if t.coordinate == -222),
             "{caret:?}"
         );
+    }
+
+    #[test]
+    fn lig_caret_nop_deltas() {
+        use write_fonts::read::tables::gdef as rgdef;
+        // these values are taken from Oswald.glyphs
+        let out = MarksInput::new([&[-1.0], &[0.0], &[1.0]])
+            .add_glyph("f_f", None, |anchors| {
+                anchors.add("caret_1", [(10.0, 0.0), (10., 0.0), (10., 0.)]);
+            })
+            .compile();
+
+        let gdef_bytes = write_fonts::dump_table(&out.gdef.unwrap()).unwrap();
+        let gdef = rgdef::Gdef::read(gdef_bytes.as_slice().into()).unwrap();
+        let lig_carets = gdef.lig_caret_list().unwrap().unwrap();
+        let ff = lig_carets.lig_glyphs().get(0).unwrap();
+        let rgdef::CaretValue::Format1(caret) = ff.caret_values().get(0).unwrap() else {
+            panic!("wrong caret format");
+        };
+        assert_eq!(caret.coordinate(), 10)
     }
 
     #[test]
