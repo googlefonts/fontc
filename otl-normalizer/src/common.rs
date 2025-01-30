@@ -8,12 +8,18 @@ use std::{
 };
 
 use write_fonts::{
-    read::tables::layout::{FeatureList, ScriptList},
+    read::{
+        tables::{
+            gpos::DeviceOrVariationIndex,
+            layout::{FeatureList, ScriptList},
+        },
+        ReadError,
+    },
     tables::layout::LookupFlag,
     types::{GlyphId16, Tag},
 };
 
-use crate::glyph_names::NameMap;
+use crate::{glyph_names::NameMap, variations::DeltaComputer};
 
 pub(crate) struct LanguageSystem {
     script: Tag,
@@ -69,6 +75,37 @@ where
     pub lookup_id: u16,
     flag: LookupFlag,
     filter_set: Option<u16>,
+}
+
+/// Resolved device or delta values
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum DeviceOrDeltas {
+    Device {
+        start: u16,
+        end: u16,
+        values: Vec<i8>,
+    },
+    Deltas(Vec<i32>),
+}
+
+impl DeviceOrDeltas {
+    pub fn new(
+        default_value: i16,
+        device: DeviceOrVariationIndex,
+        ivs: Option<&DeltaComputer>,
+    ) -> Result<Self, ReadError> {
+        match device {
+            DeviceOrVariationIndex::Device(device) => Ok(Self::Device {
+                start: device.start_size(),
+                end: device.end_size(),
+                values: device.iter().collect(),
+            }),
+            DeviceOrVariationIndex::VariationIndex(idx) => ivs
+                .unwrap()
+                .master_values(default_value as _, idx)
+                .map(Self::Deltas),
+        }
+    }
 }
 
 impl LanguageSystem {
@@ -375,5 +412,33 @@ impl From<GlyphId16> for GlyphSet {
 impl FromIterator<GlyphId16> for GlyphSet {
     fn from_iter<T: IntoIterator<Item = GlyphId16>>(iter: T) -> Self {
         GlyphSet::Multiple(iter.into_iter().collect())
+    }
+}
+
+impl Display for DeviceOrDeltas {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeviceOrDeltas::Device { start, end, values } => {
+                write!(f, " [({start})")?;
+                for (i, adj) in values.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
+                    write!(f, "{adj}")?;
+                }
+                write!(f, "({end})]")?;
+            }
+            DeviceOrDeltas::Deltas(deltas) => {
+                write!(f, " {{")?;
+                for (i, var) in deltas.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
+                    write!(f, "{var}")?;
+                }
+                write!(f, "}}")?;
+            }
+        }
+        Ok(())
     }
 }
