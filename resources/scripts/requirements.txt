@@ -129,7 +129,7 @@ gflanguages==0.7.2
     #   glyphsets
 gfsubsets==2024.9.25
     # via gftools
-gftools==0.9.74
+gftools==0.9.77
     # via -r requirements.in
 gitdb==4.0.12
     # via gitpython
@@ -204,7 +204,7 @@ pyclipper==1.3.0.post6
     # via booleanoperations
 pycparser==2.22
     # via cffi
-pygit2==1.14.1
+pygit2==1.15.0
     # via gftools
 pygithub==2.5.0
     # via gftools
@@ -266,7 +266,7 @@ ttfautohint-py==0.5.1
     # via gftools
 typing-extensions==4.12.2
     # via pygithub
-ufo2ft[cffsubr,compreffor]==3.4.0
+ufo2ft[cffsubr,compreffor]==3.4.1
     # via
     #   fontmake
     #   nanoemoji
