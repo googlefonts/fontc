@@ -385,9 +385,37 @@ impl GvarFragment {
                     return None;
                 }
 
-                let tuple_builder = TupleBuilder::new(region, axis_order);
-                let (min, peak, max) = tuple_builder.build();
-                Some(GlyphDeltas::new(peak, deltas.clone(), Some((min, max))))
+                let mut mins = Vec::<F2Dot14>::new();
+                let mut peaks = Vec::<F2Dot14>::new();
+                let mut maxes = Vec::<F2Dot14>::new();
+
+                // Optimisation: only write explicit mins and maxes if at least one of the tents is
+                // an intermediate region.
+                // https://github.com/fonttools/fonttools/blob/b467579c/Lib/fontTools/ttLib/tables/TupleVariation.py#L184-L193
+                let mut needs_intermediate = false;
+
+                for tag in axis_order.iter() {
+                    let tent = region.get(tag).unwrap();
+                    let (min, peak, max) = (
+                        F2Dot14::from_f32(tent.min.to_f64() as _),
+                        F2Dot14::from_f32(tent.peak.to_f64() as _),
+                        F2Dot14::from_f32(tent.max.to_f64() as _),
+                    );
+
+                    mins.push(min);
+                    peaks.push(peak);
+                    maxes.push(max);
+
+                    // NOTE: Comparison must occur after type conversion.
+                    needs_intermediate |=
+                        (min, max) != (peak.min(Default::default()), peak.max(Default::default()));
+                }
+
+                return Some(GlyphDeltas::new(
+                    Tuple::new(peaks),
+                    deltas.clone(),
+                    needs_intermediate.then(|| (Tuple::new(mins), Tuple::new(maxes))),
+                ));
             })
             .collect()
     }
@@ -406,40 +434,6 @@ impl Persistable for GvarFragment {
 
     fn write(&self, to: &mut dyn io::Write) {
         bincode::serialize_into(to, &self).unwrap();
-    }
-}
-
-/// <https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview#variation-data>
-#[derive(Debug, Default)]
-struct TupleBuilder {
-    axes: Vec<Tag>,
-    min: Vec<F2Dot14>,
-    peak: Vec<F2Dot14>,
-    max: Vec<F2Dot14>,
-}
-
-impl TupleBuilder {
-    fn new(region: &VariationRegion, axis_order: &[Tag]) -> Self {
-        let mut builder = TupleBuilder::default();
-        for tag in axis_order {
-            let tent = region.get(tag).unwrap();
-            builder.axes.push(*tag);
-            builder.min.push(F2Dot14::from_f32(tent.min.to_f64() as _));
-            builder
-                .peak
-                .push(F2Dot14::from_f32(tent.peak.to_f64() as _));
-            builder.max.push(F2Dot14::from_f32(tent.max.to_f64() as _));
-        }
-        trace!("{builder:?}");
-        builder
-    }
-
-    fn build(self) -> (Tuple, Tuple, Tuple) {
-        (
-            Tuple::new(self.min),
-            Tuple::new(self.peak),
-            Tuple::new(self.max),
-        )
     }
 }
 
