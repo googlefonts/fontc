@@ -10,4 +10,4 @@ cdifflib
 glyphsLib
 # keep gftools pinned as well to ensure ttx_diff.py output is stable.
 # 0.9.74 is when experimental support for fontc was added to gftools.
-gftools==0.9.74
+gftools==0.9.77
