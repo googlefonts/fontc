@@ -405,7 +405,8 @@ impl GvarFragment {
                     peaks.push(peak);
                     maxes.push(max);
 
-                    // NOTE: Comparison must occur after type conversion.
+                    // NOTE: Comparison must occur after truncation, as f64s
+                    // that are not equal may result in F2Dot14s that are.
                     needs_intermediate |=
                         (min, max) != (peak.min(F2Dot14::ZERO), peak.max(F2Dot14::ZERO));
                 }
