@@ -30,7 +30,6 @@ use fontir::{
     },
     variations::VariationRegion,
 };
-use log::trace;
 
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
