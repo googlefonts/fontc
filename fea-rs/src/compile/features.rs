@@ -398,6 +398,7 @@ impl ActiveFeature {
                 None => &mut feature.base,
             };
             to_add.extend(lookups);
+            to_add.sort();
         }
     }
 

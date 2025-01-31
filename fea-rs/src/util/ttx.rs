@@ -427,6 +427,7 @@ fn write_lines(f: &mut impl Write, lines: &[&str], line_num: usize, prefix: char
     }
 }
 
+// NOTE: to generate a new expected_diff, use the ttx_test binary.
 static DIFF_PREAMBLE: &str = "\
 # generated automatically by fea-rs
 # this file represents an acceptable difference between the output of
