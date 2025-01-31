@@ -411,11 +411,11 @@ impl GvarFragment {
                         (min, max) != (peak.min(F2Dot14::ZERO), peak.max(F2Dot14::ZERO));
                 }
 
-                return Some(GlyphDeltas::new(
+                Some(GlyphDeltas::new(
                     Tuple::new(peaks),
                     deltas.clone(),
                     needs_intermediate.then(|| (Tuple::new(mins), Tuple::new(maxes))),
-                ));
+                ))
             })
             .collect()
     }
