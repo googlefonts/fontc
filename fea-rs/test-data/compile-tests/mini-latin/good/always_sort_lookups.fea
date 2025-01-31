@@ -1,0 +1,16 @@
+feature derp {
+    lookup hi_mom {
+        sub x by z;
+        # sub a b' c by d;
+    } hi_mom;
+} derp;
+
+feature herp {
+    sub d by j;
+} herp;
+
+# this is added after 'sub d by j' but has a lower lookup id; it should
+# still be first in the lookuplist
+feature herp {
+    lookup hi_mom;
+} herp;
