@@ -3,7 +3,11 @@
 # fonttools and the output of fea-rs for a given input.
 #
 # In this case, fonttools does not sort these lookups, but we do.
-#
+# Ordering of lookups within a feature doesn't matter, and there issues
+# no defined convention, so we have adopted the convention of always sorting
+# them since it means our output will be stable regardless of whether some
+# implementation change might cause lookups to be added in a different order.
+
 L26
 >            <LookupListIndex index="0" value="1"/>
 >            <LookupListIndex index="1" value="0"/>
