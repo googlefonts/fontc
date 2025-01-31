@@ -742,7 +742,7 @@ impl FeatureProvider for FeaRsMarks {
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsStr, sync::Arc};
+    use std::{path::Path, sync::Arc};
 
     use fea_rs::compile::Compilation;
     use fontdrasil::{
@@ -968,8 +968,8 @@ mod tests {
             let (ast, _) = fea_rs::parse::parse_root(
                 "memory".into(),
                 Some(&glyph_map),
-                Box::new(move |x: &OsStr| {
-                    if x == "memory" {
+                Box::new(move |x: &Path| {
+                    if x == Path::new("memory") {
                         Ok(fea.clone())
                     } else {
                         unreachable!("our FEA has no include statements");

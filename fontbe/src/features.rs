@@ -4,10 +4,9 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     collections::{HashMap, HashSet},
-    ffi::{OsStr, OsString},
     fmt::Display,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     time::Instant,
 };
@@ -70,7 +69,7 @@ pub struct FeatureCompilationWork {}
 // I do not like this construct
 // I do find the need to lament
 struct InMemoryResolver {
-    content_path: OsString,
+    content_path: PathBuf,
     content: Arc<str>,
     // Our fea might be generated in memory, such as to inject generated kerning,
     // while compiling a disk-based source with a well defined include path
@@ -88,29 +87,29 @@ impl InMemoryResolver {
 }
 
 impl SourceResolver for InMemoryResolver {
-    fn get_contents(&self, rel_path: &OsStr) -> Result<Arc<str>, SourceLoadError> {
+    fn get_contents(&self, rel_path: &Path) -> Result<Arc<str>, SourceLoadError> {
         if rel_path == &*self.content_path {
             return Ok(self.content.clone());
         }
         let Some(include_dir) = &self.include_dir else {
             return Err(SourceLoadError::new(
-                rel_path.to_os_string(),
+                rel_path.to_path_buf(),
                 NoIncludePathError::new(),
             ));
         };
         let path = include_dir
             .join(rel_path)
             .canonicalize()
-            .map_err(|e| SourceLoadError::new(rel_path.to_os_string(), e))?;
+            .map_err(|e| SourceLoadError::new(rel_path.to_path_buf(), e))?;
         if !path.is_file() {
             return Err(SourceLoadError::new(
-                rel_path.to_os_string(),
+                rel_path.to_path_buf(),
                 Error::FileExpected(path),
             ));
         }
         trace!("Resolved {rel_path:?} to {path:?}");
         let contents = fs::read_to_string(path)
-            .map_err(|e| SourceLoadError::new(rel_path.to_os_string(), e))?;
+            .map_err(|e| SourceLoadError::new(rel_path.to_path_buf(), e))?;
         Ok(Arc::from(contents.as_str()))
     }
 }
@@ -503,7 +502,7 @@ impl FeatureParsingWork {
     }
 }
 
-fn get_resolver_and_root_path(features: &FeaturesSource) -> (Box<dyn SourceResolver>, OsString) {
+fn get_resolver_and_root_path(features: &FeaturesSource) -> (Box<dyn SourceResolver>, PathBuf) {
     match features {
         FeaturesSource::File {
             fea_file,
@@ -515,7 +514,7 @@ fn get_resolver_and_root_path(features: &FeaturesSource) -> (Box<dyn SourceResol
                 .unwrap_or_default();
             (
                 Box::new(FileSystemResolver::new(project_root)),
-                fea_file.to_owned().into_os_string(),
+                fea_file.clone(),
             )
         }
         FeaturesSource::Memory {
@@ -524,10 +523,10 @@ fn get_resolver_and_root_path(features: &FeaturesSource) -> (Box<dyn SourceResol
         } => (
             Box::new(InMemoryResolver {
                 include_dir: include_dir.to_owned(),
-                content_path: OsString::new(),
+                content_path: PathBuf::new(),
                 content: fea_content.as_str().into(),
             }),
-            OsString::new(),
+            PathBuf::new(),
         ),
         FeaturesSource::Empty => (Box::new(InMemoryResolver::empty()), Default::default()),
     }
