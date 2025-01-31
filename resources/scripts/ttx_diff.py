@@ -61,6 +61,7 @@ GFTOOLS_FONTC_PATH = "GFTOOLS_FONTC_PATH"
 FLAGS = flags.FLAGS
 # used instead of a tag for the normalized mark/kern output
 MARK_KERN_NAME = "(mark/kern)"
+LIG_CARET_NAME = "ligcaret"
 # maximum chars of stderr to include when reporting errors; prevents
 # too much bloat when run in CI
 MAX_ERR_LEN = 1000
@@ -154,14 +155,20 @@ def run_ttx(font_file: Path):
 
 
 # generate a simple text repr for gpos for this font, with retry
-def run_normalizer_gpos(normalizer_bin: Path, font_file: Path):
-    out_path = font_file.with_suffix(".markkern.txt")
+def run_normalizer(normalizer_bin: Path, font_file: Path, table: str):
+    if table == "gpos":
+        out_path = font_file.with_suffix(".markkern.txt")
+    elif table == "gdef":
+        out_path = font_file.with_suffix(f".{LIG_CARET_NAME}.txt")
+    else:
+        raise ValueError(f"unknown table for normalizer: '{table}'")
+
     if out_path.exists():
         eprint(f"reusing {out_path}")
     NUM_RETRIES = 5
     for i in range(NUM_RETRIES + 1):
         try:
-            return try_normalizer_gpos(normalizer_bin, font_file, out_path)
+            return try_normalizer(normalizer_bin, font_file, out_path, table)
         except subprocess.CalledProcessError as e:
             time.sleep(0.1)
             if i >= NUM_RETRIES:
@@ -171,7 +178,7 @@ def run_normalizer_gpos(normalizer_bin: Path, font_file: Path):
 
 # we had a bug where this would sometimes hang in mysterious ways, so we may
 # call it multiple times if it fails
-def try_normalizer_gpos(normalizer_bin: Path, font_file: Path, out_path: Path):
+def try_normalizer(normalizer_bin: Path, font_file: Path, out_path: Path, table: str):
     NORMALIZER_TIMEOUT = 60 * 10  # ten minutes
     if not out_path.is_file():
         cmd = [
@@ -180,9 +187,12 @@ def try_normalizer_gpos(normalizer_bin: Path, font_file: Path, out_path: Path):
             "-o",
             out_path.name,
             "--table",
-            "gpos",
+            table,
         ]
         log_and_run(cmd, font_file.parent, check=True, timeout=NORMALIZER_TIMEOUT)
+        # if we finished running and there's no file then there's no output:
+        if not out_path.is_file():
+            return ""
     with open(out_path) as f:
         return f.read()
 
@@ -498,6 +508,18 @@ def remove_mark_and_kern_lookups(ttx):
             lookup_type_el.attrib["value"] = str(lookup_type)
 
 
+# this all gets handled by otl-normalizer
+def remove_gdef_lig_caret_and_var_store(ttx: etree.ElementTree):
+    gdef = ttx.find("GDEF")
+    if gdef is None:
+        return
+
+    for ident in ["LigCaretList", "VarStore"]:
+        subtable = gdef.find(ident)
+        if subtable:
+            gdef.remove(subtable)
+
+
 def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
     sort_fontmake_feature_lookups(fontmake)
     for ttx in (fontc, fontmake):
@@ -518,6 +540,7 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         normalize_glyf_contours(ttx)
 
         erase_type_from_stranded_points(ttx)
+        remove_gdef_lig_caret_and_var_store(ttx)
 
     allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
     allow_some_off_by_ones(
@@ -567,8 +590,10 @@ def generate_output(
 ):
     fontc_ttx = run_ttx(fontc_ttf)
     fontmake_ttx = run_ttx(fontmake_ttf)
-    fontc_gpos = run_normalizer_gpos(otl_norm_bin, fontc_ttf)
-    fontmake_gpos = run_normalizer_gpos(otl_norm_bin, fontmake_ttf)
+    fontc_gpos = run_normalizer(otl_norm_bin, fontc_ttf, "gpos")
+    fontmake_gpos = run_normalizer(otl_norm_bin, fontmake_ttf, "gpos")
+    fontc_gdef = run_normalizer(otl_norm_bin, fontc_ttf, "gdef")
+    fontmake_gdef = run_normalizer(otl_norm_bin, fontmake_ttf, "gdef")
 
     fontc = etree.parse(fontc_ttx)
     fontmake = etree.parse(fontmake_ttx)
@@ -579,6 +604,10 @@ def generate_output(
     size_diffs = check_sizes(fontmake_ttf, fontc_ttf)
     fontc[MARK_KERN_NAME] = fontc_gpos
     fontmake[MARK_KERN_NAME] = fontmake_gpos
+    if len(fontc_gdef):
+        fontc[LIG_CARET_NAME] = fontc_gdef
+    if len(fontmake_gdef):
+        fontmake[LIG_CARET_NAME] = fontmake_gdef
     result = {"fontc": fontc, "fontmake": fontmake}
     if len(size_diffs) > 0:
         result["sizes"] = size_diffs

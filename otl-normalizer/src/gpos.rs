@@ -18,7 +18,7 @@ use write_fonts::{
 };
 
 use crate::{
-    common::{self, GlyphSet, Lookup, PrintNames, SingleRule},
+    common::{self, DeviceOrDeltas, GlyphSet, Lookup, PrintNames, SingleRule},
     error::Error,
     glyph_names::NameMap,
     variations::DeltaComputer,
@@ -114,16 +114,6 @@ fn print_rules<T: PrintNames + Clone>(
         writeln!(f, "{}", rule.printer(names))?;
     }
     Ok(())
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum DeviceOrDeltas {
-    Device {
-        start: u16,
-        end: u16,
-        values: Vec<i8>,
-    },
-    Deltas(Vec<i32>),
 }
 
 /// A value plus an optional device table or set of deltas
@@ -223,17 +213,9 @@ impl ResolvedValue {
         ivs: Option<&DeltaComputer>,
     ) -> Result<Self, ReadError> {
         let default = default.unwrap_or_default();
-        let device_or_deltas = device.transpose()?.map(|device| match device {
-            DeviceOrVariationIndex::Device(device) => Ok(DeviceOrDeltas::Device {
-                start: device.start_size(),
-                end: device.end_size(),
-                values: device.iter().collect(),
-            }),
-            DeviceOrVariationIndex::VariationIndex(idx) => ivs
-                .unwrap()
-                .master_values(default as _, idx)
-                .map(DeviceOrDeltas::Deltas),
-        });
+        let device_or_deltas = device
+            .transpose()?
+            .map(|device| DeviceOrDeltas::new(default, device, ivs));
         device_or_deltas
             .transpose()
             .map(|device_or_deltas| ResolvedValue {
@@ -490,28 +472,8 @@ impl Display for ResolvedValueRecord {
 impl Display for ResolvedValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.default)?;
-        match &self.device_or_deltas {
-            Some(DeviceOrDeltas::Device { start, end, values }) => {
-                write!(f, " [({start})")?;
-                for (i, adj) in values.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ",")?;
-                    }
-                    write!(f, "{adj}")?;
-                }
-                write!(f, "({end})]")?;
-            }
-            Some(DeviceOrDeltas::Deltas(deltas)) => {
-                write!(f, " {{")?;
-                for (i, var) in deltas.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ",")?;
-                    }
-                    write!(f, "{var}")?;
-                }
-                write!(f, "}}")?;
-            }
-            None => (),
+        if let Some(device_or_deltas) = self.device_or_deltas.as_ref() {
+            write!(f, "{device_or_deltas}")?;
         }
         Ok(())
     }
