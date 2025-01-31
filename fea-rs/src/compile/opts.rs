@@ -83,7 +83,7 @@ mod tests {
             let features = Path::new(OSWALD_DIR).join("features.fea");
             let glyph_order = std::fs::read_to_string(glyph_order).unwrap();
             let glyph_order = crate::compile::parse_glyph_order(&glyph_order).unwrap();
-            Compiler::<NopFeatureProvider, MockVariationInfo>::new(&features, &glyph_order)
+            Compiler::<NopFeatureProvider, MockVariationInfo>::new(features, &glyph_order)
                 .with_opts(opts)
                 .compile()
                 .unwrap()

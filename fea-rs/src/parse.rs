@@ -11,8 +11,7 @@ mod source;
 mod tree;
 
 use std::{
-    ffi::{OsStr, OsString},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -50,7 +49,7 @@ pub fn parse_root_file(
     let project_root =
         project_root.unwrap_or_else(|| path.parent().map(PathBuf::from).unwrap_or_default());
     let resolver = source::FileSystemResolver::new(project_root);
-    parse_root(path.into_os_string(), glyph_map, Box::new(resolver))
+    parse_root(path, glyph_map, Box::new(resolver))
 }
 
 /// Entry point for parsing.
@@ -70,7 +69,7 @@ pub fn parse_root_file(
 /// check that there are no errors (via [`DiagnosticSet::has_errors`]) to know
 /// whether or not parsing was successful.
 pub fn parse_root(
-    path: OsString,
+    path: PathBuf,
     glyph_map: Option<&GlyphMap>,
     resolver: Box<dyn SourceResolver>,
 ) -> Result<(ParseTree, DiagnosticSet), SourceLoadError> {
@@ -93,12 +92,12 @@ pub fn parse_string(text: impl Into<Arc<str>>) -> (ParseTree, DiagnosticSet) {
     parse_root(
         SRC_NAME.into(),
         None,
-        Box::new(move |s: &OsStr| {
-            if s == SRC_NAME {
+        Box::new(move |s: &Path| {
+            if s == Path::new(SRC_NAME) {
                 Ok(text.clone())
             } else {
                 Err(SourceLoadError::new(
-                    s.to_os_string(),
+                    s.to_path_buf(),
                     "parse_string cannot handle imports",
                 ))
             }

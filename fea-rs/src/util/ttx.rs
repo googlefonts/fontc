@@ -3,7 +3,6 @@
 use std::{
     collections::HashMap,
     env::temp_dir,
-    ffi::OsStr,
     fmt::{Debug, Display, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -180,12 +179,20 @@ pub fn finalize_results(result: Vec<Result<PathBuf, TestCase>>) -> Report {
     result
 }
 
+/// Only for testing; panics on bad string filenames
+fn is_fea(path: &Path) -> bool {
+    let Some(pstr) = path.file_name().and_then(|n| n.to_str()) else {
+        panic!("Compile tests should use stringable names");
+    };
+    pstr.ends_with(".fea")
+}
+
 fn iter_compile_tests<'a>(
     path: &'a Path,
     filter: Filter<'a>,
 ) -> impl Iterator<Item = PathBuf> + 'a {
     iter_fea_files(path).filter(move |p| {
-        if p.extension() == Some(OsStr::new("fea")) && p.with_extension("ttx").exists() {
+        if is_fea(p) && p.with_extension("ttx").exists() {
             let path_str = p.file_name().unwrap().to_str().unwrap();
             return should_run_test(path_str) && filter.filter(path_str);
         }
@@ -197,13 +204,13 @@ fn should_run_test(path: &str) -> bool {
     !IGNORED_TESTS.contains(&path)
 }
 
-/// Iterate over all the files in a directory with the 'fea' suffix
+/// Iterate over all the files in a directory with the 'fea' suffix. Only used for test purposes.
 pub fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> + 'static {
     let mut dir = path.as_ref().read_dir().ok();
     std::iter::from_fn(move || loop {
         let entry = dir.as_mut()?.next()?.unwrap();
         let path = entry.path();
-        if path.extension() == Some(OsStr::new("fea")) {
+        if is_fea(&path) {
             return Some(path);
         }
     })
@@ -240,7 +247,7 @@ pub(crate) fn run_test(
 ) -> Result<PathBuf, TestCase> {
     let run_result = std::panic::catch_unwind(|| {
         let mut compiler: Compiler<'_, NopFeatureProvider, MockVariationInfo> =
-            Compiler::new(&path, glyph_map)
+            Compiler::new(path.clone(), glyph_map)
                 .print_warnings(std::env::var(super::VERBOSE).is_ok())
                 .with_opts(Opts::new().make_post_table(true));
         if is_variable(&path) {

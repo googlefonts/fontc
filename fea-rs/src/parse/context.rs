@@ -2,8 +2,8 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    ffi::OsString,
     ops::Range,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -117,7 +117,7 @@ impl ParseContext {
     ///
     /// [`generate_parse_tree`]: ParseContext::generate_parse_tree
     pub(crate) fn parse(
-        path: OsString,
+        path: PathBuf,
         glyph_map: Option<&GlyphMap>,
         resolver: Box<dyn SourceResolver>,
     ) -> Result<Self, SourceLoadError> {
@@ -145,7 +145,7 @@ impl ParseContext {
             let source_id = source.id();
 
             for include in &include_stmts {
-                match sources.source_for_path(&include.path(), Some(source_id)) {
+                match sources.source_for_path(Path::new(include.path()), Some(source_id)) {
                     Ok(included_id) => {
                         includes.add_edge(id, (included_id, include.stmt_range()));
                         queue.push(included_id);
@@ -342,9 +342,6 @@ pub(crate) fn parse_src(
 
 #[cfg(test)]
 mod tests {
-
-    use std::ffi::OsStr;
-
     use super::*;
     use crate::{
         token_tree::{typed, TreeBuilder},
@@ -389,7 +386,7 @@ mod tests {
         let parse = ParseContext::parse(
             "a".into(),
             None,
-            Box::new(|path: &OsStr| match path.to_str().unwrap() {
+            Box::new(|path: &Path| match path.to_str().unwrap() {
                 "a" => Ok("include(bb);".into()),
                 "bb" => Ok("include(a);".into()),
                 _ => Err(SourceLoadError::new(
@@ -419,7 +416,7 @@ mod tests {
         let parse = ParseContext::parse(
             "file_a".into(),
             None,
-            Box::new(|path: &OsStr| match path.to_str().unwrap() {
+            Box::new(|path: &Path| match path.to_str().unwrap() {
                 "file_a" => Ok(file_a.into()),
                 "b" => Ok(file_b.into()),
                 "c" => Ok(file_c.into()),

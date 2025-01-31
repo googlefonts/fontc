@@ -1,7 +1,6 @@
 //! The main public API for compilation
 
 use std::{
-    ffi::OsString,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -28,7 +27,7 @@ const DEFAULT_N_MESSAGES_TO_PRINT: usize = 100;
 ///     .compile_binary().unwrap();
 /// ```
 pub struct Compiler<'a, F: FeatureProvider, V: VariationInfo> {
-    root_path: OsString,
+    root_path: PathBuf,
     project_root: Option<PathBuf>,
     glyph_map: &'a GlyphMap,
     // variable fonts only
@@ -51,7 +50,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
     /// identifier that your resolver will resolve.
     ///
     /// [`with_resolver`]: Self::with_resolver
-    pub fn new(root_path: impl Into<OsString>, glyph_map: &'a GlyphMap) -> Self {
+    pub fn new(root_path: impl Into<PathBuf>, glyph_map: &'a GlyphMap) -> Self {
         Compiler {
             root_path: root_path.into(),
             glyph_map,
