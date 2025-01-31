@@ -301,11 +301,13 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
         if let Some(vendor_id) = font.vendor_id() {
-            static_metadata.misc.vendor_id =
-                Tag::from_str(vendor_id).map_err(|cause| Error::InvalidTag {
-                    raw_tag: vendor_id.to_owned(),
-                    cause,
-                })?;
+            match Tag::from_str(vendor_id) {
+                Ok(id) => static_metadata.misc.vendor_id = id,
+                Err(e) => {
+                    // we can log and continue here, this value is not required
+                    log::warn!("Invalid vendorID: '{e}'");
+                }
+            }
         }
 
         // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
@@ -1830,5 +1832,12 @@ mod tests {
     #[test]
     fn fixed_pitch_off() {
         assert_eq!(None, fixed_pitch_of(glyphs3_dir().join("WghtVar.glyphs")));
+    }
+
+    #[test]
+    fn invalid_vendor_id_no_crashy() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("InvalidVendorID.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(Tag::new(b"NONE"), static_metadata.misc.vendor_id);
     }
 }
