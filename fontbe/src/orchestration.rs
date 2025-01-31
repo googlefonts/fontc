@@ -407,7 +407,7 @@ impl GvarFragment {
 
                     // NOTE: Comparison must occur after type conversion.
                     needs_intermediate |=
-                        (min, max) != (peak.min(Default::default()), peak.max(Default::default()));
+                        (min, max) != (peak.min(F2Dot14::ZERO), peak.max(F2Dot14::ZERO));
                 }
 
                 return Some(GlyphDeltas::new(
