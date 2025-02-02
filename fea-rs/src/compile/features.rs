@@ -139,16 +139,22 @@ impl AllFeatures {
             let Some(feat_idx) = aalt.features().iter().position(|tag| *tag == key.feature) else {
                 continue;
             };
-            relevant_lookups[feat_idx].extend(
-                feat_lookups
-                    .base
-                    .iter()
-                    .flat_map(|idx| all_lookups.aalt_lookups(*idx)),
-            )
+            relevant_lookups[feat_idx].extend(feat_lookups.base.iter().copied().flat_map(|idx| {
+                all_lookups
+                    .aalt_lookups(idx)
+                    .into_iter()
+                    .map(move |lookup| (idx, lookup))
+            }))
         }
 
+        // then within a given tag we want to sort the lookups by lookup id;
+        // this isn't exactly described in the spec but it matches the (implicit)
+        // behaviour of fonttools.
+        for lookups in &mut relevant_lookups {
+            lookups.sort_by_key(|(idx, _)| *idx);
+        }
         // now go through the lookups, ordered by appearance of feature in aalt
-        for lookup in relevant_lookups.iter().flat_map(|x| x.iter()) {
+        for (_, lookup) in relevant_lookups.iter().flat_map(|x| x.iter()) {
             match lookup {
                 super::lookups::SubstitutionLookup::Single(lookup) => {
                     aalt.extend(lookup.iter_subtables().flat_map(|sub| sub.iter_pairs()))
