@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::Path,
-    str::FromStr,
     sync::Arc,
 };
 
@@ -300,14 +299,14 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
-        if let Some(vendor_id) = font.vendor_id() {
-            match Tag::from_str(vendor_id) {
-                Ok(id) => static_metadata.misc.vendor_id = id,
-                Err(e) => {
-                    // we can log and continue here, this value is not required
-                    log::warn!("Invalid vendorID: '{e}'");
-                }
-            }
+        // treat "    " (four spaces) as equivalent to no value; it means
+        // 'null', per the spec
+        if let Some(vendor_id) = font.vendor_id().filter(|id| *id != "    ") {
+            static_metadata.misc.vendor_id =
+                vendor_id.parse().map_err(|cause| Error::InvalidTag {
+                    raw_tag: vendor_id.to_owned(),
+                    cause,
+                })?;
         }
 
         // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
