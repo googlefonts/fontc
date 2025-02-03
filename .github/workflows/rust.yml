@@ -239,26 +239,7 @@ jobs:
           target: wasm32-unknown-unknown
 
       # Not all libraries need to build here, only the ones needed for the core compiler
-      # TODO: just check fontc. For now lets make sure we don't backslide on what does work.
-      # TODO: fix ufo2fontir, it hits https://docs.rs/getrandom/#webassembly-support
+      # Which is conveniently checked by simply building fontc
 
-      - name: build fontdrasil for wasm32-unknown-unknown
-        run: cargo build -p fontdrasil --target wasm32-unknown-unknown
-
-      - name: build glyphs-reader for wasm32-unknown-unknown
-        run: cargo build -p glyphs-reader --target wasm32-unknown-unknown
-
-      - name: build fontra2fontir for wasm32-unknown-unknown
-        run: cargo build -p fontra2fontir --target wasm32-unknown-unknown
-
-      - name: build glyphs2fontir for wasm32-unknown-unknown
-        run: cargo build -p glyphs2fontir --target wasm32-unknown-unknown
-
-      - name: build fea-rs for wasm32-unknown-unknown
-        run: cargo build -p fea-rs --target wasm32-unknown-unknown
-
-      - name: build fea-rs --features serde for wasm32-unknown-unknown
-        run: cargo build -p fea-rs --features serde --target wasm32-unknown-unknown
-
-      - name: build fontir for wasm32-unknown-unknown
-        run: cargo build -p fontir --target wasm32-unknown-unknown
+      - name: build fontc for wasm32-unknown-unknown
+        run: cargo build -p fontc --target wasm32-unknown-unknown
