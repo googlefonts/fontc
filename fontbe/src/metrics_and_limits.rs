@@ -302,12 +302,13 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             caret_slope_rise: default_metrics.caret_slope_rise.into_inner().ot_round(),
             caret_slope_run: default_metrics.caret_slope_run.into_inner().ot_round(),
             caret_offset: default_metrics.caret_offset.into_inner().ot_round(),
-            number_of_long_metrics: long_metrics.len().try_into().map_err(|_| {
-                Error::OutOfBounds {
+            number_of_h_metrics: long_metrics
+                .len()
+                .try_into()
+                .map_err(|_| Error::OutOfBounds {
                     what: "number_of_long_metrics".into(),
                     value: format!("{}", long_metrics.len()),
-                }
-            })?,
+                })?,
         };
         context.hhea.set(hhea);
 

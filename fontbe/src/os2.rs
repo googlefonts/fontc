@@ -220,7 +220,7 @@ fn x_avg_char_width(context: &Context) -> Result<i16, Error> {
     let num_glyphs = glyph_order.len() as u64;
     let hmtx = Hmtx::read(
         FontData::new(raw_hmtx.get()),
-        hhea.number_of_long_metrics,
+        hhea.number_of_h_metrics,
         num_glyphs as u16,
     )
     .map_err(|_| Error::InvalidTableBytes(Hmtx::TAG))?;
@@ -243,7 +243,7 @@ fn x_avg_char_width(context: &Context) -> Result<i16, Error> {
         .map(|m| m.advance() as u64)
         .unwrap_or_default();
     let (count, total) = if last_advance > 0 {
-        let num_short = num_glyphs - hhea.number_of_long_metrics as u64;
+        let num_short = num_glyphs - hhea.number_of_h_metrics as u64;
         (count + num_short, total + num_short * last_advance)
     } else {
         (count, total)
