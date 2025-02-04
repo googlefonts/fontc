@@ -66,6 +66,11 @@ impl GlyphSet {
         self.0.iter().copied()
     }
 
+    /// Returns `true` if the glyph is in the set.
+    pub fn contains(&self, gid: GlyphId16) -> bool {
+        self.0.binary_search(&gid).is_ok()
+    }
+
     /// The number of glyphs in the set
     pub fn len(&self) -> usize {
         self.0.len()
