@@ -639,7 +639,7 @@ def print_output(build_dir: Path, output: dict[str, dict[str, Any]]):
             difference = diff_ratio(t1s, t2s)
             p1 = build_dir / path_for_output_item(tag, "fontc")
             p2 = build_dir / path_for_output_item(tag, "fontmake")
-            print(f"  DIFF '{tag}', {p1} {p2} ({difference:.1%})")
+            print(f"  DIFF '{tag}', {p1} {p2} ({difference:.3%})")
     if output.get("sizes"):
         print("SIZE DIFFERENCES")
     for tag, diff in output.get("sizes", {}).items():
