@@ -929,7 +929,7 @@ mod tests {
         let result = TestCompile::compile_source("glyphs2/Mono.glyphs");
 
         let hhea = result.be_context.hhea.get();
-        assert_eq!(1, hhea.number_of_long_metrics);
+        assert_eq!(1, hhea.number_of_h_metrics);
         assert_eq!(175, hhea.min_left_side_bearing.to_i16());
         assert_eq!(50, hhea.min_right_side_bearing.to_i16());
         assert_eq!(375, hhea.x_max_extent.to_i16());
@@ -943,7 +943,7 @@ mod tests {
         let raw_hmtx = result.be_context.hmtx.get();
         let hmtx = Hmtx::read_with_args(
             FontData::new(raw_hmtx.get()),
-            &(hhea.number_of_long_metrics, maxp.num_glyphs),
+            &(hhea.number_of_h_metrics, maxp.num_glyphs),
         )
         .unwrap();
         assert_eq!(
@@ -2667,8 +2667,8 @@ mod tests {
         assert_eq!(gvar.glyph_count(), glyph_count);
         assert!((0..glyph_count).all(|gid| gvar
             .glyph_variation_data(GlyphId16::new(gid).into())
-            // read-fonts would return an error when a glyph's variations are empty
-            .is_err()));
+            .unwrap()
+            .is_none()));
     }
 
     // if a font has custom gdef categories defined, create the gdef table and
