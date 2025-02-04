@@ -212,7 +212,7 @@ mod tests {
     }
 
     fn contour_point(x: f64, y: f64, typ: norad::PointType) -> ContourPoint {
-        ContourPoint::new(x, y, typ, false, None, None, None)
+        ContourPoint::new(x, y, typ, false, None, None)
     }
 
     // https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
@@ -227,7 +227,7 @@ mod tests {
             contour_point(9.0, 2.0, norad::PointType::Line),
             contour_point(1.0, 2.0, norad::PointType::Line),
         ];
-        let contour = norad::Contour::new(points, None, None);
+        let contour = norad::Contour::new(points, None);
         let bez = to_ir_contour("test".into(), &contour).unwrap();
         assert_eq!("M1,1 L9,1 L9,2 L1,2 L1,1 Z", bez.to_svg());
     }
@@ -244,7 +244,7 @@ mod tests {
             contour_point(64.0, 64.0, norad::PointType::OffCurve),
             contour_point(64.0, 0.0, norad::PointType::OffCurve),
         ];
-        let contour = norad::Contour::new(points, None, None);
+        let contour = norad::Contour::new(points, None);
         let bez = to_ir_contour("test".into(), &contour).unwrap();
         assert_eq!("M32,32 C64,64 64,0 32,32 Z", bez.to_svg());
     }
@@ -279,7 +279,6 @@ mod tests {
                 x_offset: 0.0,
                 y_offset: 0.0,
             },
-            None,
             None,
         );
         assert_eq!(
