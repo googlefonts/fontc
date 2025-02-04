@@ -586,6 +586,14 @@ impl KernSide {
         }
     }
 
+    fn contains(&self, gid: u16) -> bool {
+        let gid = GlyphId16::new(gid);
+        match self {
+            KernSide::Glyph(glyph_id16) => glyph_id16 == &gid,
+            KernSide::Group(glyph_set) => glyph_set.contains(gid),
+        }
+    }
+
     pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {
         let (first, second) = match self {
             Self::Glyph(gid) => (Some(*gid), None),
@@ -626,6 +634,11 @@ impl KernPair {
     /// any knowledge of writing direction.
     pub(crate) fn make_rtl_compatible(&mut self) {
         self.value.make_rtl_compatible()
+    }
+
+    #[allow(dead_code)] // useful for debugging
+    pub(crate) fn contains(&self, gid: u16) -> bool {
+        self.side1.contains(gid) || self.side2.contains(gid)
     }
 
     pub(crate) fn add_to(self, builder: &mut PairPosBuilder) {
