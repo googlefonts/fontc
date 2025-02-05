@@ -12,7 +12,7 @@ use fea_rs::{
         ValueRecord as ValueRecordBuilder,
     },
     typed::{AstNode, LanguageSystem},
-    GlyphMap, GlyphSet, Opts, ParseTree,
+    GlyphSet, Opts, ParseTree,
 };
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -20,7 +20,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, Glyph, KernGroup, KerningGroups, KerningInstance},
+    ir::{self, Glyph, GlyphOrder, KernGroup, KerningGroups, KerningInstance},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::props::BidiClass;
@@ -384,198 +384,204 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
         let arc_fragments = context.kern_fragments.all();
         let ast = context.fea_ast.get();
         let glyph_order = context.ir.glyph_order.get();
-        let glyph_map = glyph_order.names().cloned().collect();
         let mut pairs: Vec<_> = arc_fragments
             .iter()
             .flat_map(|(_, fragment)| fragment.kerns.iter())
             .collect();
         pairs.sort();
 
-        let glyphs_and_gids = glyph_order
-            .iter()
-            .map(|(i, glyphname)| (context.ir.get_glyph(glyphname.clone()), i))
+        let glyphs = glyph_order
+            .names()
+            .map(|glyphname| context.ir.get_glyph(glyphname.clone()))
             .collect::<Vec<_>>();
-        let lookups = self.finalize_kerning(&pairs, &ast.ast, &glyph_map, glyphs_and_gids)?;
+        let lookups = finalize_kerning(&pairs, &ast.ast, &glyph_order, glyphs)?;
         context.fea_rs_kerns.set(lookups);
         Ok(())
     }
 }
 
-impl KerningGatherWork {
-    //. take the kerning fragments and generate the kerning lookups.
-    //
-    // This includes much of the logic from the ufo2ft KernFeatureWriter
-    fn finalize_kerning(
-        &self,
-        pairs: &[&KernPair],
-        ast: &ParseTree,
-        glyph_map: &GlyphMap,
-        glyphs: Vec<(Arc<Glyph>, GlyphId16)>,
-    ) -> Result<FeaRsKerns, Error> {
-        // ignore diagnostics, they'll get logged during actual GSUB compilation
-        let (compilation, _) = fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
-            ast,
-            glyph_map,
-            None,
-            None,
-            Opts::new().compile_gpos(false),
-        )
-        .map_err(|err| {
-            Error::FeaCompileError(fea_rs::compile::error::CompilerError::CompilationFail(err))
-        })?;
+//. take the kerning fragments and generate the kerning lookups.
+//
+// This includes much of the logic from the ufo2ft KernFeatureWriter
+fn finalize_kerning(
+    pairs: &[&KernPair],
+    ast: &ParseTree,
+    glyph_order: &GlyphOrder,
+    glyphs: Vec<Arc<Glyph>>,
+) -> Result<FeaRsKerns, Error> {
+    let glyph_map = glyph_order.names().cloned().collect();
+    // ignore diagnostics, they'll get logged during actual GSUB compilation
+    let (compilation, _) = fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
+        ast,
+        &glyph_map,
+        None,
+        None,
+        Opts::new().compile_gpos(false),
+    )
+    .map_err(|err| {
+        Error::FeaCompileError(fea_rs::compile::error::CompilerError::CompilationFail(err))
+    })?;
 
-        let gsub = compilation
-            .gsub
-            .as_ref()
-            .map(write_fonts::dump_table)
-            .transpose()
-            .expect("if this doesn't compile we will already panic when we try to add it to the context");
-        let gsub = gsub
-            .as_ref()
-            .map(|data| write_fonts::read::tables::gsub::Gsub::read(data.as_slice().into()))
-            .transpose()?;
+    let gsub = compilation
+        .gsub
+        .as_ref()
+        .map(write_fonts::dump_table)
+        .transpose()
+        .expect(
+            "if this doesn't compile we will already panic when we try to add it to the context",
+        );
+    let gsub = gsub
+        .as_ref()
+        .map(|data| write_fonts::read::tables::gsub::Gsub::read(data.as_slice().into()))
+        .transpose()?;
 
-        let gdef = compilation.gdef_classes;
+    let gdef = compilation.gdef_classes;
+    let char_map = glyphs
+        .iter()
+        .flat_map(|g| {
+            let id = glyph_order.glyph_id(&g.name).unwrap();
+            g.codepoints.iter().map(move |cp| (*cp, id))
+        })
+        .collect::<HashMap<_, _>>();
 
-        let known_scripts = guess_font_scripts(ast, &glyphs);
-        let mark_glyphs = glyphs
-            .iter()
-            .filter_map(|(glyph, gid)| {
-                let is_mark = gdef
-                    .as_ref()
-                    .map(|gdef| gdef.get(gid) == Some(&GlyphClassDef::Mark))
-                    .unwrap_or(false);
-                is_mark.then(|| {
-                    let spacing = if glyph
-                        .sources()
-                        .values()
-                        .all(|instance| instance.width != 0.0)
-                    {
-                        MarkSpacing::Spacing
-                    } else {
-                        MarkSpacing::NonSpacing
-                    };
-                    (*gid, spacing)
-                })
+    let known_scripts = guess_font_scripts(ast, &char_map);
+    let mark_glyphs = glyphs
+        .iter()
+        .filter_map(|glyph| {
+            let gid = glyph_order.glyph_id(&glyph.name).unwrap();
+            let is_mark = gdef
+                .as_ref()
+                .map(|gdef| gdef.get(&gid) == Some(&GlyphClassDef::Mark))
+                .unwrap_or(false);
+            is_mark.then(|| {
+                let spacing = if glyph
+                    .sources()
+                    .values()
+                    .all(|instance| instance.width != 0.0)
+                {
+                    MarkSpacing::Spacing
+                } else {
+                    MarkSpacing::NonSpacing
+                };
+                (gid, spacing)
             })
-            .collect();
-        let split_ctx = KernSplitContext::new(&glyphs, &known_scripts, gsub, mark_glyphs)?;
+        })
+        .collect();
+    let split_ctx = KernSplitContext::new(&char_map, &known_scripts, gsub, mark_glyphs)?;
 
-        let lookups = split_ctx.make_lookups(pairs);
-        let (lookups, features) = self.assign_lookups_to_scripts(lookups, ast, KERN);
-        Ok(FeaRsKerns { lookups, features })
+    let lookups = split_ctx.make_lookups(pairs);
+    let (lookups, features) = assign_lookups_to_scripts(lookups, ast, KERN);
+    Ok(FeaRsKerns { lookups, features })
+}
+
+/// returns a vec of lookups (as a vec of subtables), along with a map of features -> lookups
+/// (by order in the first vec)
+///
+/// this based on
+/// <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L772>
+fn assign_lookups_to_scripts(
+    lookups: BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>>,
+    ast: &ParseTree,
+    // one of 'kern' or 'dist'
+    current_feature: Tag,
+) -> (
+    Vec<PendingLookup<PairPosBuilder>>,
+    BTreeMap<FeatureKey, Vec<usize>>,
+) {
+    let dflt_langs = vec![DFLT_LANG];
+
+    let is_kern_feature = current_feature == KERN;
+    assert!(is_kern_feature || current_feature == DIST);
+    let mut lookups_by_script = BTreeMap::new();
+    let mut ordered_lookups = Vec::new();
+
+    let fea_langs_by_script = get_fea_language_systems(ast);
+
+    // in python this part happens earlier, as part of splitKerning.
+    for (scripts, lookups) in lookups {
+        for lookup in lookups {
+            let idx = ordered_lookups.len();
+            ordered_lookups.push(lookup);
+            for script in &scripts {
+                lookups_by_script
+                    .entry(script.to_owned())
+                    .or_insert(Vec::new())
+                    .push(idx);
+            }
+        }
     }
 
-    /// returns a vec of lookups (as a vec of subtables), along with a map of features -> lookups
-    /// (by order in the first vec)
-    ///
-    /// this based on
-    /// <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L772>
-    fn assign_lookups_to_scripts(
-        &self,
-        lookups: BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>>,
-        ast: &ParseTree,
-        // one of 'kern' or 'dist'
-        current_feature: Tag,
-    ) -> (
-        Vec<PendingLookup<PairPosBuilder>>,
-        BTreeMap<FeatureKey, Vec<usize>>,
-    ) {
-        let dflt_langs = vec![DFLT_LANG];
+    let mut default_lookups = Vec::new();
+    if let Some(common_lookups) = lookups_by_script
+        .get(&COMMON_SCRIPT)
+        .filter(|_| is_kern_feature)
+    {
+        log::debug!("found {} default lookups", common_lookups.len());
+        default_lookups.extend(common_lookups.iter().copied());
+    }
 
-        let is_kern_feature = current_feature == KERN;
-        assert!(is_kern_feature || current_feature == DIST);
-        let mut lookups_by_script = BTreeMap::new();
-        let mut ordered_lookups = Vec::new();
-
-        let fea_langs_by_script = get_fea_language_systems(ast);
-
-        // in python this part happens earlier, as part of splitKerning.
-        for (scripts, lookups) in lookups {
-            for lookup in lookups {
-                let idx = ordered_lookups.len();
-                ordered_lookups.push(lookup);
-                for script in &scripts {
-                    lookups_by_script
-                        .entry(script.to_owned())
-                        .or_insert(Vec::new())
-                        .push(idx);
-                }
-            }
+    //inDesign bugfix:
+    // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L785>
+    let dist_enabled_scripts = super::properties::dist_feature_enabled_scripts();
+    let (mut ltr_lookups, mut rtl_lookups) = (Vec::new(), Vec::new());
+    for (script, lookups) in lookups_by_script
+        .iter()
+        .filter(|(script, _)| !dist_enabled_scripts.contains(script))
+    {
+        match ScriptDirection::for_script(script) {
+            ScriptDirection::LeftToRight => ltr_lookups.extend(lookups.iter().copied()),
+            ScriptDirection::RightToLeft => rtl_lookups.extend(lookups.iter().copied()),
+            ScriptDirection::Auto => (),
         }
+    }
 
-        let mut default_lookups = Vec::new();
-        if let Some(common_lookups) = lookups_by_script
-            .get(&COMMON_SCRIPT)
-            .filter(|_| is_kern_feature)
-        {
-            log::debug!("found {} default lookups", common_lookups.len());
-            default_lookups.extend(common_lookups.iter().copied());
+    // if we have any LTR lookups, we add those to defaults, otherwise add RTL lookups
+    if !ltr_lookups.is_empty() {
+        default_lookups.extend(ltr_lookups);
+    } else {
+        default_lookups.extend(rtl_lookups);
+    }
+    default_lookups.sort_unstable();
+
+    let mut features = BTreeMap::new();
+    if !default_lookups.is_empty() {
+        let languages = fea_langs_by_script.get(&DFLT_SCRIPT).unwrap_or(&dflt_langs);
+        for lang in languages {
+            features.insert(
+                FeatureKey::new(KERN, *lang, DFLT_SCRIPT),
+                default_lookups.clone(),
+            );
         }
+    }
 
-        //inDesign bugfix:
-        // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L785>
-        let dist_enabled_scripts = super::properties::dist_feature_enabled_scripts();
-        let (mut ltr_lookups, mut rtl_lookups) = (Vec::new(), Vec::new());
-        for (script, lookups) in lookups_by_script
-            .iter()
-            .filter(|(script, _)| !dist_enabled_scripts.contains(script))
-        {
-            match ScriptDirection::for_script(script) {
-                ScriptDirection::LeftToRight => ltr_lookups.extend(lookups.iter().copied()),
-                ScriptDirection::RightToLeft => rtl_lookups.extend(lookups.iter().copied()),
-                ScriptDirection::Auto => (),
-            }
+    let common_lookups = lookups_by_script.remove(&COMMON_SCRIPT);
+    let inherited_lookups = lookups_by_script.remove(&INHERITED_SCRIPT);
+    let dflt_lookups = match (common_lookups, inherited_lookups) {
+        (Some(mut a), Some(b)) => {
+            a.extend(b);
+            a.sort_unstable();
+            a.dedup();
+            a
         }
+        (Some(a), None) | (None, Some(a)) => a,
+        (None, None) => Vec::new(),
+    };
 
-        // if we have any LTR lookups, we add those to defaults, otherwise add RTL lookups
-        if !ltr_lookups.is_empty() {
-            default_lookups.extend(ltr_lookups);
-        } else {
-            default_lookups.extend(rtl_lookups);
-        }
-        default_lookups.sort_unstable();
+    for (script, mut lookups) in lookups_by_script {
+        lookups.extend(dflt_lookups.iter().copied());
+        lookups.sort_unstable();
+        lookups.dedup();
 
-        let mut features = BTreeMap::new();
-        if !default_lookups.is_empty() {
-            let languages = fea_langs_by_script.get(&DFLT_SCRIPT).unwrap_or(&dflt_langs);
+        for tag in super::properties::script_to_ot_tags(&script) {
+            let languages = fea_langs_by_script.get(&tag).unwrap_or(&dflt_langs);
             for lang in languages {
-                features.insert(
-                    FeatureKey::new(KERN, *lang, DFLT_SCRIPT),
-                    default_lookups.clone(),
-                );
+                features.insert(FeatureKey::new(KERN, *lang, tag), lookups.clone());
             }
         }
-
-        let common_lookups = lookups_by_script.remove(&COMMON_SCRIPT);
-        let inherited_lookups = lookups_by_script.remove(&INHERITED_SCRIPT);
-        let dflt_lookups = match (common_lookups, inherited_lookups) {
-            (Some(mut a), Some(b)) => {
-                a.extend(b);
-                a.sort_unstable();
-                a.dedup();
-                a
-            }
-            (Some(a), None) | (None, Some(a)) => a,
-            (None, None) => Vec::new(),
-        };
-
-        for (script, mut lookups) in lookups_by_script {
-            lookups.extend(dflt_lookups.iter().copied());
-            lookups.sort_unstable();
-            lookups.dedup();
-
-            for tag in super::properties::script_to_ot_tags(&script) {
-                let languages = fea_langs_by_script.get(&tag).unwrap_or(&dflt_langs);
-                for lang in languages {
-                    features.insert(FeatureKey::new(KERN, *lang, tag), lookups.clone());
-                }
-            }
-        }
-
-        debug_ordered_lookups(&features, &ordered_lookups);
-        (ordered_lookups, features)
     }
+
+    debug_ordered_lookups(&features, &ordered_lookups);
+    (ordered_lookups, features)
 }
 
 fn debug_ordered_lookups(
@@ -1336,7 +1342,7 @@ mod tests {
             None,
         )];
         let lookups = BTreeMap::from([(script, lookup)]);
-        let (_lookup, features) = KerningGatherWork.assign_lookups_to_scripts(lookups, &ast, KERN);
+        let (_lookup, features) = assign_lookups_to_scripts(lookups, &ast, KERN);
         let dflt_mah = FeatureKey::new(KERN, Tag::new(b"MAH "), DFLT_SCRIPT);
         // ensure that the feature was registered for the DFLT/Mah language system
         assert!(features.contains_key(&dflt_mah));
