@@ -385,11 +385,11 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
         let ast = context.fea_ast.get();
         let glyph_order = context.ir.glyph_order.get();
         let glyph_map = glyph_order.iter().cloned().collect();
-        let mut fragments: Vec<_> = arc_fragments
+        let mut pairs: Vec<_> = arc_fragments
             .iter()
-            .map(|(_, fragment)| fragment.as_ref())
+            .flat_map(|(_, fragment)| fragment.kerns.iter())
             .collect();
-        fragments.sort_by_key(|fragment| fragment.segment);
+        pairs.sort();
 
         let glyphs_and_gids = glyph_order
             .iter()
@@ -401,7 +401,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
                 )
             })
             .collect::<Vec<_>>();
-        let lookups = self.finalize_kerning(&fragments, &ast.ast, &glyph_map, glyphs_and_gids)?;
+        let lookups = self.finalize_kerning(&pairs, &ast.ast, &glyph_map, glyphs_and_gids)?;
         context.fea_rs_kerns.set(lookups);
         Ok(())
     }
@@ -413,7 +413,7 @@ impl KerningGatherWork {
     // This includes much of the logic from the ufo2ft KernFeatureWriter
     fn finalize_kerning(
         &self,
-        fragments: &[&KernFragment],
+        pairs: &[&KernPair],
         ast: &ParseTree,
         glyph_map: &GlyphMap,
         glyphs: Vec<(Arc<Glyph>, GlyphId16)>,
@@ -443,12 +443,6 @@ impl KerningGatherWork {
 
         let gdef = compilation.gdef_classes;
 
-        let mut pairs = fragments
-            .iter()
-            .flat_map(|frag| frag.kerns.iter())
-            .collect::<Vec<_>>();
-        pairs.sort();
-
         let known_scripts = guess_font_scripts(ast, &glyphs);
         let mark_glyphs = glyphs
             .iter()
@@ -473,7 +467,7 @@ impl KerningGatherWork {
             .collect();
         let split_ctx = KernSplitContext::new(&glyphs, &known_scripts, gsub, mark_glyphs)?;
 
-        let lookups = split_ctx.make_lookups(&pairs);
+        let lookups = split_ctx.make_lookups(pairs);
         let (lookups, features) = self.assign_lookups_to_scripts(lookups, ast, KERN);
         Ok(FeaRsKerns { lookups, features })
     }
