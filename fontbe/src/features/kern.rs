@@ -3,7 +3,6 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    sync::Arc,
 };
 
 use fea_rs::{
@@ -20,7 +19,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, Glyph, GlyphOrder, KernGroup, KerningGroups, KerningInstance},
+    ir::{self, GlyphOrder, KernGroup, KerningGroups, KerningInstance},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::props::BidiClass;
@@ -394,7 +393,26 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
             .names()
             .map(|glyphname| context.ir.get_glyph(glyphname.clone()))
             .collect::<Vec<_>>();
-        let lookups = finalize_kerning(&pairs, &ast.ast, &glyph_order, glyphs)?;
+
+        let char_map = glyphs
+            .iter()
+            .flat_map(|g| {
+                let id = glyph_order.glyph_id(&g.name).unwrap();
+                g.codepoints.iter().map(move |cp| (*cp, id))
+            })
+            .collect::<HashMap<_, _>>();
+        let non_spacing_glyphs = glyphs
+            .iter()
+            .filter_map(|g| {
+                g.sources()
+                    .values()
+                    .all(|instance| instance.width == 0.0)
+                    .then(|| glyph_order.glyph_id(&g.name).unwrap())
+            })
+            .collect::<HashSet<_>>();
+
+        let lookups =
+            finalize_kerning(&pairs, &ast.ast, &glyph_order, char_map, non_spacing_glyphs)?;
         context.fea_rs_kerns.set(lookups);
         Ok(())
     }
@@ -407,7 +425,8 @@ fn finalize_kerning(
     pairs: &[&KernPair],
     ast: &ParseTree,
     glyph_order: &GlyphOrder,
-    glyphs: Vec<Arc<Glyph>>,
+    char_map: HashMap<u32, GlyphId16>,
+    non_spacing_glyphs: HashSet<GlyphId16>,
 ) -> Result<FeaRsKerns, Error> {
     let glyph_map = glyph_order.names().cloned().collect();
     // ignore diagnostics, they'll get logged during actual GSUB compilation
@@ -436,37 +455,26 @@ fn finalize_kerning(
         .transpose()?;
 
     let gdef = compilation.gdef_classes;
-    let char_map = glyphs
-        .iter()
-        .flat_map(|g| {
-            let id = glyph_order.glyph_id(&g.name).unwrap();
-            g.codepoints.iter().map(move |cp| (*cp, id))
-        })
-        .collect::<HashMap<_, _>>();
-
     let known_scripts = guess_font_scripts(ast, &char_map);
-    let mark_glyphs = glyphs
+
+    let mark_glyphs = glyph_order
         .iter()
-        .filter_map(|glyph| {
-            let gid = glyph_order.glyph_id(&glyph.name).unwrap();
+        .filter_map(|(gid, _)| {
             let is_mark = gdef
                 .as_ref()
                 .map(|gdef| gdef.get(&gid) == Some(&GlyphClassDef::Mark))
                 .unwrap_or(false);
             is_mark.then(|| {
-                let spacing = if glyph
-                    .sources()
-                    .values()
-                    .all(|instance| instance.width != 0.0)
-                {
-                    MarkSpacing::Spacing
-                } else {
+                let spacing = if non_spacing_glyphs.contains(&gid) {
                     MarkSpacing::NonSpacing
+                } else {
+                    MarkSpacing::Spacing
                 };
                 (gid, spacing)
             })
         })
         .collect();
+
     let split_ctx = KernSplitContext::new(&char_map, &known_scripts, gsub, mark_glyphs)?;
 
     let lookups = split_ctx.make_lookups(pairs);
