@@ -48,7 +48,7 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
         let glyph_order = context.ir.glyph_order.get();
         let mut post = Post::new_v2(
             glyph_order
-                .iter()
+                .names()
                 .map(|g| postscript_names.get(g).unwrap_or(g).as_str()),
         );
         post.is_fixed_pitch = static_metadata.misc.is_fixed_pitch.unwrap_or_default() as u32;

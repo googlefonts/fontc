@@ -28,7 +28,7 @@ fn make_variations(
     get_deltas: impl Fn(&GlyphName) -> Vec<GlyphDeltas>,
 ) -> Vec<GlyphVariations> {
     glyph_order
-        .iter()
+        .names()
         .enumerate()
         .map(|(gid, gn)| GlyphVariations::new(GlyphId16::new(gid as u16).into(), get_deltas(gn)))
         .collect()

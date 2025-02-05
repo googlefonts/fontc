@@ -166,7 +166,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let glyph_order = context.ir.glyph_order.get();
         let axis_count = var_model.axes().count().try_into().unwrap();
         let glyphs: Vec<_> = glyph_order
-            .iter()
+            .names()
             .map(|name| context.ir.glyphs.get(&FeWorkId::Glyph(name.clone())))
             .collect();
         let glyph_locations: HashSet<_> = glyphs

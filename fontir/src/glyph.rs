@@ -384,7 +384,7 @@ fn apply_optional_transformations(
         .flags
         .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS)
     {
-        for glyph_name in glyph_order.iter() {
+        for glyph_name in glyph_order.names() {
             let glyph = context.get_glyph(glyph_name.clone());
             if glyph.has_nonidentity_2x2() {
                 convert_components_to_contours(context, &glyph)?;
@@ -393,7 +393,7 @@ fn apply_optional_transformations(
     }
 
     if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
-        for glyph_name in glyph_order.iter() {
+        for glyph_name in glyph_order.names() {
             let glyph = context.get_glyph(glyph_name.clone());
             flatten_glyph(context, &glyph)?;
         }
@@ -461,13 +461,13 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         let arc_current = context.preliminary_glyph_order.get();
         let current_glyph_order = &*arc_current;
         let original_glyphs: HashMap<_, _> = current_glyph_order
-            .iter()
+            .names()
             .map(|gn| (gn, context.get_glyph(gn.clone())))
             .collect();
 
         // Anything the source specifically said not to retain shouldn't end up in the final font
         let mut new_glyph_order = current_glyph_order.clone();
-        for glyph_name in current_glyph_order.iter() {
+        for glyph_name in current_glyph_order.names() {
             let glyph = original_glyphs.get(glyph_name).unwrap();
             if !glyph.emit_to_binary {
                 new_glyph_order.remove(glyph_name);
@@ -481,7 +481,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // 2) collapse such glyphs into a simple (contour-only) glyph
         //    fontmake (Python) prefers option 2.
         let mut todo = VecDeque::new();
-        for glyph_name in new_glyph_order.iter() {
+        for glyph_name in new_glyph_order.names() {
             let glyph = original_glyphs.get(glyph_name).unwrap();
             if !glyph.has_consistent_components() {
                 debug!(
@@ -519,7 +519,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // Resolve component references to glyphs that are not retained by conversion to contours
         // Glyphs have to have consistent components at this point so it's safe to just check the default
         // See https://github.com/googlefonts/fontc/issues/532
-        for glyph_name in new_glyph_order.iter() {
+        for glyph_name in new_glyph_order.names() {
             // We are only int
             let glyph = context.get_glyph(glyph_name.clone());
             for component in glyph.default_instance().components.iter() {

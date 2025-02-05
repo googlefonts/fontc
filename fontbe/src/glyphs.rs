@@ -774,7 +774,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
     let glyph_order = context.ir.glyph_order.get();
 
     let glyphs: HashMap<_, _> = glyph_order
-        .iter()
+        .names()
         .map(|gn| {
             (
                 gn,
@@ -847,7 +847,7 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
         let glyph_order = context.ir.glyph_order.get();
         let mut builder = GlyfLocaBuilder::new();
 
-        for name in glyph_order.iter() {
+        for name in glyph_order.names() {
             let glyph = context
                 .glyphs
                 .get(&WorkId::GlyfFragment(name.clone()).into());

@@ -263,7 +263,16 @@ impl GlyphOrder {
         self.0.contains(name)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &GlyphName> {
+    /// Iterate over ids and names
+    pub fn iter(&self) -> impl Iterator<Item = (GlyphId16, &GlyphName)> {
+        self.0
+            .iter()
+            .enumerate()
+            .map(|(i, name)| (GlyphId16::new(i as _), name))
+    }
+
+    /// Iterate glyph names, in order
+    pub fn names(&self) -> impl Iterator<Item = &GlyphName> {
         self.0.iter()
     }
 
