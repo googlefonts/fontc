@@ -495,6 +495,19 @@ impl FeaRsKerns {
     pub fn is_empty(&self) -> bool {
         self.lookups.is_empty()
     }
+
+    #[cfg(test)]
+    pub(crate) fn lookups_for_feature(
+        &self,
+        feature: &FeatureKey,
+    ) -> Vec<&PendingLookup<PairPosBuilder>> {
+        self.features
+            .get(feature)
+            .into_iter()
+            .flatten()
+            .map(|id| &self.lookups[*id])
+            .collect()
+    }
 }
 
 impl Persistable for FeaRsKerns {

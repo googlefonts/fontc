@@ -403,12 +403,8 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
             .collect::<HashMap<_, _>>();
         let non_spacing_glyphs = glyphs
             .iter()
-            .filter_map(|g| {
-                g.sources()
-                    .values()
-                    .all(|instance| instance.width == 0.0)
-                    .then(|| glyph_order.glyph_id(&g.name).unwrap())
-            })
+            .filter(|g| g.sources().values().all(|instance| instance.width == 0.0))
+            .map(|g| glyph_order.glyph_id(&g.name).unwrap())
             .collect::<HashSet<_>>();
 
         let lookups =
@@ -633,14 +629,14 @@ impl Default for KernSplitOptions {
 
 impl KernSplitContext {
     fn new(
-        glyphs: &impl CharMap,
+        char_map: &HashMap<u32, GlyphId16>,
         known_scripts: &HashSet<UnicodeShortName>,
         gsub: Option<Gsub>,
         mark_glyphs: HashMap<GlyphId16, MarkSpacing>,
     ) -> Result<Self, ReadError> {
         let glyph_scripts =
-            super::properties::scripts_by_glyph(glyphs, known_scripts, gsub.as_ref())?;
-        let bidi_glyphs = super::properties::glyphs_by_bidi_class(glyphs, gsub.as_ref())?;
+            super::properties::scripts_by_glyph(char_map, known_scripts, gsub.as_ref())?;
+        let bidi_glyphs = super::properties::glyphs_by_bidi_class(char_map, gsub.as_ref())?;
 
         Ok(Self {
             mark_glyphs,
@@ -1001,7 +997,10 @@ impl FeatureProvider for FeaRsKerns {
 }
 
 // <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfcf0b1c/Lib/ufo2ft/featureWriters/baseFeatureWriter.py#L401>
-fn guess_font_scripts(ast: &ParseTree, glyphs: &impl CharMap) -> HashSet<UnicodeShortName> {
+fn guess_font_scripts(
+    ast: &ParseTree,
+    glyphs: &HashMap<u32, GlyphId16>,
+) -> HashSet<UnicodeShortName> {
     let mut scripts = scripts_for_chars(glyphs);
     // add scripts explicitly defined in fea
     scripts.extend(get_script_language_systems(ast).keys().cloned());
@@ -1009,7 +1008,7 @@ fn guess_font_scripts(ast: &ParseTree, glyphs: &impl CharMap) -> HashSet<Unicode
 }
 
 /// return the set of scripts (based on unicode data) that use this set of glyphs
-fn scripts_for_chars(glyphs: &impl CharMap) -> HashSet<UnicodeShortName> {
+fn scripts_for_chars(glyphs: &HashMap<u32, GlyphId16>) -> HashSet<UnicodeShortName> {
     glyphs
         .iter_glyphs()
         .filter_map(|(_, codepoint)| super::properties::single_script_for_codepoint(codepoint))
@@ -1100,93 +1099,155 @@ fn merge_scripts(
 
 #[cfg(test)]
 mod tests {
+    use std::{path::Path, sync::Arc};
+
+    use fontdrasil::agl::agl_name_for_char;
+
     use super::*;
 
-    const LATN: UnicodeShortName = unsafe { UnicodeShortName::from_bytes_unchecked(*b"Latn") };
-    struct MockCharMap(HashMap<char, GlyphId16>);
+    struct KernInput {
+        charmap: HashMap<u32, GlyphId16>,
+        pairs: Vec<KernPair>,
+        non_spacing: HashSet<GlyphId16>,
+        glyph_order: GlyphOrder,
+        user_fea: Arc<str>,
+    }
 
-    impl CharMap for MockCharMap {
-        fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId16, u32)> {
-            self.0.iter().map(|(uv, gid)| (*gid, *uv as u32))
+    trait ToKernSide {
+        fn to_kern_side(&self, charmap: &HashMap<u32, GlyphId16>) -> KernSide;
+    }
+
+    impl ToKernSide for char {
+        fn to_kern_side(&self, charmap: &HashMap<u32, GlyphId16>) -> KernSide {
+            KernSide::Glyph(*charmap.get(&(*self as u32)).unwrap())
         }
     }
 
-    impl MockCharMap {
-        fn make_rule(&self, left: char, right: char, val: i16) -> KernPair {
-            KernPair {
-                side1: KernSide::Glyph(self.get(left)),
-                side2: KernSide::Glyph(self.get(right)),
-                value: ValueRecordBuilder::new().with_x_advance(val),
-            }
-        }
-
-        fn make_class_rule(&self, left: &[char], right: &[char], val: i16) -> KernPair {
-            let left = left.iter().map(|c| self.get(*c)).collect();
-            let right = right.iter().map(|c| self.get(*c)).collect();
-
-            KernPair {
-                side1: KernSide::Group(left),
-                side2: KernSide::Group(right),
-                value: ValueRecordBuilder::new().with_x_advance(val),
-            }
-        }
-
-        fn get(&self, c: char) -> GlyphId16 {
-            self.0.get(&c).copied().unwrap()
-        }
-    }
-
-    impl FromIterator<char> for MockCharMap {
-        fn from_iter<T: IntoIterator<Item = char>>(iter: T) -> Self {
-            Self(
-                iter.into_iter()
-                    .enumerate()
-                    .map(|(i, c)| (c, GlyphId16::new(i as u16 + 1)))
+    impl<const N: usize> ToKernSide for [char; N] {
+        fn to_kern_side(&self, charmap: &HashMap<u32, GlyphId16>) -> KernSide {
+            KernSide::Group(
+                self.iter()
+                    .map(|c| *charmap.get(&(*c as u32)).unwrap())
                     .collect(),
             )
         }
     }
 
+    impl KernInput {
+        fn new(chars: &[char]) -> Self {
+            let charmap = chars
+                .iter()
+                .enumerate()
+                .map(|(i, chr)| {
+                    let gid = GlyphId16::new((i + 1) as _);
+                    (*chr as u32, gid)
+                })
+                .collect();
+
+            let glyph_order = std::iter::once(GlyphName::NOTDEF)
+                .chain(chars.iter().map(|c| {
+                    agl_name_for_char(*c)
+                        .map(GlyphName::new)
+                        .unwrap_or_else(|| c.to_string().into())
+                }))
+                .collect();
+
+            Self {
+                charmap,
+                glyph_order,
+                pairs: Default::default(),
+                non_spacing: Default::default(),
+                user_fea: "".into(),
+            }
+        }
+
+        fn with_user_fea(mut self, fea: &str) -> Self {
+            self.user_fea = fea.into();
+            self
+        }
+
+        fn with_nonspacing_glyphs(mut self, glyphs: &[char]) -> Self {
+            self.non_spacing.extend(
+                glyphs
+                    .iter()
+                    .map(|c| self.charmap.get(&(*c as u32)).unwrap()),
+            );
+            self
+        }
+
+        fn with_rule(mut self, side1: impl ToKernSide, side2: impl ToKernSide, val: i16) -> Self {
+            let side1 = side1.to_kern_side(&self.charmap);
+            let side2 = side2.to_kern_side(&self.charmap);
+            self.pairs.push(KernPair {
+                side1,
+                side2,
+                value: ValueRecordBuilder::new().with_x_advance(val),
+            });
+            self
+        }
+
+        fn build(self) -> FeaRsKerns {
+            let pairs = self.pairs.iter().collect::<Vec<_>>();
+            let glyph_map = self.glyph_order.names().cloned().collect();
+            let (ast, _) = fea_rs::parse::parse_root(
+                "memory".into(),
+                Some(&glyph_map),
+                Box::new(move |x: &Path| {
+                    if x == Path::new("memory") {
+                        Ok(self.user_fea.clone())
+                    } else {
+                        unreachable!("our FEA has no include statements");
+                    }
+                }),
+            )
+            .unwrap();
+            finalize_kerning(
+                &pairs,
+                &ast,
+                &self.glyph_order,
+                self.charmap,
+                self.non_spacing,
+            )
+            .unwrap()
+        }
+    }
+
+    const ACUTE_COMB: char = '\u{0301}';
+    const CIRCUM_COMB: char = '\u{302}';
+    const KERN_DFLT_DFLT: FeatureKey = FeatureKey::new(KERN, DFLT_LANG, DFLT_SCRIPT);
+    const KERN_LATN_DFLT: FeatureKey = FeatureKey::new(KERN, DFLT_LANG, Tag::new(b"latn"));
+    const KERN_CYRL_DFLT: FeatureKey = FeatureKey::new(KERN, DFLT_LANG, Tag::new(b"cyrl"));
+
     #[test]
     fn split_latin_and_cyrillic() {
         const A_CY: char = 'а';
         const BE_CY: char = 'б';
-        let charmap: MockCharMap = ['a', 'b', A_CY, BE_CY].into_iter().collect();
-        let known_scripts = scripts_for_chars(&charmap);
-        let pairs = [('a', 'b', 5i16), ('a', 'a', 7), (A_CY, BE_CY, 12)]
-            .into_iter()
-            .map(|(a, b, val)| charmap.make_rule(a, b, val))
-            .collect::<Vec<_>>();
-        let ctx =
-            KernSplitContext::new(&charmap, &known_scripts, None, Default::default()).unwrap();
+        let kerns = KernInput::new(&['a', 'b', A_CY, BE_CY])
+            .with_rule('a', 'b', 5)
+            .with_rule('a', 'a', 7)
+            .with_rule(A_CY, BE_CY, 12)
+            .build();
 
-        let pairs_ref = pairs.iter().collect::<Vec<_>>();
-
-        let result = ctx.make_lookups(&pairs_ref);
-        assert_eq!(result.len(), 2);
-
-        let cyrillic: BTreeSet<_> = [UnicodeShortName::from_str("Cyrl").unwrap()]
-            .into_iter()
-            .collect();
-
-        let latn: BTreeSet<_> = [LATN].into_iter().collect();
-
-        let cyr_rules = result.get(&cyrillic).unwrap();
         assert_eq!(
-            cyr_rules
-                .iter()
-                .flat_map(|x| x.subtables().iter().map(|sub| sub.len()))
-                .sum::<usize>(),
-            1
+            kerns.features.keys().cloned().collect::<Vec<_>>(),
+            [KERN_DFLT_DFLT, KERN_CYRL_DFLT, KERN_LATN_DFLT]
         );
 
-        let latn_rules = result.get(&latn).unwrap();
         assert_eq!(
-            latn_rules
+            kerns
+                .lookups_for_feature(&KERN_LATN_DFLT)
                 .iter()
-                .flat_map(|x| x.subtables().iter().map(|sub| sub.len()))
+                .map(|lk| flags_and_rule_count(lk).1)
                 .sum::<usize>(),
             2
+        );
+        assert_eq!(
+            kerns
+                .lookups_for_feature(&KERN_CYRL_DFLT)
+                .iter()
+                .map(|lk| flags_and_rule_count(lk).1)
+                .sum::<usize>(),
+            1
         );
     }
 
@@ -1203,29 +1264,24 @@ mod tests {
 
     #[test]
     fn mark_to_base_kern() {
-        const ACUTE_COMB: char = '\u{0301}';
-        let charmap: MockCharMap = ['A', 'B', 'C', ACUTE_COMB].into_iter().collect();
-        let known_scripts = scripts_for_chars(&charmap);
-        let mark_glyphs = [(charmap.get(ACUTE_COMB), MarkSpacing::NonSpacing)]
-            .into_iter()
-            .collect();
-        let pairs = [('A', ACUTE_COMB, -55), ('B', 'C', -30), ('A', 'C', -22)]
-            .into_iter()
-            .map(|(a, b, val)| charmap.make_rule(a, b, val))
-            .collect::<Vec<_>>();
+        let kerns = KernInput::new(&['A', 'B', 'C', ACUTE_COMB])
+            .with_nonspacing_glyphs(&[ACUTE_COMB])
+            //FIXME: there's no way this should only work with explicit FEA
+            .with_user_fea("table GDEF { GlyphClassDef [A B C], , [acutecomb], ; } GDEF;")
+            .with_rule('A', ACUTE_COMB, -55)
+            .with_rule('B', 'C', -30)
+            .with_rule('A', 'C', -30)
+            .build();
+        assert_eq!(
+            kerns.features.keys().cloned().collect::<Vec<_>>(),
+            [KERN_DFLT_DFLT, KERN_LATN_DFLT]
+        );
 
-        let ctx = KernSplitContext::new(&charmap, &known_scripts, None, mark_glyphs).unwrap();
+        assert_eq!(kerns.lookups.len(), 2);
 
-        let pairs_ref = pairs.iter().collect::<Vec<_>>();
-        let result = ctx.make_lookups(&pairs_ref);
+        let bases = &kerns.lookups[0];
+        let marks = &kerns.lookups[1];
 
-        let latn: BTreeSet<_> = [LATN].into_iter().collect();
-        assert_eq!(result.len(), 1);
-        let lookups = result.get(&latn).unwrap();
-        assert_eq!(lookups.len(), 2);
-
-        let bases = &lookups[0];
-        let marks = &lookups[1];
         assert_eq!(
             (flags_and_rule_count(bases), flags_and_rule_count(marks)),
             ((LookupFlag::IGNORE_MARKS, 2), (LookupFlag::empty(), 1)),
@@ -1234,57 +1290,31 @@ mod tests {
 
     #[test]
     fn mark_to_base_only() {
-        const ACUTE_COMB: char = '\u{0301}';
-        let charmap: MockCharMap = ['A', 'B', 'C', ACUTE_COMB].into_iter().collect();
-        let known_scripts = scripts_for_chars(&charmap);
-        let mark_glyphs = [(charmap.get(ACUTE_COMB), MarkSpacing::NonSpacing)]
-            .into_iter()
-            .collect();
-        let pairs = vec![charmap.make_rule('A', ACUTE_COMB, -55)];
+        let kerns = KernInput::new(&['A', 'B', 'C', ACUTE_COMB])
+            .with_nonspacing_glyphs(&[ACUTE_COMB])
+            .with_user_fea("table GDEF { GlyphClassDef [A B C], , [acutecomb], ; } GDEF;")
+            .with_rule('A', ACUTE_COMB, -55)
+            .build();
 
-        let ctx = KernSplitContext::new(&charmap, &known_scripts, None, mark_glyphs).unwrap();
-
-        let pairs_ref = pairs.iter().collect::<Vec<_>>();
-        let result = ctx.make_lookups(&pairs_ref);
-
-        let latn: BTreeSet<_> = [LATN].into_iter().collect();
-        assert_eq!(result.len(), 1);
-        let lookups = result.get(&latn).unwrap();
+        let lookups = kerns.lookups_for_feature(&KERN_LATN_DFLT);
         assert_eq!(lookups.len(), 1);
-
-        assert_eq!(flags_and_rule_count(&lookups[0]), (LookupFlag::empty(), 1));
+        assert_eq!(flags_and_rule_count(lookups[0]), (LookupFlag::empty(), 1));
     }
 
     #[test]
     fn mark_to_base_mixed_class() {
-        const ACUTE_COMB: char = '\u{0301}';
-        const CIRCUM_COMB: char = '\u{302}';
-        let charmap: MockCharMap = ['A', 'B', 'C', ACUTE_COMB, CIRCUM_COMB]
-            .into_iter()
-            .collect();
-        let known_scripts = scripts_for_chars(&charmap);
-        let mark_glyphs = [
-            (charmap.get(ACUTE_COMB), MarkSpacing::NonSpacing),
-            (charmap.get(CIRCUM_COMB), MarkSpacing::NonSpacing),
-        ]
-        .into_iter()
-        .collect();
-        let pairs = vec![
-            charmap.make_rule('A', 'A', 12),
-            charmap.make_class_rule(&['A', 'B'], &[ACUTE_COMB, CIRCUM_COMB, 'C'], -55),
-        ];
-        let ctx = KernSplitContext::new(&charmap, &known_scripts, None, mark_glyphs).unwrap();
+        let kerns = KernInput::new(&['A', 'B', 'C', ACUTE_COMB, CIRCUM_COMB])
+            .with_nonspacing_glyphs(&[ACUTE_COMB, CIRCUM_COMB])
+            .with_user_fea(
+                "table GDEF { GlyphClassDef [A B C], , [acutecomb, circumflexcomb], ; } GDEF;",
+            )
+            .with_rule('A', 'A', 12)
+            .with_rule(['A', 'B'], [ACUTE_COMB, CIRCUM_COMB, 'C'], -55)
+            .build();
 
-        let pairs_ref = pairs.iter().collect::<Vec<_>>();
-        let result = ctx.make_lookups(&pairs_ref);
+        let lookups = kerns.lookups_for_feature(&KERN_LATN_DFLT);
+        assert_eq!(kerns.lookups.len(), 2);
 
-        let latn: BTreeSet<_> = [LATN].into_iter().collect();
-        assert_eq!(result.len(), 1);
-        let lookups = result.get(&latn).unwrap();
-        assert_eq!(lookups.len(), 2);
-
-        // we should end up splitting this rule into two lookups, because class2 has mixed
-        // base & mark glyphs
         let bases = &lookups[0];
         let marks = &lookups[1];
 
