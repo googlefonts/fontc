@@ -245,18 +245,21 @@ impl GlyphOrder {
         GlyphOrder(IndexSet::new())
     }
 
-    pub fn glyph_id(&self, name: &GlyphName) -> Option<GlyphId16> {
-        self.0
-            .get_index_of(name)
-            .map(|i| i as u32)
-            .map(|gid| GlyphId16::new(gid as u16))
+    pub fn glyph_id<Q>(&self, name: &Q) -> Option<GlyphId16>
+    where
+        Q: std::hash::Hash + indexmap::Equivalent<GlyphName> + ?Sized,
+    {
+        self.0.get_index_of(name).map(|i| GlyphId16::new(i as _))
     }
 
     pub fn glyph_name(&self, index: usize) -> Option<&GlyphName> {
         self.0.get_index(index)
     }
 
-    pub fn contains(&self, name: &GlyphName) -> bool {
+    pub fn contains<Q>(&self, name: &Q) -> bool
+    where
+        Q: std::hash::Hash + indexmap::Equivalent<GlyphName> + ?Sized,
+    {
         self.0.contains(name)
     }
 
