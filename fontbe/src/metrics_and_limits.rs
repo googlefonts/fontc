@@ -241,9 +241,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
 
         let mut long_metrics: Vec<LongMetric> = glyph_order
             .iter()
-            .enumerate()
             .map(|(gid, gn)| {
-                let gid = GlyphId16::new(gid as u16);
                 let advance: u16 = context
                     .ir
                     .get_glyph(gn.clone())

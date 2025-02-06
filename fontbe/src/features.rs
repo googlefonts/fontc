@@ -409,7 +409,7 @@ impl FeatureCompilationWork {
 
 fn write_debug_glyph_order(context: &Context, glyphs: &GlyphOrder) {
     let glyph_order_file = context.debug_dir().join("glyph_order.txt");
-    let glyph_order = glyphs.iter().map(|g| g.to_string()).collect::<Vec<_>>();
+    let glyph_order = glyphs.names().map(|g| g.as_str()).collect::<Vec<_>>();
     let glyph_order = glyph_order.join("\n");
     if let Err(e) = fs::write(glyph_order_file, glyph_order) {
         log::error!("failed to write glyph order to debug/glyph_order.txt: '{e}'");
@@ -449,7 +449,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureParsingWork {
         let features = context.ir.features.get();
         let glyph_order = context.ir.glyph_order.get();
         let static_metadata = context.ir.static_metadata.get();
-        let glyph_map = glyph_order.iter().cloned().collect();
+        let glyph_map = glyph_order.names().cloned().collect();
 
         let result = self.parse(&features, &glyph_map);
 

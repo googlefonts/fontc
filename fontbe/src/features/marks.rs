@@ -237,7 +237,7 @@ impl<'a> MarkLookupBuilder<'a> {
         let mark_lig = self.make_lookups::<MarkToLigBuilder>(mark_lig_groups)?;
         let curs = self.make_cursive_lookups()?;
         Ok(FeaRsMarks {
-            glyphmap: self.glyph_order.iter().cloned().collect(),
+            glyphmap: self.glyph_order.names().cloned().collect(),
             mark_base,
             mark_mark,
             mark_lig,
@@ -539,7 +539,7 @@ fn get_gdef_classes(
     ast: &ParseTree,
     glyph_order: &GlyphOrder,
 ) -> BTreeMap<GlyphName, GlyphClassDef> {
-    let glyph_map = glyph_order.iter().cloned().collect();
+    let glyph_map = glyph_order.names().cloned().collect();
     // if we prefer classes defined in fea, compile the fea and see if we have any
     if meta.gdef_categories.prefer_gdef_categories_in_fea {
         if let Some(gdef_classes) =

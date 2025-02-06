@@ -384,7 +384,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
         let arc_fragments = context.kern_fragments.all();
         let ast = context.fea_ast.get();
         let glyph_order = context.ir.glyph_order.get();
-        let glyph_map = glyph_order.iter().cloned().collect();
+        let glyph_map = glyph_order.names().cloned().collect();
         let mut pairs: Vec<_> = arc_fragments
             .iter()
             .flat_map(|(_, fragment)| fragment.kerns.iter())
@@ -393,13 +393,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
 
         let glyphs_and_gids = glyph_order
             .iter()
-            .enumerate()
-            .map(|(i, glyphname)| {
-                (
-                    context.ir.get_glyph(glyphname.clone()),
-                    GlyphId16::new(i as u16),
-                )
-            })
+            .map(|(i, glyphname)| (context.ir.get_glyph(glyphname.clone()), i))
             .collect::<Vec<_>>();
         let lookups = self.finalize_kerning(&pairs, &ast.ast, &glyph_map, glyphs_and_gids)?;
         context.fea_rs_kerns.set(lookups);
