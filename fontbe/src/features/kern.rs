@@ -1101,9 +1101,30 @@ fn merge_scripts(
 mod tests {
     use std::{path::Path, sync::Arc};
 
-    use fontdrasil::agl::agl_name_for_char;
-
     use super::*;
+
+    // just a helper so we can use the same names as fonttools does in their tests
+    fn glyph_name_for_char(c: char) -> GlyphName {
+        static EXTRA_GLYPH_NAMES: &[(char, &str)] = &[
+            ('\u{302}', "circumflexcomb"),
+            ('\u{0430}', "a-cy"),
+            ('\u{0431}', "be-cy"),
+            ('\u{627}', "alef-ar"),
+            ('\u{631}', "reh-ar"),
+            ('\u{632}', "zain-ar"),
+            ('\u{644}', "lam-ar"),
+            ('\u{64E}', "fatha-ar"),
+            ('\u{664}', "four-ar"),
+            ('\u{667}', "seven-ar"),
+        ];
+        EXTRA_GLYPH_NAMES
+            .binary_search_by(|probe| probe.0.cmp(&c))
+            .map(|idx| EXTRA_GLYPH_NAMES[idx].1)
+            .ok()
+            .or_else(|| fontdrasil::agl::agl_name_for_char(c))
+            .unwrap()
+            .into()
+    }
 
     struct KernInput {
         charmap: HashMap<u32, GlyphId16>,
@@ -1114,20 +1135,36 @@ mod tests {
     }
 
     trait ToKernSide {
-        fn to_kern_side(&self, charmap: &HashMap<u32, GlyphId16>) -> KernSide;
+        fn to_kern_side(&self, input: &KernInput) -> KernSide;
     }
 
     impl ToKernSide for char {
-        fn to_kern_side(&self, charmap: &HashMap<u32, GlyphId16>) -> KernSide {
-            KernSide::Glyph(*charmap.get(&(*self as u32)).unwrap())
+        fn to_kern_side(&self, input: &KernInput) -> KernSide {
+            KernSide::Glyph(*input.charmap.get(&(*self as u32)).unwrap())
+        }
+    }
+
+    impl ToKernSide for &str {
+        fn to_kern_side(&self, input: &KernInput) -> KernSide {
+            KernSide::Glyph(input.glyph_order.glyph_id(*self).unwrap())
         }
     }
 
     impl<const N: usize> ToKernSide for [char; N] {
-        fn to_kern_side(&self, charmap: &HashMap<u32, GlyphId16>) -> KernSide {
+        fn to_kern_side(&self, input: &KernInput) -> KernSide {
             KernSide::Group(
                 self.iter()
-                    .map(|c| *charmap.get(&(*c as u32)).unwrap())
+                    .map(|c| *input.charmap.get(&(*c as u32)).unwrap())
+                    .collect(),
+            )
+        }
+    }
+
+    impl<const N: usize> ToKernSide for [&'static str; N] {
+        fn to_kern_side(&self, input: &KernInput) -> KernSide {
+            KernSide::Group(
+                self.iter()
+                    .map(|c| input.glyph_order.glyph_id(*c).unwrap())
                     .collect(),
             )
         }
@@ -1145,11 +1182,7 @@ mod tests {
                 .collect();
 
             let glyph_order = std::iter::once(GlyphName::NOTDEF)
-                .chain(chars.iter().map(|c| {
-                    agl_name_for_char(*c)
-                        .map(GlyphName::new)
-                        .unwrap_or_else(|| c.to_string().into())
-                }))
+                .chain(chars.iter().map(|c| glyph_name_for_char(*c)))
                 .collect();
 
             Self {
@@ -1175,9 +1208,18 @@ mod tests {
             self
         }
 
+        /// Adds glyph names that don't have unicode values associated
+        ///
+        /// used to test that we figure out BIDI & script correctly
+        fn with_unmapped_glyphs<const N: usize>(mut self, names: [&str; N]) -> Self {
+            self.glyph_order
+                .extend(names.into_iter().map(GlyphName::new));
+            self
+        }
+
         fn with_rule(mut self, side1: impl ToKernSide, side2: impl ToKernSide, val: i16) -> Self {
-            let side1 = side1.to_kern_side(&self.charmap);
-            let side2 = side2.to_kern_side(&self.charmap);
+            let side1 = side1.to_kern_side(&self);
+            let side2 = side2.to_kern_side(&self);
             self.pairs.push(KernPair {
                 side1,
                 side2,
@@ -1186,7 +1228,8 @@ mod tests {
             self
         }
 
-        fn build(self) -> FeaRsKerns {
+        /// Returns the raw lookups/features as well as otl-normalizer output
+        fn build(self) -> (FeaRsKerns, String) {
             let pairs = self.pairs.iter().collect::<Vec<_>>();
             let glyph_map = self.glyph_order.names().cloned().collect();
             let (ast, _) = fea_rs::parse::parse_root(
@@ -1201,15 +1244,45 @@ mod tests {
                 }),
             )
             .unwrap();
-            finalize_kerning(
+            let kerns = finalize_kerning(
                 &pairs,
                 &ast,
                 &self.glyph_order,
                 self.charmap,
                 self.non_spacing,
             )
-            .unwrap()
+            .unwrap();
+
+            let (comp, _) = fea_rs::compile::compile::<NopVariationInfo, _>(
+                &ast,
+                &glyph_map,
+                None,
+                Some(&kerns),
+                Default::default(),
+            )
+            .unwrap();
+            let gpos_bytes = write_fonts::dump_table(comp.gpos.as_ref().unwrap()).unwrap();
+            let gpos =
+                write_fonts::read::tables::gpos::Gpos::read(gpos_bytes.as_slice().into()).unwrap();
+            let mut buf = Vec::new();
+            let names = self.glyph_order.names().cloned().collect();
+            otl_normalizer::print_gpos(&mut buf, &gpos, None, &names).unwrap();
+            let norm_out = String::from_utf8(buf).unwrap();
+            (kerns, norm_out)
         }
+    }
+
+    // does some cleanup so that we don't need to worry about indentation when comparing strings
+    fn normalize_layout_repr(s: &str) -> String {
+        s.trim().chars().filter(|c| *c != ' ').collect()
+    }
+
+    macro_rules! assert_eq_ignoring_ws {
+        ($left:expr, $right:expr) => {
+            let left = normalize_layout_repr(&$left);
+            let right = normalize_layout_repr(&$right);
+            pretty_assertions::assert_str_eq!(left, right)
+        };
     }
 
     const ACUTE_COMB: char = '\u{0301}';
@@ -1226,7 +1299,8 @@ mod tests {
             .with_rule('a', 'b', 5)
             .with_rule('a', 'a', 7)
             .with_rule(A_CY, BE_CY, 12)
-            .build();
+            .build()
+            .0;
 
         assert_eq!(
             kerns.features.keys().cloned().collect::<Vec<_>>(),
@@ -1271,7 +1345,8 @@ mod tests {
             .with_rule('A', ACUTE_COMB, -55)
             .with_rule('B', 'C', -30)
             .with_rule('A', 'C', -30)
-            .build();
+            .build()
+            .0;
         assert_eq!(
             kerns.features.keys().cloned().collect::<Vec<_>>(),
             [KERN_DFLT_DFLT, KERN_LATN_DFLT]
@@ -1294,7 +1369,8 @@ mod tests {
             .with_nonspacing_glyphs(&[ACUTE_COMB])
             .with_user_fea("table GDEF { GlyphClassDef [A B C], , [acutecomb], ; } GDEF;")
             .with_rule('A', ACUTE_COMB, -55)
-            .build();
+            .build()
+            .0;
 
         let lookups = kerns.lookups_for_feature(&KERN_LATN_DFLT);
         assert_eq!(lookups.len(), 1);
@@ -1310,7 +1386,8 @@ mod tests {
             )
             .with_rule('A', 'A', 12)
             .with_rule(['A', 'B'], [ACUTE_COMB, CIRCUM_COMB, 'C'], -55)
-            .build();
+            .build()
+            .0;
 
         let lookups = kerns.lookups_for_feature(&KERN_LATN_DFLT);
         assert_eq!(kerns.lookups.len(), 2);
@@ -1324,6 +1401,265 @@ mod tests {
         );
     }
 
+    const FOUR_AR: char = '\u{0664}';
+    const SEVEN_AR: char = '\u{0667}';
+    const ALEF_AR: char = '\u{00627}';
+
+    //https://github.com/googlefonts/ufo2ft/blob/d82816873ed/tests/featureWriters/kernFeatureWriter_test.py#L548
+    #[test]
+    fn arabic_numerals_1() {
+        let kerns = KernInput::new(&[FOUR_AR, SEVEN_AR])
+            .with_rule(FOUR_AR, SEVEN_AR, -30)
+            .build()
+            .0;
+
+        assert_eq!(kerns.features.len(), 1);
+        assert_eq!(kerns.lookups.len(), 1);
+
+        let lookups = kerns.lookups_for_feature(&KERN_DFLT_DFLT);
+        assert_eq!(
+            flags_and_rule_count(lookups[0]),
+            (LookupFlag::IGNORE_MARKS, 1)
+        );
+    }
+
+    const KERN_ARAB_DFLT: FeatureKey = FeatureKey::new(KERN, DFLT_LANG, Tag::new(b"arab"));
+    // in fonttools, part of the same test as arabic_numerals_1, but we
+    // split it up for legibility
+    #[test]
+    fn arabic_numerals_2() {
+        let kerns = KernInput::new(&[FOUR_AR, SEVEN_AR, ALEF_AR])
+            .with_rule(FOUR_AR, SEVEN_AR, -30)
+            .build()
+            .0;
+        assert_eq!(kerns.lookups.len(), 1);
+        assert_eq!(
+            kerns.lookups_for_feature(&KERN_DFLT_DFLT),
+            kerns.lookups_for_feature(&KERN_ARAB_DFLT)
+        );
+    }
+
+    // ensure the lookup gets registered for all languagesystems
+    #[test]
+    fn arabic_numerals_3() {
+        const KERN_THAA_DFLT: FeatureKey = FeatureKey::new(KERN, DFLT_LANG, Tag::new(b"thaa"));
+        let kerns = KernInput::new(&[FOUR_AR, SEVEN_AR, ALEF_AR])
+            .with_user_fea("languagesystem DFLT dflt; languagesystem Thaa dflt;")
+            .with_rule(FOUR_AR, SEVEN_AR, -30)
+            .build()
+            .0;
+        assert_eq!(kerns.lookups.len(), 1);
+        assert_eq!(
+            kerns.features.keys().collect::<Vec<_>>(),
+            [&KERN_DFLT_DFLT, &KERN_ARAB_DFLT, &KERN_THAA_DFLT]
+        );
+    }
+
+    //https://github.com/googlefonts/ufo2ft/blob/d82816873/tests/featureWriters/kernFeatureWriter_test.py#L659
+    #[test]
+    fn skip_zero_class_kerns() {
+        let kerns = KernInput::new(&['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'])
+            .with_rule(['A', 'B'], ['C', 'D'], 10)
+            .with_rule(['E', 'F'], ['C', 'D'], -10)
+            .with_rule(['A', 'B'], 'D', 15)
+            .with_rule('A', ['C', 'D'], 5)
+            .with_rule('G', 'H', -5)
+            .with_rule(['A', 'B'], ['G', 'H'], 0)
+            .build()
+            .1;
+
+        assert_eq_ignoring_ws!(
+            kerns,
+            r#"
+            # kern: DFLT/dflt, latn/dflt ## 6 PairPos rules
+            # lookupflag LookupFlag(8)
+            A 5 [C,D]
+            B 10 C
+            B 15 D
+            E -10 [C,D]
+            F -10 [C,D]
+            G -5 H
+            "#
+        );
+    }
+
+    //https://github.com/googlefonts/ufo2ft/blob/d82816873ed40a8/tests/featureWriters/kernFeatureWriter_test.py#L717
+    #[test]
+    fn kern_uniqueness() {
+        const QUESTION_DOWN: char = '\u{BF}';
+
+        let kerns = KernInput::new(&[QUESTION_DOWN, 'y'])
+            .with_rule([QUESTION_DOWN], ['y'], 15)
+            .with_rule([QUESTION_DOWN], 'y', 35)
+            .with_rule(QUESTION_DOWN, ['y'], -35)
+            .with_rule(QUESTION_DOWN, 'y', 10)
+            .build()
+            .1;
+
+        assert_eq_ignoring_ws!(
+            kerns,
+            r#"
+            # kern: DFLT/dflt, latn/dflt ## 1 PairPos rules
+            # lookupflag LookupFlag(8)
+            questiondown 10 y
+            "#
+        );
+    }
+
+    const AACUTE: char = '\u{C1}';
+    const REH_AR: char = '\u{631}';
+    const ZAIN_AR: char = '\u{632}';
+    const LAM_AR: char = '\u{644}';
+
+    //https://github.com/googlefonts/ufo2ft/blob/d82816873ed40a801515/tests/featureWriters/kernFeatureWriter_test.py#L765
+    #[test]
+    fn kern_ltr_and_rtl() {
+        let (_kerns, normalized) = KernInput::new(&[
+            '4', '7', 'A', 'V', AACUTE, ALEF_AR, REH_AR, ZAIN_AR, LAM_AR, FOUR_AR, SEVEN_AR,
+        ])
+        .with_unmapped_glyphs(["alef-ar.isol", "lam-ar.init", "reh-ar.fina"])
+        .with_user_fea(
+            "
+            languagesystem DFLT dflt;
+            languagesystem latn dflt;
+            languagesystem latn TRK;
+            languagesystem arab dflt;
+            languagesystem arab URD;
+
+            feature init {
+                script arab;
+                sub lam-ar by lam-ar.init;
+                language URD;
+            } init;
+
+            feature fina {
+                script arab;
+                sub reh-ar by reh-ar.fina;
+                language URD;
+            } fina;
+
+            feature isol {
+                script arab;
+                sub alef-ar by alef-ar.isol;
+            } isol;
+                ",
+        )
+        .with_rule(['A', AACUTE], 'V', -40)
+        .with_rule('7', '4', -25)
+        .with_rule("reh-ar.fina", "lam-ar.init", -80)
+        .with_rule(
+            ["reh-ar", "zain-ar", "reh-ar.fina"],
+            ["alef-ar", "alef-ar.isol"],
+            -100,
+        )
+        .with_rule(FOUR_AR, SEVEN_AR, -30)
+        .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt, latn/dflt, latn/TRK ## 3 PairPos rules
+            # lookupflag LookupFlag(8)
+            seven -25 four
+            A -40 V
+            Aacute -40 V
+
+            # kern: arab/dflt, arab/URD ## 6 PairPos rules
+            # lookupflag LookupFlag(8)
+            seven -25 four
+            reh-ar <-100 0 -100 0> [alef-ar, alef-ar.isol]
+            zain-ar <-100 0 -100 0> [alef-ar, alef-ar.isol]
+            four-ar -30 seven-ar
+            reh-ar.fina <-100 0 -100 0> [alef-ar, alef-ar.isol]
+            reh-ar.fina <-80 0 -80 0> lam-ar.init
+            "#
+        );
+    }
+
+    const FATHA_AR: char = '\u{064E}';
+
+    //https://github.com/googlefonts/ufo2ft/blob/d82816873ed40a801515/tests/featureWriters/kernFeatureWriter_test.py#L869
+    #[test]
+    fn kern_ltr_and_rtl_with_marks() {
+        let (_kerns, normalized) = KernInput::new(&[
+            '4', '7', 'A', 'V', AACUTE, ACUTE_COMB, ALEF_AR, REH_AR, ZAIN_AR, LAM_AR, FOUR_AR,
+            SEVEN_AR, FATHA_AR,
+        ])
+        .with_unmapped_glyphs(["alef-ar.isol", "lam-ar.init", "reh-ar.fina"])
+        .with_user_fea(
+            "
+            languagesystem DFLT dflt;
+            languagesystem latn dflt;
+            languagesystem latn TRK;
+            languagesystem arab dflt;
+            languagesystem arab URD;
+
+            feature init {
+                script arab;
+                sub lam-ar by lam-ar.init;
+                language URD;
+            } init;
+
+            feature fina {
+                script arab;
+                sub reh-ar by reh-ar.fina;
+                language URD;
+            } fina;
+
+            feature isol {
+                script arab;
+                sub alef-ar by alef-ar.isol;
+            } isol;
+
+            @Bases = [A V Aacute alef-ar reh-ar zain-ar lam-ar
+                      alef-ar.isol lam-ar.init reh-ar.fina];
+            @Marks = [acutecomb fatha-ar];
+            table GDEF {
+                GlyphClassDef @Bases, [], @Marks, ;
+            } GDEF;
+                ",
+        )
+        .with_nonspacing_glyphs(&[ACUTE_COMB, FATHA_AR])
+        .with_rule(['A', AACUTE], 'V', -40)
+        .with_rule('7', '4', -25)
+        .with_rule("reh-ar.fina", "lam-ar.init", -80)
+        .with_rule(
+            ["reh-ar", "zain-ar", "reh-ar.fina"],
+            ["alef-ar", "alef-ar.isol"],
+            -100,
+        )
+        .with_rule(FOUR_AR, SEVEN_AR, -30)
+        .with_rule('V', ACUTE_COMB, 70)
+        .with_rule("reh-ar", "fatha-ar", 80)
+        .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt, latn/dflt, latn/TRK ## 4 PairPos rules
+            # lookupflag LookupFlag(8)
+            seven -25 four
+            A -40 V
+            # lookupflag LookupFlag(0)
+            V 70 acutecomb
+            # lookupflag LookupFlag(8)
+            Aacute -40 V
+
+            # kern: arab/dflt, arab/URD ## 7 PairPos rules
+            # lookupflag LookupFlag(8)
+            seven -25 four
+            reh-ar <-100 0 -100 0> [alef-ar, alef-ar.isol]
+            # lookupflag LookupFlag(0)
+            reh-ar <80 0 80 0> fatha-ar
+            # lookupflag LookupFlag(8)
+            zain-ar <-100 0 -100 0> [alef-ar, alef-ar.isol]
+            four-ar -30 seven-ar
+            reh-ar.fina <-100 0 -100 0> [alef-ar, alef-ar.isol]
+            reh-ar.fina <-80 0 -80 0> lam-ar.init
+
+            "#
+        );
+    }
     // we had a bug where we were updating the kerning values in place, which
     // meant the order in which we handled pairs could influence the results
     #[test]
