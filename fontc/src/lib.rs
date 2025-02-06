@@ -302,7 +302,7 @@ mod tests {
             self.fe_context
                 .glyph_order
                 .get()
-                .glyph_id(&name.into())
+                .glyph_id(name)
                 .map(|v| v.to_u16() as u32)
         }
 
@@ -2788,13 +2788,13 @@ mod tests {
         let expected_rot60more_bbox = Rect::new(50.0, 149.0, 150.0, 449.0);
 
         let gids = ["rot30", "rot60more"]
-            .iter()
+            .into_iter()
             .map(|gn| {
                 compile
                     .fe_context
                     .glyph_order
                     .get()
-                    .glyph_id(&GlyphName::new(gn))
+                    .glyph_id(gn)
                     .map(|gid16| GlyphId::new(gid16.to_u32()))
                     .unwrap()
             })
