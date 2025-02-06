@@ -2,10 +2,8 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
-    sync::Arc,
 };
 
-use fontir::ir::Glyph;
 use icu_properties::{
     props::{BidiClass, Script},
     CodePointMapData, PropertyNamesShort, PropertyParser,
@@ -48,10 +46,9 @@ pub trait CharMap {
     fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId16, u32)>;
 }
 
-impl CharMap for Vec<(Arc<Glyph>, GlyphId16)> {
+impl CharMap for HashMap<u32, GlyphId16> {
     fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId16, u32)> {
-        self.iter()
-            .flat_map(|(glyph, gid)| glyph.codepoints.iter().map(|uv| (*gid, *uv)))
+        self.iter().map(|(k, v)| (*v, *k))
     }
 }
 

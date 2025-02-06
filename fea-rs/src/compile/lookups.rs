@@ -1201,7 +1201,7 @@ impl FeatureKey {
     ///
     /// If you already have a [`super::LanguageSystem`], you can create a [`FeatureKey`]
     /// with the [`super::LanguageSystem::to_feature_key`] method.
-    pub fn new(feature: Tag, language: Tag, script: Tag) -> Self {
+    pub const fn new(feature: Tag, language: Tag, script: Tag) -> Self {
         FeatureKey {
             feature,
             language,
