@@ -44,7 +44,7 @@ pub(crate) static NEW_SCRIPT_TAGS: &[(&str, Tag)] = &[
     ("Deva", Tag::new(b"dev2")),
     ("Gujr", Tag::new(b"gjr2")),
     ("Guru", Tag::new(b"gur2")),
-    ("Kana", Tag::new(b"knd2")),
+    ("Knda", Tag::new(b"knd2")),
     ("Mlym", Tag::new(b"mlm2")),
     ("Mymr", Tag::new(b"mym2")),
     ("Orya", Tag::new(b"ory2")),

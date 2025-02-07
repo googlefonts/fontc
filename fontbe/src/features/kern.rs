@@ -552,7 +552,7 @@ fn assign_lookups_to_scripts(
         let languages = fea_langs_by_script.get(&DFLT_SCRIPT).unwrap_or(&dflt_langs);
         for lang in languages {
             features.insert(
-                FeatureKey::new(KERN, *lang, DFLT_SCRIPT),
+                FeatureKey::new(current_feature, *lang, DFLT_SCRIPT),
                 default_lookups.clone(),
             );
         }
@@ -1116,6 +1116,10 @@ mod tests {
             ('\u{64E}', "fatha-ar"),
             ('\u{664}', "four-ar"),
             ('\u{667}', "seven-ar"),
+            ('\u{CBE}', "aaMatra_kannada"),
+            ('\u{CD6}', "ailength_kannada"),
+            ('\u{10A06}', "u10A06"),
+            ('\u{10A1E}', "u10A1E"),
         ];
         EXTRA_GLYPH_NAMES
             .binary_search_by(|probe| probe.0.cmp(&c))
@@ -1656,10 +1660,92 @@ mod tests {
             four-ar -30 seven-ar
             reh-ar.fina <-100 0 -100 0> [alef-ar, alef-ar.isol]
             reh-ar.fina <-80 0 -80 0> lam-ar.init
-
             "#
         );
     }
+
+    const AAMATRA_KANNADA: char = '\u{0CBE}';
+    const AILENGTH_KANNADA: char = '\u{0CD6}';
+
+    #[test]
+    fn dist_ltr() {
+        let (_kerns, normalized) = KernInput::new(&[AAMATRA_KANNADA, AILENGTH_KANNADA])
+            .with_user_fea(
+                "
+            languagesystem DFLT dflt;
+            languagesystem latn dflt;
+            languagesystem knda dflt;
+            languagesystem knd2 dflt;
+                ",
+            )
+            .with_rule([AAMATRA_KANNADA], [AILENGTH_KANNADA], 34)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # dist: knd2/dflt, knda/dflt ## 1 PairPos rules
+            # lookupflag LookupFlag(8)
+            aaMatra_kannada 34 ailength_kannada
+            "#
+        );
+    }
+
+    const U10A1E: char = '\u{10A1E}';
+    const U10A06: char = '\u{10A06}';
+    #[test]
+    fn dist_rtl() {
+        let (_kerns, normalized) = KernInput::new(&[U10A06, U10A1E])
+            .with_user_fea(
+                "
+            languagesystem DFLT dflt;
+            languagesystem arab dflt;
+            languagesystem khar dflt;
+                ",
+            )
+            .with_rule(U10A1E, U10A06, 117)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # dist: khar/dflt ## 1 PairPos rules
+            # lookupflag LookupFlag(8)
+            u10A1E <117 0 117 0> u10A06
+            "#
+        );
+    }
+
+    #[test]
+    fn dist_ltr_and_rtl() {
+        let (_kerns, normalized) =
+            KernInput::new(&[AAMATRA_KANNADA, AILENGTH_KANNADA, U10A06, U10A1E])
+                .with_user_fea(
+                    "
+            languagesystem DFLT dflt;
+            languagesystem knda dflt;
+            languagesystem knd2 dflt;
+            languagesystem khar dflt;
+                ",
+                )
+                .with_rule([AAMATRA_KANNADA], [AILENGTH_KANNADA], 34)
+                .with_rule(U10A1E, U10A06, 117)
+                .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # dist: khar/dflt ## 1 PairPos rules
+            # lookupflag LookupFlag(8)
+            u10A1E <117 0 117 0> u10A06
+
+            # dist: knd2/dflt, knda/dflt ## 1 PairPos rules
+            # lookupflag LookupFlag(8)
+            aaMatra_kannada 34 ailength_kannada
+            "#
+        );
+    }
+
     // we had a bug where we were updating the kerning values in place, which
     // meant the order in which we handled pairs could influence the results
     #[test]
