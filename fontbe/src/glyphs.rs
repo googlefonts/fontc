@@ -303,7 +303,7 @@ fn process_composite_deltas(deltas: Vec<Vec2>) -> Vec<GlyphDelta> {
             (0, 0) => GlyphDelta::optional(0, 0),
             (x, y) => GlyphDelta::required(x, y),
         })
-        .collect::<Vec<_>>()
+        .collect()
 }
 
 impl Work<Context, AnyWorkId, Error> for GlyphWork {
