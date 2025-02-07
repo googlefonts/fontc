@@ -295,7 +295,7 @@ fn compute_deltas(
 
 /// convert raw deltas to the write-fonts representation (composite glyphs only)
 fn process_composite_deltas(deltas: Vec<Vec2>) -> Vec<GlyphDelta> {
-    let mut deltas = deltas
+    deltas
         .into_iter()
         .map(|delta| match delta.to_point().ot_round() {
             // IUP only applies to simple glyphs; for composites we
@@ -303,18 +303,7 @@ fn process_composite_deltas(deltas: Vec<Vec2>) -> Vec<GlyphDelta> {
             (0, 0) => GlyphDelta::optional(0, 0),
             (x, y) => GlyphDelta::required(x, y),
         })
-        .collect::<Vec<_>>();
-
-    // match fonttools behaviour, ensuring there is at least one
-    // delta required, to ensure we write an entry for the glyf.
-    // <https://github.com/fonttools/fonttools/blob/0a3360e52727cdefce2e9b28286b074faf99033c/Lib/fontTools/varLib/__init__.py#L351>
-    // <https://github.com/fonttools/fonttools/issues/1381>
-    if deltas.iter().all(|delta| !delta.required) {
-        if let Some(first) = deltas.first_mut() {
-            first.required = true;
-        }
-    }
-    deltas
+        .collect()
 }
 
 impl Work<Context, AnyWorkId, Error> for GlyphWork {
@@ -935,11 +924,9 @@ mod tests {
     #[test]
     fn all_zero_composite_deltas() {
         let zeros = vec![Vec2::ZERO; 6];
-        // if a composite glyph has all zero deltas we want to finish with a single
-        // required zero delta, and skip the rest:
+        // if a composite glyph has all zero deltas we want to skip them all
         let deltas = process_composite_deltas(zeros);
-        assert!(deltas[0].required);
-        assert!(deltas.iter().skip(1).all(|d| !d.required));
+        assert!(deltas.iter().all(|d| !d.required));
     }
 
     #[test]

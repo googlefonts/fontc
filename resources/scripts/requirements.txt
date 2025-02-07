@@ -23,7 +23,7 @@ axisregistry==0.4.12
     # via gftools
 babelfont==3.1.2
     # via gftools
-beautifulsoup4==4.12.3
+beautifulsoup4==4.13.3
     # via gftools
 booleanoperations==0.9.0
     # via
@@ -90,7 +90,7 @@ fontparts==0.12.3
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.55.8
+fonttools[lxml,repacker,ufo,unicode,woff]==4.56.0
     # via
     #   -r requirements.in
     #   afdko
@@ -123,13 +123,13 @@ fs==2.4.16
     # via
     #   fontfeatures
     #   fonttools
-gflanguages==0.7.2
+gflanguages==0.7.3
     # via
     #   gftools
     #   glyphsets
 gfsubsets==2024.9.25
     # via gftools
-gftools==0.9.77
+gftools==0.9.78
     # via -r requirements.in
 gitdb==4.0.12
     # via gitpython
@@ -265,7 +265,9 @@ tqdm==4.67.1
 ttfautohint-py==0.5.1
     # via gftools
 typing-extensions==4.12.2
-    # via pygithub
+    # via
+    #   beautifulsoup4
+    #   pygithub
 ufo2ft[cffsubr,compreffor]==3.4.1
     # via
     #   fontmake
