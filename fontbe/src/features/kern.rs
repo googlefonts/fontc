@@ -19,7 +19,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, GlyphOrder, KernGroup, KerningGroups, KerningInstance},
+    ir::{self, GlyphOrder, KernGroup, KerningGroups, KerningInstance, StaticMetadata},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::props::BidiClass;
@@ -383,6 +383,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
         let arc_fragments = context.kern_fragments.all();
         let ast = context.fea_ast.get();
         let glyph_order = context.ir.glyph_order.get();
+        let meta = context.ir.static_metadata.get();
         let mut pairs: Vec<_> = arc_fragments
             .iter()
             .flat_map(|(_, fragment)| fragment.kerns.iter())
@@ -407,8 +408,14 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
             .map(|g| glyph_order.glyph_id(&g.name).unwrap())
             .collect::<HashSet<_>>();
 
-        let lookups =
-            finalize_kerning(&pairs, &ast.ast, &glyph_order, char_map, non_spacing_glyphs)?;
+        let lookups = finalize_kerning(
+            &pairs,
+            &ast.ast,
+            &meta,
+            &glyph_order,
+            char_map,
+            non_spacing_glyphs,
+        )?;
         context.fea_rs_kerns.set(lookups);
         Ok(())
     }
@@ -420,6 +427,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
 fn finalize_kerning(
     pairs: &[&KernPair],
     ast: &ParseTree,
+    meta: &StaticMetadata,
     glyph_order: &GlyphOrder,
     char_map: HashMap<u32, GlyphId16>,
     non_spacing_glyphs: HashSet<GlyphId16>,
@@ -450,16 +458,24 @@ fn finalize_kerning(
         .map(|data| write_fonts::read::tables::gsub::Gsub::read(data.as_slice().into()))
         .transpose()?;
 
-    let gdef = compilation.gdef_classes;
+    let glyph_classes = compilation
+        .gdef_classes
+        .filter(|_| meta.gdef_categories.prefer_gdef_categories_in_fea)
+        .unwrap_or_else(|| {
+            meta.gdef_categories
+                .categories
+                .iter()
+                .filter_map(|(name, category)| {
+                    glyph_order.glyph_id(name).map(|gid| (gid, *category))
+                })
+                .collect()
+        });
     let known_scripts = guess_font_scripts(ast, &char_map);
 
     let mark_glyphs = glyph_order
         .iter()
         .filter_map(|(gid, _)| {
-            let is_mark = gdef
-                .as_ref()
-                .map(|gdef| gdef.get(&gid) == Some(&GlyphClassDef::Mark))
-                .unwrap_or(false);
+            let is_mark = glyph_classes.get(&gid) == Some(&GlyphClassDef::Mark);
             is_mark.then(|| {
                 let spacing = if non_spacing_glyphs.contains(&gid) {
                     MarkSpacing::NonSpacing
@@ -1123,6 +1139,8 @@ fn merge_scripts(
 mod tests {
     use std::{path::Path, sync::Arc};
 
+    use fontir::ir::GdefCategories;
+
     use super::*;
 
     // just a helper so we can use the same names as fonttools does in their tests
@@ -1156,6 +1174,7 @@ mod tests {
         charmap: HashMap<u32, GlyphId16>,
         pairs: Vec<KernPair>,
         non_spacing: HashSet<GlyphId16>,
+        opentype_categories: BTreeMap<GlyphName, GlyphClassDef>,
         glyph_order: GlyphOrder,
         user_fea: Arc<str>,
     }
@@ -1217,6 +1236,7 @@ mod tests {
                 pairs: Default::default(),
                 non_spacing: Default::default(),
                 user_fea: "".into(),
+                opentype_categories: Default::default(),
             }
         }
 
@@ -1225,6 +1245,24 @@ mod tests {
             self
         }
 
+        fn with_opentype_category_marks(mut self, mark_glyphs: &[char]) -> Self {
+            self.opentype_categories = mark_glyphs
+                .iter()
+                .map(|c| {
+                    (
+                        self.glyph_order
+                            .glyph_name(self.charmap.get(&(*c as u32)).copied().unwrap().into())
+                            .unwrap()
+                            .to_owned(),
+                        GlyphClassDef::Mark,
+                    )
+                })
+                .collect();
+            self
+        }
+
+        // manually indicate some glyphs are 'nonspacing'. In real code, this is
+        // determined by checking the glyohs' advance widths.
         fn with_nonspacing_glyphs(mut self, glyphs: &[char]) -> Self {
             self.non_spacing.extend(
                 glyphs
@@ -1270,9 +1308,25 @@ mod tests {
                 }),
             )
             .unwrap();
+            let fake_meta = StaticMetadata::new(
+                1000,
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                42.,
+                GdefCategories {
+                    prefer_gdef_categories_in_fea: self.opentype_categories.is_empty(),
+                    categories: self.opentype_categories,
+                },
+                None,
+            )
+            .unwrap();
             let kerns = finalize_kerning(
                 &pairs,
                 &ast,
+                &fake_meta,
                 &self.glyph_order,
                 self.charmap,
                 self.non_spacing,
@@ -1390,6 +1444,32 @@ mod tests {
     }
 
     #[test]
+    fn mark_to_base_kern_no_fea() {
+        let kerns = KernInput::new(&['A', 'B', 'C', ACUTE_COMB])
+            .with_nonspacing_glyphs(&[ACUTE_COMB])
+            .with_opentype_category_marks(&[ACUTE_COMB])
+            .with_rule('A', ACUTE_COMB, -55)
+            .with_rule('B', 'C', -30)
+            .with_rule('A', 'C', -30)
+            .build()
+            .0;
+        assert_eq!(
+            kerns.features.keys().cloned().collect::<Vec<_>>(),
+            [KERN_DFLT_DFLT, KERN_LATN_DFLT]
+        );
+
+        assert_eq!(kerns.lookups.len(), 2);
+
+        let bases = &kerns.lookups[0];
+        let marks = &kerns.lookups[1];
+
+        assert_eq!(
+            (flags_and_rule_count(bases), flags_and_rule_count(marks)),
+            ((LookupFlag::IGNORE_MARKS, 2), (LookupFlag::empty(), 1)),
+        );
+    }
+
+    #[test]
     fn mark_to_base_only() {
         let kerns = KernInput::new(&['A', 'B', 'C', ACUTE_COMB])
             .with_nonspacing_glyphs(&[ACUTE_COMB])
@@ -1410,6 +1490,28 @@ mod tests {
             .with_user_fea(
                 "table GDEF { GlyphClassDef [A B C], , [acutecomb, circumflexcomb], ; } GDEF;",
             )
+            .with_rule('A', 'A', 12)
+            .with_rule(['A', 'B'], [ACUTE_COMB, CIRCUM_COMB, 'C'], -55)
+            .build()
+            .0;
+
+        let lookups = kerns.lookups_for_feature(&KERN_LATN_DFLT);
+        assert_eq!(kerns.lookups.len(), 2);
+
+        let bases = &lookups[0];
+        let marks = &lookups[1];
+
+        assert_eq!(
+            (flags_and_rule_count(bases), flags_and_rule_count(marks)),
+            ((LookupFlag::IGNORE_MARKS, 2), (LookupFlag::empty(), 1)),
+        );
+    }
+
+    #[test]
+    fn mark_to_base_mixed_class_no_fea() {
+        let kerns = KernInput::new(&['A', 'B', 'C', ACUTE_COMB, CIRCUM_COMB])
+            .with_nonspacing_glyphs(&[ACUTE_COMB, CIRCUM_COMB])
+            .with_opentype_category_marks(&[ACUTE_COMB, CIRCUM_COMB])
             .with_rule('A', 'A', 12)
             .with_rule(['A', 'B'], [ACUTE_COMB, CIRCUM_COMB, 'C'], -55)
             .build()
