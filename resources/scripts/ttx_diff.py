@@ -516,7 +516,7 @@ def remove_gdef_lig_caret_and_var_store(ttx: etree.ElementTree):
 
     for ident in ["LigCaretList", "VarStore"]:
         subtable = gdef.find(ident)
-        if subtable:
+        if subtable is not None:
             gdef.remove(subtable)
 
 
@@ -771,6 +771,7 @@ def delete_things_we_must_rebuild(rebuild: str, fontmake_ttf: Path, fontc_ttf: P
                 ttf_path,
                 ttf_path.with_suffix(".ttx"),
                 ttf_path.with_suffix(".markkern.txt"),
+                ttf_path.with_suffix(".ligcaret.txt"),
             ]:
                 if path.exists():
                     os.remove(path)
