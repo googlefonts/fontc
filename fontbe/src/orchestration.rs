@@ -30,7 +30,6 @@ use fontir::{
     },
     variations::VariationRegion,
 };
-use log::trace;
 
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
@@ -59,10 +58,9 @@ use write_fonts::{
         os2::Os2,
         post::Post,
         stat::Stat,
-        variations::Tuple,
         vhea::Vhea,
     },
-    types::{F2Dot14, GlyphId16, Tag},
+    types::{GlyphId16, Tag},
     validate::Validate,
     FontWrite,
 };
@@ -385,9 +383,13 @@ impl GvarFragment {
                     return None;
                 }
 
-                let tuple_builder = TupleBuilder::new(region, axis_order);
-                let (min, peak, max) = tuple_builder.build();
-                Some(GlyphDeltas::new(peak, deltas.clone(), Some((min, max))))
+                let coordinates = axis_order
+                    .iter()
+                    .map(|axis| *region.get(axis).unwrap())
+                    .map(Into::into)
+                    .collect();
+
+                Some(GlyphDeltas::new(coordinates, deltas.clone()))
             })
             .collect()
     }
@@ -406,40 +408,6 @@ impl Persistable for GvarFragment {
 
     fn write(&self, to: &mut dyn io::Write) {
         bincode::serialize_into(to, &self).unwrap();
-    }
-}
-
-/// <https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview#variation-data>
-#[derive(Debug, Default)]
-struct TupleBuilder {
-    axes: Vec<Tag>,
-    min: Vec<F2Dot14>,
-    peak: Vec<F2Dot14>,
-    max: Vec<F2Dot14>,
-}
-
-impl TupleBuilder {
-    fn new(region: &VariationRegion, axis_order: &[Tag]) -> Self {
-        let mut builder = TupleBuilder::default();
-        for tag in axis_order {
-            let tent = region.get(tag).unwrap();
-            builder.axes.push(*tag);
-            builder.min.push(F2Dot14::from_f32(tent.min.to_f64() as _));
-            builder
-                .peak
-                .push(F2Dot14::from_f32(tent.peak.to_f64() as _));
-            builder.max.push(F2Dot14::from_f32(tent.max.to_f64() as _));
-        }
-        trace!("{builder:?}");
-        builder
-    }
-
-    fn build(self) -> (Tuple, Tuple, Tuple) {
-        (
-            Tuple::new(self.min),
-            Tuple::new(self.peak),
-            Tuple::new(self.max),
-        )
     }
 }
 

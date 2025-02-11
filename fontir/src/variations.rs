@@ -15,7 +15,7 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use write_fonts::{
-    tables::variations::RegionAxisCoordinates,
+    tables::{gvar, variations::RegionAxisCoordinates},
     types::{F2Dot14, Tag},
 };
 
@@ -590,7 +590,7 @@ impl VariationRegion {
 ///
 /// Visualize as a tent of influence, starting at min, peaking at peak,
 /// and dropping off to zero at max.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub struct Tent {
     pub min: NormalizedCoord,
     pub peak: NormalizedCoord,
@@ -677,6 +677,16 @@ impl From<(f64, f64, f64)> for Tent {
     }
 }
 
+impl From<Tent> for gvar::AxisCoordinates {
+    fn from(val: Tent) -> Self {
+        let Tent { peak, min, max } = val;
+        gvar::AxisCoordinates::new(
+            peak.into(),
+            Some(gvar::Intermediate::explicit(min.into(), max.into())),
+        )
+    }
+}
+
 /// Split space into regions.
 ///
 /// VariationModel::_locationsToRegions in Python.
@@ -756,7 +766,7 @@ fn master_influence(axis_order: &[Tag], regions: &[VariationRegion]) -> Vec<Vari
                     continue;
                 }
                 let prev_peak = prev_region.axis_tents[tag].peak;
-                let mut axis_region = region.axis_tents[tag].clone();
+                let mut axis_region = region.axis_tents[tag];
                 let ratio;
                 match prev_peak.cmp(&axis_region.peak) {
                     Ordering::Less => {
