@@ -86,7 +86,7 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
 mod tests {
     use fontir::ir::GlyphOrder;
     use write_fonts::{
-        tables::gvar::{AxisCoordinates, GlyphDelta, GlyphDeltas},
+        tables::gvar::{self, GlyphDelta, GlyphDeltas},
         types::F2Dot14,
     };
 
@@ -107,7 +107,7 @@ mod tests {
                 v if v == glyph_without_var => Vec::new(),
                 // At the maximum extent (normalized pos 1.0) of our axis, add +1, +1
                 v if v == glyph_with_var => vec![GlyphDeltas::new(
-                    vec![AxisCoordinates::new(F2Dot14::from_f32(1.0), None)],
+                    vec![gvar::Tent::new(F2Dot14::from_f32(1.0), None)],
                     vec![GlyphDelta::new(1, 1, false)],
                 )],
                 v => panic!("unexpected {v}"),

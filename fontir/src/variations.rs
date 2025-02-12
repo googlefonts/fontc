@@ -677,13 +677,10 @@ impl From<(f64, f64, f64)> for Tent {
     }
 }
 
-impl From<Tent> for gvar::AxisCoordinates {
+impl From<Tent> for gvar::Tent {
     fn from(val: Tent) -> Self {
         let Tent { peak, min, max } = val;
-        gvar::AxisCoordinates::new(
-            peak.into(),
-            Some(gvar::Intermediate::explicit(min.into(), max.into())),
-        )
+        gvar::Tent::new(peak.into(), Some((min.into(), max.into())))
     }
 }
 
