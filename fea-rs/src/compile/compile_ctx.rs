@@ -92,6 +92,12 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     conditionset_defs: ConditionSetMap,
     mark_attach_class_id: HashMap<GlyphSet, u16>,
     mark_filter_sets: HashMap<GlyphSet, FilterSetId>,
+    // feature blocks can include `# Automatic Code` comments that instruct us
+    // on where we should merge in code generated from an external provider.
+    // when we encounter these we record what lookup id would be logically next,
+    // and we will use that for the generated lookups.
+    // We also store the start pos of the comment, to break ties.
+    insert_markers: HashMap<Tag, (LookupId, usize)>,
 }
 
 impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
@@ -125,6 +131,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
             opts,
+            insert_markers: Default::default(),
         }
     }
 
@@ -277,12 +284,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         writer.add_features(&mut builder);
 
         // now we need to merge in the newly generated features.
-        let id_map = self.lookups.merge_external_lookups(builder.lookups);
-        builder
-            .features
-            .values_mut()
-            .for_each(|feat| feat.base.iter_mut().for_each(|id| *id = id_map.get(*id)));
+        let id_map = self.lookups.merge_external_lookups(
+            builder.lookups,
+            &builder.features,
+            &self.insert_markers,
+        );
         self.features.merge_external_features(builder.features);
+        self.features.remap_ids(&id_map);
+        self.lookups.remap_ids(&id_map);
         builder.lig_carets
     }
 
@@ -1888,6 +1897,39 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             }
         } else if item.kind() == Kind::Semi {
             // continue
+        } else if item.kind() == Kind::Comment {
+            assert!(item
+                .token_text()
+                .unwrap_or_default()
+                .contains("# Automatic Code"));
+            if self.active_feature.is_none() {
+                self.warning(
+                    item.range(),
+                    "Insertion marker outside feature block will be ignored",
+                );
+                return;
+            };
+
+            // make sure we finish any active lookup before assigning the lookupid
+            if let Some((id, _name)) = self.lookups.finish_current() {
+                if _name.is_some() {
+                    self.error(
+                        item.range(),
+                        "insertion marker cannot be inside named lookup block",
+                    );
+                }
+                self.add_lookup_to_current_feature_if_present(id);
+            }
+            let current_feature = self.active_feature.as_ref().unwrap().tag;
+
+            // we can have multiple markers in a row without any lookups between,
+            // but we care about the order; so along with the lookup id we also
+            // store the comment position, which breaks ties.
+            let comment_start = item.range().start;
+            self.insert_markers.insert(
+                current_feature,
+                (self.lookups.next_gpos_id(), comment_start),
+            );
         } else {
             let span = match item {
                 NodeOrToken::Token(t) => t.range(),

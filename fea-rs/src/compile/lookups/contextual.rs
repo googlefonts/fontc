@@ -7,8 +7,7 @@ use std::{
 
 use write_fonts::{
     tables::{
-        gsub as write_gsub,
-        gsub::ReverseChainSingleSubstFormat1,
+        gsub::{self as write_gsub, ReverseChainSingleSubstFormat1},
         layout::{self as write_layout, CoverageTableBuilder, LookupFlag},
         variations::ivs_builder::VariationStoreBuilder,
     },
@@ -20,7 +19,7 @@ use write_fonts::{
 use crate::{common::GlyphOrClass, compile::metrics::ValueRecord};
 
 use super::{
-    Builder, ClassDefBuilder2, FilterSetId, LookupBuilder, LookupId, PositionLookup,
+    Builder, ClassDefBuilder2, FilterSetId, LookupBuilder, LookupId, PositionLookup, RemapIds,
     SubstitutionLookup,
 };
 
@@ -449,6 +448,28 @@ impl Builder for SubContextBuilder {
     }
 }
 
+impl RemapIds for PosContextBuilder {
+    fn remap_ids(&mut self, id_map: &super::LookupIdMap) {
+        self.0.remap_ids(id_map);
+    }
+}
+
+impl RemapIds for SubContextBuilder {
+    fn remap_ids(&mut self, id_map: &super::LookupIdMap) {
+        self.0.remap_ids(id_map);
+    }
+}
+
+impl RemapIds for ContextBuilder {
+    fn remap_ids(&mut self, id_map: &super::LookupIdMap) {
+        for rule in &mut self.rules {
+            for (_, lookups) in &mut rule.context {
+                lookups.iter_mut().for_each(|id| *id = id_map.get(*id));
+            }
+        }
+    }
+}
+
 impl ContextBuilder {
     fn build(
         self,
@@ -687,6 +708,17 @@ impl Builder for SubChainContextBuilder {
     }
 }
 
+impl RemapIds for PosChainContextBuilder {
+    fn remap_ids(&mut self, id_map: &super::LookupIdMap) {
+        self.0 .0.remap_ids(id_map);
+    }
+}
+
+impl RemapIds for SubChainContextBuilder {
+    fn remap_ids(&mut self, id_map: &super::LookupIdMap) {
+        self.0 .0.remap_ids(id_map);
+    }
+}
 // invariant: at least one item must be Some
 fn pick_best_format<T: FontWrite + Validate>(subtables: [Option<Vec<T>>; 3]) -> Vec<T> {
     // first see if there's only one table present, in which case we can exit early:
