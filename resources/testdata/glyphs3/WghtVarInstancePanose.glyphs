@@ -1,0 +1,173 @@
+{
+.formatVersion = 3;
+familyName = WghtVarInstancePanose;
+
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+
+customParameters = (
+{
+name = panose;
+value = (
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10
+);
+}
+);
+
+fontMaster = (
+{
+id = m01;
+name = Regular;
+axesValues = (
+400
+);
+customParameters = (
+{
+name = panose;
+value = (
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11
+);
+}
+);
+},
+{
+id = m02;
+name = Bold;
+axesValues = (
+700
+);
+customParameters = (
+{
+name = panose;
+value = (
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12
+);
+}
+);
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = m02;
+width = 250;
+}
+);
+unicode = 32;
+}
+);
+
+instances = (
+{
+customParameters = (
+{
+name = panose;
+value = (
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13
+);
+}
+);
+name = Regular;
+type = variable;
+},
+{
+axesValues = (
+400
+);
+customParameters = (
+{
+name = panose;
+value = (
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14
+);
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+customParameters = (
+{
+name = panose;
+value = (
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15
+);
+}
+);
+isBold = 1;
+linkStyle = Regular;
+name = Bold;
+weightClass = 700;
+}
+);
+
+unitsPerEm = 1024;
+versionMajor = 42;
+versionMinor = 42;
+}

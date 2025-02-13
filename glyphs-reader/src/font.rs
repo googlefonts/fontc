@@ -1065,6 +1065,7 @@ pub struct Instance {
     pub type_: InstanceType,
     pub axis_mappings: BTreeMap<String, AxisUserToDesignMap>,
     pub axes_values: Vec<OrderedFloat<f64>>,
+    pub custom_parameters: CustomParameters,
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L150>
@@ -1102,6 +1103,7 @@ struct RawInstance {
 
     weight_class: Option<String>,
     width_class: Option<String>,
+    custom_parameters: RawCustomParameters,
 }
 
 impl RawInstance {
@@ -2328,7 +2330,7 @@ impl Instance {
     ///
     /// Mappings based on
     /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L3451>
-    fn new(axes: &[Axis], value: &RawInstance) -> Self {
+    fn new(axes: &[Axis], value: &RawInstance) -> Result<Self, Error> {
         let active = value.is_active();
         let mut axis_mappings = BTreeMap::new();
 
@@ -2363,7 +2365,7 @@ impl Instance {
                 .unwrap_or(100.0),
         );
 
-        Instance {
+        Ok(Instance {
             name: value.name.clone(),
             active,
             type_: value
@@ -2373,7 +2375,8 @@ impl Instance {
                 .unwrap_or(InstanceType::Single),
             axis_mappings,
             axes_values: value.axes_values.clone(),
-        }
+            custom_parameters: value.custom_parameters.to_custom_params()?,
+        })
     }
 }
 
@@ -2443,7 +2446,7 @@ impl TryFrom<RawFont> for Font {
             .instances
             .iter()
             .map(|ri| Instance::new(&axes, ri))
-            .collect();
+            .collect::<Result<Vec<_>, Error>>()?;
 
         let default_master_idx = default_master_idx(&from);
         let axis_mappings = UserToDesignMapping::new(&from, &instances);
@@ -2588,6 +2591,12 @@ impl Font {
 
     pub fn default_master(&self) -> &FontMaster {
         &self.masters[self.default_master_idx]
+    }
+
+    pub fn instance(&self, master: &FontMaster) -> Option<&Instance> {
+        self.instances
+            .iter()
+            .find(|i| i.active && i.type_ == InstanceType::Variable && i.name == master.name)
     }
 
     pub fn vendor_id(&self) -> Option<&String> {

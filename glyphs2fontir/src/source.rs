@@ -325,11 +325,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .as_ref()
             .map(|bits| bits.iter().copied().collect());
 
-        if let Some(raw_panose) = font
-            .default_master()
-            .custom_parameters
-            .panose
-            .as_ref()
+        let default_master = font.default_master();
+        let default_instance = font.instance(default_master);
+        if let Some(raw_panose) = default_instance
+            .and_then(|di| di.custom_parameters.panose.as_ref())
+            .or(default_master.custom_parameters.panose.as_ref())
             .or(font.custom_parameters.panose.as_ref())
         {
             let mut bytes = [0u8; 10];
@@ -1838,5 +1838,17 @@ mod tests {
         let (_, context) = build_static_metadata(glyphs3_dir().join("InvalidVendorID.glyphs"));
         let static_metadata = context.static_metadata.get();
         assert_eq!(Tag::new(b"NONE"), static_metadata.misc.vendor_id);
+    }
+
+    #[test]
+    fn which_panose_shall_i_get() {
+        // Learned from GSC that panose can live in instances
+        let (_, context) =
+            build_static_metadata(glyphs3_dir().join("WghtVarInstancePanose.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(
+            Some(Panose::from([4, 5, 6, 7, 8, 9, 10, 11, 12, 13])),
+            static_metadata.misc.panose
+        );
     }
 }
