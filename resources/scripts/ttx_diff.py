@@ -550,6 +550,8 @@ def reorder_rules(lookup: etree.ElementTree, new_order: Dict[int, int], rule_nam
     # instead we remove them and then append them back in order, using 'addnext'
     # to ensure that we're inserting them at the right location.
     orig_order = [el for el in lookup.iterchildren(tag=rule_name)]
+    if len(orig_order) == 0:
+        return
     prev_el = orig_order[0].getprevious()
     for el in orig_order:
         lookup.remove(el)
@@ -566,6 +568,14 @@ def reorder_rules(lookup: etree.ElementTree, new_order: Dict[int, int], rule_nam
     # reindent everything to be safe.
     etree.indent(lookup, level=4)
 
+# for each named child in container, remap the 'value' attribute using the new ordering
+def remap_values(container: etree.ElementTree, new_order: Dict[int, int], child_name: str):
+    # for the original use we need to map from new to old, but here we need the reverse
+    rev_map = {v:k for (k,v) in new_order.items()}
+    for el in container.iterchildren(child_name):
+        old = int(el.attrib['value'])
+        el.attrib['value'] = str(rev_map[old])
+
 
 # fontmake and fontc assign glyph classes differently for class-based tables;
 # fontc uses GIDs but fontmake uses glyph names, so we reorder them to be consistent.
@@ -574,13 +584,19 @@ def reorder_gsub_class_based_rules(ttx: etree.ElementTree):
     if gsub is None:
         return
     for lookup in gsub.xpath(".//Lookup"):
-        chain_ctx = lookup.find("ChainContextSubst")
-        if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
-            continue
-        new_class_order = remap_class_def_ids_like_fonttools(
-            chain_ctx.find("InputClassDef")
-        )
-        reorder_rules(chain_ctx, new_class_order, "ChainSubClassSet")
+        for chain_ctx in lookup.findall("ChainContextSubst"):
+            if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
+                continue
+            input_class_order = remap_class_def_ids_like_fonttools(
+                chain_ctx.find("InputClassDef")
+            )
+            reorder_rules(chain_ctx, input_class_order, "ChainSubClassSet")
+            backtrack_class_order = remap_class_def_ids_like_fonttools(chain_ctx.find("BacktrackClassDef"))
+            lookahead_class_order = remap_class_def_ids_like_fonttools(chain_ctx.find("LookAheadClassDef"))
+            for class_set in chain_ctx.findall("ChainSubClassSet"):
+                for class_rule in class_set.findall("ChainSubClassRule"):
+                    remap_values(class_rule, backtrack_class_order, "Backtrack")
+                    remap_values(class_rule, lookahead_class_order, "LookAhead")
 
 
 def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
