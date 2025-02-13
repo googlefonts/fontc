@@ -2244,6 +2244,12 @@ impl RawFeature {
 
 impl RawNameValue {
     fn to_fea(&self) -> Option<String> {
+        if self.value.is_empty() {
+            // skip empty names:
+            // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f/Lib/glyphsLib/builder/features.py#L155
+            return None;
+        }
+
         match GLYPHS_TO_OPENTYPE_LANGUAGE_ID
             .binary_search_by_key(&self.language.as_str(), |entry| entry.0)
         {
