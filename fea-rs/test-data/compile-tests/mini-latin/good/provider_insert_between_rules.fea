@@ -1,0 +1,10 @@
+# tests beginning with 'provider' get compiled with an external Feature Provider
+
+feature kern {
+    # these two statements should be split into separate lookups, with the
+    # external lookup between them.
+    pos a 5;
+    # Automatic Code
+    pos x 7;
+
+} kern;
