@@ -9,7 +9,7 @@
 use std::{env, path::PathBuf};
 
 use crate::{
-    util::ttx::{self as test_utils, Report, TestCase, TestResult},
+    util::ttx::{self as test_utils, Filter, Report, TestCase, TestResult},
     GlyphIdent, GlyphMap,
 };
 
@@ -30,7 +30,7 @@ fn parse_good() -> Result<(), Report> {
 
     let glyph_map = parse_test_glyph_order();
 
-    let results = test_utils::iter_fea_files(PARSE_GOOD)
+    let results = test_utils::iter_fea_files(PARSE_GOOD, Filter::from_env())
         .chain(OTHER_TESTS.iter().map(PathBuf::from))
         .map(|path| run_good_test(path, &glyph_map))
         .collect::<Vec<_>>();
@@ -40,7 +40,7 @@ fn parse_good() -> Result<(), Report> {
 #[test]
 fn parse_bad() -> Result<(), Report> {
     test_utils::finalize_results(
-        test_utils::iter_fea_files(PARSE_BAD)
+        test_utils::iter_fea_files(PARSE_BAD, Filter::from_env())
             .map(run_bad_test)
             .collect(),
     )

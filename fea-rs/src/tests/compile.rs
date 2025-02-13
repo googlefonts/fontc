@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     compile::{error::CompilerError, Compiler, MockVariationInfo, NopFeatureProvider, Opts},
-    util::ttx::{self as test_utils, Report, TestCase, TestResult},
+    util::ttx::{self as test_utils, Filter, Report, TestCase, TestResult},
     GlyphMap,
 };
 use fontdrasil::types::GlyphName;
@@ -74,7 +74,7 @@ fn iter_test_groups(
         let glyph_map = glyph_order.lines().map(GlyphName::new).collect();
         let var_info = test_utils::make_var_info();
         let tests_dir = dir.join(test_dir);
-        let tests = test_utils::iter_fea_files(tests_dir).collect::<Vec<_>>();
+        let tests = test_utils::iter_fea_files(tests_dir, Filter::from_env()).collect::<Vec<_>>();
         (glyph_map, var_info, tests)
     })
 }

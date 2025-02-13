@@ -26,6 +26,8 @@ use write_fonts::{
     types::{GlyphId16, Tag},
 };
 
+use super::FEA_FILTER_TESTS;
+
 static IGNORED_TESTS: &[&str] = &[
     // ## tests with unofficial syntax extensiosn we haven't implemented yet ## //
     "AlternateChained.fea",
@@ -128,21 +130,32 @@ pub fn assert_has_ttx_executable() {
 }
 
 /// Selectively filter which files to run.
-pub struct Filter<'a>(Vec<&'a str>);
+#[derive(Clone, Debug, Default)]
+pub struct Filter(Vec<String>);
 
-impl<'a> Filter<'a> {
+impl Filter {
+    /// A new filter, reading the `FEA_FILTER_TESTS` env var
+    pub fn from_env() -> Self {
+        Self::new(std::env::var(FEA_FILTER_TESTS).ok())
+    }
+
     /// Create a new filter from a comma-separated list of inputs
-    pub fn new(input: Option<&'a String>) -> Self {
+    pub fn new(input: Option<String>) -> Self {
         Self(
             input
-                .map(|s| s.split(',').map(|s| s.trim()).collect::<Vec<_>>())
+                .map(|s| {
+                    s.split(',')
+                        .map(|s| s.trim().to_owned())
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default(),
         )
     }
 
     /// true if this matches the filter, false if not
-    pub fn filter(&self, item: &str) -> bool {
-        self.0.is_empty() || self.0.iter().any(|needle| item.contains(needle))
+    pub fn filter(&self, item: &Path) -> bool {
+        let str_item = item.to_str().unwrap_or_default();
+        self.0.is_empty() || self.0.iter().any(|needle| str_item.contains(needle))
     }
 }
 
@@ -153,13 +166,17 @@ impl<'a> Filter<'a> {
 ///
 /// `filter` is an optional comma-separated list of strings. If present, only
 /// tests which contain one of the strings in the list will be run.
-pub fn run_fonttools_tests(filter: Option<&String>) -> Report {
+pub fn run_fonttools_tests(filter: Option<String>) -> Report {
     let fonttools_data_dir = test_data_dir().join("fonttools-tests");
     let glyph_map = fonttools_test_glyph_order();
     let filter = Filter::new(filter);
     let var_info = make_var_info();
 
-    let result = iter_compile_tests(fonttools_data_dir.as_ref(), filter)
+    let result = iter_fea_files(&fonttools_data_dir, filter)
+        .filter(|test| {
+            test.with_extension("ttx").exists()
+                && !IGNORED_TESTS.contains(&test.file_name().unwrap().to_str().unwrap())
+        })
         .par_bridge()
         .map(|path| run_test(path, &glyph_map, &var_info))
         .collect::<Vec<_>>();
@@ -195,30 +212,17 @@ fn is_fea(path: &Path) -> bool {
     pstr.ends_with(".fea")
 }
 
-fn iter_compile_tests<'a>(
-    path: &'a Path,
-    filter: Filter<'a>,
-) -> impl Iterator<Item = PathBuf> + 'a {
-    iter_fea_files(path).filter(move |p| {
-        if is_fea(p) && p.with_extension("ttx").exists() {
-            let path_str = p.file_name().unwrap().to_str().unwrap();
-            return should_run_test(path_str) && filter.filter(path_str);
-        }
-        false
-    })
-}
-
-fn should_run_test(path: &str) -> bool {
-    !IGNORED_TESTS.contains(&path)
-}
-
 /// Iterate over all the files in a directory with the 'fea' suffix. Only used for test purposes.
-pub fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> + 'static {
-    let mut dir = path.as_ref().read_dir().ok();
+pub fn iter_fea_files(
+    path: impl AsRef<Path>,
+    filter: Filter,
+) -> impl Iterator<Item = PathBuf> + 'static {
+    let path = path.as_ref();
+    let mut dir = path.read_dir().ok();
     std::iter::from_fn(move || loop {
         let entry = dir.as_mut()?.next()?.unwrap();
         let path = entry.path();
-        if is_fea(&path) {
+        if is_fea(&path) && filter.filter(&path) {
             return Some(path);
         }
     })
