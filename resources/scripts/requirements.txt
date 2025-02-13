@@ -57,7 +57,7 @@ charset-normalizer==3.4.1
     # via requests
 compreffor==0.5.6
     # via ufo2ft
-cryptography==44.0.0
+cryptography==44.0.1
     # via pyjwt
 defcon[lxml,pens]==0.10.3
     # via
@@ -150,7 +150,7 @@ importlib-resources==6.5.2
     # via gfsubsets
 jinja2==3.1.5
     # via gftools
-lxml==5.3.0
+lxml==5.3.1
     # via
     #   -r requirements.in
     #   afdko
