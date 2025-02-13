@@ -555,6 +555,10 @@ impl KernSide {
         matches!(self, KernSide::Group(items) if items.is_empty())
     }
 
+    pub(crate) fn is_group(&self) -> bool {
+        matches!(self, KernSide::Group(_))
+    }
+
     /// Convert from IR (which uses glyph names) to our representation (using ids)
     pub(crate) fn from_ir_side(
         ir: &ir::KernSide,

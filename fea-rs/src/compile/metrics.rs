@@ -189,7 +189,7 @@ impl ValueRecord {
     }
 
     /// `true` if we are not null, but our set values are all 0
-    fn is_all_zeros(&self) -> bool {
+    pub fn is_all_zeros(&self) -> bool {
         let device_mask = ValueFormat::X_PLACEMENT_DEVICE
             | ValueFormat::Y_PLACEMENT_DEVICE
             | ValueFormat::X_ADVANCE_DEVICE
