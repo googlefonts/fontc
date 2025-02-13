@@ -605,6 +605,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 || item.kind() == Kind::LanguageNode
                 || item.kind() == Kind::SubtableNode
                 || item.kind() == Kind::Semi
+                || item.kind() == Kind::Comment
             {
                 // lgtm
             } else if let Some(node) = typed::CvParameters::cast(item) {

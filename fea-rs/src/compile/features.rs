@@ -10,7 +10,7 @@ use write_fonts::{
 
 use super::{
     language_system::{DefaultLanguageSystems, LanguageSystem},
-    lookups::{AllLookups, FeatureKey, LookupId},
+    lookups::{AllLookups, FeatureKey, LookupId, LookupIdMap},
     tables::{NameBuilder, NameSpec},
     tags,
 };
@@ -41,7 +41,7 @@ pub(crate) struct AllFeatures {
 /// and script, and add any lookups as appropriate; this struct handles that
 /// logic.
 pub(crate) struct ActiveFeature {
-    tag: Tag,
+    pub(crate) tag: Tag,
     condition_set: Option<ConditionSet>,
     default_systems: DefaultLanguageSystems,
     current_lang_sys: Option<LanguageSystem>,
@@ -124,6 +124,12 @@ impl AllFeatures {
         self.features.iter()
     }
 
+    pub(crate) fn remap_ids(&mut self, id_map: &LookupIdMap) {
+        self.features
+            .values_mut()
+            .for_each(|lookups| lookups.remap_ids(id_map));
+    }
+
     pub(crate) fn finalize_aalt(
         &mut self,
         all_lookups: &mut AllLookups,
@@ -189,7 +195,8 @@ impl AllFeatures {
         let mut seen = HashSet::new();
         for lookup in self.features.values_mut() {
             seen.clear();
-            lookup.base.retain(|id| seen.insert(*id))
+            lookup.base.retain(|id| seen.insert(*id));
+            lookup.base.sort();
         }
     }
 
@@ -252,6 +259,20 @@ impl FeatureLookups {
             .iter_mut()
             .chain(self.variations.values_mut().flat_map(|x| x.iter_mut()))
             .for_each(|id| id.adjust_if_gsub(delta));
+    }
+
+    pub(crate) fn remap_ids(&mut self, id_map: &LookupIdMap) {
+        self.base
+            .iter_mut()
+            .chain(self.variations.values_mut().flat_map(|x| x.iter_mut()))
+            .for_each(|id| *id = id_map.get(*id));
+    }
+
+    pub(crate) fn iter_ids(&self) -> impl Iterator<Item = LookupId> + use<'_> {
+        self.base
+            .iter()
+            .chain(self.variations.values().flat_map(|v| v.iter()))
+            .copied()
     }
 
     // split lookups into gpos/gsub

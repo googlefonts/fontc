@@ -1,0 +1,8 @@
+# tests beginning with 'provider' get compiled with an external Feature Provider
+
+feature kern {
+    # Automatic Code
+    # we need to ensure that the anonymous singlepos lookup here gets
+    # adjusted after the lookup is inserted ahead of it.
+    pos a a' 50 z;
+} kern;

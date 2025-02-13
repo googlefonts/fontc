@@ -35,7 +35,11 @@ use crate::{
     Kind, Opts,
 };
 
-use super::{features::AllFeatures, metrics::Anchor, tags};
+use super::{
+    features::{AllFeatures, FeatureLookups},
+    metrics::Anchor,
+    tags,
+};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
@@ -86,7 +90,7 @@ pub(crate) struct AllLookups {
     named: HashMap<SmolStr, LookupId>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct LookupBuilder<T> {
     flags: LookupFlag,
     mark_set: Option<FilterSetId>,
@@ -258,7 +262,40 @@ impl<U> LookupBuilder<U> {
     }
 }
 
+trait RemapIds {
+    fn remap_ids(&mut self, id_map: &LookupIdMap);
+}
+
+impl<T: RemapIds> RemapIds for LookupBuilder<T> {
+    fn remap_ids(&mut self, id_map: &LookupIdMap) {
+        for lookup in &mut self.subtables {
+            lookup.remap_ids(id_map);
+        }
+    }
+}
+
 impl PositionLookup {
+    fn remap_ids(&mut self, id_map: &LookupIdMap) {
+        match self {
+            PositionLookup::Contextual(lookup) => lookup.remap_ids(id_map),
+            PositionLookup::ChainedContextual(lookup) => lookup.remap_ids(id_map),
+            _ => (),
+        }
+    }
+
+    fn kind(&self) -> Kind {
+        match self {
+            PositionLookup::Single(_) => Kind::GposType1,
+            PositionLookup::Pair(_) => Kind::GposType2,
+            PositionLookup::Cursive(_) => Kind::GposType3,
+            PositionLookup::MarkToBase(_) => Kind::GposType4,
+            PositionLookup::MarkToLig(_) => Kind::GposType5,
+            PositionLookup::MarkToMark(_) => Kind::GposType6,
+            PositionLookup::Contextual(_) => Kind::GposType7,
+            PositionLookup::ChainedContextual(_) => Kind::GposType8,
+        }
+    }
+
     fn force_subtable_break(&mut self) {
         match self {
             PositionLookup::Single(lookup) => lookup.force_subtable_break(),
@@ -274,6 +311,14 @@ impl PositionLookup {
 }
 
 impl SubstitutionLookup {
+    fn remap_ids(&mut self, id_map: &LookupIdMap) {
+        match self {
+            SubstitutionLookup::Contextual(lookup) => lookup.remap_ids(id_map),
+            SubstitutionLookup::ChainedContextual(lookup) => lookup.remap_ids(id_map),
+            _ => (),
+        }
+    }
+
     fn force_subtable_break(&mut self) {
         match self {
             SubstitutionLookup::Single(lookup) => lookup.force_subtable_break(),
@@ -427,6 +472,10 @@ impl AllLookups {
 
     pub(crate) fn has_current(&self) -> bool {
         self.current.is_some()
+    }
+
+    pub(crate) fn next_gpos_id(&self) -> LookupId {
+        LookupId::Gpos(self.gpos.len())
     }
 
     /// Returns `true` if there is an active lookup of this kind
@@ -595,6 +644,15 @@ impl AllLookups {
         }
     }
 
+    pub(crate) fn remap_ids(&mut self, ids: &LookupIdMap) {
+        self.gpos
+            .iter_mut()
+            .for_each(|lookup| lookup.remap_ids(ids));
+        self.gsub
+            .iter_mut()
+            .for_each(|lookup| lookup.remap_ids(ids));
+    }
+
     pub(crate) fn insert_aalt_lookups(
         &mut self,
         all_alts: HashMap<GlyphId16, Vec<GlyphId16>>,
@@ -653,8 +711,86 @@ impl AllLookups {
     pub(crate) fn merge_external_lookups(
         &mut self,
         lookups: Vec<(LookupId, PositionLookup)>,
+        features: &BTreeMap<FeatureKey, FeatureLookups>,
+        insert_markers: &HashMap<Tag, (LookupId, usize)>,
     ) -> LookupIdMap {
+        // okay so this is a bit complicated, so a brief outline might be useful:
+        // - 'lookups' and 'features' are being passed in from the outside
+        // - `insert_markers` are optional locations at which the lookups
+        //    for a given feature should be inserted
+        // - if a feature has no marker, its lookups are appended at the end.
+        //
+        // NOTE: inserting lookups into the middle of the lookup list means that
+        // all subsequent lookup ids become invalid. As a consequence, we need
+        // to figure out the transform from old->new for any affected lookups,
+        // and remap those ids at the end.
+        let lookup_to_feature = features
+            .iter()
+            .filter(|(feat, _)| insert_markers.contains_key(&feat.feature))
+            .flat_map(|(feat, lookups)| lookups.iter_ids().map(|id| (id, feat.feature)))
+            .collect::<HashMap<_, _>>();
+
+        // split off the lookups with an insert marker, which we will handle first
+        let (lookups_with_marker, lookups): (Vec<_>, Vec<_>) = lookups
+            .into_iter()
+            .partition(|lk| lookup_to_feature.contains_key(&lk.0));
+
+        // now we want to process the lookups that had an insert marker,
+        // and we want to do it by grouping them by feature tag.
+        let mut marked_lookups_by_feature = HashMap::new();
+        for lk in lookups_with_marker {
+            let feature = lookup_to_feature.get(&lk.0).unwrap();
+            marked_lookups_by_feature
+                .entry(*feature)
+                .or_insert(Vec::new())
+                .push(lk);
+        }
+
+        // except we want to assign the ids respecting the order of the markers
+        // in the source file, so convert to a vec and sort.
+        let mut marked_lookups_by_feature =
+            marked_lookups_by_feature.into_iter().collect::<Vec<_>>();
+        marked_lookups_by_feature.sort_by_key(|(tag, _)| insert_markers.get(tag).unwrap());
+
         let mut map = LookupIdMap::default();
+        let mut inserted_so_far = 0;
+
+        // 'adjustments' stores the state we need to remap existing ids, if needed.
+        let mut adjustments = Vec::new();
+
+        for (tag, lookups) in marked_lookups_by_feature {
+            let first_id = insert_markers.get(&tag).unwrap().0.to_raw();
+            // first update the ids
+            for (i, (temp_id, _)) in lookups.iter().enumerate() {
+                let final_id = LookupId::Gpos(first_id + inserted_so_far + i);
+                map.insert(*temp_id, final_id);
+            }
+            // then insert the lookups into the correct position
+            let insert_at = first_id + inserted_so_far;
+            inserted_so_far += lookups.len();
+            self.gpos
+                .splice(insert_at..insert_at, lookups.into_iter().map(|(_, lk)| lk));
+            adjustments.push((first_id, inserted_so_far));
+        }
+
+        // now based on our recorded adjustments, figure out the remapping
+        // for the existing ids. each entry in adjustment is an (index, delta)
+        // pair, where the delta applies from adjustment[n] to adjustment[n +1]
+        if !adjustments.is_empty() {
+            // add the end of the last range
+            adjustments.push((self.gpos.len(), inserted_so_far));
+        }
+        let (mut range_start, mut adjust) = (0, 0);
+        let mut adjustments = adjustments.as_slice();
+        while let Some(((next_start, next_adjust), remaining)) = adjustments.split_first() {
+            if adjust > 0 {
+                for old_id in range_start..*next_start {
+                    map.insert(LookupId::Gpos(old_id), LookupId::Gpos(old_id + adjust));
+                }
+            }
+            (range_start, adjust, adjustments) = (*next_start, *next_adjust, remaining);
+        }
+
         for (temp_id, lookup) in lookups {
             let final_id = self.push(SomeLookup::GposLookup(lookup));
             map.insert(temp_id, final_id);
@@ -829,16 +965,7 @@ impl SomeLookup {
                 SubstitutionLookup::Reverse(_) => Kind::GsubType8,
                 _ => panic!("unhandled table kind"),
             },
-            SomeLookup::GposLookup(gpos) => match gpos {
-                PositionLookup::Single(_) => Kind::GposType1,
-                PositionLookup::Pair(_) => Kind::GposType2,
-                PositionLookup::Cursive(_) => Kind::GposType3,
-                PositionLookup::MarkToBase(_) => Kind::GposType4,
-                PositionLookup::MarkToLig(_) => Kind::GposType5,
-                PositionLookup::MarkToMark(_) => Kind::GposType6,
-                PositionLookup::Contextual(_) => Kind::GposType7,
-                PositionLookup::ChainedContextual(_) => Kind::GposType8,
-            },
+            SomeLookup::GposLookup(gpos) => gpos.kind(),
         }
     }
 
@@ -1228,4 +1355,82 @@ fn is_gpos_rule(kind: Kind) -> bool {
             | Kind::GposType7
             | Kind::GposType8
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::compile::tags::{LANG_DFLT, SCRIPT_DFLT};
+
+    use super::*;
+
+    fn make_all_lookups() -> AllLookups {
+        AllLookups {
+            gpos: (0..8)
+                .map(|_| PositionLookup::Single(Default::default()))
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn merge_external_lookups_before() {
+        const KERN: Tag = Tag::new(b"kern");
+        const WHAT: Tag = Tag::new(b"what");
+        const DERP: Tag = Tag::new(b"derp");
+        let mut all = make_all_lookups();
+
+        let lookups = (0..6)
+            .map(|id| {
+                (
+                    LookupId::External(id),
+                    PositionLookup::Pair(Default::default()),
+                )
+            })
+            .collect();
+        let features: BTreeMap<_, _> =
+            [(KERN, [0].as_slice()), (WHAT, &[1, 2]), (DERP, &[3, 4, 5])]
+                .iter()
+                .map(|(tag, ids)| {
+                    let mut features = FeatureLookups::default();
+                    features.base = ids.iter().copied().map(LookupId::External).collect();
+                    (FeatureKey::new(*tag, LANG_DFLT, SCRIPT_DFLT), features)
+                })
+                .collect();
+
+        // kern is 'after', derp is 'before', and what has no marker (goes at the end)
+        let markers = HashMap::from([
+            (KERN, (LookupId::Gpos(3), 100)),
+            (DERP, (LookupId::Gpos(5), 200)),
+        ]);
+
+        let id_map = all.merge_external_lookups(lookups, &features, &markers);
+        let final_lookups = all.gpos.iter().map(|lk| lk.kind()).collect::<Vec<_>>();
+        assert_eq!(
+            final_lookups,
+            [
+                Kind::GposType1,
+                Kind::GposType1,
+                Kind::GposType1,
+                Kind::GposType2, // one kern lookup at 3
+                Kind::GposType1,
+                Kind::GposType1,
+                Kind::GposType2, // 3 derp lookups at 5
+                Kind::GposType2,
+                Kind::GposType2,
+                Kind::GposType1,
+                Kind::GposType1,
+                Kind::GposType1,
+                Kind::GposType2, // 2 what lookups at the end
+                Kind::GposType2
+            ]
+        );
+        let remapped = (0..8)
+            .map(|id| id_map.get(LookupId::Gpos(id)).to_gpos_id_or_die())
+            .collect::<Vec<_>>();
+        assert_eq!(remapped, [0, 1, 2, 4, 5, 9, 10, 11]);
+        let inserted = (0..6)
+            .map(|id| id_map.get(LookupId::External(id)).to_gpos_id_or_die())
+            .collect::<Vec<_>>();
+        assert_eq!(inserted, [3, 12, 13, 6, 7, 8]);
+    }
 }

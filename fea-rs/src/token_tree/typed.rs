@@ -672,10 +672,22 @@ impl Feature {
     }
 
     pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
+        fn filter_trivia_except_for_magic_insertion_comments(item: &&NodeOrToken) -> bool {
+            match item.kind() {
+                Kind::Comment => item
+                    .token_text()
+                    .unwrap_or_default()
+                    .trim_start()
+                    //https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da5/Lib/ufo2ft/featureWriters/baseFeatureWriter.py#L18
+                    .starts_with("# Automatic Code"),
+                other => !other.is_trivia(),
+            }
+        }
+
         self.iter()
             .skip_while(|t| t.kind() != Kind::LBrace)
             .skip(1)
-            .filter(|t| !t.kind().is_trivia())
+            .filter(filter_trivia_except_for_magic_insertion_comments)
             .take_while(|t| t.kind() != Kind::RBrace)
     }
 }

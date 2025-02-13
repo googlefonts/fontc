@@ -1,0 +1,12 @@
+# tests beginning with 'provider' get compiled with an external Feature Provider
+
+feature kern {
+    # Automatic Code
+} kern;
+
+feature mark {
+# Automatic Code
+} mark;
+
+# even though no lookups are created between 'kern' and 'mark', the external
+# kern lookups should always precede the mark

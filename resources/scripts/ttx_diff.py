@@ -228,6 +228,7 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         "-o",
         out_file.name,
         source,
+        "--emit-debug",
     ]
     build(cmd, build_dir)
 

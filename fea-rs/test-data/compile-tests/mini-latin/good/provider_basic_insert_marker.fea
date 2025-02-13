@@ -1,0 +1,15 @@
+# tests beginning with 'provider' get compiled with an external Feature Provider
+
+feature kern {
+    pos a b 10;
+    # Automatic Code
+} kern;
+
+feature noop {
+    pos j k 404;
+} noop;
+
+feature mark {
+# Automatic Code
+pos x y 5;
+} mark;

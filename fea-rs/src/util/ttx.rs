@@ -10,13 +10,21 @@ use std::{
 };
 
 use crate::{
-    compile::{error::CompilerError, Compiler, MockVariationInfo, NopFeatureProvider, Opts},
+    compile::{
+        error::CompilerError, Anchor, Compiler, FeatureProvider, MarkToBaseBuilder,
+        MockVariationInfo, Opts, PairPosBuilder, PendingLookup, ValueRecord,
+    },
     DiagnosticSet, GlyphIdent, GlyphMap, ParseTree,
 };
 
 use ansi_term::Color;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
+use write_fonts::{
+    tables::layout::LookupFlag,
+    types::{GlyphId16, Tag},
+};
 
 static IGNORED_TESTS: &[&str] = &[
     // ## tests with unofficial syntax extensiosn we haven't implemented yet ## //
@@ -236,6 +244,11 @@ pub(crate) fn is_variable(test_path: &Path) -> bool {
     as_str.contains("variable") || as_str.contains("variation")
 }
 
+pub(crate) fn needs_feature_provider(test_path: &Path) -> bool {
+    let as_str = test_path.to_str().expect("paths are utf8");
+    as_str.contains("provider")
+}
+
 /// Run the test case at the provided path.
 ///
 /// the provided fvar table will be passed through only if the path contains
@@ -246,12 +259,15 @@ pub(crate) fn run_test(
     fvar: &MockVariationInfo,
 ) -> Result<PathBuf, TestCase> {
     let run_result = std::panic::catch_unwind(|| {
-        let mut compiler: Compiler<'_, NopFeatureProvider, MockVariationInfo> =
+        let mut compiler: Compiler<'_, TestFeatureProvider, MockVariationInfo> =
             Compiler::new(path.clone(), glyph_map)
                 .print_warnings(std::env::var(super::VERBOSE).is_ok())
                 .with_opts(Opts::new().make_post_table(true));
         if is_variable(&path) {
             compiler = compiler.with_variable_info(fvar);
+        }
+        if needs_feature_provider(&path) {
+            compiler = compiler.with_feature_writer(&TestFeatureProvider)
         }
 
         match compiler.compile_binary() {
@@ -545,6 +561,45 @@ pub(crate) fn fonttools_test_glyph_order() -> GlyphMap {
 /// Generate variation info
 pub(crate) fn make_var_info() -> MockVariationInfo {
     MockVariationInfo::new(&[("wght", 200, 200, 1000), ("wdth", 100, 100, 200)])
+}
+
+struct TestFeatureProvider;
+
+impl FeatureProvider for TestFeatureProvider {
+    // we always add one lookup each for 'kern' and 'mark', which
+    // seems like enough for our purposes
+    fn add_features(&self, builder: &mut crate::compile::FeatureBuilder) {
+        let mut kern = PairPosBuilder::default();
+        kern.insert_pair(
+            GlyphId16::new(20),
+            ValueRecord::new().with_x_advance(5),
+            GlyphId16::new(21),
+            ValueRecord::new(),
+        );
+        let kern_id = builder.add_lookup(PendingLookup::new(vec![kern], LookupFlag::empty(), None));
+
+        let mut mark = MarkToBaseBuilder::default();
+        mark.insert_mark(
+            GlyphId16::new(116),
+            SmolStr::new("derp"),
+            Anchor::new(101, 102),
+        )
+        .unwrap();
+
+        mark.insert_base(
+            GlyphId16::new(36),
+            &SmolStr::new("derp"),
+            Anchor::new(11, 13),
+        );
+        let mark_id = builder.add_lookup(PendingLookup::new(
+            vec![mark],
+            LookupFlag::IGNORE_MARKS,
+            None,
+        ));
+
+        builder.add_to_default_language_systems(Tag::new(b"kern"), &[kern_id]);
+        builder.add_to_default_language_systems(Tag::new(b"mark"), &[mark_id]);
+    }
 }
 
 impl Report {
