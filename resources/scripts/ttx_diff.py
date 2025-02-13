@@ -606,6 +606,7 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
         name_id_to_name(ttx, "//AxisNameID", "value")
+        name_id_to_name(ttx, "//UINameID", "value")
         name_id_to_name(ttx, "//AxisNameID", None)
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
