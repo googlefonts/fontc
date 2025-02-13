@@ -12,7 +12,7 @@ fn main() {
     env_logger::init();
     let args = Args::parse();
 
-    let results = ttx::run_fonttools_tests(args.test_filter.as_ref());
+    let results = ttx::run_fonttools_tests(args.test_filter);
 
     if let Some(to_compare) = args
         .compare
