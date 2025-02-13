@@ -794,6 +794,11 @@ impl KernSplitContext {
     ) -> HashMap<BTreeSet<UnicodeShortName>, Vec<KernPair>> {
         let mut kerning_per_script = HashMap::new();
         for pair in pairs {
+            // filter out zero-value class pairs:
+            // https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6d/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L431
+            if pair.side1.is_group() && pair.side2.is_group() && pair.value.is_all_zeros() {
+                continue;
+            }
             for (scripts, pair) in self.partition_by_script(pair) {
                 kerning_per_script
                     .entry(scripts)
@@ -1608,6 +1613,31 @@ mod tests {
             F -10 [C,D]
             G -5 H
             "#
+        );
+    }
+
+    #[test]
+    fn skip_zero_class_kerns_actually_though() {
+        let (kerns, normalized) = KernInput::new(&['A', 'B', 'C', 'D', 'E', 'F'])
+            .with_rule('A', 'B', 10)
+            .with_rule(['C', 'D'], ['E', 'F'], 0)
+            .build();
+
+        // we can't just use normalizer because it erases the difference
+        // (since it's a noop)
+        assert_eq!(kerns.lookups.len(), 1);
+        let lookup = &kerns.lookups[0];
+        assert_eq!(lookup.subtables().len(), 1);
+        let subtable = &lookup.subtables()[0];
+        assert_eq!(subtable.len(), 1);
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+        # kern: DFLT/dflt, latn/dflt ## 1 PairPos rules
+        # lookupflag LookupFlag(8)
+        A 10 B
+        "#
         );
     }
 
