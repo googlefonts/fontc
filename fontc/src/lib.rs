@@ -2909,7 +2909,7 @@ mod tests {
 
         let gsub = font.gsub().unwrap();
         let feature_list = gsub.feature_list().unwrap();
-        assert_eq!(feature_list.feature_records().len(), 1);
+        assert_eq!(feature_list.feature_records().len(), 2);
         let feature = feature_list.feature_records()[0]
             .feature(feature_list.offset_data())
             .unwrap();
@@ -2920,6 +2920,19 @@ mod tests {
 
         // matches what is in the name table
         assert_eq!(params.ui_name_id().to_u16(), 257);
+    }
+
+    #[test]
+    fn skip_empty_stylistic_set_names() {
+        let result = TestCompile::compile_source("glyphs3/WghtVarWithStylisticSet.glyphs");
+        let font = result.font();
+        let gsub = font.gsub().unwrap();
+        let feature_list = gsub.feature_list().unwrap();
+        assert_eq!(feature_list.feature_records().len(), 2);
+        let ss02 = feature_list.feature_records()[1]
+            .feature(feature_list.offset_data())
+            .unwrap();
+        assert!(ss02.feature_params().is_none());
     }
 
     #[test]

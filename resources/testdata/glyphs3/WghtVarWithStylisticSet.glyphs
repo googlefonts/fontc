@@ -32,6 +32,16 @@ value = "my fun feature";
 }
 );
 tag = ss01;
+},
+{
+code = "sub space by hyphen;";
+labels = (
+{
+language = dflt;
+value = "";
+}
+);
+tag = ss02;
 }
 );
 fontMaster = (
