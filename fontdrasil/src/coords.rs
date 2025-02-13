@@ -3,7 +3,7 @@
 //! See <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Write},
     marker::PhantomData,
     ops::Sub,
@@ -321,6 +321,22 @@ impl<Space> Location<Space> {
 
     pub fn retain(&mut self, pred: impl Fn(&Tag, &mut Coord<Space>) -> bool) {
         self.0.retain(pred);
+    }
+
+    /// Creates a new `Location` containing only the axis tags contained in the given set.
+    pub fn subset_axes(&self, axis_tags: &BTreeSet<Tag>) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter_map(|(tag, coord)| {
+                    if axis_tags.contains(tag) {
+                        Some((*tag, *coord))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+        )
     }
 
     pub fn convert<ToSpace>(&self, axes: &HashMap<Tag, &Axis>) -> Location<ToSpace>

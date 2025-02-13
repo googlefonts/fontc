@@ -18,6 +18,7 @@ use write_fonts::{
         hvar::Hvar,
         variations::{ivs_builder::VariationStoreBuilder, DeltaSetIndexMap, VariationRegion},
     },
+    types::Tag,
     validate::Validate,
     FontWrite, OtRound,
 };
@@ -50,6 +51,8 @@ where
 struct AdvanceWidthDeltas {
     /// Variation axes
     axes: Vec<Axis>,
+    /// Set of axis tags
+    axis_tags: BTreeSet<Tag>,
     /// Sparse variation models, keyed by the set of locations they define
     models: HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
     /// Glyph's advance width deltas sorted by glyph order
@@ -59,13 +62,25 @@ struct AdvanceWidthDeltas {
 }
 
 impl AdvanceWidthDeltas {
-    fn new(global_model: VariationModel, glyph_locations: HashSet<NormalizedLocation>) -> Self {
+    fn new<'a>(
+        global_model: VariationModel,
+        glyph_locations: impl IntoIterator<Item = &'a NormalizedLocation>,
+    ) -> Self {
         let axes = global_model.axes().cloned().collect::<Vec<_>>();
+        let axis_tags: BTreeSet<_> = axes.iter().map(|axis| axis.tag).collect();
+        // prune axes that are not in the global model (e.g. 'point' axes) which might
+        // be confused for a distinct sub-model
+        // https://github.com/googlefonts/fontc/issues/1256
+        let glyph_locations = glyph_locations
+            .into_iter()
+            .map(|loc| loc.subset_axes(&axis_tags))
+            .collect();
         let global_locations = global_model.locations().cloned().collect::<BTreeSet<_>>();
         let mut models = HashMap::new();
         models.insert(global_locations, global_model);
         AdvanceWidthDeltas {
             axes,
+            axis_tags,
             models,
             deltas: Vec::new(),
             glyph_locations,
@@ -78,7 +93,7 @@ impl AdvanceWidthDeltas {
             .iter()
             // widths must be rounded before the computing deltas to match fontmake
             // https://github.com/googlefonts/fontc/issues/1043
-            .map(|(loc, src)| (loc.clone(), vec![src.width.ot_round()]))
+            .map(|(loc, src)| (loc.subset_axes(&self.axis_tags), vec![src.width.ot_round()]))
             .collect();
         let name = glyph.name.clone();
         let i = self.deltas.len();
@@ -169,11 +184,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             .names()
             .map(|name| context.ir.glyphs.get(&FeWorkId::Glyph(name.clone())))
             .collect();
-        let glyph_locations: HashSet<_> = glyphs
-            .iter()
-            .flat_map(|glyph| glyph.sources().keys())
-            .cloned()
-            .collect();
+        let glyph_locations = glyphs.iter().flat_map(|glyph| glyph.sources().keys());
 
         let mut glyph_width_deltas = AdvanceWidthDeltas::new(var_model.clone(), glyph_locations);
         for glyph in glyphs.into_iter() {
