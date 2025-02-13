@@ -568,6 +568,7 @@ def reorder_rules(lookup: etree.ElementTree, new_order: Dict[int, int], rule_nam
     # reindent everything to be safe.
     etree.indent(lookup, level=4)
 
+
 # for each named child in container, remap the 'value' attribute using the new ordering
 def remap_values(container: etree.ElementTree, new_order: Dict[int, int], child_name: str):
     # for the original use we need to map from new to old, but here we need the reverse
@@ -579,29 +580,46 @@ def remap_values(container: etree.ElementTree, new_order: Dict[int, int], child_
 
 # fontmake and fontc assign glyph classes differently for class-based tables;
 # fontc uses GIDs but fontmake uses glyph names, so we reorder them to be consistent.
-def reorder_gsub_class_based_rules(ttx: etree.ElementTree):
-    gsub = ttx.find("GSUB")
-    if gsub is None:
+def reorder_contextual_class_based_rules(ttx: etree.ElementTree, tag: str):
+    if tag == "GSUB":
+        chain_name = "ChainContextSubst"
+        class_set_name = "ChainSubClassSet"
+        class_rule_name = "ChainSubClassRule"
+
+    elif tag == "GPOS":
+        chain_name = "ChainContextPos"
+        class_set_name = "ChainPosClassSet"
+        class_rule_name = "ChainPosClassRule"
+    else:
+        raise ValueError("must be one of 'GPOS' or 'GSUB'")
+
+    table = ttx.find(tag)
+    if table is None:
         return
-    for lookup in gsub.xpath(".//Lookup"):
-        for chain_ctx in lookup.findall("ChainContextSubst"):
+    for lookup in table.xpath(".//Lookup"):
+        for chain_ctx in lookup.findall(chain_name):
             if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
                 continue
             input_class_order = remap_class_def_ids_like_fonttools(
                 chain_ctx.find("InputClassDef")
             )
-            reorder_rules(chain_ctx, input_class_order, "ChainSubClassSet")
-            backtrack_class_order = remap_class_def_ids_like_fonttools(chain_ctx.find("BacktrackClassDef"))
-            lookahead_class_order = remap_class_def_ids_like_fonttools(chain_ctx.find("LookAheadClassDef"))
-            for class_set in chain_ctx.findall("ChainSubClassSet"):
-                for class_rule in class_set.findall("ChainSubClassRule"):
+            reorder_rules(chain_ctx, input_class_order, class_set_name)
+            backtrack_class_order = remap_class_def_ids_like_fonttools(
+                chain_ctx.find("BacktrackClassDef")
+            )
+            lookahead_class_order = remap_class_def_ids_like_fonttools(
+                chain_ctx.find("LookAheadClassDef")
+            )
+            for class_set in chain_ctx.findall(class_set_name):
+                for class_rule in class_set.findall(class_rule_name):
                     remap_values(class_rule, backtrack_class_order, "Backtrack")
                     remap_values(class_rule, lookahead_class_order, "LookAhead")
 
 
 def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
     sort_fontmake_feature_lookups(fontmake)
-    reorder_gsub_class_based_rules(fontc)
+    reorder_contextual_class_based_rules(fontc, "GSUB")
+    reorder_contextual_class_based_rules(fontc, "GPOS")
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
