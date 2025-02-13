@@ -88,6 +88,15 @@ impl GlyphOrClass {
         }
     }
 
+    /// If this is a glyph or a class with exactly one, return it.
+    pub(crate) fn single_glyph(&self) -> Option<GlyphId16> {
+        match self {
+            GlyphOrClass::Glyph(gid) => Some(*gid),
+            GlyphOrClass::Class(class) if class.len() == 1 => class.iter().next(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {
         let mut idx = 0;
         std::iter::from_fn(move || {
