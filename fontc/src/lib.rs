@@ -1961,6 +1961,55 @@ mod tests {
     }
 
     #[test]
+    fn compile_hvar_single_model_direct_varstore_from_glyphs2_with_implicit_axes() {
+        // This test font is a Glyphs 2 source without an 'Axes' custom parameter, so
+        // the axes default to "Weight", "Width", and "Custom". However, the two masters
+        // only define coordinates along Weight, so the other two are so-called 'point'
+        // axes which don't vary and are discarded by the VariationModel. The IR Glyph
+        // instances' locations still contain these static 'point' axes. When building
+        // HVAR, we must prune these out lest their presence would trigger the creation
+        // of a multi-model indirect VarStore where a single-model direct one would suffice.
+        // https://github.com/googlefonts/fontc/issues/1256
+        let result = TestCompile::compile_source("glyphs2/WghtVar_ImplicitAxes.glyphs");
+        let font = result.font();
+        let num_glyphs = font.maxp().unwrap().num_glyphs();
+        assert_eq!(num_glyphs, 4);
+        let hvar = font.hvar().unwrap();
+        // we expect a 'direct' VarStore with implicit variation indices and no mapping
+        assert!(hvar.advance_width_mapping().is_none());
+        let varstore = hvar.item_variation_store().unwrap();
+        let regions = varstore
+            .variation_region_list()
+            .unwrap()
+            .variation_regions();
+        // this simple test font only has two masters (Regular [default] and Bold)
+        // so we expect a single region with a single wght axis
+        assert_eq!(regions.len(), 1);
+        let region_coords = regions
+            .get(0)
+            .unwrap()
+            .region_axes()
+            .iter()
+            .map(|coords| {
+                [
+                    coords.start_coord().to_f32(),
+                    coords.peak_coord().to_f32(),
+                    coords.end_coord().to_f32(),
+                ]
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(region_coords, vec![[0.0, 1.0, 1.0]]);
+        // we expect one ItemVariationData and 4 delta sets, one per glyph
+        assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:#?}");
+        let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
+        assert_eq!(vardata.region_indexes(), &[0]);
+        assert_eq!(
+            vec![vec![0], vec![400], vec![200], vec![200],],
+            delta_sets(&vardata)
+        );
+    }
+
+    #[test]
     fn compile_hvar_single_model_indirect_varstore() {
         // This is the same as the previous font but with additional 10 glyphs that
         // share the same deltas (the number was found empirically), enough to tip
