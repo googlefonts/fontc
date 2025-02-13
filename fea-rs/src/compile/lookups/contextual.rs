@@ -325,8 +325,10 @@ impl ContextBuilder {
         self.rules.iter().any(ContextRule::is_chain_rule)
     }
 
-    fn has_glyph_classes(&self) -> bool {
-        self.rules.iter().any(ContextRule::has_glyph_classes)
+    fn has_glyph_classes_with_more_than_one_glyph(&self) -> bool {
+        self.rules
+            .iter()
+            .any(ContextRule::has_glyph_classes_with_more_than_one_glyph)
     }
 
     /// If the input sequence can be represented as a class def, return it
@@ -345,13 +347,13 @@ impl ContextBuilder {
     }
 
     fn format_1_coverage(&self) -> Option<CoverageTableBuilder> {
-        if self.has_glyph_classes() {
+        if self.has_glyph_classes_with_more_than_one_glyph() {
             return None;
         }
         Some(
             self.rules
                 .iter()
-                .map(|rule| rule.first_input_sequence_item().to_glyph().unwrap())
+                .map(|rule| rule.first_input_sequence_item().single_glyph().unwrap())
                 .collect::<CoverageTableBuilder>(),
         )
     }
@@ -360,7 +362,7 @@ impl ContextBuilder {
         let coverage = self.format_1_coverage()?.build();
         let mut rule_sets = HashMap::<_, Vec<_>>::new();
         for rule in &self.rules {
-            let key = rule.first_input_sequence_item().to_glyph().unwrap();
+            let key = rule.first_input_sequence_item().single_glyph().unwrap();
             let seq_lookups = rule.lookup_records(in_gpos);
             let rule = write_layout::SequenceRule::new(
                 rule.context
@@ -404,12 +406,12 @@ impl ContextRule {
         !self.backtrack.is_empty() || !self.lookahead.is_empty()
     }
 
-    fn has_glyph_classes(&self) -> bool {
+    fn has_glyph_classes_with_more_than_one_glyph(&self) -> bool {
         self.backtrack
             .iter()
             .chain(self.lookahead.iter())
             .chain(self.context.iter().map(|(glyphs, _)| glyphs))
-            .any(|x| x.is_class())
+            .any(|x| x.len() > 1)
     }
 
     fn first_input_sequence_item(&self) -> &GlyphOrClass {
@@ -525,7 +527,7 @@ impl ChainContextBuilder {
 
         let mut rule_sets = HashMap::<_, Vec<_>>::new();
         for rule in &self.0.rules {
-            let key = rule.first_input_sequence_item().to_glyph().unwrap();
+            let key = rule.first_input_sequence_item().single_glyph().unwrap();
             let seq_lookups = rule.lookup_records(in_gpos);
             let rule = write_layout::ChainedSequenceRule::new(
                 rule.backtrack.iter().flat_map(|cls| cls.iter()).collect(),

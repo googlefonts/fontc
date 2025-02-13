@@ -1,0 +1,13 @@
+
+feature ccmp {
+    @one = [a];
+    @two = [b];
+
+    # this should compile to format 1, because the class has only a single glyph
+    lookup test {
+        sub @one' @two by @two;
+        sub @two @one' by @two;
+    } test;
+
+} ccmp;
+
