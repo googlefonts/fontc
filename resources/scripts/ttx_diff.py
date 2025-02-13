@@ -34,6 +34,7 @@ JSON:
     is the command that was used to run that compiler.
 """
 
+from collections import defaultdict
 from absl import app
 from absl import flags
 from lxml import etree
@@ -45,7 +46,7 @@ import sys
 import os
 from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
-from typing import Any, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 from glyphsLib import GSFont
 from fontTools.designspaceLib import DesignSpaceDocument
 import time
@@ -521,8 +522,70 @@ def remove_gdef_lig_caret_and_var_store(ttx: etree.ElementTree):
             gdef.remove(subtable)
 
 
+# reassign class ids within a ClassDef, matching the fonttools behaviour.
+# returns a map of new -> old ids, which can be used to reorder elements that
+# used the class ids as indices
+def remap_class_def_ids_like_fonttools(class_def: etree.ElementTree) -> Dict[int, int]:
+    current_classes = defaultdict(list)
+    for glyph in class_def.xpath(".//ClassDef"):
+        cls = glyph.attrib["class"]
+        current_classes[cls].append(glyph.attrib["glyph"])
+
+    # match the sorting used in fonttools:
+    # https://github.com/fonttools/fonttools/blob/8a89f4f81b0068/Lib/fontTools/otlLib/builder.py#L2689
+    new_order = sorted(current_classes.values(), key=lambda s: (-len(s), s))
+    new_order_map = {name: i + 1 for (i, cls) in enumerate(new_order) for name in cls}
+    result = dict()
+    for glyph in class_def.xpath(".//ClassDef"):
+        cls = glyph.attrib["class"]
+        new = new_order_map.get(glyph.attrib["glyph"])
+        glyph.attrib["class"] = str(new)
+        result[new] = int(cls)
+    return result
+
+
+def reorder_rules(lookup: etree.ElementTree, new_order: Dict[int, int], rule_name: str):
+    # the rules can exist as siblings of other non-rule elements, so we can't just
+    # clear all children and set them in the same order.
+    # instead we remove them and then append them back in order, using 'addnext'
+    # to ensure that we're inserting them at the right location.
+    orig_order = [el for el in lookup.iterchildren(tag=rule_name)]
+    prev_el = orig_order[0].getprevious()
+    for el in orig_order:
+        lookup.remove(el)
+
+    for ix in range(len(orig_order)):
+        prev_ix = new_order.get(ix, ix)
+        el = orig_order[prev_ix]
+        el.set("index", str(ix))
+        prev_el.addnext(el)
+        prev_el = el
+
+    # there was a funny issue where if we moved the last element elsewhere
+    # in the ordering it would end up having incorrect indentation, so just
+    # reindent everything to be safe.
+    etree.indent(lookup, level=4)
+
+
+# fontmake and fontc assign glyph classes differently for class-based tables;
+# fontc uses GIDs but fontmake uses glyph names, so we reorder them to be consistent.
+def reorder_gsub_class_based_rules(ttx: etree.ElementTree):
+    gsub = ttx.find("GSUB")
+    if gsub is None:
+        return
+    for lookup in gsub.xpath(".//Lookup"):
+        chain_ctx = lookup.find("ChainContextSubst")
+        if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
+            continue
+        new_class_order = remap_class_def_ids_like_fonttools(
+            chain_ctx.find("InputClassDef")
+        )
+        reorder_rules(chain_ctx, new_class_order, "ChainSubClassSet")
+
+
 def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
     sort_fontmake_feature_lookups(fontmake)
+    reorder_gsub_class_based_rules(fontc)
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
