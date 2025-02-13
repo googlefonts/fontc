@@ -201,46 +201,33 @@ mod tests {
     use log::info;
     use pretty_assertions::assert_eq;
 
-    use skrifa::{
-        charmap::Charmap,
-        instance::Size,
-        outline::DrawSettings,
-        raw::{
+    use skrifa::{charmap::Charmap, instance::Size, outline::DrawSettings, MetadataProvider};
+    use tempfile::{tempdir, TempDir};
+    use write_fonts::{
+        dump_table,
+        read::{
             tables::{
                 cmap::{Cmap, CmapSubtable},
                 gasp::GaspRangeBehavior,
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
+                gpos::{AnchorTable, Gpos, MarkBasePosFormat1Marker, PositionLookup},
                 hmtx::Hmtx,
                 layout::FeatureParams,
                 loca::Loca,
+                name::Name,
+                os2::SelectionFlags,
+                variations::{DeltaSetIndexMap, ItemVariationData},
             },
-            types::F2Dot14,
-            FontData, FontRead, FontReadWithArgs, FontRef, TableProvider,
+            FontData, FontRead, FontReadWithArgs, FontRef, TableProvider, TableRef,
         },
-        GlyphId, GlyphId16, MetadataProvider, Tag,
-    };
-    use tempfile::{tempdir, TempDir};
-    use write_fonts::{
-        dump_table,
+        tables::layout::LookupFlag,
         tables::{
             gdef::GlyphClassDef,
             glyf::{Bbox, Glyph as RawGlyph},
             loca::LocaFormat,
             meta::{DataMapRecord, Metadata, ScriptLangTag},
         },
-    };
-    use write_fonts::{
-        read::{
-            tables::{
-                gpos::{AnchorTable, Gpos, MarkBasePosFormat1Marker, PositionLookup},
-                name::Name,
-                os2::SelectionFlags,
-                variations::{DeltaSetIndexMap, ItemVariationData},
-            },
-            TableRef,
-        },
-        tables::layout::LookupFlag,
-        types::NameId,
+        types::{F2Dot14, GlyphId, GlyphId16, NameId, Tag},
     };
 
     use super::*;
