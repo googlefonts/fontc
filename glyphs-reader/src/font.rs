@@ -2534,7 +2534,13 @@ impl TryFrom<RawFont> for Font {
                             metric_names.get(&idx).map(|name| (name.clone(), value))
                         })
                         .filter(|(_, metric)| !metric.is_empty())
-                        .collect(),
+                        .fold(BTreeMap::new(), |mut acc, (name, value)| {
+                            // only insert a metric if one with the same name hasn't been added
+                            // yet; matches glyphsLib's behavior where the first duplicate wins
+                            // https://github.com/googlefonts/fontc/issues/1269
+                            acc.entry(name).or_insert(value);
+                            acc
+                        }),
                     number_values: from
                         .numbers
                         .iter()
@@ -3583,6 +3589,19 @@ mod tests {
         );
         assert_eq!(master.get_metric("x-height"), Some((Some(500.), Some(15.))));
         assert_eq!(master.get_metric("italic angle"), None);
+    }
+
+    #[test]
+    fn v3_duplicate_metrics_first_wins() {
+        // In this test font, the default master contains two 'x-height' metric values,
+        // the first (501) that applies globally, and a second one (450) that applies
+        // only to small-caps, using GSMetric's `filter` attribute which we ignore as
+        // it is not relevant to build OS/2 and MVAR tables.
+        // We match glyphsLib and only consider the first metric with a given name.
+        let font = Font::load(&glyphs3_dir().join("WghtVar_OS2.glyphs")).unwrap();
+        let master = font.default_master();
+
+        assert_eq!(master.get_metric("x-height"), Some((Some(501.), None)));
     }
 
     #[test]
