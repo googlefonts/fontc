@@ -2534,7 +2534,13 @@ impl TryFrom<RawFont> for Font {
                             metric_names.get(&idx).map(|name| (name.clone(), value))
                         })
                         .filter(|(_, metric)| !metric.is_empty())
-                        .collect(),
+                        .fold(BTreeMap::new(), |mut acc, (name, value)| {
+                            // only insert a metric if one with the same name hasn't been added
+                            // yet; matches glyphsLib's behavior where the first duplicate wins
+                            // https://github.com/googlefonts/fontc/issues/1269
+                            acc.entry(name).or_insert(value);
+                            acc
+                        }),
                     number_values: from
                         .numbers
                         .iter()
