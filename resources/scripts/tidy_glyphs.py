@@ -4,6 +4,7 @@ Removes elements from .glyphs files that we don't care about.
 
 from pathlib import Path
 import re
+import sys
 
 
 _EXEMPTIONS = {
@@ -25,7 +26,9 @@ def delete_key(plist_file: Path, plist: str, key: str) -> str:
     return re.sub(f"(?sm)^{key} = .*?;\n", "", plist)
 
 
-def main():
+def main(argv):
+    exit_code = 0
+    just_check = any(v == "just_check" for v in argv)
     testdata_dir = Path(__file__).parent.parent / "testdata"
     assert testdata_dir.is_dir(), testdata_dir
 
@@ -37,13 +40,21 @@ def main():
     assert len(plist_files) > 0
     
     for plist_file in plist_files:
-        plist = plist_file.read_text()
+        original_plist = plist_file.read_text()
+        plist = original_plist
 
         for key in _DELETE_ME:
             plist = delete_key(plist_file, plist, key)
         
-        plist_file.write_text(plist)
+        if plist != original_plist:
+            if not just_check:
+                plist_file.write_text(plist)
+            else:
+                print(plist_file, "is not tidy")
+            exit_code = 1
+
+    sys.exit(exit_code)
     
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv)

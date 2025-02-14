@@ -245,3 +245,15 @@ jobs:
 
       - name: build fontc for wasm32-unknown-unknown
         run: cargo build -p fontc --target wasm32-unknown-unknown
+
+  # Make cursory effort to keep our testdata minimal
+  tidy-glyphs-files:
+    runs-on: ubuntu-latest
+    name: Check if .glyphs files have unnecessary elements
+
+    steps:
+      - name: Check out fontc source repository
+        uses: actions/checkout@v4
+
+      - name: run tidy_glyphs.py
+        run: python3 ./resources/scripts/tidy_glyphs.py just_check
