@@ -326,7 +326,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .map(|bits| bits.iter().copied().collect());
 
         let default_master = font.default_master();
-        let default_instance = font.instance(default_master);
+        let default_instance = font.variable_export_settings(default_master);
         if let Some(raw_panose) = default_instance
             .and_then(|di| di.custom_parameters.panose.as_ref())
             .or(default_master.custom_parameters.panose.as_ref())
