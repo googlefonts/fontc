@@ -268,7 +268,7 @@ typing-extensions==4.12.2
     # via
     #   beautifulsoup4
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.4.1
+ufo2ft[cffsubr,compreffor]==3.4.2
     # via
     #   fontmake
     #   nanoemoji
