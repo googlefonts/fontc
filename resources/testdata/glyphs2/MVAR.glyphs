@@ -1,4 +1,5 @@
 {
+.appVersion = "3228";
 customParameters = (
 {
 name = "Variable Font Origin";

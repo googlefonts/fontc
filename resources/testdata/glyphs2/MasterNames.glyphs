@@ -1,4 +1,5 @@
 {
+.appVersion = "3323";
 customParameters = (
 {
 name = "Disable Last Change";

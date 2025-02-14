@@ -1,4 +1,5 @@
 {
+.appVersion = "3340";
 customParameters = (
 );
 familyName = WghtVar;

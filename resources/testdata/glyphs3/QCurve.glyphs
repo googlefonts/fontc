@@ -1,4 +1,5 @@
 {
+.appVersion = "3208";
 .formatVersion = 3;
 customParameters = (
 {

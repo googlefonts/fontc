@@ -1,4 +1,5 @@
 {
+.appVersion = "3259";
 .formatVersion = 3;
 familyName = "New Font";
 fontMaster = (
