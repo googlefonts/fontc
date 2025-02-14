@@ -1,5 +1,4 @@
 {
-.appVersion = "3323";
 copyright = "Copy!";
 customParameters = (
 {
@@ -28,7 +27,6 @@ Tag = wdth;
 );
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WdthVar;
 fontMaster = (
 {
@@ -60,7 +58,6 @@ xHeight = 500;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2022-12-01 04:58:12 +0000";
 layers = (
 {
 layerId = m01;
@@ -75,7 +72,6 @@ unicode = 0020;
 },
 {
 glyphname = hyphen;
-lastChange = "2024-08-28 11:45:55 +0000";
 layers = (
 {
 layerId = m01;

@@ -1,5 +1,4 @@
 {
-.appVersion = "3260";
 customParameters = (
 {
 disabled = 1;
@@ -10,7 +9,6 @@ value = (
 );
 }
 );
-date = "2024-07-18 16:00:55 +0000";
 familyName = "New Font";
 fontMaster = (
 {

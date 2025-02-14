@@ -1,5 +1,4 @@
 {
-.appVersion = "3227";
 .formatVersion = 3;
 axes = (
 {
@@ -13,7 +12,6 @@ name = "Variable Font Origin";
 value = m01;
 }
 );
-date = "2023-12-05 15:07:25 +0000";
 familyName = "WghtVar Custom Origin";
 fontMaster = (
 {
@@ -34,7 +32,6 @@ name = "Master 2";
 glyphs = (
 {
 glyphname = space;
-lastChange = "2023-12-05 15:14:26 +0000";
 layers = (
 {
 layerId = m01;

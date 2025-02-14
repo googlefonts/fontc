@@ -1,5 +1,4 @@
 {
-.appVersion = "3323";
 .formatVersion = 3;
 axes = (
 {
@@ -25,7 +24,6 @@ name = "Write DisplayStrings";
 value = 0;
 }
 );
-date = "2024-10-08 14:26:05 +0000";
 familyName = "Master Names";
 fontMaster = (
 {

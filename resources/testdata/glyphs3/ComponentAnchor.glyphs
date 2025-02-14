@@ -1,14 +1,5 @@
 {
-.appVersion = "3259";
 .formatVersion = 3;
-DisplayStrings = (
-"",
-"́",
-"",
-"/A_A",
-"/A_A/A_Aacute"
-);
-date = "2024-04-25 15:41:39 +0000";
 familyName = "New Font";
 fontMaster = (
 {
@@ -42,7 +33,6 @@ name = Regular;
 glyphs = (
 {
 glyphname = A_A;
-lastChange = "2024-04-25 20:33:02 +0000";
 layers = (
 {
 anchors = (
@@ -87,7 +77,6 @@ width = 600;
 },
 {
 glyphname = A_Aacute;
-lastChange = "2024-04-25 20:29:19 +0000";
 layers = (
 {
 layerId = m01;
@@ -107,7 +96,6 @@ width = 600;
 },
 {
 glyphname = acutecomb;
-lastChange = "2024-04-25 20:23:00 +0000";
 layers = (
 {
 anchors = (

@@ -1,11 +1,5 @@
 {
-.appVersion = "3151";
 .formatVersion = 3;
-DisplayStrings = (
-".",
-","
-);
-date = "2023-01-20 20:20:30 +0000";
 familyName = "New Font";
 fontMaster = (
 {
@@ -40,7 +34,6 @@ name = Regular;
 glyphs = (
 {
 glyphname = period;
-lastChange = "2023-01-20 20:20:51 +0000";
 layers = (
 {
 layerId = m01;
@@ -62,7 +55,6 @@ unicode = 46;
 },
 {
 glyphname = comma;
-lastChange = "2023-01-20 20:22:39 +0000";
 layers = (
 {
 layerId = m01;
@@ -81,7 +73,6 @@ unicode = 44;
 },
 {
 glyphname = non_uniform_scale;
-lastChange = "2023-01-20 20:22:39 +0000";
 layers = (
 {
 layerId = m01;

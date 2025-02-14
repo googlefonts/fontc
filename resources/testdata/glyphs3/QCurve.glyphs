@@ -1,17 +1,11 @@
 {
-.appVersion = "3208";
 .formatVersion = 3;
-DisplayStrings = (
-"",
-i
-);
 customParameters = (
 {
 name = "Write lastChange";
 value = 0;
 }
 );
-date = "2023-07-20 13:49:39 +0000";
 familyName = "New Font";
 fontMaster = (
 {

@@ -358,8 +358,6 @@ pub enum Shape {
 #[derive(Default, Debug, PartialEq, FromPlist)]
 #[allow(non_snake_case)]
 struct RawFont {
-    #[fromplist(key = ".appVersion")]
-    app_version: i64,
     #[fromplist(key = ".formatVersion")]
     format_version: i64,
     units_per_em: Option<i64>,

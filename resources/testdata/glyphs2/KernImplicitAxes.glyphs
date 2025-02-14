@@ -27,7 +27,6 @@ xHeight = 500;
 glyphs = (
 {
 glyphname = hyphen;
-lastChange = "2023-06-05 23:23:03 +0000";
 layers = (
 {
 layerId = m01;

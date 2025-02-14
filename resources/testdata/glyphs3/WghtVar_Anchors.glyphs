@@ -1,16 +1,11 @@
 {
-.appVersion = "3219";
 .formatVersion = 3;
-DisplayStrings = (
-A
-);
 axes = (
 {
 name = Weight;
 tag = wght;
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WghtVar_Anchors;
 fontMaster = (
 {
@@ -65,7 +60,6 @@ name = Bold;
 glyphs = (
 {
 glyphname = A;
-lastChange = "2023-09-14 14:42:56 +0000";
 layers = (
 {
 anchors = (
@@ -132,7 +126,6 @@ unicode = 65;
 },
 {
 glyphname = space;
-lastChange = "2022-12-01 04:58:12 +0000";
 layers = (
 {
 layerId = m01;
@@ -147,7 +140,6 @@ unicode = 32;
 },
 {
 glyphname = macroncomb;
-lastChange = "2023-09-14 14:41:26 +0000";
 layers = (
 {
 anchors = (
@@ -196,7 +188,6 @@ unicode = 772;
 },
 {
 glyphname = brevecomb;
-lastChange = "2023-09-14 14:41:26 +0000";
 layers = (
 {
 anchors = (

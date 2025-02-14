@@ -1,10 +1,5 @@
 {
-.appVersion = "3316";
 .formatVersion = 3;
-DisplayStrings = (
-"",
-" "
-);
 axes = (
 {
 name = Weight;
@@ -62,7 +57,6 @@ name = underlinePosition;
 value = -300;
 }
 );
-date = "2024-09-11 20:25:35 +0000";
 familyName = "GlobalMetrics Font Test";
 fontMaster = (
 {
@@ -145,7 +139,6 @@ name = Black;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2024-09-11 21:06:25 +0000";
 layers = (
 {
 layerId = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";

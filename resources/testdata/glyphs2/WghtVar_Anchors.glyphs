@@ -1,8 +1,4 @@
 {
-.appVersion = "3219";
-DisplayStrings = (
-A
-);
 customParameters = (
 {
 name = Axes;
@@ -14,7 +10,6 @@ Tag = wght;
 );
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WghtVar_Anchors;
 fontMaster = (
 {
@@ -43,7 +38,6 @@ xHeight = 500;
 glyphs = (
 {
 glyphname = A;
-lastChange = "2023-09-14 14:42:56 +0000";
 layers = (
 {
 anchors = (
@@ -110,7 +104,6 @@ unicode = 0041;
 },
 {
 glyphname = space;
-lastChange = "2022-12-01 04:58:12 +0000";
 layers = (
 {
 layerId = m01;
@@ -125,7 +118,6 @@ unicode = 0020;
 },
 {
 glyphname = macroncomb;
-lastChange = "2023-09-14 14:41:26 +0000";
 layers = (
 {
 anchors = (
@@ -174,7 +166,6 @@ unicode = 0304;
 },
 {
 glyphname = brevecomb;
-lastChange = "2023-09-14 14:41:26 +0000";
 layers = (
 {
 anchors = (

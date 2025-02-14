@@ -1,11 +1,5 @@
 {
-.appVersion = "3260";
 .formatVersion = 3;
-DisplayStrings = (
-"/space",
-"/mycustommark"
-);
-date = "2023-05-05 15:11:55 +0000";
 familyName = Dated;
 fontMaster = (
 {
@@ -16,7 +10,6 @@ name = Regular;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2024-09-05 19:35:17 +0000";
 layers = (
 {
 layerId = m01;
@@ -27,7 +20,6 @@ width = 200;
 {
 category = Mark;
 glyphname = mycustommark;
-lastChange = "2024-09-05 19:36:39 +0000";
 layers = (
 {
 anchors = (

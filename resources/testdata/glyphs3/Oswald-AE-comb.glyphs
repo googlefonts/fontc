@@ -1,13 +1,5 @@
 {
-.appVersion = "3223";
 .formatVersion = 3;
-DisplayStrings = (
-" 
- 
-  
-  
-"
-);
 axes = (
 {
 name = Weight;
@@ -49,7 +41,6 @@ wght = {
 };
 }
 );
-date = "2017-09-22 11:11:33 +0000";
 familyName = Oswald;
 featurePrefixes = (
 {

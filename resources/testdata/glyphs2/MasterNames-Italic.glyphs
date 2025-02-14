@@ -1,5 +1,4 @@
 {
-.appVersion = "3323";
 customParameters = (
 {
 name = "Disable Last Change";
@@ -19,7 +18,6 @@ Tag = wght;
 );
 }
 );
-date = "2024-10-08 16:36:05 +0000";
 familyName = "Master Names";
 fontMaster = (
 {

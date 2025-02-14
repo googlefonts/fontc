@@ -1,9 +1,4 @@
 {
-.appVersion = "3300";
-DisplayStrings = (
-I,
-ii
-);
 customParameters = (
 {
 name = "Disable Last Change";
@@ -62,7 +57,6 @@ Tag = wght;
 );
 }
 );
-date = "2023-07-20 13:49:39 +0000";
 familyName = "Intermediate Layer";
 fontMaster = (
 {

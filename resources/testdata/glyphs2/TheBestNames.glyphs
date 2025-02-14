@@ -1,9 +1,4 @@
 {
-.appVersion = "3151";
-DisplayStrings = (
-"-",
-"!"
-);
 copyright = "Copy!";
 customParameters = (
 {
@@ -64,7 +59,6 @@ Tag = wght;
 );
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 designer = "Designed by me!";
 designerURL = "https://example.com/designer";
 familyName = FamilyName;
@@ -95,7 +89,6 @@ xHeight = 500;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2022-12-01 04:58:12 +0000";
 layers = (
 {
 layerId = m01;
@@ -110,7 +103,6 @@ unicode = 0020;
 },
 {
 glyphname = exclam;
-lastChange = "2022-12-01 05:10:49 +0000";
 layers = (
 {
 layerId = m01;
@@ -165,7 +157,6 @@ unicode = 0021;
 },
 {
 glyphname = hyphen;
-lastChange = "2022-12-01 04:57:39 +0000";
 layers = (
 {
 layerId = m01;
@@ -202,7 +193,6 @@ unicode = 002D;
 },
 {
 glyphname = "manual-component";
-lastChange = "2022-12-01 04:57:39 +0000";
 layers = (
 {
 components = (

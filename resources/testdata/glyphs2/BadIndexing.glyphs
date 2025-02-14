@@ -1,9 +1,4 @@
 {
-.appVersion = "3148";
-DisplayStrings = (
-"-",
-"!"
-);
 customParameters = (
 {
 name = "Variable Font Origin";
@@ -23,7 +18,6 @@ Tag = wdth;
 );
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WghtVar;
 fontMaster = (
 {

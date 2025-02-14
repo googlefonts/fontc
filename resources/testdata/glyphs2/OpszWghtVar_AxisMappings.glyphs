@@ -1,9 +1,4 @@
 {
-.appVersion = "3148";
-DisplayStrings = (
-"-",
-"!"
-);
 customParameters = (
 {
 name = Axes;
@@ -41,7 +36,6 @@ wght = {
 };
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WghtVar;
 fontMaster = (
 {
@@ -104,7 +98,6 @@ xHeight = 500;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2022-12-01 04:58:12 +0000";
 layers = (
 {
 layerId = thin-12pt;
@@ -135,7 +128,6 @@ unicode = 0020;
 },
 {
 glyphname = hyphen;
-lastChange = "2022-12-01 04:57:39 +0000";
 layers = (
 {
 layerId = thin-12pt;

@@ -1,10 +1,4 @@
 {
-.appVersion = "3219";
-DisplayStrings = (
-"-",
-"!",
-"/space"
-);
 copyright = "Copy!";
 customParameters = (
 {
@@ -33,7 +27,6 @@ Tag = wght;
 );
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WghtVar;
 fontMaster = (
 {
@@ -71,7 +64,6 @@ xHeight = 500;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2023-04-12 17:01:58 +0000";
 layers = (
 {
 layerId = m01;
@@ -90,7 +82,6 @@ unicode = 0020;
 },
 {
 glyphname = exclam;
-lastChange = "2023-04-12 16:55:39 +0000";
 layers = (
 {
 layerId = m01;
@@ -169,7 +160,6 @@ unicode = 0021;
 },
 {
 glyphname = hyphen;
-lastChange = "2023-04-12 17:01:20 +0000";
 layers = (
 {
 layerId = m01;
@@ -221,7 +211,6 @@ unicode = 002D;
 },
 {
 glyphname = "manual-component";
-lastChange = "2023-04-12 17:00:55 +0000";
 layers = (
 {
 components = (

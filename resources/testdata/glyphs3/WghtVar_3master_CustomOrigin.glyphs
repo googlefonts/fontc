@@ -1,10 +1,5 @@
 {
-.appVersion = "3148";
 .formatVersion = 3;
-DisplayStrings = (
-"-",
-"!"
-);
 axes = (
 {
 hidden = 1;
@@ -18,7 +13,6 @@ name = "Variable Font Origin";
 value = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WghtVar;
 fontMaster = (
 {
@@ -97,7 +91,6 @@ name = Bold;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2022-12-09 01:38:15 +0000";
 layers = (
 {
 layerId = m01;
@@ -116,7 +109,6 @@ unicode = 32;
 },
 {
 glyphname = exclam;
-lastChange = "2022-12-09 01:39:12 +0000";
 layers = (
 {
 layerId = m01;
@@ -195,7 +187,6 @@ unicode = 33;
 },
 {
 glyphname = hyphen;
-lastChange = "2022-12-09 01:38:09 +0000";
 layers = (
 {
 layerId = m01;

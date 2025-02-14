@@ -1,16 +1,10 @@
 {
-.appVersion = "3208";
-DisplayStrings = (
-"",
-i
-);
 customParameters = (
 {
 name = "Disable Last Change";
 value = 1;
 }
 );
-date = "2023-07-20 13:49:39 +0000";
 familyName = "New Font";
 fontMaster = (
 {

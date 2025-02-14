@@ -1,5 +1,4 @@
 {
-.appVersion = "3151";
 .formatVersion = 3;
 familyName = WghtVar;
 fontMaster = (
@@ -30,7 +29,6 @@ name = "Bold Italic";
 glyphs = (
 {
 glyphname = space;
-lastChange = "2022-12-01 04:58:12 +0000";
 layers = (
 {
 layerId = m01;

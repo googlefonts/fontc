@@ -1,5 +1,4 @@
 {
-.appVersion = "3227";
 customParameters = (
 {
 name = "Variable Font Origin";
@@ -15,7 +14,6 @@ Tag = slnt;
 );
 }
 );
-date = "2023-12-05 14:28:33 +0000";
 familyName = "Slanted Font";
 fontMaster = (
 {
@@ -54,7 +52,6 @@ xHeight = 500;
 glyphs = (
 {
 glyphname = I;
-lastChange = "2023-12-05 14:31:49 +0000";
 layers = (
 {
 layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
@@ -91,7 +88,6 @@ unicode = 0049;
 },
 {
 glyphname = space;
-lastChange = "2023-12-05 14:44:13 +0000";
 layers = (
 {
 layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
