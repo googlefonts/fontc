@@ -12,10 +12,11 @@ _EXEMPTIONS = {
 }
 
 _DELETE_ME = {
-    ".appVersion",
-    "DisplayStrings"
-    "date"
-    "lastChange"
+    # Keep .appVersion, per @anthrotype Glyphs.app makes decisions based on this
+    # ".appVersion",
+    "DisplayStrings",
+    "date",
+    "lastChange",
 }
 
 

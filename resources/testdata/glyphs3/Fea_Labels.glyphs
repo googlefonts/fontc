@@ -1,4 +1,5 @@
 {
+.appVersion = "3317";
 .formatVersion = 3;
 familyName = "GlobalMetrics Font Test";
 features = (
