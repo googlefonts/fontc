@@ -2599,7 +2599,8 @@ impl Font {
         &self.masters[self.default_master_idx]
     }
 
-    pub fn instance(&self, master: &FontMaster) -> Option<&Instance> {
+    /// <https://handbook.glyphsapp.com/exports/>
+    pub fn variable_export_settings(&self, master: &FontMaster) -> Option<&Instance> {
         self.instances
             .iter()
             .find(|i| i.active && i.type_ == InstanceType::Variable && i.name == master.name)
