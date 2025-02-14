@@ -1,5 +1,4 @@
 {
-.appVersion = "3260";
 .formatVersion = 3;
 customParameters = (
 {
@@ -16,7 +15,6 @@ tag = slng;
 );
 }
 );
-date = "2024-12-03 00:05:48 +0000";
 familyName = MetaTable;
 fontMaster = (
 {

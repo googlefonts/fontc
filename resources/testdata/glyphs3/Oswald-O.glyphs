@@ -1,9 +1,5 @@
 {
-.appVersion = "3192";
 .formatVersion = 3;
-DisplayStrings = (
-O
-);
 axes = (
 {
 name = Weight;
@@ -16,7 +12,6 @@ name = "Write lastChange";
 value = 0;
 }
 );
-date = "2023-05-05 15:11:55 +0000";
 familyName = OswaldO;
 fontMaster = (
 {

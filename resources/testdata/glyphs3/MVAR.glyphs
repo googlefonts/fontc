@@ -1,5 +1,4 @@
 {
-.appVersion = "3228";
 .formatVersion = 3;
 axes = (
 {
@@ -13,7 +12,6 @@ name = "Variable Font Origin";
 value = m01;
 }
 );
-date = "2023-12-05 15:07:25 +0000";
 familyName = "MVAR Test";
 fontMaster = (
 {
@@ -337,7 +335,6 @@ name = "Slanted 5";
 glyphs = (
 {
 glyphname = space;
-lastChange = "2023-12-07 13:14:38 +0000";
 layers = (
 {
 layerId = m01;

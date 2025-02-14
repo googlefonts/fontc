@@ -1,5 +1,4 @@
 {
-.appVersion = "3219";
 copyright = "Copy!";
 customParameters = (
 {
@@ -47,7 +46,6 @@ value = (
 );
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WghtVarOS2;
 fontMaster = (
 {

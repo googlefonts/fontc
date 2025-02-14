@@ -27,7 +27,6 @@ name = Bold;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2022-12-01 04:58:12 +0000";
 layers = (
 {
 layerId = m01;

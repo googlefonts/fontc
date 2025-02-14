@@ -1,10 +1,5 @@
 {
-.appVersion = "3219";
 .formatVersion = 3;
-DisplayStrings = (
-"-",
-"!"
-);
 axes = (
 {
 name = Weight;
@@ -32,7 +27,6 @@ value = (
 );
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WghtVarOS2;
 fontMaster = (
 {
@@ -129,7 +123,6 @@ name = Bold;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2022-12-01 04:58:12 +0000";
 layers = (
 {
 layerId = m01;
@@ -144,7 +137,6 @@ unicode = 32;
 },
 {
 glyphname = exclam;
-lastChange = "2022-12-01 05:10:49 +0000";
 layers = (
 {
 layerId = m01;
@@ -199,7 +191,6 @@ unicode = 33;
 },
 {
 glyphname = hyphen;
-lastChange = "2022-12-01 04:57:39 +0000";
 layers = (
 {
 layerId = m01;
@@ -236,7 +227,6 @@ unicode = 45;
 },
 {
 glyphname = "manual-component";
-lastChange = "2022-12-01 04:57:39 +0000";
 layers = (
 {
 layerId = m01;

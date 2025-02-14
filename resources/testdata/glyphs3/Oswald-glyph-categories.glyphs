@@ -1,17 +1,5 @@
 {
-.appVersion = "3260";
 .formatVersion = 3;
-DisplayStrings = (
-"áa",
-"̆",
-"ắ",
-"/brevecomb_acutecomb",
-"̆ă",
-"/f_a",
-a,
-b,
-"/U1C82"
-);
 axes = (
 {
 name = Weight;
@@ -46,7 +34,6 @@ wght = {
 };
 }
 );
-date = "2017-09-22 11:11:33 +0000";
 familyName = Oswald;
 featurePrefixes = (
 {

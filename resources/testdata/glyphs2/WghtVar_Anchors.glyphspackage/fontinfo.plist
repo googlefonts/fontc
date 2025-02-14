@@ -1,5 +1,4 @@
 {
-.appVersion = "3219";
 customParameters = (
 {
 name = Axes;
@@ -11,7 +10,6 @@ Tag = wght;
 );
 }
 );
-date = "2022-12-01 04:52:20 +0000";
 familyName = WghtVar_Anchors;
 fontMaster = (
 {

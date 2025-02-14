@@ -1,5 +1,4 @@
 {
-.appVersion = "3324";
 .formatVersion = 3;
 axes = (
 {
@@ -27,7 +26,6 @@ name = foobarbaz;
 tag = FOOB;
 }
 );
-date = "2024-10-10 14:11:11 +0000";
 familyName = "New Font";
 fontMaster = (
 {
@@ -148,7 +146,6 @@ name = "Foo Bar Baz";
 glyphs = (
 {
 glyphname = space;
-lastChange = "2024-10-14 10:45:18 +0000";
 layers = (
 {
 layerId = m01;

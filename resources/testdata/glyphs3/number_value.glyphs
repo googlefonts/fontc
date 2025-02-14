@@ -1,5 +1,4 @@
 {
-.appVersion = "3260";
 .formatVersion = 3;
 axes = (
 {
@@ -17,7 +16,6 @@ value = (
 );
 }
 );
-date = "2024-07-18 16:00:55 +0000";
 familyName = "New Font";
 fontMaster = (
 {
@@ -105,7 +103,6 @@ unicode = 65;
 },
 {
 glyphname = a;
-lastChange = "2024-07-30 20:14:41 +0000";
 layers = (
 {
 layerId = "CEAF8881-3B30-4737-AC29-09BAEF72AFFD";

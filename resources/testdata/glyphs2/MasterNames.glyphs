@@ -1,5 +1,4 @@
 {
-.appVersion = "3323";
 customParameters = (
 {
 name = "Disable Last Change";
@@ -27,7 +26,6 @@ Tag = slnt;
 );
 }
 );
-date = "2024-10-08 14:26:05 +0000";
 familyName = "Master Names";
 fontMaster = (
 {
