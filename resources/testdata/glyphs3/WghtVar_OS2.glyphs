@@ -91,6 +91,9 @@ pos = 702;
 },
 {
 pos = 501;
+},
+{
+pos = 450;
 }
 );
 name = Regular;
@@ -115,6 +118,9 @@ pos = 700;
 },
 {
 pos = 500;
+},
+{
+pos = 480;
 }
 );
 name = Bold;
@@ -277,6 +283,10 @@ type = descender;
 type = "cap height";
 },
 {
+type = "x-height";
+},
+{
+filter = "case == 3";
 type = "x-height";
 }
 );

@@ -1,5 +1,5 @@
 {
-.appVersion = "3219";
+.appVersion = "3340";
 DisplayStrings = (
 "-",
 "!"
@@ -94,6 +94,10 @@ value = -290;
 {
 name = hheaLineGap;
 value = 43;
+},
+{
+name = smallCapHeight;
+value = 450;
 }
 );
 descender = -42;
@@ -104,6 +108,12 @@ xHeight = 501;
 {
 ascender = 800;
 capHeight = 700;
+customParameters = (
+{
+name = smallCapHeight;
+value = 480;
+}
+);
 descender = -200;
 id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
 weight = Bold;
