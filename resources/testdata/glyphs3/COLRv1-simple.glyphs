@@ -193,66 +193,6 @@ width = 600;
 unicode = 68;
 },
 {
-glyphname = E;
-layers = (
-{
-layerId = m01;
-width = 600;
-}
-);
-unicode = 69;
-},
-{
-glyphname = F;
-layers = (
-{
-layerId = m01;
-width = 600;
-}
-);
-unicode = 70;
-},
-{
-glyphname = G;
-layers = (
-{
-layerId = m01;
-width = 600;
-}
-);
-unicode = 71;
-},
-{
-glyphname = H;
-layers = (
-{
-layerId = m01;
-width = 600;
-}
-);
-unicode = 72;
-},
-{
-glyphname = I;
-layers = (
-{
-layerId = m01;
-width = 600;
-}
-);
-unicode = 73;
-},
-{
-glyphname = J;
-layers = (
-{
-layerId = m01;
-width = 600;
-}
-);
-unicode = 74;
-},
-{
 glyphname = K;
 layers = (
 {

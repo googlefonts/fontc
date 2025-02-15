@@ -400,7 +400,7 @@ fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolS
                 .flat_map(|layer| layer.shapes.iter())
                 .filter_map(|shape| match shape {
                     Shape::Path(..) => None,
-                    Shape::Component(c) => Some(&c.name),
+                    Shape::Component(c, _) => Some(&c.name),
                 })
                 .map(|name| depths.get(name).copied())
                 .try_fold(0, |acc, e| e.map(|e| acc.max(e)));
@@ -531,19 +531,20 @@ mod tests {
 
         // use an int for pos to simplify the call site ('0' instead of'0.0')
         fn add_component(&mut self, name: &str, pos: (i32, i32)) -> &mut Self {
-            self.last_layer_mut()
-                .shapes
-                .push(Shape::Component(Component {
+            self.last_layer_mut().shapes.push(Shape::Component(
+                Component {
                     name: name.into(),
                     transform: Affine::translate((pos.0 as f64, pos.1 as f64)),
                     anchor: None,
-                }));
+                },
+                Default::default(),
+            ));
             self
         }
 
         /// Set an explicit translate + rotation for the component
         fn rotate_component(&mut self, degrees: f64) -> &mut Self {
-            if let Some(Shape::Component(comp)) = self.last_layer_mut().shapes.last_mut() {
+            if let Some(Shape::Component(comp, _)) = self.last_layer_mut().shapes.last_mut() {
                 comp.transform = comp.transform.pre_rotate(degrees.to_radians());
             }
             self
@@ -551,7 +552,7 @@ mod tests {
 
         /// add an explicit anchor to the last added component
         fn add_component_anchor(&mut self, name: &str) -> &mut Self {
-            if let Some(Shape::Component(comp)) = self.last_layer_mut().shapes.last_mut() {
+            if let Some(Shape::Component(comp, _)) = self.last_layer_mut().shapes.last_mut() {
                 comp.anchor = Some(name.into());
             }
             self
