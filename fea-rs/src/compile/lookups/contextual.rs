@@ -236,7 +236,7 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
                 SubstitutionLookup::Ligature(builder) => builder
                     .subtables
                     .iter()
-                    .all(|sub| !sub.contains_target(target.first().copied().unwrap())),
+                    .all(|sub| sub.can_add(&target, replacement)),
                 _ => false,
             },
             |flags, mark_set| SubstitutionLookup::Ligature(LookupBuilder::new(flags, mark_set)),
