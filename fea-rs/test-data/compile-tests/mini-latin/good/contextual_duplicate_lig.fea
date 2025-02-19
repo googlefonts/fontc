@@ -1,0 +1,6 @@
+
+feature test {
+    sub a' a' by A;
+    sub a' b' by B;
+    sub a' a' by A; # this is a duplicate
+} test;
