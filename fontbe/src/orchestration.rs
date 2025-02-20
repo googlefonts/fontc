@@ -1,7 +1,7 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
@@ -36,13 +36,13 @@ use serde::{Deserialize, Serialize};
 
 use write_fonts::{
     dump_table,
-    read::FontRead,
+    read::{tables::gsub::Gsub as ReadGsub, FontRead},
     tables::{
         base::Base,
         cmap::Cmap,
         fvar::Fvar,
         gasp::Gasp,
-        gdef::Gdef,
+        gdef::{Gdef, GlyphClassDef},
         glyf::Glyph as RawGlyph,
         gpos::Gpos,
         gsub::Gsub,
@@ -443,19 +443,68 @@ pub struct FeaRsKerns {
     pub features: BTreeMap<FeatureKey, Vec<usize>>,
 }
 
-/// The abstract syntax tree of any user FEA.
+/// "Stage one" state from fea compilation, which is needed as input later.
+///
+/// To generate marks & kerns we need access to things like the AST and a
+/// compiled GSUB table; to avoid needing to compile GSUB multiple times we
+/// do it once up front, and then that gets shared by later jobs.
 ///
 /// Before storing the AST, ensure that it has been validated (via [`fea_rs::compile::validate`]).
 /// This does not include features that are generated, such as for kerning or marks.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct FeaAst {
+pub struct FeaFirstPassOutput {
     /// A validated abstract syntax tree.
     pub ast: ParseTree,
+    // bytes of the compiled gsub table
+    gsub_bytes: Option<Vec<u8>>,
+    /// GDEF classes, if they were declared explicitly in the fea
+    pub(crate) gdef_classes: Option<HashMap<GlyphId16, GlyphClassDef>>,
 }
 
-impl From<ParseTree> for FeaAst {
-    fn from(ast: ParseTree) -> FeaAst {
-        FeaAst { ast }
+impl FeaFirstPassOutput {
+    pub fn new(ast: ParseTree, compilation: Compilation) -> Result<Self, Error> {
+        let gsub_bytes = compilation
+            .gsub
+            .as_ref()
+            .map(write_fonts::dump_table)
+            .transpose()
+            .map_err(|e| Error::DumpTableError {
+                e,
+                context: "GSUB".into(),
+            })?;
+        Ok(Self {
+            ast,
+            gsub_bytes,
+            gdef_classes: compilation.gdef_classes,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(ast: ParseTree, glyph_map: &GlyphMap) -> Result<Self, Error> {
+        use fea_rs::{
+            compile::{NopFeatureProvider, NopVariationInfo},
+            Opts,
+        };
+
+        let (compilation, _) = fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
+            &ast,
+            glyph_map,
+            None,
+            None,
+            Opts::new().compile_gpos(false),
+        )
+        .map_err(|err| {
+            Error::FeaCompileError(fea_rs::compile::error::CompilerError::CompilationFail(err))
+        })?;
+
+        Self::new(ast, compilation)
+    }
+
+    /// Return a read-fonts GSUB table (for computing glyph closure for mark/kern)
+    pub fn gsub(&self) -> Option<ReadGsub> {
+        self.gsub_bytes
+            .as_ref()
+            .and_then(|bytes| ReadGsub::read(bytes.as_slice().into()).ok())
     }
 }
 
@@ -488,7 +537,7 @@ impl Persistable for FeaRsKerns {
     }
 }
 
-impl Persistable for FeaAst {
+impl Persistable for FeaFirstPassOutput {
     fn read(from: &mut dyn Read) -> Self {
         bincode::deserialize_from(from).unwrap()
     }
@@ -827,7 +876,7 @@ pub struct Context {
     pub mvar: BeContextItem<Mvar>,
     pub all_kerning_pairs: BeContextItem<AllKerningPairs>,
     pub kern_fragments: BeContextMap<KernFragment>,
-    pub fea_ast: BeContextItem<FeaAst>,
+    pub fea_ast: BeContextItem<FeaFirstPassOutput>,
     pub fea_rs_kerns: BeContextItem<FeaRsKerns>,
     pub fea_rs_marks: BeContextItem<FeaRsMarks>,
     pub extra_fea_tables: BeContextItem<ExtraFeaTables>,

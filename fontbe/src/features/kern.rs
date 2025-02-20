@@ -6,12 +6,9 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{
-        FeatureKey, FeatureProvider, NopFeatureProvider, NopVariationInfo, PairPosBuilder,
-        ValueRecord as ValueRecordBuilder,
-    },
+    compile::{FeatureKey, FeatureProvider, PairPosBuilder, ValueRecord as ValueRecordBuilder},
     typed::{AstNode, LanguageSystem},
-    GlyphSet, Opts, ParseTree,
+    GlyphSet, ParseTree,
 };
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -26,7 +23,7 @@ use icu_properties::props::BidiClass;
 use log::debug;
 use ordered_float::OrderedFloat;
 use write_fonts::{
-    read::{tables::gsub::Gsub, FontRead, ReadError},
+    read::{tables::gsub::Gsub, ReadError},
     tables::{gdef::GlyphClassDef, layout::LookupFlag},
     types::{GlyphId16, Tag},
 };
@@ -38,8 +35,8 @@ use crate::{
         resolve_variable_metric,
     },
     orchestration::{
-        AllKerningPairs, AnyWorkId, BeWork, Context, FeaRsKerns, KernAdjustments, KernFragment,
-        KernPair, KernSide, WorkId,
+        AllKerningPairs, AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsKerns,
+        KernAdjustments, KernFragment, KernPair, KernSide, WorkId,
     },
 };
 
@@ -410,7 +407,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
 
         let lookups = finalize_kerning(
             &pairs,
-            &ast.ast,
+            &ast,
             &meta,
             &glyph_order,
             char_map,
@@ -426,51 +423,14 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
 // This includes much of the logic from the ufo2ft KernFeatureWriter
 fn finalize_kerning(
     pairs: &[&KernPair],
-    ast: &ParseTree,
+    ast: &FeaFirstPassOutput,
     meta: &StaticMetadata,
     glyph_order: &GlyphOrder,
     char_map: HashMap<u32, GlyphId16>,
     non_spacing_glyphs: HashSet<GlyphId16>,
 ) -> Result<FeaRsKerns, Error> {
-    let glyph_map = glyph_order.names().cloned().collect();
-    // ignore diagnostics, they'll get logged during actual GSUB compilation
-    let (compilation, _) = fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
-        ast,
-        &glyph_map,
-        None,
-        None,
-        Opts::new().compile_gpos(false),
-    )
-    .map_err(|err| {
-        Error::FeaCompileError(fea_rs::compile::error::CompilerError::CompilationFail(err))
-    })?;
-
-    let gsub = compilation
-        .gsub
-        .as_ref()
-        .map(write_fonts::dump_table)
-        .transpose()
-        .expect(
-            "if this doesn't compile we will already panic when we try to add it to the context",
-        );
-    let gsub = gsub
-        .as_ref()
-        .map(|data| write_fonts::read::tables::gsub::Gsub::read(data.as_slice().into()))
-        .transpose()?;
-
-    let glyph_classes = compilation
-        .gdef_classes
-        .filter(|_| meta.gdef_categories.prefer_gdef_categories_in_fea)
-        .unwrap_or_else(|| {
-            meta.gdef_categories
-                .categories
-                .iter()
-                .filter_map(|(name, category)| {
-                    glyph_order.glyph_id(name).map(|gid| (gid, *category))
-                })
-                .collect()
-        });
-    let known_scripts = guess_font_scripts(ast, &char_map);
+    let known_scripts = guess_font_scripts(&ast.ast, &char_map);
+    let glyph_classes = super::get_gdef_classes(meta, ast, glyph_order);
 
     let mark_glyphs = glyph_order
         .iter()
@@ -487,13 +447,13 @@ fn finalize_kerning(
         })
         .collect();
 
-    let split_ctx = KernSplitContext::new(&char_map, &known_scripts, gsub, mark_glyphs)?;
+    let split_ctx = KernSplitContext::new(&char_map, &known_scripts, ast.gsub(), mark_glyphs)?;
 
     let lookups = split_ctx.make_lookups(pairs);
     let (lookups_by_script, lookups) = split_lookups_by_script(lookups);
 
-    let kern_features = assign_lookups_to_scripts(lookups_by_script.clone(), ast, KERN);
-    let dist_features = assign_lookups_to_scripts(lookups_by_script, ast, DIST);
+    let kern_features = assign_lookups_to_scripts(lookups_by_script.clone(), &ast.ast, KERN);
+    let dist_features = assign_lookups_to_scripts(lookups_by_script, &ast.ast, DIST);
     let features = kern_features.into_iter().chain(dist_features).collect();
     debug_ordered_lookups(&features, &lookups);
     Ok(FeaRsKerns { lookups, features })
@@ -1144,7 +1104,9 @@ fn merge_scripts(
 mod tests {
     use std::{path::Path, sync::Arc};
 
+    use fea_rs::compile::NopVariationInfo;
     use fontir::ir::GdefCategories;
+    use write_fonts::read::FontRead;
 
     use super::*;
 
@@ -1313,6 +1275,7 @@ mod tests {
                 }),
             )
             .unwrap();
+            let fea_first_pass = FeaFirstPassOutput::for_test(ast, &glyph_map).unwrap();
             let fake_meta = StaticMetadata::new(
                 1000,
                 Default::default(),
@@ -1330,7 +1293,7 @@ mod tests {
             .unwrap();
             let kerns = finalize_kerning(
                 &pairs,
-                &ast,
+                &fea_first_pass,
                 &fake_meta,
                 &self.glyph_order,
                 self.charmap,
@@ -1339,7 +1302,7 @@ mod tests {
             .unwrap();
 
             let (comp, _) = fea_rs::compile::compile::<NopVariationInfo, _>(
-                &ast,
+                &fea_first_pass.ast,
                 &glyph_map,
                 None,
                 Some(&kerns),
