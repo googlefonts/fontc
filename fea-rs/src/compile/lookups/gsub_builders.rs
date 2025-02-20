@@ -151,19 +151,27 @@ pub struct LigatureSubBuilder {
 
 impl LigatureSubBuilder {
     pub fn insert(&mut self, target: Vec<GlyphId16>, replacement: GlyphId16) {
-        let mut iter = target.into_iter();
-        let first = iter.next().unwrap();
-        let rest = iter.collect::<Vec<_>>();
-        self.items
-            .entry(first)
-            .or_default()
-            .push((rest, replacement));
+        let (first, rest) = target.split_first().unwrap();
+        let entry = self.items.entry(*first).or_default();
+        // skip duplicates
+        if !entry
+            .iter()
+            .any(|existing| (existing.0 == rest && existing.1 == replacement))
+        {
+            entry.push((rest.to_owned(), replacement))
+        }
     }
 
-    pub fn contains_target(&self, target: GlyphId16) -> bool {
-        //FIXME: we could be more aggressive here, but for now we will force a new
-        //lookup anytime the target exists? idk
-        self.items.contains_key(&target)
+    pub fn can_add(&self, target: &[GlyphId16], replacement: GlyphId16) -> bool {
+        let Some((first, rest)) = target.split_first() else {
+            return false;
+        };
+        match self.items.get(first) {
+            Some(ligs) => !ligs
+                .iter()
+                .any(|(seq, target)| seq == rest && *target != replacement),
+            None => true,
+        }
     }
 }
 
