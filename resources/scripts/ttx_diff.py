@@ -612,6 +612,7 @@ def reorder_contextual_class_based_rules(ttx: etree.ElementTree, tag: str):
             )
             for class_set in chain_ctx.findall(class_set_name):
                 for class_rule in class_set.findall(class_rule_name):
+                    remap_values(class_rule, input_class_order, "Input")
                     remap_values(class_rule, backtrack_class_order, "Backtrack")
                     remap_values(class_rule, lookahead_class_order, "LookAhead")
 
