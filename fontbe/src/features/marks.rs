@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use fea_rs::{
     compile::{
         Anchor as FeaAnchor, CaretValue, CursivePosBuilder, FeatureProvider, MarkToBaseBuilder,
-        MarkToLigBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo, PendingLookup,
+        MarkToLigBuilder, MarkToMarkBuilder, PendingLookup,
     },
     typed::{AstNode, LanguageSystem},
-    GlyphSet, Opts, ParseTree,
+    GlyphSet, ParseTree,
 };
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
@@ -24,7 +24,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, FeaRsMarks, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsMarks, WorkId},
 };
 use fontir::{
     ir::{self, Anchor, AnchorKind, GlyphAnchors, GlyphOrder, StaticMetadata},
@@ -146,10 +146,16 @@ impl<'a> MarkLookupBuilder<'a> {
         anchors: Vec<&'a GlyphAnchors>,
         glyph_order: &'a GlyphOrder,
         static_metadata: &'a StaticMetadata,
-        ast: &ParseTree,
+        ast: &FeaFirstPassOutput,
     ) -> Result<Self, Error> {
-        let gdef_classes = get_gdef_classes(static_metadata, ast, glyph_order);
-        let fea_scripts = get_fea_scripts(ast);
+        // the initial version of this code used names instead of GIDs, and
+        // so we keep that up for now by converting from gids to names, here
+        let gdef_classes: BTreeMap<_, _> =
+            super::get_gdef_classes(static_metadata, ast, glyph_order)
+                .into_iter()
+                .filter_map(|(k, v)| glyph_order.glyph_name(k.into()).cloned().map(|k| (k, v)))
+                .collect();
+        let fea_scripts = get_fea_scripts(&ast.ast);
         let lig_carets = get_ligature_carets(glyph_order, static_metadata, &anchors)?;
         // first we want to narrow our input down to only anchors that are participating.
         // in pythonland this is https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L380
@@ -485,7 +491,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
         let raw_anchors = context.ir.anchors.all();
-        let ast = context.fea_ast.get();
+        let fea_first_pass = context.fea_ast.get();
 
         let anchors = raw_anchors
             .iter()
@@ -494,7 +500,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
 
         // this code is roughly equivalent to what in pythonland happens in
         // setContext: https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L322
-        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, &static_metadata, &ast.ast)?;
+        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, &static_metadata, &fea_first_pass)?;
         let all_marks = ctx.build()?;
 
         context.fea_rs_marks.set(all_marks);
@@ -532,42 +538,6 @@ fn get_fea_scripts(ast: &ParseTree) -> HashSet<Tag> {
         .map(|langsys| langsys.script().to_raw())
         .filter(|tag| *tag != DFLT_SCRIPT)
         .collect()
-}
-
-fn get_gdef_classes(
-    meta: &StaticMetadata,
-    ast: &ParseTree,
-    glyph_order: &GlyphOrder,
-) -> BTreeMap<GlyphName, GlyphClassDef> {
-    let glyph_map = glyph_order.names().cloned().collect();
-    // if we prefer classes defined in fea, compile the fea and see if we have any
-    if meta.gdef_categories.prefer_gdef_categories_in_fea {
-        if let Some(gdef_classes) =
-            fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
-                ast,
-                &glyph_map,
-                None,
-                None,
-                Opts::new().compile_gpos(false),
-            )
-            .ok()
-            .and_then(|mut comp| comp.0.gdef_classes.take())
-        {
-            return gdef_classes
-                .into_iter()
-                .filter_map(|(g, cls)| {
-                    glyph_order
-                        .glyph_name(g.to_u16() as _)
-                        .cloned()
-                        .map(|name| (name, cls))
-                })
-                .collect();
-        }
-    }
-    // otherwise (we don't care about FEA or nothing is defined) we use the
-    // classes in StaticMetadata (which are from public.openTypeCategories or
-    // GlyphData.xml)
-    meta.gdef_categories.categories.clone()
 }
 
 fn resolve_anchor(
@@ -944,7 +914,7 @@ mod tests {
         fn run_marks_writer(
             &self,
             static_metadata: &StaticMetadata,
-            ast: &ParseTree,
+            ast: &FeaFirstPassOutput,
         ) -> FeaRsMarks {
             let anchors = self
                 .anchors
@@ -978,12 +948,13 @@ mod tests {
             )
             .unwrap();
 
+            let first_pass_fea = FeaFirstPassOutput::for_test(ast, &glyph_map).unwrap();
             // then run the marks code in this module:
-            let marks = self.run_marks_writer(&static_metadata, &ast);
+            let marks = self.run_marks_writer(&static_metadata, &first_pass_fea);
             let var_info = FeaVariationInfo::new(&static_metadata);
             // then compile with fea-rs, passing in our generated marks:
             let (result, _) = fea_rs::compile::compile(
-                &ast,
+                &first_pass_fea.ast,
                 &glyph_map,
                 Some(&var_info),
                 Some(&marks),

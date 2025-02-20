@@ -15,7 +15,7 @@ use fontbe::{
     cmap::create_cmap_work,
     features::{
         create_gather_ir_kerning_work, create_kern_segment_work, create_kerns_work,
-        create_mark_work, FeatureCompilationWork, FeatureParsingWork,
+        create_mark_work, FeatureCompilationWork, FeatureFirstPassWork,
     },
     font::create_font_work,
     fvar::create_fvar_work,
@@ -156,7 +156,7 @@ impl Workload {
         workload.add(create_glyph_order_work());
 
         // BE: f(IR, maybe other BE work) => binary
-        workload.add_skippable_feature_work(FeatureParsingWork::create());
+        workload.add_skippable_feature_work(FeatureFirstPassWork::create());
         workload.add_skippable_feature_work(FeatureCompilationWork::create());
         workload.add(create_gasp_work());
         let ir_glyphs = workload
