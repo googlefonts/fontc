@@ -16,8 +16,8 @@ use ordered_float::OrderedFloat;
 
 use fea_rs::{
     compile::{
-        error::CompilerError, Compilation, FeatureBuilder, FeatureProvider, PendingLookup,
-        VariationInfo,
+        error::CompilerError, Compilation, FeatureBuilder, FeatureProvider, NopFeatureProvider,
+        PendingLookup, VariationInfo,
     },
     parse::{FileSystemResolver, SourceLoadError, SourceResolver},
     DiagnosticSet, GlyphMap, Opts, ParseTree,
@@ -35,15 +35,16 @@ use fontdrasil::{
     types::Axis,
 };
 use write_fonts::{
-    tables::{layout::ClassDef, variations::VariationRegion},
-    types::{NameId, Tag},
+    tables::{gdef::GlyphClassDef, layout::ClassDef, variations::VariationRegion},
+    types::{GlyphId16, NameId, Tag},
     OtRound,
 };
 
 use crate::{
     error::Error,
     orchestration::{
-        AnyWorkId, BeWork, Context, ExtraFeaTables, FeaAst, FeaRsKerns, FeaRsMarks, WorkId,
+        AnyWorkId, BeWork, Context, ExtraFeaTables, FeaFirstPassOutput, FeaRsKerns, FeaRsMarks,
+        WorkId,
     },
 };
 
@@ -59,7 +60,7 @@ const DFLT_SCRIPT: Tag = Tag::new(b"DFLT");
 const DFLT_LANG: Tag = Tag::new(b"dflt");
 
 #[derive(Debug)]
-pub struct FeatureParsingWork {}
+pub struct FeatureFirstPassWork {}
 
 #[derive(Debug)]
 pub struct FeatureCompilationWork {}
@@ -149,6 +150,31 @@ impl<'a> FeaVariationInfo<'a> {
             static_metadata,
         }
     }
+}
+
+/// Return GDEF classes.
+///
+/// If the source is one where we prefer classes declared explicitly in FEA,
+/// and those exist, return those; otherwise return computed classes (from
+/// public.openTypeCatgories or from Glyphs.xml, depending on the source type)
+pub(crate) fn get_gdef_classes(
+    meta: &StaticMetadata,
+    ast: &FeaFirstPassOutput,
+    glyph_order: &GlyphOrder,
+) -> HashMap<GlyphId16, GlyphClassDef> {
+    ast.gdef_classes
+        .as_ref()
+        .filter(|_| meta.gdef_categories.prefer_gdef_categories_in_fea)
+        .cloned()
+        .unwrap_or_else(|| {
+            meta.gdef_categories
+                .categories
+                .iter()
+                .filter_map(|(name, category)| {
+                    glyph_order.glyph_id(name).map(|gid| (gid, *category))
+                })
+                .collect()
+        })
 }
 
 //NOTE: this is basically identical to the same method on FeaVariationInfo,
@@ -376,7 +402,7 @@ impl FeatureCompilationWork {
     fn compile(
         &self,
         static_metadata: &StaticMetadata,
-        ast: &FeaAst,
+        ast: &FeaFirstPassOutput,
         kerns: &FeaRsKerns,
         marks: &FeaRsMarks,
     ) -> Result<Compilation, Error> {
@@ -426,7 +452,7 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
     };
 }
 
-impl Work<Context, AnyWorkId, Error> for FeatureParsingWork {
+impl Work<Context, AnyWorkId, Error> for FeatureFirstPassWork {
     fn id(&self) -> AnyWorkId {
         WorkId::FeaturesAst.into()
     }
@@ -458,13 +484,26 @@ impl Work<Context, AnyWorkId, Error> for FeatureParsingWork {
         // after parsing we validate; we only need to do this once, and future
         // work can trust the AST.
         self.validate(&ast, &glyph_map, &static_metadata)?;
+        let var_info = FeaVariationInfo::new(&static_metadata);
 
-        context.fea_ast.set(ast.into());
+        let (compilation, _) = fea_rs::compile::compile::<_, NopFeatureProvider>(
+            &ast,
+            &glyph_map,
+            Some(&var_info),
+            None,
+            Opts::new().compile_gpos(false),
+        )
+        .map_err(|err| {
+            Error::FeaCompileError(fea_rs::compile::error::CompilerError::CompilationFail(err))
+        })?;
+        context
+            .fea_ast
+            .set(FeaFirstPassOutput::new(ast, compilation)?);
         Ok(())
     }
 }
 
-impl FeatureParsingWork {
+impl FeatureFirstPassWork {
     pub fn create() -> Box<BeWork> {
         Box::new(Self {})
     }

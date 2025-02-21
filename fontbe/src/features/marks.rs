@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use fea_rs::{
     compile::{
         Anchor as FeaAnchor, CaretValue, CursivePosBuilder, FeatureProvider, MarkToBaseBuilder,
-        MarkToLigBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo, PendingLookup,
+        MarkToLigBuilder, MarkToMarkBuilder, PendingLookup,
     },
     typed::{AstNode, LanguageSystem},
-    GlyphSet, Opts, ParseTree,
+    GlyphSet, ParseTree,
 };
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
@@ -24,11 +24,12 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, FeaRsMarks, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsMarks, WorkId},
 };
 use fontir::{
     ir::{self, Anchor, AnchorKind, GlyphAnchors, GlyphOrder, StaticMetadata},
     orchestration::WorkId as FeWorkId,
+    variations::DeltaError,
 };
 
 use super::DFLT_SCRIPT;
@@ -45,14 +46,14 @@ type GroupName = SmolStr;
 
 struct MarkLookupBuilder<'a> {
     // extracted from public.openTypeCatgories/GlyphData.xml or FEA
-    gdef_classes: BTreeMap<GlyphName, GlyphClassDef>,
+    gdef_classes: HashMap<GlyphId16, GlyphClassDef>,
     // pruned, only the anchors we are using
-    anchor_lists: BTreeMap<GlyphName, Vec<&'a ir::Anchor>>,
+    anchor_lists: BTreeMap<GlyphId16, Vec<&'a ir::Anchor>>,
     glyph_order: &'a GlyphOrder,
     static_metadata: &'a StaticMetadata,
     // we don't currently use this, because just adding lookups to all scripts works?
     _fea_scripts: HashSet<Tag>,
-    mark_glyphs: BTreeSet<GlyphName>,
+    mark_glyphs: BTreeSet<GlyphId16>,
     lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
 }
 
@@ -66,24 +67,20 @@ enum BaseOrLigAnchors<T> {
 /// The bases and marks in a particular group, e.g. "top" or "bottom"
 #[derive(Default, Debug, Clone, PartialEq)]
 struct MarkGroup<'a> {
-    bases: Vec<(GlyphName, BaseOrLigAnchors<&'a ir::Anchor>)>,
-    marks: Vec<(GlyphName, &'a ir::Anchor)>,
+    bases: Vec<(GlyphId16, BaseOrLigAnchors<&'a ir::Anchor>)>,
+    marks: Vec<(GlyphId16, &'a ir::Anchor)>,
     // if `true`, we will make a mark filter set from the marks in this group
     // (only true for mkmk)
     filter_glyphs: bool,
 }
 
 impl MarkGroup<'_> {
-    fn make_filter_glyph_set(&self, glyph_order: &GlyphOrder) -> Option<GlyphSet> {
+    fn make_filter_glyph_set(&self) -> Option<GlyphSet> {
         self.filter_glyphs.then(|| {
             self.marks
                 .iter()
-                .map(|(name, _)| glyph_order.glyph_id(name).unwrap())
-                .chain(
-                    self.bases
-                        .iter()
-                        .map(|(name, _)| glyph_order.glyph_id(name).unwrap()),
-                )
+                .map(|(gid, _)| *gid)
+                .chain(self.bases.iter().map(|(gid, _)| *gid))
                 .collect()
         })
     }
@@ -146,10 +143,10 @@ impl<'a> MarkLookupBuilder<'a> {
         anchors: Vec<&'a GlyphAnchors>,
         glyph_order: &'a GlyphOrder,
         static_metadata: &'a StaticMetadata,
-        ast: &ParseTree,
+        ast: &FeaFirstPassOutput,
     ) -> Result<Self, Error> {
-        let gdef_classes = get_gdef_classes(static_metadata, ast, glyph_order);
-        let fea_scripts = get_fea_scripts(ast);
+        let gdef_classes = super::get_gdef_classes(static_metadata, ast, glyph_order);
+        let fea_scripts = get_fea_scripts(&ast.ast);
         let lig_carets = get_ligature_carets(glyph_order, static_metadata, &anchors)?;
         // first we want to narrow our input down to only anchors that are participating.
         // in pythonland this is https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L380
@@ -171,8 +168,9 @@ impl<'a> MarkLookupBuilder<'a> {
             if !glyph_order.contains(&anchors.glyph_name) {
                 continue;
             }
+            let gid = glyph_order.glyph_id(&anchors.glyph_name).unwrap();
             // skip glyphs that are not mark/lig/base, if we have any defined categories
-            if !include.is_empty() && !include.contains(&anchors.glyph_name) {
+            if !include.is_empty() && !include.contains(&gid) {
                 continue;
             }
             for anchor in &anchors.anchors {
@@ -192,10 +190,7 @@ impl<'a> MarkLookupBuilder<'a> {
                     | AnchorKind::Caret(_)
                     | AnchorKind::VCaret(_) => (),
                 }
-                pruned
-                    .entry(anchors.glyph_name.clone())
-                    .or_insert(Vec::new())
-                    .push(anchor);
+                pruned.entry(gid).or_insert(Vec::new()).push(anchor);
             }
         }
 
@@ -256,22 +251,21 @@ impl<'a> MarkLookupBuilder<'a> {
             .filter(|(_, group)| !(group.bases.is_empty() || group.marks.is_empty()))
             .map(|(group_name, group)| {
                 let mut builder = T::default();
-                let filter_set = group.make_filter_glyph_set(self.glyph_order);
+                let filter_set = group.make_filter_glyph_set();
                 let mut flags = LookupFlag::empty();
                 if filter_set.is_some() {
                     flags |= LookupFlag::USE_MARK_FILTERING_SET;
                 }
-                for (mark_name, anchor) in group.marks {
-                    // we already filtered to only things in glyph order
-                    let gid = self.glyph_order.glyph_id(&mark_name).unwrap();
-                    let anchor = resolve_anchor_once(anchor, self.static_metadata, &mark_name)?;
-                    builder.add_mark(gid, &group_name, anchor);
+                for (mark_gid, anchor) in &group.marks {
+                    let anchor = resolve_anchor_once(anchor, self.static_metadata)
+                        .map_err(|e| self.convert_delta_error(e, *mark_gid))?;
+                    builder.add_mark(*mark_gid, &group_name, anchor);
                 }
 
-                for (base_name, anchor) in group.bases {
-                    let gid = self.glyph_order.glyph_id(&base_name).unwrap();
-                    let anchor = resolve_anchor(anchor, self.static_metadata, &base_name)?;
-                    builder.add_base(gid, &group_name, anchor);
+                for (mark_gid, anchor) in group.bases {
+                    let anchor = resolve_anchor(anchor, self.static_metadata)
+                        .map_err(|e| self.convert_delta_error(e, mark_gid))?;
+                    builder.add_base(mark_gid, &group_name, anchor);
                 }
                 Ok(PendingLookup::new(vec![builder], flags, filter_set))
             })
@@ -280,11 +274,11 @@ impl<'a> MarkLookupBuilder<'a> {
 
     fn make_mark_to_base_groups(&self) -> BTreeMap<GroupName, MarkGroup<'a>> {
         let mut groups = BTreeMap::<_, MarkGroup>::new();
-        for (glyph_name, anchors) in &self.anchor_lists {
-            let is_mark = self.mark_glyphs.contains(glyph_name);
+        for (gid, anchors) in &self.anchor_lists {
+            let is_mark = self.mark_glyphs.contains(gid);
             // if we have explicit gdef classes and this is not an expilcit base
             let is_not_base = !self.gdef_classes.is_empty()
-                && (self.gdef_classes.get(glyph_name)) != Some(&GlyphClassDef::Base);
+                && (self.gdef_classes.get(gid)) != Some(&GlyphClassDef::Base);
 
             let treat_as_base = !(is_mark | is_not_base);
             for anchor in anchors {
@@ -293,12 +287,12 @@ impl<'a> MarkLookupBuilder<'a> {
                         .entry(group.clone())
                         .or_default()
                         .bases
-                        .push((glyph_name.clone(), BaseOrLigAnchors::Base(anchor))),
+                        .push((*gid, BaseOrLigAnchors::Base(anchor))),
                     ir::AnchorKind::Mark(group) if is_mark => groups
                         .entry(group.clone())
                         .or_default()
                         .marks
-                        .push((glyph_name.clone(), anchor)),
+                        .push((*gid, anchor)),
                     _ => continue,
                 }
             }
@@ -326,8 +320,8 @@ impl<'a> MarkLookupBuilder<'a> {
         // then iterate again, looking for glyphs that we have identified as marks,
         // but which also have participating base anchors
         let mut result = BTreeMap::<GroupName, MarkGroup>::new();
-        for (glyph, glyph_anchors) in &self.anchor_lists {
-            if !mark_glyphs.contains(glyph) {
+        for (gid, glyph_anchors) in &self.anchor_lists {
+            if !mark_glyphs.contains(gid) {
                 continue;
             }
 
@@ -337,9 +331,7 @@ impl<'a> MarkLookupBuilder<'a> {
                     if mark_anchors.contains(group_name) {
                         let group = result.entry(group_name.clone()).or_default();
                         group.filter_glyphs = true;
-                        group
-                            .bases
-                            .push((glyph.clone(), BaseOrLigAnchors::Base(anchor)))
+                        group.bases.push((*gid, BaseOrLigAnchors::Base(anchor)))
                     }
                 }
             }
@@ -352,7 +344,7 @@ impl<'a> MarkLookupBuilder<'a> {
                 if let AnchorKind::Mark(group) = &anchor.kind {
                     // only add mark glyph if there is at least one base
                     if let Some(group) = result.get_mut(group) {
-                        group.marks.push((mark.clone(), anchor))
+                        group.marks.push((*mark, anchor))
                     }
                 }
             }
@@ -369,10 +361,10 @@ impl<'a> MarkLookupBuilder<'a> {
 
         // first do a pass to build up the ligature anchors and track the set
         // of mark classes used
-        for (glyph_name, anchors) in &self.anchor_lists {
+        for (gid, anchors) in &self.anchor_lists {
             // skip anything that is definitely not a ligature glyph
             let might_be_liga = self.gdef_classes.is_empty()
-                || (self.gdef_classes.get(glyph_name) == Some(&GlyphClassDef::Ligature));
+                || (self.gdef_classes.get(gid) == Some(&GlyphClassDef::Ligature));
 
             if !might_be_liga {
                 continue;
@@ -399,13 +391,13 @@ impl<'a> MarkLookupBuilder<'a> {
                     .entry(group_name)
                     .or_default()
                     .bases
-                    .push((glyph_name.clone(), BaseOrLigAnchors::Ligature(anchors)));
+                    .push((*gid, BaseOrLigAnchors::Ligature(anchors)));
             }
         }
 
         // then we do another pass to add the marks in the used classes
-        for (glyph_name, anchors) in &self.anchor_lists {
-            if !self.mark_glyphs.contains(glyph_name) {
+        for (gid, anchors) in &self.anchor_lists {
+            if !self.mark_glyphs.contains(gid) {
                 continue;
             }
             for anchor in anchors {
@@ -415,7 +407,7 @@ impl<'a> MarkLookupBuilder<'a> {
                             .entry(group.to_owned())
                             .or_default()
                             .marks
-                            .push((glyph_name.clone(), anchor));
+                            .push((*gid, anchor));
                     }
                 }
             }
@@ -430,16 +422,16 @@ impl<'a> MarkLookupBuilder<'a> {
         let mut affected_glyphs = BTreeSet::new();
         let mut exits = BTreeMap::new();
 
-        for (glyph_name, anchors) in &self.anchor_lists {
+        for (gid, anchors) in &self.anchor_lists {
             for anchor in anchors {
                 match anchor.kind {
                     AnchorKind::CursiveEntry => {
-                        entries.insert(glyph_name, anchor);
-                        affected_glyphs.insert(glyph_name);
+                        entries.insert(*gid, anchor);
+                        affected_glyphs.insert(*gid);
                     }
                     AnchorKind::CursiveExit => {
-                        exits.insert(glyph_name, anchor);
-                        affected_glyphs.insert(glyph_name);
+                        exits.insert(*gid, anchor);
+                        affected_glyphs.insert(*gid);
                     }
                     _ => {}
                 }
@@ -448,21 +440,27 @@ impl<'a> MarkLookupBuilder<'a> {
         if affected_glyphs.is_empty() {
             return Ok(vec![]);
         }
-        for glyph_name in affected_glyphs {
-            let gid = self.glyph_order.glyph_id(glyph_name).unwrap();
+        for gid in affected_glyphs {
             let entry_anchor = entries
-                .get(glyph_name)
-                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata, glyph_name))
-                .transpose()?;
+                .get(&gid)
+                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
+                .transpose()
+                .map_err(|e| self.convert_delta_error(e, gid))?;
             let exit_anchor = exits
-                .get(glyph_name)
-                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata, glyph_name))
-                .transpose()?;
+                .get(&gid)
+                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
+                .transpose()
+                .map_err(|e| self.convert_delta_error(e, gid))?;
             builder.insert(gid, entry_anchor, exit_anchor);
         }
         // In the future we might to do an LTR/RTL split, but for now return a
         // vector with one element.
         Ok(vec![PendingLookup::new(vec![builder], flags, None)])
+    }
+
+    fn convert_delta_error(&self, err: DeltaError, gid: GlyphId16) -> Error {
+        let name = self.glyph_order.glyph_name(gid.into()).cloned().unwrap();
+        Error::AnchorDeltaError(name, err)
     }
 }
 
@@ -485,7 +483,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
         let raw_anchors = context.ir.anchors.all();
-        let ast = context.fea_ast.get();
+        let fea_first_pass = context.fea_ast.get();
 
         let anchors = raw_anchors
             .iter()
@@ -494,7 +492,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
 
         // this code is roughly equivalent to what in pythonland happens in
         // setContext: https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L322
-        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, &static_metadata, &ast.ast)?;
+        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, &static_metadata, &fea_first_pass)?;
         let all_marks = ctx.build()?;
 
         context.fea_rs_marks.set(all_marks);
@@ -506,9 +504,9 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
 // in py this is set during _groupMarkGlyphsByAnchor; we try to match that logic
 // https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L412
 fn find_mark_glyphs(
-    anchors: &BTreeMap<GlyphName, Vec<&Anchor>>,
-    gdef_classes: &BTreeMap<GlyphName, GlyphClassDef>,
-) -> BTreeSet<GlyphName> {
+    anchors: &BTreeMap<GlyphId16, Vec<&Anchor>>,
+    gdef_classes: &HashMap<GlyphId16, GlyphClassDef>,
+) -> BTreeSet<GlyphId16> {
     anchors
         .iter()
         .filter(|(name, anchors)| {
@@ -534,55 +532,18 @@ fn get_fea_scripts(ast: &ParseTree) -> HashSet<Tag> {
         .collect()
 }
 
-fn get_gdef_classes(
-    meta: &StaticMetadata,
-    ast: &ParseTree,
-    glyph_order: &GlyphOrder,
-) -> BTreeMap<GlyphName, GlyphClassDef> {
-    let glyph_map = glyph_order.names().cloned().collect();
-    // if we prefer classes defined in fea, compile the fea and see if we have any
-    if meta.gdef_categories.prefer_gdef_categories_in_fea {
-        if let Some(gdef_classes) =
-            fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
-                ast,
-                &glyph_map,
-                None,
-                None,
-                Opts::new().compile_gpos(false),
-            )
-            .ok()
-            .and_then(|mut comp| comp.0.gdef_classes.take())
-        {
-            return gdef_classes
-                .into_iter()
-                .filter_map(|(g, cls)| {
-                    glyph_order
-                        .glyph_name(g.to_u16() as _)
-                        .cloned()
-                        .map(|name| (name, cls))
-                })
-                .collect();
-        }
-    }
-    // otherwise (we don't care about FEA or nothing is defined) we use the
-    // classes in StaticMetadata (which are from public.openTypeCategories or
-    // GlyphData.xml)
-    meta.gdef_categories.categories.clone()
-}
-
 fn resolve_anchor(
     anchor: BaseOrLigAnchors<&ir::Anchor>,
     static_metadata: &StaticMetadata,
-    glyph_name: &GlyphName,
-) -> Result<BaseOrLigAnchors<FeaAnchor>, Error> {
+) -> Result<BaseOrLigAnchors<FeaAnchor>, DeltaError> {
     match anchor {
         BaseOrLigAnchors::Base(anchor) => {
-            resolve_anchor_once(anchor, static_metadata, glyph_name).map(BaseOrLigAnchors::Base)
+            resolve_anchor_once(anchor, static_metadata).map(BaseOrLigAnchors::Base)
         }
         BaseOrLigAnchors::Ligature(anchors) => anchors
             .into_iter()
             .map(|a| {
-                a.map(|a| resolve_anchor_once(a, static_metadata, glyph_name))
+                a.map(|a| resolve_anchor_once(a, static_metadata))
                     .transpose()
             })
             .collect::<Result<_, _>>()
@@ -593,8 +554,7 @@ fn resolve_anchor(
 fn resolve_anchor_once(
     anchor: &ir::Anchor,
     static_metadata: &StaticMetadata,
-    glyph_name: &GlyphName, // just used for error reporting
-) -> Result<FeaAnchor, Error> {
+) -> Result<FeaAnchor, DeltaError> {
     let (x_values, y_values): (Vec<_>, Vec<_>) = anchor
         .positions
         .iter()
@@ -613,13 +573,11 @@ fn resolve_anchor_once(
         // clippy complains about the seemingly no-op identity map:
         // https://rust-lang.github.io/rust-clippy/master/index.html#/map_identity
         x_values.iter().map(|item| (&item.0, &item.1)),
-    )
-    .map_err(|err| Error::AnchorDeltaError(glyph_name.to_owned(), err))?;
+    )?;
     let (y_default, y_deltas) = crate::features::resolve_variable_metric(
         static_metadata,
         y_values.iter().map(|item| (&item.0, &item.1)),
-    )
-    .map_err(|err| Error::AnchorDeltaError(glyph_name.to_owned(), err))?;
+    )?;
 
     let mut anchor = FeaAnchor::new(x_default, y_default);
     if x_deltas.iter().any(|v| v.1 != 0) {
@@ -944,7 +902,7 @@ mod tests {
         fn run_marks_writer(
             &self,
             static_metadata: &StaticMetadata,
-            ast: &ParseTree,
+            ast: &FeaFirstPassOutput,
         ) -> FeaRsMarks {
             let anchors = self
                 .anchors
@@ -978,12 +936,13 @@ mod tests {
             )
             .unwrap();
 
+            let first_pass_fea = FeaFirstPassOutput::for_test(ast, &glyph_map).unwrap();
             // then run the marks code in this module:
-            let marks = self.run_marks_writer(&static_metadata, &ast);
+            let marks = self.run_marks_writer(&static_metadata, &first_pass_fea);
             let var_info = FeaVariationInfo::new(&static_metadata);
             // then compile with fea-rs, passing in our generated marks:
             let (result, _) = fea_rs::compile::compile(
-                &ast,
+                &first_pass_fea.ast,
                 &glyph_map,
                 Some(&var_info),
                 Some(&marks),
