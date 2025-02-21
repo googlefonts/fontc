@@ -199,10 +199,7 @@ pub(crate) fn resolve_variable_metric<'a>(
         .iter()
         .filter_map(|(region, value)| {
             let scaler = region.scalar_at(&var_model.default).into_inner();
-            match scaler {
-                scaler if scaler == 0.0 => None,
-                scaler => Some(scaler * { *value }),
-            }
+            (scaler != 0.0).then_some(*value * scaler)
         })
         .sum::<f64>()
         .ot_round();
@@ -337,10 +334,7 @@ impl VariationInfo for FeaVariationInfo<'_> {
             .iter()
             .filter_map(|(region, value)| {
                 let scaler = region.scalar_at(&var_model.default).into_inner();
-                match scaler {
-                    scaler if scaler == 0.0 => None,
-                    scaler => Some(scaler * { *value }),
-                }
+                (scaler != 0.0).then_some(*value * scaler)
             })
             .sum::<f64>()
             .ot_round();

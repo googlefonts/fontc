@@ -620,7 +620,7 @@ mod tests {
     fn compile_obeys_family_class() {
         let result = TestCompile::compile_source("fontinfo.designspace");
         let os2 = result.font().os2().unwrap();
-        assert_eq!(1 << 8 | 2, os2.s_family_class());
+        assert_eq!((1 << 8) | 2, os2.s_family_class());
     }
 
     #[test]
@@ -2769,7 +2769,7 @@ mod tests {
         let os2 = font.os2().unwrap();
 
         assert_eq!(
-            [1 | 1 << 28, 1 << 20 | 1 << 24, 0, 1 << 26],
+            [1 | (1 << 28), (1 << 20) | (1 << 24), 0, 1 << 26],
             [
                 os2.ul_unicode_range_1(),
                 os2.ul_unicode_range_2(),
@@ -2795,7 +2795,7 @@ mod tests {
         let os2 = font.os2().unwrap();
 
         assert_eq!(
-            [Some(1 | 1 << 1 | 1 << 19), Some(1 << 31)],
+            [Some(1 | (1 << 1) | (1 << 19)), Some(1 << 31)],
             [os2.ul_code_page_range_1(), os2.ul_code_page_range_2(),]
         );
     }

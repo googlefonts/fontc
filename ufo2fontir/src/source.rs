@@ -832,7 +832,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             font_info_at_default
                 .open_type_os2_type
                 .as_ref()
-                .map(|flags| flags.iter().fold(0_u16, |acc, e| acc | 1 << *e))
+                .map(|flags| flags.iter().fold(0_u16, |acc, e| acc | (1 << *e)))
                 .unwrap_or(1_u16 << 2),
         );
 
@@ -881,7 +881,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         static_metadata.misc.family_class = font_info_at_default
             .open_type_os2_family_class
             .as_ref()
-            .map(|v| (v.class_id as i16) << 8 | v.subclass_id as i16);
+            .map(|v| ((v.class_id as i16) << 8) | v.subclass_id as i16);
 
         static_metadata.misc.created =
             try_parse_date(font_info_at_default.open_type_head_created.as_ref())
