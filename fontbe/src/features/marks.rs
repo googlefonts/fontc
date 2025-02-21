@@ -4,11 +4,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
     compile::{
-        Anchor as FeaAnchor, CaretValue, CursivePosBuilder, FeatureProvider, MarkToBaseBuilder,
-        MarkToLigBuilder, MarkToMarkBuilder, PendingLookup,
+        Anchor as FeaAnchor, CaretValue, CursivePosBuilder, FeatureProvider, LookupId,
+        MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PendingLookup,
     },
-    typed::{AstNode, LanguageSystem},
-    GlyphSet, ParseTree,
+    GlyphSet,
 };
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
@@ -24,7 +23,9 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsMarks, WorkId},
+    orchestration::{
+        AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsMarks, MarkLookups, WorkId,
+    },
 };
 use fontir::{
     ir::{self, Anchor, AnchorKind, GlyphAnchors, GlyphOrder, StaticMetadata},
@@ -32,7 +33,10 @@ use fontir::{
     variations::DeltaError,
 };
 
-use super::DFLT_SCRIPT;
+use super::{
+    ot_tags::{INDIC_SCRIPTS, USE_SCRIPTS},
+    properties::UnicodeShortName,
+};
 
 #[derive(Debug)]
 struct MarkWork {}
@@ -51,10 +55,11 @@ struct MarkLookupBuilder<'a> {
     anchor_lists: BTreeMap<GlyphId16, Vec<&'a ir::Anchor>>,
     glyph_order: &'a GlyphOrder,
     static_metadata: &'a StaticMetadata,
-    // we don't currently use this, because just adding lookups to all scripts works?
-    _fea_scripts: HashSet<Tag>,
+    fea_first_pass: &'a FeaFirstPassOutput,
+    // unicode names of scripts declared in FEA
     mark_glyphs: BTreeSet<GlyphId16>,
     lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
+    char_map: HashMap<u32, GlyphId16>,
 }
 
 /// Abstract over the difference in anchor shape between mark2lig and mark2base/mark2mark
@@ -143,10 +148,10 @@ impl<'a> MarkLookupBuilder<'a> {
         anchors: Vec<&'a GlyphAnchors>,
         glyph_order: &'a GlyphOrder,
         static_metadata: &'a StaticMetadata,
-        ast: &FeaFirstPassOutput,
+        fea_first_pass: &'a FeaFirstPassOutput,
+        char_map: HashMap<u32, GlyphId16>,
     ) -> Result<Self, Error> {
-        let gdef_classes = super::get_gdef_classes(static_metadata, ast, glyph_order);
-        let fea_scripts = get_fea_scripts(&ast.ast);
+        let gdef_classes = super::get_gdef_classes(static_metadata, fea_first_pass, glyph_order);
         let lig_carets = get_ligature_carets(glyph_order, static_metadata, &anchors)?;
         // first we want to narrow our input down to only anchors that are participating.
         // in pythonland this is https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L380
@@ -214,41 +219,112 @@ impl<'a> MarkLookupBuilder<'a> {
         Ok(Self {
             anchor_lists: pruned,
             glyph_order,
-            _fea_scripts: fea_scripts,
             static_metadata,
+            fea_first_pass,
             gdef_classes,
             mark_glyphs,
             lig_carets,
+            char_map,
         })
     }
 
+    // corresponds to _makeFeatures in python
     fn build(&self) -> Result<FeaRsMarks, Error> {
         let mark_base_groups = self.make_mark_to_base_groups();
         let mark_mark_groups = self.make_mark_to_mark_groups();
         let mark_lig_groups = self.make_mark_to_liga_groups();
 
-        let mark_base = self.make_lookups::<MarkToBaseBuilder>(mark_base_groups)?;
-        let mark_mark = self.make_lookups::<MarkToMarkBuilder>(mark_mark_groups)?;
-        let mark_lig = self.make_lookups::<MarkToLigBuilder>(mark_lig_groups)?;
+        let (abvm_glyphs, non_abvm_glyphs) = self.split_mark_and_abvm_blwm_glyphs()?;
+
+        let mark_mkmk = self.make_lookups(
+            &mark_base_groups,
+            &mark_mark_groups,
+            &mark_lig_groups,
+            &non_abvm_glyphs,
+            |_| true,
+        )?;
         let curs = self.make_cursive_lookups()?;
+        let (abvm, blwm) = if !abvm_glyphs.is_empty() {
+            (
+                self.make_lookups(
+                    &mark_base_groups,
+                    &mark_mark_groups,
+                    &mark_lig_groups,
+                    &abvm_glyphs,
+                    is_above_mark,
+                )?,
+                self.make_lookups(
+                    &mark_base_groups,
+                    &mark_mark_groups,
+                    &mark_lig_groups,
+                    &abvm_glyphs,
+                    is_below_mark,
+                )?,
+            )
+        } else {
+            Default::default()
+        };
+
         Ok(FeaRsMarks {
             glyphmap: self.glyph_order.names().cloned().collect(),
-            mark_base,
-            mark_mark,
-            mark_lig,
+            mark_mkmk,
+            abvm,
+            blwm,
             curs,
             lig_carets: self.lig_carets.clone(),
         })
     }
 
-    // code shared between mark2base and mark2mark
-    fn make_lookups<T: MarkAttachmentBuilder>(
+    fn make_lookups(
         &self,
-        groups: BTreeMap<GroupName, MarkGroup>,
+        mark_base_groups: &BTreeMap<GroupName, MarkGroup>,
+        mark_mark_groups: &BTreeMap<GroupName, MarkGroup>,
+        mark_lig_groups: &BTreeMap<GroupName, MarkGroup>,
+        include_glyphs: &HashSet<GlyphId16>,
+        marks_filter: impl Fn(&str) -> bool,
+    ) -> Result<MarkLookups, Error> {
+        let mark_base = self.make_lookups_type::<MarkToBaseBuilder>(
+            mark_base_groups,
+            include_glyphs,
+            &marks_filter,
+        )?;
+        let mark_mark = self.make_lookups_type::<MarkToMarkBuilder>(
+            mark_mark_groups,
+            include_glyphs,
+            &marks_filter,
+        )?;
+        let mark_lig = self.make_lookups_type::<MarkToLigBuilder>(
+            mark_lig_groups,
+            include_glyphs,
+            &marks_filter,
+        )?;
+        Ok(MarkLookups {
+            mark_base,
+            mark_mark,
+            mark_lig,
+        })
+    }
+
+    // code shared between mark2base and mark2mark
+    fn make_lookups_type<T: MarkAttachmentBuilder>(
+        &self,
+        groups: &BTreeMap<GroupName, MarkGroup>,
+        filter_glyphs: &HashSet<GlyphId16>,
+        marks_filter: &impl Fn(&str) -> bool,
     ) -> Result<Vec<PendingLookup<T>>, Error> {
         groups
             .into_iter()
-            .filter(|(_, group)| !(group.bases.is_empty() || group.marks.is_empty()))
+            .filter(|(group_name, group)| {
+                marks_filter(group_name)
+                    // we want to skip any group that doesn't have at least
+                    // one glyph in the filter_glyphs set.
+                    && !(group.marks.is_empty()
+                        || !group
+                            .bases
+                            .iter()
+                            .map(|(g, _)| *g)
+                            .any(|gid| filter_glyphs.contains(&gid)))
+            })
             .map(|(group_name, group)| {
                 let mut builder = T::default();
                 let filter_set = group.make_filter_glyph_set();
@@ -262,10 +338,13 @@ impl<'a> MarkLookupBuilder<'a> {
                     builder.add_mark(*mark_gid, &group_name, anchor);
                 }
 
-                for (mark_gid, anchor) in group.bases {
+                for (base_gid, anchor) in &group.bases {
+                    if !filter_glyphs.contains(base_gid) {
+                        continue;
+                    }
                     let anchor = resolve_anchor(anchor, self.static_metadata)
-                        .map_err(|e| self.convert_delta_error(e, mark_gid))?;
-                    builder.add_base(mark_gid, &group_name, anchor);
+                        .map_err(|e| self.convert_delta_error(e, *base_gid))?;
+                    builder.add_base(*base_gid, &group_name, anchor);
                 }
                 Ok(PendingLookup::new(vec![builder], flags, filter_set))
             })
@@ -462,6 +541,80 @@ impl<'a> MarkLookupBuilder<'a> {
         let name = self.glyph_order.glyph_name(gid.into()).cloned().unwrap();
         Error::AnchorDeltaError(name, err)
     }
+
+    fn scripts_using_abvm(&self) -> HashSet<UnicodeShortName> {
+        let fea_scripts = super::get_script_language_systems(&self.fea_first_pass.ast)
+            .into_keys()
+            .collect::<HashSet<_>>();
+        INDIC_SCRIPTS
+            .iter()
+            .chain(USE_SCRIPTS)
+            .chain(std::iter::once(&"Khmr"))
+            .filter_map(|s| UnicodeShortName::from_str(s).ok())
+            .filter(|script| fea_scripts.is_empty() || fea_scripts.contains(script))
+            .collect()
+    }
+
+    //https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L1119
+    //
+    // returns two sets: glyphs used in abvm/blwm, and glyphs used in mark
+    // (in theory these could intersect?)
+    fn split_mark_and_abvm_blwm_glyphs(
+        &self,
+    ) -> Result<(HashSet<GlyphId16>, HashSet<GlyphId16>), Error> {
+        let scripts_using_abvm = self.scripts_using_abvm();
+
+        let unicode_is_abvm = |uv: u32| -> bool {
+            super::properties::scripts_for_codepoint(uv)
+                .any(|script| scripts_using_abvm.contains(&script))
+        };
+
+        // note that it's possible for a glyph to pass both these tests!
+        let unicode_is_non_abvm = |uv: u32| -> bool {
+            super::properties::scripts_for_codepoint(uv)
+                .any(|script| !scripts_using_abvm.contains(&script))
+        };
+
+        if scripts_using_abvm.is_empty() || !self.char_map.keys().copied().any(unicode_is_abvm) {
+            // no abvm scripts: everything is a mark
+            return Ok((
+                Default::default(),
+                self.char_map.values().copied().collect(),
+            ));
+        }
+
+        let gsub = self.fea_first_pass.gsub();
+        let abvm_glyphs = super::properties::glyphs_matching_predicate(
+            &self.char_map,
+            unicode_is_abvm,
+            gsub.as_ref(),
+        )?;
+
+        let mut non_abvm_glyphs = super::properties::glyphs_matching_predicate(
+            &self.char_map,
+            unicode_is_non_abvm,
+            gsub.as_ref(),
+        )?;
+        // https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L1156
+        // I do not understand why we have all this fancy logic when it feels like
+        // 'not abvm' is implicit?
+        non_abvm_glyphs.extend(
+            self.char_map
+                .values()
+                .filter(|gid| !abvm_glyphs.contains(gid)),
+        );
+        Ok((abvm_glyphs, non_abvm_glyphs))
+    }
+}
+
+// matching current fonttools behaviour, we treat treat every non-bottom as a top:
+// https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da5/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L998
+fn is_above_mark(anchor_name: &str) -> bool {
+    !is_below_mark(anchor_name)
+}
+
+fn is_below_mark(anchor_name: &str) -> bool {
+    anchor_name.starts_with("bottom") || anchor_name == "nukta"
 }
 
 impl Work<Context, AnyWorkId, Error> for MarkWork {
@@ -490,9 +643,28 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
             .map(|(_, anchors)| anchors.as_ref())
             .collect::<Vec<_>>();
 
+        let glyphs = glyph_order
+            .names()
+            .map(|glyphname| context.ir.get_glyph(glyphname.clone()))
+            .collect::<Vec<_>>();
+
+        let char_map = glyphs
+            .iter()
+            .flat_map(|g| {
+                let id = glyph_order.glyph_id(&g.name).unwrap();
+                g.codepoints.iter().map(move |cp| (*cp, id))
+            })
+            .collect::<HashMap<_, _>>();
+
         // this code is roughly equivalent to what in pythonland happens in
         // setContext: https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L322
-        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, &static_metadata, &fea_first_pass)?;
+        let ctx = MarkLookupBuilder::new(
+            anchors,
+            &glyph_order,
+            &static_metadata,
+            &fea_first_pass,
+            char_map,
+        )?;
         let all_marks = ctx.build()?;
 
         context.fea_rs_marks.set(all_marks);
@@ -523,17 +695,8 @@ fn find_mark_glyphs(
         .collect()
 }
 
-fn get_fea_scripts(ast: &ParseTree) -> HashSet<Tag> {
-    ast.typed_root()
-        .statements()
-        .filter_map(LanguageSystem::cast)
-        .map(|langsys| langsys.script().to_raw())
-        .filter(|tag| *tag != DFLT_SCRIPT)
-        .collect()
-}
-
 fn resolve_anchor(
-    anchor: BaseOrLigAnchors<&ir::Anchor>,
+    anchor: &BaseOrLigAnchors<&ir::Anchor>,
     static_metadata: &StaticMetadata,
 ) -> Result<BaseOrLigAnchors<FeaAnchor>, DeltaError> {
     match anchor {
@@ -657,20 +820,51 @@ fn make_caret_value(
 
 impl FeatureProvider for FeaRsMarks {
     fn add_features(&self, builder: &mut fea_rs::compile::FeatureBuilder) {
+        // a little helper reused for abvm/blwm
+        fn add_all_lookups(
+            builder: &mut fea_rs::compile::FeatureBuilder,
+            lookups: &MarkLookups,
+        ) -> Vec<LookupId> {
+            let mut out = Vec::new();
+            out.extend(
+                lookups
+                    .mark_base
+                    .iter()
+                    .map(|lk| builder.add_lookup(lk.clone())),
+            );
+            out.extend(
+                lookups
+                    .mark_lig
+                    .iter()
+                    .map(|lk| builder.add_lookup(lk.clone())),
+            );
+            out.extend(
+                lookups
+                    .mark_mark
+                    .iter()
+                    .map(|lk| builder.add_lookup(lk.clone())),
+            );
+            out
+        }
+
+        // add these first, matching fontmake
+        let abvm_lookups = add_all_lookups(builder, &self.abvm);
+        let blwm_lookups = add_all_lookups(builder, &self.blwm);
+
         let mut mark_lookups = Vec::new();
         let mut mkmk_lookups = Vec::new();
         let mut curs_lookups = Vec::new();
 
-        for mark_base in self.mark_base.iter() {
+        for mark_base in self.mark_mkmk.mark_base.iter() {
             // each mark to base it's own lookup, whch differs from fontmake
             mark_lookups.push(builder.add_lookup(mark_base.clone()));
         }
-        for mark_lig in self.mark_lig.iter() {
+        for mark_lig in self.mark_mkmk.mark_lig.iter() {
             mark_lookups.push(builder.add_lookup(mark_lig.clone()));
         }
 
         // If a mark has anchors that are themselves marks what we got here is a mark to mark
-        for mark_mark in self.mark_mark.iter() {
+        for mark_mark in self.mark_mkmk.mark_mark.iter() {
             mkmk_lookups.push(builder.add_lookup(mark_mark.clone()));
         }
 
@@ -678,15 +872,18 @@ impl FeatureProvider for FeaRsMarks {
             curs_lookups.push(builder.add_lookup(curs.clone()));
         }
 
-        if !mark_lookups.is_empty() {
-            builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_lookups);
+        for (lookups, tag) in [
+            (mark_lookups, b"mark"),
+            (mkmk_lookups, b"mkmk"),
+            (curs_lookups, b"curs"),
+            (abvm_lookups, b"abvm"),
+            (blwm_lookups, b"blwm"),
+        ] {
+            if !lookups.is_empty() {
+                builder.add_to_default_language_systems(Tag::new(tag), &lookups);
+            }
         }
-        if !mkmk_lookups.is_empty() {
-            builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mkmk_lookups);
-        }
-        if !curs_lookups.is_empty() {
-            builder.add_to_default_language_systems(Tag::new(b"curs"), &curs_lookups);
-        }
+
         if !self.lig_carets.is_empty()
             && builder
                 .gdef()
@@ -704,6 +901,7 @@ mod tests {
 
     use fea_rs::compile::Compilation;
     use fontdrasil::{
+        agl,
         coords::{Coord, CoordConverter, NormalizedLocation},
         types::Axis,
     };
@@ -723,6 +921,37 @@ mod tests {
 
     use super::*;
 
+    fn char_for_glyph(name: &GlyphName) -> Option<char> {
+        static MANUAL: &[(&str, char)] = &[
+            ("f_f", '\u{FB00}'),
+            ("f_i", '\u{FB01}'),
+            ("f_l", '\u{FB02}'),
+            ("f_i_i", '\u{FB03}'),
+            ("dottedCircle", '\u{25CC}'),
+            ("nukta-kannada", '\u{0CBC}'),
+            ("candrabindu-kannada", '\u{0C81}'),
+            ("halant-kannada", '\u{0CCD}'),
+            ("ka-kannada", '\u{0C95}'),
+        ];
+
+        static UNMAPPED: &[&str] = &["ka-kannada.base"];
+
+        let c = agl::char_for_agl_name(name.as_str()).or_else(|| {
+            MANUAL
+                .iter()
+                .find_map(|(n, uv)| (name.as_str() == *n).then_some(*uv))
+        });
+        if c.is_none()
+            && UNMAPPED
+                .iter()
+                .find(|except| **except == name.as_str())
+                .is_none()
+        {
+            panic!("please add a manual charmap entry for '{name}'");
+        }
+        c
+    }
+
     /// A helper for testing our mark generation code
     #[derive(Clone, Debug)]
     struct MarksInput<const N: usize> {
@@ -730,6 +959,7 @@ mod tests {
         locations: [NormalizedLocation; N],
         anchors: BTreeMap<GlyphName, Vec<Anchor>>,
         categories: BTreeMap<GlyphName, GlyphClassDef>,
+        char_map: HashMap<u32, GlyphName>,
         user_fea: Arc<str>,
     }
 
@@ -811,6 +1041,7 @@ mod tests {
                 locations,
                 anchors: Default::default(),
                 categories: Default::default(),
+                char_map: Default::default(),
                 prefer_gdef_categories_in_fea: false,
             }
         }
@@ -843,6 +1074,10 @@ mod tests {
             mut anchors_fn: impl FnMut(&mut AnchorBuilder<N>),
         ) -> &mut Self {
             let name: GlyphName = name.into();
+            if let Some(unic) = char_for_glyph(&name) {
+                self.char_map.insert(unic as u32, name.clone());
+            }
+
             if let Some(category) = category.into() {
                 self.categories.insert(name.clone(), category);
             }
@@ -910,10 +1145,16 @@ mod tests {
                 .map(|(name, anchors)| GlyphAnchors::new(name.clone(), anchors.clone()))
                 .collect::<Vec<_>>();
             let anchorsref = anchors.iter().collect();
-            let glyph_order = self.anchors.keys().cloned().collect();
+            let glyph_order: GlyphOrder = self.anchors.keys().cloned().collect();
+            let char_map = self
+                .char_map
+                .iter()
+                .map(|(uv, name)| (*uv, glyph_order.glyph_id(name).unwrap()))
+                .collect();
 
             let ctx =
-                MarkLookupBuilder::new(anchorsref, &glyph_order, static_metadata, ast).unwrap();
+                MarkLookupBuilder::new(anchorsref, &glyph_order, static_metadata, ast, char_map)
+                    .unwrap();
 
             ctx.build().unwrap()
         }
@@ -1066,6 +1307,76 @@ mod tests {
             tildecomb @(x: 100, y: 300)
               @(x: 100, y: 200) [acutecomb, tildecomb]
             "#
+        );
+    }
+
+    #[test]
+    fn abvm_blwm_features() {
+        let mut input = MarksInput::default();
+        let out = input
+            .add_glyph("dottedCircle", None, |anchors| {
+                anchors
+                    .add("top", [(297, 552)])
+                    .add("topright", [(491, 458)])
+                    .add("bottom", [(297, 0)]);
+            })
+            .add_glyph("nukta-kannada", None, |anchors| {
+                anchors.add("_bottom", [(0, 0)]);
+            })
+            .add_glyph("candrabindu-kannada", None, |anchors| {
+                anchors.add("_top", [(0, 547)]);
+            })
+            .add_glyph("halant-kannada", None, |anchors| {
+                anchors.add("_topright", [(-456, 460)]);
+            })
+            .add_glyph("ka-kannada", None, |anchors| {
+                anchors.add("bottom", [(290, 0)]);
+            })
+            .add_glyph("ka-kannada.base", None, |anchors| {
+                anchors
+                    .add("top", [(291, 547)])
+                    .add("topright", [(391, 460)])
+                    .add("bottom", [(290, 0)]);
+            })
+            .set_user_fea(
+                "
+            languagesystem DFLT dflt;
+            languagesystem knda dflt;
+            languagesystem knd2 dflt;
+
+            feature psts {
+                sub ka-kannada' halant-kannada by ka-kannada.base;
+            } psts;",
+            )
+            .get_normalized_output();
+
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+                # abvm: DFLT/dflt, knd2/dflt, knda/dflt ## 2 MarkToBase rules
+                # lookupflag LookupFlag(0)
+                ka-kannada.base @(x: 291, y: 547)
+                  @(x: 0, y: 547) candrabindu-kannada
+                ka-kannada.base @(x: 391, y: 460)
+                  @(x: -456, y: 460) halant-kannada
+
+                # blwm: DFLT/dflt, knd2/dflt, knda/dflt ## 2 MarkToBase rules
+                # lookupflag LookupFlag(0)
+                ka-kannada @(x: 290, y: 0)
+                  @(x: 0, y: 0) nukta-kannada
+                ka-kannada.base @(x: 290, y: 0)
+                  @(x: 0, y: 0) nukta-kannada
+
+                # mark: DFLT/dflt, knd2/dflt,knda/dflt ## 3 MarkToBase rules
+                # lookupflag LookupFlag(0)
+                dottedCircle @(x: 297, y: 0)
+                  @(x: 0, y: 0) nukta-kannada
+                dottedCircle @(x: 297, y: 552)
+                  @(x: 0, y: 547) candrabindu-kannada
+                dottedCircle @(x: 491, y: 458)
+                  @(x: -456, y: 460) halant-kannada
+
+                "#
         );
     }
 
@@ -1241,7 +1552,7 @@ mod tests {
             .add_glyph("f_i", None, |anchors| {
                 anchors.add("caret_1", [(100, 0)]);
             })
-            .add_glyph("v_v", None, |anchors| {
+            .add_glyph("f_l", None, |anchors| {
                 anchors.add("vcaret_1", [(0, -222)]);
             })
             .compile();
@@ -1256,9 +1567,9 @@ mod tests {
             "{caret:?}"
         );
 
-        let vv = &lig_carets.lig_glyphs[1].caret_values;
-        assert_eq!(vv.len(), 1);
-        let caret = vv[0].as_ref();
+        let f_l = &lig_carets.lig_glyphs[1].caret_values;
+        assert_eq!(f_l.len(), 1);
+        let caret = f_l[0].as_ref();
         assert!(
             matches!(caret, RawCaretValue::Format1(t) if t.coordinate == -222),
             "{caret:?}"

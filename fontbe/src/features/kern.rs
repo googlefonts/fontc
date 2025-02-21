@@ -7,7 +7,6 @@ use std::{
 
 use fea_rs::{
     compile::{FeatureKey, FeatureProvider, PairPosBuilder, ValueRecord as ValueRecordBuilder},
-    typed::{AstNode, LanguageSystem},
     GlyphSet, ParseTree,
 };
 use fontdrasil::{
@@ -504,7 +503,7 @@ fn assign_lookups_to_scripts(
     let is_kern_feature = current_feature == KERN;
     assert!(is_kern_feature || current_feature == DIST);
 
-    let fea_langs_by_script = get_fea_language_systems(ast);
+    let fea_langs_by_script = super::get_fea_language_systems(ast);
 
     let mut default_lookups = Vec::new();
     if let Some(common_lookups) = lookups_by_script
@@ -1006,7 +1005,7 @@ fn guess_font_scripts(
 ) -> HashSet<UnicodeShortName> {
     let mut scripts = scripts_for_chars(glyphs);
     // add scripts explicitly defined in fea
-    scripts.extend(get_script_language_systems(ast).keys().cloned());
+    scripts.extend(super::get_script_language_systems(ast).keys().cloned());
     scripts
 }
 
@@ -1016,43 +1015,6 @@ fn scripts_for_chars(glyphs: &HashMap<u32, GlyphId16>) -> HashSet<UnicodeShortNa
         .iter_glyphs()
         .filter_map(|(_, codepoint)| super::properties::single_script_for_codepoint(codepoint))
         .collect()
-}
-
-/// returns a map of opentype script: [opentype lang], for the languagesystems in FEA
-fn get_fea_language_systems(ast: &ParseTree) -> BTreeMap<Tag, Vec<Tag>> {
-    let mut languages_by_script = BTreeMap::new();
-    for langsys in ast
-        .typed_root()
-        .statements()
-        .filter_map(LanguageSystem::cast)
-    {
-        languages_by_script
-            .entry(langsys.script().to_raw())
-            .or_insert(Vec::new())
-            .push(langsys.language().to_raw())
-    }
-    languages_by_script
-}
-
-// <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfcf0b1c0fa4e133e/Lib/ufo2ft/featureWriters/ast.py#L23>
-/// returns a map of unicode script names to (ot_script, `[ot_lang]`)
-fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec<(Tag, Vec<Tag>)>> {
-    let languages_by_script = get_fea_language_systems(ast);
-    let mut unic_script_to_languages = HashMap::new();
-    for (ot_script, langs) in languages_by_script {
-        let Some(unicode_script) = super::properties::ot_tag_to_script(ot_script) else {
-            if ot_script != DFLT_SCRIPT {
-                log::warn!("no unicode script for OT script tag {ot_script}");
-            }
-            continue;
-        };
-        unic_script_to_languages
-            .entry(unicode_script)
-            .or_insert(Vec::new())
-            .push((ot_script, langs));
-    }
-
-    unic_script_to_languages
 }
 
 // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b340c/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L946>

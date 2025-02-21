@@ -411,13 +411,19 @@ impl Persistable for GvarFragment {
     }
 }
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MarkLookups {
+    pub(crate) mark_base: Vec<PendingLookup<MarkToBaseBuilder>>,
+    pub(crate) mark_mark: Vec<PendingLookup<MarkToMarkBuilder>>,
+    pub(crate) mark_lig: Vec<PendingLookup<MarkToLigBuilder>>,
+}
 /// Marks, ready to feed to fea-rs in the form it expects
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FeaRsMarks {
     pub(crate) glyphmap: GlyphMap,
-    pub(crate) mark_base: Vec<PendingLookup<MarkToBaseBuilder>>,
-    pub(crate) mark_mark: Vec<PendingLookup<MarkToMarkBuilder>>,
-    pub(crate) mark_lig: Vec<PendingLookup<MarkToLigBuilder>>,
+    pub(crate) mark_mkmk: MarkLookups,
+    pub(crate) abvm: MarkLookups,
+    pub(crate) blwm: MarkLookups,
     pub(crate) curs: Vec<PendingLookup<CursivePosBuilder>>,
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
 }

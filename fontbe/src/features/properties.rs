@@ -84,7 +84,7 @@ impl ScriptDirection {
 
 /// Iff a codepoint belongs to a single script, return it.
 pub(crate) fn single_script_for_codepoint(cp: u32) -> Option<UnicodeShortName> {
-    let mut scripts = scripts_for_cp(cp);
+    let mut scripts = scripts_for_codepoint(cp);
 
     match (scripts.next(), scripts.next()) {
         (Some(script), None) => Some(script),
@@ -146,6 +146,23 @@ where
     Ok(sets)
 }
 
+pub(crate) fn glyphs_matching_predicate(
+    glyphs: &impl CharMap,
+    predicate: impl Fn(u32) -> bool,
+    gsub: Option<&Gsub>,
+) -> Result<HashSet<GlyphId16>, ReadError> {
+    classify(
+        glyphs,
+        |cp, buf| {
+            if predicate(cp) {
+                buf.push(true);
+            }
+        },
+        gsub,
+    )
+    .map(|mut items| items.remove(&true).unwrap_or_default())
+}
+
 /// Returns a map of gids to their scripts
 pub(crate) fn scripts_by_glyph(
     glyphs: &impl CharMap,
@@ -159,7 +176,7 @@ pub(crate) fn scripts_by_glyph(
             if known_scripts.is_empty() {
                 buf.push(COMMON_SCRIPT);
             } else {
-                buf.extend(scripts_for_cp(cp).filter(|script| {
+                buf.extend(scripts_for_codepoint(cp).filter(|script| {
                     *script == COMMON_SCRIPT
                         || *script == INHERITED_SCRIPT
                         || known_scripts.contains(script)
@@ -211,7 +228,8 @@ impl<T: Ord + Eq, U: Clone> BinarySearchExact<T, U> for &[(T, U)] {
     }
 }
 
-fn scripts_for_cp(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
+/// Iterate over unicode scripts for the given codepoint
+pub(crate) fn scripts_for_codepoint(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
     let temp_fix = script_ext_for_cp_override(cp);
     let normal_path = if temp_fix.is_none() {
         Some(
@@ -450,7 +468,7 @@ mod tests {
     fn expected_unicode_script_overrides() {
         // this codepoint did not have scriptext property in unicode 15 but does
         // in unicode 16, so we need to manually override
-        let apostrophemod = scripts_for_cp(0x2bc);
+        let apostrophemod = scripts_for_codepoint(0x2bc);
         assert_eq!(
             apostrophemod.collect::<Vec<_>>(),
             ["Beng", "Cyrl", "Deva", "Latn", "Lisu", "Thai", "Toto",]
@@ -458,7 +476,7 @@ mod tests {
 
         // this codepoint's scriptex property changed in unicode16, but shouldn't
         // need an override because it existed in unicode 16
-        let other = scripts_for_cp(0x0ce6);
+        let other = scripts_for_codepoint(0x0ce6);
         assert_eq!(other.collect::<Vec<_>>(), ["Knda", "Nand", "Tutg"]);
     }
 }
