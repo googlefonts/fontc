@@ -439,6 +439,8 @@ fn rewrite_ttx(input: &str) -> String {
     for line in input.lines() {
         if line.starts_with("<ttFont") {
             out.push_str("<ttFont>\n");
+        } else if line.starts_with("    <checkSumAdjustment value=\"0x") {
+            out.push_str("    <checkSumAdjustment value=\"0x0\"/>\n");
         } else {
             out.push_str(line);
             out.push('\n')
