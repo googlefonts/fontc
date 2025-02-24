@@ -36,6 +36,8 @@ pub enum Error {
     BadData,
     #[error("Unknown escape code")]
     UnknownEscape,
+    #[error("Invalid unicode escape sequence: '{0}'")]
+    InvalidUnicodeEscape(String),
     #[error("Expected string, found '{token_name}")]
     NotAString { token_name: &'static str },
     #[error("Missing '='")]
@@ -69,7 +71,7 @@ pub enum Error {
     Parse(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum Token<'a> {
     Eof,
     OpenBrace,
@@ -471,43 +473,13 @@ impl<'a> Token<'a> {
                         }
                         b'\\' => {
                             buf.push_str(&s[cow_start..ix]);
-                            ix += 1;
-                            if ix == s.len() {
+                            if ix + 1 == s.len() {
                                 return Err(Error::UnclosedString);
                             }
-                            let b = s.as_bytes()[ix];
-                            match b {
-                                b'"' | b'\\' => cow_start = ix,
-                                b'n' => {
-                                    buf.push('\n');
-                                    cow_start = ix + 1;
-                                }
-                                b'r' => {
-                                    buf.push('\r');
-                                    cow_start = ix + 1;
-                                }
-                                _ => {
-                                    if (b'0'..=b'3').contains(&b) && ix + 2 < s.len() {
-                                        // octal escape
-                                        let b1 = s.as_bytes()[ix + 1];
-                                        let b2 = s.as_bytes()[ix + 2];
-                                        if (b'0'..=b'7').contains(&b1)
-                                            && (b'0'..=b'7').contains(&b2)
-                                        {
-                                            let oct =
-                                                (b - b'0') * 64 + (b1 - b'0') * 8 + (b2 - b'0');
-                                            buf.push(oct as char);
-                                            ix += 2;
-                                            cow_start = ix + 1;
-                                        } else {
-                                            return Err(Error::UnknownEscape);
-                                        }
-                                    } else {
-                                        return Err(Error::UnknownEscape);
-                                    }
-                                }
-                            }
-                            ix += 1;
+                            let (c, len) = parse_escape(&s[ix..])?;
+                            buf.push(c);
+                            ix += len;
+                            cow_start = ix;
                         }
                         _ => ix += 1,
                     }
@@ -572,6 +544,77 @@ impl<'a> Token<'a> {
             Token::OpenParen => "OpenParen",
             Token::Data(_) => "Data",
         }
+    }
+}
+
+fn parse_escape(s: &str) -> Result<(char, usize), Error> {
+    // checked before this is called
+    assert!(s.starts_with('\\') && s.len() > 1);
+
+    let mut ix = 1;
+    let b = s.as_bytes()[ix];
+    match b {
+        b'"' | b'\\' => Ok((b as _, 2)),
+        b'n' => Ok(('\n', 2)),
+        b'r' => Ok(('\r', 2)),
+        b't' => Ok(('\t', 2)),
+        // unicode escapes
+        b'U' if s.len() >= 3 => {
+            // here we will parse up to 4 hexdigits:
+            // https://github.com/opensource-apple/CF/blob/3cc41a76b1491f5/CFOldStylePList.c#L150C2-L150C6
+            ix += 1;
+            let (val, len) = parse_hex_digit(&s.as_bytes()[ix..])?;
+            ix += len;
+            let result = if !is_surrogate(val) || !s.as_bytes()[ix..].starts_with(b"\\U") {
+                // we can't cast! this is a utf-16 value, not a codepoint
+                char::decode_utf16([val]).next()
+            } else {
+                ix += 2;
+                let (val2, len) = parse_hex_digit(&s.as_bytes()[ix..])?;
+                ix += len;
+                char::decode_utf16([val, val2]).next()
+            };
+            result
+                .transpose()
+                .ok()
+                .flatten()
+                .ok_or_else(|| Error::InvalidUnicodeEscape(s[..ix].to_string()))
+                .map(|c| (c, ix))
+        }
+        b'0'..=b'3' if s.len() >= 4 => {
+            // octal escape
+            let b1 = s.as_bytes()[ix + 1];
+            let b2 = s.as_bytes()[ix + 2];
+            if (b'0'..=b'7').contains(&b1) && (b'0'..=b'7').contains(&b2) {
+                let oct = (b - b'0') * 64 + (b1 - b'0') * 8 + (b2 - b'0');
+                ix += 3;
+                Ok((oct as _, ix))
+            } else {
+                Err(Error::UnknownEscape)
+            }
+        }
+        _ => Err(Error::UnknownEscape),
+    }
+}
+
+fn is_surrogate(val: u16) -> bool {
+    matches!(val, 0xD800..=0xDFFF)
+}
+
+// parse up to four hex digits as a u16
+// returns an error if the first byte is not a valid ascii hex digit,
+// then will read up to four bytes
+fn parse_hex_digit(bytes: &[u8]) -> Result<(u16, usize), Error> {
+    match bytes {
+        &[] => Err(Error::UnknownEscape),
+        &[one, ..] if !one.is_ascii_hexdigit() => Err(Error::UnknownEscape),
+        other => Ok(other
+            .iter()
+            .take(4)
+            .map_while(|b| (*b as char).to_digit(16).map(|x| x as u16))
+            .fold((0u16, 0usize), |(num, len), hexval| {
+                ((num << 4) + hexval, len + 1)
+            })),
     }
 }
 
@@ -1076,5 +1119,51 @@ mod tests {
         );
         assert_eq!(second.get("tag").and_then(Plist::as_str), Some("slng"));
         assert_eq!(second.get("num").and_then(Plist::as_f64), Some(-3.0));
+    }
+
+    #[test]
+    fn parse_hex_digit_sanity() {
+        assert_eq!(parse_hex_digit(b"2019"), Ok((0x2019, 4)));
+        assert_eq!(parse_hex_digit(b"201"), Ok((0x201, 3)));
+        assert_eq!(parse_hex_digit(b"201z"), Ok((0x201, 3)));
+        assert_eq!(parse_hex_digit(b"fu"), Ok((0xf, 1)));
+        assert_eq!(parse_hex_digit(b"z"), Err(Error::UnknownEscape));
+    }
+
+    // partially borrowed from from python: https://github.com/fonttools/openstep-plist/blob/2fa77b267d67/tests/test_parser.py#L135
+    #[test]
+    fn escape_parsing_good() {
+        for (input, expected, expected_len) in [
+            ("\\n", '\n', 2),                    // octal escape
+            ("\\012", '\n', 4),                  // octal escape
+            ("\\U2019", '\u{2019}', 6),          // unicode escape (’)
+            ("\\UD83D\\UDCA9", '\u{1F4A9}', 12), // surrogate pair (💩)
+        ] {
+            let (result, len) = parse_escape(input).unwrap();
+            {
+                assert_eq!((result, len), (expected, expected_len));
+            }
+        }
+    }
+
+    #[test]
+    fn escape_parsing_bad() {
+        assert_eq!(
+            parse_escape("\\UD83D"),
+            Err(Error::InvalidUnicodeEscape("\\UD83D".to_string()))
+        );
+    }
+
+    #[test]
+    fn parsing_escape_in_string() {
+        for (input, expected, expected_len) in [
+            ("\"a\\012b\"", "a\nb", 8),
+            ("\"a\\nb\"", "a\nb", 6),
+            ("\"a\\U000Ab\"", "a\nb", 10),
+        ] {
+            let (token, len) = Token::lex(input, 0).unwrap();
+            assert_eq!(token, Token::String(Cow::Borrowed(expected)));
+            assert_eq!(len, expected_len);
+        }
     }
 }
