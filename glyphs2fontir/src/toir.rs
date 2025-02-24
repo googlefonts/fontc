@@ -371,6 +371,7 @@ mod tests {
         let path = Path {
             closed: true,
             nodes,
+            ..Default::default()
         };
 
         let bez = to_ir_path("hello".into(), &path).unwrap();
