@@ -492,18 +492,16 @@ impl FeaFirstPassOutput {
             Opts,
         };
 
-        let (compilation, _) = fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
+        match fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
             &ast,
             glyph_map,
             None,
             None,
             Opts::new().compile_gpos(false),
-        )
-        .map_err(|err| {
-            Error::FeaCompileError(fea_rs::compile::error::CompilerError::CompilationFail(err))
-        })?;
-
-        Self::new(ast, compilation)
+        ) {
+            Ok((compilation, _)) => Self::new(ast, compilation),
+            Err(err) => panic!("{}", err.display()),
+        }
     }
 
     /// Return a read-fonts GSUB table (for computing glyph closure for mark/kern)

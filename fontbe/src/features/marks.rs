@@ -605,7 +605,7 @@ impl<'a> MarkLookupBuilder<'a> {
             // no abvm scripts: everything is a mark
             return Ok((
                 Default::default(),
-                self.char_map.values().copied().collect(),
+                self.glyph_order.iter().map(|(gid, _)| gid).collect(),
             ));
         }
 
@@ -730,7 +730,7 @@ fn resolve_anchor(
             resolve_anchor_once(anchor, static_metadata).map(BaseOrLigAnchors::Base)
         }
         BaseOrLigAnchors::Ligature(anchors) => anchors
-            .into_iter()
+            .iter()
             .map(|a| {
                 a.map(|a| resolve_anchor_once(a, static_metadata))
                     .transpose()
@@ -963,19 +963,14 @@ mod tests {
             ("ka-kannada", '\u{0C95}'),
         ];
 
-        static UNMAPPED: &[&str] = &["ka-kannada.base"];
+        static UNMAPPED: &[&str] = &["ka-kannada.base", "a.alt"];
 
         let c = agl::char_for_agl_name(name.as_str()).or_else(|| {
             MANUAL
                 .iter()
                 .find_map(|(n, uv)| (name.as_str() == *n).then_some(*uv))
         });
-        if c.is_none()
-            && UNMAPPED
-                .iter()
-                .find(|except| **except == name.as_str())
-                .is_none()
-        {
+        if c.is_none() && !UNMAPPED.iter().any(|except| *except == name.as_str()) {
             panic!("please add a manual charmap entry for '{name}'");
         }
         c
@@ -1487,6 +1482,43 @@ mod tests {
                   @(x: -456, y: 460) halant-kannada
 
                 "#
+        );
+    }
+
+    #[test]
+    fn include_unmapped_glyph_with_no_abvm() {
+        // make sure that we are including all glyphs (even those only reachable
+        // via GSUB closure) in the case where we do not have any abvm glyphs
+        let mut out = MarksInput::default();
+        let out = out
+            // a.alt is only reachable via substitution
+            .set_user_fea(
+                "languagesystem latn dflt;
+        feature test {
+            sub a by a.alt;
+        } test;",
+            )
+            .add_glyph("a", None, |anchors| {
+                anchors.add("top", [(100, 0)]);
+            })
+            .add_glyph("a.alt", None, |anchors| {
+                anchors.add("top", [(110, 0)]);
+            })
+            .add_glyph("acutecomb", None, |anchors| {
+                anchors.add("_top", [(202, 0)]);
+            })
+            .get_normalized_output();
+
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+            # mark: latn/dflt ## 2 MarkToBase rules
+            # lookupflag LookupFlag(0)
+            a @(x: 100, y: 0)
+              @(x: 202, y: 0) acutecomb
+            a.alt @(x: 110, y: 0)
+              @(x: 202, y: 0) acutecomb
+          "#
         );
     }
 
