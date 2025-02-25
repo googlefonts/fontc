@@ -220,7 +220,6 @@ mod tests {
             },
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider, TableRef,
         },
-        tables::layout::LookupFlag,
         tables::{
             gdef::GlyphClassDef,
             glyf::{Bbox, Glyph as RawGlyph},
@@ -2234,126 +2233,6 @@ mod tests {
                 ]
             ),
             (bases, marks)
-        );
-    }
-
-    #[test]
-    fn compile_mark_mark() {
-        let result = TestCompile::compile_source("glyphs3/Oswald-AE-comb.glyphs");
-        let font = result.font();
-        let gpos = font.gpos().unwrap();
-        let gdef = font.gdef().unwrap();
-        let acutecomb = result.get_gid("acutecomb");
-        let brevecomb = result.get_gid("brevecomb");
-        let tildecomb = result.get_gid("tildecomb");
-        let macroncomb = result.get_gid("macroncomb");
-        let breveinvertedcomb = result.get_gid("breveinvertedcomb");
-
-        let mark_mark_lookups = gpos
-            .lookup_list()
-            .unwrap()
-            .lookups()
-            .iter()
-            .filter_map(|lookup| match lookup {
-                Ok(PositionLookup::MarkToMark(lookup)) => Some(lookup),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(mark_mark_lookups.len(), 2);
-
-        let mark_mark_lookup = mark_mark_lookups.first().unwrap();
-        let mark_mark_subtables = mark_mark_lookup
-            .subtables()
-            .iter()
-            .map(|s| s.unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(mark_mark_subtables.len(), 1);
-
-        let mut bases = Vec::new();
-        let mut marks = Vec::new();
-        for sub in &mark_mark_subtables {
-            let mark_cov = sub.mark1_coverage().unwrap();
-            let base_cov = sub.mark2_coverage().unwrap();
-            let mark1array = sub.mark1_array().unwrap();
-            let mark2array = sub.mark2_array().unwrap();
-
-            assert_eq!(mark_cov.iter().count(), mark1array.mark_count() as usize);
-            assert_eq!(base_cov.iter().count(), mark2array.mark2_count() as usize);
-
-            for (gid, rec) in mark_cov.iter().zip(mark1array.mark_records().iter()) {
-                let mark_class = rec.mark_class();
-                let anchor = rec.mark_anchor(mark1array.offset_data()).unwrap();
-                let x = anchor.x_coordinate();
-                let y = anchor.y_coordinate();
-                marks.push((gid, mark_class, (x, y)));
-            }
-
-            for (i, gid) in base_cov.iter().enumerate() {
-                let rec = mark2array.mark2_records().get(i).unwrap();
-                let anchors = rec
-                    .mark2_anchors(mark2array.offset_data())
-                    .iter()
-                    .map(|anchor| {
-                        anchor
-                            .transpose()
-                            .unwrap()
-                            .map(|anchor| (anchor.x_coordinate(), anchor.y_coordinate()))
-                            .unwrap_or_default()
-                    })
-                    .collect::<Vec<_>>();
-                bases.push((gid, anchors));
-            }
-        }
-
-        assert_eq!(
-            marks,
-            vec![
-                (acutecomb, 0, (0, 578)),
-                (brevecomb, 0, (-1, 578)),
-                (tildecomb, 0, (0, 578)),
-                (macroncomb, 0, (0, 578)),
-            ]
-        );
-
-        assert_eq!(
-            bases,
-            [
-                (acutecomb, vec![(0, 810)]),
-                (brevecomb, vec![(-1, 776)]),
-                (tildecomb, vec![(0, 776)]),
-                (macroncomb, vec![(0, 810)]),
-                (breveinvertedcomb, vec![(-1, 776)]),
-            ]
-        );
-
-        let mark_filter_id = mark_mark_lookup
-            .lookup_flag()
-            .contains(LookupFlag::USE_MARK_FILTERING_SET)
-            .then_some(mark_mark_lookup.mark_filtering_set())
-            .flatten();
-        assert_eq!(mark_filter_id, Some(0));
-
-        let mark_filter_set = gdef
-            .mark_glyph_sets_def()
-            .unwrap()
-            .as_ref()
-            .map(|sets| {
-                sets.coverages()
-                    .get(mark_filter_id.unwrap().into())
-                    .unwrap()
-            })
-            .map(|cov| cov.iter().collect::<Vec<_>>())
-            .unwrap();
-
-        assert_eq!(
-            mark_filter_set,
-            vec![
-                acutecomb,
-                brevecomb,
-                tildecomb,
-                macroncomb,
-                breveinvertedcomb
-            ]
         );
     }
 

@@ -80,14 +80,42 @@ struct MarkGroup<'a> {
 }
 
 impl MarkGroup<'_> {
-    fn make_filter_glyph_set(&self) -> Option<GlyphSet> {
+    //https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da594e3cc56a169e5c3d5fa267c/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L796
+    fn make_filter_glyph_set(&self, filter_glyphs: &HashSet<GlyphId16>) -> Option<GlyphSet> {
+        let all_marks = self
+            .marks
+            .iter()
+            .map(|(gid, _)| *gid)
+            .collect::<HashSet<_>>();
         self.filter_glyphs.then(|| {
             self.marks
                 .iter()
-                .map(|(gid, _)| *gid)
-                .chain(self.bases.iter().map(|(gid, _)| *gid))
+                .filter_map(|(gid, _)| filter_glyphs.contains(gid).then_some(*gid))
+                .chain(
+                    self.bases
+                        .iter()
+                        .filter_map(|(gid, _)| (!all_marks.contains(gid)).then_some(*gid)),
+                )
                 .collect()
         })
+    }
+
+    fn only_using_glyphs(&self, include: &HashSet<GlyphId16>) -> Option<MarkGroup> {
+        let bases = self
+            .bases
+            .iter()
+            .filter(|(gid, _)| include.contains(gid))
+            .map(|(gid, anchors)| (*gid, anchors.clone()))
+            .collect::<Vec<_>>();
+        if bases.is_empty() || self.marks.is_empty() {
+            None
+        } else {
+            Some(MarkGroup {
+                bases,
+                marks: self.marks.clone(),
+                filter_glyphs: self.filter_glyphs,
+            })
+        }
     }
 }
 
@@ -281,7 +309,7 @@ impl<'a> MarkLookupBuilder<'a> {
         mark_mark_groups: &BTreeMap<GroupName, MarkGroup>,
         mark_lig_groups: &BTreeMap<GroupName, MarkGroup>,
         include_glyphs: &HashSet<GlyphId16>,
-        marks_filter: impl Fn(&str) -> bool,
+        marks_filter: impl Fn(&GroupName) -> bool,
     ) -> Result<MarkLookups, Error> {
         let mark_base = self.make_lookups_type::<MarkToBaseBuilder>(
             mark_base_groups,
@@ -309,46 +337,44 @@ impl<'a> MarkLookupBuilder<'a> {
     fn make_lookups_type<T: MarkAttachmentBuilder>(
         &self,
         groups: &BTreeMap<GroupName, MarkGroup>,
-        filter_glyphs: &HashSet<GlyphId16>,
-        marks_filter: &impl Fn(&str) -> bool,
+        include_glyphs: &HashSet<GlyphId16>,
+        // filters based on the name of an anchor!
+        marks_filter: &impl Fn(&GroupName) -> bool,
     ) -> Result<Vec<PendingLookup<T>>, Error> {
-        groups
-            .into_iter()
-            .filter(|(group_name, group)| {
-                marks_filter(group_name)
-                    // we want to skip any group that doesn't have at least
-                    // one glyph in the filter_glyphs set.
-                    && !(group.marks.is_empty()
-                        || !group
-                            .bases
-                            .iter()
-                            .map(|(g, _)| *g)
-                            .any(|gid| filter_glyphs.contains(&gid)))
-            })
-            .map(|(group_name, group)| {
-                let mut builder = T::default();
-                let filter_set = group.make_filter_glyph_set();
-                let mut flags = LookupFlag::empty();
-                if filter_set.is_some() {
-                    flags |= LookupFlag::USE_MARK_FILTERING_SET;
-                }
-                for (mark_gid, anchor) in &group.marks {
-                    let anchor = resolve_anchor_once(anchor, self.static_metadata)
-                        .map_err(|e| self.convert_delta_error(e, *mark_gid))?;
-                    builder.add_mark(*mark_gid, &group_name, anchor);
-                }
+        let mut result = Vec::with_capacity(groups.len());
+        for (name, group) in groups {
+            if !marks_filter(name) {
+                continue;
+            }
 
-                for (base_gid, anchor) in &group.bases {
-                    if !filter_glyphs.contains(base_gid) {
-                        continue;
-                    }
-                    let anchor = resolve_anchor(anchor, self.static_metadata)
-                        .map_err(|e| self.convert_delta_error(e, *base_gid))?;
-                    builder.add_base(*base_gid, &group_name, anchor);
+            // reduce the group to only include glyphs used in this feature
+            let Some(group) = group.only_using_glyphs(include_glyphs) else {
+                continue;
+            };
+
+            let mut builder = T::default();
+            let filter_set = group.make_filter_glyph_set(include_glyphs);
+            let mut flags = LookupFlag::empty();
+            if filter_set.is_some() {
+                flags |= LookupFlag::USE_MARK_FILTERING_SET;
+            }
+            for (mark_gid, anchor) in &group.marks {
+                let anchor = resolve_anchor_once(anchor, self.static_metadata)
+                    .map_err(|e| self.convert_delta_error(e, *mark_gid))?;
+                builder.add_mark(*mark_gid, name, anchor);
+            }
+
+            for (base_gid, anchor) in &group.bases {
+                if !include_glyphs.contains(base_gid) {
+                    continue;
                 }
-                Ok(PendingLookup::new(vec![builder], flags, filter_set))
-            })
-            .collect()
+                let anchor = resolve_anchor(anchor, self.static_metadata)
+                    .map_err(|e| self.convert_delta_error(e, *base_gid))?;
+                builder.add_base(*base_gid, name, anchor);
+            }
+            result.push(PendingLookup::new(vec![builder], flags, filter_set));
+        }
+        Ok(result)
     }
 
     fn make_mark_to_base_groups(&self) -> BTreeMap<GroupName, MarkGroup<'a>> {
@@ -609,11 +635,11 @@ impl<'a> MarkLookupBuilder<'a> {
 
 // matching current fonttools behaviour, we treat treat every non-bottom as a top:
 // https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da5/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L998
-fn is_above_mark(anchor_name: &str) -> bool {
+fn is_above_mark(anchor_name: &GroupName) -> bool {
     !is_below_mark(anchor_name)
 }
 
-fn is_below_mark(anchor_name: &str) -> bool {
+fn is_below_mark(anchor_name: &GroupName) -> bool {
     anchor_name.starts_with("bottom") || anchor_name == "nukta"
 }
 
@@ -923,6 +949,9 @@ mod tests {
 
     fn char_for_glyph(name: &GlyphName) -> Option<char> {
         static MANUAL: &[(&str, char)] = &[
+            ("brevecomb", '\u{0306}'),
+            ("breveinvertedcomb", '\u{0311}'),
+            ("macroncomb", '\u{0304}'),
             ("f_f", '\u{FB00}'),
             ("f_i", '\u{FB01}'),
             ("f_l", '\u{FB02}'),
@@ -1306,6 +1335,87 @@ mod tests {
             # filter glyphs: [acutecomb, tildecomb]
             tildecomb @(x: 100, y: 300)
               @(x: 100, y: 200) [acutecomb, tildecomb]
+            "#
+        );
+    }
+
+    // reduced from testdata/glyphs3/Oswald-AE-comb
+    //
+    // this ends up mostly being a test about how we generate mark filtering sets..
+    #[test]
+    fn oswald_ae_test_case() {
+        let mut input = MarksInput::default();
+        let out = input
+            .add_glyph("A", None, |anchors| {
+                anchors
+                    .add("bottom", [(234, 0)])
+                    .add("ogonek", [(411, 0)])
+                    .add("top", [(234, 810)]);
+            })
+            .add_glyph("E", None, |anchors| {
+                anchors
+                    .add("topleft", [(20, 810)])
+                    .add("bottom", [(216, 0)])
+                    .add("ogonek", [(314, 0)])
+                    .add("top", [(217, 810)]);
+            })
+            .add_glyph("acutecomb", None, |anchors| {
+                anchors.add("top", [(0, 810)]).add("_top", [(0, 578)]);
+            })
+            .add_glyph("brevecomb", None, |anchors| {
+                anchors.add("top", [(0, 810)]).add("_top", [(0, 578)]);
+            })
+            .add_glyph("tildecomb", None, |anchors| {
+                anchors.add("top", [(0, 742)]).add("_top", [(0, 578)]);
+            })
+            .add_glyph("macroncomb", None, |anchors| {
+                anchors.add("top", [(0, 810)]).add("_top", [(0, 578)]);
+            })
+            .add_glyph("breveinvertedcomb", None, |anchors| {
+                anchors
+                    .add("top", [(0, 810)])
+                    .add("top.a", [(0, 810)])
+                    .add("_top.a", [(0, 578)]);
+            })
+            .get_normalized_output();
+
+        assert_eq_ignoring_ws!(
+            out,
+            // this gets an abvm feature because we don't specify any languagesystems
+            r#"
+            # abvm: DFLT/dflt ## 2 MarkToMark rules
+            # lookupflag LookupFlag(16)
+            # filter glyphs: [acutecomb,macroncomb]
+            acutecomb @(x: 0, y: 810)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+            macroncomb @(x: 0, y: 810)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+
+            # mark: DFLT/dflt ## 2 MarkToBase rules
+            # lookupflag LookupFlag(0)
+            A @(x: 234, y: 810)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+            E @(x: 217, y: 810)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+
+            # mkmk: DFLT/dflt ## 6 MarkToMark rules
+            # lookupflag LookupFlag(16)
+            # filter glyphs: [acutecomb,brevecomb,breveinvertedcomb,macroncomb,tildecomb]
+            acutecomb @(x: 0, y: 810)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+            brevecomb @(x: 0, y: 810)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+            breveinvertedcomb @(x: 0, y: 810)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+            # filter glyphs: [breveinvertedcomb]
+            breveinvertedcomb @(x: 0, y: 810)
+              @(x: 0, y: 578) breveinvertedcomb
+            # filter glyphs: [acutecomb,brevecomb,breveinvertedcomb,macroncomb,tildecomb]
+            macroncomb @(x: 0, y: 810)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+            tildecomb @(x: 0, y: 742)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+
             "#
         );
     }
