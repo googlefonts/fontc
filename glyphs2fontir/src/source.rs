@@ -17,7 +17,7 @@ use fontir::{
     ir::{
         self, AnchorBuilder, GdefCategories, GlobalMetric, GlobalMetrics, GlyphInstance,
         GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues,
-        NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+        NameBuilder, NameKey, NamedInstance, PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
     source::Source,
@@ -33,8 +33,7 @@ use write_fonts::{
         gasp::{GaspRange, GaspRangeBehavior},
         gdef::GlyphClassDef,
         os2::SelectionFlags,
-    },
-    types::{NameId, Tag},
+    }, types::{NameId, Tag}
 };
 
 use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
@@ -286,13 +285,21 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         let categories = make_glyph_categories(font);
 
+        let mut postscript_names = PostscriptNames::default();
+        for glyph in font.glyphs.values() {
+            let name = glyph.name.as_str();
+            if let Some(production_name) = glyph.production_name.as_ref() {
+                postscript_names.insert(GlyphName::from(name), GlyphName::from(production_name.clone()));
+            }
+        }
+
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
             names(font, selection_flags),
             axes,
             named_instances,
             global_locations,
-            Default::default(), // TODO: impl reading PS names from Glyphs
+            postscript_names,
             italic_angle,
             categories,
             number_values,

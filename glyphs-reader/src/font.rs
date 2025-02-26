@@ -261,6 +261,7 @@ pub struct Glyph {
     pub right_kern: Option<SmolStr>,
     pub category: Option<Category>,
     pub sub_category: Option<Subcategory>,
+    pub production_name: Option<SmolStr>,
 }
 
 impl Glyph {
@@ -781,6 +782,7 @@ struct RawGlyph {
     unicode: Option<String>,
     category: Option<SmolStr>,
     sub_category: Option<SmolStr>,
+    production_name: Option<SmolStr>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
 }
@@ -2111,19 +2113,22 @@ impl RawGlyph {
 
         let mut category = parse_category(self.category.as_deref(), &self.glyphname);
         let mut sub_category = parse_category(self.sub_category.as_deref(), &self.glyphname);
+        let mut production_name = self.production_name;
 
         let codepoints = self
             .unicode
             .map(|s| parse_codepoint_str(&s, codepoint_radix))
             .unwrap_or_default();
 
-        if category.is_none() || sub_category.is_none() {
+        if category.is_none() || sub_category.is_none() || production_name.is_none() {
             if let Some(result) = glyph_data.query(&self.glyphname, Some(&codepoints)) {
                 // if they were manually set don't change them, otherwise do
                 category = category.or(Some(result.category));
                 sub_category = sub_category.or(result.subcategory);
+                production_name = production_name.or(result.production_name.map(SmolStr::new));
             }
         }
+
 
         Ok(Glyph {
             name: self.glyphname,
@@ -2134,6 +2139,7 @@ impl RawGlyph {
             unicode: codepoints,
             category,
             sub_category,
+            production_name,
         })
     }
 }

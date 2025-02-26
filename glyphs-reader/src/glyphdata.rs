@@ -78,9 +78,11 @@ pub enum Subcategory {
 /// Default/no overrides instances are cheap. Instances created with overrides are more expensive.
 pub struct GlyphData {
     // Sorted by name, unique names, therefore safe to bsearch
-    data: &'static [(&'static str, QueryResult)],
+    data: &'static [(&'static str, ConstQueryResult)],
     // Sorted by codepoint, unique codepoints, therefore safe to bsearch
     codepoint_to_data_index: &'static [(u32, usize)],
+    // Sorted by production name, unique production names, therefore safe to bsearch
+    production_name_to_data_index: &'static [(&'static str, usize)],
 
     // override-names are preferred to names in data
     overrides: Option<HashMap<SmolStr, QueryResult>>,
@@ -99,6 +101,7 @@ impl GlyphData {
         Self {
             data: glyphslib_data::GLYPH_INFO,
             codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
+            production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
             overrides,
             overrrides_by_codepoint,
         }
@@ -120,60 +123,133 @@ impl Default for GlyphData {
         Self {
             data: glyphslib_data::GLYPH_INFO,
             codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
+            production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
             overrides: None,
             overrrides_by_codepoint: None,
         }
     }
 }
 
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
+/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
 pub(crate) const fn qr(
     category: Category,
     subcategory: Subcategory,
     codepoint: u32,
-) -> QueryResult {
-    QueryResult {
+) -> ConstQueryResult {
+    ConstQueryResult {
         category,
         subcategory: Some(subcategory),
         codepoint: Some(codepoint),
+        production_name: None,
     }
 }
 
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q1(category: Category) -> QueryResult {
-    QueryResult {
+/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn qrp(
+    category: Category,
+    subcategory: Subcategory,
+    codepoint: u32,
+    production_name: &'static str,
+) -> ConstQueryResult {
+    ConstQueryResult {
+        category,
+        subcategory: Some(subcategory),
+        codepoint: Some(codepoint),
+        production_name: Some(production_name),
+    }
+}
+
+/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q1(category: Category) -> ConstQueryResult {
+    ConstQueryResult {
         category,
         subcategory: None,
         codepoint: None,
+        production_name: None,
     }
 }
 
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q2(category: Category, codepoint: u32) -> QueryResult {
-    QueryResult {
+/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q1p(category: Category, production_name: &'static str) -> ConstQueryResult {
+    ConstQueryResult {
+        category,
+        subcategory: None,
+        codepoint: None,
+        production_name: Some(production_name),
+    }
+}
+
+/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q2(category: Category, codepoint: u32) -> ConstQueryResult {
+    ConstQueryResult {
         category,
         subcategory: None,
         codepoint: Some(codepoint),
+        production_name: None,
     }
 }
 
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q3(category: Category, subcategory: Subcategory) -> QueryResult {
-    QueryResult {
+/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q2p(category: Category, codepoint: u32, production_name: &'static str) -> ConstQueryResult {
+    ConstQueryResult {
+        category,
+        subcategory: None,
+        codepoint: Some(codepoint),
+        production_name: Some(production_name),
+    }
+}
+
+/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q3(category: Category, subcategory: Subcategory) -> ConstQueryResult {
+    ConstQueryResult {
         category,
         subcategory: Some(subcategory),
         codepoint: None,
+        production_name: None,
     }
 }
 
-/// The category and subcategory to use
+/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q3p(category: Category, subcategory: Subcategory, production_name: &'static str) -> ConstQueryResult {
+    ConstQueryResult {
+        category,
+        subcategory: Some(subcategory),
+        codepoint: None,
+        production_name: Some(production_name),
+    }
+}
+
+/// A const-constructible version of QueryResult, with production_name a static &str
+///
+/// This is useful for the bundled glyphslib_data.rs file.
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct ConstQueryResult {
+    category: Category,
+    subcategory: Option<Subcategory>,
+    codepoint: Option<u32>,
+    production_name: Option<&'static str>,
+}
+
+/// The category, subcategory, codepoint and production name to use
 ///
 /// Used for overrides and as the result of [`GlyphData::query`]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct QueryResult {
     pub category: Category,
     pub subcategory: Option<Subcategory>,
     pub codepoint: Option<u32>,
+    pub production_name: Option<SmolStr>,
+}
+
+impl From<ConstQueryResult> for QueryResult {
+    fn from(value: ConstQueryResult) -> Self {
+        Self {
+            category: value.category,
+            subcategory: value.subcategory,
+            codepoint: value.codepoint,
+            production_name: value.production_name.map(SmolStr::new),
+        }
+    }
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -249,6 +325,7 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
                 category: info.category,
                 subcategory: info.subcategory,
                 codepoint: info.codepoint,
+                production_name: info.production_name,
             },
         );
         for alt in info.alt_names {
@@ -258,6 +335,7 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
                     category: info.category,
                     subcategory: info.subcategory,
                     codepoint: None,
+                    production_name: None,
                 },
             ));
         }
@@ -287,6 +365,7 @@ struct GlyphInfoFromXml {
     category: Category,
     subcategory: Option<Subcategory>,
     codepoint: Option<u32>,
+    production_name: Option<SmolStr>,
 }
 
 fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError> {
@@ -295,6 +374,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
     let mut subcategory = None;
     let mut unicode = None;
     let mut alt_names = None;
+    let mut production_name = None;
 
     for attr in item.attributes() {
         let attr = attr?;
@@ -305,7 +385,8 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
             b"subCategory" => subcategory = Some(value),
             b"unicode" => unicode = Some(value),
             b"altNames" => alt_names = Some(value),
-            b"production" | b"unicodeLegacy" | b"case" | b"direction" | b"script"
+            b"production" => production_name = Some(value),
+            b"unicodeLegacy" | b"case" | b"direction" | b"script"
             | b"description" => (),
             other => {
                 return Err(GlyphDataError::UnknownAttribute(
@@ -344,6 +425,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
                 .collect()
         })
         .unwrap_or_default();
+    let production_name = production_name.map(SmolStr::new);
 
     Ok(GlyphInfoFromXml {
         name,
@@ -351,6 +433,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
         category,
         subcategory,
         codepoint,
+        production_name,
     })
 }
 
@@ -398,6 +481,7 @@ impl GlyphData {
                     category: override_result.category,
                     subcategory: override_result.subcategory,
                     codepoint: override_result.codepoint,
+                    production_name: override_result.production_name.clone(),
                 });
             }
         }
@@ -408,6 +492,12 @@ impl GlyphData {
             .ok()
             .map(|i| self.data[i])
             .or_else(|| {
+                self.production_name_to_data_index
+                    .binary_search_by(|(n, _)| (*n).cmp(name))
+                    .ok()
+                    .map(|i| self.data[self.production_name_to_data_index[i].1])
+            })
+            .or_else(|| {
                 codepoints
                     .into_iter()
                     .flat_map(|cps| cps.iter())
@@ -415,11 +505,10 @@ impl GlyphData {
                         self.codepoint_to_data_index
                             .binary_search_by(|(info_cp, _)| info_cp.cmp(cp))
                             .ok()
-                            .map(|i| &self.data[self.codepoint_to_data_index[i].1])
+                            .map(|i| self.data[self.codepoint_to_data_index[i].1])
                     })
-                    .copied()
             })
-            .map(|(_, r)| r)
+            .map(|(_, r)| r.into())
     }
 
     fn contains_name(&self, name: &str) -> bool {
@@ -458,6 +547,7 @@ impl GlyphData {
                         category: Category::Mark,
                         subcategory: first_attr.subcategory,
                         codepoint: None,
+                        production_name: None,
                     });
                 } else if first_attr.category == Category::Letter {
                     // if first is letter and rest are marks/separators, we use info from first
@@ -471,12 +561,14 @@ impl GlyphData {
                             category: first_attr.category,
                             subcategory: first_attr.subcategory,
                             codepoint: None,
+                            production_name: None,
                         });
                     } else {
                         return Some(QueryResult {
                             category: Category::Letter,
                             subcategory: Some(Subcategory::Ligature),
                             codepoint: None,
+                            production_name: None,
                         });
                     }
                 }
@@ -503,12 +595,14 @@ impl GlyphData {
                     category,
                     subcategory: Some(Subcategory::Ligature),
                     codepoint: None,
+                    production_name: None,
                 });
             } else {
                 return Some(QueryResult {
                     category,
                     subcategory,
                     codepoint: None,
+                    production_name: None,
                 });
             }
         }

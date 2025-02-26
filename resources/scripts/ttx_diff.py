@@ -223,7 +223,7 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         # uncomment this to compare output w/ fontmake --keep-direction
         # "--keep-direction",
         # no longer required, still useful to get human-readable glyph names in diff
-        "--no-production-names",
+        # "--no-production-names",
         "--build-dir",
         ".",
         "-o",
@@ -252,7 +252,7 @@ def build_fontmake(source: Path, build_dir: Path):
         "--drop-implied-oncurves",
         # "--keep-direction",
         # no longer required, still useful to get human-readable glyph names in diff
-        "--no-production-names",
+        # "--no-production-names",
         # helpful for troubleshooting
         "--debug-feature-file",
         "debug.fea",
@@ -570,12 +570,14 @@ def reorder_rules(lookup: etree.ElementTree, new_order: Dict[int, int], rule_nam
 
 
 # for each named child in container, remap the 'value' attribute using the new ordering
-def remap_values(container: etree.ElementTree, new_order: Dict[int, int], child_name: str):
+def remap_values(
+    container: etree.ElementTree, new_order: Dict[int, int], child_name: str
+):
     # for the original use we need to map from new to old, but here we need the reverse
-    rev_map = {v:k for (k,v) in new_order.items()}
+    rev_map = {v: k for (k, v) in new_order.items()}
     for el in container.iterchildren(child_name):
-        old = int(el.attrib['value'])
-        el.attrib['value'] = str(rev_map[old])
+        old = int(el.attrib["value"])
+        el.attrib["value"] = str(rev_map[old])
 
 
 # fontmake and fontc assign glyph classes differently for class-based tables;
@@ -989,7 +991,6 @@ def main(argv):
     if output["fontc"] == output["fontmake"]:
         eprint("output is identical")
     else:
-
         diffs = True
         if not FLAGS.json:
             print_output(build_dir, output)
