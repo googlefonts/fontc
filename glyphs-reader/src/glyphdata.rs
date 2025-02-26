@@ -78,29 +78,40 @@ pub enum Subcategory {
 /// Default/no overrides instances are cheap. Instances created with overrides are more expensive.
 pub struct GlyphData {
     // Sorted by name, unique names, therefore safe to bsearch
-    data: &'static [(&'static str, QueryResult)],
+    data: &'static [(&'static str, QueryPartialResult)],
     // Sorted by codepoint, unique codepoints, therefore safe to bsearch
     codepoint_to_data_index: &'static [(u32, usize)],
+    // Same length as data slice, therefore safe to index into; empty str means no production name
+    production_names: &'static [&'static str],
+    // Sorted by production name, unique production names, therefore safe to bsearch
+    production_name_to_data_index: &'static [(&'static str, usize)],
 
     // override-names are preferred to names in data
     overrides: Option<HashMap<SmolStr, QueryResult>>,
-    overrrides_by_codepoint: Option<HashMap<u32, SmolStr>>,
+    overrides_by_codepoint: Option<HashMap<u32, SmolStr>>,
+    overrides_by_production_name: Option<HashMap<SmolStr, SmolStr>>,
 }
 
 impl GlyphData {
     /// Overrides, if provided, explicitly assign the result for a given query
     pub(crate) fn new(overrides: Option<HashMap<SmolStr, QueryResult>>) -> Self {
-        let overrrides_by_codepoint = overrides.as_ref().map(|overrides| {
+        let overrides_by_codepoint = overrides.as_ref().map(|overrides| {
             overrides
                 .iter()
                 .filter_map(|(k, v)| v.codepoint.map(|cp| (cp, k.clone())))
                 .collect()
         });
+        let overrides_by_production_name = overrides.as_ref().map(|overrides| {
+            overrides
+                .iter()
+                .filter_map(|(k, v)| v.production_name.clone().map(|pn| (pn, k.clone())))
+                .collect()
+        });
         Self {
-            data: glyphslib_data::GLYPH_INFO,
-            codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
             overrides,
-            overrrides_by_codepoint,
+            overrides_by_codepoint,
+            overrides_by_production_name,
+            ..Default::default()
         }
     }
 
@@ -117,63 +128,102 @@ impl GlyphData {
 
 impl Default for GlyphData {
     fn default() -> Self {
+        debug_assert_eq!(
+            glyphslib_data::GLYPH_INFO.len(),
+            glyphslib_data::PRODUCTION_NAMES.len(),
+            "GLYPH_INFO and PRODUCTION_NAEMS must be the same length"
+        );
         Self {
             data: glyphslib_data::GLYPH_INFO,
             codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
+            production_names: glyphslib_data::PRODUCTION_NAMES,
+            production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
             overrides: None,
-            overrrides_by_codepoint: None,
+            overrides_by_codepoint: None,
+            overrides_by_production_name: None,
         }
     }
 }
 
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
+/// Shorthand for construction of a [`QueryPartialResult``] to shorten length of glyphslib_data.rs
 pub(crate) const fn qr(
     category: Category,
     subcategory: Subcategory,
     codepoint: u32,
-) -> QueryResult {
-    QueryResult {
+) -> QueryPartialResult {
+    QueryPartialResult {
         category,
         subcategory: Some(subcategory),
         codepoint: Some(codepoint),
     }
 }
 
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q1(category: Category) -> QueryResult {
-    QueryResult {
+/// Shorthand for construction of a [`QueryPartialResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q1(category: Category) -> QueryPartialResult {
+    QueryPartialResult {
         category,
         subcategory: None,
         codepoint: None,
     }
 }
 
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q2(category: Category, codepoint: u32) -> QueryResult {
-    QueryResult {
+/// Shorthand for construction of a [`QueryPartialResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q2(category: Category, codepoint: u32) -> QueryPartialResult {
+    QueryPartialResult {
         category,
         subcategory: None,
         codepoint: Some(codepoint),
     }
 }
 
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q3(category: Category, subcategory: Subcategory) -> QueryResult {
-    QueryResult {
+/// Shorthand for construction of a [`QueryPartialResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q3(category: Category, subcategory: Subcategory) -> QueryPartialResult {
+    QueryPartialResult {
         category,
         subcategory: Some(subcategory),
         codepoint: None,
     }
 }
 
-/// The category and subcategory to use
+/// A const-constructible version of QueryResult, without production_name
+///
+/// This is useful for the bundled glyphslib_data.rs file.
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct QueryPartialResult {
+    category: Category,
+    subcategory: Option<Subcategory>,
+    codepoint: Option<u32>,
+}
+
+/// The category, subcategory, codepoint and production name to use
 ///
 /// Used for overrides and as the result of [`GlyphData::query`]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct QueryResult {
     pub category: Category,
     pub subcategory: Option<Subcategory>,
     pub codepoint: Option<u32>,
+    pub production_name: Option<SmolStr>,
+}
+
+impl From<QueryPartialResult> for QueryResult {
+    fn from(value: QueryPartialResult) -> Self {
+        Self {
+            category: value.category,
+            subcategory: value.subcategory,
+            codepoint: value.codepoint,
+            production_name: None,
+        }
+    }
+}
+
+impl QueryResult {
+    fn with_production_name(self, production_name: &str) -> Self {
+        Self {
+            production_name: (!production_name.is_empty()).then_some(production_name.into()),
+            ..self
+        }
+    }
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -249,6 +299,7 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
                 category: info.category,
                 subcategory: info.subcategory,
                 codepoint: info.codepoint,
+                production_name: info.production_name,
             },
         );
         for alt in info.alt_names {
@@ -258,6 +309,7 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
                     category: info.category,
                     subcategory: info.subcategory,
                     codepoint: None,
+                    production_name: None,
                 },
             ));
         }
@@ -287,6 +339,7 @@ struct GlyphInfoFromXml {
     category: Category,
     subcategory: Option<Subcategory>,
     codepoint: Option<u32>,
+    production_name: Option<SmolStr>,
 }
 
 fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError> {
@@ -295,6 +348,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
     let mut subcategory = None;
     let mut unicode = None;
     let mut alt_names = None;
+    let mut production_name = None;
 
     for attr in item.attributes() {
         let attr = attr?;
@@ -305,8 +359,8 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
             b"subCategory" => subcategory = Some(value),
             b"unicode" => unicode = Some(value),
             b"altNames" => alt_names = Some(value),
-            b"production" | b"unicodeLegacy" | b"case" | b"direction" | b"script"
-            | b"description" => (),
+            b"production" => production_name = Some(value),
+            b"unicodeLegacy" | b"case" | b"direction" | b"script" | b"description" => (),
             other => {
                 return Err(GlyphDataError::UnknownAttribute(
                     String::from_utf8_lossy(other).into_owned(),
@@ -344,6 +398,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
                 .collect()
         })
         .unwrap_or_default();
+    let production_name = production_name.map(SmolStr::new);
 
     Ok(GlyphInfoFromXml {
         name,
@@ -351,6 +406,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
         category,
         subcategory,
         codepoint,
+        production_name,
     })
 }
 
@@ -365,6 +421,9 @@ impl GlyphData {
     ///
     // See https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L94
     pub fn query(&self, name: &str, codepoints: Option<&BTreeSet<u32>>) -> Option<QueryResult> {
+        // TODO: if production_name is None, we should try to synthesize it
+        // like glyphsLib does here:
+        // https://github.com/googlefonts/glyphsLib/blob/c4db6b9/Lib/glyphsLib/glyphdata.py#L351-L453
         self.query_no_synthesis(name, codepoints)
             // we don't have info for this glyph: can we synthesize it?
             .or_else(|| self.construct_category(name))
@@ -379,25 +438,34 @@ impl GlyphData {
         codepoints: Option<&BTreeSet<u32>>,
     ) -> Option<QueryResult> {
         // Override?
-        if let (Some(overrides), Some(overrides_by_codepoint)) = (
+        if let (Some(overrides), Some(overrides_by_codepoint), Some(overrides_by_production_name)) = (
             self.overrides.as_ref(),
-            self.overrrides_by_codepoint.as_ref(),
+            self.overrides_by_codepoint.as_ref(),
+            self.overrides_by_production_name.as_ref(),
         ) {
-            let override_result = overrides.get(name).or_else(|| {
-                codepoints
-                    .into_iter()
-                    .flat_map(|cps| cps.iter())
-                    .find_map(|cp: &u32| {
-                        overrides_by_codepoint
-                            .get(cp)
-                            .and_then(|n| overrides.get(n))
-                    })
-            });
+            let override_result = overrides
+                .get(name)
+                .or_else(|| {
+                    overrides_by_production_name
+                        .get(name)
+                        .and_then(|n| overrides.get(n))
+                })
+                .or_else(|| {
+                    codepoints
+                        .into_iter()
+                        .flat_map(|cps| cps.iter())
+                        .find_map(|cp: &u32| {
+                            overrides_by_codepoint
+                                .get(cp)
+                                .and_then(|n| overrides.get(n))
+                        })
+                });
             if let Some(override_result) = override_result {
                 return Some(QueryResult {
                     category: override_result.category,
                     subcategory: override_result.subcategory,
                     codepoint: override_result.codepoint,
+                    production_name: override_result.production_name.clone(),
                 });
             }
         }
@@ -406,7 +474,16 @@ impl GlyphData {
         self.data
             .binary_search_by(|(n, _)| (*n).cmp(name))
             .ok()
-            .map(|i| self.data[i])
+            .map(|i| (i, self.data[i].1))
+            .or_else(|| {
+                self.production_name_to_data_index
+                    .binary_search_by(|(n, _)| (*n).cmp(name))
+                    .ok()
+                    .map(|i| {
+                        let j = self.production_name_to_data_index[i].1;
+                        (j, self.data[j].1)
+                    })
+            })
             .or_else(|| {
                 codepoints
                     .into_iter()
@@ -415,11 +492,13 @@ impl GlyphData {
                         self.codepoint_to_data_index
                             .binary_search_by(|(info_cp, _)| info_cp.cmp(cp))
                             .ok()
-                            .map(|i| &self.data[self.codepoint_to_data_index[i].1])
+                            .map(|i| {
+                                let j = self.codepoint_to_data_index[i].1;
+                                (j, self.data[j].1)
+                            })
                     })
-                    .copied()
             })
-            .map(|(_, r)| r)
+            .map(|(i, r)| QueryResult::from(r).with_production_name(self.production_names[i]))
     }
 
     fn contains_name(&self, name: &str) -> bool {
@@ -458,6 +537,7 @@ impl GlyphData {
                         category: Category::Mark,
                         subcategory: first_attr.subcategory,
                         codepoint: None,
+                        production_name: None,
                     });
                 } else if first_attr.category == Category::Letter {
                     // if first is letter and rest are marks/separators, we use info from first
@@ -471,12 +551,14 @@ impl GlyphData {
                             category: first_attr.category,
                             subcategory: first_attr.subcategory,
                             codepoint: None,
+                            production_name: None,
                         });
                     } else {
                         return Some(QueryResult {
                             category: Category::Letter,
                             subcategory: Some(Subcategory::Ligature),
                             codepoint: None,
+                            production_name: None,
                         });
                     }
                 }
@@ -503,12 +585,14 @@ impl GlyphData {
                     category,
                     subcategory: Some(Subcategory::Ligature),
                     codepoint: None,
+                    production_name: None,
                 });
             } else {
                 return Some(QueryResult {
                     category,
                     subcategory,
                     codepoint: None,
+                    production_name: None,
                 });
             }
         }
@@ -730,6 +814,7 @@ impl Display for Subcategory {
 mod tests {
 
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_bundled_data() {
@@ -745,19 +830,44 @@ mod tests {
                 category: Category::Mark,
                 subcategory: Some(Subcategory::SpacingCombining),
                 codepoint: Some(b'A' as u32),
+                production_name: Some("u0041".into()),
             },
         )]);
         let data = GlyphData::new(Some(overrides));
 
-        assert_eq!(data.query("A", None).unwrap().category, Category::Mark);
+        let result = data.query("A", None).unwrap();
+        assert_eq!(result.category, Category::Mark);
+        assert_eq!(result.production_name, Some("u0041".into()));
     }
 
     #[test]
-    fn overrides_from_file() {
+    fn category_overrides_from_file() {
         let data =
             GlyphData::with_override_file(Path::new("./data/GlyphData_override_test.xml")).unwrap();
         assert_eq!(data.query("zero", None).unwrap().category, Category::Other);
         assert_eq!(data.query("C", None).unwrap().category, Category::Number);
+    }
+
+    fn assert_query_results_are_equal(result: &QueryResult, expected: &QueryResult) {
+        assert_eq!(result.category, expected.category);
+        assert_eq!(result.subcategory, expected.subcategory);
+        assert_eq!(result.codepoint, expected.codepoint);
+        assert_eq!(result.production_name, expected.production_name);
+    }
+
+    #[test]
+    fn production_name_overrides_from_file() {
+        let data =
+            GlyphData::with_override_file(Path::new("./data/GlyphData_override_test.xml")).unwrap();
+        let yogh = data.query("Yogh", None).unwrap();
+        assert_eq!(yogh.production_name, Some("Yolo".into()));
+        assert_eq!(yogh.codepoint, Some(0x021C));
+        assert_eq!(yogh.category, Category::Letter);
+        // the same query result can be looked up by codepoint or production name
+        let yogh_by_cp = data.query("foo", Some(&[0x021C].into())).unwrap();
+        assert_query_results_are_equal(&yogh_by_cp, &yogh);
+        let yogh_by_pn = data.query("Yolo", None).unwrap();
+        assert_query_results_are_equal(&yogh_by_pn, &yogh);
     }
 
     fn get_category(name: &str, codepoints: &[u32]) -> Option<(Category, Option<Subcategory>)> {
@@ -910,5 +1020,91 @@ mod tests {
         assert_eq!(u, Some((Category::Mark, Some(Subcategory::Nonspacing))));
         let g = get_category("longlowtonecomb-nko", &[]);
         assert_eq!(g, Some((Category::Mark, Some(Subcategory::Nonspacing))));
+    }
+
+    fn get_production_name(name: &str) -> Option<SmolStr> {
+        GlyphData::new(None)
+            .query(name, None)
+            .and_then(|result| result.production_name)
+    }
+
+    #[rstest(name, expected,
+        case("A", None),  // AGLFN names *are* production names
+        case("z", None),
+        // The AGLFN authors: "hm, this one looks like an omega..."
+        case("omega1", None),
+        case("nbspace", Some("uni00A0")),
+        // case("nonbreakingspace", Some("uni00A0")),  // FIXME: lookup by altName doesn't work
+        case("uni00A0", Some("uni00A0")),
+        // the «» punctuation marks are spelled with an 'guillemets' in French, but for
+        // some reasons the AGLFN has 'guillemot' (that's actually a bird! :shrug:)
+        case("guillemetleft", Some("guillemotleft")),
+        case("twosevenths", Some("two_fraction_seven")),
+        case("idotaccent", Some("i.loclTRK")),
+        case("idotless", Some("dotlessi")),
+        case("Jacute", Some("uni004A0301")),
+        case("scurl", Some("u1DF1E")),
+        // In the old AGL, Delta was confused with increment 0x2206 so now it's banned
+        // from the Greek alphabet.
+        case("Delta", Some("uni0394")),
+        case("increment", Some("uni2206")),
+        case("dog-ko", Some("uniB3C5")),
+        case("bau-kannada", Some("uni0CAC0CCC")),
+        case("EnglandFlag", Some("u1F3F4E0067E0062E0065E006EE0067E007F")),
+        case("pileOfPoo", Some("u1F4A9")),
+    )]
+    fn query_production_names(name: &str, expected: Option<&str>) {
+        let result = get_production_name(name);
+        assert_eq!(
+            result,
+            expected.map(Into::into),
+            "{name}: {result:?} != {expected:?}"
+        );
+    }
+
+    // Python original test cases for synthetic production names:
+    // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d59bec0c9437da3a748c58f2999911/tests/glyphdata_test.py#L196-L409
+    // Note that I removed a bunch of them as they were too many and repetitive
+    #[ignore] // TODO: remove this once we actually implement
+    #[rstest(
+        name,
+        expected,
+        case("Ech_Vew-arm.liga", "uni0535054E.liga"),
+        case("aiMatra_anusvara-deva", "uni09480902"),
+        case("aiMatra_reph_anusvara-deva", "uni09480930094D0902"),
+        case("ca_iMatra-tamil", "uni0B9A0BBF"),
+        case("ch_ya-deva", "uni091B094D092F"),
+        case("d_dh_ya-deva", "uni0926094D0927094D092F"),
+        case("da-khmer.below.ro", "uni17D2178A.ro"),
+        case("da_rVocalicMatra-deva", "uni09260943"),
+        case("dd_dda-deva", "uni0921094D0921"),
+        case("eShortMatra_reph_anusvara-deva", "uni09460930094D0902"),
+        case("ech_vew-arm.liga.sc", "uni0565057E.liga.sc"),
+        case("finalkaf_qamats-hb", "uni05DA05B8"),
+        case("finalkaf_sheva-hb", "uni05DA05B0"),
+        case("finalkafdagesh_qamats-hb", "uniFB3A05B8"),
+        case("finalkafdagesh_sheva-hb", "uniFB3A05B0"),
+        case("h_la-deva", "uni0939094D0932"),
+        case("ha_iMatra-tamil", "uni0BB90BBF"),
+        case("hatafpatah_siluqleft-hb", "uni05B205BD"),
+        case("iMark_toandakhiat-khmer.narrow", "uni17B717CD.narrow"),
+        case("idotaccent.sc", "i.loclTRK.sc"),
+        case("iiMatra_reph-deva", "uni09400930094D"),
+        case("iiMatra_reph-deva.alt2", "uni09400930094D.alt2"),
+        case("j_ny-deva", "uni091C094D091E094D"),
+        case("j_ny-deva.alt2", "uni091C094D091E094D.alt2"),
+        case("mo-khmer.below.ro", "uni17D21798.ro"),
+        case("moMa_underscore-thai", "uni0E21005F"),
+        case("nno-khmer.below.narrow1", "uni17D2178E.narrow1"),
+        case("nyo-khmer.full.below.narrow", "uni17D21789.full.below.narrow"),
+        case("sh_ra_iiMatra-tamil", "uni0BB60BCD0BB00BC0")
+    )]
+    fn synthetic_production_names(name: &str, expected: &str) {
+        let result = get_production_name(name);
+        assert_eq!(
+            result,
+            Some(expected.into()),
+            "{name}: {result:?} != {expected:?}"
+        );
     }
 }
