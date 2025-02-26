@@ -75,7 +75,7 @@ def minimal_names(names_taken: set(), names: Iterable[str]) -> Mapping[str, str]
 
     result = {}
     # most used first so it gets the shortest name
-    for (_, name) in sorted(((v, k) for (k, v) in counts.items()), reverse=True):
+    for _, name in sorted(((v, k) for (k, v) in counts.items()), reverse=True):
         for i in range(1, len(name) + 1):
             candidate = name[:i].upper()
             if candidate not in names_taken:
@@ -88,8 +88,8 @@ def minimal_names(names_taken: set(), names: Iterable[str]) -> Mapping[str, str]
 
 
 def write_enum_shorthands(f, enum_name, minimal_names):
-    for (long, short) in sorted(minimal_names.items()):
-        f.write(f'const {short}: {enum_name} = {enum_name}::{long};\n')
+    for long, short in sorted(minimal_names.items()):
+        f.write(f"const {short}: {enum_name} = {enum_name}::{long};\n")
 
 
 def main():
@@ -103,7 +103,10 @@ def main():
     # Globally unique minimized names for categories and subcategories
     shorthand_names = set()
     min_categories = minimal_names(shorthand_names, (g.category for g in glyph_infos))
-    min_subcategories = minimal_names(shorthand_names, (g.subcategory for g in glyph_infos if g.subcategory is not None))
+    min_subcategories = minimal_names(
+        shorthand_names,
+        (g.subcategory for g in glyph_infos if g.subcategory is not None),
+    )
 
     assert len(names) == len(glyph_infos), "Names aren't unique?"
     codepoints = {}
@@ -127,15 +130,17 @@ def main():
         f.write("//!\n")
         f.write(f"//! {len(glyph_infos)} glyph metadata records taken from glyphsLib\n")
         f.write("\n")
-        f.write("use crate::glyphdata::{qr, q1, q2, q3, Category, QueryResult, Subcategory};\n")  
+        f.write(
+            "use crate::glyphdata::{qr, q1, q2, q3, Category, QueryResult, Subcategory};\n"
+        )
         f.write("\n")
 
-        # Write constants for enum variants to shorten giant tuple array        
+        # Write constants for enum variants to shorten giant tuple array
         write_enum_shorthands(f, "Category", min_categories)
         f.write("\n")
         write_enum_shorthands(f, "Subcategory", min_subcategories)
         f.write("\n")
-        
+
         f.write("// Sorted by name, has unique names, therefore safe to bsearch\n")
 
         f.write("pub(crate) const GLYPH_INFO: &[(&str, QueryResult)] = &[\n")
@@ -159,10 +164,10 @@ def main():
             codepoint = "None"
             if gi.codepoint is not None:
                 codepoint = f"Some(0x{gi.codepoint})"
-            
+
             subcategory = "None"
             if gi.subcategory is not None:
-                subcategory = f"Some({min_subcategories[gi.subcategory]})"            
+                subcategory = f"Some({min_subcategories[gi.subcategory]})"
             fragment = f'("{gi.name}", {entry}),'
             if (len(lines[-1]) + len(fragment)) > 100:
                 lines[-1] += "\n"
