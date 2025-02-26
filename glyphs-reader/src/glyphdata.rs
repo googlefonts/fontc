@@ -78,9 +78,11 @@ pub enum Subcategory {
 /// Default/no overrides instances are cheap. Instances created with overrides are more expensive.
 pub struct GlyphData {
     // Sorted by name, unique names, therefore safe to bsearch
-    data: &'static [(&'static str, ConstQueryResult)],
+    data: &'static [(&'static str, QueryPartialResult)],
     // Sorted by codepoint, unique codepoints, therefore safe to bsearch
     codepoint_to_data_index: &'static [(u32, usize)],
+    // Same length as data slice, therefore safe to index into
+    production_names: Vec<Option<&'static str>>,
     // Sorted by production name, unique production names, therefore safe to bsearch
     production_name_to_data_index: &'static [(&'static str, usize)],
 
@@ -104,6 +106,7 @@ impl GlyphData {
             production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
             overrides,
             overrrides_by_codepoint,
+            ..Default::default()
         }
     }
 
@@ -120,9 +123,18 @@ impl GlyphData {
 
 impl Default for GlyphData {
     fn default() -> Self {
+        debug_assert_eq!(
+            glyphslib_data::GLYPH_INFO.len(),
+            glyphslib_data::PRODUCTION_NAMES.len(),
+            "GLYPH_INFO and PRODUCTION_NAEMS must be the same length"
+        );
         Self {
             data: glyphslib_data::GLYPH_INFO,
             codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
+            production_names: glyphslib_data::PRODUCTION_NAMES
+                .iter()
+                .map(|s| (!s.is_empty()).then_some(*s))
+                .collect(),
             production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
             overrides: None,
             overrrides_by_codepoint: None,
@@ -130,104 +142,54 @@ impl Default for GlyphData {
     }
 }
 
-/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
+/// Shorthand for construction of a [`QueryPartialResult``] to shorten length of glyphslib_data.rs
 pub(crate) const fn qr(
     category: Category,
     subcategory: Subcategory,
     codepoint: u32,
-) -> ConstQueryResult {
-    ConstQueryResult {
+) -> QueryPartialResult {
+    QueryPartialResult {
         category,
         subcategory: Some(subcategory),
         codepoint: Some(codepoint),
-        production_name: None,
     }
 }
 
-/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn qrp(
-    category: Category,
-    subcategory: Subcategory,
-    codepoint: u32,
-    production_name: &'static str,
-) -> ConstQueryResult {
-    ConstQueryResult {
-        category,
-        subcategory: Some(subcategory),
-        codepoint: Some(codepoint),
-        production_name: Some(production_name),
-    }
-}
-
-/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q1(category: Category) -> ConstQueryResult {
-    ConstQueryResult {
+/// Shorthand for construction of a [`QueryPartialResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q1(category: Category) -> QueryPartialResult {
+    QueryPartialResult {
         category,
         subcategory: None,
         codepoint: None,
-        production_name: None,
     }
 }
 
-/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q1p(category: Category, production_name: &'static str) -> ConstQueryResult {
-    ConstQueryResult {
-        category,
-        subcategory: None,
-        codepoint: None,
-        production_name: Some(production_name),
-    }
-}
-
-/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q2(category: Category, codepoint: u32) -> ConstQueryResult {
-    ConstQueryResult {
+/// Shorthand for construction of a [`QueryPartialResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q2(category: Category, codepoint: u32) -> QueryPartialResult {
+    QueryPartialResult {
         category,
         subcategory: None,
         codepoint: Some(codepoint),
-        production_name: None,
     }
 }
 
-/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q2p(category: Category, codepoint: u32, production_name: &'static str) -> ConstQueryResult {
-    ConstQueryResult {
-        category,
-        subcategory: None,
-        codepoint: Some(codepoint),
-        production_name: Some(production_name),
-    }
-}
-
-/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q3(category: Category, subcategory: Subcategory) -> ConstQueryResult {
-    ConstQueryResult {
+/// Shorthand for construction of a [`QueryPartialResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q3(category: Category, subcategory: Subcategory) -> QueryPartialResult {
+    QueryPartialResult {
         category,
         subcategory: Some(subcategory),
         codepoint: None,
-        production_name: None,
     }
 }
 
-/// Shorthand for construction of a [`ConstQueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q3p(category: Category, subcategory: Subcategory, production_name: &'static str) -> ConstQueryResult {
-    ConstQueryResult {
-        category,
-        subcategory: Some(subcategory),
-        codepoint: None,
-        production_name: Some(production_name),
-    }
-}
-
-/// A const-constructible version of QueryResult, with production_name a static &str
+/// A const-constructible version of QueryResult, without production_name
 ///
 /// This is useful for the bundled glyphslib_data.rs file.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct ConstQueryResult {
+pub(crate) struct QueryPartialResult {
     category: Category,
     subcategory: Option<Subcategory>,
     codepoint: Option<u32>,
-    production_name: Option<&'static str>,
 }
 
 /// The category, subcategory, codepoint and production name to use
@@ -241,13 +203,22 @@ pub struct QueryResult {
     pub production_name: Option<SmolStr>,
 }
 
-impl From<ConstQueryResult> for QueryResult {
-    fn from(value: ConstQueryResult) -> Self {
+impl From<QueryPartialResult> for QueryResult {
+    fn from(value: QueryPartialResult) -> Self {
         Self {
             category: value.category,
             subcategory: value.subcategory,
             codepoint: value.codepoint,
-            production_name: value.production_name.map(SmolStr::new),
+            production_name: None,
+        }
+    }
+}
+
+impl QueryResult {
+    fn with_production_name(self, production_name: Option<&str>) -> Self {
+        Self {
+            production_name: production_name.map(SmolStr::new),
+            ..self
         }
     }
 }
@@ -490,12 +461,15 @@ impl GlyphData {
         self.data
             .binary_search_by(|(n, _)| (*n).cmp(name))
             .ok()
-            .map(|i| self.data[i])
+            .map(|i| (i, self.data[i].1))
             .or_else(|| {
                 self.production_name_to_data_index
                     .binary_search_by(|(n, _)| (*n).cmp(name))
                     .ok()
-                    .map(|i| self.data[self.production_name_to_data_index[i].1])
+                    .map(|i| {
+                        let j = self.production_name_to_data_index[i].1;
+                        (j, self.data[j].1)
+                    })
             })
             .or_else(|| {
                 codepoints
@@ -505,10 +479,13 @@ impl GlyphData {
                         self.codepoint_to_data_index
                             .binary_search_by(|(info_cp, _)| info_cp.cmp(cp))
                             .ok()
-                            .map(|i| self.data[self.codepoint_to_data_index[i].1])
+                            .map(|i| {
+                                let j = self.codepoint_to_data_index[i].1;
+                                (j, self.data[j].1)
+                            })
                     })
             })
-            .map(|(_, r)| r.into())
+            .map(|(i, r)| QueryResult::from(r).with_production_name(self.production_names[i]))
     }
 
     fn contains_name(&self, name: &str) -> bool {

@@ -126,10 +126,13 @@ def main():
                 f"Multiple names are assigned 0x{codepoint:04x}, using the first one we saw"
             )
 
+    production_names = []
     production_name_to_info_idx = {}
     for i, gi in enumerate(glyph_infos):
         if gi.production_name is None:
+            production_names.append("")
             continue
+        production_names.append(gi.production_name)
         if gi.production_name in production_name_to_info_idx:
             print(
                 f"Multiple names are assigned {gi.production_name}, using the first one we saw"
@@ -147,7 +150,7 @@ def main():
         f.write(f"//! {len(glyph_infos)} glyph metadata records taken from glyphsLib\n")
         f.write("\n")
         f.write(
-            "use crate::glyphdata::{qr, qrp, q1, q1p, q2, q2p, q3, q3p, Category, ConstQueryResult, Subcategory};\n"
+            "use crate::glyphdata::{qr, q1, q2, q3, Category, QueryPartialResult, Subcategory};\n"
         )
         f.write("\n")
 
@@ -159,28 +162,23 @@ def main():
 
         f.write("// Sorted by name, has unique names, therefore safe to bsearch\n")
 
-        f.write("pub(crate) const GLYPH_INFO: &[(&str, ConstQueryResult)] = &[\n")
+        f.write("pub(crate) const GLYPH_INFO: &[(&str, QueryPartialResult)] = &[\n")
         lines = [""]
         for gi in glyph_infos:
             category = min_categories[gi.category]
-            p, production_name = (
-                ("", "")
-                if gi.production_name is None
-                else ("p", f', "{gi.production_name}"')
-            )
 
             # map to shorthand
             if (None, None) == (gi.subcategory, gi.codepoint):
-                entry = f"q1{p}({category}{production_name})"
+                entry = f"q1({category})"
             elif gi.subcategory is None:
                 # codepoint must not be
-                entry = f"q2{p}({category}, 0x{gi.codepoint}{production_name})"
+                entry = f"q2({category}, 0x{gi.codepoint})"
             elif gi.codepoint is None:
                 # subcategory must not be
-                entry = f"q3{p}({category}, {min_subcategories[gi.subcategory]}{production_name})"
+                entry = f"q3({category}, {min_subcategories[gi.subcategory]})"
             else:
                 # We must have all the things!
-                entry = f"qr{p}({category}, {min_subcategories[gi.subcategory]}, 0x{gi.codepoint}{production_name})"
+                entry = f"qr({category}, {min_subcategories[gi.subcategory]}, 0x{gi.codepoint})"
 
             codepoint = "None"
             if gi.codepoint is not None:
@@ -204,6 +202,22 @@ def main():
         lines = [""]
         for codepoint, i in sorted(codepoints.items()):
             fragment = f"(0x{codepoint:04x}, {i}),"
+            if (len(lines[-1]) + len(fragment)) > 100:
+                lines[-1] += "\n"
+                lines.append("")
+            lines[-1] += fragment
+
+        for line in lines:
+            f.write(line)
+        f.write("\n")
+        f.write("];\n")
+
+        f.write("// Sorted by name, has unique names, therefore safe to bsearch\n")
+        f.write("pub(crate) const PRODUCTION_NAMES: &[&str] = &[\n")
+        lines = [""]
+        assert len(glyph_infos) == len(production_names)
+        for production_name in production_names:
+            fragment = f'"{production_name}",'
             if (len(lines[-1]) + len(fragment)) > 100:
                 lines[-1] += "\n"
                 lines.append("")
