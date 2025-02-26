@@ -490,7 +490,9 @@ def remove_mark_and_kern_lookups(ttx):
     # './/Lookup' xpath selects all the 'Lookup' elements that are descendants of
     # the current 'GPOS' node - no matter where they are under it.
     # Most importantly, this _excludes_ GSUB lookups, which shouldn't be pruned.
+    removed_indices = set()
     for lookup in gpos.xpath(".//Lookup"):
+        lookup_index = lookup.attrib["index"]
         lookup_type_el = lookup.find("LookupType")
         lookup_type = int(lookup_type_el.attrib["value"])
         is_extension = lookup_type == 9
@@ -508,6 +510,15 @@ def remove_mark_and_kern_lookups(ttx):
             lookup.remove(child)
         if is_extension:
             lookup_type_el.attrib["value"] = str(lookup_type)
+        removed_indices.add(lookup_index)
+
+    # finally go and replace any of the removed indices where they are referenced
+    # in features; our lookup order won't always match fonttools for mark/kern
+    # because of the particulars of the feature writers, so we just ignore this
+    # (these lookups are all normalized, which takes lookup order into account)
+    for lookup_idx_el in gpos.xpath(".//LookupListIndex"):
+        if lookup_idx_el.attrib["value"] in removed_indices:
+            lookup_idx_el.attrib["value"] = "normalized"
 
 
 # this all gets handled by otl-normalizer
