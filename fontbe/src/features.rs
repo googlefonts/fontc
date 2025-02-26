@@ -3,7 +3,7 @@
 use std::{
     borrow::Cow,
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
     fs,
     path::{Path, PathBuf},
@@ -20,6 +20,7 @@ use fea_rs::{
         PendingLookup, VariationInfo,
     },
     parse::{FileSystemResolver, SourceLoadError, SourceResolver},
+    typed::{AstNode, LanguageSystem},
     DiagnosticSet, GlyphMap, Opts, ParseTree,
 };
 
@@ -34,6 +35,7 @@ use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::Axis,
 };
+use properties::UnicodeShortName;
 use write_fonts::{
     tables::{gdef::GlyphClassDef, layout::ClassDef, variations::VariationRegion},
     types::{GlyphId16, NameId, Tag},
@@ -676,6 +678,43 @@ fn log_fea_warnings(stage: &str, warnings: &DiagnosticSet) {
             warnings.display()
         );
     }
+}
+
+/// returns a map of opentype script: [opentype lang], for the languagesystems in FEA
+fn get_fea_language_systems(ast: &ParseTree) -> BTreeMap<Tag, Vec<Tag>> {
+    let mut languages_by_script = BTreeMap::new();
+    for langsys in ast
+        .typed_root()
+        .statements()
+        .filter_map(LanguageSystem::cast)
+    {
+        languages_by_script
+            .entry(langsys.script().to_raw())
+            .or_insert(Vec::new())
+            .push(langsys.language().to_raw())
+    }
+    languages_by_script
+}
+
+// <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfcf0b1c0fa4e133e/Lib/ufo2ft/featureWriters/ast.py#L23>
+/// returns a map of unicode script names to (ot_script, `[ot_lang]`)
+fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec<(Tag, Vec<Tag>)>> {
+    let languages_by_script = get_fea_language_systems(ast);
+    let mut unic_script_to_languages = HashMap::new();
+    for (ot_script, langs) in languages_by_script {
+        let Some(unicode_script) = properties::ot_tag_to_script(ot_script) else {
+            if ot_script != DFLT_SCRIPT {
+                log::warn!("no unicode script for OT script tag {ot_script}");
+            }
+            continue;
+        };
+        unic_script_to_languages
+            .entry(unicode_script)
+            .or_insert(Vec::new())
+            .push((ot_script, langs));
+    }
+
+    unic_script_to_languages
 }
 
 #[cfg(test)]

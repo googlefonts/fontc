@@ -812,7 +812,13 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
-        if let Some(vendor_id) = &font_info_at_default.open_type_os2_vendor_id {
+        if let Some(vendor_id) = font_info_at_default
+            .open_type_os2_vendor_id
+            .as_ref()
+            // treat "    " (four spaces) as equivalent to no value; it means
+            // 'null', per the spec
+            .filter(|id| *id != "    ")
+        {
             static_metadata.misc.vendor_id =
                 Tag::from_str(vendor_id).map_err(|cause| Error::InvalidTag {
                     raw_tag: vendor_id.to_owned(),
@@ -2315,6 +2321,16 @@ mod tests {
         let (_, context) = build_static_metadata(name, default_test_flags());
         let static_metadata = context.static_metadata.get();
         static_metadata.misc.is_fixed_pitch
+    }
+
+    #[test]
+    fn allow_four_spaces_for_vendor_id() {
+        let (_, context) = build_static_metadata("empty-vendorid.ufo", default_test_flags());
+        let static_meta = context.static_metadata.get();
+        assert_eq!(
+            static_meta.misc.vendor_id.as_ref(),
+            fontir::ir::DEFAULT_VENDOR_ID.as_bytes()
+        )
     }
 
     #[test]

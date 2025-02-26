@@ -411,13 +411,19 @@ impl Persistable for GvarFragment {
     }
 }
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MarkLookups {
+    pub(crate) mark_base: Vec<PendingLookup<MarkToBaseBuilder>>,
+    pub(crate) mark_mark: Vec<PendingLookup<MarkToMarkBuilder>>,
+    pub(crate) mark_lig: Vec<PendingLookup<MarkToLigBuilder>>,
+}
 /// Marks, ready to feed to fea-rs in the form it expects
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FeaRsMarks {
     pub(crate) glyphmap: GlyphMap,
-    pub(crate) mark_base: Vec<PendingLookup<MarkToBaseBuilder>>,
-    pub(crate) mark_mark: Vec<PendingLookup<MarkToMarkBuilder>>,
-    pub(crate) mark_lig: Vec<PendingLookup<MarkToLigBuilder>>,
+    pub(crate) mark_mkmk: MarkLookups,
+    pub(crate) abvm: MarkLookups,
+    pub(crate) blwm: MarkLookups,
     pub(crate) curs: Vec<PendingLookup<CursivePosBuilder>>,
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
 }
@@ -486,18 +492,16 @@ impl FeaFirstPassOutput {
             Opts,
         };
 
-        let (compilation, _) = fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
+        match fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
             &ast,
             glyph_map,
             None,
             None,
             Opts::new().compile_gpos(false),
-        )
-        .map_err(|err| {
-            Error::FeaCompileError(fea_rs::compile::error::CompilerError::CompilationFail(err))
-        })?;
-
-        Self::new(ast, compilation)
+        ) {
+            Ok((compilation, _)) => Self::new(ast, compilation),
+            Err(err) => panic!("{}", err.display()),
+        }
     }
 
     /// Return a read-fonts GSUB table (for computing glyph closure for mark/kern)
