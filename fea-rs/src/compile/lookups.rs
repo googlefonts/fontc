@@ -57,6 +57,7 @@ use gsub_builders::{
 pub(crate) use helpers::ClassDefBuilder2;
 
 // features that can be added by a feature writer
+const CURS: Tag = Tag::new(b"curs");
 const MARK: Tag = Tag::new(b"mark");
 const MKMK: Tag = Tag::new(b"mkmk");
 const ABVM: Tag = Tag::new(b"abvm");
@@ -778,7 +779,7 @@ impl AllLookups {
         // for adding extras, mimic the order ufo2ft uses, which is alphabetical
         // but grouped by feature writer. We add markers for all features,
         // even if they dont exist in the font; we'll ignore those later
-        for feature in [DIST, KERN, ABVM, BLWM, MARK, MKMK] {
+        for feature in [CURS, DIST, KERN, ABVM, BLWM, MARK, MKMK] {
             insert_markers.entry(feature).or_insert_with(|| {
                 next_pos += 1;
                 (last_id, next_pos)
@@ -1534,28 +1535,30 @@ mod tests {
 
     #[test]
     fn feature_ordering_without_markers() {
-        let (lookups, features) = mock_external_features(&[DIST, KERN, ABVM, BLWM, MARK, MKMK]);
+        let (lookups, features) =
+            mock_external_features(&[CURS, DIST, KERN, ABVM, BLWM, MARK, MKMK]);
         let markers = make_markers_with_order([]);
         let mut all = AllLookups::default();
         let map = all.merge_external_lookups(lookups, &features, &markers);
 
         assert_eq!(
             feature_order_for_test(&map, &features),
-            [DIST, KERN, ABVM, BLWM, MARK, MKMK]
+            [CURS, DIST, KERN, ABVM, BLWM, MARK, MKMK]
         );
     }
 
     #[test]
     fn feature_ordering_without_markers_input_order_doesnt_matter_either() {
         // just to demonstrate that the order we passed in is irrelevant
-        let (lookups, features) = mock_external_features(&[BLWM, KERN, MKMK, DIST, MARK, ABVM]);
+        let (lookups, features) =
+            mock_external_features(&[BLWM, KERN, CURS, MKMK, DIST, MARK, ABVM]);
         let markers = make_markers_with_order([]);
         let mut all = AllLookups::default();
         let map = all.merge_external_lookups(lookups, &features, &markers);
 
         assert_eq!(
             feature_order_for_test(&map, &features),
-            [DIST, KERN, ABVM, BLWM, MARK, MKMK]
+            [CURS, DIST, KERN, ABVM, BLWM, MARK, MKMK]
         );
     }
 
