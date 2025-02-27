@@ -746,11 +746,12 @@ impl AllLookups {
         let mut insert_markers = insert_markers.to_owned();
 
         // Also: in fonttools, dist/kern are added before marks, so let's do
-        // that first
-        if let Some((kern_id, kern_pos)) = insert_markers.get(&KERN).copied() {
+        // that first; and kern has to go before dist, if both is present
+        // https://github.com/googlefonts/ufo2ft/blob/16ed156bd6a8b9bc035d0/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L311
+        if let Some((kern_id, kern_pos)) = insert_markers.get(&DIST).copied() {
             // if kern has a marker but dist doesn't, insert dist first
             insert_markers
-                .entry(DIST)
+                .entry(KERN)
                 .or_insert((kern_id, kern_pos - 1));
         }
 
@@ -779,7 +780,7 @@ impl AllLookups {
         // for adding extras, mimic the order ufo2ft uses, which is alphabetical
         // but grouped by feature writer. We add markers for all features,
         // even if they dont exist in the font; we'll ignore those later
-        for feature in [CURS, DIST, KERN, ABVM, BLWM, MARK, MKMK] {
+        for feature in [CURS, KERN, DIST, ABVM, BLWM, MARK, MKMK] {
             insert_markers.entry(feature).or_insert_with(|| {
                 next_pos += 1;
                 (last_id, next_pos)
@@ -1543,7 +1544,7 @@ mod tests {
 
         assert_eq!(
             feature_order_for_test(&map, &features),
-            [CURS, DIST, KERN, ABVM, BLWM, MARK, MKMK]
+            [CURS, KERN, DIST, ABVM, BLWM, MARK, MKMK]
         );
     }
 
@@ -1558,7 +1559,7 @@ mod tests {
 
         assert_eq!(
             feature_order_for_test(&map, &features),
-            [CURS, DIST, KERN, ABVM, BLWM, MARK, MKMK]
+            [CURS, KERN, DIST, ABVM, BLWM, MARK, MKMK]
         );
     }
 
@@ -1591,7 +1592,7 @@ mod tests {
         assert_eq!(
             feature_order_for_test(&map, &features),
             // abvm/blwm/mark all have to go before mkmk
-            [ABVM, BLWM, MARK, MKMK, DIST, KERN]
+            [ABVM, BLWM, MARK, MKMK, KERN, DIST]
         );
     }
 }
