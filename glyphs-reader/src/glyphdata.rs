@@ -81,8 +81,8 @@ pub struct GlyphData {
     data: &'static [(&'static str, QueryPartialResult)],
     // Sorted by codepoint, unique codepoints, therefore safe to bsearch
     codepoint_to_data_index: &'static [(u32, usize)],
-    // Same length as data slice, therefore safe to index into
-    production_names: Vec<Option<&'static str>>,
+    // Same length as data slice, therefore safe to index into; empty str means no production name
+    production_names: &'static [&'static str],
     // Sorted by production name, unique production names, therefore safe to bsearch
     production_name_to_data_index: &'static [(&'static str, usize)],
 
@@ -139,10 +139,7 @@ impl Default for GlyphData {
         Self {
             data: glyphslib_data::GLYPH_INFO,
             codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
-            production_names: glyphslib_data::PRODUCTION_NAMES
-                .iter()
-                .map(|s| (!s.is_empty()).then_some(*s))
-                .collect(),
+            production_names: glyphslib_data::PRODUCTION_NAMES,
             production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
             overrides: None,
             overrides_by_codepoint: None,
@@ -224,9 +221,9 @@ impl From<QueryPartialResult> for QueryResult {
 }
 
 impl QueryResult {
-    fn with_production_name(self, production_name: Option<&str>) -> Self {
+    fn with_production_name(self, production_name: &str) -> Self {
         Self {
-            production_name: production_name.map(SmolStr::new),
+            production_name: (!production_name.is_empty()).then_some(production_name.into()),
             ..self
         }
     }
