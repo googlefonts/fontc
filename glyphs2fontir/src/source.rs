@@ -19,7 +19,7 @@ use fontir::{
         GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues,
         NameBuilder, NameKey, NamedInstance, PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
-    orchestration::{Context, IrWork, WorkId},
+    orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
 };
 use glyphs_reader::{
@@ -33,7 +33,8 @@ use write_fonts::{
         gasp::{GaspRange, GaspRangeBehavior},
         gdef::GlyphClassDef,
         os2::SelectionFlags,
-    }, types::{NameId, Tag}
+    },
+    types::{NameId, Tag},
 };
 
 use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
@@ -286,12 +287,16 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let categories = make_glyph_categories(font);
 
         let mut postscript_names = PostscriptNames::default();
-        for glyph in font.glyphs.values() {
-            let name = glyph.name.as_str();
-            if let Some(production_name) = glyph.production_name.as_ref() {
-                postscript_names.insert(GlyphName::from(name), GlyphName::from(production_name.clone()));
+        if context.flags.contains(Flags::PRODUCTION_NAMES) {
+            for glyph in font.glyphs.values() {
+                if let Some(production_name) = glyph.production_name.as_ref() {
+                    postscript_names.insert(
+                        GlyphName::from(glyph.name.as_str()),
+                        GlyphName::from(production_name.as_str()),
+                    );
+                }
             }
-        }
+        };
 
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
