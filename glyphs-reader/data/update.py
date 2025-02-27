@@ -49,7 +49,7 @@ def read_glyph_info(file: str) -> Tuple[GlyphInfo]:
             e.attrib["name"].strip(),
             codename(e.attrib["category"]),
             codename(e.attrib.get("subCategory", None)),
-            codename(e.attrib.get("production", None)),
+            e.attrib.get("production", None),
         )
         if info.name not in by_name:
             by_name[info.name] = info

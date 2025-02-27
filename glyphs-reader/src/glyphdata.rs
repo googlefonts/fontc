@@ -88,16 +88,23 @@ pub struct GlyphData {
 
     // override-names are preferred to names in data
     overrides: Option<HashMap<SmolStr, QueryResult>>,
-    overrrides_by_codepoint: Option<HashMap<u32, SmolStr>>,
+    overrides_by_codepoint: Option<HashMap<u32, SmolStr>>,
+    overrides_by_production_name: Option<HashMap<SmolStr, SmolStr>>,
 }
 
 impl GlyphData {
     /// Overrides, if provided, explicitly assign the result for a given query
     pub(crate) fn new(overrides: Option<HashMap<SmolStr, QueryResult>>) -> Self {
-        let overrrides_by_codepoint = overrides.as_ref().map(|overrides| {
+        let overrides_by_codepoint = overrides.as_ref().map(|overrides| {
             overrides
                 .iter()
                 .filter_map(|(k, v)| v.codepoint.map(|cp| (cp, k.clone())))
+                .collect()
+        });
+        let overrides_by_production_name = overrides.as_ref().map(|overrides| {
+            overrides
+                .iter()
+                .filter_map(|(k, v)| v.production_name.clone().map(|pn| (pn, k.clone())))
                 .collect()
         });
         Self {
@@ -105,7 +112,8 @@ impl GlyphData {
             codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
             production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
             overrides,
-            overrrides_by_codepoint,
+            overrides_by_codepoint,
+            overrides_by_production_name,
             ..Default::default()
         }
     }
@@ -137,7 +145,8 @@ impl Default for GlyphData {
                 .collect(),
             production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
             overrides: None,
-            overrrides_by_codepoint: None,
+            overrides_by_codepoint: None,
+            overrides_by_production_name: None,
         }
     }
 }
@@ -357,8 +366,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
             b"unicode" => unicode = Some(value),
             b"altNames" => alt_names = Some(value),
             b"production" => production_name = Some(value),
-            b"unicodeLegacy" | b"case" | b"direction" | b"script"
-            | b"description" => (),
+            b"unicodeLegacy" | b"case" | b"direction" | b"script" | b"description" => (),
             other => {
                 return Err(GlyphDataError::UnknownAttribute(
                     String::from_utf8_lossy(other).into_owned(),
@@ -433,20 +441,28 @@ impl GlyphData {
         codepoints: Option<&BTreeSet<u32>>,
     ) -> Option<QueryResult> {
         // Override?
-        if let (Some(overrides), Some(overrides_by_codepoint)) = (
+        if let (Some(overrides), Some(overrides_by_codepoint), Some(overrides_by_production_name)) = (
             self.overrides.as_ref(),
-            self.overrrides_by_codepoint.as_ref(),
+            self.overrides_by_codepoint.as_ref(),
+            self.overrides_by_production_name.as_ref(),
         ) {
-            let override_result = overrides.get(name).or_else(|| {
-                codepoints
-                    .into_iter()
-                    .flat_map(|cps| cps.iter())
-                    .find_map(|cp: &u32| {
-                        overrides_by_codepoint
-                            .get(cp)
-                            .and_then(|n| overrides.get(n))
-                    })
-            });
+            let override_result = overrides
+                .get(name)
+                .or_else(|| {
+                    overrides_by_production_name
+                        .get(name)
+                        .and_then(|n| overrides.get(n))
+                })
+                .or_else(|| {
+                    codepoints
+                        .into_iter()
+                        .flat_map(|cps| cps.iter())
+                        .find_map(|cp: &u32| {
+                            overrides_by_codepoint
+                                .get(cp)
+                                .and_then(|n| overrides.get(n))
+                        })
+                });
             if let Some(override_result) = override_result {
                 return Some(QueryResult {
                     category: override_result.category,
@@ -816,19 +832,44 @@ mod tests {
                 category: Category::Mark,
                 subcategory: Some(Subcategory::SpacingCombining),
                 codepoint: Some(b'A' as u32),
+                production_name: Some("u0041".into()),
             },
         )]);
         let data = GlyphData::new(Some(overrides));
 
-        assert_eq!(data.query("A", None).unwrap().category, Category::Mark);
+        let result = data.query("A", None).unwrap();
+        assert_eq!(result.category, Category::Mark);
+        assert_eq!(result.production_name, Some("u0041".into()));
     }
 
     #[test]
-    fn overrides_from_file() {
+    fn category_overrides_from_file() {
         let data =
             GlyphData::with_override_file(Path::new("./data/GlyphData_override_test.xml")).unwrap();
         assert_eq!(data.query("zero", None).unwrap().category, Category::Other);
         assert_eq!(data.query("C", None).unwrap().category, Category::Number);
+    }
+
+    fn assert_query_results_are_equal(result: &QueryResult, expected: &QueryResult) {
+        assert_eq!(result.category, expected.category);
+        assert_eq!(result.subcategory, expected.subcategory);
+        assert_eq!(result.codepoint, expected.codepoint);
+        assert_eq!(result.production_name, expected.production_name);
+    }
+
+    #[test]
+    fn production_name_overrides_from_file() {
+        let data =
+            GlyphData::with_override_file(Path::new("./data/GlyphData_override_test.xml")).unwrap();
+        let yogh = data.query("Yogh", None).unwrap();
+        assert_eq!(yogh.production_name, Some("Yolo".into()));
+        assert_eq!(yogh.codepoint, Some(0x021C));
+        assert_eq!(yogh.category, Category::Letter);
+        // the same query result can be looked up by codepoint or production name
+        let yogh_by_cp = data.query("foo", Some(&[0x021C].into())).unwrap();
+        assert_query_results_are_equal(&yogh_by_cp, &yogh);
+        let yogh_by_pn = data.query("Yolo", None).unwrap();
+        assert_query_results_are_equal(&yogh_by_pn, &yogh);
     }
 
     fn get_category(name: &str, codepoints: &[u32]) -> Option<(Category, Option<Subcategory>)> {
