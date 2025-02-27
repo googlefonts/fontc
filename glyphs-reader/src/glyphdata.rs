@@ -108,9 +108,6 @@ impl GlyphData {
                 .collect()
         });
         Self {
-            data: glyphslib_data::GLYPH_INFO,
-            codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
-            production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
             overrides,
             overrides_by_codepoint,
             overrides_by_production_name,
