@@ -1,6 +1,6 @@
 //! API for the client to manually add additional features
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use write_fonts::{
     tables::layout::LookupFlag,
@@ -211,111 +211,72 @@ pub(crate) struct ExternalFeatures {
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
 }
 
-impl ExternalFeatures {
-    /// Merge the external features into the already compiled features.
-    pub(crate) fn merge_into(
-        &self,
-        all_lookups: &mut AllLookups,
-        features: &mut AllFeatures,
-        markers: &HashMap<Tag, (LookupId, usize)>,
-    ) {
-        let id_map = self.merge_lookups(all_lookups, markers);
-        features.merge_external_features(self.features.clone());
-        features.remap_ids(&id_map);
-        all_lookups.remap_ids(&id_map);
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
+pub(crate) struct InsertionPoint {
+    /// The position in the lookuplist to insert a set of new lookups
+    pub(crate) lookup_id: LookupId,
+    /// if multiple sets are inserted at the same lookup index, this breaks ties
+    ///
+    /// This is common! for instance if you have FEA with two feature blocks
+    /// that contain `# Automatic Code` comments and nothing else, this is used
+    /// to order them.
+    pub(crate) priority: usize,
+}
+
+struct MergeCtx<'a> {
+    all_lookups: &'a mut AllLookups,
+    all_feats: &'a mut AllFeatures,
+    // that were explicit
+    insert_markers: &'a HashMap<Tag, InsertionPoint>,
+    ext_lookups: BTreeMap<LookupId, PositionLookup>,
+    ext_features: BTreeMap<FeatureKey, FeatureLookups>,
+    // ready for insertion
+    processed_lookups: Vec<(InsertionPoint, Vec<(LookupId, PositionLookup)>)>,
+    // track how many groups of lookups have been appended on the end,
+    // so we can give them the right priority
+    append_priority: usize,
+}
+
+impl MergeCtx<'_> {
+    fn merge(mut self) {
+        // This is complicated.
+        //
+        // We are trying to match the behaviour provided by 'feature writers'
+        // in ufo2ft.
+        //
+        // These work by actually generating FEA, and inserting it into the AST
+        // before compilation.
+        //
+        // We are not modifying the AST; the AST has already been compiled, and
+        // we are now inserting generated lookups into those that were compiled
+        // from the AST.
+        //
+        // This means we need to figure out where in the AST these external
+        // lookups _would have been inserted_, and what IDs would have been
+        // assigned to them if they had been there.
+
+        // To make it easier to follow our logic, we will process the external
+        // lookups and features in groups, replicating how they would be
+        // handled by the various feature writers.
+
+        self.do_curs();
+        self.do_kern_and_dist();
+        self.do_marks();
+
+        // okay so now 'processed_lookups' should contain insertion points for
+        // all of our lookups
+
+        if !self.ext_lookups.is_empty() {
+            log::warn!("feature merging left unhandled features!");
+        }
+        self.finalize();
     }
 
-    fn merge_lookups(
-        &self,
-        all: &mut AllLookups,
-        insert_markers: &HashMap<Tag, (LookupId, usize)>,
-    ) -> LookupIdMap {
-        // okay so this is a bit complicated, so a brief outline might be useful:
-        // - 'lookups' and 'features' are being passed in from the outside
-        // - `insert_markers` are optional locations at which the lookups
-        //    for a given feature should be inserted
-        // - if a feature has no marker, its lookups are appended at the end.
-        //
-        // NOTE: inserting lookups into the middle of the lookup list means that
-        // all subsequent lookup ids become invalid. As a consequence, we need
-        // to figure out the transform from old->new for any affected lookups,
-        // and remap those ids at the end.
+    fn finalize(mut self) {
+        self.processed_lookups.sort_by_key(|(key, _)| *key);
 
-        // preflight: we have a list of the manual insert markers, but we also
-        // need to figure out where the marker-less features should go.
-        // fonttools some something fancy here, where certain features are
-        // always inserted ahead of certain other features, if they exist;
-        // otherwise features are appended.
-        //
-        // see https://github.com/googlefonts/ufo2ft/blob/16ed156bd6a8b9bc035/Lib/ufo2ft/featureWriters/baseFeatureWriter.py#L235
-        // and https://github.com/googlefonts/ufo2ft/issues/506
-
-        let mut insert_markers = insert_markers.to_owned();
-
-        // Also: in fonttools, dist/kern are added before marks, so let's do
-        // that first; and kern has to go before dist, if both is present
-        // https://github.com/googlefonts/ufo2ft/blob/16ed156bd6a8b9bc035d0/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L311
-        if let Some((kern_id, kern_pos)) = insert_markers.get(&DIST).copied() {
-            // if kern has a marker but dist doesn't, insert dist first
-            insert_markers
-                .entry(KERN)
-                .or_insert((kern_id, kern_pos - 1));
-        }
-
-        // then handle the mark features, in the same order as ufo2ft:
-        // see https://github.com/googlefonts/ufo2ft/blob/16ed156bd6/Lib/ufo2ft/featureWriters/baseFeatureWriter.py#L235
-        let order = [ABVM, BLWM, MARK, MKMK];
-        for (i, tag) in order.iter().enumerate() {
-            if let Some((id, mut pos)) = insert_markers.get(tag).copied() {
-                // if a later feature has an explicit position, put the earlier
-                // features in front of it; rev() because we're prepending each
-                // time
-                for prev_tag in order[..i].iter().rev() {
-                    if !insert_markers.contains_key(prev_tag) {
-                        pos -= 1;
-                        insert_markers.insert(*prev_tag, (id, pos));
-                    }
-                }
-            }
-        }
-
-        // finally insert dummy markers for any other feature that doesn't exist
-        // when appending, we use the last id and increment the position
-        let last_id = all.next_gpos_id();
-        // quite likely to be after EOF!
-        let mut next_pos = 1_000_000_000;
-        // for adding extras, mimic the order ufo2ft uses, which is alphabetical
-        // but grouped by feature writer. We add markers for all features,
-        // even if they dont exist in the font; we'll ignore those later
-        for feature in [CURS, KERN, DIST, ABVM, BLWM, MARK, MKMK] {
-            insert_markers.entry(feature).or_insert_with(|| {
-                next_pos += 1;
-                (last_id, next_pos)
-            });
-        }
-
-        let lookup_to_feature = self
-            .features
-            .iter()
-            .filter(|(feat, _)| insert_markers.contains_key(&feat.feature))
-            .flat_map(|(feat, lookups)| lookups.iter_ids().map(|id| (id, feat.feature)))
-            .collect::<HashMap<_, _>>();
-
-        // now we want to process the lookups that had an insert marker,
-        // and we want to do it by grouping them by feature tag.
-        let mut lookups_by_feature = HashMap::new();
-        for lk in &self.lookups {
-            let feature = lookup_to_feature.get(&lk.0).unwrap();
-            lookups_by_feature
-                .entry(*feature)
-                .or_insert(Vec::new())
-                .push(lk);
-        }
-
-        // except we want to assign the ids respecting the order of the markers
-        // in the source file, so convert to a vec and sort.
-        let mut lookups_by_feature = lookups_by_feature.into_iter().collect::<Vec<_>>();
-        lookups_by_feature.sort_by_key(|(tag, _)| insert_markers.get(tag).unwrap());
+        // this is the actual logic for inserting the lookups into the main
+        // lookup list, keeping track of how the ids change.
 
         let mut map = LookupIdMap::default();
         let mut inserted_so_far = 0;
@@ -323,8 +284,11 @@ impl ExternalFeatures {
         // 'adjustments' stores the state we need to remap existing ids, if needed.
         let mut adjustments = Vec::new();
 
-        for (tag, lookups) in lookups_by_feature {
-            let first_id = insert_markers.get(&tag).unwrap().0.to_raw();
+        for (insert_point, mut lookups) in self.processed_lookups {
+            let first_id = insert_point.lookup_id.to_raw();
+            // within a feature, the lookups should honor the ordering they were
+            // assigned by the user
+            lookups.sort_by_key(|(key, _)| *key);
             // first update the ids
             for (i, (temp_id, _)) in lookups.iter().enumerate() {
                 let final_id = LookupId::Gpos(first_id + inserted_so_far + i);
@@ -333,7 +297,8 @@ impl ExternalFeatures {
             // then insert the lookups into the correct position
             let insert_at = first_id + inserted_so_far;
             inserted_so_far += lookups.len();
-            all.splice_gpos(insert_at, lookups.into_iter().map(|v| v.1.clone()));
+            self.all_lookups
+                .splice_gpos(insert_at, lookups.into_iter().map(|v| v.1.clone()));
             adjustments.push((first_id, inserted_so_far));
         }
 
@@ -342,7 +307,7 @@ impl ExternalFeatures {
         // pair, where the delta applies from adjustment[n] to adjustment[n +1]
         if !adjustments.is_empty() {
             // add the end of the last range
-            adjustments.push((all.next_gpos_id().to_raw(), inserted_so_far));
+            adjustments.push((self.all_lookups.next_gpos_id().to_raw(), inserted_so_far));
         }
         let (mut range_start, mut adjust) = (0, 0);
         let mut adjustments = adjustments.as_slice();
@@ -355,7 +320,139 @@ impl ExternalFeatures {
             (range_start, adjust, adjustments) = (*next_start, *next_adjust, remaining);
         }
 
-        map
+        self.all_feats.merge_external_features(self.ext_features);
+        self.all_feats.remap_ids(&map);
+        self.all_lookups.remap_ids(&map);
+    }
+
+    fn do_curs(&mut self) {
+        let curs_pos = self
+            .insert_markers
+            .get(&CURS)
+            .copied()
+            .unwrap_or_else(|| self.insertion_point_for_append());
+        self.finalize_lookups_for_feature(CURS, curs_pos);
+    }
+
+    fn do_kern_and_dist(&mut self) {
+        // the lookups for these two features are grouped together,
+        // and are inserted before whichever of them occurs first.
+
+        let marker = self
+            .insert_markers
+            .get(&DIST)
+            .or_else(|| self.insert_markers.get(&KERN))
+            .copied()
+            .unwrap_or_else(|| self.insertion_point_for_append());
+
+        let lookups = self.take_lookups_for_features(&[KERN, DIST]);
+        if !lookups.is_empty() {
+            self.processed_lookups.push((marker, lookups));
+        }
+    }
+
+    fn do_marks(&mut self) {
+        // This one is complicated!
+        // there is logic in the base feature writer that says, when multiple
+        // features are added, features that are earlier in the input list will
+        // be inserted before features that come later.
+        //
+        // the markFeatureWriter passes these features in in alphabetical order:
+        // https://github.com/googlefonts/ufo2ft/blob/16ed156bd6a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L1174
+        //
+        // BUT! the lookups for abvm & blwm are included _in_ the feature blocks
+        // for those features, but the lookups for mark and mkmk are not
+        // inlined, and so they are grouped together, but inserted before any
+        // other lookups in this group. My head hurts :) :)
+
+        const ORDER: [Tag; 4] = [ABVM, BLWM, MARK, MKMK];
+        let mut inserts = [None; 4];
+        for (i, tag) in ORDER.iter().enumerate() {
+            inserts[i] = self.insert_markers.get(tag).copied();
+        }
+
+        for i in 0..ORDER.len() {
+            if let Some(insert) = inserts[i] {
+                // if a later feature has an explicit position, put the earlier
+                // features in front of it
+                for j in 0..i {
+                    let j = i - j - 1; // we want to go in reverse order,
+                                       // prepending each time
+                    if inserts[j].is_none() {
+                        inserts[j] = Some(InsertionPoint {
+                            lookup_id: insert.lookup_id,
+                            priority: insert.priority - 1,
+                        })
+                    }
+                }
+            }
+        }
+
+        // so now `inserts` has explicit positions for features that need them.
+        // lets fill in any features that were not assigned positions this way:
+        for insert in inserts.iter_mut() {
+            if insert.is_none() {
+                *insert = Some(self.insertion_point_for_append());
+            }
+        }
+
+        // and finally lets put the lookups in our processed list:
+        self.finalize_lookups_for_feature(ABVM, inserts[0].unwrap());
+        self.finalize_lookups_for_feature(BLWM, inserts[1].unwrap());
+        self.finalize_lookups_for_feature(MARK, inserts[2].unwrap());
+        self.finalize_lookups_for_feature(MKMK, inserts[3].unwrap());
+    }
+
+    fn finalize_lookups_for_feature(&mut self, feature: Tag, pos: InsertionPoint) {
+        let lookups = self.take_lookups_for_features(&[feature]);
+        if !lookups.is_empty() {
+            self.processed_lookups.push((pos, lookups));
+        }
+    }
+
+    fn lookup_ids_for_features(&self, features: &[Tag]) -> BTreeSet<LookupId> {
+        self.ext_features
+            .iter()
+            .filter(|(feat, _)| features.contains(&feat.feature))
+            .flat_map(|(_, lookups)| lookups.iter_ids())
+            .collect()
+    }
+
+    fn take_lookups_for_features(&mut self, features: &[Tag]) -> Vec<(LookupId, PositionLookup)> {
+        self.lookup_ids_for_features(features)
+            .into_iter()
+            .map(|id| (id, self.ext_lookups.remove(&id).unwrap()))
+            .collect()
+    }
+
+    fn insertion_point_for_append(&mut self) -> InsertionPoint {
+        let lookup_id = self.all_lookups.next_gpos_id();
+        self.append_priority += 1;
+        InsertionPoint {
+            lookup_id,
+            priority: self.append_priority,
+        }
+    }
+}
+
+impl ExternalFeatures {
+    /// Merge the external features into the already compiled features.
+    pub(crate) fn merge_into(
+        &mut self,
+        all_lookups: &mut AllLookups,
+        all_feats: &mut AllFeatures,
+        markers: &HashMap<Tag, InsertionPoint>,
+    ) {
+        let ctx = MergeCtx {
+            all_lookups,
+            all_feats,
+            ext_lookups: self.lookups.iter().cloned().collect(),
+            ext_features: self.features.clone(),
+            insert_markers: markers,
+            processed_lookups: Default::default(),
+            append_priority: 1_000_000_000,
+        };
+        ctx.merge();
     }
 }
 
@@ -369,8 +466,8 @@ mod tests {
         // after remapping, return the order of features, based on the final
         // ordering of lookups.
         //
-        // this works because for these tests we add one unique lookup to each feature,
-        // so lookup order is a proxy for feature order.
+        // this works because for these tests we add one unique lookup to each
+        // feature, so lookup order is a proxy for feature order.
         // - one lookup per feature
         // - no duplicates
         fn feature_order_for_test(&self) -> Vec<Tag> {
@@ -412,11 +509,23 @@ mod tests {
 
         // mark is 'after', kern is 'before', and mkmk has no marker (goes at the end)
         let markers = HashMap::from([
-            (MARK, (LookupId::Gpos(3), 100)),
-            (KERN, (LookupId::Gpos(5), 200)),
+            (
+                MARK,
+                InsertionPoint {
+                    lookup_id: LookupId::Gpos(3),
+                    priority: 100,
+                },
+            ),
+            (
+                KERN,
+                InsertionPoint {
+                    lookup_id: LookupId::Gpos(5),
+                    priority: 200,
+                },
+            ),
         ]);
 
-        let external_features = ExternalFeatures {
+        let mut external_features = ExternalFeatures {
             lookups,
             features,
             lig_carets: Default::default(),
@@ -459,17 +568,26 @@ mod tests {
         }
     }
 
-    fn make_markers_with_order<const N: usize>(order: [Tag; N]) -> HashMap<Tag, (LookupId, usize)> {
+    fn make_markers_with_order<const N: usize>(order: [Tag; N]) -> HashMap<Tag, InsertionPoint> {
         order
             .into_iter()
             .enumerate()
-            .map(|(i, tag)| (tag, (LookupId::Gpos(0), i + 10)))
+            .map(|(i, tag)| {
+                (
+                    tag,
+                    InsertionPoint {
+                        lookup_id: LookupId::Gpos(0),
+                        priority: i + 10,
+                    },
+                )
+            })
             .collect()
     }
 
+    // respect dependencies: kern before dist, abvm/blwm/mark before mkmk.
     #[test]
     fn feature_ordering_without_markers() {
-        let external = mock_external_features(&[CURS, DIST, KERN, ABVM, BLWM, MARK, MKMK]);
+        let mut external = mock_external_features(&[KERN, DIST, MKMK, ABVM, BLWM, MARK, CURS]);
         let markers = make_markers_with_order([]);
         let mut all = AllLookups::default();
         let mut all_feats = AllFeatures::default();
@@ -482,34 +600,48 @@ mod tests {
     }
 
     #[test]
-    fn feature_ordering_without_markers_input_order_doesnt_matter_either() {
-        // just to demonstrate that the order we passed in is irrelevant
-        let external = mock_external_features(&[BLWM, KERN, CURS, MKMK, DIST, MARK, ABVM]);
+    fn kern_and_dist_respect_input_order() {
+        // for kern/dist lookups are inserted together, and respect the lookup
+        // order assigned when they were passed in.
+
+        let mut external = mock_external_features(&[DIST, KERN, CURS]);
+
         let markers = make_markers_with_order([]);
         let mut all = AllLookups::default();
         let mut all_feats = AllFeatures::default();
         external.merge_into(&mut all, &mut all_feats, &markers);
+        assert_eq!(all_feats.feature_order_for_test(), [CURS, DIST, KERN]);
+    }
 
-        assert_eq!(
-            all_feats.feature_order_for_test(),
-            [CURS, KERN, DIST, ABVM, BLWM, MARK, MKMK]
-        );
+    #[test]
+    fn kern_and_dist_respect_input_order_with_marker() {
+        // - dist is earlier in input order
+        // - kern has an explicit marker
+        // = the marker is used for both kern/dist, and they keep input order
+
+        let mut external = mock_external_features(&[CURS, DIST, KERN]);
+
+        let markers = make_markers_with_order([KERN]);
+        let mut all = AllLookups::default();
+        let mut all_feats = AllFeatures::default();
+        external.merge_into(&mut all, &mut all_feats, &markers);
+        assert_eq!(all_feats.feature_order_for_test(), [DIST, KERN, CURS]);
     }
 
     #[test]
     fn blwm_with_marker_takes_abvm_with_it() {
-        let external = mock_external_features(&[BLWM, ABVM, DIST]);
+        let mut external = mock_external_features(&[BLWM, ABVM, DIST]);
         let markers = make_markers_with_order([BLWM]);
         let mut all = AllLookups::default();
         let mut all_feats = AllFeatures::default();
         external.merge_into(&mut all, &mut all_feats, &markers);
-        // because BLWM has a marker and ABVM depends on it, we insert ABVM first
+        // because BLWM has a marker and ABVM depends on it, insert ABVM first
         assert_eq!(all_feats.feature_order_for_test(), [ABVM, BLWM, DIST]);
     }
 
     #[test]
     fn marks_with_marker_goes_before_kern() {
-        let external = mock_external_features(&[MARK, KERN]);
+        let mut external = mock_external_features(&[MARK, KERN]);
         // 'mark' gets an explicit location
         let markers = make_markers_with_order([MARK]);
         let mut all = AllLookups::default();
@@ -520,7 +652,7 @@ mod tests {
 
     #[test]
     fn mkmk_brings_along_the_whole_family() {
-        let external = mock_external_features(&[BLWM, KERN, MKMK, DIST, MARK, ABVM]);
+        let mut external = mock_external_features(&[BLWM, KERN, MKMK, DIST, MARK, ABVM]);
         let markers = make_markers_with_order([MKMK]);
         let mut all = AllLookups::default();
         let mut all_feats = AllFeatures::default();

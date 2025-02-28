@@ -33,7 +33,7 @@ use crate::{
 };
 
 use super::{
-    feature_writer::{FeatureBuilder, FeatureProvider},
+    feature_writer::{FeatureBuilder, FeatureProvider, InsertionPoint},
     features::{
         AaltFeature, ActiveFeature, AllFeatures, ConditionSetMap, CvParams, SizeFeature,
         SpecialVerticalFeatureState,
@@ -97,7 +97,7 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     // when we encounter these we record what lookup id would be logically next,
     // and we will use that for the generated lookups.
     // We also store the start pos of the comment, to break ties.
-    insert_markers: HashMap<Tag, (LookupId, usize)>,
+    insert_markers: HashMap<Tag, InsertionPoint>,
 }
 
 impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
@@ -282,7 +282,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             &mut self.mark_filter_sets,
         );
         writer.add_features(&mut builder);
-        let external_features = builder.finish();
+        let mut external_features = builder.finish();
         external_features.merge_into(&mut self.lookups, &mut self.features, &self.insert_markers);
         external_features.lig_carets
     }
@@ -1917,10 +1917,13 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             // we can have multiple markers in a row without any lookups between,
             // but we care about the order; so along with the lookup id we also
             // store the comment position, which breaks ties.
-            let comment_start = item.range().start;
+            let priority = item.range().start;
             self.insert_markers.insert(
                 current_feature,
-                (self.lookups.next_gpos_id(), comment_start),
+                InsertionPoint {
+                    lookup_id: self.lookups.next_gpos_id(),
+                    priority,
+                },
             );
         } else {
             let span = match item {
