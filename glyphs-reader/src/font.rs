@@ -2129,7 +2129,6 @@ impl RawGlyph {
             }
         }
 
-
         Ok(Glyph {
             name: self.glyphname,
             export: self.export.unwrap_or(true),
