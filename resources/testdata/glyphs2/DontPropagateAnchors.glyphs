@@ -1,0 +1,90 @@
+{
+.appVersion = "1364";
+familyName = "New Font";
+customParameters = (
+{
+name = "Propagate Anchors";
+value = 0;
+}
+);
+fontMaster = (
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "89D5A646-9CD3-4D7D-B45A-59A2C21796F3";
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = "89D5A646-9CD3-4D7D-B45A-59A2C21796F3";
+paths = (
+{
+closed = 1;
+nodes = (
+"254 183 LINE",
+"426 35 LINE",
+"97 20 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0041;
+},
+{
+glyphname = Aacute;
+layers = (
+{
+components = (
+{
+name = A;
+},
+{
+name = acutecomb;
+transform = "{1, 0, 0, 1, 38, -161}";
+}
+);
+layerId = "89D5A646-9CD3-4D7D-B45A-59A2C21796F3";
+width = 600;
+}
+);
+unicode = 00C1;
+},
+{
+glyphname = acutecomb;
+layers = (
+{
+anchors = (
+{
+name = "new anchor";
+position = "{258, 593}";
+}
+);
+layerId = "89D5A646-9CD3-4D7D-B45A-59A2C21796F3";
+paths = (
+{
+closed = 1;
+nodes = (
+"263 376 LINE",
+"308 456 LINE",
+"239 471 LINE",
+"217 385 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0301;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
