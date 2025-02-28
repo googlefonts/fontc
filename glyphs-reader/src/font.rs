@@ -316,13 +316,15 @@ impl Layer {
 #[derive(Clone, Default, Debug, PartialEq, Hash)]
 pub struct LayerAttributes {
     pub coordinates: Vec<OrderedFloat<f64>>,
-    // TODO: add axisRules, color, etc.
+    pub color: bool,
+    // TODO: add axisRules, etc.
 }
 
 // hand-parse because they can take multiple shapes
 impl FromPlist for LayerAttributes {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
         let mut coordinates = Vec::new();
+        let mut color = false;
 
         tokenizer.eat(b'{')?;
 
@@ -334,9 +336,8 @@ impl FromPlist for LayerAttributes {
             let key: String = tokenizer.parse()?;
             tokenizer.eat(b'=')?;
             match key.as_str() {
-                "coordinates" => {
-                    coordinates = tokenizer.parse()?;
-                }
+                "coordinates" => coordinates = tokenizer.parse()?,
+                "color" => color = tokenizer.parse()?,
                 // skip unsupported attributes for now
                 // TODO: match the others
                 _ => tokenizer.skip_rec()?,
@@ -344,7 +345,59 @@ impl FromPlist for LayerAttributes {
             tokenizer.eat(b';')?;
         }
 
-        Ok(LayerAttributes { coordinates })
+        Ok(LayerAttributes { coordinates, color })
+    }
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, FromPlist)]
+pub struct ShapeAttributes {
+    pub gradient: Gradient,
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, FromPlist)]
+pub struct Gradient {
+    start: Vec<OrderedFloat<f64>>,
+    end: Vec<OrderedFloat<f64>>,
+    colors: Vec<Color>,
+    #[fromplist(key = "type")]
+    style: String,
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
+pub struct Color {
+    pub r: i64,
+    pub g: i64,
+    pub b: i64,
+    pub a: i64,
+    // The position on the color line, see <https://learn.microsoft.com/en-us/typography/opentype/spec/colr#color-lines>
+    pub stop_offset: OrderedFloat<f64>,
+}
+
+// hand-parse because it's a list of inconsistent types
+impl FromPlist for Color {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+        tokenizer.eat(b'(')?;
+
+        let colors = tokenizer.parse::<Vec<i64>>()?;
+        tokenizer.eat(b',')?;
+        let stop_offset = tokenizer.parse::<f64>()?;
+        tokenizer.eat(b')')?;
+
+        if colors.len() != 4 {
+            return Err(crate::plist::Error::UnexpectedNumberOfValues {
+                value_type: "rgba values",
+                expected: 4,
+                actual: colors.len(),
+            });
+        }
+
+        Ok(Color {
+            r: colors[0],
+            g: colors[1],
+            b: colors[2],
+            a: colors[3],
+            stop_offset: stop_offset.into(),
+        })
     }
 }
 
@@ -352,6 +405,16 @@ impl FromPlist for LayerAttributes {
 pub enum Shape {
     Path(Path),
     Component(Component),
+}
+
+#[cfg(test)]
+impl Shape {
+    fn attributes(&self) -> &ShapeAttributes {
+        match self {
+            Shape::Path(p) => &p.attributes,
+            Shape::Component(c) => &c.attributes,
+        }
+    }
 }
 
 // The font you get directly from a plist, minimally modified
@@ -857,14 +920,20 @@ struct RawShape {
     pos: Vec<f64>,             // v3
     angle: Option<f64>,        // v3
     scale: Vec<f64>,           // v3
+
+    #[fromplist(alt_name = "attr")]
+    attributes: ShapeAttributes,
 }
 
+/// <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#spec-glyphs-3-path>
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
 pub struct Path {
     pub closed: bool,
     pub nodes: Vec<Node>,
+    pub attributes: ShapeAttributes,
 }
 
+/// <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#spec-glyphs-3-component>
 #[derive(Default, Clone, Debug, FromPlist)]
 pub struct Component {
     /// The glyph this component references
@@ -876,6 +945,7 @@ pub struct Component {
     /// For instance, if an acute accent is a component of a ligature glyph,
     /// we might rename its 'top' anchor to 'top_2'
     pub anchor: Option<SmolStr>,
+    pub attributes: ShapeAttributes,
 }
 
 impl PartialEq for Component {
@@ -1280,6 +1350,7 @@ impl Path {
         Path {
             nodes: Vec::new(),
             closed,
+            ..Default::default()
         }
     }
 
@@ -2001,12 +2072,14 @@ impl TryFrom<RawShape> for Shape {
                 name: glyph_name,
                 transform,
                 anchor: from.anchor,
+                attributes: from.attributes,
             })
         } else {
             // no ref; presume it's a path
             Shape::Path(Path {
                 closed: from.closed.unwrap_or_default(),
                 nodes: from.nodes.clone(),
+                attributes: from.attributes,
             })
         };
         Ok(shape)
@@ -2651,8 +2724,8 @@ impl From<Affine> for AffineForEqAndHash {
 mod tests {
     use crate::{
         font::{
-            default_master_idx, normalized_rotation, AxisUserToDesignMap, RawFeature, RawFont,
-            RawFontMaster, UserToDesignMapping,
+            default_master_idx, normalized_rotation, AxisUserToDesignMap, Color, Gradient,
+            RawFeature, RawFont, RawFontMaster, UserToDesignMapping,
         },
         glyphdata::{Category, GlyphData},
         plist::FromPlist,
@@ -3757,5 +3830,86 @@ mod tests {
     ) {
         // any other angles' sin and cos != (0, ±1) are passed through unchanged
         assert_eq!(expected, round(normalized_rotation(angle), precision));
+    }
+
+    #[test]
+    fn parse_colrv1_identify_colr_glyphs() {
+        let font = Font::load(&glyphs3_dir().join("COLRv1-simple.glyphs")).unwrap();
+        let expected_colr = HashSet::from(["A", "B", "C", "D", "K", "L", "M", "N"]);
+        assert_eq!(
+            expected_colr,
+            font.glyphs
+                .values()
+                .filter(|g| g.layers.iter().all(|l| l.attributes.color))
+                .map(|g| g.name.as_str())
+                .collect::<HashSet<_>>()
+        );
+    }
+
+    #[test]
+    fn parse_colrv1_gradients() {
+        let font = Font::load(&glyphs3_dir().join("COLRv1-simple.glyphs")).unwrap();
+        let expected_colr = HashSet::from([
+            (
+                "A",
+                Gradient {
+                    start: vec![OrderedFloat(0.1), OrderedFloat(0.1)],
+                    end: vec![OrderedFloat(0.9), OrderedFloat(0.9)],
+                    colors: vec![
+                        Color {
+                            r: 255,
+                            g: 0,
+                            b: 0,
+                            a: 255,
+                            stop_offset: 0.into(),
+                        },
+                        Color {
+                            r: 0,
+                            g: 0,
+                            b: 255,
+                            a: 255,
+                            stop_offset: 1.into(),
+                        },
+                    ],
+                    ..Default::default()
+                },
+            ),
+            (
+                "N",
+                Gradient {
+                    start: vec![OrderedFloat(1.0), OrderedFloat(1.0)],
+                    end: vec![OrderedFloat(0.0), OrderedFloat(0.0)],
+                    colors: vec![
+                        Color {
+                            r: 255,
+                            g: 0,
+                            b: 0,
+                            a: 255,
+                            stop_offset: 0.into(),
+                        },
+                        Color {
+                            r: 0,
+                            g: 0,
+                            b: 255,
+                            a: 255,
+                            stop_offset: 1.into(),
+                        },
+                    ],
+                    style: "circle".to_string(),
+                },
+            ),
+        ]);
+        assert_eq!(
+            expected_colr,
+            font.glyphs
+                .values()
+                .filter(|g| expected_colr.iter().any(|(name, _)| *name == g.name))
+                .flat_map(|g| g
+                    .layers
+                    .iter()
+                    .flat_map(|l| l.shapes.iter())
+                    .map(|s| (g.name.as_str(), s.attributes().gradient.clone())))
+                .collect::<HashSet<_>>()
+        );
     }
 }

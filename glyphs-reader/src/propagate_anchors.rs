@@ -536,7 +536,7 @@ mod tests {
                 .push(Shape::Component(Component {
                     name: name.into(),
                     transform: Affine::translate((pos.0 as f64, pos.1 as f64)),
-                    anchor: None,
+                    ..Default::default()
                 }));
             self
         }
