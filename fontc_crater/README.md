@@ -24,7 +24,7 @@ To run in CI mode locally to play with the html output:
 When run in CI, we want to ensure that we have complete control over the set of
 python pacakges we are comparing against; to ensure this we use `pip-compile`
 (part of [`pip-tools`]) to generate a pinned `requirements.txt` from a
-`requirements.in` file in the root `resources/scripts` directory. 
+`requirements.in` file in the root `resources/scripts` directory.
 
 To update the set of python packages in use, you need to update this file:
 
@@ -45,7 +45,7 @@ To run locally to rebuild the HTML:
 # clone git@github.com:googlefonts/fontc_crater.git somewhere, we'll assume at ../fontc_crater
 # CI currently has it's own format for the repo list, use the file from ^
 
-$ cargo run --release -p=fontc_crater -- ci ../fontc_crater/gf-repos-2024-09-23.json -o ../fontc_crater/results/ --html-only
+$ cargo run --release -p=fontc_crater -- ci ../fontc_crater/targets.json -o ../fontc_crater/results/ --html-only
 
 # Review ../fontc_crater/results/index.html (NOT ../fontc_crater/index.html)
 ```
@@ -58,7 +58,7 @@ checkout as above):
 # cd ../fontc_crater && git pull
 
 $ RUST_LOG=debug cargo run --release -p fontc_crater \
--- ci ../fontc_crater/gf-repos-2025-02-19.json --out ../fontc_crater/results/
+-- ci ../fontc_crater/targets.json --out ../fontc_crater/results/
 
 ```
 
