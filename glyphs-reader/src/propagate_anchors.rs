@@ -1023,4 +1023,15 @@ mod tests {
         let sorted = depth_sorted_composite_glyphs(&glyphs);
         assert_eq!(sorted, ["A", "C", "E", "D", "B"]);
     }
+
+    #[test]
+    fn dont_propagate_anchors() {
+        let font = Font::load(std::path::Path::new(
+            "../resources/testdata/glyphs2/DontPropagateAnchors.glyphs",
+        ))
+        .unwrap();
+        assert_eq!(font.custom_parameters.propagate_anchors, Some(false));
+        let glyph = font.glyphs.get("Aacute").unwrap();
+        assert!(glyph.layers.first().unwrap().anchors.is_empty());
+    }
 }

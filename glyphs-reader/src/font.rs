@@ -68,6 +68,7 @@ pub struct Font {
 /// Custom parameter options that can be set on a glyphs font
 #[derive(Clone, Debug, PartialEq, Hash, Default)]
 pub struct CustomParameters {
+    pub propagate_anchors: Option<bool>,
     pub use_typo_metrics: Option<bool>,
     pub is_fixed_pitch: Option<bool>,
     pub fs_type: Option<u16>,
@@ -598,6 +599,7 @@ impl RawCustomParameters {
                 continue;
             }
             match name.as_str() {
+                "Propagate Anchors" => add_and_report_issues!(propagate_anchors, Plist::as_bool),
                 "Use Typo Metrics" => add_and_report_issues!(use_typo_metrics, Plist::as_bool),
                 "isFixedPitch" => add_and_report_issues!(is_fixed_pitch, Plist::as_bool),
                 "Has WWS Names" => add_and_report_issues!(has_wws_names, Plist::as_bool),
@@ -2584,7 +2586,11 @@ fn preprocess_unparsed_plist(s: &str) -> Cow<str> {
 impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
         let mut font = Self::load_raw(glyphs_file)?;
-        font.propagate_all_anchors();
+
+        // propagate anchors by default unless explicitly set to false
+        if font.custom_parameters.propagate_anchors.unwrap_or(true) {
+            font.propagate_all_anchors();
+        }
         Ok(font)
     }
 
