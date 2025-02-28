@@ -130,6 +130,17 @@ fn pip_freeze_sha() -> String {
         .to_owned()
 }
 
+fn get_input_sha(path: &Path) -> String {
+    let output = Command::new("shasum")
+        .arg(path)
+        .output()
+        .expect("shasum should be installed everywhere");
+    std::str::from_utf8(&output.stdout)
+        .expect("shasum output always ascii")
+        .trim()
+        .to_owned()
+}
+
 impl<T, E> FromIterator<(Target, RunResult<T, E>)> for Results<T, E> {
     fn from_iter<I: IntoIterator<Item = (Target, RunResult<T, E>)>>(iter: I) -> Self {
         let mut out = Results::default();

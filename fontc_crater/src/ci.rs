@@ -44,7 +44,8 @@ struct RunSummary {
     results_file: PathBuf,
     // the name of the file listing targets used by this run.
     // it is intended that when this list is updated, the filename is changed.
-    input_file: PathBuf,
+    #[serde(alias = "input_file")]
+    input_file_sha: String,
     stats: super::ttx_diff_runner::Summary,
 }
 
@@ -84,23 +85,24 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     }
 
     log_if_auth_or_not();
+    // do this now so we error if the input file doesn't exist
+    let inputs: Vec<RepoInfo> = super::try_read_json(&args.to_run)?;
 
     let summary_file = args.out_dir.join(SUMMARY_FILE);
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
     // todo: fontc_repo should be checked out by us, and have a known path
     let fontc_rev = super::get_git_rev(None).unwrap();
     let pip_freeze_sha = super::pip_freeze_sha();
+    let input_file_sha = super::get_input_sha(&args.to_run);
     if let Some(last_run) = prev_runs.last() {
         if last_run.fontc_rev == fontc_rev
-            && Some(last_run.input_file.as_os_str()) == args.to_run.file_name()
+            && input_file_sha == last_run.input_file_sha
             && pip_freeze_sha == last_run.pip_freeze_sha
         {
             log::info!("no changes since last run, skipping");
             return Ok(());
         }
     }
-
-    let inputs: Vec<RepoInfo> = super::try_read_json(&args.to_run)?;
 
     let out_file = result_path_for_current_date();
     let out_path = args.out_dir.join(&out_file);
@@ -146,11 +148,6 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         log::info!("output identical to last run, skipping");
         return Ok(());
     }
-    let input_file = args
-        .to_run
-        .file_name()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| args.to_run.clone());
 
     let summary = RunSummary {
         began,
@@ -158,7 +155,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         fontc_rev,
         pip_freeze_sha,
         results_file: out_file.into(),
-        input_file,
+        input_file_sha,
         stats: summary,
     };
 
