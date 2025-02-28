@@ -39,6 +39,8 @@ $ rm -f resources/scripts/requirements.txt && pip-compile resources/scripts/requ
 # Commit updated file
 ```
 
+To run locally to rebuild the HTML:
+
 ```shell
 # clone git@github.com:googlefonts/fontc_crater.git somewhere, we'll assume at ../fontc_crater
 # CI currently has it's own format for the repo list, use the file from ^
@@ -46,6 +48,18 @@ $ rm -f resources/scripts/requirements.txt && pip-compile resources/scripts/requ
 $ cargo run --release -p=fontc_crater -- ci ../fontc_crater/gf-repos-2024-09-23.json -o ../fontc_crater/results/ --html-only
 
 # Review ../fontc_crater/results/index.html (NOT ../fontc_crater/index.html)
+```
+
+To do a full run locally, such as to test a PR (assuming same fontc_crater
+checkout as above):
+
+```shell
+# make sure the repo is up to date, so you're comparing against the latest run:
+# cd ../fontc_crater && git pull
+
+$ RUST_LOG=debug cargo run --release -p fontc_crater \
+-- ci ../fontc_crater/gf-repos-2025-02-19.json --out ../fontc_crater/results/
+
 ```
 
 [google-fonts-sources]: https://github.com/googlefonts/google-fonts-sources
