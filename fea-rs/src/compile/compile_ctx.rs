@@ -282,17 +282,9 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             &mut self.mark_filter_sets,
         );
         writer.add_features(&mut builder);
-
-        // now we need to merge in the newly generated features.
-        let id_map = self.lookups.merge_external_lookups(
-            builder.lookups,
-            &builder.features,
-            &self.insert_markers,
-        );
-        self.features.merge_external_features(builder.features);
-        self.features.remap_ids(&id_map);
-        self.lookups.remap_ids(&id_map);
-        builder.lig_carets
+        let external_features = builder.finish();
+        external_features.merge_into(&mut self.lookups, &mut self.features, &self.insert_markers);
+        external_features.lig_carets
     }
 
     /// Infer/update GDEF table as required.
