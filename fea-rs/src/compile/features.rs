@@ -27,7 +27,7 @@ pub(crate) struct FeatureLookups {
 /// We update this type as we encounter feature blocks in the source FEA.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AllFeatures {
-    features: BTreeMap<FeatureKey, FeatureLookups>,
+    pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
     required_features: HashSet<FeatureKey>,
     pub(crate) size: Option<SizeFeature>,
     pub(crate) aalt: Option<AaltFeature>,
