@@ -410,7 +410,12 @@ fn make_diff_report(
                     k,
                     match v {
                         DiffOutput::Identical => 100.0,
-                        DiffOutput::Diffs(d) => d.get("total").unwrap().ratio().unwrap() * 100.0,
+                        DiffOutput::Diffs(d) => {
+                            // sometimes the output is rounded up to 100 but is
+                            // not actually identical: we want to not show that as 100!
+                            let diff_perc = d.get("total").unwrap().ratio().unwrap() * 100.0;
+                            diff_perc.min(99.999)
+                        }
                     },
                 )
             })
