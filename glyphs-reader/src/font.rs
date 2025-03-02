@@ -383,21 +383,30 @@ impl FromPlist for Color {
         let stop_offset = tokenizer.parse::<f64>()?;
         tokenizer.eat(b')')?;
 
-        if colors.len() != 4 {
-            return Err(crate::plist::Error::UnexpectedNumberOfValues {
-                value_type: "rgba values",
-                expected: 4,
+        // See <https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f456d64ebe9993818770e170454/Lib/glyphsLib/builder/common.py#L41-L50>
+        match *colors.as_slice() {
+            // Grayscale
+            [black, alpha] => Ok(Color {
+                r: black,
+                g: black,
+                b: black,
+                a: alpha,
+                stop_offset: stop_offset.into(),
+            }),
+            // RGB
+            [r, g, b, a] => Ok(Color {
+                r,
+                g,
+                b,
+                a,
+                stop_offset: stop_offset.into(),
+            }),
+            // 5 is CMYK, match python by not supporting that
+            _ => Err(crate::plist::Error::UnexpectedNumberOfValues {
+                value_type: "grayscale (2) or rgba (4)",
                 actual: colors.len(),
-            });
+            }),
         }
-
-        Ok(Color {
-            r: colors[0],
-            g: colors[1],
-            b: colors[2],
-            a: colors[3],
-            stop_offset: stop_offset.into(),
-        })
     }
 }
 
@@ -3910,6 +3919,37 @@ mod tests {
                     .flat_map(|l| l.shapes.iter())
                     .map(|s| (g.name.as_str(), s.attributes().gradient.clone())))
                 .collect::<HashSet<_>>()
+        );
+    }
+
+    #[test]
+    fn parse_grayscale_colors() {
+        let font = Font::load(&glyphs3_dir().join("COLRv1-grayscale.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                Color {
+                    r: 64,
+                    g: 64,
+                    b: 64,
+                    a: 255,
+                    stop_offset: 0.into(),
+                },
+                Color {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                    stop_offset: 1.into(),
+                },
+            ],
+            font.glyphs
+                .values()
+                .flat_map(|g| g
+                    .layers
+                    .iter()
+                    .flat_map(|l| l.shapes.iter())
+                    .flat_map(|s| (s.attributes().gradient.colors.iter().cloned())))
+                .collect::<Vec<_>>()
         );
     }
 }
