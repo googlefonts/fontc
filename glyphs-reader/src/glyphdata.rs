@@ -1169,7 +1169,7 @@ mod tests {
     fn query_production_names(name: &str, expected: Option<(ProductionName, &str)>) {
         let result = query_by_name(name);
         assert_eq!(
-            result.production_name.map(|n| (n, n.smol_str(result.codepoint).as_str())),
+            result.production_name.map(|n| (n, n.smolstr(result.codepoint).as_str())),
             expected,
             "{name}: {result:?} != {expected:?}"
         );
