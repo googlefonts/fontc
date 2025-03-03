@@ -67,10 +67,9 @@ pub enum Error {
     },
     #[error("Unexpected token '{name}'")]
     UnexpectedToken { name: &'static str },
-    #[error("Expected {expected} {value_type},, found '{actual}'")]
+    #[error("Expected {value_type}, found '{actual}'")]
     UnexpectedNumberOfValues {
         value_type: &'static str,
-        expected: usize,
         actual: usize,
     },
     #[error("parsing failed: '{0}'")]
