@@ -898,6 +898,7 @@ impl FromPlist for bool {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, Error> {
         match tokenizer.lex()? {
             Token::Atom(val) => parse_int(val).map(|v| v == 1),
+            Token::String(val) => parse_int(&val).map(|v| v == 1),
             _ => Err(Error::ExpectedNumber),
         }
     }
@@ -1171,5 +1172,20 @@ mod tests {
             assert_eq!(token, Token::String(Cow::Borrowed(expected)));
             assert_eq!(len, expected_len);
         }
+    }
+
+    #[test]
+    fn parse_quoted_and_unquoted_ints_and_bools() {
+        assert_eq!(
+            (Ok(1), Ok(1), Ok(true), Ok(true), Ok(false), Ok(false)),
+            (
+                Tokenizer::new("1").parse::<i64>(),
+                Tokenizer::new("\"1\"").parse::<i64>(),
+                Tokenizer::new("1").parse::<bool>(),
+                Tokenizer::new("\"1\"").parse::<bool>(),
+                Tokenizer::new("0").parse::<bool>(),
+                Tokenizer::new("\"0\"").parse::<bool>(),
+            )
+        );
     }
 }
