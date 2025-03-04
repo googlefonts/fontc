@@ -30,6 +30,7 @@ pub(crate) use results_cache::ResultsCache;
 
 static SUMMARY_FILE: &str = "summary.json";
 static SOURCES_FILE: &str = "sources.json";
+static FAILED_REPOS_FILE: &str = "failed_repos.json";
 
 type DiffResults = Results<DiffOutput, DiffError>;
 
@@ -124,7 +125,12 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     log::info!("compiled fontc to {}", fontc_path.display());
     log::info!("compiled otl-normalizeer to {}", normalizer_path.display());
 
-    let (targets, source_repos) = make_targets(&cache_dir, &inputs);
+    let ResolvedTargets {
+        targets,
+        source_repos,
+        failures,
+    } = make_targets(&cache_dir, &inputs);
+
     let n_targets = targets.len();
 
     let context = super::ttx_diff_runner::TtxContext {
@@ -167,7 +173,9 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     // we write the map of target -> source repo to a separate file because
     // otherwise we're basically duplicating it for each run.
     let sources_file = args.out_dir.join(SOURCES_FILE);
-    super::try_write_json(&source_repos, &sources_file)
+    super::try_write_json(&source_repos, &sources_file)?;
+    let failures_file = args.out_dir.join(FAILED_REPOS_FILE);
+    super::try_write_json(&failures, &failures_file)
 }
 
 fn result_path_for_current_date() -> String {
@@ -176,15 +184,23 @@ fn result_path_for_current_date() -> String {
     format!("{timestamp}.json")
 }
 
-fn make_targets(cache_dir: &Path, repos: &[RepoInfo]) -> (Vec<Target>, BTreeMap<PathBuf, String>) {
-    let mut targets = Vec::new();
-    let mut repo_list = BTreeMap::new();
-    for repo in repos {
+#[derive(Debug, Default)]
+struct ResolvedTargets {
+    targets: Vec<Target>,
+    // map of local path -> repo URL
+    source_repos: BTreeMap<PathBuf, String>,
+    // repos where we expected to find targets but didn't
+    // map of URL -> error message
+    failures: BTreeMap<String, String>,
+}
+
+fn make_targets(cache_dir: &Path, repos: &[RepoInfo]) -> ResolvedTargets {
+    let mut result = ResolvedTargets::default();
+    'repo: for repo in repos {
         let iter = match repo.iter_configs(cache_dir) {
             Ok(iter) => iter,
             Err(e) => {
-                let path = repo.repo_path(cache_dir);
-                log::warn!("error reading repo '{}': {e}", path.display());
+                result.failures.insert(repo.repo_url.clone(), e.to_string());
                 continue;
             }
         };
@@ -192,8 +208,8 @@ fn make_targets(cache_dir: &Path, repos: &[RepoInfo]) -> (Vec<Target>, BTreeMap<
             let config = match Config::load(&config_path) {
                 Ok(x) => x,
                 Err(e) => {
-                    log::warn!("failed to load config '{}': '{e}'", config_path.display());
-                    continue;
+                    result.failures.insert(repo.repo_url.clone(), e.to_string());
+                    continue 'repo;
                 }
             };
             let relative_config_path = config_path
@@ -204,21 +220,27 @@ fn make_targets(cache_dir: &Path, repos: &[RepoInfo]) -> (Vec<Target>, BTreeMap<
                 .expect("config path always in sources dir");
             // config is always in sources, sources is always in org/repo
             let repo_dir = relative_config_path.parent().unwrap().parent().unwrap();
-            repo_list.insert(repo_dir.to_owned(), repo.repo_url.clone());
+            result
+                .source_repos
+                .insert(repo_dir.to_owned(), repo.repo_url.clone());
             for source in &config.sources {
                 let src_path = sources_dir.join(source);
                 if !src_path.exists() {
-                    log::warn!("source file '{}' is missing", src_path.display());
-                    continue;
+                    result
+                        .failures
+                        .insert(repo.repo_url.clone(), format!("missing source '{source}'"));
+                    continue 'repo;
                 }
                 let src_path = src_path
                     .strip_prefix(cache_dir)
                     .expect("source is always in cache dir");
-                targets.extend(targets_for_source(src_path, relative_config_path, &config))
+                result
+                    .targets
+                    .extend(targets_for_source(src_path, relative_config_path, &config))
             }
         }
     }
-    (targets, repo_list)
+    result
 }
 
 fn targets_for_source(

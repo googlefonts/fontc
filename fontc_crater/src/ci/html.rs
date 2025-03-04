@@ -23,8 +23,11 @@ pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
     let summary_path = target_dir.join(super::SUMMARY_FILE);
     let summary: Vec<RunSummary> = crate::try_read_json(&summary_path)?;
     let sources_path = target_dir.join(super::SOURCES_FILE);
+    let failures_path = target_dir.join(super::FAILED_REPOS_FILE);
     let sources: BTreeMap<PathBuf, String> =
         super::load_json_if_exists_else_default(&sources_path)?;
+    let failures: BTreeMap<String, String> =
+        super::load_json_if_exists_else_default(&failures_path)?;
     let details = summary
         .iter()
         .flat_map(|run| match run.try_load_results(target_dir) {
@@ -34,7 +37,7 @@ pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
         })
         .collect::<Result<HashMap<_, _>, _>>()?;
 
-    let html_text = make_html(&summary, &sources, &details)?;
+    let html_text = make_html(&summary, &sources, &details, &failures)?;
     let outpath = target_dir.join(HTML_FILE);
     crate::try_write_str(&html_text, &outpath)
 }
@@ -43,6 +46,7 @@ fn make_html(
     summary: &[RunSummary],
     sources: &BTreeMap<PathBuf, String>,
     results: &HashMap<DateTime<Utc>, DiffResults>,
+    repo_failures: &BTreeMap<String, String>,
 ) -> Result<String, Error> {
     let table_body = make_table_body(summary);
     let css = include_str!("../../resources/style.css");
@@ -72,6 +76,8 @@ fn make_html(
         ),
         _ => html!(),
     };
+
+    let weird_failures = format_repo_failures(repo_failures);
 
     let script = PreEscaped(
         "
@@ -125,6 +131,7 @@ fn make_html(
                     ", "
                     {a href = "#both-failures" { "both compilers" } }
                 }
+                (weird_failures)
                 (detailed_report)
             }
         }
@@ -796,6 +803,26 @@ fn get_other_failures(results: &DiffResults) -> BTreeMap<&Target, &str> {
             DiffError::Other(err) => Some((id, err.as_str())),
         })
         .collect()
+}
+
+// failures that result from us not being able to access a repo in the target list
+fn format_repo_failures(failures: &BTreeMap<String, String>) -> Markup {
+    if failures.is_empty() {
+        return Default::default();
+    }
+
+    html! {
+        div.repo_failures {
+            h4 { "failed to find targets for " (failures.len()) " repos" }
+            ul {
+                @for (repo, reason) in failures {
+                    li {
+                        (repo) ": '" (reason) "'"
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn get_compiler_failures<'a>(

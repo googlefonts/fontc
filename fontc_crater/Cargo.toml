@@ -10,7 +10,7 @@ readme = "README.md"
 [dependencies]
 fontc = { version = "0.0.1", path = "../fontc" }
 
-google-fonts-sources = "0.7.0"
+google-fonts-sources = "0.7.1"
 maud = "0.26.0"
 tidier = "0.5.3"
 
