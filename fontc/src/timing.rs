@@ -123,6 +123,7 @@ impl JobTimer {
 fn short_name(id: &AnyWorkId) -> &'static str {
     match id {
         AnyWorkId::Fe(FeWorkIdentifier::Anchor(..)) => "anchor",
+        AnyWorkId::Fe(FeWorkIdentifier::ColorPalettes) => "cpal",
         AnyWorkId::Fe(FeWorkIdentifier::Features) => "fea",
         AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => "metrics",
         AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)) => "glyph",
@@ -133,6 +134,7 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => "static-meta",
         AnyWorkId::Be(BeWorkIdentifier::Avar) => "avar",
         AnyWorkId::Be(BeWorkIdentifier::Cmap) => "cmap",
+        AnyWorkId::Be(BeWorkIdentifier::Cpal) => "cpal-be",
         AnyWorkId::Be(BeWorkIdentifier::Features) => "fea",
         AnyWorkId::Be(BeWorkIdentifier::FeaturesAst) => "fea.ast",
         AnyWorkId::Be(BeWorkIdentifier::Font) => "font",

@@ -149,6 +149,12 @@ impl Source for FontraIrSource {
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         todo!()
     }
+
+    fn create_color_palette_work(
+        &self,
+    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]

@@ -75,6 +75,12 @@ pub enum Error {
     InvalidTag { raw_tag: String, cause: InvalidTag },
     #[error("Source file contained a construct we don't yet support: {0}")]
     UnsupportedConstruct(String),
+    #[error("Inconsistent palette size, [0] has {size_0}, [{n}] has {size_n}")]
+    InconsistentPaletteLength {
+        size_0: usize,
+        n: usize,
+        size_n: usize,
+    },
 }
 
 /// An error related to loading source input files

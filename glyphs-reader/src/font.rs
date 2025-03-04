@@ -356,11 +356,11 @@ pub struct ShapeAttributes {
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash, FromPlist)]
 pub struct Gradient {
-    start: Vec<OrderedFloat<f64>>,
-    end: Vec<OrderedFloat<f64>>,
-    colors: Vec<Color>,
+    pub start: Vec<OrderedFloat<f64>>,
+    pub end: Vec<OrderedFloat<f64>>,
+    pub colors: Vec<Color>,
     #[fromplist(key = "type")]
-    style: String,
+    pub style: String,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
@@ -416,9 +416,8 @@ pub enum Shape {
     Component(Component),
 }
 
-#[cfg(test)]
 impl Shape {
-    fn attributes(&self) -> &ShapeAttributes {
+    pub fn attributes(&self) -> &ShapeAttributes {
         match self {
             Shape::Path(p) => &p.attributes,
             Shape::Component(c) => &c.attributes,

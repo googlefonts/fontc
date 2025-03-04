@@ -208,6 +208,7 @@ mod tests {
         read::{
             tables::{
                 cmap::{Cmap, CmapSubtable},
+                cpal::ColorRecord,
                 gasp::GaspRangeBehavior,
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
                 gpos::{AnchorTable, Gpos, MarkBasePosFormat1Marker, PositionLookup},
@@ -345,6 +346,7 @@ mod tests {
 
         let mut expected = vec![
             AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata),
+            FeWorkIdentifier::ColorPalettes.into(),
             FeWorkIdentifier::GlobalMetrics.into(),
             FeWorkIdentifier::PreliminaryGlyphOrder.into(),
             FeWorkIdentifier::GlyphOrder.into(),
@@ -356,6 +358,7 @@ mod tests {
             BeWorkIdentifier::FeaturesAst.into(),
             BeWorkIdentifier::Avar.into(),
             BeWorkIdentifier::Cmap.into(),
+            BeWorkIdentifier::Cpal.into(),
             BeWorkIdentifier::Font.into(),
             BeWorkIdentifier::Fvar.into(),
             BeWorkIdentifier::Gasp.into(),
@@ -2871,5 +2874,75 @@ mod tests {
     fn dont_generate_meta_table_if_empty_glyphs_param() {
         let result = TestCompile::compile_source("glyphs3/EmptyMetaTable.glyphs");
         assert!(result.be_context.meta.try_get().is_none())
+    }
+
+    #[test]
+    fn cpal_grayscale() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
+        let cpal = result.font().cpal().unwrap();
+        assert_eq!(
+            (
+                1,
+                2,
+                [
+                    ColorRecord {
+                        red: 0,
+                        green: 0,
+                        blue: 0,
+                        alpha: 255
+                    },
+                    ColorRecord {
+                        red: 64,
+                        green: 64,
+                        blue: 64,
+                        alpha: 255
+                    }
+                ]
+                .as_slice()
+            ),
+            (
+                cpal.num_palettes(),
+                cpal.num_palette_entries(),
+                cpal.color_records_array().unwrap().unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn cpal_color() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-simple.glyphs");
+        let cpal = result.font().cpal().unwrap();
+        assert_eq!(
+            (
+                1,
+                2,
+                [
+                    ColorRecord {
+                        red: 0,
+                        green: 0,
+                        blue: 255,
+                        alpha: 255
+                    },
+                    ColorRecord {
+                        red: 255,
+                        green: 0,
+                        blue: 0,
+                        alpha: 255
+                    }
+                ]
+                .as_slice()
+            ),
+            (
+                cpal.num_palettes(),
+                cpal.num_palette_entries(),
+                cpal.color_records_array().unwrap().unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn cpal_me_not() {
+        let compile = TestCompile::compile_source("glyphs3/WghtVar.glyphs");
+        assert!(compile.font().cpal().is_err());
     }
 }
