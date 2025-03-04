@@ -53,6 +53,11 @@ pub trait Source {
 
     /// Create a function that could be called to generate [crate::ir::ColorPalettes].
     ///
-    /// When run work should update [crate::orchestration::Context] with new [crate::ir::StaticMetadata].
+    /// When run work should update [crate::orchestration::Context] with new [crate::ir::ColorPalettes].
     fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error>;
+
+    /// Create a function that could be called to generate [crate::ir::PaintGraph].
+    ///
+    /// When run work should update [crate::orchestration::Context] with new [crate::ir::PaintGraph].
+    fn create_paint_graph_work(&self) -> Result<Box<IrWork>, Error>;
 }

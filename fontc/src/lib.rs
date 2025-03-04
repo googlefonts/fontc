@@ -348,6 +348,7 @@ mod tests {
             AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata),
             FeWorkIdentifier::ColorPalettes.into(),
             FeWorkIdentifier::GlobalMetrics.into(),
+            FeWorkIdentifier::PaintGraph.into(),
             FeWorkIdentifier::PreliminaryGlyphOrder.into(),
             FeWorkIdentifier::GlyphOrder.into(),
             FeWorkIdentifier::Features.into(),
@@ -358,6 +359,7 @@ mod tests {
             BeWorkIdentifier::FeaturesAst.into(),
             BeWorkIdentifier::Avar.into(),
             BeWorkIdentifier::Cmap.into(),
+            BeWorkIdentifier::Colr.into(),
             BeWorkIdentifier::Cpal.into(),
             BeWorkIdentifier::Font.into(),
             BeWorkIdentifier::Fvar.into(),
@@ -2941,8 +2943,15 @@ mod tests {
     }
 
     #[test]
-    fn cpal_me_not() {
+    fn color_me_not() {
         let compile = TestCompile::compile_source("glyphs3/WghtVar.glyphs");
         assert!(compile.font().cpal().is_err());
+        assert!(compile.font().colr().is_err());
+    }
+
+    #[test]
+    fn colr_grayscale() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
+        result.font().colr().unwrap(); // for now just check the table exists
     }
 }

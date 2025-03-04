@@ -125,6 +125,14 @@ impl Source for GlyphsIrSource {
             font_info: self.font_info.clone(),
         }))
     }
+
+    fn create_paint_graph_work(
+        &self,
+    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+        Ok(Box::new(PaintGraphWork {
+            _font_info: self.font_info.clone(),
+        }))
+    }
 }
 
 fn try_name_id(name: &str) -> Option<NameId> {
@@ -958,6 +966,30 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
             Ok(None) => Ok(()),
             Err(e) => Err(e),
         }
+    }
+}
+
+#[derive(Debug)]
+struct PaintGraphWork {
+    _font_info: Arc<FontInfo>,
+}
+
+impl Work<Context, WorkId, Error> for PaintGraphWork {
+    fn id(&self) -> WorkId {
+        WorkId::PaintGraph
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::None
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::PaintGraph)
+    }
+
+    fn exec(&self, _context: &Context) -> Result<(), Error> {
+        debug!("TODO: actually create paint graph");
+        Ok(())
     }
 }
 

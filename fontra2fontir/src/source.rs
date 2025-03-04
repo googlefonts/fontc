@@ -155,6 +155,12 @@ impl Source for FontraIrSource {
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         todo!()
     }
+
+    fn create_paint_graph_work(
+        &self,
+    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]

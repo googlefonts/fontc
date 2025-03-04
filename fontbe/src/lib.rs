@@ -1,6 +1,7 @@
 //! Backend of the `fontc` font compiler.
 pub mod avar;
 pub mod cmap;
+pub mod colr;
 pub mod cpal;
 pub mod error;
 pub mod features;

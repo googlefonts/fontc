@@ -316,6 +316,8 @@ pub enum WorkId {
     Anchor(GlyphName),
     /// CPAL data
     ColorPalettes,
+    /// COLR data
+    PaintGraph,
 }
 
 impl WorkId {
@@ -337,7 +339,8 @@ impl Identifier for WorkId {
             WorkId::KerningGroups => "IrKerningGroups",
             WorkId::KernInstance(..) => "IrKernInstance",
             WorkId::Anchor(..) => "IrAnchor",
-            WorkId::ColorPalettes => "IrColorPalettes",
+            WorkId::ColorPalettes => "IrPalettes",
+            WorkId::PaintGraph => "IrPaints",
         }
     }
 }
@@ -415,6 +418,7 @@ pub struct Context {
     pub kerning_at: FeContextMap<ir::KerningInstance>,
     pub anchors: FeContextMap<ir::GlyphAnchors>,
     pub colors: FeContextItem<ir::ColorPalettes>,
+    pub paint_graph: FeContextItem<ir::PaintGraph>,
 }
 
 pub fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
@@ -437,7 +441,8 @@ impl Context {
             kerning_groups: self.kerning_groups.clone_with_acl(acl.clone()),
             kerning_at: self.kerning_at.clone_with_acl(acl.clone()),
             anchors: self.anchors.clone_with_acl(acl.clone()),
-            colors: self.colors.clone_with_acl(acl),
+            colors: self.colors.clone_with_acl(acl.clone()),
+            paint_graph: self.paint_graph.clone_with_acl(acl),
         }
     }
 
@@ -479,7 +484,12 @@ impl Context {
             ),
             kerning_at: ContextMap::new(acl.clone(), persistent_storage.clone()),
             anchors: ContextMap::new(acl.clone(), persistent_storage.clone()),
-            colors: ContextItem::new(WorkId::ColorPalettes, acl, persistent_storage),
+            colors: ContextItem::new(
+                WorkId::ColorPalettes,
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
+            paint_graph: ContextItem::new(WorkId::PaintGraph, acl, persistent_storage),
         }
     }
 
