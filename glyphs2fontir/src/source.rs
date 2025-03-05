@@ -15,9 +15,9 @@ use fontdrasil::{
 use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
     ir::{
-        self, AnchorBuilder, GdefCategories, GlobalMetric, GlobalMetrics, GlyphInstance,
-        GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues,
-        NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+        self, AnchorBuilder, Color, ColorPalettes, GdefCategories, GlobalMetric, GlobalMetrics,
+        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        MetaTableValues, NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
     source::Source,
@@ -115,6 +115,14 @@ impl Source for GlyphsIrSource {
         Ok(Box::new(KerningInstanceWork {
             font_info: self.font_info.clone(),
             location: at,
+        }))
+    }
+
+    fn create_color_palette_work(
+        &self,
+    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+        Ok(Box::new(ColorPaletteWork {
+            font_info: self.font_info.clone(),
         }))
     }
 }
@@ -900,6 +908,56 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         context.anchors.set(ir_anchors.build()?);
         context.glyphs.set(ir_glyph.build()?);
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct ColorPaletteWork {
+    font_info: Arc<FontInfo>,
+}
+
+impl Work<Context, WorkId, Error> for ColorPaletteWork {
+    fn id(&self) -> WorkId {
+        WorkId::ColorPalettes
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::None
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::ColorPalettes)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        // Since we're only [for now, baby steps] producing one palette we can dedup it
+        let palette = self
+            .font_info
+            .font
+            .glyphs
+            .values()
+            .flat_map(|g| {
+                g.layers
+                    .iter()
+                    .flat_map(|l| l.shapes.iter())
+                    .flat_map(|s| (s.attributes().gradient.colors.iter()))
+            })
+            .map(|c| Color {
+                r: c.r as u8,
+                g: c.g as u8,
+                b: c.b as u8,
+                a: c.a as u8,
+            })
+            .collect::<Vec<_>>();
+        debug!("{} color palette entries", palette.len());
+        match ColorPalettes::new(vec![palette]) {
+            Ok(Some(palettes)) => {
+                context.colors.set(palettes);
+                Ok(())
+            }
+            Ok(None) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 }
 

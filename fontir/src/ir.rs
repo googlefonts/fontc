@@ -25,7 +25,7 @@ use fontdrasil::{
 };
 
 use crate::{
-    error::{BadAnchor, BadAnchorReason, BadGlyph, BadGlyphKind, VariationModelError},
+    error::{BadAnchor, BadAnchorReason, BadGlyph, BadGlyphKind, Error, VariationModelError},
     orchestration::{IdAware, Persistable, WorkId},
     variations::VariationModel,
 };
@@ -1734,6 +1734,16 @@ impl Persistable for GlyphAnchors {
     }
 }
 
+impl Persistable for ColorPalettes {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
 /// A variable definition of a single glyph.
 ///
 /// If defined in many locations, presumed to vary continuously
@@ -1888,6 +1898,52 @@ pub struct Component {
     pub base: GlyphName,
     /// Affine transformation to apply to the referenced glyph.
     pub transform: Affine,
+}
+
+/// Data to inform construction of [CPAL](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal#palette-table-header)
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ColorPalettes {
+    // All palettes have the same number of colors; there is at least one palette with at least one color
+    pub palettes: Vec<Vec<Color>>,
+}
+
+impl ColorPalettes {
+    pub fn new(mut palettes: Vec<Vec<Color>>) -> Result<Option<Self>, Error> {
+        // Fail if boring
+        if !palettes.iter().any(|p| !p.is_empty()) {
+            return Ok(None);
+        }
+
+        // Fail if inconsistent
+        if let Some(bad_idx) = palettes.iter().position(|p| p.len() != palettes[0].len()) {
+            return Err(Error::InconsistentPaletteLength {
+                size_0: palettes[0].len(),
+                n: bad_idx,
+                size_n: palettes[bad_idx].len(),
+            });
+        }
+
+        // Trivial optimization: if there is only one palette we can deduplicate it
+        if let [one_palette] = palettes.as_mut_slice() {
+            one_palette.sort();
+            one_palette.dedup();
+        }
+        // Sort for stability in output
+        for p in palettes.iter_mut() {
+            p.sort();
+        }
+
+        Ok(Some(Self { palettes }))
+    }
+}
+
+/// We may in time need more than RGBA, but likely not for some years so start simple
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
 }
 
 #[cfg(test)]

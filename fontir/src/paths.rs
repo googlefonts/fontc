@@ -74,6 +74,7 @@ impl Paths {
             WorkId::Features => self.build_dir.join("features.yml"),
             WorkId::KerningGroups => self.build_dir.join("kern_groups.yml"),
             WorkId::KernInstance(location) => self.kern_ir_file(location),
+            WorkId::ColorPalettes => self.build_dir.join("colors.yml"),
         }
     }
 }

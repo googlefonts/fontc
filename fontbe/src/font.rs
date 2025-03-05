@@ -6,9 +6,10 @@ use log::debug;
 use write_fonts::{
     read::TopLevelTable,
     tables::{
-        avar::Avar, cmap::Cmap, fvar::Fvar, gasp::Gasp, gdef::Gdef, glyf::Glyf, gpos::Gpos,
-        gsub::Gsub, gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx, hvar::Hvar, loca::Loca,
-        maxp::Maxp, meta::Meta, mvar::Mvar, name::Name, os2::Os2, post::Post, stat::Stat,
+        avar::Avar, cmap::Cmap, cpal::Cpal, fvar::Fvar, gasp::Gasp, gdef::Gdef, glyf::Glyf,
+        gpos::Gpos, gsub::Gsub, gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx, hvar::Hvar,
+        loca::Loca, maxp::Maxp, meta::Meta, mvar::Mvar, name::Name, os2::Os2, post::Post,
+        stat::Stat,
     },
     types::Tag,
     FontBuilder,
@@ -34,6 +35,7 @@ enum TableType {
 const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
     (WorkId::Avar, Avar::TAG, TableType::Variable),
     (WorkId::Cmap, Cmap::TAG, TableType::Static),
+    (WorkId::Cpal, Cpal::TAG, TableType::Static),
     (WorkId::Fvar, Fvar::TAG, TableType::Variable),
     (WorkId::Head, Head::TAG, TableType::Static),
     (WorkId::Hhea, Hhea::TAG, TableType::Static),
@@ -59,6 +61,7 @@ fn has(context: &Context, id: WorkId) -> bool {
     match id {
         WorkId::Avar => context.avar.try_get().is_some(),
         WorkId::Cmap => context.cmap.try_get().is_some(),
+        WorkId::Cpal => context.cpal.try_get().is_some(),
         WorkId::Fvar => context.fvar.try_get().is_some(),
         WorkId::Head => context.head.try_get().is_some(),
         WorkId::Hhea => context.hhea.try_get().is_some(),
@@ -87,6 +90,7 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
     let bytes = match id {
         WorkId::Avar => context.avar.get().as_ref().as_ref().and_then(to_bytes),
         WorkId::Cmap => to_bytes(context.cmap.get().as_ref()),
+        WorkId::Cpal => to_bytes(context.cpal.get().as_ref()),
         WorkId::Fvar => to_bytes(context.fvar.get().as_ref()),
         WorkId::Head => to_bytes(context.head.get().as_ref()),
         WorkId::Hhea => to_bytes(context.hhea.get().as_ref()),
@@ -120,6 +124,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
         AccessBuilder::new()
             .variant(WorkId::Avar)
             .variant(WorkId::Cmap)
+            .variant(WorkId::Cpal)
             .variant(WorkId::Fvar)
             .variant(WorkId::Head)
             .variant(WorkId::Hhea)

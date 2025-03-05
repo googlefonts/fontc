@@ -286,7 +286,6 @@ impl Source for DesignSpaceIrSource {
     }
 
     fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        debug!("CREATE FEATURES");
         Ok(Box::new(FeatureWork {
             designspace_or_ufo: self.designspace_or_ufo.clone(),
             fea_files: self.fea_files.clone(),
@@ -340,6 +339,12 @@ impl Source for DesignSpaceIrSource {
 
         Ok(work)
     }
+
+    fn create_color_palette_work(
+        &self,
+    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+        Ok(Box::new(ColorPaletteWork {}))
+    }
 }
 
 #[derive(Debug)]
@@ -377,6 +382,9 @@ struct KerningInstanceWork {
     designspace: Arc<DesignSpaceDocument>,
     location: NormalizedLocation,
 }
+
+#[derive(Debug)]
+struct ColorPaletteWork {}
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
     let ds_axes = to_ir_axes(&designspace.axes).ok()?;
@@ -1522,6 +1530,25 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 
         context.anchors.set(ir_anchors.build()?);
         context.glyphs.set(glyph_ir);
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, Error> for ColorPaletteWork {
+    fn id(&self) -> WorkId {
+        WorkId::ColorPalettes
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::None
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::ColorPalettes)
+    }
+
+    fn exec(&self, _context: &Context) -> Result<(), Error> {
+        debug!("Color palettes not implemented for UFO");
         Ok(())
     }
 }

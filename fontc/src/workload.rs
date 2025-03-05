@@ -13,6 +13,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
     avar::create_avar_work,
     cmap::create_cmap_work,
+    cpal::create_cpal_work,
     features::{
         create_gather_ir_kerning_work, create_kern_segment_work, create_kerns_work,
         create_mark_work, FeatureCompilationWork, FeatureFirstPassWork,
@@ -154,6 +155,7 @@ impl Workload {
             .into_iter()
             .for_each(|w| workload.add(w));
         workload.add(create_glyph_order_work());
+        workload.add(workload.source.create_color_palette_work()?);
 
         // BE: f(IR, maybe other BE work) => binary
         workload.add_skippable_feature_work(FeatureFirstPassWork::create());
@@ -175,6 +177,7 @@ impl Workload {
         workload.add(create_stat_work());
         workload.add(create_meta_work());
         workload.add(create_cmap_work());
+        workload.add(create_cpal_work());
         workload.add(create_fvar_work());
         workload.add(create_gvar_work());
         workload.add(create_head_work());
