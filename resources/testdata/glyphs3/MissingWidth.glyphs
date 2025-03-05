@@ -1,0 +1,25 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+familyName = Cormorant;
+fontMaster = (
+{
+iconName = Light;
+id = "68864C9E-53B8-40CD-B419-4EDDE40154E2";
+name = Light;
+}
+);
+glyphs = (
+{
+glyphname = "widthless";
+layers = (
+{
+layerId = "68864C9E-53B8-40CD-B419-4EDDE40154E2";
+}
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 4;
+versionMinor = 1;
+}

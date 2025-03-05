@@ -864,7 +864,7 @@ struct RawLayer {
     name: String,
     layer_id: String,
     associated_master_id: Option<String>,
-    width: OrderedFloat<f64>,
+    width: Option<OrderedFloat<f64>>,
     shapes: Vec<RawShape>,
     paths: Vec<Path>,
     components: Vec<Component>,
@@ -2128,6 +2128,12 @@ impl TryFrom<RawLayer> for Layer {
     type Error = Error;
 
     fn try_from(from: RawLayer) -> Result<Self, Self::Error> {
+        // we do what glyphsLib does:
+        // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f4/Lib/glyphsLib/classes.py#L3662
+        // which is apparently standard, in that if a field is missing it has
+        // some implied default value? Although I don't know where these are
+        // all documented, outside of glyphsLib.
+        const DEFAULT_LAYER_WIDTH: f64 = 600.;
         let mut shapes = Vec::new();
 
         // Glyphs v2 uses paths and components
@@ -2157,7 +2163,7 @@ impl TryFrom<RawLayer> for Layer {
         Ok(Layer {
             layer_id: from.layer_id,
             associated_master_id: from.associated_master_id,
-            width: from.width,
+            width: from.width.unwrap_or(DEFAULT_LAYER_WIDTH.into()),
             shapes,
             anchors,
             attributes: from.attributes,
@@ -3951,5 +3957,13 @@ mod tests {
                     .flat_map(|s| (s.attributes().gradient.colors.iter().cloned())))
                 .collect::<Vec<_>>()
         );
+    }
+
+    // we want to match glyphsLib and use a value of 600 if the width is missing.
+    #[test]
+    fn missing_width_no_problem() {
+        let font = Font::load(&glyphs3_dir().join("MissingWidth.glyphs")).unwrap();
+        let glyph = font.glyphs.get("widthless").unwrap();
+        assert_eq!(glyph.layers[0].width, 600.);
     }
 }
