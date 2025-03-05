@@ -268,10 +268,7 @@ impl Glyph {
     pub fn is_nonspacing_mark(&self) -> bool {
         matches!(
             (self.category, self.sub_category),
-            (
-                Some(Category::Mark),
-                Some(Subcategory::Nonspacing) | Some(Subcategory::SpacingCombining)
-            )
+            (Some(Category::Mark), Some(Subcategory::Nonspacing))
         )
     }
 
