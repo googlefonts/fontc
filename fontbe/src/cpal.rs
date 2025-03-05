@@ -1,4 +1,4 @@
-//! Generates a [cpal](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal) table.
+//! Generates a [CPAL](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal) table.
 
 use crate::{
     error::Error,
@@ -34,7 +34,7 @@ impl Work<Context, AnyWorkId, Error> for CpalWork {
         Access::Variant(AnyWorkId::Fe(FeWorkId::ColorPalettes))
     }
 
-    /// Generate [cpal](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal)
+    /// Generate [CPAL](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // Guard clause: no colors
         let Some(colors) = context.ir.colors.try_get() else {

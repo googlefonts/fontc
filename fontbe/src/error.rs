@@ -95,6 +95,8 @@ pub enum Error {
     CmapConflict(#[from] CmapConflict),
     #[error("Progress stalled computing composite bbox: {0:?}")]
     CompositesStalled(Vec<GlyphName>),
+    #[error("Inconsistent palette lengths observed: {0:?}")]
+    InconsistentPaletteLength(Vec<usize>),
 }
 
 #[derive(Debug)]

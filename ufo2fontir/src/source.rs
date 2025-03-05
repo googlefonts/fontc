@@ -345,6 +345,12 @@ impl Source for DesignSpaceIrSource {
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         Ok(Box::new(ColorPaletteWork {}))
     }
+
+    fn create_paint_graph_work(
+        &self,
+    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+        Ok(Box::new(PaintGraphWork {}))
+    }
 }
 
 #[derive(Debug)]
@@ -385,6 +391,9 @@ struct KerningInstanceWork {
 
 #[derive(Debug)]
 struct ColorPaletteWork {}
+
+#[derive(Debug)]
+struct PaintGraphWork {}
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
     let ds_axes = to_ir_axes(&designspace.axes).ok()?;
@@ -1549,6 +1558,25 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
 
     fn exec(&self, _context: &Context) -> Result<(), Error> {
         debug!("Color palettes not implemented for UFO");
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, Error> for PaintGraphWork {
+    fn id(&self) -> WorkId {
+        WorkId::PaintGraph
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::None
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::PaintGraph)
+    }
+
+    fn exec(&self, _context: &Context) -> Result<(), Error> {
+        debug!("Paint graph not implemented for UFO");
         Ok(())
     }
 }

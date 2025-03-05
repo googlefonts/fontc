@@ -1744,6 +1744,16 @@ impl Persistable for ColorPalettes {
     }
 }
 
+impl Persistable for PaintGraph {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
 /// A variable definition of a single glyph.
 ///
 /// If defined in many locations, presumed to vary continuously
@@ -1945,6 +1955,10 @@ pub struct Color {
     pub b: u8,
     pub a: u8,
 }
+
+/// Data to inform construction of [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr)
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct PaintGraph {}
 
 #[cfg(test)]
 mod tests {

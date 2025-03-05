@@ -75,6 +75,7 @@ impl Paths {
             WorkId::KerningGroups => self.build_dir.join("kern_groups.yml"),
             WorkId::KernInstance(location) => self.kern_ir_file(location),
             WorkId::ColorPalettes => self.build_dir.join("colors.yml"),
+            WorkId::PaintGraph => self.build_dir.join("paint_graph.yml"),
         }
     }
 }

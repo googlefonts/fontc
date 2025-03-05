@@ -71,6 +71,7 @@ impl Paths {
             WorkId::GlyfFragment(name) => self.glyph_glyf_file(name.as_str()),
             WorkId::GvarFragment(name) => self.glyph_gvar_file(name.as_str()),
             WorkId::Avar => self.build_dir.join("avar.table"),
+            WorkId::Colr => self.build_dir.join("colr.table"),
             WorkId::Cpal => self.build_dir.join("cpal.table"),
             WorkId::Gasp => self.build_dir.join("gasp.table"),
             WorkId::Glyf => self.build_dir.join("glyf.table"),
