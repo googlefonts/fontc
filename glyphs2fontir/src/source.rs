@@ -1851,4 +1851,13 @@ mod tests {
             static_metadata.misc.panose
         );
     }
+
+    #[test]
+    fn mark_width_zeroing() {
+        let (source, context) = build_static_metadata(glyphs3_dir().join("SpacingMark.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+        let glyph = context.get_glyph("descender-cy");
+        // this is a spacing-combining mark, so we shouldn't zero it's width
+        assert!(glyph.default_instance().width != 0.0);
+    }
 }
