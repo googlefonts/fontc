@@ -480,6 +480,28 @@ def sort_fontmake_feature_lookups(ttx):
             lookup_index.attrib["value"] = str(values[i])
 
 
+# the same sets can be assigned different ids, but normalizer
+# will resolve them to the actual glyphs and here we can just sort
+def sort_gdef_mark_filter_sets(ttx: etree.ElementTree):
+    markglyphs = ttx.xpath("//GDEF//MarkGlyphSetsDef")
+    if markglyphs is None or len(markglyphs) == 0:
+        return
+
+    assert len(markglyphs) == 1
+    markglyphs = markglyphs[0]
+
+    coverages = sorted(markglyphs.findall("Coverage"), key=lambda cov: [g.attrib["value"] for g in cov])
+    for c in coverages:
+        markglyphs.remove(c)
+
+    for (i, c) in enumerate(coverages):
+        c.attrib["index"] = str(i)
+        markglyphs.append(c)
+
+    # items keep their indentation when we reorder them, so reindent everything
+    etree.indent(markglyphs, level=3)
+
+
 LOOKUPS_TO_SKIP = set([2, 4, 5, 6])  # pairpos, markbase, marklig, markmark
 
 
@@ -643,6 +665,7 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
 
         erase_type_from_stranded_points(ttx)
         remove_gdef_lig_caret_and_var_store(ttx)
+        sort_gdef_mark_filter_sets(ttx)
 
     allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
     allow_some_off_by_ones(
