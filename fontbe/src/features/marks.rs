@@ -568,36 +568,38 @@ impl<'a> MarkLookupBuilder<'a> {
         Error::AnchorDeltaError(name, err)
     }
 
-    fn scripts_using_abvm(&self) -> HashSet<UnicodeShortName> {
-        let fea_scripts = super::get_script_language_systems(&self.fea_first_pass.ast)
-            .into_keys()
-            .collect::<HashSet<_>>();
-        INDIC_SCRIPTS
-            .iter()
-            .chain(USE_SCRIPTS)
-            .chain(std::iter::once(&"Khmr"))
-            .filter_map(|s| UnicodeShortName::from_str(s).ok())
-            .filter(|script| fea_scripts.is_empty() || fea_scripts.contains(script))
-            .collect()
-    }
-
     //https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L1119
     //
     // returns two sets: glyphs used in abvm/blwm, and glyphs used in mark
-    // (in theory these could intersect?)
     fn split_mark_and_abvm_blwm_glyphs(
         &self,
     ) -> Result<(HashSet<GlyphId16>, HashSet<GlyphId16>), Error> {
-        let scripts_using_abvm = self.scripts_using_abvm();
+        let scripts_using_abvm = scripts_using_abvm();
+        let fea_scripts = super::get_script_language_systems(&self.fea_first_pass.ast)
+            .into_keys()
+            .collect::<HashSet<_>>();
+        let filtered_scripts_using_abvm = (fea_scripts.is_empty()).then(|| {
+            scripts_using_abvm
+                .union(&fea_scripts)
+                .copied()
+                .collect::<HashSet<_>>()
+        });
+        // if we had fea scripts, this is abvm scripts that are also in fea;
+        // otherwise it is all abvm scripts
+        let maybe_filtered = filtered_scripts_using_abvm
+            .as_ref()
+            .unwrap_or(&scripts_using_abvm);
 
         let unicode_is_abvm = |uv: u32| -> bool {
             super::properties::scripts_for_codepoint(uv)
-                .any(|script| scripts_using_abvm.contains(&script))
+                // attn: this uses the _filtered_ abvm scripts:
+                .any(|script| maybe_filtered.contains(&script))
         };
 
         // note that it's possible for a glyph to pass both these tests!
         let unicode_is_non_abvm = |uv: u32| -> bool {
             super::properties::scripts_for_codepoint(uv)
+                // but this uses the unfiltered ones!
                 .any(|script| !scripts_using_abvm.contains(&script))
         };
 
@@ -622,8 +624,8 @@ impl<'a> MarkLookupBuilder<'a> {
             gsub.as_ref(),
         )?;
         // https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L1156
-        // I do not understand why we have all this fancy logic when it feels like
-        // 'not abvm' is implicit?
+        // TK: there's another bug here I think!? we can't trust char map, need
+        // to union with glyph set.
         non_abvm_glyphs.extend(
             self.char_map
                 .values()
@@ -921,6 +923,16 @@ impl FeatureProvider for FeaRsMarks {
     }
 }
 
+//https://github.com/googlefonts/ufo2ft/blob/16ed156bd/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L338
+fn scripts_using_abvm() -> HashSet<UnicodeShortName> {
+    INDIC_SCRIPTS
+        .iter()
+        .chain(USE_SCRIPTS)
+        .chain(std::iter::once(&"Khmr"))
+        .filter_map(|s| UnicodeShortName::from_str(s).ok())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{path::Path, sync::Arc};
@@ -961,6 +973,7 @@ mod tests {
             ("candrabindu-kannada", '\u{0C81}'),
             ("halant-kannada", '\u{0CCD}'),
             ("ka-kannada", '\u{0C95}'),
+            ("taonethousand", '\u{0BF2}'),
         ];
 
         static UNMAPPED: &[&str] = &["ka-kannada.base", "a.alt"];
@@ -1158,32 +1171,9 @@ mod tests {
             .unwrap()
         }
 
-        fn run_marks_writer(
-            &self,
-            static_metadata: &StaticMetadata,
-            ast: &FeaFirstPassOutput,
-        ) -> FeaRsMarks {
-            let anchors = self
-                .anchors
-                .iter()
-                .map(|(name, anchors)| GlyphAnchors::new(name.clone(), anchors.clone()))
-                .collect::<Vec<_>>();
-            let anchorsref = anchors.iter().collect();
-            let glyph_order: GlyphOrder = self.anchors.keys().cloned().collect();
-            let char_map = self
-                .char_map
-                .iter()
-                .map(|(uv, name)| (*uv, glyph_order.glyph_id(name).unwrap()))
-                .collect();
-
-            let ctx =
-                MarkLookupBuilder::new(anchorsref, &glyph_order, static_metadata, ast, char_map)
-                    .unwrap();
-
-            ctx.build().unwrap()
-        }
-
-        fn compile(&self) -> Compilation {
+        // you can pass in a closure and look at the builder; this is useful
+        // for at least one test
+        fn compile_and_inspect(&self, f: impl FnOnce(&MarkLookupBuilder)) -> Compilation {
             let static_metadata = self.make_static_metadata();
             let fea = self.user_fea.clone();
             let glyph_map = self.anchors.keys().cloned().collect();
@@ -1202,8 +1192,32 @@ mod tests {
             .unwrap();
 
             let first_pass_fea = FeaFirstPassOutput::for_test(ast, &glyph_map).unwrap();
-            // then run the marks code in this module:
-            let marks = self.run_marks_writer(&static_metadata, &first_pass_fea);
+
+            let anchors = self
+                .anchors
+                .iter()
+                .map(|(name, anchors)| GlyphAnchors::new(name.clone(), anchors.clone()))
+                .collect::<Vec<_>>();
+            let anchorsref = anchors.iter().collect();
+            let glyph_order: GlyphOrder = self.anchors.keys().cloned().collect();
+            let char_map = self
+                .char_map
+                .iter()
+                .map(|(uv, name)| (*uv, glyph_order.glyph_id(name).unwrap()))
+                .collect();
+
+            let ctx = MarkLookupBuilder::new(
+                anchorsref,
+                &glyph_order,
+                &static_metadata,
+                &first_pass_fea,
+                char_map,
+            )
+            .unwrap();
+
+            f(&ctx);
+
+            let marks = ctx.build().unwrap();
             let var_info = FeaVariationInfo::new(&static_metadata);
             // then compile with fea-rs, passing in our generated marks:
             let (result, _) = fea_rs::compile::compile(
@@ -1215,6 +1229,11 @@ mod tests {
             )
             .unwrap();
             result
+        }
+
+        // a thin wrapper, this is what most tests want to use
+        fn compile(&self) -> Compilation {
+            self.compile_and_inspect(|_| {})
         }
 
         /// Build the GPOS & GDEF tables and get a textual representation
@@ -1588,6 +1607,27 @@ mod tests {
               @(x: 50, y: 50) acutecomb
             "#
         );
+    }
+
+    // reproduces a real failure, where we would incorrectly classify this glyph
+    // as both abvm & not-abvm.
+    #[test]
+    fn non_abvm_glyphs_use_unfiltered_scripts() {
+        let _ = MarksInput::default()
+            .set_user_fea(
+                r#"
+                languagesystem DFLT dflt;
+                languagesystem sinh dflt;
+                languagesystem taml dflt;
+                "#,
+            )
+            .add_glyph("taonethousand", None, |_| {})
+            .compile_and_inspect(|builder| {
+                let taonethousand = builder.glyph_order.glyph_id("taonethousand").unwrap();
+                let (abvm, non_abvm) = builder.split_mark_and_abvm_blwm_glyphs().unwrap();
+                assert!(abvm.contains(&taonethousand));
+                assert!(!non_abvm.contains(&taonethousand));
+            });
     }
 
     //https://github.com/googlefonts/ufo2ft/blob/779bbad84a/tests/featureWriters/markFeatureWriter_test.py#L1438
