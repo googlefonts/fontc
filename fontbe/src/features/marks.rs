@@ -627,8 +627,9 @@ impl<'a> MarkLookupBuilder<'a> {
         // TK: there's another bug here I think!? we can't trust char map, need
         // to union with glyph set.
         non_abvm_glyphs.extend(
-            self.char_map
-                .values()
+            self.glyph_order
+                .iter()
+                .map(|(gid, _)| gid)
                 .filter(|gid| !abvm_glyphs.contains(gid)),
         );
         Ok((abvm_glyphs, non_abvm_glyphs))
@@ -1541,6 +1542,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn include_unmapped_non_abvm_glyph_with_abvm() {
+        // make sure that we are including all glyphs non-abvm glyphs (even
+        // those only reachable via GSUB closure) in the case where we have
+        // both abvm & non-abvm glyphs
+        let mut out = MarksInput::default();
+        out
+            // a.alt is only reachable via substitution
+            .set_user_fea(
+                "languagesystem latn dflt;
+                languagesystem knda dflt;
+        ",
+            )
+            // this glyph is unreachable
+            .add_glyph("ka-kannada.base", None, |_| {})
+            .add_glyph("nukta-kannada", None, |_| {})
+            .compile_and_inspect(|ctx| {
+                let (abvm, non_abvm) = ctx.split_mark_and_abvm_blwm_glyphs().unwrap();
+                let nukta = ctx.glyph_order.glyph_id("nukta-kannada").unwrap();
+                let ka = ctx.glyph_order.glyph_id("ka-kannada.base").unwrap();
+                assert!(abvm.contains(&nukta));
+                // all unreachable glyphs get stuffed into non-abvm
+                // (although maybe this can change in the future, and we
+                // can just drop them?)
+                assert!(non_abvm.contains(&ka));
+            });
+    }
     #[test]
     fn custom_fea() {
         let out = simple_test_input()
