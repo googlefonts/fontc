@@ -578,9 +578,9 @@ impl<'a> MarkLookupBuilder<'a> {
         let fea_scripts = super::get_script_language_systems(&self.fea_first_pass.ast)
             .into_keys()
             .collect::<HashSet<_>>();
-        let filtered_scripts_using_abvm = (fea_scripts.is_empty()).then(|| {
+        let filtered_scripts_using_abvm = (!fea_scripts.is_empty()).then(|| {
             scripts_using_abvm
-                .union(&fea_scripts)
+                .intersection(&fea_scripts)
                 .copied()
                 .collect::<HashSet<_>>()
         });
@@ -1627,6 +1627,36 @@ mod tests {
                 let (abvm, non_abvm) = builder.split_mark_and_abvm_blwm_glyphs().unwrap();
                 assert!(abvm.contains(&taonethousand));
                 assert!(!non_abvm.contains(&taonethousand));
+            });
+    }
+
+    #[test]
+    fn glyph_in_abvm_but_not_if_no_abvm_lang() {
+        let dotbelowcomb_char = char_for_glyph(&GlyphName::new("dotbelowcomb")).unwrap();
+        let dotbelow_scripts =
+            super::super::properties::scripts_for_codepoint(dotbelowcomb_char as _)
+                .collect::<Vec<_>>();
+        let abvm_scripts = super::scripts_using_abvm();
+
+        // this codepoint is used in both abvm and non-abvm scripts
+        assert!(dotbelow_scripts.iter().any(|sc| abvm_scripts.contains(sc)));
+        assert!(dotbelow_scripts.iter().any(|sc| !abvm_scripts.contains(sc)));
+
+        let _ = MarksInput::default()
+            // but if the file contains only non-abvm scripts,
+            .set_user_fea(
+                r#"
+                languagesystem DFLT dflt;
+                languagesystem latn dflt;
+                "#,
+            )
+            .add_glyph("dotbelowcomb", None, |_| {})
+            .compile_and_inspect(|builder| {
+                let dotbelowcomb = builder.glyph_order.glyph_id("dotbelowcomb").unwrap();
+                let (abvm, non_abvm) = builder.split_mark_and_abvm_blwm_glyphs().unwrap();
+                // it should only be in the non-abvm set.
+                assert!(!abvm.contains(&dotbelowcomb));
+                assert!(non_abvm.contains(&dotbelowcomb));
             });
     }
 
