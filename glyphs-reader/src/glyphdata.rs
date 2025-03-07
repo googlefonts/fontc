@@ -69,6 +69,7 @@ pub enum Subcategory {
     SpacingCombining,
     Emoji,
     Enclosing,
+    Composition,
 }
 
 /// A queryable set of glyph data
@@ -671,6 +672,7 @@ impl FromStr for Subcategory {
             "Spacing Combining" => Ok(Self::SpacingCombining),
             "Emoji" => Ok(Self::Emoji),
             "Enclosing" => Ok(Self::Enclosing),
+            "Composition" => Ok(Self::Composition),
             _ => Err(s.into()),
         }
     }
@@ -722,6 +724,7 @@ impl Display for Subcategory {
             Self::SpacingCombining => write!(f, "Spacing Combining"),
             Self::Emoji => write!(f, "Emoji"),
             Self::Enclosing => write!(f, "Enclosing"),
+            Self::Composition => write!(f, "Composition"),
         }
     }
 }
