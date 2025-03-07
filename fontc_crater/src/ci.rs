@@ -126,10 +126,14 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     log::info!("compiled otl-normalizeer to {}", normalizer_path.display());
 
     let ResolvedTargets {
-        targets,
+        mut targets,
         source_repos,
         failures,
     } = make_targets(&cache_dir, &inputs);
+
+    if !args.gftools {
+        targets.retain(|t| t.build == BuildType::Default);
+    }
 
     let n_targets = targets.len();
 
