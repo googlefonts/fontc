@@ -56,12 +56,21 @@ pub struct UserSpace;
 pub struct NormalizedSpace;
 
 /// A coordinate in some coordinate space.
-#[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize, Deserialize, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Coord<Space> {
     coord: OrderedFloat<f64>,
     // we want to be covariant but also Send + Sync. See
     // <https://doc.rust-lang.org/1.74.0/nomicon/phantom-data.html#table-of-phantomdata-patterns>
     space: PhantomData<fn() -> Space>,
+}
+
+impl<Space: Debug + Default> Debug for Coord<Space> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Coord")
+            .field("coord", &self.coord)
+            .field("space", &Space::default())
+            .finish()
+    }
 }
 
 /// A coordinate in design space.
