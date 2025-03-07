@@ -41,6 +41,9 @@ pub(super) struct CiArgs {
     /// This should be consistent between runs.
     #[arg(short = 'o', long = "out")]
     pub(super) out_dir: PathBuf,
+    /// skip gftools mode (to reduce target count when running locally)
+    #[arg(long)]
+    pub(super) skip_gftools: bool,
     /// only generate html (for the provided out_dir)
     #[arg(long)]
     pub(super) html_only: bool,
