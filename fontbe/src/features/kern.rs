@@ -428,6 +428,9 @@ fn finalize_kerning(
     char_map: HashMap<u32, GlyphId16>,
     non_spacing_glyphs: HashSet<GlyphId16>,
 ) -> Result<FeaRsKerns, Error> {
+    if pairs.is_empty() {
+        return Ok(Default::default());
+    }
     let known_scripts = guess_font_scripts(&ast.ast, &char_map);
     let glyph_classes = super::get_gdef_classes(meta, ast, glyph_order);
 
