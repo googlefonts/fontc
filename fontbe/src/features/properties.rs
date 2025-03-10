@@ -151,16 +151,8 @@ pub(crate) fn glyphs_matching_predicate(
     predicate: impl Fn(u32) -> bool,
     gsub: Option<&Gsub>,
 ) -> Result<HashSet<GlyphId16>, ReadError> {
-    classify(
-        glyphs,
-        |cp, buf| {
-            if predicate(cp) {
-                buf.push(true);
-            }
-        },
-        gsub,
-    )
-    .map(|mut items| items.remove(&true).unwrap_or_default())
+    classify(glyphs, |cp, buf| buf.push(predicate(cp)), gsub)
+        .map(|mut items| items.remove(&true).unwrap_or_default())
 }
 
 /// Returns a map of gids to their scripts
@@ -430,6 +422,8 @@ pub(crate) fn script_to_ot_tags(script: &UnicodeShortName) -> impl Iterator<Item
 
 #[cfg(test)]
 mod tests {
+    use write_fonts::read::FontRead;
+
     use super::*;
 
     /// we want to binary search these, so let's enforce that they are sorted,
@@ -478,5 +472,48 @@ mod tests {
         // need an override because it existed in unicode 16
         let other = scripts_for_codepoint(0x0ce6);
         assert_eq!(other.collect::<Vec<_>>(), ["Knda", "Nand", "Tutg"]);
+    }
+
+    // https://github.com/googlefonts/ufo2ft/issues/901
+    // I'm not sure that ufo2ft's behaviour is the best choice, but for the times
+    // being we will match it.
+    #[test]
+    fn glyphs_matching_predicate_behaves_like_ufo2ft() {
+        use write_fonts::tables::{gsub as wgsub, layout as wlayout};
+
+        let a_gid = GlyphId16::new(0);
+        let b_gid = GlyphId16::new(1);
+        let neutral_gid = GlyphId16::new(2);
+
+        // now we go and manually create a GSUB table with a single rule,
+        // `sub a neutral_glyph by b;`.
+        // the point here is that we want to test that 'b' is not considered
+        // reachable via closure from 'a' for the given predicate, because
+        // the predicate is not true for the neutral glyph.
+        let coverage = [a_gid].into_iter().collect();
+        let lig_set = wgsub::LigatureSet::new(vec![wgsub::Ligature::new(b_gid, vec![neutral_gid])]);
+        let subtable = wgsub::LigatureSubstFormat1::new(coverage, vec![lig_set]);
+        let lookup = wlayout::Lookup::new(Default::default(), vec![subtable]);
+
+        let lookup_list = wgsub::SubstitutionLookupList::new(vec![lookup.into()]);
+        let features = wlayout::FeatureList::new(vec![wlayout::FeatureRecord::new(
+            Tag::new(b"derp"),
+            wlayout::Feature::new(None, vec![0]),
+        )]);
+        let gsub = wgsub::Gsub::new(Default::default(), features, lookup_list);
+
+        let bytes = write_fonts::dump_table(&gsub).unwrap();
+        let read_gsub =
+            write_fonts::read::tables::gsub::Gsub::read(bytes.as_slice().into()).unwrap();
+
+        let charmap = HashMap::from([('a' as u32, a_gid)]);
+
+        // a contrived predicate that is only true for the 'a' glyph.
+        let reachable_from_a =
+            glyphs_matching_predicate(&charmap, |uv| uv == 'a' as u32, Some(&read_gsub)).unwrap();
+
+        // 'b' should not be reachable because 'neutral_glyph' doesn't match our
+        // predicate
+        assert!(reachable_from_a.contains(&a_gid) && reachable_from_a.len() == 1);
     }
 }
