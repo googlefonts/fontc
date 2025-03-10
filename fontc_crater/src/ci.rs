@@ -131,7 +131,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         failures,
     } = make_targets(&cache_dir, &inputs);
 
-    if !args.gftools {
+    if args.gftools == Some(false) {
         targets.retain(|t| t.build == BuildType::Default);
     }
 
