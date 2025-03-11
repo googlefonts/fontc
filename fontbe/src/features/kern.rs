@@ -1532,7 +1532,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             kerns,
             r#"
-            # kern: DFLT/dflt, latn/dflt ## 6 PairPos rules
+            # kern: DFLT/dflt, latn/dflt
+            # 6 PairPos rules
             # lookupflag LookupFlag(8)
             A 5 [C,D]
             B 10 C
@@ -1562,7 +1563,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             normalized,
             r#"
-        # kern: DFLT/dflt, latn/dflt ## 1 PairPos rules
+        # kern: DFLT/dflt, latn/dflt
+        # 1 PairPos rules
         # lookupflag LookupFlag(8)
         A 10 B
         "#
@@ -1585,7 +1587,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             kerns,
             r#"
-            # kern: DFLT/dflt, latn/dflt ## 1 PairPos rules
+            # kern: DFLT/dflt, latn/dflt
+            # 1 PairPos rules
             # lookupflag LookupFlag(8)
             questiondown 10 y
             "#
@@ -1644,13 +1647,15 @@ mod tests {
         assert_eq_ignoring_ws!(
             normalized,
             r#"
-            # kern: DFLT/dflt, latn/dflt, latn/TRK ## 3 PairPos rules
+            # kern: DFLT/dflt, latn/dflt, latn/TRK
+            # 3 PairPos rules
             # lookupflag LookupFlag(8)
             seven -25 four
             A -40 V
             Aacute -40 V
 
-            # kern: arab/dflt, arab/URD ## 6 PairPos rules
+            # kern: arab/dflt, arab/URD
+            # 6 PairPos rules
             # lookupflag LookupFlag(8)
             seven -25 four
             reh-ar <-100 0 -100 0> [alef-ar, alef-ar.isol]
@@ -1722,7 +1727,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             normalized,
             r#"
-            # kern: DFLT/dflt, latn/dflt, latn/TRK ## 4 PairPos rules
+            # kern: DFLT/dflt, latn/dflt, latn/TRK
+            # 4 PairPos rules
             # lookupflag LookupFlag(8)
             seven -25 four
             A -40 V
@@ -1731,7 +1737,8 @@ mod tests {
             # lookupflag LookupFlag(8)
             Aacute -40 V
 
-            # kern: arab/dflt, arab/URD ## 7 PairPos rules
+            # kern: arab/dflt, arab/URD
+            # 7 PairPos rules
             # lookupflag LookupFlag(8)
             seven -25 four
             reh-ar <-100 0 -100 0> [alef-ar, alef-ar.isol]
@@ -1766,7 +1773,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             normalized,
             r#"
-            # dist: knd2/dflt, knda/dflt ## 1 PairPos rules
+            # dist: knd2/dflt, knda/dflt
+            # 1 PairPos rules
             # lookupflag LookupFlag(8)
             aaMatra_kannada 34 ailength_kannada
             "#
@@ -1791,7 +1799,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             normalized,
             r#"
-            # dist: khar/dflt ## 1 PairPos rules
+            # dist: khar/dflt
+            # 1 PairPos rules
             # lookupflag LookupFlag(8)
             u10A1E <117 0 117 0> u10A06
             "#
@@ -1817,11 +1826,13 @@ mod tests {
         assert_eq_ignoring_ws!(
             normalized,
             r#"
-            # dist: khar/dflt ## 1 PairPos rules
+            # dist: khar/dflt
+            # 1 PairPos rules
             # lookupflag LookupFlag(8)
             u10A1E <117 0 117 0> u10A06
 
-            # dist: knd2/dflt, knda/dflt ## 1 PairPos rules
+            # dist: knd2/dflt, knda/dflt
+            # 1 PairPos rules
             # lookupflag LookupFlag(8)
             aaMatra_kannada 34 ailength_kannada
             "#

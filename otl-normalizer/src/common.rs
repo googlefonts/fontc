@@ -126,16 +126,27 @@ impl Feature {
 
     /// the header printed before each feature
     pub(crate) fn fmt_header(&self, f: &mut dyn io::Write) -> std::io::Result<()> {
+        const SCRIPTLANG_LEN: usize = "DFLT/dflt".len();
+        const LINE_WIDTH: usize = 80;
         write!(f, "# {}: ", self.feature)?;
+        let mut pos = 8; // len of "# atag: "
         let mut first = true;
         for LanguageSystem { script, lang } in &self.lang_systems {
             if !first {
-                write!(f, ", ")?;
+                // should we linebreak?
+                if pos + SCRIPTLANG_LEN + 2 > LINE_WIDTH {
+                    write!(f, ",\n  ")?;
+                    pos = 2;
+                } else {
+                    write!(f, ", ")?;
+                    pos += 2;
+                }
             }
             first = false;
             write!(f, "{script}/{lang}")?;
+            pos += SCRIPTLANG_LEN;
         }
-        write!(f, " #")
+        writeln!(f)
     }
 }
 

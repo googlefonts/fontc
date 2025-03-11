@@ -1321,7 +1321,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-            # mark: DFLT/dflt ## 1 MarkToBase rules
+            # mark: DFLT/dflt
+            # 1 MarkToBase rules
             # lookupflag LookupFlag(0)
             A @(x: 100, y: 400)
               @(x: 50, y: 50) acutecomb
@@ -1336,7 +1337,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-            # mark: DFLT/dflt ## 1 MarkToBase rules
+            # mark: DFLT/dflt
+            # 1 MarkToBase rules
             # lookupflag LookupFlag(0)
             a @(x: 100, y: 200)
               @(x: 100, y: 200) [acutecomb, tildecomb]
@@ -1345,7 +1347,8 @@ mod tests {
             f_i (lig) [@(x: 100, y: 500), @(x: 600, y: 500)]
               @(x: 100, y: 200) [acutecomb, tildecomb]
 
-            # mkmk: DFLT/dflt ## 1 MarkToMark rules
+            # mkmk: DFLT/dflt
+            # 1 MarkToMark rules
             # lookupflag LookupFlag(16)
             # filter glyphs: [acutecomb, tildecomb]
             tildecomb @(x: 100, y: 300)
@@ -1398,7 +1401,8 @@ mod tests {
             out,
             // this gets an abvm feature because we don't specify any languagesystems
             r#"
-            # abvm: DFLT/dflt ## 2 MarkToMark rules
+            # abvm: DFLT/dflt
+            # 2 MarkToMark rules
             # lookupflag LookupFlag(16)
             # filter glyphs: [acutecomb,macroncomb]
             acutecomb @(x: 0, y: 810)
@@ -1406,14 +1410,16 @@ mod tests {
             macroncomb @(x: 0, y: 810)
               @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
 
-            # mark: DFLT/dflt ## 2 MarkToBase rules
+            # mark: DFLT/dflt
+            # 2 MarkToBase rules
             # lookupflag LookupFlag(0)
             A @(x: 234, y: 810)
               @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
             E @(x: 217, y: 810)
               @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
 
-            # mkmk: DFLT/dflt ## 6 MarkToMark rules
+            # mkmk: DFLT/dflt
+            # 6 MarkToMark rules
             # lookupflag LookupFlag(16)
             # filter glyphs: [acutecomb,brevecomb,breveinvertedcomb,macroncomb,tildecomb]
             acutecomb @(x: 0, y: 810)
@@ -1478,21 +1484,24 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-                # abvm: DFLT/dflt, knd2/dflt, knda/dflt ## 2 MarkToBase rules
+                # abvm: DFLT/dflt, knd2/dflt, knda/dflt
+                # 2 MarkToBase rules
                 # lookupflag LookupFlag(0)
                 ka-kannada.base @(x: 291, y: 547)
                   @(x: 0, y: 547) candrabindu-kannada
                 ka-kannada.base @(x: 391, y: 460)
                   @(x: -456, y: 460) halant-kannada
 
-                # blwm: DFLT/dflt, knd2/dflt, knda/dflt ## 2 MarkToBase rules
+                # blwm: DFLT/dflt, knd2/dflt, knda/dflt
+                # 2 MarkToBase rules
                 # lookupflag LookupFlag(0)
                 ka-kannada @(x: 290, y: 0)
                   @(x: 0, y: 0) nukta-kannada
                 ka-kannada.base @(x: 290, y: 0)
                   @(x: 0, y: 0) nukta-kannada
 
-                # mark: DFLT/dflt, knd2/dflt,knda/dflt ## 3 MarkToBase rules
+                # mark: DFLT/dflt, knd2/dflt,knda/dflt
+                # 3 MarkToBase rules
                 # lookupflag LookupFlag(0)
                 dottedCircle @(x: 297, y: 0)
                   @(x: 0, y: 0) nukta-kannada
@@ -1532,7 +1541,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-            # mark: latn/dflt ## 2 MarkToBase rules
+            # mark: latn/dflt
+            # 2 MarkToBase rules
             # lookupflag LookupFlag(0)
             a @(x: 100, y: 0)
               @(x: 202, y: 0) acutecomb
@@ -1577,7 +1587,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-            # mark: latn/dflt ## 1 MarkToBase rules
+            # mark: latn/dflt
+            # 1 MarkToBase rules
             # lookupflag LookupFlag(0)
             A @(x: 100, y: 400)
               @(x: 50, y: 50) acutecomb
@@ -1612,7 +1623,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-            # mark: DFLT/dflt ## 1 MarkToBase rules
+            # mark: DFLT/dflt
+            # 1 MarkToBase rules
             # lookupflag LookupFlag(0)
             A @(x: 100, y: 400)
               @(x: 50, y: 50) acutecomb
@@ -1628,7 +1640,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-            # mark: DFLT/dflt ## 1 MarkToBase rules
+            # mark: DFLT/dflt
+            # 1 MarkToBase rules
             # lookupflag LookupFlag(0)
             A @(x: 100, y: 400)
               @(x: 5, y: 15) gravecomb
@@ -1708,7 +1721,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-                # mark: DFLT/dflt ## 2 MarkToBase rules
+                # mark: DFLT/dflt
+                # 2 MarkToBase rules
                 # lookupflag LookupFlag(0)
                 a @(x: 515, y: 581)
                   @(x: -175, y: 589) acutecomb
@@ -1736,7 +1750,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-    # mark: DFLT/dflt ## 1 MarkToLig rules
+    # mark: DFLT/dflt
+    # 1 MarkToLig rules
     # lookupflag LookupFlag(0)
     f_i_i (lig) [@(x: 250, y: 600), @(x: 500, y: 600), <NULL>]
     @(x: 100, y: 200) acutecomb
@@ -1774,7 +1789,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-                # mark: DFLT/dflt ## 3 MarkToLig rules
+                # mark: DFLT/dflt
+                # 3 MarkToLig rules
                 # lookupflag LookupFlag(0)
                 f_f (lig) [@(x: 101, y: 501), @(x: 601, y: 501)]
                   @(x: 150, y: 250) acutecomb
@@ -1890,7 +1906,8 @@ mod tests {
         assert_eq_ignoring_ws!(
             out,
             r#"
-                # mark: DFLT/dflt ## 2 MarkToBase rules
+                # mark: DFLT/dflt
+                # 2 MarkToBase rules
                 # lookupflag LookupFlag(0)
                 a @(x: 377 {386,389}, y: 451 {450,450})
                 @(x: 218 {265,282}, y: 704 {707,708}) acutecomb
