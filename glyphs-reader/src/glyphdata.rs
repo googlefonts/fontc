@@ -73,6 +73,90 @@ pub enum Subcategory {
     Other,
 }
 
+/// The script of a given glyph
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum Script {
+    Adlam,
+    Alchemical,
+    Arabic,
+    Armenian,
+    Avestan,
+    Balinese,
+    Bamum,
+    Batak,
+    Bengali,
+    BlackLetter,
+    Bopomofo,
+    Brahmi,
+    Braille,
+    Buginese,
+    Canadian,
+    Chakma,
+    Cham,
+    Cherokee,
+    Chorasmian,
+    Coptic,
+    Cyrillic,
+    Dentistry,
+    Deseret,
+    Devanagari,
+    Divesakuru,
+    Elbasan,
+    Elymaic,
+    Ethiopic,
+    Georgian,
+    Glagolitic,
+    Gothic,
+    Greek,
+    Gujarati,
+    Gurmukhi,
+    Han,
+    Hangul,
+    Hebrew,
+    Javanese,
+    Kana,
+    Kannada,
+    Kawi,
+    Kayahli,
+    Khmer,
+    Khojki,
+    Lao,
+    Latin,
+    Lepcha,
+    Lue,
+    Mahjong,
+    Malayalam,
+    Mandaic,
+    Math,
+    Mongolian,
+    Musical,
+    Myanmar,
+    Nko,
+    NyiakengPuachueHmong,
+    Ogham,
+    Oriya,
+    Osage,
+    Osmanya,
+    PahawhHmong,
+    PhaistosDisc,
+    Rovas,
+    Runic,
+    Samaritan,
+    Shavian,
+    Sinhala,
+    Syriac,
+    Tamil,
+    Telugu,
+    Thaana,
+    Thai,
+    Tham,
+    Tibet,
+    Tifinagh,
+    Vai,
+    Yi,
+}
+
 /// A queryable set of glyph data
 ///
 /// Always queries static data from glyphsLib. Optionally includes a set of override values as well.
@@ -119,6 +203,7 @@ pub struct QueryResult {
     pub category: Category,
     pub subcategory: Option<Subcategory>,
     pub codepoint: Option<u32>,
+    pub script: Option<Script>,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -136,6 +221,8 @@ pub enum GlyphDataError {
     InvalidCategory(SmolStr),
     #[error("Unknown subcategory '{0}'")]
     InvalidSubcategory(SmolStr),
+    #[error("Unknown script '{0}'")]
+    InvalidScript(SmolStr),
     #[error("the XML input did not start with a <glyphdata> tag")]
     WrongFirstElement,
     #[error("Missing required attribute '{missing}' in '{attributes}'")]
@@ -194,6 +281,7 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
                 category: info.category,
                 subcategory: info.subcategory,
                 codepoint: info.codepoint,
+                script: info.script,
             },
         );
         for alt in info.alt_names {
@@ -203,6 +291,7 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
                     category: info.category,
                     subcategory: info.subcategory,
                     codepoint: None,
+                    script: info.script,
                 },
             ));
         }
@@ -232,6 +321,7 @@ struct GlyphInfoFromXml {
     category: Category,
     subcategory: Option<Subcategory>,
     codepoint: Option<u32>,
+    script: Option<Script>,
 }
 
 fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError> {
@@ -240,6 +330,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
     let mut subcategory = None;
     let mut unicode = None;
     let mut alt_names = None;
+    let mut script = None;
 
     for attr in item.attributes() {
         let attr = attr?;
@@ -250,7 +341,8 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
             b"subCategory" => subcategory = Some(value),
             b"unicode" => unicode = Some(value),
             b"altNames" => alt_names = Some(value),
-            b"production" | b"unicodeLegacy" | b"case" | b"direction" | b"script"
+            b"script" => script = Some(value),
+            b"production" | b"unicodeLegacy" | b"case" | b"direction"
             | b"description" => (),
             other => {
                 return Err(GlyphDataError::UnknownAttribute(
@@ -271,6 +363,9 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
         })?;
     let subcategory = subcategory
         .map(|cat| Subcategory::from_str(cat.as_ref()).map_err(GlyphDataError::InvalidSubcategory))
+        .transpose()?;
+    let script = script
+        .map(|cat| Script::from_str(cat.as_ref()).map_err(GlyphDataError::InvalidScript))
         .transpose()?;
     let codepoint = unicode
         .map(|s| {
@@ -296,6 +391,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
         category,
         subcategory,
         codepoint,
+        script,
     })
 }
 
@@ -343,6 +439,7 @@ impl GlyphData {
                     category: override_result.category,
                     subcategory: override_result.subcategory,
                     codepoint: override_result.codepoint,
+                    script: override_result.script,
                 });
             }
         }
@@ -396,6 +493,7 @@ impl GlyphData {
                         category: Category::Mark,
                         subcategory: first_attr.subcategory,
                         codepoint: None,
+                        script: None,
                     });
                 } else if first_attr.category == Category::Letter {
                     // if first is letter and rest are marks/separators, we use info from first
@@ -409,12 +507,14 @@ impl GlyphData {
                             category: first_attr.category,
                             subcategory: first_attr.subcategory,
                             codepoint: None,
+                            script: None,
                         });
                     } else {
                         return Some(QueryResult {
                             category: Category::Letter,
                             subcategory: Some(Subcategory::Ligature),
                             codepoint: None,
+                            script: None,
                         });
                     }
                 }
@@ -441,12 +541,14 @@ impl GlyphData {
                     category,
                     subcategory: Some(Subcategory::Ligature),
                     codepoint: None,
+                    script: None,
                 });
             } else {
                 return Some(QueryResult {
                     category,
                     subcategory,
                     codepoint: None,
+                    script: None,
                 });
             }
         }
@@ -616,6 +718,94 @@ impl FromStr for Subcategory {
     }
 }
 
+impl FromStr for Script {
+    type Err = SmolStr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "adlam" => Ok(Self::Adlam),
+            "alchemical" => Ok(Self::Alchemical),
+            "arabic" => Ok(Self::Arabic),
+            "armenian" => Ok(Self::Armenian),
+            "avestan" => Ok(Self::Avestan),
+            "balinese" => Ok(Self::Balinese),
+            "bamum" => Ok(Self::Bamum),
+            "batak" => Ok(Self::Batak),
+            "bengali" => Ok(Self::Bengali),
+            "blackLetter" => Ok(Self::BlackLetter),
+            "bopomofo" => Ok(Self::Bopomofo),
+            "brahmi" => Ok(Self::Brahmi),
+            "braille" => Ok(Self::Braille),
+            "buginese" => Ok(Self::Buginese),
+            "canadian" => Ok(Self::Canadian),
+            "chakma" => Ok(Self::Chakma),
+            "cham" => Ok(Self::Cham),
+            "cherokee" => Ok(Self::Cherokee),
+            "chorasmian" => Ok(Self::Chorasmian),
+            "coptic" => Ok(Self::Coptic),
+            "cyrillic" => Ok(Self::Cyrillic),
+            "dentistry" => Ok(Self::Dentistry),
+            "deseret" => Ok(Self::Deseret),
+            "devanagari" => Ok(Self::Devanagari),
+            "divesakuru" => Ok(Self::Divesakuru),
+            "elbasan" => Ok(Self::Elbasan),
+            "elymaic" => Ok(Self::Elymaic),
+            "ethiopic" => Ok(Self::Ethiopic),
+            "georgian" => Ok(Self::Georgian),
+            "glagolitic" => Ok(Self::Glagolitic),
+            "gothic" => Ok(Self::Gothic),
+            "greek" => Ok(Self::Greek),
+            "gujarati" => Ok(Self::Gujarati),
+            "gurmukhi" => Ok(Self::Gurmukhi),
+            "han" => Ok(Self::Han),
+            "hangul" => Ok(Self::Hangul),
+            "hebrew" => Ok(Self::Hebrew),
+            "javanese" => Ok(Self::Javanese),
+            "kana" => Ok(Self::Kana),
+            "kannada" => Ok(Self::Kannada),
+            "kawi" => Ok(Self::Kawi),
+            "kayahli" => Ok(Self::Kayahli),
+            "khmer" => Ok(Self::Khmer),
+            "khojki" => Ok(Self::Khojki),
+            "lao" => Ok(Self::Lao),
+            "latin" => Ok(Self::Latin),
+            "lepcha" => Ok(Self::Lepcha),
+            "lue" => Ok(Self::Lue),
+            "mahjong" => Ok(Self::Mahjong),
+            "malayalam" => Ok(Self::Malayalam),
+            "mandaic" => Ok(Self::Mandaic),
+            "math" => Ok(Self::Math),
+            "mongolian" => Ok(Self::Mongolian),
+            "musical" => Ok(Self::Musical),
+            "myanmar" => Ok(Self::Myanmar),
+            "nko" => Ok(Self::Nko),
+            "nyiakeng puachue hmong" => Ok(Self::NyiakengPuachueHmong),
+            "ogham" => Ok(Self::Ogham),
+            "oriya" => Ok(Self::Oriya),
+            "osage" => Ok(Self::Osage),
+            "osmanya" => Ok(Self::Osmanya),
+            "pahawh hmong" => Ok(Self::PahawhHmong),
+            "phaistosDisc" => Ok(Self::PhaistosDisc),
+            "rovas" => Ok(Self::Rovas),
+            "runic" => Ok(Self::Runic),
+            "samaritan" => Ok(Self::Samaritan),
+            "shavian" => Ok(Self::Shavian),
+            "sinhala" => Ok(Self::Sinhala),
+            "syriac" => Ok(Self::Syriac),
+            "tamil" => Ok(Self::Tamil),
+            "telugu" => Ok(Self::Telugu),
+            "thaana" => Ok(Self::Thaana),
+            "thai" => Ok(Self::Thai),
+            "tham" => Ok(Self::Tham),
+            "tibet" => Ok(Self::Tibet),
+            "tifinagh" => Ok(Self::Tifinagh),
+            "vai" => Ok(Self::Vai),
+            "yi" => Ok(Self::Yi),
+            _ => Err(s.into()),
+        }
+    }
+}
+
 impl Display for Category {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -681,6 +871,7 @@ mod tests {
                 category: Category::Mark,
                 subcategory: Some(Subcategory::SpacingCombining),
                 codepoint: Some(b'A' as u32),
+                script: Some(Script::Alchemical),
             },
         )]);
         let data = GlyphData::new(Some(overrides));

@@ -2,7 +2,7 @@
 
 use std::{cmp::Ordering, marker::PhantomData, str::from_utf8_unchecked};
 
-use crate::glyphdata::{Category, QueryResult, Subcategory};
+use crate::glyphdata::{Category, QueryResult, Script, Subcategory};
 
 type U24 = usize;
 
@@ -69,6 +69,8 @@ const CODEPOINTS: ArrayOf<U24> = ArrayOf::new(include_bytes!("../resources/codep
 const CATEGORIES: ArrayOf<Category> = ArrayOf::new(include_bytes!("../resources/categories.dat"));
 const SUBCATEGORIES: ArrayOf<Option<Subcategory>> =
     ArrayOf::new(include_bytes!("../resources/subcategories.dat"));
+const SCRIPTS: ArrayOf<Option<Script>> =
+    ArrayOf::new(include_bytes!("../resources/scripts.dat"));
 
 fn name_offset(idx: usize) -> usize {
     // The last offset extends to EOF
@@ -128,6 +130,9 @@ pub(crate) fn get(i: usize) -> Option<QueryResult> {
     let codepoint = CODEPOINTS
         .get(i)
         .unwrap_or_else(|| panic!("We have names[{i}] but not codepoints[{i}] ?!"));
+    let script = SCRIPTS
+        .get(i)
+        .unwrap_or_else(|| panic!("We have names[{i}] but not scripts[{i}] ?!"));
     let codepoint = if codepoint > 0 {
         Some(codepoint as u32)
     } else {
@@ -138,12 +143,19 @@ pub(crate) fn get(i: usize) -> Option<QueryResult> {
         category,
         subcategory,
         codepoint,
+        script,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn result_for_codepoint(cp: u32) -> (&'static str, QueryResult) {
+        find_pos_by_codepoint(cp)
+                .map(|i| (name(i), get(i).unwrap()))
+                .unwrap()
+    }
 
     #[test]
     fn how_many_names() {
@@ -172,11 +184,10 @@ mod tests {
                     category: Category::Symbol,
                     subcategory: Some(Subcategory::Emoji),
                     codepoint: Some(0x1F63C),
+                    script: None,
                 }
             ),
-            find_pos_by_codepoint(0x1F63C)
-                .map(|i| (name(i), get(i).unwrap()))
-                .unwrap()
+            result_for_codepoint(0x1F63C)
         );
     }
 
@@ -194,5 +205,13 @@ mod tests {
     fn find_pos_by_name_last() {
         let last = NAME_OFFSETS.len() - 1;
         assert_eq!(Some(last), find_pos_by_name(name(last)));
+    }
+
+    #[test]
+    fn script() {
+        assert_eq!(
+            vec![None, Some(Script::Latin), Some(Script::Elbasan)],
+            vec!['>' as u32, 'A' as u32, 0x10527].into_iter().map(result_for_codepoint).map(|r| r.1.script).collect::<Vec<_>>()
+        )
     }
 }
