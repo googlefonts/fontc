@@ -667,8 +667,14 @@ impl FloatLike {
 }
 
 impl Feature {
-    pub(crate) fn tag(&self) -> Tag {
+    /// The name (tag) of this feature (kern, merk, etc)
+    pub fn tag(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    /// Returns `true` if this feature block contains an '# Automatic Code' comment
+    pub fn has_insert_marker(&self) -> bool {
+        self.statements().any(|s| s.kind() == Kind::Comment)
     }
 
     pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {

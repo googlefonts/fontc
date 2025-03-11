@@ -7,6 +7,7 @@ use std::{
 
 use fea_rs::{
     compile::{FeatureKey, FeatureProvider, PairPosBuilder, ValueRecord as ValueRecordBuilder},
+    typed::AstNode,
     GlyphSet, ParseTree,
 };
 use fontdrasil::{
@@ -428,9 +429,10 @@ fn finalize_kerning(
     char_map: HashMap<u32, GlyphId16>,
     non_spacing_glyphs: HashSet<GlyphId16>,
 ) -> Result<FeaRsKerns, Error> {
-    if pairs.is_empty() {
+    if pairs.is_empty() || ast_has_kern_or_dist_but_no_markers(&ast.ast) {
         return Ok(Default::default());
     }
+
     let known_scripts = guess_font_scripts(&ast.ast, &char_map);
     let glyph_classes = super::get_gdef_classes(meta, ast, glyph_order);
 
@@ -459,6 +461,25 @@ fn finalize_kerning(
     let features = kern_features.into_iter().chain(dist_features).collect();
     debug_ordered_lookups(&features, &lookups);
     Ok(FeaRsKerns { lookups, features })
+}
+
+fn ast_has_kern_or_dist_but_no_markers(ast: &ParseTree) -> bool {
+    use fea_rs::typed;
+    for feature_block in ast
+        .typed_root()
+        .statements()
+        .filter_map(typed::Feature::cast)
+    {
+        let tag = feature_block.tag().to_raw();
+        if tag == "kern" || tag == "dist" && !feature_block.has_insert_marker() {
+            log::warn!(
+                "font has kerning, but also manually written '{tag}' features,\
+                        and no insertion comment. We will ignore the non-FEA kerning."
+            );
+            return true;
+        }
+    }
+    false
 }
 
 /// Given a map of `[scripts] -> [lookups]`, convert it into a map of
@@ -1835,6 +1856,33 @@ mod tests {
             # 1 PairPos rules
             # lookupflag LookupFlag(8)
             aaMatra_kannada 34 ailength_kannada
+            "#
+        );
+    }
+
+    #[test]
+    fn prefer_user_fea() {
+        let (_kerns, normalized) = KernInput::new(&['a', 'b', 'c', 'd'])
+            .with_user_fea(
+                r#"
+                feature kern {
+                    lookupflag IgnoreMarks;
+                    pos a b 20;
+                    pos a c 22;
+                } kern;
+                "#,
+            )
+            .with_rule('c', 'd', -5)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt
+            # 2 PairPos rules
+            # lookupflag LookupFlag(8)
+            a 20 b
+            a 22 c
             "#
         );
     }
