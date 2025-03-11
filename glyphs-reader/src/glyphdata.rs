@@ -19,7 +19,8 @@ use icu_properties::props::GeneralCategory;
 
 use smol_str::SmolStr;
 
-use crate::glyphslib_data;
+use crate::{glyphslib_categories, glyphslib_codepoints, glyphslib_names, glyphslib_production_names, glyphslib_subcategories};
+
 
 /// The primary category for a given glyph
 ///
@@ -77,12 +78,12 @@ pub enum Subcategory {
 ///
 /// Default/no overrides instances are cheap. Instances created with overrides are more expensive.
 pub struct GlyphData {
-    // Sorted by name, unique names, therefore safe to bsearch
-    data: &'static [(&'static str, QueryResult)],
-    // Sorted by codepoint, unique codepoints, therefore safe to bsearch
-    codepoint_to_data_index: &'static [(u32, usize)],
-    // Sorted by production name, unique production names, therefore safe to bsearch
-    production_name_to_data_index: &'static [(&'static str, usize)],
+    // The following are parallel arrays. names is sorted so a full query result can be found by name.
+    names: &'static [&'static str],
+    categories: &'static [Category],
+    subcategories: &'static [Subcategory],
+    codepoints: &'static [u32],
+    production_names: &'static [SmolStr],
 
     // override-names are preferred to names in data
     overrides: Option<HashMap<SmolStr, QueryResult>>,
@@ -105,7 +106,7 @@ impl GlyphData {
                 .filter_map(|(k, v)| {
                     v.production_name
                         .clone()
-                        .map(|pn| (pn.smolstr(v.codepoint.unwrap_or_default()), k.clone()))
+                        .map(|pn| (pn.smolstr(v.codepoint), k.clone()))
                 })
                 .collect()
         });
@@ -131,9 +132,11 @@ impl GlyphData {
 impl Default for GlyphData {
     fn default() -> Self {
         Self {
-            data: glyphslib_data::GLYPH_INFO,
-            codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
-            production_name_to_data_index: glyphslib_data::PRODUCTION_NAME_TO_INFO_IDX,
+            names: glyphslib_names::NAMES,
+            categories: glyphslib_categories::CATEGORIES,
+            subcategories: glyphslib_subcategories::SUBCATEGORIES,
+            codepoints: glyphslib_codepoints::CODEPOINTS,
+            production_names: glyphslib_production_name::PRODUCTION_NAME,
             overrides: None,
             overrides_by_codepoint: None,
             overrides_by_production_name: None,
@@ -295,6 +298,8 @@ pub(crate) const fn q3c(
 // To avoid storing a giant and almost entirely pointless array lets capture the patterns here
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ProductionName {
+    // There is no production name. We don't use Option<ProductionName> because it complicates codegen.
+    None,
     // The production name is u{codepoint:04X}
     PrefixU,
     // The production name is uni{codepoint:04X}
@@ -319,10 +324,11 @@ impl ProductionName {
         return ProductionName::Custom(s.into());
     }
 
-    fn smolstr(&self, codepoint: u32) -> SmolStr {
+    fn smolstr(&self, codepoint: Option<u32>) -> SmolStr {
         match self {
-            ProductionName::PrefixU => format!("u{codepoint:04X}").into(),
-            ProductionName::PrefixUni => format!("uni{codepoint:04X}").into(),
+            ProductionName::None => SmolStr::new_static(""),
+            ProductionName::PrefixU => format!("u{:04X}", codepoint.unwrap_or_default()).into(),
+            ProductionName::PrefixUni => format!("uni{:04X}", codepoint.unwrap_or_default()).into(),
             ProductionName::Custom(n) => n.clone(),
         }
     }
@@ -581,7 +587,7 @@ impl GlyphData {
             }
         }
 
-        // No override, perhaps we have a direct answer?
+        // No override, perhaps we have an answer in the static dataset?
         self.data
             .binary_search_by(|(n, _)| (*n).cmp(name))
             .ok()

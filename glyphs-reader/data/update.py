@@ -92,9 +92,93 @@ def minimal_names(names_taken: MutableSet, names: Iterable[str]) -> Mapping[str,
     return result
 
 
-def write_enum_shorthands(f, enum_name, minimal_names):
+def write_enum_shorthands(f, enum_name, minimal_names, option):
+    const_t = enum_name
+    if option:
+        const_t = "Option<" + enum_name + ">"
     for long, short in sorted(minimal_names.items()):
-        f.write(f"const {short}: {enum_name} = {enum_name}::{long};\n")
+        value = f"{enum_name}::{long}"
+        if option:
+            value = "Some(" + value + ")"
+        f.write(f"const {short}: {const_t} = {value};\n")
+
+
+
+def write_const_array_file(value_type, plural, glyph_infos, value_fn, shorthands, preamble=None):
+    dest_file = Path(__file__).parent.parent / "src" / f"glyphslib_{plural.lower()}.rs"
+    with open(dest_file, "w") as f:
+        f.write(
+            f"//! Glyph data generated from glyphsLib {glyphsLib.__version__} by {Path(__file__).name}\n"
+        )
+        f.write("//!\n")
+        f.write(f"//! {len(glyph_infos)} glyph metadata records taken from glyphsLib\n")
+        f.write("\n")
+        if value_type[0].isalpha() and value_type[0].isupper():
+            f.write(
+                f"use crate::glyphdata::{value_type};\n"
+            )
+        f.write("\n")
+
+        values = tuple(value_fn(gi) for gi in glyph_infos)
+        optional = any(v is None for v in values)
+
+        if preamble:
+            f.write(preamble)
+        else:
+            if optional:
+                f.write(f"#[allow(non_upper_case_globals)]\nconst n: Option<{value_type}> = None;\n")
+                f.write("\n")
+
+        if shorthands:
+            write_enum_shorthands(f, value_type, shorthands, optional)
+            f.write("\n")
+
+        if optional:
+            const_t = f"Option<{value_type}>"
+        else:
+            const_t = value_type
+        f.write(f"pub(crate) const {plural.upper()}: &[{const_t}] = &[\n")
+
+        lines = [""]
+        for gi in glyph_infos:
+            value = value_fn(gi)
+            if shorthands and value is not None:
+                value = shorthands[value]
+
+            if value is None:
+                value = "n"
+            fragment = value + ","
+            if (len(lines[-1]) + len(fragment)) > 100:
+                lines[-1] += "\n"
+                lines.append("")
+            lines[-1] += fragment
+
+        for line in lines:
+            f.write(line)
+        f.write("\n")
+        f.write("];\n")
+
+
+def codepoint_literal(gi):
+    if gi.codepoint is None:
+        return "0"
+    b10 = str(int(gi.codepoint, 16))
+    b16 = "0x" + gi.codepoint
+    if len(b10) < len(b16):
+        return b10
+    return b16
+
+
+def production_name_literal(gi):
+    if gi.production_name is None:
+        return "n"
+    if gi.codepoint is not None:
+        codepoint = int(gi.codepoint, 16)
+        if gi.production_name == f"uni{codepoint:04X}":
+            return "U"
+        if gi.production_name == f"u{codepoint:04X}":
+            return "V"
+    return f"C(\"{gi.production_name}\")"
 
 
 def main():
@@ -142,7 +226,25 @@ def main():
         else:
             production_name_to_info_idx[gi.production_name] = i
 
-    dest_file = Path(__file__).parent.parent / "src" / "glyphslib_data.rs"
+    # We emit parallel arrays instead of a giant const array of structs because it's less bytes
+    # and hopefully easier on the compiler and rust analyzer as well
+    write_const_array_file("&str", "Names", glyph_infos, lambda gi: f"\"{gi.name}\"", None)
+    write_const_array_file("Category", "Categories", glyph_infos, lambda gi: gi.category, min_categories)
+    write_const_array_file("Subcategory", "Subcategories", glyph_infos, lambda gi: gi.subcategory, min_subcategories)
+    write_const_array_file("u32", "Codepoints", glyph_infos, codepoint_literal, None)
+    write_const_array_file("ProductionName", "Production_Names", glyph_infos, production_name_literal, None,
+"""
+#[allow(non_upper_case_globals)]
+const n: ProductionName = ProductionName::None;
+const U: ProductionName = ProductionName::PrefixUni;
+const V: ProductionName = ProductionName::PrefixU;
+const fn C(s: &'static str) -> ProductionName { 
+    ProductionName::Custom(smol_str::SmolStr::new_static(s))
+}
+
+""")
+
+    dest_file = Path(__file__).parent.parent / "src" / "glyphslib_production_name_to_idx.rs"
 
     with open(dest_file, "w") as f:
         f.write(
@@ -150,92 +252,8 @@ def main():
         )
         f.write("//!\n")
         f.write(f"//! {len(glyph_infos)} glyph metadata records taken from glyphsLib\n")
+
         f.write("\n")
-        f.write(
-            "use crate::glyphdata::{qr, qru, qrv, qrc, q1, q1c, q2, q2c, q2u, q2v, q3, q3c, Category, QueryResult, Subcategory};\n"
-        )
-        f.write("\n")
-
-        # Write constants for enum variants to shorten giant tuple array
-        write_enum_shorthands(f, "Category", min_categories)
-        f.write("\n")
-        write_enum_shorthands(f, "Subcategory", min_subcategories)
-        f.write("\n")
-
-        f.write("// Sorted by name, has unique names, therefore safe to bsearch\n")
-
-        f.write("pub(crate) const GLYPH_INFO: &[(&str, QueryResult)] = &[\n")
-        lines = [""]
-        for gi in glyph_infos:
-            category = min_categories[gi.category]
-
-            # map to shorthand
-            if (None, None) == (gi.subcategory, gi.codepoint):
-                fn = "q1"
-                args = (category,)
-            elif gi.subcategory is None:
-                # codepoint must not be
-                fn = "q2"
-                args = (category, f"0x{gi.codepoint}")
-            elif gi.codepoint is None:
-                # subcategory must not be
-                fn = "q3"
-                args = (category, min_subcategories[gi.subcategory])
-            else:
-                # We must have all the things!
-                fn = "qr"
-                args = (category, min_subcategories[gi.subcategory], f"0x{gi.codepoint}")
-
-            # Do we need to track a production name?
-            # If so modify which shorthand fn we call
-            if gi.production_name is not None:
-                use_custom = True
-                if gi.codepoint is not None:
-                    codepoint = int(gi.codepoint, 16)
-                    # Uni-prefix is most common so given the shortest prefix. See ProductioName enum.
-                    if gi.production_name == f"uni{codepoint:04X}":
-                        use_custom = False
-                        fn += "u"
-                    if gi.production_name == f"u{codepoint:04X}":
-                        use_custom = False
-                        fn += "v"
-                if use_custom:
-                    fn += "c"
-                    args += (f"\"{gi.production_name}\"",)
-
-            entry = fn + "(" + ",".join(args) + ")"
-
-            codepoint = "None"
-            if gi.codepoint is not None:
-                codepoint = f"Some(0x{gi.codepoint})"
-
-            fragment = f'("{gi.name}", {entry}),'
-            if (len(lines[-1]) + len(fragment)) > 100:
-                lines[-1] += "\n"
-                lines.append("")
-            lines[-1] += fragment
-
-        for line in lines:
-            f.write(line)
-        f.write("\n")
-        f.write("];\n")
-
-        f.write(
-            "// Sorted by codepoint, has unique codepoints, therefore safe to bsearch\n"
-        )
-        f.write("pub(crate) const CODEPOINT_TO_INFO_IDX: &[(u32, usize)] = &[\n")
-        lines = [""]
-        for codepoint, i in sorted(codepoints.items()):
-            fragment = f"(0x{codepoint:04x}, {i}),"
-            if (len(lines[-1]) + len(fragment)) > 100:
-                lines[-1] += "\n"
-                lines.append("")
-            lines[-1] += fragment
-
-        for line in lines:
-            f.write(line)
-        f.write("\n")
-        f.write("];\n")
 
         f.write(
             "// Sorted by production name, has unique production names, therefore safe to bsearch\n"
