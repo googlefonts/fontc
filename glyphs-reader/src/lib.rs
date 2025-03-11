@@ -3,8 +3,8 @@
 pub mod error;
 mod font;
 pub mod glyphdata;
-#[rustfmt::skip]
-mod glyphslib_data;
+mod glyphdata_bundled;
+mod glyphslib_enums;
 mod plist;
 mod propagate_anchors;
 

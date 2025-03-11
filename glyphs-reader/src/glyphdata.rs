@@ -19,7 +19,7 @@ use icu_properties::props::GeneralCategory;
 
 use smol_str::SmolStr;
 
-use crate::glyphslib_data;
+use crate::glyphdata_bundled as bundled;
 
 /// The primary category for a given glyph
 ///
@@ -75,15 +75,11 @@ pub enum Subcategory {
 
 /// A queryable set of glyph data
 ///
-/// Always includes static data from glyphsLib. Optionally includes a set of override values as well.
+/// Always queries static data from glyphsLib. Optionally includes a set of override values as well.
 ///
 /// Default/no overrides instances are cheap. Instances created with overrides are more expensive.
+#[derive(Default)]
 pub struct GlyphData {
-    // Sorted by name, unique names, therefore safe to bsearch
-    data: &'static [(&'static str, QueryResult)],
-    // Sorted by codepoint, unique codepoints, therefore safe to bsearch
-    codepoint_to_data_index: &'static [(u32, usize)],
-
     // override-names are preferred to names in data
     overrides: Option<HashMap<SmolStr, QueryResult>>,
     overrrides_by_codepoint: Option<HashMap<u32, SmolStr>>,
@@ -99,8 +95,6 @@ impl GlyphData {
                 .collect()
         });
         Self {
-            data: glyphslib_data::GLYPH_INFO,
-            codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
             overrides,
             overrrides_by_codepoint,
         }
@@ -117,61 +111,10 @@ impl GlyphData {
     }
 }
 
-impl Default for GlyphData {
-    fn default() -> Self {
-        Self {
-            data: glyphslib_data::GLYPH_INFO,
-            codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
-            overrides: None,
-            overrrides_by_codepoint: None,
-        }
-    }
-}
-
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn qr(
-    category: Category,
-    subcategory: Subcategory,
-    codepoint: u32,
-) -> QueryResult {
-    QueryResult {
-        category,
-        subcategory: Some(subcategory),
-        codepoint: Some(codepoint),
-    }
-}
-
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q1(category: Category) -> QueryResult {
-    QueryResult {
-        category,
-        subcategory: None,
-        codepoint: None,
-    }
-}
-
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q2(category: Category, codepoint: u32) -> QueryResult {
-    QueryResult {
-        category,
-        subcategory: None,
-        codepoint: Some(codepoint),
-    }
-}
-
-/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
-pub(crate) const fn q3(category: Category, subcategory: Subcategory) -> QueryResult {
-    QueryResult {
-        category,
-        subcategory: Some(subcategory),
-        codepoint: None,
-    }
-}
-
 /// The category and subcategory to use
 ///
 /// Used for overrides and as the result of [`GlyphData::query`]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct QueryResult {
     pub category: Category,
     pub subcategory: Option<Subcategory>,
@@ -405,23 +348,16 @@ impl GlyphData {
         }
 
         // No override, perhaps we have a direct answer?
-        self.data
-            .binary_search_by(|(n, _)| (*n).cmp(name))
-            .ok()
-            .map(|i| self.data[i])
+        bundled::find_pos_by_name(name)
             .or_else(|| {
                 codepoints
                     .into_iter()
                     .flat_map(|cps| cps.iter())
-                    .find_map(|cp| {
-                        self.codepoint_to_data_index
-                            .binary_search_by(|(info_cp, _)| info_cp.cmp(cp))
-                            .ok()
-                            .map(|i| &self.data[self.codepoint_to_data_index[i].1])
-                    })
-                    .copied()
+                    .find_map(|cp| bundled::find_pos_by_codepoint(*cp))
             })
-            .map(|(_, r)| r)
+            .map(|i| {
+                bundled::get(i).unwrap_or_else(|| panic!("We found invalid index {i} somehow"))
+            })
     }
 
     fn contains_name(&self, name: &str) -> bool {
@@ -431,7 +367,7 @@ impl GlyphData {
                 return true;
             }
         }
-        self.data.binary_search_by(|(n, _)| (*n).cmp(name)).is_ok()
+        bundled::find_pos_by_name(name).is_some()
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L199
@@ -736,12 +672,6 @@ impl Display for Subcategory {
 mod tests {
 
     use super::*;
-
-    #[test]
-    fn test_bundled_data() {
-        let data = GlyphData::new(None).data;
-        assert!(data.len() > 70000, "{}", data.len());
-    }
 
     #[test]
     fn simple_overrides() {
