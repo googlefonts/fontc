@@ -42,7 +42,7 @@ pub(super) struct CiArgs {
     #[arg(short = 'o', long = "out")]
     pub(super) out_dir: PathBuf,
     /// gftools mode (disable to reduce target count when running locally)
-    #[arg(long, default_value_t = true)]
+    #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
     pub(super) gftools: bool,
     /// only generate html (for the provided out_dir)
     #[arg(long)]
