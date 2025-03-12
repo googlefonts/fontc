@@ -717,6 +717,36 @@ fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec
     unic_script_to_languages
 }
 
+/// Return the set of features from the list that we need to generate.
+///
+/// This ignores features that already exist in the FEA, and for which there
+/// is no insertion mark.
+fn feature_writer_todo_list(features: &[Tag], ast: &ParseTree) -> HashSet<Tag> {
+    use fea_rs::typed;
+    let mut result = features.iter().copied().collect::<HashSet<_>>();
+    let mut existing_features = HashMap::new();
+    for feature in ast
+        .typed_root()
+        .statements()
+        .filter_map(typed::Feature::cast)
+    {
+        let tag = feature.tag().to_raw();
+        if result.contains(&tag) {
+            *existing_features.entry(tag).or_insert(false) |= feature.has_insert_marker();
+        }
+    }
+    for (tag, has_marker) in existing_features {
+        if !has_marker {
+            log::warn!(
+                "Skipping generating feature '{tag}', which is manually declared
+                in FEA and has no insertion comment."
+            );
+            result.remove(&tag);
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
