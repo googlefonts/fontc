@@ -70,6 +70,7 @@ pub enum Subcategory {
     Emoji,
     Enclosing,
     Composition,
+    Other,
 }
 
 /// A queryable set of glyph data
@@ -673,6 +674,7 @@ impl FromStr for Subcategory {
             "Emoji" => Ok(Self::Emoji),
             "Enclosing" => Ok(Self::Enclosing),
             "Composition" => Ok(Self::Composition),
+            "Other" => Ok(Self::Other),
             _ => Err(s.into()),
         }
     }
@@ -725,6 +727,7 @@ impl Display for Subcategory {
             Self::Emoji => write!(f, "Emoji"),
             Self::Enclosing => write!(f, "Enclosing"),
             Self::Composition => write!(f, "Composition"),
+            Self::Other => write!(f, "Other"),
         }
     }
 }
