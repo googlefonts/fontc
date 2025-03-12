@@ -2318,7 +2318,7 @@ impl RawFeature {
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L113
     fn raw_feature_to_feature(&self) -> Result<FeatureSnippet, Error> {
         let name = self.name()?;
-        let insert_mark = dbg!(self.insert_mark_if_manual_kern_feature());
+        let insert_mark = self.insert_mark_if_manual_kern_feature();
         let code = format!(
             "feature {name} {{\n{}{}{}{insert_mark}\n}} {name};",
             self.autostr(),

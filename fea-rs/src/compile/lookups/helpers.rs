@@ -116,7 +116,6 @@ mod tests {
         builder.checked_add(make_glyph_class([1, 12]));
         builder.checked_add(make_glyph_class([3, 4]));
         let (cls, _) = builder.build();
-        dbg!(&cls);
         assert_eq!(cls.get(GlyphId16::new(9)), 1);
         assert_eq!(cls.get(GlyphId16::new(1)), 2);
         assert_eq!(cls.get(GlyphId16::new(4)), 3);
