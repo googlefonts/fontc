@@ -148,11 +148,19 @@ where
 
 pub(crate) fn glyphs_matching_predicate(
     glyphs: &impl CharMap,
-    predicate: impl Fn(u32) -> bool,
+    predicate: impl Fn(u32) -> Option<bool>,
     gsub: Option<&Gsub>,
 ) -> Result<HashSet<GlyphId16>, ReadError> {
-    classify(glyphs, |cp, buf| buf.push(predicate(cp)), gsub)
-        .map(|mut items| items.remove(&true).unwrap_or_default())
+    classify(
+        glyphs,
+        |cp, buf| {
+            if let Some(val) = predicate(cp) {
+                buf.push(val)
+            }
+        },
+        gsub,
+    )
+    .map(|mut items| items.remove(&true).unwrap_or_default())
 }
 
 /// Returns a map of gids to their scripts
@@ -510,7 +518,8 @@ mod tests {
 
         // a contrived predicate that is only true for the 'a' glyph.
         let reachable_from_a =
-            glyphs_matching_predicate(&charmap, |uv| uv == 'a' as u32, Some(&read_gsub)).unwrap();
+            glyphs_matching_predicate(&charmap, |uv| Some(uv == 'a' as u32), Some(&read_gsub))
+                .unwrap();
 
         // 'b' should not be reachable because 'neutral_glyph' doesn't match our
         // predicate
