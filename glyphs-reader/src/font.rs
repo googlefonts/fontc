@@ -1141,6 +1141,7 @@ pub struct Instance {
     pub axis_mappings: BTreeMap<String, AxisUserToDesignMap>,
     pub axes_values: Vec<OrderedFloat<f64>>,
     pub custom_parameters: CustomParameters,
+    properties: Vec<RawName>, // used for name resolution
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L150>
@@ -1178,6 +1179,7 @@ struct RawInstance {
 
     weight_class: Option<String>,
     width_class: Option<String>,
+    properties: Vec<RawName>,
     custom_parameters: RawCustomParameters,
 }
 
@@ -1765,8 +1767,8 @@ impl RawFont {
         self.v2_to_v3_master_names()?;
         self.v2_to_v3_axes()?;
         self.v2_to_v3_metrics()?;
-        self.v2_to_v3_names()?;
         self.v2_to_v3_instances()?;
+        self.v2_to_v3_names()?; // uses instances
         self.v2_to_v3_layer_attributes();
         Ok(())
     }
@@ -2472,6 +2474,7 @@ impl Instance {
                 .unwrap_or(InstanceType::Single),
             axis_mappings,
             axes_values: value.axes_values.clone(),
+            properties: value.properties.clone(),
             custom_parameters: value.custom_parameters.to_custom_params()?,
         })
     }
@@ -2517,6 +2520,40 @@ fn codepage_range_bit(codepage: u32) -> Result<u32, Error> {
         v if v < 64 => v, // an actual bit
         _ => return Err(Error::InvalidCodePage(codepage)),
     })
+}
+
+fn update_names(names: &mut BTreeMap<String, String>, raw_names: &[RawName]) {
+    for name in raw_names {
+        // Name may have one value, in which case use it, or lots, in which case try to pick a winner
+        if let Some(value) = name.value.as_deref().or_else(|| {
+            // This is a localized (multivalued) name. Pick a winner.
+            // See <https://github.com/googlefonts/fontc/issues/1011>
+            // In order of preference: dflt, default, ENG, whatever is first
+            // <https://github.com/googlefonts/glyphsLib/blob/1cb4fc5ae2cf385df95d2b7768e7ab4eb60a5ac3/Lib/glyphsLib/classes.py#L3155-L3161>
+            name.values
+                .iter()
+                .enumerate()
+                // (score [lower better], index)
+                .map(|(i, n)| match n.language.as_str() {
+                    "dflt" => (-3, i),
+                    "default" => (-2, i),
+                    "ENG" => (-1, i),
+                    _ => (i as i32, i),
+                })
+                .reduce(
+                    |(best_score, best_index), (candidate_score, candidate_index)| {
+                        if best_score < candidate_score {
+                            (best_score, best_index)
+                        } else {
+                            (candidate_score, candidate_index)
+                        }
+                    },
+                )
+                .map(|(_, i)| name.values[i].value.as_str())
+        }) {
+            names.insert(name.key.clone(), value.to_string());
+        }
+    }
 }
 
 impl TryFrom<RawFont> for Font {
@@ -2571,37 +2608,18 @@ impl TryFrom<RawFont> for Font {
         let units_per_em = units_per_em.try_into().map_err(Error::InvalidUpem)?;
 
         let mut names = BTreeMap::new();
-        for name in from.properties {
-            if name.value.is_some() {
-                name.value
-            } else {
-                // We don't support full l10n of names, just the limited capability of glyphsLib
-                // See <https://github.com/googlefonts/fontc/issues/1011>
-                // In order of preference: dflt, default, ENG, whatever is first
-                // <https://github.com/googlefonts/glyphsLib/blob/1cb4fc5ae2cf385df95d2b7768e7ab4eb60a5ac3/Lib/glyphsLib/classes.py#L3155-L3161>
-                name.values
-                    .iter()
-                    .enumerate()
-                    // (score [lower better], index)
-                    .map(|(i, n)| match n.language.as_str() {
-                        "dflt" => (-3, i),
-                        "default" => (-2, i),
-                        "ENG" => (-1, i),
-                        _ => (i as i32, i),
-                    })
-                    .reduce(
-                        |(best_score, best_index), (candidate_score, candidate_index)| {
-                            if best_score < candidate_score {
-                                (best_score, best_index)
-                            } else {
-                                (candidate_score, candidate_index)
-                            }
-                        },
-                    )
-                    .map(|(_, i)| name.values[i].value.clone())
+        update_names(&mut names, &from.properties);
+        // Evidently names can come from instances too! They are higher priority so do them last (overwriting prior values)
+        if let Some(name) = from
+            .font_master
+            .get(default_master_idx)
+            .and_then(|m| m.name.as_deref())
+        {
+            if let Some(instance) = variable_instance_for(&instances, name) {
+                update_names(&mut names, &instance.properties);
             }
-            .and_then(|value| names.insert(name.key, value));
         }
+        // And a final few delicate butterflies
         names.insert("familyNames".into(), from.family_name);
         if let Some(version) = names.remove("versionString") {
             names.insert("version".into(), version);
@@ -2680,6 +2698,12 @@ fn preprocess_unparsed_plist(s: &str) -> Cow<str> {
     unicode_re.replace_all(s, r#"$prefix"$value";"#)
 }
 
+fn variable_instance_for<'a>(instances: &'a [Instance], name: &str) -> Option<&'a Instance> {
+    instances
+        .iter()
+        .find(|i| i.active && i.type_ == InstanceType::Variable && i.name == name)
+}
+
 impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
         let mut font = Self::load_raw(glyphs_file)?;
@@ -2702,9 +2726,7 @@ impl Font {
 
     /// <https://handbook.glyphsapp.com/exports/>
     pub fn variable_export_settings(&self, master: &FontMaster) -> Option<&Instance> {
-        self.instances
-            .iter()
-            .find(|i| i.active && i.type_ == InstanceType::Variable && i.name == master.name)
+        variable_instance_for(&self.instances, &master.name)
     }
 
     pub fn vendor_id(&self) -> Option<&String> {
@@ -4003,5 +4025,26 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("MissingWidth.glyphs")).unwrap();
         let glyph = font.glyphs.get("widthless").unwrap();
         assert_eq!(glyph.layers[0].width, 600.);
+    }
+
+    #[test]
+    fn read_preferred_names_from_properties() {
+        let font = Font::load(&glyphs3_dir().join("PreferableNames.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                Some("Pref Family Name"),
+                Some("Pref Regular"),
+                Some("Name 25?!")
+            ],
+            vec![
+                font.names.get("preferredFamilyNames").map(|s| s.as_str()),
+                font.names
+                    .get("preferredSubfamilyNames")
+                    .map(|s| s.as_str()),
+                font.names
+                    .get("variationsPostScriptNamePrefix")
+                    .map(|s| s.as_str()),
+            ]
+        );
     }
 }
