@@ -15,7 +15,7 @@ grep_rust_lines_with_prints() {
         # Prepend the file name and line number to each line, with colors
         awk -v file="$file" '{ printf "\033[35m%s\033[0m:\033[32m%s\033[0m: %s\n", file, FNR, $0 }' | \
         # Grep for print statements
-        grep --color=always -E '\b(println!|eprintln!)' || true
+        grep --color=always -E '\b(println!|eprintln!|dbg!)' || true
     done
 }
 
@@ -37,7 +37,7 @@ diff_rust_lines_with_prints() {
         # Prepend the file name and line number to each line, with colors
         awk -v file="$file" '{ printf "\033[35m%s\033[0m:\033[32m%s\033[0m: %s\n", file, FNR, $0 }' | \
         # Grep for print statements
-        grep --color=always -E '\b(println!|eprintln!)' || true
+        grep --color=always -E '\b(println!|eprintln!|dbg!)' || true
     done
 }
 
