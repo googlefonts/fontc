@@ -428,7 +428,9 @@ fn finalize_kerning(
     char_map: HashMap<u32, GlyphId16>,
     non_spacing_glyphs: HashSet<GlyphId16>,
 ) -> Result<FeaRsKerns, Error> {
-    if pairs.is_empty() {
+    let todo = super::feature_writer_todo_list(&[KERN, DIST], &ast.ast);
+    if pairs.is_empty() || todo.is_empty() {
+        log::info!("no kerning work to do");
         return Ok(Default::default());
     }
     let known_scripts = guess_font_scripts(&ast.ast, &char_map);
@@ -454,9 +456,17 @@ fn finalize_kerning(
     let lookups = split_ctx.make_lookups(pairs);
     let (lookups_by_script, lookups) = split_lookups_by_script(lookups);
 
-    let kern_features = assign_lookups_to_scripts(lookups_by_script.clone(), &ast.ast, KERN);
-    let dist_features = assign_lookups_to_scripts(lookups_by_script, &ast.ast, DIST);
-    let features = kern_features.into_iter().chain(dist_features).collect();
+    let kern_features = todo
+        .contains(&KERN)
+        .then(|| assign_lookups_to_scripts(lookups_by_script.clone(), &ast.ast, KERN));
+    let dist_features = todo
+        .contains(&DIST)
+        .then(|| assign_lookups_to_scripts(lookups_by_script, &ast.ast, DIST));
+    let features = kern_features
+        .into_iter()
+        .flatten()
+        .chain(dist_features.into_iter().flatten())
+        .collect();
     debug_ordered_lookups(&features, &lookups);
     Ok(FeaRsKerns { lookups, features })
 }
@@ -1835,6 +1845,33 @@ mod tests {
             # 1 PairPos rules
             # lookupflag LookupFlag(8)
             aaMatra_kannada 34 ailength_kannada
+            "#
+        );
+    }
+
+    #[test]
+    fn prefer_user_fea() {
+        let (_kerns, normalized) = KernInput::new(&['a', 'b', 'c', 'd'])
+            .with_user_fea(
+                r#"
+                feature kern {
+                    lookupflag IgnoreMarks;
+                    pos a b 20;
+                    pos a c 22;
+                } kern;
+                "#,
+            )
+            .with_rule('c', 'd', -5)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt
+            # 2 PairPos rules
+            # lookupflag LookupFlag(8)
+            a 20 b
+            a 22 c
             "#
         );
     }
