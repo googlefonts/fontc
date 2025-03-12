@@ -45,6 +45,11 @@ pub fn create_mark_work() -> Box<BeWork> {
     Box::new(MarkWork {})
 }
 
+const MARK: Tag = Tag::new(b"mark");
+const MKMK: Tag = Tag::new(b"mkmk");
+const CURS: Tag = Tag::new(b"curs");
+const ABVM: Tag = Tag::new(b"abvm");
+const BLWM: Tag = Tag::new(b"blwm");
 /// The canonical name shared for a given mark/base pair, e.g. `top` for `top`/`_top`
 type GroupName = SmolStr;
 
@@ -264,31 +269,57 @@ impl<'a> MarkLookupBuilder<'a> {
 
         let (abvm_glyphs, non_abvm_glyphs) = self.split_mark_and_abvm_blwm_glyphs()?;
 
-        let mark_mkmk = self.make_lookups(
+        let todo = super::feature_writer_todo_list(
+            &[MARK, MKMK, ABVM, BLWM, CURS],
+            &self.fea_first_pass.ast,
+        );
+
+        let mut mark_mkmk = self.make_lookups(
             &mark_base_groups,
             &mark_mark_groups,
             &mark_lig_groups,
             &non_abvm_glyphs,
             |_| true,
         )?;
-        let curs = self.make_cursive_lookups()?;
+        if !todo.contains(&MARK) {
+            mark_mkmk.mark_base.clear();
+            mark_mkmk.mark_lig.clear();
+        }
+        if !todo.contains(&MKMK) {
+            mark_mkmk.mark_mark.clear();
+        }
+
+        let curs = todo
+            .contains(&CURS)
+            .then(|| self.make_cursive_lookups())
+            .transpose()?
+            .unwrap_or_default();
         let (abvm, blwm) = if !abvm_glyphs.is_empty() {
-            (
-                self.make_lookups(
-                    &mark_base_groups,
-                    &mark_mark_groups,
-                    &mark_lig_groups,
-                    &abvm_glyphs,
-                    is_above_mark,
-                )?,
-                self.make_lookups(
-                    &mark_base_groups,
-                    &mark_mark_groups,
-                    &mark_lig_groups,
-                    &abvm_glyphs,
-                    is_below_mark,
-                )?,
-            )
+            let abvm = todo
+                .contains(&ABVM)
+                .then(|| {
+                    self.make_lookups(
+                        &mark_base_groups,
+                        &mark_mark_groups,
+                        &mark_lig_groups,
+                        &abvm_glyphs,
+                        is_above_mark,
+                    )
+                })
+                .transpose()?;
+            let blwm = todo
+                .contains(&BLWM)
+                .then(|| {
+                    self.make_lookups(
+                        &mark_base_groups,
+                        &mark_mark_groups,
+                        &mark_lig_groups,
+                        &abvm_glyphs,
+                        is_below_mark,
+                    )
+                })
+                .transpose()?;
+            (abvm.unwrap_or_default(), blwm.unwrap_or_default())
         } else {
             Default::default()
         };
@@ -902,14 +933,14 @@ impl FeatureProvider for FeaRsMarks {
         }
 
         for (lookups, tag) in [
-            (mark_lookups, b"mark"),
-            (mkmk_lookups, b"mkmk"),
-            (curs_lookups, b"curs"),
-            (abvm_lookups, b"abvm"),
-            (blwm_lookups, b"blwm"),
+            (mark_lookups, MARK),
+            (mkmk_lookups, MKMK),
+            (curs_lookups, CURS),
+            (abvm_lookups, ABVM),
+            (blwm_lookups, BLWM),
         ] {
             if !lookups.is_empty() {
-                builder.add_to_default_language_systems(Tag::new(tag), &lookups);
+                builder.add_to_default_language_systems(tag, &lookups);
             }
         }
 
