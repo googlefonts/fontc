@@ -2318,13 +2318,26 @@ impl RawFeature {
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L113
     fn raw_feature_to_feature(&self) -> Result<FeatureSnippet, Error> {
         let name = self.name()?;
+        let insert_mark = dbg!(self.insert_mark_if_manual_kern_feature());
         let code = format!(
-            "feature {name} {{\n{}{}{}\n}} {name};",
+            "feature {name} {{\n{}{}{}{insert_mark}\n}} {name};",
             self.autostr(),
             self.feature_names(),
             self.code
         );
         Ok(FeatureSnippet::new(code, self.disabled()))
+    }
+
+    //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f4/Lib/glyphsLib/builder/features.py#L180
+    fn insert_mark_if_manual_kern_feature(&self) -> &str {
+        if self.name().unwrap_or_default() == "kern"
+            && self.automatic != Some(1)
+            && !self.code.contains("# Automatic Code")
+        {
+            "# Automatic Code\n"
+        } else {
+            ""
+        }
     }
 }
 
@@ -3400,6 +3413,35 @@ mod tests {
             ..Default::default()
         };
         assert_eq!("aalt", raw.name().unwrap());
+    }
+
+    #[test]
+    fn manual_kern_always_gets_insert_mark() {
+        let feature = RawFeature {
+            tag: Some("kern".into()),
+            ..Default::default()
+        };
+
+        assert!(feature
+            .raw_feature_to_feature()
+            .unwrap()
+            .content
+            .contains("# Automatic Code"))
+    }
+
+    #[test]
+    fn but_automatic_does_not() {
+        let feature = RawFeature {
+            tag: Some("kern".into()),
+            automatic: Some(1),
+            ..Default::default()
+        };
+
+        assert!(!feature
+            .raw_feature_to_feature()
+            .unwrap()
+            .content
+            .contains("# Automatic Code"))
     }
 
     #[test]
