@@ -1,0 +1,252 @@
+{
+.appVersion = "3151";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Variable Font Origin";
+value = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+}
+);
+familyName = FamilyName;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+iconName = Bold;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = "";
+}
+);
+},
+{
+key = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+key = vendorID;
+value = RODS;
+},
+{
+key = descriptions;
+values = (
+{
+language = dflt;
+value = "The greatest weight var";
+}
+);
+},
+{
+key = copyrights;
+values = (
+{
+language = default;
+value = "Wrong answer";
+},
+{
+language = dflt;
+value = "Copy!";
+}
+);
+},
+{
+key = versionString;
+value = "New Value";
+},
+{
+key = uniqueID;
+value = "We are all unique";
+},
+{
+key = postscriptFullName;
+value = "Full of names";
+},
+{
+key = postscriptFontName;
+value = "Postscript Name";
+},
+{
+key = trademarks;
+values = (
+{
+language = dflt;
+value = "A trade in marks";
+}
+);
+},
+{
+key = manufacturers;
+values = (
+{
+language = ENG;
+value = "Wrong answer :(";
+},
+{
+language = dflt;
+value = "Who made you?!";
+}
+);
+},
+{
+key = manufacturerURL;
+value = "https://example.com/manufacturer";
+},
+{
+key = designers;
+values = (
+{
+language = IT_CAN_BE_ANYTHING;
+value = "Designed by me!";
+},
+{
+language = NOT_THIS_ONE;
+value = "Designed by ... you?!";
+}
+);
+},
+{
+key = designerURL;
+value = "https://example.com/designer";
+},
+{
+key = licenses;
+values = (
+{
+language = dflt;
+value = "Licensed to thrill";
+}
+);
+},
+{
+key = sampleTexts;
+values = (
+{
+language = MEH;
+value = "Don't pull this text";
+},
+{
+language = ENG;
+value = "Also bad";
+},
+{
+language = default;
+value = "Sam pull text";
+}
+);
+},
+{
+key = compatibleFullNames;
+values = (
+{
+language = WRONG;
+value = "For the BeOS only";
+},
+{
+language = ENG;
+value = "For the Mac's only";
+}
+);
+},
+{
+key = WWSFamilyName;
+value = "We Will Slant you";
+},
+
+{
+key = preferredFamilyNames;
+values = (
+{
+language = dflt;
+value = "Wrong Pref Family Name";
+}
+);
+},
+{
+key = preferredSubfamilyNames;
+values = (
+{
+language = dflt;
+value = "Wrong Pref Regular";
+}
+);
+},
+{
+key = variationsPostScriptNamePrefix;
+value = "Wrong Name 25?!";
+}
+
+);
+
+instances = (
+{
+name = Bold;
+type = variable;
+properties = (
+{
+key = preferredFamilyNames;
+values = (
+{
+language = dflt;
+value = "Pref Family Name";
+}
+);
+},
+{
+key = preferredSubfamilyNames;
+values = (
+{
+language = dflt;
+value = "Pref Regular";
+}
+);
+},
+{
+key = variationsPostScriptNamePrefix;
+value = "Name 25?!";
+}
+);
+}
+);
+
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}

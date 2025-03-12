@@ -154,6 +154,10 @@ fn try_name_id(name: &str) -> Option<NameId> {
         "compatibleFullNames" => Some(NameId::COMPATIBLE_FULL_NAME),
         "sampleTexts" => Some(NameId::SAMPLE_TEXT),
         "WWSFamilyName" => Some(NameId::WWS_FAMILY_NAME),
+        "preferredFamilyNames" => Some(NameId::TYPOGRAPHIC_FAMILY_NAME),
+        "preferredSubfamilyNames" => Some(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+        "variationsPostScriptNamePrefix" => Some(NameId::VARIATIONS_POSTSCRIPT_NAME_PREFIX),
+        "vendorID" => None, // handled separately
         _ => {
             warn!("Unknown 'name' entry {name}");
             None
@@ -170,27 +174,6 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
         }
     }
 
-    // Family name needs to include style, with some mutilation (drop last Regular, Bold, Italic)
-    // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da540d646b0784ae6d2c3ca834/Lib/glyphsLib/builder/names.py#L92>
-    let typographic_family = builder.get(NameId::FAMILY_NAME).unwrap_or_default();
-    let mut family = vec![typographic_family];
-    family.extend(font.default_master().name.split_ascii_whitespace());
-    while matches!(
-        family.last().copied(),
-        Some("Regular") | Some("Bold") | Some("Italic")
-    ) {
-        family.pop();
-    }
-    let family = family.join(" ");
-
-    if typographic_family != family {
-        builder.add(
-            NameId::TYPOGRAPHIC_FAMILY_NAME,
-            typographic_family.to_string(),
-        );
-    }
-
-    builder.add(NameId::FAMILY_NAME, family);
     let subfamily = if flags.contains(SelectionFlags::BOLD | SelectionFlags::ITALIC) {
         "Bold Italic"
     } else if flags.contains(SelectionFlags::BOLD) {
@@ -202,10 +185,51 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     };
     builder.add(NameId::SUBFAMILY_NAME, subfamily.to_string());
 
-    builder.add(
-        NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
-        font.default_master().name.clone(),
-    );
+    // Family name needs to include style, with some mutilation (drop last Regular, Bold, Italic)
+    // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da540d646b0784ae6d2c3ca834/Lib/glyphsLib/builder/names.py#L92>
+    let original_family = builder
+        .get(NameId::FAMILY_NAME)
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    let mut family = vec![original_family.as_str()];
+    family.extend(font.default_master().name.split_ascii_whitespace());
+    while matches!(
+        family.last().copied(),
+        Some("Regular") | Some("Bold") | Some("Italic")
+    ) {
+        family.pop();
+    }
+    let family = family.join(" ");
+    builder.add(NameId::FAMILY_NAME, family.clone());
+
+    let typographic_family = builder
+        .get(NameId::TYPOGRAPHIC_FAMILY_NAME)
+        .filter(|s| *s != family)
+        .map(|s| s.to_string());
+    if let Some(typographic_family) = &typographic_family {
+        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, typographic_family.clone());
+    }
+    let typographic_subfamily = builder
+        .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
+        .filter(|s| *s != subfamily)
+        .map(|s| s.to_string());
+    if let Some(typographic_subfamily) = &typographic_subfamily {
+        builder.add(
+            NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
+            typographic_subfamily.to_string(),
+        );
+    }
+
+    if typographic_family.is_some() || typographic_subfamily.is_some() {
+        builder.add(
+            NameId::FULL_NAME,
+            format!(
+                "{} {}",
+                typographic_family.unwrap_or(family),
+                typographic_subfamily.as_deref().unwrap_or(subfamily)
+            ),
+        );
+    }
 
     let vendor = font
         .vendor_id()
@@ -1418,89 +1442,135 @@ mod tests {
         assert_eq!(1000, context.static_metadata.get().units_per_em);
     }
 
+    fn the_best_names() -> Vec<(NameKey, String)> {
+        vec![
+            (
+                NameKey::new_bmp_only(NameId::COPYRIGHT_NOTICE),
+                String::from("Copy!"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::FAMILY_NAME),
+                String::from("FamilyName"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
+                String::from("Bold"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::UNIQUE_ID),
+                String::from("We are all unique"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::FULL_NAME),
+                String::from("Full of names"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::VERSION_STRING),
+                String::from("New Value"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
+                String::from("Postscript Name"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::TRADEMARK),
+                String::from("A trade in marks"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::MANUFACTURER),
+                String::from("Who made you?!"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::DESIGNER),
+                String::from("Designed by me!"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::DESCRIPTION),
+                String::from("The greatest weight var"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::VENDOR_URL),
+                String::from("https://example.com/manufacturer"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::DESIGNER_URL),
+                String::from("https://example.com/designer"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::LICENSE_DESCRIPTION),
+                String::from("Licensed to thrill"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::LICENSE_URL),
+                String::from("https://example.com/my/font/license"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::COMPATIBLE_FULL_NAME),
+                String::from("For the Mac's only"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::SAMPLE_TEXT),
+                String::from("Sam pull text"),
+            ),
+            (
+                NameKey::new_bmp_only(NameId::WWS_FAMILY_NAME),
+                String::from("We Will Slant you"),
+            ),
+        ]
+    }
+
+    fn update_expected_names(names: &mut Vec<(NameKey, String)>, updates: Vec<(NameKey, String)>) {
+        names.retain(|(k, _)| !updates.iter().any(|(k2, _)| k == k2));
+        names.extend(updates);
+        names.sort_by_key(|(k, _)| k.name_id.to_u16());
+    }
+
     #[test]
     fn name_table() {
         let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         let mut names: Vec<_> = names(&font, SelectionFlags::BOLD).into_iter().collect();
         names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
         // typographic family name == family name and should NOT be present
-        assert_eq!(
+        assert_eq!(the_best_names(), names);
+    }
+
+    #[test]
+    fn name_table_with_preferred_names() {
+        let font = Font::load(&glyphs3_dir().join("PreferableNames.glyphs")).unwrap();
+        let mut names: Vec<_> = names(&font, SelectionFlags::REGULAR).into_iter().collect();
+        names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
+        // typographic family and subfamily should be present now
+        let mut expected_names = the_best_names();
+        update_expected_names(
+            &mut expected_names,
             vec![
                 (
-                    NameKey::new_bmp_only(NameId::COPYRIGHT_NOTICE),
-                    String::from("Copy!")
-                ),
-                (
                     NameKey::new_bmp_only(NameId::FAMILY_NAME),
-                    String::from("FamilyName")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
-                    String::from("Bold")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::UNIQUE_ID),
-                    String::from("We are all unique")
+                    "FamilyName".to_string(),
                 ),
                 (
                     NameKey::new_bmp_only(NameId::FULL_NAME),
-                    String::from("Full of names")
+                    "Pref Family Name Pref Regular".to_string(),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::VERSION_STRING),
-                    String::from("New Value")
+                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
+                    "Regular".to_string(),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
-                    String::from("Postscript Name")
+                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
+                    "Pref Family Name".to_string(),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::TRADEMARK),
-                    String::from("A trade in marks")
+                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+                    "Pref Regular".to_string(),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::MANUFACTURER),
-                    String::from("Who made you?!")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::DESIGNER),
-                    String::from("Designed by me!")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::DESCRIPTION),
-                    String::from("The greatest weight var")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::VENDOR_URL),
-                    String::from("https://example.com/manufacturer")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::DESIGNER_URL),
-                    String::from("https://example.com/designer")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::LICENSE_DESCRIPTION),
-                    String::from("Licensed to thrill")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::LICENSE_URL),
-                    String::from("https://example.com/my/font/license")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::COMPATIBLE_FULL_NAME),
-                    String::from("For the Mac's only")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::SAMPLE_TEXT),
-                    String::from("Sam pull text")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::WWS_FAMILY_NAME),
-                    String::from("We Will Slant you")
+                    NameKey::new_bmp_only(NameId::VARIATIONS_POSTSCRIPT_NAME_PREFIX),
+                    "Name 25?!".to_string(),
                 ),
             ],
-            names
         );
+        assert_eq!(expected_names, names);
     }
 
     #[test]
@@ -1878,10 +1948,10 @@ mod tests {
             (
                 "An Light",
                 "Italic",
-                "1.000;NONE;An-LightItalic",
+                "1.000;NONE;AnLight-Italic",
                 "An Light Italic",
-                "An",
-                "Light Italic",
+                "",
+                "",
                 SelectionFlags::ITALIC
             )
         );
