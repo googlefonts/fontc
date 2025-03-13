@@ -140,7 +140,8 @@ fn try_name_id(name: &str) -> Option<NameId> {
         "copyrights" => Some(NameId::COPYRIGHT_NOTICE),
         "familyNames" => Some(NameId::FAMILY_NAME),
         "uniqueID" => Some(NameId::UNIQUE_ID),
-        "postscriptFullName" => Some(NameId::FULL_NAME),
+        // Python appears to *only* use this for CFF topDict construction, not name
+        // "postscriptFullName" => Some(NameId::FULL_NAME),
         "version" => Some(NameId::VERSION_STRING),
         "postscriptFontName" => Some(NameId::POSTSCRIPT_NAME),
         "trademarks" => Some(NameId::TRADEMARK),
@@ -151,7 +152,8 @@ fn try_name_id(name: &str) -> Option<NameId> {
         "designerURL" => Some(NameId::DESIGNER_URL),
         "licenses" => Some(NameId::LICENSE_DESCRIPTION),
         "licenseURL" => Some(NameId::LICENSE_URL),
-        "compatibleFullNames" => Some(NameId::COMPATIBLE_FULL_NAME),
+        // ttx_diff suggests python doesn't care about this one
+        //"compatibleFullNames" => Some(NameId::COMPATIBLE_FULL_NAME),
         "sampleTexts" => Some(NameId::SAMPLE_TEXT),
         "WWSFamilyName" => Some(NameId::WWS_FAMILY_NAME),
         "preferredFamilyNames" => Some(NameId::TYPOGRAPHIC_FAMILY_NAME),
@@ -191,43 +193,26 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
         .get(NameId::FAMILY_NAME)
         .map(|s| s.to_string())
         .unwrap_or_default();
-    let mut family = vec![original_family.as_str()];
-    family.extend(font.default_master().name.split_ascii_whitespace());
-    while matches!(
-        family.last().copied(),
-        Some("Regular") | Some("Bold") | Some("Italic")
-    ) {
-        family.pop();
-    }
-    let family = family.join(" ");
+    let family = NameBuilder::make_family_name(&original_family, &font.default_master().name, true);
     builder.add(NameId::FAMILY_NAME, family.clone());
 
-    let typographic_family = builder
+    if let Some(typographic_family) = &builder
         .get(NameId::TYPOGRAPHIC_FAMILY_NAME)
-        .filter(|s| *s != family)
-        .map(|s| s.to_string());
-    if let Some(typographic_family) = &typographic_family {
-        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, typographic_family.clone());
-    }
-    let typographic_subfamily = builder
-        .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
-        .filter(|s| *s != subfamily)
-        .map(|s| s.to_string());
-    if let Some(typographic_subfamily) = &typographic_subfamily {
+        .or(Some(&original_family))
+    {
         builder.add(
-            NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
-            typographic_subfamily.to_string(),
+            NameId::TYPOGRAPHIC_FAMILY_NAME,
+            typographic_family.to_string(),
         );
     }
 
-    if typographic_family.is_some() || typographic_subfamily.is_some() {
+    if let Some(typographic_subfamily) = &builder
+        .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
+        .or(Some(&font.default_master().name))
+    {
         builder.add(
-            NameId::FULL_NAME,
-            format!(
-                "{} {}",
-                typographic_family.unwrap_or(family),
-                typographic_subfamily.as_deref().unwrap_or(subfamily)
-            ),
+            NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
+            typographic_subfamily.to_string(),
         );
     }
 
@@ -1462,7 +1447,7 @@ mod tests {
             ),
             (
                 NameKey::new_bmp_only(NameId::FULL_NAME),
-                String::from("Full of names"),
+                String::from("FamilyName Bold"),
             ),
             (
                 NameKey::new_bmp_only(NameId::VERSION_STRING),
@@ -1505,10 +1490,6 @@ mod tests {
                 String::from("https://example.com/my/font/license"),
             ),
             (
-                NameKey::new_bmp_only(NameId::COMPATIBLE_FULL_NAME),
-                String::from("For the Mac's only"),
-            ),
-            (
                 NameKey::new_bmp_only(NameId::SAMPLE_TEXT),
                 String::from("Sam pull text"),
             ),
@@ -1532,6 +1513,52 @@ mod tests {
         names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
         // typographic family name == family name and should NOT be present
         assert_eq!(the_best_names(), names);
+    }
+
+    #[test]
+    fn name_table_with_basic_names_light_origin() {
+        let font = Font::load(&glyphs3_dir().join("LightOriginNames.glyphs")).unwrap();
+        let mut names: Vec<_> = names(&font, SelectionFlags::REGULAR).into_iter().collect();
+        names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
+
+        // Expected taken from fontmake output
+        assert_eq!(
+            vec![
+                (
+                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
+                    String::from("FamilyName Light"),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
+                    String::from("Regular"),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::UNIQUE_ID),
+                    String::from("42.042;NONE;FamilyName-Light"),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::FULL_NAME),
+                    String::from("FamilyName Light"),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::VERSION_STRING),
+                    String::from("Version 42.042"),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
+                    String::from("FamilyName-Light"),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
+                    String::from("FamilyName"),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+                    String::from("Light"),
+                ),
+            ],
+            names
+        )
     }
 
     #[test]
@@ -1935,23 +1962,28 @@ mod tests {
                 .unwrap_or_default()
         };
 
+        // Correct values taken from fontmake
         assert_eq!(
             (
                 name(NameId::FAMILY_NAME),
                 name(NameId::SUBFAMILY_NAME),
                 name(NameId::UNIQUE_ID),
                 name(NameId::FULL_NAME),
+                name(NameId::POSTSCRIPT_NAME),
                 name(NameId::TYPOGRAPHIC_FAMILY_NAME),
                 name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+                name(NameId::new(256)),
                 selection_flags
             ),
             (
                 "An Light",
                 "Italic",
-                "1.000;NONE;AnLight-Italic",
+                "1.000;NONE;An-LightItalic",
                 "An Light Italic",
-                "",
-                "",
+                "An-LightItalic",
+                "An",
+                "Light Italic",
+                "Weight",
                 SelectionFlags::ITALIC
             )
         );

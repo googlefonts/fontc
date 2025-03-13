@@ -948,6 +948,22 @@ fn is_ribbi(style_name: &str) -> bool {
 }
 
 impl NameBuilder {
+    /// If drop_rbbi_suffix remove trailing Regular, Bold, or Italic, e.g. convert Family Regular to just Family
+    pub fn make_family_name(family: &str, subfamily: &str, drop_rbbi_suffix: bool) -> String {
+        let mut family = vec![family];
+        family.extend(subfamily.split_ascii_whitespace());
+        if drop_rbbi_suffix {
+            while let Some(last) = family.last().copied() {
+                if matches!(last, "Regular" | "Bold" | "Italic") {
+                    family.pop();
+                } else {
+                    break;
+                }
+            }
+        }
+        family.join(" ")
+    }
+
     pub fn add(&mut self, name_id: NameId, value: String) {
         let key = NameKey::new(name_id, &value);
         self.names.insert(key, value);
@@ -1069,25 +1085,29 @@ impl NameBuilder {
         if !self.contains_key(NameId::FULL_NAME) {
             self.add(
                 NameId::FULL_NAME,
-                format!(
-                    "{} {}",
+                NameBuilder::make_family_name(
                     self.get(NameId::TYPOGRAPHIC_FAMILY_NAME)
                         .unwrap_or_default(),
                     self.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
                         .unwrap_or_default(),
+                    false,
                 ),
             );
         }
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L178-L185
         if !self.contains_key(NameId::POSTSCRIPT_NAME) {
-            let mut value = format!(
-                "{}-{}",
-                self.get(NameId::TYPOGRAPHIC_FAMILY_NAME)
-                    .unwrap_or_default(),
-                self.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
-                    .unwrap_or_default(),
-            );
+            let mut family = self
+                .get(NameId::TYPOGRAPHIC_FAMILY_NAME)
+                .unwrap_or_default()
+                .replace(" ", "");
+            let subfamily = self
+                .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
+                .unwrap_or_default();
+            if !subfamily.is_empty() {
+                family += "-";
+            }
+            let mut value = NameBuilder::make_family_name(&family, subfamily, false);
             normalize_for_postscript(&mut value, false);
             self.add(NameId::POSTSCRIPT_NAME, value);
         }
