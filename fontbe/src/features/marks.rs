@@ -621,20 +621,36 @@ impl<'a> MarkLookupBuilder<'a> {
             .as_ref()
             .unwrap_or(&scripts_using_abvm);
 
-        let unicode_is_abvm = |uv: u32| -> bool {
-            super::properties::scripts_for_codepoint(uv)
+        // this returns Option<bool> to replicate the ternary logic of
+        // https://github.com/googlefonts/ufo2ft/blob/16ed156bd6a8b9bc/Lib/ufo2ft/util.py#L360
+        let unicode_is_abvm = |uv: u32| -> Option<bool> {
+            let mut saw_abvm = false;
+            for script in super::properties::scripts_for_codepoint(uv) {
+                if script == super::properties::COMMON_SCRIPT {
+                    return None;
+                }
                 // attn: this uses the _filtered_ abvm scripts:
-                .any(|script| maybe_filtered.contains(&script))
+                saw_abvm |= maybe_filtered.contains(&script);
+            }
+            Some(saw_abvm)
         };
 
         // note that it's possible for a glyph to pass both these tests!
-        let unicode_is_non_abvm = |uv: u32| -> bool {
-            super::properties::scripts_for_codepoint(uv)
-                // but this uses the unfiltered ones!
-                .any(|script| !scripts_using_abvm.contains(&script))
+        let unicode_is_non_abvm = |uv: u32| -> Option<bool> {
+            Some(
+                super::properties::scripts_for_codepoint(uv)
+                    // but this uses the unfiltered ones!
+                    .any(|script| !scripts_using_abvm.contains(&script)),
+            )
         };
 
-        if scripts_using_abvm.is_empty() || !self.char_map.keys().copied().any(unicode_is_abvm) {
+        if scripts_using_abvm.is_empty()
+            || !self
+                .char_map
+                .keys()
+                .copied()
+                .any(|uv| unicode_is_abvm(uv).unwrap_or(false))
+        {
             // no abvm scripts: everything is a mark
             return Ok((
                 Default::default(),
@@ -1006,6 +1022,7 @@ mod tests {
             ("halant-kannada", '\u{0CCD}'),
             ("ka-kannada", '\u{0C95}'),
             ("taonethousand", '\u{0BF2}'),
+            ("uni25CC", '\u{25CC}'),
         ];
 
         static UNMAPPED: &[&str] = &["ka-kannada.base", "a.alt"];
@@ -1729,6 +1746,37 @@ mod tests {
                 // it should only be in the non-abvm set.
                 assert!(!abvm.contains(&dotbelowcomb));
                 assert!(non_abvm.contains(&dotbelowcomb));
+            });
+    }
+
+    #[test]
+    fn abvm_closure_excludes_glyphs_with_common_script() {
+        let uni25cc = char_for_glyph(&GlyphName::new("uni25CC")).unwrap();
+        assert_eq!(
+            super::super::properties::scripts_for_codepoint(uni25cc as _).collect::<Vec<_>>(),
+            [super::super::properties::COMMON_SCRIPT]
+        );
+        let _ = MarksInput::default()
+            .set_user_fea(
+                "languagesystem latn dflt;
+                languagesystem knda dflt;
+
+                feature derp {
+                    sub ka-kannada by uni25CC;
+                } derp;
+        ",
+            )
+            .add_glyph("ka-kannada", None, |_| {})
+            .add_glyph("uni25CC", None, |_| {})
+            .compile_and_inspect(|ctx| {
+                let (abvm, non_abvm) = ctx.split_mark_and_abvm_blwm_glyphs().unwrap();
+                // even though this is reachable by substitution from an abvm glyph,
+                // we don't want it to go in abvm
+                let uni25cc = ctx.glyph_order.glyph_id("uni25CC").unwrap();
+                let ka = ctx.glyph_order.glyph_id("ka-kannada").unwrap();
+                assert!(!abvm.contains(&uni25cc));
+                assert!(abvm.contains(&ka));
+                assert!(non_abvm.contains(&uni25cc));
             });
     }
 
