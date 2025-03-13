@@ -154,26 +154,32 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     log::info!("completed {n_targets} targets in {elapsed}");
 
     let summary = super::ttx_diff_runner::Summary::new(&results);
-    if Some(&summary) == prev_runs.last().map(|run| &run.stats) {
-        log::info!("output identical to last run, skipping");
-        return Ok(());
-    }
+    // if nothing has changed we still want to report it, but we don't need to
+    // write a new big results file; we can reuse the previous one
+    let (results_file, reuse_last_result) = match prev_runs.last() {
+        Some(prev) if prev.stats == summary => (prev.results_file.clone(), true),
+        _ => (out_file.into(), false),
+    };
 
     let summary = RunSummary {
         began,
         finished,
         fontc_rev,
         pip_freeze_sha,
-        results_file: out_file.into(),
+        results_file,
         input_file_sha,
         stats: summary,
     };
 
     prev_runs.push(summary);
+    super::try_write_json(&prev_runs, &summary_file)?;
+    if reuse_last_result {
+        // we don't need to rewrite any of these other files if nothing
+        // changed.
+        return Ok(());
+    }
 
     super::try_write_json(&results, &out_path)?;
-    super::try_write_json(&prev_runs, &summary_file)?;
-
     // we write the map of target -> source repo to a separate file because
     // otherwise we're basically duplicating it for each run.
     let sources_file = args.out_dir.join(SOURCES_FILE);
