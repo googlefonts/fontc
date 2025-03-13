@@ -1,6 +1,6 @@
 //! Accessors for bundled glyphsLib data
 
-use std::{cmp::Ordering, str::from_utf8_unchecked};
+use std::{cmp::Ordering, marker::PhantomData, str::from_utf8_unchecked};
 
 use crate::glyphdata::{Category, QueryResult, Subcategory};
 
@@ -35,13 +35,16 @@ impl BundledEntry for (U24, U24) {
     }
 }
 
-// T is a data member because const PhantomData didn't cseem to want to cooperate
-struct ArrayOf<T: BundledEntry>(&'static [u8], T);
+struct ArrayOf<T: BundledEntry>(&'static [u8], PhantomData<T>);
 
 impl<T> ArrayOf<T>
 where
     T: BundledEntry,
 {
+    const fn new(data: &'static [u8]) -> Self {
+        Self(data, PhantomData)
+    }
+
     fn len(&self) -> usize {
         self.0.len() / T::element_size()
     }
@@ -56,19 +59,16 @@ where
     }
 }
 
-const NAME_OFFSETS: ArrayOf<U24> = ArrayOf(include_bytes!("../resources/name_offsets.dat"), 0);
+const NAME_OFFSETS: ArrayOf<U24> = ArrayOf::new(include_bytes!("../resources/name_offsets.dat"));
 const NAMES: &[u8] = include_bytes!("../resources/names.dat");
 
 const CODEPOINT_TO_INFO_IDX: ArrayOf<(U24, U24)> =
-    ArrayOf(include_bytes!("../resources/codepoints_to_idx.dat"), (0, 0));
+    ArrayOf::new(include_bytes!("../resources/codepoints_to_idx.dat"));
 
-const CODEPOINTS: ArrayOf<U24> = ArrayOf(include_bytes!("../resources/codepoints.dat"), 0);
-const CATEGORIES: ArrayOf<Category> = ArrayOf(
-    include_bytes!("../resources/categories.dat"),
-    Category::Other,
-);
+const CODEPOINTS: ArrayOf<U24> = ArrayOf::new(include_bytes!("../resources/codepoints.dat"));
+const CATEGORIES: ArrayOf<Category> = ArrayOf::new(include_bytes!("../resources/categories.dat"));
 const SUBCATEGORIES: ArrayOf<Option<Subcategory>> =
-    ArrayOf(include_bytes!("../resources/subcategories.dat"), None);
+    ArrayOf::new(include_bytes!("../resources/subcategories.dat"));
 
 fn name_offset(idx: usize) -> usize {
     // The last offset extends to EOF
