@@ -13,7 +13,6 @@ import dataclasses
 from dataclasses import dataclass
 import glyphsLib
 from importlib import resources
-from io import StringIO
 from lxml import etree
 from pathlib import Path
 from textwrap import dedent
@@ -22,7 +21,7 @@ from typing import Iterable, Mapping, Optional, Tuple
 
 @dataclass(frozen=True)
 class GlyphInfo:
-    codepoint: Optional[int]
+    codepoint: Optional[str]
     name: str
     category: str
     subcategory: Optional[str]
@@ -92,6 +91,37 @@ def write_enum_shorthands(f, enum_name, minimal_names):
         f.write(f"const {short}: {enum_name} = {enum_name}::{long};\n")
 
 
+def writeU24(file, value):
+    file.write(value.to_bytes(3, byteorder="little"))
+
+
+def write_enum_conversion(name: str, values: Tuple[str], optional: bool) -> str:
+    lines = []
+    typ = name
+    if optional:
+       typ = f"Option<{name}>" 
+    lines.append(f"impl BundledEntry for {typ} {{")
+    lines.append("    fn element_size() -> usize {")
+    lines.append("        1")
+    lines.append("    }")
+    lines.append(f"    fn from_slice(raw: &[u8]) -> {typ} {{")
+    lines.append("        match raw[0] {")
+
+    if optional:
+        for (i, value) in enumerate(values):
+            lines.append(f"            {i} => Some({name}::{value}),")
+        lines.append(f"            255 => None,")
+    else:
+        for (i, value) in enumerate(values):
+            lines.append(f"            {i} => {name}::{value},")
+    lines.append(f"            v => panic!(\"What is {{v}}\"),")
+    lines.append("        }")
+    lines.append("    }")
+    lines.append("}")
+
+    return "\n".join(lines) + "\n"
+
+
 def main():
     glyph_infos = sorted(
         set(read_glyph_info("GlyphData.xml"))
@@ -99,14 +129,8 @@ def main():
         key=lambda g: g.name,
     )
     names = {g.name for g in glyph_infos}
-
-    # Globally unique minimized names for categories and subcategories
-    shorthand_names = set()
-    min_categories = minimal_names(shorthand_names, (g.category for g in glyph_infos))
-    min_subcategories = minimal_names(
-        shorthand_names,
-        (g.subcategory for g in glyph_infos if g.subcategory is not None),
-    )
+    categories = sorted({g.category for g in glyph_infos})
+    subcategories = sorted({g.subcategory for g in glyph_infos if g.subcategory is not None})
 
     assert len(names) == len(glyph_infos), "Names aren't unique?"
     codepoints = {}
@@ -121,80 +145,76 @@ def main():
                 f"Multiple names are assigned 0x{codepoint:04x}, using the first one we saw"
             )
 
-    dest_file = Path(__file__).parent.parent / "src" / "glyphslib_data.rs"
+    for gi in glyph_infos:
+        if not gi.name.isascii():
+            raise ValueError(f"{gi.name} invalid")
 
-    with open(dest_file, "w") as f:
-        f.write(
-            f"//! Glyph data generated from glyphsLib {glyphsLib.__version__} by {Path(__file__).name}\n"
-        )
-        f.write("//!\n")
-        f.write(f"//! {len(glyph_infos)} glyph metadata records taken from glyphsLib\n")
-        f.write("\n")
-        f.write(
-            "use crate::glyphdata::{qr, q1, q2, q3, Category, QueryResult, Subcategory};\n"
-        )
-        f.write("\n")
+    # There was a time we wrote a bincode file. It took 10% of compile time to decode.
+    # There was a time we wrote a really big const array. It was slow for rustc and RA.
+    # So lets try writing a binary file we dance around using view apis, akin to how we read fonts.
 
-        # Write constants for enum variants to shorten giant tuple array
-        write_enum_shorthands(f, "Category", min_categories)
-        f.write("\n")
-        write_enum_shorthands(f, "Subcategory", min_subcategories)
-        f.write("\n")
+    offsets_file = Path(__file__).parent.parent / "resources" / "name_offsets.dat"
+    data_file = Path(__file__).parent.parent / "resources" / "names.dat"
+    codepoint_to_idx_file = Path(__file__).parent.parent / "resources" / "codepoints_to_idx.dat"
+    codepoint_file = Path(__file__).parent.parent / "resources" / "codepoints.dat"
+    category_file = Path(__file__).parent.parent / "resources" / "categories.dat"
+    subcategory_file = Path(__file__).parent.parent / "resources" / "subcategories.dat"
+    enums_file = Path(__file__).parent.parent / "src" / "glyphslib_enums.rs"
+    readme_file = Path(__file__).parent.parent / "resources" / "README.md"
 
-        f.write("// Sorted by name, has unique names, therefore safe to bsearch\n")
+    offset = 0
+    with open(offsets_file, "wb") as f_offsets:
+        with open(data_file, "wb") as f_data:            
+            for gi in glyph_infos:
+                data = gi.name.encode("ascii")
+                writeU24(f_offsets, offset)
+                f_data.write(data)
+                offset += len(data)
 
-        f.write("pub(crate) const GLYPH_INFO: &[(&str, QueryResult)] = &[\n")
-        lines = [""]
+    with open(codepoint_file, "wb") as f:
+        rev_codepoints = {i:cp for (cp, i) in codepoints.items()}
+        for i in range(0, len(glyph_infos)):
+            codepoint = rev_codepoints.get(i, 0)
+            writeU24(f, codepoint)
+
+    with open(codepoint_to_idx_file, "wb") as f:
+        for (codepoint, i) in sorted(codepoints.items()):
+            writeU24(f, codepoint)
+            writeU24(f, i)
+
+    with open(category_file, "wb") as f:
         for gi in glyph_infos:
-            category = min_categories[gi.category]
+            f.write(categories.index(gi.category).to_bytes(1))
 
-            # map to shorthand
-            if (None, None) == (gi.subcategory, gi.codepoint):
-                entry = f"q1({category})"
-            elif gi.subcategory is None:
-                # codepoint must not be
-                entry = f"q2({category}, 0x{gi.codepoint})"
-            elif gi.codepoint is None:
-                # subcategory must not be
-                entry = f"q3({category}, {min_subcategories[gi.subcategory]})"
-            else:
-                # We must have all the things!
-                entry = f"qr({category}, {min_subcategories[gi.subcategory]}, 0x{gi.codepoint})"
-
-            codepoint = "None"
-            if gi.codepoint is not None:
-                codepoint = f"Some(0x{gi.codepoint})"
-
-            subcategory = "None"
+    with open(subcategory_file, "wb") as f:
+        for gi in glyph_infos:
+            i = 255
             if gi.subcategory is not None:
-                subcategory = f"Some({min_subcategories[gi.subcategory]})"
-            fragment = f'("{gi.name}", {entry}),'
-            if (len(lines[-1]) + len(fragment)) > 100:
-                lines[-1] += "\n"
-                lines.append("")
-            lines[-1] += fragment
+                i = subcategories.index(gi.subcategory)
+            f.write(i.to_bytes(1))
 
-        for line in lines:
-            f.write(line)
+
+    # Generate binary : enum translations
+    with open(enums_file, "w") as f:
+        f.write("//! Generated by glyphs-reader/data/update.py\n")
         f.write("\n")
-        f.write("];\n")
 
+        f.write("use crate::{glyphdata::{Category, Subcategory}, glyphdata_bundled::BundledEntry};\n")
+        f.write("\n")
+
+        f.write(write_enum_conversion("Category", categories, False))
+        f.write("\n")
+
+        f.write("/// The subcategory of a given glyph\n")
+        f.write(write_enum_conversion("Subcategory", subcategories, True))
+        f.write("\n")
+
+    with open(readme_file, "w") as f:
+        f.write("# Dat files\n")
+        f.write("\n")
         f.write(
-            "// Sorted by codepoint, has unique codepoints, therefore safe to bsearch\n"
+            f"*.dat content generated from glyphsLib {glyphsLib.__version__} by {Path(__file__).name}\n"
         )
-        f.write("pub(crate) const CODEPOINT_TO_INFO_IDX: &[(u32, usize)] = &[\n")
-        lines = [""]
-        for codepoint, i in sorted(codepoints.items()):
-            fragment = f"(0x{codepoint:04x}, {i}),"
-            if (len(lines[-1]) + len(fragment)) > 100:
-                lines[-1] += "\n"
-                lines.append("")
-            lines[-1] += fragment
-
-        for line in lines:
-            f.write(line)
-        f.write("\n")
-        f.write("];\n")
 
 
 if __name__ == "__main__":
