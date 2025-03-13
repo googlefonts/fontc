@@ -75,7 +75,12 @@ fn name_offset(idx: usize) -> usize {
     if idx == NAME_OFFSETS.len() {
         return NAMES.len();
     }
-    NAME_OFFSETS.get(idx).unwrap()
+    NAME_OFFSETS.get(idx).unwrap_or_else(|| {
+        panic!(
+            "Asked for name {idx} but we only have {} names",
+            NAMES.len()
+        )
+    })
 }
 
 fn name(idx: usize) -> &'static str {
@@ -85,35 +90,29 @@ fn name(idx: usize) -> &'static str {
     unsafe { from_utf8_unchecked(&NAMES[start..end]) }
 }
 
-pub(crate) fn find_pos_by_name(needle: &str) -> Option<usize> {
-    let mut upper = NAME_OFFSETS.len();
+fn bsearch<T: Ord>(len: usize, needle: T, get: impl Fn(usize) -> (T, usize)) -> Option<usize> {
+    let mut upper = len as i32;
     let mut lower = 0;
     while lower <= upper {
-        let mid = (lower + upper) / 2;
-        let c = name(mid).cmp(needle);
-        match c {
-            Ordering::Equal => return Some(mid),
-            Ordering::Less => lower = mid + 1,
-            Ordering::Greater => upper = mid - 1,
+        let mid = ((lower + upper) / 2) as usize;
+        let (c, i) = get(mid);
+        match c.cmp(&needle) {
+            Ordering::Equal => return Some(i),
+            Ordering::Less => lower = mid as i32 + 1,
+            Ordering::Greater => upper = mid as i32 - 1,
         }
     }
     None
 }
 
+pub(crate) fn find_pos_by_name(needle: &str) -> Option<usize> {
+    bsearch(NAME_OFFSETS.len(), needle, |i| (name(i), i))
+}
+
 pub(crate) fn find_pos_by_codepoint(needle: u32) -> Option<usize> {
-    let mut upper = CODEPOINT_TO_INFO_IDX.len();
-    let mut lower = 0;
-    while lower <= upper {
-        let mid = (lower + upper) / 2;
-        let (cp, i) = CODEPOINT_TO_INFO_IDX.get(mid).unwrap();
-        let c = cp.cmp(&(needle as usize));
-        match c {
-            Ordering::Equal => return Some(i),
-            Ordering::Less => lower = mid + 1,
-            Ordering::Greater => upper = mid - 1,
-        }
-    }
-    None
+    bsearch(CODEPOINT_TO_INFO_IDX.len(), needle as usize, |i| {
+        CODEPOINT_TO_INFO_IDX.get(i).unwrap()
+    })
 }
 
 pub(crate) fn get(i: usize) -> Option<QueryResult> {
@@ -179,5 +178,21 @@ mod tests {
                 .map(|i| (name(i), get(i).unwrap()))
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn find_pos_by_name_empty() {
+        assert_eq!(None, find_pos_by_name(" "));
+    }
+
+    #[test]
+    fn find_pos_by_name_first() {
+        assert_eq!(Some(0), find_pos_by_name(name(0)));
+    }
+
+    #[test]
+    fn find_pos_by_name_last() {
+        let last = NAME_OFFSETS.len() - 1;
+        assert_eq!(Some(last), find_pos_by_name(name(last)));
     }
 }
