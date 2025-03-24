@@ -48,7 +48,7 @@ impl Work<Context, AnyWorkId, Error> for CpalWork {
             .map(to_cpal_color)
             .collect::<Vec<_>>();
 
-        if color_records.len() > u16::MAX.into() {
+        if color_records.len() > u16::MAX as usize {
             return Err(Error::OutOfBounds {
                 what: "Too many CPAL colorRecords".to_string(),
                 value: format!("{}", color_records.len()),
