@@ -2,7 +2,9 @@
 
 use std::{cmp::Ordering, marker::PhantomData, str::from_utf8_unchecked};
 
-use crate::glyphdata::{Category, QueryResult, Subcategory};
+use smol_str::SmolStr;
+
+use crate::glyphdata::{Category, ProductionName, QueryResult, Script, Subcategory};
 
 type U24 = usize;
 
@@ -62,6 +64,11 @@ where
 const NAME_OFFSETS: ArrayOf<U24> = ArrayOf::new(include_bytes!("../resources/name_offsets.dat"));
 const NAMES: &[u8] = include_bytes!("../resources/names.dat");
 
+const PROD_NAME_OFFSETS: ArrayOf<U24> =
+    ArrayOf::new(include_bytes!("../resources/prod_name_offsets.dat"));
+const PROD_NAMES: &[u8] = include_bytes!("../resources/prod_names.dat");
+const PROD_NAME_PREDICTABLE_BITMAP: &[u8] = include_bytes!("../resources/prod_name_bitmap.dat");
+
 const CODEPOINT_TO_INFO_IDX: ArrayOf<(U24, U24)> =
     ArrayOf::new(include_bytes!("../resources/codepoints_to_idx.dat"));
 
@@ -69,25 +76,32 @@ const CODEPOINTS: ArrayOf<U24> = ArrayOf::new(include_bytes!("../resources/codep
 const CATEGORIES: ArrayOf<Category> = ArrayOf::new(include_bytes!("../resources/categories.dat"));
 const SUBCATEGORIES: ArrayOf<Option<Subcategory>> =
     ArrayOf::new(include_bytes!("../resources/subcategories.dat"));
+const SCRIPTS: ArrayOf<Option<Script>> = ArrayOf::new(include_bytes!("../resources/scripts.dat"));
 
-fn name_offset(idx: usize) -> usize {
+fn offset(offsets: &ArrayOf<U24>, target: &[u8], idx: usize) -> usize {
     // The last offset extends to EOF
-    if idx == NAME_OFFSETS.len() {
-        return NAMES.len();
+    if idx == offsets.len() {
+        return target.len();
     }
-    NAME_OFFSETS.get(idx).unwrap_or_else(|| {
-        panic!(
-            "Asked for name {idx} but we only have {} names",
-            NAMES.len()
-        )
-    })
+    offsets
+        .get(idx)
+        .unwrap_or_else(|| panic!("Asked for offset {idx} but we only have {}", offsets.len()))
 }
 
 fn name(idx: usize) -> &'static str {
-    let start = name_offset(idx);
-    let end = name_offset(idx + 1);
+    let start = offset(&NAME_OFFSETS, NAMES, idx);
+    let end = offset(&NAME_OFFSETS, NAMES, idx + 1);
     // SAFETY: we only write ascii names in glyphs-reader/data/update.py
     unsafe { from_utf8_unchecked(&NAMES[start..end]) }
+}
+
+fn custom_prod_name(idx: usize) -> (ProductionName, usize) {
+    let start = offset(&PROD_NAME_OFFSETS, PROD_NAMES, idx);
+    let end = offset(&PROD_NAME_OFFSETS, PROD_NAMES, idx + 1);
+    let (idx_slice, str_slice) = PROD_NAMES[start..end].split_at(3);
+    let idx = U24::from_slice(idx_slice);
+    let name = unsafe { from_utf8_unchecked(str_slice) };
+    (ProductionName::Custom(SmolStr::new_static(name)), idx)
 }
 
 fn bsearch<T: Ord>(len: usize, needle: T, get: impl Fn(usize) -> (T, usize)) -> Option<usize> {
@@ -103,6 +117,30 @@ fn bsearch<T: Ord>(len: usize, needle: T, get: impl Fn(usize) -> (T, usize)) -> 
         }
     }
     None
+}
+
+pub(crate) fn find_pos_by_prod_name(needle: ProductionName) -> Option<usize> {
+    match needle {
+        ProductionName::Bmp(cp) | ProductionName::NonBmp(cp) => {
+            // See if predictable name bit is set for this codepoint
+            // Most production names work this way
+            let i = (cp / 8) as usize;
+            let bit = 1 << cp.rem_euclid(8);
+            let bits = PROD_NAME_PREDICTABLE_BITMAP
+                .get(i)
+                .copied()
+                .unwrap_or_default();
+            if bit & bits == bit {
+                find_pos_by_codepoint(cp)
+            } else {
+                None
+            }
+        }
+        ProductionName::Custom(..) => {
+            // See if this matches against the (relatively small) set of names that break the basic patterns
+            bsearch(PROD_NAME_OFFSETS.len(), needle, custom_prod_name)
+        }
+    }
 }
 
 pub(crate) fn find_pos_by_name(needle: &str) -> Option<usize> {
@@ -128,6 +166,9 @@ pub(crate) fn get(i: usize) -> Option<QueryResult> {
     let codepoint = CODEPOINTS
         .get(i)
         .unwrap_or_else(|| panic!("We have names[{i}] but not codepoints[{i}] ?!"));
+    let script = SCRIPTS
+        .get(i)
+        .unwrap_or_else(|| panic!("We have names[{i}] but not scripts[{i}] ?!"));
     let codepoint = if codepoint > 0 {
         Some(codepoint as u32)
     } else {
@@ -138,12 +179,21 @@ pub(crate) fn get(i: usize) -> Option<QueryResult> {
         category,
         subcategory,
         codepoint,
+        script,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn result_for_idx(i: usize) -> (&'static str, QueryResult) {
+        (name(i), get(i).unwrap())
+    }
+
+    fn result_for_codepoint(cp: u32) -> (&'static str, QueryResult) {
+        find_pos_by_codepoint(cp).map(result_for_idx).unwrap()
+    }
 
     #[test]
     fn how_many_names() {
@@ -172,11 +222,10 @@ mod tests {
                     category: Category::Symbol,
                     subcategory: Some(Subcategory::Emoji),
                     codepoint: Some(0x1F63C),
+                    script: None,
                 }
             ),
-            find_pos_by_codepoint(0x1F63C)
-                .map(|i| (name(i), get(i).unwrap()))
-                .unwrap()
+            result_for_codepoint(0x1F63C)
         );
     }
 
@@ -194,5 +243,88 @@ mod tests {
     fn find_pos_by_name_last() {
         let last = NAME_OFFSETS.len() - 1;
         assert_eq!(Some(last), find_pos_by_name(name(last)));
+    }
+
+    #[test]
+    fn find_pos_by_prod_name_bmp() {
+        assert_eq!(
+            (
+                "quotedblbasereversed",
+                QueryResult {
+                    category: Category::Punctuation,
+                    subcategory: Some(Subcategory::Quote),
+                    codepoint: Some(0x2E42),
+                    script: None,
+                }
+            ),
+            result_for_idx(find_pos_by_prod_name("uni2E42".into()).unwrap())
+        );
+    }
+
+    #[test]
+    fn find_pos_by_prod_name_non_bmp() {
+        assert_eq!(
+            (
+                "tilde.tag",
+                QueryResult {
+                    category: Category::Symbol,
+                    subcategory: Some(Subcategory::Format),
+                    codepoint: Some(0xE007E),
+                    script: None,
+                }
+            ),
+            result_for_idx(find_pos_by_prod_name("uE007E".into()).unwrap())
+        );
+    }
+
+    #[test]
+    fn find_pos_by_prod_name_empty() {
+        assert_eq!(None, find_pos_by_prod_name(" ".into()));
+    }
+
+    #[test]
+    fn find_pos_by_prod_name_dotnull() {
+        // .null is the first record with a prod name at time of writing
+        assert_eq!(
+            (
+                ".null",
+                QueryResult {
+                    category: Category::Separator,
+                    subcategory: None,
+                    codepoint: None,
+                    script: None,
+                }
+            ),
+            result_for_idx(find_pos_by_prod_name(".null".into()).unwrap())
+        );
+    }
+
+    #[test]
+    fn find_pos_by_prod_name_multi_codepoint() {
+        // .null is the first record with a prod name at time of writing
+        assert_eq!(
+            (
+                "AndorraFlag",
+                QueryResult {
+                    category: Category::Symbol,
+                    subcategory: Some(Subcategory::Emoji),
+                    codepoint: None,
+                    script: None,
+                }
+            ),
+            result_for_idx(find_pos_by_prod_name("u1F1E61F1E9".into()).unwrap())
+        );
+    }
+
+    #[test]
+    fn script() {
+        assert_eq!(
+            vec![None, Some(Script::Latin), Some(Script::Elbasan)],
+            vec!['>' as u32, 'A' as u32, 0x10527]
+                .into_iter()
+                .map(result_for_codepoint)
+                .map(|r| r.1.script)
+                .collect::<Vec<_>>()
+        )
     }
 }

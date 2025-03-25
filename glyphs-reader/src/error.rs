@@ -22,4 +22,10 @@ pub enum Error {
     WorstPlistEver(#[from] crate::plist::Error),
     #[error("Invalid code page {0}")]
     InvalidCodePage(u32),
+    #[error("{value} expected to be between {lbound} and {ubound}")]
+    ProductionNameOutOfBounds {
+        value: u32,
+        lbound: u32,
+        ubound: u32,
+    },
 }
