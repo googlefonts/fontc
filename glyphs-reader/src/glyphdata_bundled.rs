@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn find_pos_by_name_zzz() {
         // This was crashing
-        find_pos_by_name("zzz".into());
+        find_pos_by_name("zzz");
     }
 
     #[test]
