@@ -72,7 +72,8 @@ fn can_reuse_metrics(
     transform: &Affine,
 ) -> bool {
     let width: u16 = glyph.width.ot_round();
-    if width != component_glyph.width.ot_round() {
+    let component_width: u16 = component_glyph.width.ot_round();
+    if width != component_width {
         return false;
     }
     // transform needs to be identity ignoring dy, and dx if it will be rounded away
