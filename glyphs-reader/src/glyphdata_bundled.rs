@@ -105,7 +105,7 @@ fn custom_prod_name(idx: usize) -> (ProductionName, usize) {
 }
 
 fn bsearch<T: Ord>(len: usize, needle: T, get: impl Fn(usize) -> (T, usize)) -> Option<usize> {
-    let mut upper = len as i32;
+    let mut upper = len as i32 - 1;
     let mut lower = 0;
     while lower <= upper {
         let mid = ((lower + upper) / 2) as usize;
@@ -297,6 +297,18 @@ mod tests {
             ),
             result_for_idx(find_pos_by_prod_name(".null".into()).unwrap())
         );
+    }
+
+    #[test]
+    fn find_pos_by_name_zzz() {
+        // This was crashing
+        find_pos_by_name("zzz");
+    }
+
+    #[test]
+    fn find_pos_by_prod_name_zzz() {
+        // This was crashing
+        find_pos_by_prod_name("zzz".into());
     }
 
     #[test]
