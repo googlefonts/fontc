@@ -665,6 +665,7 @@ impl<'a> MarkLookupBuilder<'a> {
             gsub.as_ref(),
         )?;
 
+        // this is a new comment
         let mut non_abvm_glyphs = super::properties::glyphs_matching_predicate(
             &self.char_map,
             unicode_is_non_abvm,
