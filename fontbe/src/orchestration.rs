@@ -11,9 +11,8 @@ use std::{
 
 use fea_rs::{
     compile::{
-        CaretValue, Compilation, CursivePosBuilder, FeatureKey, MarkToBaseBuilder,
-        MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder, PendingLookup,
-        ValueRecord as ValueRecordBuilder,
+        Compilation, CursivePosBuilder, FeatureKey, MarkToBaseBuilder, MarkToLigBuilder,
+        MarkToMarkBuilder, PairPosBuilder, PendingLookup,
     },
     GlyphMap, GlyphSet, ParseTree,
 };
@@ -46,12 +45,13 @@ use write_fonts::{
         gasp::Gasp,
         gdef::{Gdef, GlyphClassDef},
         glyf::Glyph as RawGlyph,
-        gpos::Gpos,
+        gpos::{builders::ValueRecordBuilder, Gpos},
         gsub::Gsub,
         gvar::{GlyphDelta, GlyphDeltas},
         head::Head,
         hhea::Hhea,
         hvar::Hvar,
+        layout::builders::CaretValueBuilder,
         loca::LocaFormat,
         maxp::Maxp,
         meta::Meta,
@@ -431,7 +431,7 @@ pub struct FeaRsMarks {
     pub(crate) abvm: MarkLookups,
     pub(crate) blwm: MarkLookups,
     pub(crate) curs: Vec<PendingLookup<CursivePosBuilder>>,
-    pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
+    pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValueBuilder>>,
 }
 
 impl Persistable for FeaRsMarks {

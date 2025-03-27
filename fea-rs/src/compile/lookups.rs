@@ -15,7 +15,10 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{
         gdef::GlyphClassDef,
-        gpos::{self as write_gpos},
+        gpos::{
+            self as write_gpos,
+            builders::{AnchorBuilder as Anchor, ValueRecordBuilder as ValueRecord},
+        },
         gsub as write_gsub,
         layout::{
             ConditionSet as RawConditionSet, Feature, FeatureList, FeatureRecord,
@@ -30,11 +33,11 @@ use write_fonts::{
 
 use crate::{
     common::{GlyphId16, GlyphOrClass, GlyphSet},
-    compile::{lookups::contextual::ChainOrNot, metrics::ValueRecord},
+    compile::lookups::contextual::ChainOrNot,
     Kind, Opts,
 };
 
-use super::{features::AllFeatures, metrics::Anchor, tags};
+use super::{features::AllFeatures, tags};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,

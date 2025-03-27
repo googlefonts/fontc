@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
     compile::{
-        Anchor as FeaAnchor, CaretValue, CursivePosBuilder, FeatureProvider, LookupId,
-        MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PendingLookup,
+        CursivePosBuilder, FeatureProvider, LookupId, MarkToBaseBuilder, MarkToLigBuilder,
+        MarkToMarkBuilder, PendingLookup,
     },
     GlyphSet,
 };
@@ -17,7 +17,11 @@ use fontdrasil::{
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::{gdef::GlyphClassDef, layout::LookupFlag},
+    tables::{
+        gdef::GlyphClassDef,
+        gpos::builders::AnchorBuilder,
+        layout::{builders::CaretValueBuilder, LookupFlag},
+    },
     types::{GlyphId16, Tag},
 };
 
@@ -63,7 +67,7 @@ struct MarkLookupBuilder<'a> {
     fea_first_pass: &'a FeaFirstPassOutput,
     // unicode names of scripts declared in FEA
     mark_glyphs: BTreeSet<GlyphId16>,
-    lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
+    lig_carets: BTreeMap<GlyphId16, Vec<CaretValueBuilder>>,
     char_map: HashMap<u32, GlyphId16>,
 }
 
@@ -126,16 +130,26 @@ impl MarkGroup<'_> {
 
 // a trait to abstract over three very similar builders
 trait MarkAttachmentBuilder: Default {
-    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor);
-    fn add_base(&mut self, gid: GlyphId16, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>);
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder);
+    fn add_base(
+        &mut self,
+        gid: GlyphId16,
+        group: &GroupName,
+        anchor: BaseOrLigAnchors<AnchorBuilder>,
+    );
 }
 
 impl MarkAttachmentBuilder for MarkToBaseBuilder {
-    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor) {
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder) {
         let _ = self.insert_mark(gid, group.clone(), anchor);
     }
 
-    fn add_base(&mut self, gid: GlyphId16, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
+    fn add_base(
+        &mut self,
+        gid: GlyphId16,
+        group: &GroupName,
+        anchor: BaseOrLigAnchors<AnchorBuilder>,
+    ) {
         match anchor {
             BaseOrLigAnchors::Base(anchor) => self.insert_base(gid, group, anchor),
             BaseOrLigAnchors::Ligature(_) => panic!("lig anchors in mark2base builder"),
@@ -144,11 +158,16 @@ impl MarkAttachmentBuilder for MarkToBaseBuilder {
 }
 
 impl MarkAttachmentBuilder for MarkToMarkBuilder {
-    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor) {
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder) {
         let _ = self.insert_mark1(gid, group.clone(), anchor);
     }
 
-    fn add_base(&mut self, gid: GlyphId16, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
+    fn add_base(
+        &mut self,
+        gid: GlyphId16,
+        group: &GroupName,
+        anchor: BaseOrLigAnchors<AnchorBuilder>,
+    ) {
         match anchor {
             BaseOrLigAnchors::Base(anchor) => self.insert_mark2(gid, group, anchor),
             BaseOrLigAnchors::Ligature(_) => panic!("lig anchors in mark2mark to builder"),
@@ -157,7 +176,7 @@ impl MarkAttachmentBuilder for MarkToMarkBuilder {
 }
 
 impl MarkAttachmentBuilder for MarkToLigBuilder {
-    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor) {
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder) {
         let _ = self.insert_mark(gid, group.clone(), anchor);
     }
 
@@ -165,7 +184,7 @@ impl MarkAttachmentBuilder for MarkToLigBuilder {
         &mut self,
         gid: GlyphId16,
         group: &GroupName,
-        anchors: BaseOrLigAnchors<FeaAnchor>,
+        anchors: BaseOrLigAnchors<AnchorBuilder>,
     ) {
         match anchors {
             BaseOrLigAnchors::Ligature(anchors) => {
@@ -774,7 +793,7 @@ fn find_mark_glyphs(
 fn resolve_anchor(
     anchor: &BaseOrLigAnchors<&ir::Anchor>,
     static_metadata: &StaticMetadata,
-) -> Result<BaseOrLigAnchors<FeaAnchor>, DeltaError> {
+) -> Result<BaseOrLigAnchors<AnchorBuilder>, DeltaError> {
     match anchor {
         BaseOrLigAnchors::Base(anchor) => {
             resolve_anchor_once(anchor, static_metadata).map(BaseOrLigAnchors::Base)
@@ -793,7 +812,7 @@ fn resolve_anchor(
 fn resolve_anchor_once(
     anchor: &ir::Anchor,
     static_metadata: &StaticMetadata,
-) -> Result<FeaAnchor, DeltaError> {
+) -> Result<AnchorBuilder, DeltaError> {
     let (x_values, y_values): (Vec<_>, Vec<_>) = anchor
         .positions
         .iter()
@@ -818,7 +837,7 @@ fn resolve_anchor_once(
         y_values.iter().map(|item| (&item.0, &item.1)),
     )?;
 
-    let mut anchor = FeaAnchor::new(x_default, y_default);
+    let mut anchor = AnchorBuilder::new(x_default, y_default);
     if x_deltas.iter().any(|v| v.1 != 0) {
         anchor = anchor.with_x_device(x_deltas);
     }
@@ -837,7 +856,7 @@ fn get_ligature_carets(
     glyph_order: &GlyphOrder,
     static_metadata: &StaticMetadata,
     anchors: &[&GlyphAnchors],
-) -> Result<BTreeMap<GlyphId16, Vec<CaretValue>>, Error> {
+) -> Result<BTreeMap<GlyphId16, Vec<CaretValueBuilder>>, Error> {
     let mut out = BTreeMap::new();
 
     for glyph_anchor in anchors {
@@ -862,7 +881,7 @@ fn make_caret_value(
     anchor: &ir::Anchor,
     static_metadata: &StaticMetadata,
     glyph_name: &GlyphName,
-) -> Result<Option<CaretValue>, Error> {
+) -> Result<Option<CaretValueBuilder>, Error> {
     if !matches!(anchor.kind, AnchorKind::Caret(_) | AnchorKind::VCaret(_)) {
         return Ok(None);
     }
@@ -888,7 +907,7 @@ fn make_caret_value(
         deltas.clear();
     }
 
-    Ok(Some(CaretValue::Coordinate {
+    Ok(Some(CaretValueBuilder::Coordinate {
         default,
         deltas: deltas.into(),
     }))

@@ -6,7 +6,7 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{FeatureKey, FeatureProvider, PairPosBuilder, ValueRecord as ValueRecordBuilder},
+    compile::{FeatureKey, FeatureProvider, PairPosBuilder},
     GlyphSet, ParseTree,
 };
 use fontdrasil::{
@@ -23,7 +23,7 @@ use log::debug;
 use ordered_float::OrderedFloat;
 use write_fonts::{
     read::{collections::IntSet, tables::gsub::Gsub, ReadError},
-    tables::{gdef::GlyphClassDef, layout::LookupFlag},
+    tables::{gdef::GlyphClassDef, gpos::builders::ValueRecordBuilder, layout::LookupFlag},
     types::{GlyphId16, Tag},
 };
 

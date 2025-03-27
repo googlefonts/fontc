@@ -7,6 +7,7 @@ use std::{
 
 use write_fonts::{
     tables::{
+        gpos::builders::ValueRecordBuilder as ValueRecord,
         gsub::{self as write_gsub, ReverseChainSingleSubstFormat1},
         layout::{
             self as write_layout,
@@ -20,7 +21,7 @@ use write_fonts::{
     FontWrite,
 };
 
-use crate::{common::GlyphOrClass, compile::metrics::ValueRecord};
+use crate::common::GlyphOrClass;
 
 use super::{
     Builder, FilterSetId, LookupBuilder, LookupId, PositionLookup, RemapIds, SubstitutionLookup,

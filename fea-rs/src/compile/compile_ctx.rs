@@ -14,8 +14,14 @@ use write_fonts::{
     tables::{
         self,
         gdef::GlyphClassDef,
-        gpos::ValueFormat,
-        layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag},
+        gpos::{
+            builders::{AnchorBuilder as Anchor, ValueRecordBuilder as ValueRecord},
+            ValueFormat,
+        },
+        layout::{
+            builders::{CaretValueBuilder as CaretValue, DeviceOrDeltas, Metric},
+            ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag,
+        },
         variations::ivs_builder::{RemapVariationIndices, VariationStoreBuilder},
     },
     types::{F2Dot14, NameId, Tag},
@@ -43,10 +49,11 @@ use super::{
     lookups::{
         AllLookups, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass, SomeLookup,
     },
-    metrics::{Anchor, CaretValue, DeviceOrDeltas, Metric, ValueRecord},
+    //metrics::{Anchor, CaretValue, DeviceOrDeltas, Metric, ValueRecord},
     output::Compilation,
     tables::{GlyphClassDefExt, ScriptRecord, Tables},
-    tags, VariationInfo,
+    tags,
+    VariationInfo,
 };
 
 /// Context that manages state for a compilation.
@@ -851,14 +858,16 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
         let first_ids = self.resolve_glyph_or_class(&node.first_item());
         let second_ids = self.resolve_glyph_or_class(&node.second_item());
-        let first_value = self
-            .resolve_value_record_raw(&node.first_value())
-            .for_pair_pos(in_vert_feature);
-        let second_value = node
-            .second_value()
-            .map(|val| self.resolve_value_record_raw(&val))
-            .unwrap_or_default()
-            .for_pair_pos(in_vert_feature);
+        let first_value = for_pair_pos(
+            self.resolve_value_record_raw(&node.first_value()),
+            in_vert_feature,
+        );
+        let second_value = for_pair_pos(
+            node.second_value()
+                .map(|val| self.resolve_value_record_raw(&val))
+                .unwrap_or_default(),
+            in_vert_feature,
+        );
 
         let lookup = self.ensure_current_lookup_type(Kind::GposType2);
 
@@ -2229,6 +2238,24 @@ fn get_reasonable_length_span(node: &NodeOrToken) -> Range<usize> {
             range.start..end
         }
     }
+}
+
+/// Modify this value record for the special requirements of pairpos lookups
+///
+/// In pair pos tables, if a value record is all zeros (but not null) then
+/// we interpret it as a having a single zero advance in the x/y direction,
+/// depending on context.
+fn for_pair_pos(record: ValueRecord, in_vert_feature: bool) -> ValueRecord {
+    if !record.is_all_zeros() {
+        return record.clear_zeros();
+    }
+    let mut out = record.clear_zeros();
+    if in_vert_feature {
+        out.y_advance = Some(0.into());
+    } else {
+        out.x_advance = Some(0.into());
+    }
+    out
 }
 
 #[cfg(test)]

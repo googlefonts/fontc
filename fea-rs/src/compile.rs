@@ -2,7 +2,7 @@
 
 use crate::{parse::ParseTree, DiagnosticSet, GlyphMap};
 use fontdrasil::types::GlyphName;
-use write_fonts::types::GlyphId16;
+use write_fonts::{tables::layout::builders::CaretValueBuilder as CaretValue, types::GlyphId16};
 
 use self::{
     compile_ctx::CompilationCtx,
@@ -19,7 +19,6 @@ pub use lookups::{
     Builder, CursivePosBuilder, FeatureKey, LookupId, MarkToBaseBuilder, MarkToLigBuilder,
     MarkToMarkBuilder, PairPosBuilder, PreviouslyAssignedClass,
 };
-pub use metrics::{Anchor, CaretValue, ValueRecord};
 pub use opts::Opts;
 pub use output::Compilation;
 pub use variations::{AxisLocation, NopVariationInfo, VariationInfo};
@@ -36,7 +35,6 @@ mod glyph_range;
 pub(crate) mod glyphsapp_syntax_ext;
 mod language_system;
 mod lookups;
-mod metrics;
 mod opts;
 mod output;
 mod tables;

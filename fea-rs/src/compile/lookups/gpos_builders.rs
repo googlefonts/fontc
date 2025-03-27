@@ -5,17 +5,18 @@ use std::collections::{BTreeMap, HashMap};
 use smol_str::SmolStr;
 use write_fonts::{
     tables::{
-        gpos::{self as write_gpos, MarkRecord, ValueFormat, ValueRecord as RawValueRecord},
+        gpos::{
+            self as write_gpos,
+            builders::{AnchorBuilder as Anchor, ValueRecordBuilder as ValueRecord},
+            MarkRecord, ValueFormat, ValueRecord as RawValueRecord,
+        },
         layout::{builders::ClassDefBuilder, CoverageTable},
         variations::ivs_builder::VariationStoreBuilder,
     },
     types::GlyphId16,
 };
 
-use crate::{
-    common::GlyphSet,
-    compile::metrics::{Anchor, ValueRecord},
-};
+use crate::common::GlyphSet;
 
 use super::Builder;
 
