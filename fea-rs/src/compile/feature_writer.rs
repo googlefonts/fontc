@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use write_fonts::{
-    tables::layout::LookupFlag,
+    tables::layout::{builders::LookupBuilder, LookupFlag},
     types::{GlyphId16, Tag},
 };
 
@@ -12,9 +12,7 @@ use crate::GlyphSet;
 use super::{
     features::{AllFeatures, FeatureLookups},
     language_system::{DefaultLanguageSystems, LanguageSystem},
-    lookups::{
-        AllLookups, FeatureKey, FilterSetId, LookupBuilder, LookupId, LookupIdMap, PositionLookup,
-    },
+    lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, LookupIdMap, PositionLookup},
     tables::{GdefBuilder, Tables},
     CaretValue,
 };

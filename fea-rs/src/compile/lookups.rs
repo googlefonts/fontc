@@ -1,8 +1,6 @@
 //! gsub/gpos lookup table stuff
 
 mod contextual;
-mod gpos_builders;
-mod gsub_builders;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -17,14 +15,24 @@ use write_fonts::{
         gdef::GlyphClassDef,
         gpos::{
             self as write_gpos,
-            builders::{AnchorBuilder as Anchor, ValueRecordBuilder as ValueRecord},
+            builders::{
+                AnchorBuilder as Anchor, CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder,
+                MarkToMarkBuilder, PairPosBuilder, SinglePosBuilder,
+                ValueRecordBuilder as ValueRecord,
+            },
         },
-        gsub as write_gsub,
+        gsub::{
+            self as write_gsub,
+            builders::{
+                AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder,
+            },
+        },
         layout::{
+            builders::{Builder, LookupBuilder},
             ConditionSet as RawConditionSet, Feature, FeatureList, FeatureRecord,
             FeatureTableSubstitution, FeatureTableSubstitutionRecord, FeatureVariationRecord,
-            FeatureVariations, LangSys, LangSysRecord, Lookup as RawLookup, LookupFlag, LookupList,
-            Script, ScriptList, ScriptRecord,
+            FeatureVariations, LangSys, LangSysRecord, LookupFlag, LookupList, Script, ScriptList,
+            ScriptRecord,
         },
         variations::ivs_builder::VariationStoreBuilder,
     },
@@ -44,38 +52,6 @@ use contextual::{
     SubChainContextBuilder, SubContextBuilder,
 };
 
-use gpos_builders::SinglePosBuilder;
-pub use gpos_builders::{
-    CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder,
-    PreviouslyAssignedClass,
-};
-use gsub_builders::{
-    AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder,
-};
-
-/// A simple trait for building lookups
-// This exists because we use it to implement `LookupBuilder<T>`
-pub trait Builder {
-    /// The type produced by this builder.
-    ///
-    /// In the case of lookups, this is always a `Vec<Subtable>`, because a single
-    /// builder may produce multiple subtables in some instances.
-    type Output;
-    /// Finalize the builder, producing the output.
-    ///
-    /// # Note:
-    ///
-    /// The var_store is only used in GPOS, but we pass it everywhere.
-    /// This is annoying but feels like the lesser of two evils. It's easy to
-    /// ignore this argument where it isn't used, and this makes the logic
-    /// in LookupBuilder simpler, since it is identical for GPOS/GSUB.
-    ///
-    /// It would be nice if this could then be Option<&mut T>, but that type is
-    /// annoying to work with, as Option<&mut _> doesn't impl Copy, so you need
-    /// to do a dance anytime you use it.
-    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output;
-}
-
 pub(crate) type FilterSetId = u16;
 
 #[derive(Clone, Debug, Default)]
@@ -85,13 +61,6 @@ pub(crate) struct AllLookups {
     gpos: Vec<PositionLookup>,
     gsub: Vec<SubstitutionLookup>,
     named: HashMap<SmolStr, LookupId>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct LookupBuilder<T> {
-    flags: LookupFlag,
-    mark_set: Option<FilterSetId>,
-    subtables: Vec<T>,
 }
 
 #[derive(Clone, Debug)]
@@ -208,57 +177,6 @@ pub(crate) struct PosSubBuilder<T> {
     variations: HashMap<RawConditionSet, HashMap<FeatureIdx, Vec<LookupIdx>>>,
 }
 
-impl<T: Default> LookupBuilder<T> {
-    fn new(flags: LookupFlag, mark_set: Option<FilterSetId>) -> Self {
-        LookupBuilder {
-            flags,
-            mark_set,
-            subtables: vec![Default::default()],
-        }
-    }
-
-    pub(crate) fn new_with_lookups(
-        flags: LookupFlag,
-        mark_set: Option<FilterSetId>,
-        subtables: Vec<T>,
-    ) -> Self {
-        Self {
-            flags,
-            mark_set,
-            subtables,
-        }
-    }
-
-    //TODO: if we keep this, make it unwrap and ensure we always have a subtable
-    pub fn last_mut(&mut self) -> Option<&mut T> {
-        self.subtables.last_mut()
-    }
-
-    pub fn force_subtable_break(&mut self) {
-        self.subtables.push(Default::default())
-    }
-
-    pub(crate) fn iter_subtables(&self) -> impl Iterator<Item = &T> + '_ {
-        self.subtables.iter()
-    }
-}
-
-impl<U> LookupBuilder<U> {
-    /// A helper method for converting from (say) ContextBuilder to PosContextBuilder
-    fn convert<T: From<U>>(self) -> LookupBuilder<T> {
-        let LookupBuilder {
-            flags,
-            mark_set,
-            subtables,
-        } = self;
-        LookupBuilder {
-            flags,
-            mark_set,
-            subtables: subtables.into_iter().map(Into::into).collect(),
-        }
-    }
-}
-
 trait RemapIds {
     fn remap_ids(&mut self, id_map: &LookupIdMap);
 }
@@ -326,25 +244,6 @@ impl SubstitutionLookup {
             SubstitutionLookup::Reverse(lookup) => lookup.force_subtable_break(),
             SubstitutionLookup::ChainedContextual(lookup) => lookup.force_subtable_break(),
         }
-    }
-}
-
-impl<U, T> Builder for LookupBuilder<T>
-where
-    T: Builder<Output = Vec<U>>,
-    U: Default,
-{
-    type Output = RawLookup<U>;
-
-    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
-        let subtables = self
-            .subtables
-            .into_iter()
-            .flat_map(|b| b.build(var_store).into_iter())
-            .collect();
-        let mut out = RawLookup::new(self.flags, subtables);
-        out.mark_filtering_set = self.mark_set;
-        out
     }
 }
 

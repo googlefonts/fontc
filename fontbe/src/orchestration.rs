@@ -10,10 +10,7 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{
-        Compilation, CursivePosBuilder, FeatureKey, MarkToBaseBuilder, MarkToLigBuilder,
-        MarkToMarkBuilder, PairPosBuilder, PendingLookup,
-    },
+    compile::{Compilation, FeatureKey, PendingLookup},
     GlyphMap, GlyphSet, ParseTree,
 };
 use fontdrasil::{
@@ -45,7 +42,13 @@ use write_fonts::{
         gasp::Gasp,
         gdef::{Gdef, GlyphClassDef},
         glyf::Glyph as RawGlyph,
-        gpos::{builders::ValueRecordBuilder, Gpos},
+        gpos::{
+            builders::{
+                CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder,
+                PairPosBuilder, ValueRecordBuilder,
+            },
+            Gpos,
+        },
         gsub::Gsub,
         gvar::{GlyphDelta, GlyphDeltas},
         head::Head,

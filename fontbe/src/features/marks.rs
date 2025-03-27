@@ -3,10 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
-    compile::{
-        CursivePosBuilder, FeatureProvider, LookupId, MarkToBaseBuilder, MarkToLigBuilder,
-        MarkToMarkBuilder, PendingLookup,
-    },
+    compile::{FeatureProvider, LookupId, PendingLookup},
     GlyphSet,
 };
 use fontdrasil::{
@@ -19,7 +16,10 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{
         gdef::GlyphClassDef,
-        gpos::builders::AnchorBuilder,
+        gpos::builders::{
+            AnchorBuilder, CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder,
+            MarkToMarkBuilder,
+        },
         layout::{builders::CaretValueBuilder, LookupFlag},
     },
     types::{GlyphId16, Tag},
@@ -141,7 +141,7 @@ trait MarkAttachmentBuilder: Default {
 
 impl MarkAttachmentBuilder for MarkToBaseBuilder {
     fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder) {
-        let _ = self.insert_mark(gid, group.clone(), anchor);
+        let _ = self.insert_mark(gid, group, anchor);
     }
 
     fn add_base(
@@ -159,7 +159,7 @@ impl MarkAttachmentBuilder for MarkToBaseBuilder {
 
 impl MarkAttachmentBuilder for MarkToMarkBuilder {
     fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder) {
-        let _ = self.insert_mark1(gid, group.clone(), anchor);
+        let _ = self.insert_mark1(gid, group, anchor);
     }
 
     fn add_base(
@@ -177,7 +177,7 @@ impl MarkAttachmentBuilder for MarkToMarkBuilder {
 
 impl MarkAttachmentBuilder for MarkToLigBuilder {
     fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder) {
-        let _ = self.insert_mark(gid, group.clone(), anchor);
+        let _ = self.insert_mark(gid, group, anchor);
     }
 
     fn add_base(
@@ -187,9 +187,7 @@ impl MarkAttachmentBuilder for MarkToLigBuilder {
         anchors: BaseOrLigAnchors<AnchorBuilder>,
     ) {
         match anchors {
-            BaseOrLigAnchors::Ligature(anchors) => {
-                self.insert_ligature(gid, group.clone(), anchors)
-            }
+            BaseOrLigAnchors::Ligature(anchors) => self.insert_ligature(gid, group, anchors),
             BaseOrLigAnchors::Base(_) => panic!("base anchors passed to mark2lig builder"),
         }
     }

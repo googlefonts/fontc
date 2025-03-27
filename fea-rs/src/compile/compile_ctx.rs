@@ -15,7 +15,9 @@ use write_fonts::{
         self,
         gdef::GlyphClassDef,
         gpos::{
-            builders::{AnchorBuilder as Anchor, ValueRecordBuilder as ValueRecord},
+            builders::{
+                AnchorBuilder as Anchor, PreviouslyAssignedClass, ValueRecordBuilder as ValueRecord,
+            },
             ValueFormat,
         },
         layout::{
@@ -46,14 +48,10 @@ use super::{
     },
     glyph_range,
     language_system::{DefaultLanguageSystems, LanguageSystem},
-    lookups::{
-        AllLookups, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass, SomeLookup,
-    },
-    //metrics::{Anchor, CaretValue, DeviceOrDeltas, Metric, ValueRecord},
+    lookups::{AllLookups, FilterSetId, LookupFlagInfo, LookupId, SomeLookup},
     output::Compilation,
     tables::{GlyphClassDefExt, ScriptRecord, Tables},
-    tags,
-    VariationInfo,
+    tags, VariationInfo,
 };
 
 /// Context that manages state for a compilation.
@@ -928,7 +926,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                             .as_ref()
                             .expect("no null anchors in mark-to-base (check validation)");
                         for glyph in glyphs.iter() {
-                            subtable.insert_mark(glyph, class_name.clone(), anchor.clone())?;
+                            subtable.insert_mark(glyph, &class_name, anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {
@@ -980,7 +978,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 // doesn't think we're borrowing all of self
                 //TODO: we do validation here because our validation pass isn't smart
                 //enough. We need to not just validate a rule, but every rule in a lookup.
-                anchor_records.insert(class_name.clone(), component_anchor);
+                anchor_records.insert(class_name.to_string(), component_anchor);
                 let maybe_err = self
                     .lookups
                     .current_mut()
@@ -991,7 +989,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                                 .as_ref()
                                 .expect("no null anchors on marks (check validation)");
                             for glyph in glyphs.iter() {
-                                subtable.insert_mark(glyph, class_name.clone(), anchor.clone())?;
+                                subtable.insert_mark(glyph, class_name, anchor.clone())?;
                             }
                         }
                         Ok(())
@@ -1006,7 +1004,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .unwrap()
             .with_gpos_type_5(|subtable| {
                 for base in base_ids.iter() {
-                    subtable.add_ligature_components(base, components.clone());
+                    subtable.add_ligature_components_directly(base, components.clone());
                 }
             })
     }
@@ -1035,7 +1033,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                             .as_ref()
                             .expect("no null anchors in mark-to-mark (check validation)");
                         for glyph in glyphs.iter() {
-                            subtable.insert_mark1(glyph, class_name.clone(), anchor.clone())?;
+                            subtable.insert_mark1(glyph, class_name, anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {

@@ -15,10 +15,7 @@ use self::error::UfoGlyphOrderError;
 pub use compiler::Compiler;
 pub use feature_writer::{FeatureBuilder, FeatureProvider, NopFeatureProvider, PendingLookup};
 pub use language_system::LanguageSystem;
-pub use lookups::{
-    Builder, CursivePosBuilder, FeatureKey, LookupId, MarkToBaseBuilder, MarkToLigBuilder,
-    MarkToMarkBuilder, PairPosBuilder, PreviouslyAssignedClass,
-};
+pub use lookups::{FeatureKey, LookupId};
 pub use opts::Opts;
 pub use output::Compilation;
 pub use variations::{AxisLocation, NopVariationInfo, VariationInfo};

@@ -162,7 +162,7 @@ impl ContextualLookupBuilder<PositionLookup> {
                 PositionLookup::Single(lookup) => lookup
                     .subtables
                     .iter()
-                    .all(|subt| glyphs.iter().all(|gid| subt.can_add_rule(gid, &value))),
+                    .all(|subt| glyphs.iter().all(|gid| subt.can_add(gid, &value))),
                 _ => false,
             },
             |flags, mark_set| PositionLookup::Single(super::LookupBuilder::new(flags, mark_set)),
@@ -187,10 +187,12 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
     ) -> LookupId {
         let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
-                SubstitutionLookup::Single(subtables) => subtables
-                    .subtables
-                    .iter()
-                    .all(|subt| subt.can_add(&target, &replacement)),
+                SubstitutionLookup::Single(subtables) => subtables.subtables.iter().all(|subt| {
+                    target
+                        .iter()
+                        .zip(replacement.iter())
+                        .all(|(a, b)| subt.can_add(a, b))
+                }),
                 _ => false,
             },
             |flags, mark_set| SubstitutionLookup::Single(LookupBuilder::new(flags, mark_set)),
