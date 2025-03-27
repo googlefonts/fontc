@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use write_fonts::{
     dump_table,
-    read::{tables::gsub::Gsub as ReadGsub, FontRead},
+    read::{collections::IntSet, tables::gsub::Gsub as ReadGsub, FontRead},
     tables::{
         base::Base,
         cmap::Cmap,
@@ -607,7 +607,7 @@ pub(crate) struct KernPair {
 
 impl KernSide {
     pub(crate) const fn empty() -> Self {
-        Self::Group(GlyphSet::EMPTY)
+        Self::Group(IntSet::empty())
     }
 
     pub(crate) fn is_empty(&self) -> bool {

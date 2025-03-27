@@ -6,7 +6,7 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{
         gpos::{self as write_gpos, MarkRecord, ValueFormat, ValueRecord as RawValueRecord},
-        layout::CoverageTable,
+        layout::{builders::ClassDefBuilder, CoverageTable},
         variations::ivs_builder::VariationStoreBuilder,
     },
     types::GlyphId16,
@@ -17,7 +17,7 @@ use crate::{
     compile::metrics::{Anchor, ValueRecord},
 };
 
-use super::{Builder, ClassDefBuilder2};
+use super::Builder;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -127,15 +127,15 @@ struct GlyphPairPosBuilder(BTreeMap<GlyphId16, BTreeMap<GlyphId16, (ValueRecord,
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct ClassPairPosSubtable {
     items: BTreeMap<GlyphSet, BTreeMap<GlyphSet, (ValueRecord, ValueRecord)>>,
-    classdef_1: ClassDefBuilder2,
-    classdef_2: ClassDefBuilder2,
+    classdef_1: ClassDefBuilder,
+    classdef_2: ClassDefBuilder,
 }
 
 impl Default for ClassPairPosSubtable {
     fn default() -> Self {
         Self {
             items: Default::default(),
-            classdef_1: ClassDefBuilder2::new(true),
+            classdef_1: ClassDefBuilder::new_using_class_0(),
             classdef_2: Default::default(),
         }
     }
@@ -316,8 +316,8 @@ impl Builder for ClassPairPosSubtable {
             RawValueRecord::new().with_explicit_value_format(format2),
         );
 
-        let (class1def, class1map) = self.classdef_1.build();
-        let (class2def, class2map) = self.classdef_2.build();
+        let (class1def, class1map) = self.classdef_1.build_with_mapping();
+        let (class2def, class2map) = self.classdef_2.build_with_mapping();
 
         let coverage = self.items.keys().flat_map(GlyphSet::iter).collect();
 

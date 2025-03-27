@@ -8,7 +8,11 @@ use std::{
 use write_fonts::{
     tables::{
         gsub::{self as write_gsub, ReverseChainSingleSubstFormat1},
-        layout::{self as write_layout, CoverageTableBuilder, LookupFlag},
+        layout::{
+            self as write_layout,
+            builders::{ClassDefBuilder, CoverageTableBuilder},
+            LookupFlag,
+        },
         variations::ivs_builder::VariationStoreBuilder,
     },
     types::GlyphId16,
@@ -19,8 +23,7 @@ use write_fonts::{
 use crate::{common::GlyphOrClass, compile::metrics::ValueRecord};
 
 use super::{
-    Builder, ClassDefBuilder2, FilterSetId, LookupBuilder, LookupId, PositionLookup, RemapIds,
-    SubstitutionLookup,
+    Builder, FilterSetId, LookupBuilder, LookupId, PositionLookup, RemapIds, SubstitutionLookup,
 };
 
 /// When building a contextual/chaining contextual rule, we also build a
@@ -332,8 +335,8 @@ impl ContextBuilder {
     }
 
     /// If the input sequence can be represented as a class def, return it
-    fn input_class_def(&self) -> Option<ClassDefBuilder2> {
-        let mut builder = ClassDefBuilder2::new(false);
+    fn input_class_def(&self) -> Option<ClassDefBuilder> {
+        let mut builder = ClassDefBuilder::new();
         for class in self
             .rules
             .iter()
@@ -558,19 +561,17 @@ impl ChainContextBuilder {
 
     /// If all of backtrack, input, and lookahead can be represented as classdefs,
     /// make them.
-    fn format_2_class_defs(
-        &self,
-    ) -> Option<(ClassDefBuilder2, ClassDefBuilder2, ClassDefBuilder2)> {
+    fn format_2_class_defs(&self) -> Option<(ClassDefBuilder, ClassDefBuilder, ClassDefBuilder)> {
         let input = self.0.input_class_def()?;
 
-        let mut backtrack = ClassDefBuilder2::default();
+        let mut backtrack = ClassDefBuilder::default();
         for class in self.0.rules.iter().flat_map(|rule| rule.backtrack.iter()) {
             if !backtrack.checked_add(class.to_class().unwrap().into()) {
                 return None;
             }
         }
 
-        let mut lookahead = ClassDefBuilder2::default();
+        let mut lookahead = ClassDefBuilder::default();
         for class in self.0.rules.iter().flat_map(|rule| rule.lookahead.iter()) {
             if !lookahead.checked_add(class.to_class().unwrap().into()) {
                 return None;
@@ -583,9 +584,9 @@ impl ChainContextBuilder {
     /// If this lookup can be expressed as format 2, generate it
     fn build_format_2(&self, in_gpos: bool) -> Option<write_layout::ChainedSequenceContext> {
         let (backtrack, input, lookahead) = self.format_2_class_defs()?;
-        let (backtrack_class_def, backtrack_map) = backtrack.build();
-        let (input_class_def, input_map) = input.build();
-        let (lookahead_class_def, lookahead_map) = lookahead.build();
+        let (backtrack_class_def, backtrack_map) = backtrack.build_with_mapping();
+        let (input_class_def, input_map) = input.build_with_mapping();
+        let (lookahead_class_def, lookahead_map) = lookahead.build_with_mapping();
         let coverage = self
             .0
             .rules

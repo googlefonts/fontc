@@ -3,7 +3,6 @@
 mod contextual;
 mod gpos_builders;
 mod gsub_builders;
-mod helpers;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -50,7 +49,6 @@ pub use gpos_builders::{
 use gsub_builders::{
     AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder,
 };
-pub(crate) use helpers::ClassDefBuilder2;
 
 /// A simple trait for building lookups
 // This exists because we use it to implement `LookupBuilder<T>`

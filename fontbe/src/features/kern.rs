@@ -22,7 +22,7 @@ use icu_properties::props::BidiClass;
 use log::debug;
 use ordered_float::OrderedFloat;
 use write_fonts::{
-    read::{tables::gsub::Gsub, ReadError},
+    read::{collections::IntSet, tables::gsub::Gsub, ReadError},
     tables::{gdef::GlyphClassDef, layout::LookupFlag},
     types::{GlyphId16, Tag},
 };
@@ -914,9 +914,9 @@ impl KernSplitContext {
                 }
                 KernSide::Glyph(gid) => (KernSide::empty(), KernSide::Glyph(*gid)),
                 KernSide::Group(glyphs) => {
-                    let (x, y): (Vec<_>, Vec<_>) =
+                    let (x, y): (IntSet<_>, IntSet<_>) =
                         glyphs.iter().partition(|gid| !marks.contains_key(gid));
-                    (KernSide::Group(x.into()), KernSide::Group(y.into()))
+                    (KernSide::Group(x), KernSide::Group(y))
                 }
             }
         }
