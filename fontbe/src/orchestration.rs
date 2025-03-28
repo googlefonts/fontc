@@ -1,7 +1,7 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     fmt::Display,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
@@ -712,10 +712,10 @@ impl KernPair {
     }
 
     /// Returns true if this entry has no glyphs in common with the provided set
-    pub(crate) fn glyphs_are_disjoint(&self, glyphs: &HashSet<GlyphId16>) -> bool {
+    pub(crate) fn glyphs_are_disjoint(&self, glyphs: &IntSet<GlyphId16>) -> bool {
         self.first_glyphs()
             .chain(self.second_glyphs())
-            .all(|gid| !glyphs.contains(&gid))
+            .all(|gid| !glyphs.contains(gid))
     }
 
     /// a helper used when splitting kerns based on script direction

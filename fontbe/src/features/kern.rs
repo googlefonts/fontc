@@ -624,7 +624,7 @@ struct KernSplitContext {
     /// map of all mark glyphs + whether they are spacing or not
     mark_glyphs: HashMap<GlyphId16, MarkSpacing>,
     glyph_scripts: HashMap<GlyphId16, HashSet<UnicodeShortName>>,
-    bidi_glyphs: BTreeMap<BidiClass, HashSet<GlyphId16>>,
+    bidi_glyphs: BTreeMap<BidiClass, IntSet<GlyphId16>>,
     opts: KernSplitOptions,
     dflt_scripts: HashSet<UnicodeShortName>,
     common_scripts: HashSet<UnicodeShortName>,

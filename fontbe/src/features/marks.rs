@@ -14,6 +14,7 @@ use fontdrasil::{
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
+    read::collections::IntSet,
     tables::{
         gdef::GlyphClassDef,
         gpos::builders::{
@@ -90,7 +91,7 @@ struct MarkGroup<'a> {
 
 impl MarkGroup<'_> {
     //https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da594e3cc56a169e5c3d5fa267c/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L796
-    fn make_filter_glyph_set(&self, filter_glyphs: &HashSet<GlyphId16>) -> Option<GlyphSet> {
+    fn make_filter_glyph_set(&self, filter_glyphs: &IntSet<GlyphId16>) -> Option<GlyphSet> {
         let all_marks = self
             .marks
             .iter()
@@ -99,7 +100,7 @@ impl MarkGroup<'_> {
         self.filter_glyphs.then(|| {
             self.marks
                 .iter()
-                .filter_map(|(gid, _)| filter_glyphs.contains(gid).then_some(*gid))
+                .filter_map(|(gid, _)| filter_glyphs.contains(*gid).then_some(*gid))
                 .chain(
                     self.bases
                         .iter()
@@ -109,11 +110,11 @@ impl MarkGroup<'_> {
         })
     }
 
-    fn only_using_glyphs(&self, include: &HashSet<GlyphId16>) -> Option<MarkGroup> {
+    fn only_using_glyphs(&self, include: &IntSet<GlyphId16>) -> Option<MarkGroup> {
         let bases = self
             .bases
             .iter()
-            .filter(|(gid, _)| include.contains(gid))
+            .filter(|(gid, _)| include.contains(*gid))
             .map(|(gid, anchors)| (*gid, anchors.clone()))
             .collect::<Vec<_>>();
         if bases.is_empty() || self.marks.is_empty() {
@@ -356,7 +357,7 @@ impl<'a> MarkLookupBuilder<'a> {
         mark_base_groups: &BTreeMap<GroupName, MarkGroup>,
         mark_mark_groups: &BTreeMap<GroupName, MarkGroup>,
         mark_lig_groups: &BTreeMap<GroupName, MarkGroup>,
-        include_glyphs: &HashSet<GlyphId16>,
+        include_glyphs: &IntSet<GlyphId16>,
         marks_filter: impl Fn(&GroupName) -> bool,
     ) -> Result<MarkLookups, Error> {
         let mark_base = self.make_lookups_type::<MarkToBaseBuilder>(
@@ -385,7 +386,7 @@ impl<'a> MarkLookupBuilder<'a> {
     fn make_lookups_type<T: MarkAttachmentBuilder>(
         &self,
         groups: &BTreeMap<GroupName, MarkGroup>,
-        include_glyphs: &HashSet<GlyphId16>,
+        include_glyphs: &IntSet<GlyphId16>,
         // filters based on the name of an anchor!
         marks_filter: &impl Fn(&GroupName) -> bool,
     ) -> Result<Vec<PendingLookup<T>>, Error> {
@@ -413,7 +414,7 @@ impl<'a> MarkLookupBuilder<'a> {
             }
 
             for (base_gid, anchor) in &group.bases {
-                if !include_glyphs.contains(base_gid) {
+                if !include_glyphs.contains(*base_gid) {
                     continue;
                 }
                 let anchor = resolve_anchor(anchor, self.static_metadata)
@@ -621,7 +622,7 @@ impl<'a> MarkLookupBuilder<'a> {
     // returns two sets: glyphs used in abvm/blwm, and glyphs used in mark
     fn split_mark_and_abvm_blwm_glyphs(
         &self,
-    ) -> Result<(HashSet<GlyphId16>, HashSet<GlyphId16>), Error> {
+    ) -> Result<(IntSet<GlyphId16>, IntSet<GlyphId16>), Error> {
         let scripts_using_abvm = scripts_using_abvm();
         let fea_scripts = super::get_script_language_systems(&self.fea_first_pass.ast)
             .into_keys()
@@ -694,7 +695,7 @@ impl<'a> MarkLookupBuilder<'a> {
             self.glyph_order
                 .iter()
                 .map(|(gid, _)| gid)
-                .filter(|gid| !abvm_glyphs.contains(gid)),
+                .filter(|gid| !abvm_glyphs.contains(*gid)),
         );
         Ok((abvm_glyphs, non_abvm_glyphs))
     }
@@ -1637,11 +1638,11 @@ mod tests {
                 let (abvm, non_abvm) = ctx.split_mark_and_abvm_blwm_glyphs().unwrap();
                 let nukta = ctx.glyph_order.glyph_id("nukta-kannada").unwrap();
                 let ka = ctx.glyph_order.glyph_id("ka-kannada.base").unwrap();
-                assert!(abvm.contains(&nukta));
+                assert!(abvm.contains(nukta));
                 // all unreachable glyphs get stuffed into non-abvm
                 // (although maybe this can change in the future, and we
                 // can just drop them?)
-                assert!(non_abvm.contains(&ka));
+                assert!(non_abvm.contains(ka));
             });
     }
     #[test]
@@ -1731,8 +1732,8 @@ mod tests {
             .compile_and_inspect(|builder| {
                 let taonethousand = builder.glyph_order.glyph_id("taonethousand").unwrap();
                 let (abvm, non_abvm) = builder.split_mark_and_abvm_blwm_glyphs().unwrap();
-                assert!(abvm.contains(&taonethousand));
-                assert!(!non_abvm.contains(&taonethousand));
+                assert!(abvm.contains(taonethousand));
+                assert!(!non_abvm.contains(taonethousand));
             });
     }
 
@@ -1761,8 +1762,8 @@ mod tests {
                 let dotbelowcomb = builder.glyph_order.glyph_id("dotbelowcomb").unwrap();
                 let (abvm, non_abvm) = builder.split_mark_and_abvm_blwm_glyphs().unwrap();
                 // it should only be in the non-abvm set.
-                assert!(!abvm.contains(&dotbelowcomb));
-                assert!(non_abvm.contains(&dotbelowcomb));
+                assert!(!abvm.contains(dotbelowcomb));
+                assert!(non_abvm.contains(dotbelowcomb));
             });
     }
 
@@ -1791,9 +1792,9 @@ mod tests {
                 // we don't want it to go in abvm
                 let uni25cc = ctx.glyph_order.glyph_id("uni25CC").unwrap();
                 let ka = ctx.glyph_order.glyph_id("ka-kannada").unwrap();
-                assert!(!abvm.contains(&uni25cc));
-                assert!(abvm.contains(&ka));
-                assert!(non_abvm.contains(&uni25cc));
+                assert!(!abvm.contains(uni25cc));
+                assert!(abvm.contains(ka));
+                assert!(non_abvm.contains(uni25cc));
             });
     }
 
