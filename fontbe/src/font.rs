@@ -150,6 +150,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
             .variant(WorkId::Meta)
             .variant(WorkId::LocaFormat)
             .variant(FeWorkId::StaticMetadata)
+            .variant(WorkId::ExtraFeaTables)
             .build()
     }
 
@@ -157,6 +158,29 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // Lets go right ahead and believe those bytes are a font
         let mut builder = FontBuilder::default();
+
+        // currently this is a special case where we slap the table from FEA
+        // directly into the font, if it exists; if we ever start compiling
+        // this directly, we need to merge this at that point.
+        assert!(
+            !TABLES_TO_MERGE
+                .iter()
+                .any(|(_, tag, _)| *tag == Tag::new(b"BASE")),
+            "if manually generating BASE, handle possible BASE table in FEA"
+        );
+        if let Some(base) = context
+            .extra_fea_tables
+            .try_get()
+            .and_then(|fea| fea.base.clone())
+        {
+            log::info!("using BASE table from fea");
+            builder
+                .add_table(&base)
+                .map_err(|e| Error::DumpTableError {
+                    e: e.inner,
+                    context: "dump BASE failed".into(),
+                })?;
+        }
 
         // A fancier implementation would mmap the files. We basic.
         let is_static = context.ir.static_metadata.get().axes.is_empty();

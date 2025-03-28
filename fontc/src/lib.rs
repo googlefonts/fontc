@@ -2845,6 +2845,25 @@ mod tests {
     }
 
     #[test]
+    fn use_base_table_from_fea() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let result = TestCompile::compile_source("CustomBaseTableInFea.ufo");
+        let font = result.font();
+        let base = font.base().unwrap();
+        let horiz = base.horiz_axis().unwrap().unwrap();
+        let horiz_tags = horiz.base_tag_list().unwrap().unwrap().baseline_tags();
+        assert_eq!(horiz_tags, [Tag::new(b"ideo")]);
+        let horiz_scripts = horiz.base_script_list().unwrap();
+        assert_eq!(horiz_scripts.base_script_count(), 1);
+
+        let vert = base.vert_axis().unwrap().unwrap();
+        let vert_tags = vert.base_tag_list().unwrap().unwrap().baseline_tags();
+        assert_eq!(vert_tags, [Tag::new(b"romn")]);
+        let vert_scripts = vert.base_script_list().unwrap();
+        assert_eq!(vert_scripts.base_script_count(), 2);
+    }
+
+    #[test]
     fn generate_meta_table() {
         let result = TestCompile::compile_source("glyphs3/MetaTable.glyphs");
         let meta = result.be_context.meta.get();

@@ -1,0 +1,11 @@
+languagesystem DFLT dflt;
+
+table BASE {
+  HorizAxis.BaseTagList                 ideo;
+  HorizAxis.BaseScriptList  DFLT    ideo   0;
+
+  VertAxis.BaseTagList                  romn;
+  VertAxis.BaseScriptList   DFLT    romn    1,
+                            latn    romn    5;
+} BASE;
+
