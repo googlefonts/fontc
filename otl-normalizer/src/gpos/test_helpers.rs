@@ -1,9 +1,15 @@
 use std::fmt::Debug;
 
-use fea_rs::compile::{Anchor, Builder, MarkToBaseBuilder, PairPosBuilder, ValueRecord};
 use write_fonts::{
     tables::{
-        gpos::{MarkBasePosFormat1, PairPos},
+        gpos::{
+            builders::{
+                AnchorBuilder as Anchor, MarkToBaseBuilder, PairPosBuilder,
+                ValueRecordBuilder as ValueRecord,
+            },
+            MarkBasePosFormat1, PairPos,
+        },
+        layout::builders::Builder,
         variations::ivs_builder::VariationStoreBuilder,
     },
     types::GlyphId16,
@@ -52,13 +58,13 @@ pub trait SimpleMarkBaseBuilder {
 impl SimpleMarkBaseBuilder for MarkToBaseBuilder {
     fn add_mark(&mut self, gid: u16, class: &str, anchor: (i16, i16)) {
         let anchor = Anchor::new(anchor.0, anchor.1);
-        self.insert_mark(GlyphId16::new(gid), class.into(), anchor)
+        self.insert_mark(GlyphId16::new(gid), class, anchor)
             .unwrap();
     }
 
     fn add_base(&mut self, gid: u16, class: &str, anchor: (i16, i16)) {
         let anchor = Anchor::new(anchor.0, anchor.1);
-        self.insert_base(GlyphId16::new(gid), &class.into(), anchor)
+        self.insert_base(GlyphId16::new(gid), class, anchor)
     }
 
     fn build_exactly_one_subtable(self) -> MarkBasePosFormat1 {

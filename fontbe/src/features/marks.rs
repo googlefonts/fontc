@@ -3,10 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
-    compile::{
-        Anchor as FeaAnchor, CaretValue, CursivePosBuilder, FeatureProvider, LookupId,
-        MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PendingLookup,
-    },
+    compile::{FeatureProvider, LookupId, PendingLookup},
     GlyphSet,
 };
 use fontdrasil::{
@@ -17,7 +14,15 @@ use fontdrasil::{
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::{gdef::GlyphClassDef, layout::LookupFlag},
+    read::collections::IntSet,
+    tables::{
+        gdef::GlyphClassDef,
+        gpos::builders::{
+            AnchorBuilder, CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder,
+            MarkToMarkBuilder,
+        },
+        layout::{builders::CaretValueBuilder, LookupFlag},
+    },
     types::{GlyphId16, Tag},
 };
 
@@ -63,7 +68,7 @@ struct MarkLookupBuilder<'a> {
     fea_first_pass: &'a FeaFirstPassOutput,
     // unicode names of scripts declared in FEA
     mark_glyphs: BTreeSet<GlyphId16>,
-    lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
+    lig_carets: BTreeMap<GlyphId16, Vec<CaretValueBuilder>>,
     char_map: HashMap<u32, GlyphId16>,
 }
 
@@ -86,7 +91,7 @@ struct MarkGroup<'a> {
 
 impl MarkGroup<'_> {
     //https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da594e3cc56a169e5c3d5fa267c/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L796
-    fn make_filter_glyph_set(&self, filter_glyphs: &HashSet<GlyphId16>) -> Option<GlyphSet> {
+    fn make_filter_glyph_set(&self, filter_glyphs: &IntSet<GlyphId16>) -> Option<GlyphSet> {
         let all_marks = self
             .marks
             .iter()
@@ -95,7 +100,7 @@ impl MarkGroup<'_> {
         self.filter_glyphs.then(|| {
             self.marks
                 .iter()
-                .filter_map(|(gid, _)| filter_glyphs.contains(gid).then_some(*gid))
+                .filter_map(|(gid, _)| filter_glyphs.contains(*gid).then_some(*gid))
                 .chain(
                     self.bases
                         .iter()
@@ -105,11 +110,11 @@ impl MarkGroup<'_> {
         })
     }
 
-    fn only_using_glyphs(&self, include: &HashSet<GlyphId16>) -> Option<MarkGroup> {
+    fn only_using_glyphs(&self, include: &IntSet<GlyphId16>) -> Option<MarkGroup> {
         let bases = self
             .bases
             .iter()
-            .filter(|(gid, _)| include.contains(gid))
+            .filter(|(gid, _)| include.contains(*gid))
             .map(|(gid, anchors)| (*gid, anchors.clone()))
             .collect::<Vec<_>>();
         if bases.is_empty() || self.marks.is_empty() {
@@ -126,16 +131,26 @@ impl MarkGroup<'_> {
 
 // a trait to abstract over three very similar builders
 trait MarkAttachmentBuilder: Default {
-    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor);
-    fn add_base(&mut self, gid: GlyphId16, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>);
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder);
+    fn add_base(
+        &mut self,
+        gid: GlyphId16,
+        group: &GroupName,
+        anchor: BaseOrLigAnchors<AnchorBuilder>,
+    );
 }
 
 impl MarkAttachmentBuilder for MarkToBaseBuilder {
-    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor) {
-        let _ = self.insert_mark(gid, group.clone(), anchor);
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder) {
+        let _ = self.insert_mark(gid, group, anchor);
     }
 
-    fn add_base(&mut self, gid: GlyphId16, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
+    fn add_base(
+        &mut self,
+        gid: GlyphId16,
+        group: &GroupName,
+        anchor: BaseOrLigAnchors<AnchorBuilder>,
+    ) {
         match anchor {
             BaseOrLigAnchors::Base(anchor) => self.insert_base(gid, group, anchor),
             BaseOrLigAnchors::Ligature(_) => panic!("lig anchors in mark2base builder"),
@@ -144,11 +159,16 @@ impl MarkAttachmentBuilder for MarkToBaseBuilder {
 }
 
 impl MarkAttachmentBuilder for MarkToMarkBuilder {
-    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor) {
-        let _ = self.insert_mark1(gid, group.clone(), anchor);
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder) {
+        let _ = self.insert_mark1(gid, group, anchor);
     }
 
-    fn add_base(&mut self, gid: GlyphId16, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
+    fn add_base(
+        &mut self,
+        gid: GlyphId16,
+        group: &GroupName,
+        anchor: BaseOrLigAnchors<AnchorBuilder>,
+    ) {
         match anchor {
             BaseOrLigAnchors::Base(anchor) => self.insert_mark2(gid, group, anchor),
             BaseOrLigAnchors::Ligature(_) => panic!("lig anchors in mark2mark to builder"),
@@ -157,20 +177,18 @@ impl MarkAttachmentBuilder for MarkToMarkBuilder {
 }
 
 impl MarkAttachmentBuilder for MarkToLigBuilder {
-    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor) {
-        let _ = self.insert_mark(gid, group.clone(), anchor);
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: AnchorBuilder) {
+        let _ = self.insert_mark(gid, group, anchor);
     }
 
     fn add_base(
         &mut self,
         gid: GlyphId16,
         group: &GroupName,
-        anchors: BaseOrLigAnchors<FeaAnchor>,
+        anchors: BaseOrLigAnchors<AnchorBuilder>,
     ) {
         match anchors {
-            BaseOrLigAnchors::Ligature(anchors) => {
-                self.insert_ligature(gid, group.clone(), anchors)
-            }
+            BaseOrLigAnchors::Ligature(anchors) => self.insert_ligature(gid, group, anchors),
             BaseOrLigAnchors::Base(_) => panic!("base anchors passed to mark2lig builder"),
         }
     }
@@ -339,7 +357,7 @@ impl<'a> MarkLookupBuilder<'a> {
         mark_base_groups: &BTreeMap<GroupName, MarkGroup>,
         mark_mark_groups: &BTreeMap<GroupName, MarkGroup>,
         mark_lig_groups: &BTreeMap<GroupName, MarkGroup>,
-        include_glyphs: &HashSet<GlyphId16>,
+        include_glyphs: &IntSet<GlyphId16>,
         marks_filter: impl Fn(&GroupName) -> bool,
     ) -> Result<MarkLookups, Error> {
         let mark_base = self.make_lookups_type::<MarkToBaseBuilder>(
@@ -368,7 +386,7 @@ impl<'a> MarkLookupBuilder<'a> {
     fn make_lookups_type<T: MarkAttachmentBuilder>(
         &self,
         groups: &BTreeMap<GroupName, MarkGroup>,
-        include_glyphs: &HashSet<GlyphId16>,
+        include_glyphs: &IntSet<GlyphId16>,
         // filters based on the name of an anchor!
         marks_filter: &impl Fn(&GroupName) -> bool,
     ) -> Result<Vec<PendingLookup<T>>, Error> {
@@ -396,7 +414,7 @@ impl<'a> MarkLookupBuilder<'a> {
             }
 
             for (base_gid, anchor) in &group.bases {
-                if !include_glyphs.contains(base_gid) {
+                if !include_glyphs.contains(*base_gid) {
                     continue;
                 }
                 let anchor = resolve_anchor(anchor, self.static_metadata)
@@ -604,7 +622,7 @@ impl<'a> MarkLookupBuilder<'a> {
     // returns two sets: glyphs used in abvm/blwm, and glyphs used in mark
     fn split_mark_and_abvm_blwm_glyphs(
         &self,
-    ) -> Result<(HashSet<GlyphId16>, HashSet<GlyphId16>), Error> {
+    ) -> Result<(IntSet<GlyphId16>, IntSet<GlyphId16>), Error> {
         let scripts_using_abvm = scripts_using_abvm();
         let fea_scripts = super::get_script_language_systems(&self.fea_first_pass.ast)
             .into_keys()
@@ -677,7 +695,7 @@ impl<'a> MarkLookupBuilder<'a> {
             self.glyph_order
                 .iter()
                 .map(|(gid, _)| gid)
-                .filter(|gid| !abvm_glyphs.contains(gid)),
+                .filter(|gid| !abvm_glyphs.contains(*gid)),
         );
         Ok((abvm_glyphs, non_abvm_glyphs))
     }
@@ -774,7 +792,7 @@ fn find_mark_glyphs(
 fn resolve_anchor(
     anchor: &BaseOrLigAnchors<&ir::Anchor>,
     static_metadata: &StaticMetadata,
-) -> Result<BaseOrLigAnchors<FeaAnchor>, DeltaError> {
+) -> Result<BaseOrLigAnchors<AnchorBuilder>, DeltaError> {
     match anchor {
         BaseOrLigAnchors::Base(anchor) => {
             resolve_anchor_once(anchor, static_metadata).map(BaseOrLigAnchors::Base)
@@ -793,7 +811,7 @@ fn resolve_anchor(
 fn resolve_anchor_once(
     anchor: &ir::Anchor,
     static_metadata: &StaticMetadata,
-) -> Result<FeaAnchor, DeltaError> {
+) -> Result<AnchorBuilder, DeltaError> {
     let (x_values, y_values): (Vec<_>, Vec<_>) = anchor
         .positions
         .iter()
@@ -818,7 +836,7 @@ fn resolve_anchor_once(
         y_values.iter().map(|item| (&item.0, &item.1)),
     )?;
 
-    let mut anchor = FeaAnchor::new(x_default, y_default);
+    let mut anchor = AnchorBuilder::new(x_default, y_default);
     if x_deltas.iter().any(|v| v.1 != 0) {
         anchor = anchor.with_x_device(x_deltas);
     }
@@ -837,7 +855,7 @@ fn get_ligature_carets(
     glyph_order: &GlyphOrder,
     static_metadata: &StaticMetadata,
     anchors: &[&GlyphAnchors],
-) -> Result<BTreeMap<GlyphId16, Vec<CaretValue>>, Error> {
+) -> Result<BTreeMap<GlyphId16, Vec<CaretValueBuilder>>, Error> {
     let mut out = BTreeMap::new();
 
     for glyph_anchor in anchors {
@@ -862,7 +880,7 @@ fn make_caret_value(
     anchor: &ir::Anchor,
     static_metadata: &StaticMetadata,
     glyph_name: &GlyphName,
-) -> Result<Option<CaretValue>, Error> {
+) -> Result<Option<CaretValueBuilder>, Error> {
     if !matches!(anchor.kind, AnchorKind::Caret(_) | AnchorKind::VCaret(_)) {
         return Ok(None);
     }
@@ -888,7 +906,7 @@ fn make_caret_value(
         deltas.clear();
     }
 
-    Ok(Some(CaretValue::Coordinate {
+    Ok(Some(CaretValueBuilder::Coordinate {
         default,
         deltas: deltas.into(),
     }))
@@ -1620,11 +1638,11 @@ mod tests {
                 let (abvm, non_abvm) = ctx.split_mark_and_abvm_blwm_glyphs().unwrap();
                 let nukta = ctx.glyph_order.glyph_id("nukta-kannada").unwrap();
                 let ka = ctx.glyph_order.glyph_id("ka-kannada.base").unwrap();
-                assert!(abvm.contains(&nukta));
+                assert!(abvm.contains(nukta));
                 // all unreachable glyphs get stuffed into non-abvm
                 // (although maybe this can change in the future, and we
                 // can just drop them?)
-                assert!(non_abvm.contains(&ka));
+                assert!(non_abvm.contains(ka));
             });
     }
     #[test]
@@ -1714,8 +1732,8 @@ mod tests {
             .compile_and_inspect(|builder| {
                 let taonethousand = builder.glyph_order.glyph_id("taonethousand").unwrap();
                 let (abvm, non_abvm) = builder.split_mark_and_abvm_blwm_glyphs().unwrap();
-                assert!(abvm.contains(&taonethousand));
-                assert!(!non_abvm.contains(&taonethousand));
+                assert!(abvm.contains(taonethousand));
+                assert!(!non_abvm.contains(taonethousand));
             });
     }
 
@@ -1744,8 +1762,8 @@ mod tests {
                 let dotbelowcomb = builder.glyph_order.glyph_id("dotbelowcomb").unwrap();
                 let (abvm, non_abvm) = builder.split_mark_and_abvm_blwm_glyphs().unwrap();
                 // it should only be in the non-abvm set.
-                assert!(!abvm.contains(&dotbelowcomb));
-                assert!(non_abvm.contains(&dotbelowcomb));
+                assert!(!abvm.contains(dotbelowcomb));
+                assert!(non_abvm.contains(dotbelowcomb));
             });
     }
 
@@ -1774,9 +1792,9 @@ mod tests {
                 // we don't want it to go in abvm
                 let uni25cc = ctx.glyph_order.glyph_id("uni25CC").unwrap();
                 let ka = ctx.glyph_order.glyph_id("ka-kannada").unwrap();
-                assert!(!abvm.contains(&uni25cc));
-                assert!(abvm.contains(&ka));
-                assert!(non_abvm.contains(&uni25cc));
+                assert!(!abvm.contains(uni25cc));
+                assert!(abvm.contains(ka));
+                assert!(non_abvm.contains(uni25cc));
             });
     }
 

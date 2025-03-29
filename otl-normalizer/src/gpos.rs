@@ -487,8 +487,10 @@ impl Display for ResolvedAnchor {
 
 #[cfg(test)]
 mod tests {
-    use fea_rs::compile::{MarkToBaseBuilder, PairPosBuilder};
-    use write_fonts::tables::layout::LookupFlag;
+    use write_fonts::tables::{
+        gpos::builders::{MarkToBaseBuilder, PairPosBuilder},
+        layout::LookupFlag,
+    };
 
     use super::test_helpers::{RawAnchor, SimpleMarkBaseBuilder, SimplePairPosBuilder};
     use super::*;

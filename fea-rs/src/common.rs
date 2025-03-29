@@ -3,6 +3,7 @@
 use std::fmt::{Display, Formatter};
 
 use fontdrasil::types::GlyphName;
+use write_fonts::tables::gpos::builders::AnchorBuilder;
 pub use write_fonts::types::GlyphId16;
 
 mod glyph_class;
@@ -12,8 +13,6 @@ pub(crate) use glyph_class::GlyphClass;
 
 pub use glyph_class::GlyphSet;
 pub use glyph_map::GlyphMap;
-
-use crate::compile::Anchor;
 
 /// A glyph or glyph class.
 ///
@@ -39,7 +38,7 @@ pub enum GlyphIdent {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct MarkClass {
-    pub(crate) members: Vec<(GlyphClass, Option<Anchor>)>,
+    pub(crate) members: Vec<(GlyphClass, Option<AnchorBuilder>)>,
 }
 
 impl<T: Into<GlyphName>> From<T> for GlyphIdent {

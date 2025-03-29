@@ -323,8 +323,7 @@ fn append_mark_mark_rules(
 
 #[cfg(test)]
 mod tests {
-    use fea_rs::compile::MarkToBaseBuilder;
-    use write_fonts::read::FontRead;
+    use write_fonts::{read::FontRead, tables::gpos::builders::MarkToBaseBuilder};
 
     use super::super::test_helpers::{self, RawAnchor, SimpleMarkBaseBuilder};
 

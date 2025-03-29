@@ -175,7 +175,7 @@ mod tests {
     use write_fonts::read::FontRead;
 
     use super::super::test_helpers::SimplePairPosBuilder;
-    use fea_rs::compile::PairPosBuilder;
+    use write_fonts::tables::gpos::builders::PairPosBuilder;
 
     use super::*;
 

@@ -6,7 +6,7 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{FeatureKey, FeatureProvider, PairPosBuilder, ValueRecord as ValueRecordBuilder},
+    compile::{FeatureKey, FeatureProvider},
     GlyphSet, ParseTree,
 };
 use fontdrasil::{
@@ -22,8 +22,12 @@ use icu_properties::props::BidiClass;
 use log::debug;
 use ordered_float::OrderedFloat;
 use write_fonts::{
-    read::{tables::gsub::Gsub, ReadError},
-    tables::{gdef::GlyphClassDef, layout::LookupFlag},
+    read::{collections::IntSet, tables::gsub::Gsub, ReadError},
+    tables::{
+        gdef::GlyphClassDef,
+        gpos::builders::{PairPosBuilder, ValueRecordBuilder},
+        layout::LookupFlag,
+    },
     types::{GlyphId16, Tag},
 };
 
@@ -620,7 +624,7 @@ struct KernSplitContext {
     /// map of all mark glyphs + whether they are spacing or not
     mark_glyphs: HashMap<GlyphId16, MarkSpacing>,
     glyph_scripts: HashMap<GlyphId16, HashSet<UnicodeShortName>>,
-    bidi_glyphs: BTreeMap<BidiClass, HashSet<GlyphId16>>,
+    bidi_glyphs: BTreeMap<BidiClass, IntSet<GlyphId16>>,
     opts: KernSplitOptions,
     dflt_scripts: HashSet<UnicodeShortName>,
     common_scripts: HashSet<UnicodeShortName>,
@@ -914,9 +918,9 @@ impl KernSplitContext {
                 }
                 KernSide::Glyph(gid) => (KernSide::empty(), KernSide::Glyph(*gid)),
                 KernSide::Group(glyphs) => {
-                    let (x, y): (Vec<_>, Vec<_>) =
+                    let (x, y): (IntSet<_>, IntSet<_>) =
                         glyphs.iter().partition(|gid| !marks.contains_key(gid));
-                    (KernSide::Group(x.into()), KernSide::Group(y.into()))
+                    (KernSide::Group(x), KernSide::Group(y))
                 }
             }
         }

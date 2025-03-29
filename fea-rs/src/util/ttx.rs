@@ -11,8 +11,7 @@ use std::{
 
 use crate::{
     compile::{
-        error::CompilerError, Anchor, Compiler, FeatureProvider, MarkToBaseBuilder,
-        MockVariationInfo, Opts, PairPosBuilder, PendingLookup, ValueRecord,
+        error::CompilerError, Compiler, FeatureProvider, MockVariationInfo, Opts, PendingLookup,
     },
     DiagnosticSet, GlyphIdent, GlyphMap, ParseTree,
 };
@@ -20,9 +19,11 @@ use crate::{
 use ansi_term::Color;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use smol_str::SmolStr;
 use write_fonts::{
-    tables::layout::LookupFlag,
+    tables::{
+        gpos::builders::{AnchorBuilder, MarkToBaseBuilder, PairPosBuilder, ValueRecordBuilder},
+        layout::LookupFlag,
+    },
     types::{GlyphId16, Tag},
 };
 
@@ -578,25 +579,17 @@ impl FeatureProvider for TestFeatureProvider {
         let mut kern = PairPosBuilder::default();
         kern.insert_pair(
             GlyphId16::new(20),
-            ValueRecord::new().with_x_advance(5),
+            ValueRecordBuilder::new().with_x_advance(5),
             GlyphId16::new(21),
-            ValueRecord::new(),
+            ValueRecordBuilder::new(),
         );
         let kern_id = builder.add_lookup(PendingLookup::new(vec![kern], LookupFlag::empty(), None));
 
         let mut mark = MarkToBaseBuilder::default();
-        mark.insert_mark(
-            GlyphId16::new(116),
-            SmolStr::new("derp"),
-            Anchor::new(101, 102),
-        )
-        .unwrap();
+        mark.insert_mark(GlyphId16::new(116), "derp", AnchorBuilder::new(101, 102))
+            .unwrap();
 
-        mark.insert_base(
-            GlyphId16::new(36),
-            &SmolStr::new("derp"),
-            Anchor::new(11, 13),
-        );
+        mark.insert_base(GlyphId16::new(36), "derp", AnchorBuilder::new(11, 13));
         let mark_id = builder.add_lookup(PendingLookup::new(
             vec![mark],
             LookupFlag::IGNORE_MARKS,

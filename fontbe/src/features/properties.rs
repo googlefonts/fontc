@@ -10,7 +10,7 @@ use icu_properties::{
 };
 use tinystr::tinystr;
 use write_fonts::{
-    read::{tables::gsub::Gsub, ReadError},
+    read::{collections::IntSet, tables::gsub::Gsub, ReadError},
     types::{GlyphId16, Tag},
 };
 
@@ -110,7 +110,7 @@ fn classify<T, F, CM>(
     char_map: &CM,
     mut props_fn: F,
     gsub: Option<&Gsub>,
-) -> Result<BTreeMap<T, HashSet<GlyphId16>>, ReadError>
+) -> Result<BTreeMap<T, IntSet<GlyphId16>>, ReadError>
 where
     T: Ord + Eq,
     // instead of returning an iterator, pushes items into the provided buffer
@@ -118,13 +118,13 @@ where
     CM: CharMap,
 {
     let mut sets = BTreeMap::new();
-    let mut neutral_glyphs = HashSet::new();
+    let mut neutral_glyphs = IntSet::new();
     let mut buf = Vec::new();
     for (gid, unicode_value) in char_map.iter_glyphs() {
         let mut has_props = false;
         props_fn(unicode_value, &mut buf);
         for prop in buf.drain(..) {
-            sets.entry(prop).or_insert(HashSet::new()).insert(gid);
+            sets.entry(prop).or_insert(IntSet::new()).insert(gid);
             has_props = true;
         }
         if !has_props {
@@ -135,12 +135,10 @@ where
     if let Some(gsub) = gsub.as_ref() {
         neutral_glyphs = gsub.closure_glyphs(neutral_glyphs)?;
         for glyphs in sets.values_mut() {
-            let temp = glyphs
-                .union(&neutral_glyphs)
-                .copied()
-                .collect::<HashSet<_>>();
+            let mut temp = glyphs.clone();
+            temp.union(&neutral_glyphs);
             let temp = gsub.closure_glyphs(temp)?;
-            glyphs.extend(temp.difference(&neutral_glyphs).copied())
+            glyphs.extend(temp.iter().filter(|gid| !neutral_glyphs.contains(*gid)));
         }
     }
     Ok(sets)
@@ -150,7 +148,7 @@ pub(crate) fn glyphs_matching_predicate(
     glyphs: &impl CharMap,
     predicate: impl Fn(u32) -> Option<bool>,
     gsub: Option<&Gsub>,
-) -> Result<HashSet<GlyphId16>, ReadError> {
+) -> Result<IntSet<GlyphId16>, ReadError> {
     classify(
         glyphs,
         |cp, buf| {
@@ -185,7 +183,7 @@ pub(crate) fn scripts_by_glyph(
         },
         gsub,
     )? {
-        for glyph in glyphs {
+        for glyph in glyphs.iter() {
             result.entry(glyph).or_insert(HashSet::new()).insert(script);
         }
     }
@@ -196,7 +194,7 @@ pub(crate) fn scripts_by_glyph(
 pub(crate) fn glyphs_by_bidi_class(
     glyphs: &impl CharMap,
     gsub: Option<&Gsub>,
-) -> Result<BTreeMap<BidiClass, HashSet<GlyphId16>>, ReadError> {
+) -> Result<BTreeMap<BidiClass, IntSet<GlyphId16>>, ReadError> {
     classify(
         glyphs,
         |codepoint, buf| buf.extend(unicode_bidi_type(codepoint)),
@@ -523,6 +521,6 @@ mod tests {
 
         // 'b' should not be reachable because 'neutral_glyph' doesn't match our
         // predicate
-        assert!(reachable_from_a.contains(&a_gid) && reachable_from_a.len() == 1);
+        assert!(reachable_from_a.contains(a_gid) && reachable_from_a.len() == 1);
     }
 }
