@@ -393,6 +393,8 @@ mod tests {
             BeWorkIdentifier::Os2.into(),
             BeWorkIdentifier::Post.into(),
             BeWorkIdentifier::Stat.into(),
+            BeWorkIdentifier::Vhea.into(),
+            BeWorkIdentifier::Vmtx.into(),
         ];
 
         expected.extend(
