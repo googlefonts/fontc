@@ -82,6 +82,11 @@ pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/post>.
     pub italic_angle: OrderedFloat<f64>,
 
+    /// Records whether this font contains sufficient non-default vertical data
+    /// to warrant building a vhea and vmtx table. (The criteria for Glyphs and
+    /// UFO sources is different.)
+    pub build_vertical: bool,
+
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
     pub gdef_categories: GdefCategories,
@@ -461,6 +466,7 @@ impl StaticMetadata {
         glyphsapp_number_values: Option<
             HashMap<NormalizedLocation, BTreeMap<SmolStr, OrderedFloat<f64>>>,
         >,
+        build_vertical: bool,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
@@ -508,6 +514,7 @@ impl StaticMetadata {
             italic_angle: italic_angle.into(),
             gdef_categories,
             number_values: glyphsapp_number_values.unwrap_or_default(),
+            build_vertical,
             misc: MiscMetadata {
                 fs_type: None, // default is, sigh, inconsistent across source formats
                 is_fixed_pitch: None,
@@ -559,6 +566,9 @@ pub enum GlobalMetric {
     HheaAscender,
     HheaDescender,
     HheaLineGap,
+    VheaAscender,
+    VheaDescender,
+    VheaLineGap,
     Os2TypoAscender,
     Os2TypoDescender,
     Os2TypoLineGap,
@@ -568,6 +578,9 @@ pub enum GlobalMetric {
     CaretSlopeRise,
     CaretSlopeRun,
     CaretOffset,
+    VheaCaretSlopeRise,
+    VheaCaretSlopeRun,
+    VheaCaretOffset,
     UnderlineThickness,
     UnderlinePosition,
     XHeight,
@@ -600,17 +613,15 @@ impl GlobalMetric {
             GlobalMetric::Os2TypoLineGap => Some(Tag::new(b"hlgp")),
             GlobalMetric::Os2WinAscent => Some(Tag::new(b"hcla")),
             GlobalMetric::Os2WinDescent => Some(Tag::new(b"hcld")),
-            // TODO: support vertical global metrics
-            // https://github.com/googlefonts/fontc/issues/668
-            // GlobalMetric::VheaAscender => Some(Tag::new(b"vasc")),
-            // GlobalMetric::VheaDescender => Some(Tag::new(b"vdsc")),
-            // GlobalMetric::VheaLineGap => Some(Tag::new(b"vlgp")),
+            GlobalMetric::VheaAscender => Some(Tag::new(b"vasc")),
+            GlobalMetric::VheaDescender => Some(Tag::new(b"vdsc")),
+            GlobalMetric::VheaLineGap => Some(Tag::new(b"vlgp")),
             GlobalMetric::CaretSlopeRise => Some(Tag::new(b"hcrs")),
             GlobalMetric::CaretSlopeRun => Some(Tag::new(b"hcrn")),
             GlobalMetric::CaretOffset => Some(Tag::new(b"hcof")),
-            // GlobalMetric::VheaCaretSlopeRise => Some(Tag::new(b"vcrs")),
-            // GlobalMetric::VheaCaretSlopeRun => Some(Tag::new(b"vcrn")),
-            // GlobalMetric::VheaCaretOffset => Some(Tag::new(b"vcof")),
+            GlobalMetric::VheaCaretSlopeRise => Some(Tag::new(b"vcrs")),
+            GlobalMetric::VheaCaretSlopeRun => Some(Tag::new(b"vcrn")),
+            GlobalMetric::VheaCaretOffset => Some(Tag::new(b"vcof")),
             GlobalMetric::XHeight => Some(Tag::new(b"xhgt")),
             GlobalMetric::CapHeight => Some(Tag::new(b"cpht")),
             GlobalMetric::SubscriptXSize => Some(Tag::new(b"sbxs")),
@@ -756,6 +767,18 @@ impl GlobalMetrics {
             GlobalMetric::StrikeoutPosition,
             x_height.map(|v| v * 0.6).unwrap_or(units_per_em * 0.22),
         );
+
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L403-L408
+        set_if_absent(GlobalMetric::VheaCaretSlopeRise, 0.0);
+        set_if_absent(GlobalMetric::VheaCaretSlopeRun, 1.0);
+        set_if_absent(GlobalMetric::VheaCaretOffset, 0.0);
+
+        // XXX: These should _always_ be overwritten if the static metadata
+        // indicates that there is vertical data to build.
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L397-L402
+        set_if_absent(GlobalMetric::VheaAscender, 0.0);
+        set_if_absent(GlobalMetric::VheaDescender, 0.0);
+        set_if_absent(GlobalMetric::VheaLineGap, 0.0);
     }
 
     fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
@@ -831,6 +854,12 @@ impl GlobalMetrics {
             hhea_ascender: self.get(GlobalMetric::HheaAscender, pos),
             hhea_descender: self.get(GlobalMetric::HheaDescender, pos),
             hhea_line_gap: self.get(GlobalMetric::HheaLineGap, pos),
+            vhea_ascender: self.get(GlobalMetric::VheaAscender, pos),
+            vhea_descender: self.get(GlobalMetric::VheaDescender, pos),
+            vhea_line_gap: self.get(GlobalMetric::VheaLineGap, pos),
+            vhea_caret_slope_rise: self.get(GlobalMetric::VheaCaretSlopeRise, pos),
+            vhea_caret_slope_run: self.get(GlobalMetric::VheaCaretSlopeRun, pos),
+            vhea_caret_offset: self.get(GlobalMetric::VheaCaretOffset, pos),
             underline_thickness: self.get(GlobalMetric::UnderlineThickness, pos),
             underline_position: self.get(GlobalMetric::UnderlinePosition, pos),
         }
@@ -860,6 +889,12 @@ pub struct GlobalMetricsInstance {
     pub hhea_ascender: OrderedFloat<f64>,
     pub hhea_descender: OrderedFloat<f64>,
     pub hhea_line_gap: OrderedFloat<f64>,
+    pub vhea_ascender: OrderedFloat<f64>,
+    pub vhea_descender: OrderedFloat<f64>,
+    pub vhea_line_gap: OrderedFloat<f64>,
+    pub vhea_caret_slope_rise: OrderedFloat<f64>,
+    pub vhea_caret_slope_run: OrderedFloat<f64>,
+    pub vhea_caret_offset: OrderedFloat<f64>,
     pub strikeout_position: OrderedFloat<f64>,
     pub strikeout_size: OrderedFloat<f64>,
     pub subscript_x_offset: OrderedFloat<f64>,
@@ -898,6 +933,7 @@ pub mod test_helpers {
                 ascender: self.ascender.round2(),
                 descender: self.descender.round2(),
                 caret_slope_rise: self.caret_slope_rise.round2(),
+                vhea_caret_slope_rise: self.vhea_caret_slope_rise.round2(),
                 cap_height: self.cap_height.round2(),
                 x_height: self.x_height.round2(),
                 subscript_x_size: self.subscript_x_size.round2(),
@@ -916,10 +952,15 @@ pub mod test_helpers {
                 hhea_ascender: self.hhea_ascender.round2(),
                 hhea_descender: self.hhea_descender.round2(),
                 hhea_line_gap: self.hhea_line_gap.round2(),
+                vhea_ascender: self.vhea_ascender.round2(),
+                vhea_descender: self.vhea_descender.round2(),
+                vhea_line_gap: self.vhea_line_gap.round2(),
                 underline_thickness: self.underline_thickness.round2(),
                 underline_position: self.underline_position.round2(),
                 caret_slope_run: self.caret_slope_run.round2(),
                 caret_offset: self.caret_offset.round2(),
+                vhea_caret_slope_run: self.vhea_caret_slope_run.round2(),
+                vhea_caret_offset: self.vhea_caret_offset.round2(),
                 subscript_x_offset: self.subscript_x_offset.round2(),
                 superscript_x_offset: self.superscript_x_offset.round2(),
             }
@@ -1893,6 +1934,8 @@ pub struct GlyphInstance {
     pub width: f64,
     /// Advance height; if None, assumed to equal font's ascender - descender.
     pub height: Option<f64>,
+    /// Vertical origin; if None, assumed to equal font's ascender.
+    pub vertical_origin: Option<f64>,
     /// List of glyph contours.
     pub contours: Vec<BezPath>,
     /// List of glyph components.
@@ -2068,6 +2111,7 @@ mod tests {
                 .collect(),
                 prefer_gdef_categories_in_fea: false,
             },
+            build_vertical: true,
             misc: MiscMetadata {
                 fs_type: None,
                 is_fixed_pitch: None,

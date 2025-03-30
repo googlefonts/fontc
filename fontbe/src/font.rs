@@ -4,12 +4,12 @@ use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use log::debug;
 use write_fonts::{
-    read::TopLevelTable,
+    read::{tables::vmtx::Vmtx, TopLevelTable},
     tables::{
         avar::Avar, cmap::Cmap, colr::Colr, cpal::Cpal, fvar::Fvar, gasp::Gasp, gdef::Gdef,
         glyf::Glyf, gpos::Gpos, gsub::Gsub, gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx,
         hvar::Hvar, loca::Loca, maxp::Maxp, meta::Meta, mvar::Mvar, name::Name, os2::Os2,
-        post::Post, stat::Stat,
+        post::Post, stat::Stat, vhea::Vhea,
     },
     types::Tag,
     FontBuilder,
@@ -58,6 +58,8 @@ const TABLES_TO_MERGE: &[(WorkId, Tag)] = &[
     (WorkId::Hvar, Hvar::TAG),
     (WorkId::Mvar, Mvar::TAG),
     (WorkId::Meta, Meta::TAG),
+    (WorkId::Vhea, Vhea::TAG),
+    (WorkId::Vmtx, Vmtx::TAG),
 ];
 
 fn has(context: &Context, id: WorkId) -> bool {
@@ -85,6 +87,8 @@ fn has(context: &Context, id: WorkId) -> bool {
         WorkId::Hvar => context.hvar.try_get().is_some(),
         WorkId::Mvar => context.mvar.try_get().is_some(),
         WorkId::Meta => context.meta.try_get().is_some(),
+        WorkId::Vhea => context.vhea.try_get().is_some(),
+        WorkId::Vmtx => context.vmtx.try_get().is_some(),
         _ => false,
     }
 }
@@ -115,6 +119,8 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
         WorkId::Hvar => to_bytes(context.hvar.get().as_ref()),
         WorkId::Mvar => to_bytes(context.mvar.get().as_ref()),
         WorkId::Meta => to_bytes(context.meta.get().as_ref()),
+        WorkId::Vhea => to_bytes(context.vhea.get().as_ref()),
+        WorkId::Vmtx => Some(context.vmtx.get().as_ref().get().to_vec()),
         _ => panic!("Missing a match for {id:?}"),
     };
     Ok(bytes)
@@ -151,6 +157,8 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
             .variant(WorkId::Mvar)
             .variant(WorkId::Meta)
             .variant(WorkId::LocaFormat)
+            .variant(WorkId::Vhea)
+            .variant(WorkId::Vmtx)
             .variant(FeWorkId::StaticMetadata)
             .variant(WorkId::ExtraFeaTables)
             .build()

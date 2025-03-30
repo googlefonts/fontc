@@ -98,6 +98,8 @@ impl Paths {
             WorkId::Post => self.build_dir.join("post.table"),
             WorkId::Stat => self.build_dir.join("stat.table"),
             WorkId::Meta => self.build_dir.join("meta.table"),
+            WorkId::Vhea => self.build_dir.join("vhea.table"),
+            WorkId::Vmtx => self.build_dir.join("vmtx.table"),
             WorkId::ExtraFeaTables => self.build_dir.join("extra_tables.bin"),
             WorkId::Font => self
                 .output_file

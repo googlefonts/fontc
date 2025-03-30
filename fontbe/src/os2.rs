@@ -525,6 +525,8 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
             .variant(WorkId::Hmtx)
             .variant(WorkId::Gpos)
             .variant(WorkId::Gsub)
+            .variant(WorkId::Vhea)
+            .variant(WorkId::Vmtx)
             .variant(FeWorkId::ALL_GLYPHS)
             .build()
     }

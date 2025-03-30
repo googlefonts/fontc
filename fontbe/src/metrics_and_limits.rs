@@ -17,7 +17,8 @@ use write_fonts::{
         hhea::Hhea,
         hmtx::Hmtx,
         maxp::Maxp,
-        vmtx::LongMetric,
+        vhea::Vhea,
+        vmtx::{LongMetric, Vmtx},
     },
     types::{FWord, GlyphId16},
     OtRound,
@@ -40,8 +41,12 @@ pub fn create_metric_and_limit_work() -> Box<BeWork> {
 struct FontLimits {
     min_left_side_bearing: Option<i16>,
     min_right_side_bearing: Option<i16>,
+    min_top_side_bearing: Option<i16>,
+    min_bottom_side_bearing: Option<i16>,
     x_max_extent: Option<i16>,
+    y_max_extent: Option<i16>,
     advance_width_max: u16,
+    advance_height_max: u16,
     max_points: u16,
     max_contours: u16,
     max_component_elements: u16,
@@ -142,6 +147,32 @@ impl FontLimits {
         self.glyph_info.insert(id, glyph_info);
     }
 
+    fn update_vert(&mut self, advance: u16, side_bearing: i16, glyph: &Glyph) {
+        // max advance height should consider every glyph that has a vmtx entry
+        self.advance_height_max = max(self.advance_height_max, advance);
+
+        // min side bearings are only for non-empty glyphs
+        // we will presume only simple glyphs with no contours are empty
+        if let Some(bbox) = glyph.data.bbox() {
+            // https://github.com/googlefonts/ufo2ft/blob/16ed156bd/Lib/ufo2ft/outlineCompiler.py#L808-L811
+            let bounds_advance = bbox.y_max - bbox.y_min;
+            let extent = side_bearing + bounds_advance;
+
+            self.y_max_extent = self.y_max_extent.map(|v| max(v, extent)).or(Some(extent));
+
+            self.min_top_side_bearing = self
+                .min_top_side_bearing
+                .map(|v| min(v, side_bearing))
+                .or(Some(side_bearing));
+
+            let other_bearing = (advance as i16) - side_bearing - bounds_advance;
+            self.min_bottom_side_bearing = self
+                .min_bottom_side_bearing
+                .map(|v| min(v, other_bearing))
+                .or(Some(other_bearing));
+        }
+    }
+
     // FontTools maxp <https://github.com/fonttools/fonttools/blob/e8146a6d0725d398cfa110cba683946ee762f8e2/Lib/fontTools/ttLib/tables/_m_a_x_p.py#L53>
     fn update_composite_limits(&mut self) -> GlyphLimits {
         let mut pending = self
@@ -214,11 +245,18 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             .variant(WorkId::Hhea)
             .variant(WorkId::Maxp)
             .variant(WorkId::Head)
+            .variant(WorkId::Vmtx)
+            .variant(WorkId::Vhea)
             .build()
     }
 
     fn also_completes(&self) -> Vec<AnyWorkId> {
-        vec![WorkId::Hhea.into(), WorkId::Maxp.into()]
+        vec![
+            WorkId::Hhea.into(),
+            WorkId::Maxp.into(),
+            WorkId::Vhea.into(),
+            WorkId::Vmtx.into(),
+        ]
     }
 
     /// Generate:
@@ -239,7 +277,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
 
         let mut glyph_limits = FontLimits::default();
 
-        let mut long_metrics: Vec<LongMetric> = glyph_order
+        let mut long_h_metrics: Vec<LongMetric> = glyph_order
             .iter()
             .map(|(gid, gn)| {
                 let advance: u16 = context
@@ -258,10 +296,10 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             .collect();
 
         // If there's a run at the end with matching advances we can save some bytes
-        let num_lsb_only = if !long_metrics.is_empty() {
-            let last_advance = long_metrics.last().unwrap().advance;
+        let num_lsb_only = if !long_h_metrics.is_empty() {
+            let last_advance = long_h_metrics.last().unwrap().advance;
             let mut lsb_run = 0;
-            for metric in long_metrics.iter().rev() {
+            for metric in long_h_metrics.iter().rev() {
                 if metric.advance != last_advance {
                     break;
                 }
@@ -275,8 +313,8 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             0
         };
 
-        let lsbs = long_metrics
-            .split_off(long_metrics.len() - num_lsb_only)
+        let lsbs = long_h_metrics
+            .split_off(long_h_metrics.len() - num_lsb_only)
             .into_iter()
             .map(|metric| metric.side_bearing)
             .collect();
@@ -300,18 +338,17 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             caret_slope_rise: default_metrics.caret_slope_rise.into_inner().ot_round(),
             caret_slope_run: default_metrics.caret_slope_run.into_inner().ot_round(),
             caret_offset: default_metrics.caret_offset.into_inner().ot_round(),
-            number_of_h_metrics: long_metrics
-                .len()
-                .try_into()
-                .map_err(|_| Error::OutOfBounds {
+            number_of_h_metrics: long_h_metrics.len().try_into().map_err(|_| {
+                Error::OutOfBounds {
                     what: "number_of_long_metrics".into(),
-                    value: format!("{}", long_metrics.len()),
-                })?,
+                    value: format!("{}", long_h_metrics.len()),
+                }
+            })?,
         };
         context.hhea.set(hhea);
 
         // Send hmtx out into the world
-        let hmtx = Hmtx::new(long_metrics, lsbs);
+        let hmtx = Hmtx::new(long_h_metrics, lsbs);
         let raw_hmtx = dump_table(&hmtx)
             .map_err(|e| Error::DumpTableError {
                 e,
@@ -319,6 +356,89 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             })?
             .into();
         context.hmtx.set(raw_hmtx);
+
+        if static_metadata.build_vertical {
+            let default_height = default_metrics.hhea_ascender.into_inner()
+                - default_metrics.hhea_descender.into_inner();
+            let mut long_v_metrics: Vec<LongMetric> = glyph_order
+                .iter()
+                .map(|(_gid, gn)| {
+                    let glyph = context.ir.get_glyph(gn.clone());
+                    let instance = glyph.default_instance();
+
+                    let advance: u16 = instance.height.unwrap_or(default_height).ot_round();
+                    let vertical_origin: i16 = instance
+                        .vertical_origin
+                        .unwrap_or(default_metrics.os2_typo_ascender.into_inner())
+                        .ot_round();
+
+                    let glyph = context.glyphs.get(&WorkId::GlyfFragment(gn.clone()).into());
+                    let side_bearing = vertical_origin
+                        - glyph.data.bbox().map(|bbox| bbox.y_max).unwrap_or_default();
+
+                    glyph_limits.update_vert(advance, side_bearing, &glyph);
+                    LongMetric {
+                        advance,
+                        side_bearing,
+                    }
+                })
+                .collect();
+
+            // If there's a run at the end with matching advances we can save some bytes
+            let num_lsb_only = if !long_v_metrics.is_empty() {
+                let last_advance = long_v_metrics.last().unwrap().advance;
+                let mut lsb_run = 0;
+                for metric in long_v_metrics.iter().rev() {
+                    if metric.advance != last_advance {
+                        break;
+                    }
+                    lsb_run += 1;
+                }
+
+                // Carve 1 less than the length of the run off so the last metric retained has the advance
+                // that repeats
+                lsb_run - 1
+            } else {
+                0
+            };
+
+            let lsbs = long_v_metrics
+                .split_off(long_v_metrics.len() - num_lsb_only)
+                .into_iter()
+                .map(|metric| metric.side_bearing)
+                .collect();
+
+            let vhea = Vhea {
+                ascender: FWord::new(default_metrics.vhea_ascender.into_inner().ot_round()),
+                descender: FWord::new(default_metrics.vhea_descender.into_inner().ot_round()),
+                line_gap: FWord::new(default_metrics.vhea_line_gap.into_inner().ot_round()),
+                advance_height_max: glyph_limits.advance_height_max.into(),
+                min_top_side_bearing: glyph_limits.min_top_side_bearing.unwrap_or_default().into(),
+                min_bottom_side_bearing: glyph_limits
+                    .min_bottom_side_bearing
+                    .unwrap_or_default()
+                    .into(),
+                y_max_extent: glyph_limits.y_max_extent.unwrap_or_default().into(),
+                caret_slope_rise: default_metrics
+                    .vhea_caret_slope_rise
+                    .into_inner()
+                    .ot_round(),
+                caret_slope_run: default_metrics.vhea_caret_slope_run.into_inner().ot_round(),
+                caret_offset: default_metrics.vhea_caret_offset.into_inner().ot_round(),
+                number_of_long_ver_metrics: long_v_metrics.len() as u16,
+            };
+            context.vhea.set(vhea);
+
+            // Send vmtx out into the world
+            let vmtx = Vmtx::new(long_v_metrics, lsbs);
+            let raw_vmtx = dump_table(&vmtx)
+                .map_err(|e| Error::DumpTableError {
+                    e,
+                    context: "vmtx".into(),
+                })?
+                .into();
+            context.vmtx.set(raw_vmtx);
+        }
 
         // Might as well do maxp while we're here
         let composite_limits = glyph_limits.update_composite_limits();
