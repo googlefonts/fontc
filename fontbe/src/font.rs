@@ -27,35 +27,37 @@ pub fn create_font_work() -> Box<BeWork> {
     Box::new(FontWork {})
 }
 
-enum TableType {
-    Static,
-    Variable,
+fn is_variable_only(workid: &WorkId) -> bool {
+    matches!(
+        workid,
+        WorkId::Avar | WorkId::Fvar | WorkId::Gvar | WorkId::Stat | WorkId::Hvar | WorkId::Mvar
+    )
 }
 
-const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
-    (WorkId::Avar, Avar::TAG, TableType::Variable),
-    (WorkId::Cmap, Cmap::TAG, TableType::Static),
-    (WorkId::Colr, Colr::TAG, TableType::Static),
-    (WorkId::Cpal, Cpal::TAG, TableType::Static),
-    (WorkId::Fvar, Fvar::TAG, TableType::Variable),
-    (WorkId::Head, Head::TAG, TableType::Static),
-    (WorkId::Hhea, Hhea::TAG, TableType::Static),
-    (WorkId::Hmtx, Hmtx::TAG, TableType::Static),
-    (WorkId::Gasp, Gasp::TAG, TableType::Static),
-    (WorkId::Glyf, Glyf::TAG, TableType::Static),
-    (WorkId::Gpos, Gpos::TAG, TableType::Static),
-    (WorkId::Gsub, Gsub::TAG, TableType::Static),
-    (WorkId::Gdef, Gdef::TAG, TableType::Static),
-    (WorkId::Gvar, Gvar::TAG, TableType::Variable),
-    (WorkId::Loca, Loca::TAG, TableType::Static),
-    (WorkId::Maxp, Maxp::TAG, TableType::Static),
-    (WorkId::Name, Name::TAG, TableType::Static),
-    (WorkId::Os2, Os2::TAG, TableType::Static),
-    (WorkId::Post, Post::TAG, TableType::Static),
-    (WorkId::Stat, Stat::TAG, TableType::Variable),
-    (WorkId::Hvar, Hvar::TAG, TableType::Variable),
-    (WorkId::Mvar, Mvar::TAG, TableType::Variable),
-    (WorkId::Meta, Meta::TAG, TableType::Static),
+const TABLES_TO_MERGE: &[(WorkId, Tag)] = &[
+    (WorkId::Avar, Avar::TAG),
+    (WorkId::Cmap, Cmap::TAG),
+    (WorkId::Colr, Colr::TAG),
+    (WorkId::Cpal, Cpal::TAG),
+    (WorkId::Fvar, Fvar::TAG),
+    (WorkId::Head, Head::TAG),
+    (WorkId::Hhea, Hhea::TAG),
+    (WorkId::Hmtx, Hmtx::TAG),
+    (WorkId::Gasp, Gasp::TAG),
+    (WorkId::Glyf, Glyf::TAG),
+    (WorkId::Gpos, Gpos::TAG),
+    (WorkId::Gsub, Gsub::TAG),
+    (WorkId::Gdef, Gdef::TAG),
+    (WorkId::Gvar, Gvar::TAG),
+    (WorkId::Loca, Loca::TAG),
+    (WorkId::Maxp, Maxp::TAG),
+    (WorkId::Name, Name::TAG),
+    (WorkId::Os2, Os2::TAG),
+    (WorkId::Post, Post::TAG),
+    (WorkId::Stat, Stat::TAG),
+    (WorkId::Hvar, Hvar::TAG),
+    (WorkId::Mvar, Mvar::TAG),
+    (WorkId::Meta, Meta::TAG),
 ];
 
 fn has(context: &Context, id: WorkId) -> bool {
@@ -165,7 +167,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
         assert!(
             !TABLES_TO_MERGE
                 .iter()
-                .any(|(_, tag, _)| *tag == Tag::new(b"BASE")),
+                .any(|(_, tag)| *tag == Tag::new(b"BASE")),
             "if manually generating BASE, handle possible BASE table in FEA"
         );
         if let Some(base) = context
@@ -184,17 +186,16 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
 
         // A fancier implementation would mmap the files. We basic.
         let is_static = context.ir.static_metadata.get().axes.is_empty();
-        for (work_id, tag, table_type) in TABLES_TO_MERGE {
-            if is_static && matches!(table_type, TableType::Variable) {
-                debug!("Skip {tag} because this is a static font");
-                continue;
-            }
+        for (work_id, tag) in TABLES_TO_MERGE {
             if !has(context, work_id.clone()) {
                 debug!("Skip {tag} because we don't have it");
                 continue;
             }
             debug!("Grabbing {tag} for final font");
             if let Some(bytes) = bytes_for(context, work_id.clone())? {
+                if is_variable_only(work_id) && is_static {
+                    log::warn!("We generated {tag} for a static font, which seems weird but okay");
+                }
                 builder.add_raw(*tag, bytes);
             } else {
                 debug!("No content for {tag}");
