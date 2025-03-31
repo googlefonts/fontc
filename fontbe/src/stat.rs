@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use log::trace;
 
-use fontdrasil::orchestration::{Access, Work};
-use fontir::orchestration::WorkId as FeWorkId;
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
+use fontir::{ir::StaticMetadata, orchestration::WorkId as FeWorkId};
 use write_fonts::{
     tables::stat::{AxisRecord, Stat},
     types::NameId,
@@ -29,7 +29,10 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Variant(AnyWorkId::Fe(FeWorkId::StaticMetadata))
+        AccessBuilder::new()
+            .variant(FeWorkId::StaticMetadata)
+            .variant(WorkId::ExtraFeaTables)
+            .build()
     }
 
     /// Generate [stat](https://learn.microsoft.com/en-us/typography/opentype/spec/stat)
@@ -38,35 +41,48 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
     /// Note that we support only a very simple STAT at time of writing.
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
+        let stat = match context
+            .extra_fea_tables
+            .try_get()
+            .and_then(|tables| tables.stat.clone())
+        {
+            Some(stat) => {
+                log::info!("Using STAT table from FEA");
+                stat
+            }
+            // Guard clause: don't produce fvar for a static font
+            None if static_metadata.axes.is_empty() => {
+                trace!("Skip stat; this is not a variable font");
+                return Ok(());
+            }
+            None => make_stat(&static_metadata),
+        };
 
-        // Guard clause: don't produce fvar for a static font
-        if static_metadata.axes.is_empty() {
-            trace!("Skip stat; this is not a variable font");
-            return Ok(());
-        }
-
-        let reverse_names: HashMap<_, _> = static_metadata
-            .names
-            .iter()
-            .map(|(key, name)| (name.as_str(), key.name_id))
-            .collect();
-
-        context.stat.set(Stat {
-            design_axes: static_metadata
-                .axes
-                .iter()
-                .enumerate()
-                .map(|(idx, a)| AxisRecord {
-                    axis_tag: a.tag,
-                    axis_name_id: *reverse_names.get(a.ui_label_name()).unwrap(),
-                    axis_ordering: idx as u16,
-                })
-                .collect::<Vec<_>>()
-                .into(),
-            elided_fallback_name_id: Some(NameId::SUBFAMILY_NAME),
-            ..Default::default()
-        });
-
+        context.stat.set(stat);
         Ok(())
+    }
+}
+
+fn make_stat(static_metadata: &StaticMetadata) -> Stat {
+    let reverse_names: HashMap<_, _> = static_metadata
+        .names
+        .iter()
+        .map(|(key, name)| (name.as_str(), key.name_id))
+        .collect();
+
+    Stat {
+        design_axes: static_metadata
+            .axes
+            .iter()
+            .enumerate()
+            .map(|(idx, a)| AxisRecord {
+                axis_tag: a.tag,
+                axis_name_id: *reverse_names.get(a.ui_label_name()).unwrap(),
+                axis_ordering: idx as u16,
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        elided_fallback_name_id: Some(NameId::SUBFAMILY_NAME),
+        ..Default::default()
     }
 }

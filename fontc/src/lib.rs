@@ -2864,6 +2864,48 @@ mod tests {
     }
 
     #[test]
+    fn use_stat_table_from_fea() {
+        let result = TestCompile::compile_source("CustomStatInFea.ufo");
+        let font = result.font();
+        let name = font.name().unwrap();
+
+        let names = name
+            .name_record()
+            .iter()
+            .map(|rec| (rec.name_id(), resolve_name(&name, rec.name_id()).unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                (NameId::FAMILY_NAME, "New Font".to_string()),
+                (NameId::SUBFAMILY_NAME, "Regular".to_string()),
+                (NameId::UNIQUE_ID, "0.000;NONE;NewFont-Regular".to_string()),
+                (NameId::FULL_NAME, "New Font Regular".to_string()),
+                (NameId::VERSION_STRING, "Version 0.000".to_string()),
+                (NameId::POSTSCRIPT_NAME, "NewFont-Regular".to_string()),
+                // these names come from STAT
+                (NameId::new(256), "Regular".to_string()),
+                (NameId::new(257), "Italic".to_string()),
+                (NameId::new(258), "Upright".to_string()),
+                (NameId::new(259), "Italic".to_string()),
+            ]
+        );
+
+        let stat = font.stat().unwrap();
+        let design_axes = stat.design_axes().unwrap();
+        assert_eq!(
+            design_axes
+                .iter()
+                .map(|axis| axis.axis_tag())
+                .collect::<Vec<_>>(),
+            [Tag::new(b"ital")]
+        );
+
+        let axis_values = stat.offset_to_axis_values().unwrap().unwrap();
+        assert_eq!(axis_values.axis_values().len(), 2);
+    }
+
+    #[test]
     fn generate_meta_table() {
         let result = TestCompile::compile_source("glyphs3/MetaTable.glyphs");
         let meta = result.be_context.meta.get();
