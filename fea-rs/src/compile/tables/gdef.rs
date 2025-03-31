@@ -17,13 +17,15 @@ use write_fonts::tables::{
         AttachList, AttachPoint, CaretValue as RawCaretValue, GlyphClassDef, LigCaretList,
         LigGlyph, MarkGlyphSets,
     },
-    layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
+    layout::{
+        builders::{CaretValueBuilder, CoverageTableBuilder},
+        ClassDef,
+    },
     variations::ivs_builder::RemapVariationIndices,
 };
 
 use super::{VariationIndexRemapping, VariationStoreBuilder};
 use crate::common::{GlyphClass, GlyphSet};
-use crate::compile::metrics::CaretValue;
 
 /// Data collected from a GDEF block.
 #[derive(Clone, Debug, Default)]
@@ -35,7 +37,7 @@ pub struct GdefBuilder {
     /// glyph classes for manually generated kern/markpos lookups
     pub glyph_classes_were_inferred: bool,
     pub attach: BTreeMap<GlyphId16, BTreeSet<u16>>,
-    pub ligature_pos: BTreeMap<GlyphId16, Vec<CaretValue>>,
+    pub ligature_pos: BTreeMap<GlyphId16, Vec<CaretValueBuilder>>,
     pub mark_attach_class: BTreeMap<GlyphId16, u16>,
     pub mark_glyph_sets: Vec<GlyphSet>,
     pub var_store: Option<VariationStoreBuilder>,
@@ -73,8 +75,7 @@ impl GdefBuilder {
             self.glyph_classes
                 .iter()
                 .map(|(gid, cls)| (*gid, *cls as u16))
-                .collect::<ClassDefBuilder>()
-                .build()
+                .collect()
         })
     }
 
@@ -127,8 +128,7 @@ impl GdefBuilder {
             self.mark_attach_class
                 .iter()
                 .map(|(a, b)| (*a, *b))
-                .collect::<ClassDefBuilder>()
-                .build()
+                .collect()
         })
     }
 

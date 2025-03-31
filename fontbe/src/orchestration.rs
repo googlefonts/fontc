@@ -1,7 +1,7 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     fmt::Display,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
@@ -10,11 +10,7 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{
-        CaretValue, Compilation, CursivePosBuilder, FeatureKey, MarkToBaseBuilder,
-        MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder, PendingLookup,
-        ValueRecord as ValueRecordBuilder,
-    },
+    compile::{Compilation, FeatureKey, PendingLookup},
     GlyphMap, GlyphSet, ParseTree,
 };
 use fontdrasil::{
@@ -36,7 +32,7 @@ use serde::{Deserialize, Serialize};
 
 use write_fonts::{
     dump_table,
-    read::{tables::gsub::Gsub as ReadGsub, FontRead},
+    read::{collections::IntSet, tables::gsub::Gsub as ReadGsub, FontRead},
     tables::{
         base::Base,
         cmap::Cmap,
@@ -46,12 +42,19 @@ use write_fonts::{
         gasp::Gasp,
         gdef::{Gdef, GlyphClassDef},
         glyf::Glyph as RawGlyph,
-        gpos::Gpos,
+        gpos::{
+            builders::{
+                CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder,
+                PairPosBuilder, ValueRecordBuilder,
+            },
+            Gpos,
+        },
         gsub::Gsub,
         gvar::{GlyphDelta, GlyphDeltas},
         head::Head,
         hhea::Hhea,
         hvar::Hvar,
+        layout::builders::CaretValueBuilder,
         loca::LocaFormat,
         maxp::Maxp,
         meta::Meta,
@@ -431,7 +434,7 @@ pub struct FeaRsMarks {
     pub(crate) abvm: MarkLookups,
     pub(crate) blwm: MarkLookups,
     pub(crate) curs: Vec<PendingLookup<CursivePosBuilder>>,
-    pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
+    pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValueBuilder>>,
 }
 
 impl Persistable for FeaRsMarks {
@@ -607,7 +610,7 @@ pub(crate) struct KernPair {
 
 impl KernSide {
     pub(crate) const fn empty() -> Self {
-        Self::Group(GlyphSet::EMPTY)
+        Self::Group(IntSet::empty())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -709,10 +712,10 @@ impl KernPair {
     }
 
     /// Returns true if this entry has no glyphs in common with the provided set
-    pub(crate) fn glyphs_are_disjoint(&self, glyphs: &HashSet<GlyphId16>) -> bool {
+    pub(crate) fn glyphs_are_disjoint(&self, glyphs: &IntSet<GlyphId16>) -> bool {
         self.first_glyphs()
             .chain(self.second_glyphs())
-            .all(|gid| !glyphs.contains(&gid))
+            .all(|gid| !glyphs.contains(gid))
     }
 
     /// a helper used when splitting kerns based on script direction

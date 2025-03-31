@@ -1,4 +1,4 @@
-use write_fonts::types::GlyphId16;
+use write_fonts::{read::collections::IntSet, types::GlyphId16};
 
 use super::GlyphOrClass;
 
@@ -28,12 +28,7 @@ pub(crate) struct GlyphClass(Vec<GlyphId16>);
 ///
 /// This type exists to clearly separate the use of 'glyph class' in the fea spec
 /// from how we use it when building tables that contain OpenType glyph ClassDefs.
-///
-/// In the former case, we want to be able to do things like compare for equality
-/// and stabily sort, so we ensure that these classes are sorted and deduped.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct GlyphSet(Vec<GlyphId16>);
+pub type GlyphSet = IntSet<GlyphId16>;
 
 impl GlyphClass {
     /// An empty glyph class
@@ -54,31 +49,6 @@ impl GlyphClass {
 
     pub(crate) fn len(&self) -> usize {
         self.0.len()
-    }
-}
-
-impl GlyphSet {
-    /// The empty glyph set
-    pub const EMPTY: Self = GlyphSet(Vec::new());
-
-    /// Iterate over the glyphs in this class
-    pub fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {
-        self.0.iter().copied()
-    }
-
-    /// Returns `true` if the glyph is in the set.
-    pub fn contains(&self, gid: GlyphId16) -> bool {
-        self.0.binary_search(&gid).is_ok()
-    }
-
-    /// The number of glyphs in the set
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Returns `true` if the set contains no glyphs
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
     }
 }
 
@@ -106,22 +76,7 @@ impl From<Vec<GlyphId16>> for GlyphClass {
 
 impl From<GlyphClass> for GlyphSet {
     fn from(value: GlyphClass) -> Self {
-        value.iter().collect::<Vec<_>>().into()
-    }
-}
-
-// our base constructor; all other logic goes through here
-impl From<Vec<GlyphId16>> for GlyphSet {
-    fn from(mut value: Vec<GlyphId16>) -> Self {
-        value.sort_unstable();
-        value.dedup();
-        Self(value)
-    }
-}
-
-impl std::iter::FromIterator<GlyphId16> for GlyphSet {
-    fn from_iter<T: IntoIterator<Item = GlyphId16>>(iter: T) -> Self {
-        iter.into_iter().collect::<Vec<_>>().into()
+        value.iter().collect()
     }
 }
 

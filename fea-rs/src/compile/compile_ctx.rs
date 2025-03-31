@@ -14,8 +14,16 @@ use write_fonts::{
     tables::{
         self,
         gdef::GlyphClassDef,
-        gpos::ValueFormat,
-        layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag},
+        gpos::{
+            builders::{
+                AnchorBuilder as Anchor, PreviouslyAssignedClass, ValueRecordBuilder as ValueRecord,
+            },
+            ValueFormat,
+        },
+        layout::{
+            builders::{CaretValueBuilder as CaretValue, DeviceOrDeltas, Metric},
+            ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag,
+        },
         variations::ivs_builder::{RemapVariationIndices, VariationStoreBuilder},
     },
     types::{F2Dot14, NameId, Tag},
@@ -40,10 +48,7 @@ use super::{
     },
     glyph_range,
     language_system::{DefaultLanguageSystems, LanguageSystem},
-    lookups::{
-        AllLookups, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass, SomeLookup,
-    },
-    metrics::{Anchor, CaretValue, DeviceOrDeltas, Metric, ValueRecord},
+    lookups::{AllLookups, FilterSetId, LookupFlagInfo, LookupId, SomeLookup},
     output::Compilation,
     tables::{GlyphClassDefExt, ScriptRecord, Tables},
     tags, VariationInfo,
@@ -851,14 +856,16 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
         let first_ids = self.resolve_glyph_or_class(&node.first_item());
         let second_ids = self.resolve_glyph_or_class(&node.second_item());
-        let first_value = self
-            .resolve_value_record_raw(&node.first_value())
-            .for_pair_pos(in_vert_feature);
-        let second_value = node
-            .second_value()
-            .map(|val| self.resolve_value_record_raw(&val))
-            .unwrap_or_default()
-            .for_pair_pos(in_vert_feature);
+        let first_value = for_pair_pos(
+            self.resolve_value_record_raw(&node.first_value()),
+            in_vert_feature,
+        );
+        let second_value = for_pair_pos(
+            node.second_value()
+                .map(|val| self.resolve_value_record_raw(&val))
+                .unwrap_or_default(),
+            in_vert_feature,
+        );
 
         let lookup = self.ensure_current_lookup_type(Kind::GposType2);
 
@@ -919,7 +926,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                             .as_ref()
                             .expect("no null anchors in mark-to-base (check validation)");
                         for glyph in glyphs.iter() {
-                            subtable.insert_mark(glyph, class_name.clone(), anchor.clone())?;
+                            subtable.insert_mark(glyph, &class_name, anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {
@@ -971,7 +978,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 // doesn't think we're borrowing all of self
                 //TODO: we do validation here because our validation pass isn't smart
                 //enough. We need to not just validate a rule, but every rule in a lookup.
-                anchor_records.insert(class_name.clone(), component_anchor);
+                anchor_records.insert(class_name.to_string(), component_anchor);
                 let maybe_err = self
                     .lookups
                     .current_mut()
@@ -982,7 +989,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                                 .as_ref()
                                 .expect("no null anchors on marks (check validation)");
                             for glyph in glyphs.iter() {
-                                subtable.insert_mark(glyph, class_name.clone(), anchor.clone())?;
+                                subtable.insert_mark(glyph, class_name, anchor.clone())?;
                             }
                         }
                         Ok(())
@@ -997,7 +1004,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .unwrap()
             .with_gpos_type_5(|subtable| {
                 for base in base_ids.iter() {
-                    subtable.add_ligature_components(base, components.clone());
+                    subtable.add_ligature_components_directly(base, components.clone());
                 }
             })
     }
@@ -1026,7 +1033,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                             .as_ref()
                             .expect("no null anchors in mark-to-mark (check validation)");
                         for glyph in glyphs.iter() {
-                            subtable.insert_mark1(glyph, class_name.clone(), anchor.clone())?;
+                            subtable.insert_mark1(glyph, class_name, anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {
@@ -2229,6 +2236,24 @@ fn get_reasonable_length_span(node: &NodeOrToken) -> Range<usize> {
             range.start..end
         }
     }
+}
+
+/// Modify this value record for the special requirements of pairpos lookups
+///
+/// In pair pos tables, if a value record is all zeros (but not null) then
+/// we interpret it as a having a single zero advance in the x/y direction,
+/// depending on context.
+fn for_pair_pos(record: ValueRecord, in_vert_feature: bool) -> ValueRecord {
+    if !record.is_all_zeros() {
+        return record.clear_zeros();
+    }
+    let mut out = record.clear_zeros();
+    if in_vert_feature {
+        out.y_advance = Some(0.into());
+    } else {
+        out.x_advance = Some(0.into());
+    }
+    out
 }
 
 #[cfg(test)]
