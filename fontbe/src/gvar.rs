@@ -52,6 +52,10 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
         // We built the gvar fragments alongside glyphs, now we need to glue them together into a gvar table
         let static_metadata = context.ir.static_metadata.get();
         let axis_order: Vec<_> = static_metadata.axes.iter().map(|a| a.tag).collect();
+        if axis_order.is_empty() {
+            log::debug!("skipping gvar, font has no axes");
+            return Ok(());
+        }
         let axis_count: u16 = axis_order
             .len()
             .try_into()

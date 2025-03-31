@@ -177,6 +177,10 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
     /// Generate [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
+        if static_metadata.axes.is_empty() {
+            log::debug!("skipping HVAR, font has no axes");
+            return Ok(());
+        }
         let var_model = &static_metadata.variation_model;
         let glyph_order = context.ir.glyph_order.get();
         let axis_count = var_model.axes().count().try_into().unwrap();
