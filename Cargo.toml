@@ -53,3 +53,6 @@ members = [
     "otl-normalizer",
     "fontc_crater",
 ]
+
+[patch.crates-io]
+tidy-sys = { version = "0.8.2", git = "https://github.com/cmyr/tidy-sys.git", branch = "cmake-hotfix" }
