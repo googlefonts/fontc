@@ -394,12 +394,26 @@ def stat_like_fontmake(ttx):
 
 
 # https://github.com/googlefonts/fontc/issues/1107
-def normalize_glyf_contours(ttx):
+def normalize_glyf_contours(ttx: etree.ElementTree) -> dict[str, list[int]]:
+    # store new order of prior point indices for each glyph
+    point_orders: dict[str, list[int]] = {}
+
     for glyph in ttx.xpath("//glyf/TTGlyph"):
         contours = glyph.xpath("./contour")
         if len(contours) < 2:
             continue
-        normalized = sorted(contours, key=to_xml_string)
+
+        # annotate each contour with the range of point indices it covers
+        with_range: list[tuple[range, etree.ElementTree]] = []
+        points_seen = 0
+        for contour in contours:
+            points_here = len(contour.xpath("./pt"))
+            with_range.append((range(points_seen, points_seen + points_here), contour))
+            points_seen += points_here
+        annotated = sorted(with_range, key=lambda a: to_xml_string(a[1]))
+
+        # sort by string representation, and skip if nothing has changed
+        normalized = [contour for _, contour in annotated]
         if normalized == contours:
             continue
         # normalized contours should be inserted before any other TTGlyph's
@@ -410,6 +424,45 @@ def normalize_glyf_contours(ttx):
         for el in non_contours:
             glyph.remove(el)
         glyph.extend(normalized + non_contours)
+
+        # store new indices order
+        name = glyph.attrib["name"]
+        point_orders[name] = [idx for indices, _ in annotated for idx in indices]
+
+    return point_orders
+
+
+def normalize_gvar_contours(ttx: etree.ElementTree, point_orders: dict[str, list[int]]):
+    """Reorder gvar points to match normalised glyf order."""
+
+    for glyph in ttx.xpath("//gvar/glyphVariations"):
+        name = glyph.attrib["glyph"]
+        order = point_orders.get(name)
+
+        # skip glyph if glyf normalisation did not change its point order
+        if order is None:
+            continue
+
+        # apply the same order to every tuple
+        for tup in glyph.xpath("./tuple"):
+            deltas = tup.xpath("./delta")
+            by_order = {int(delta.attrib["pt"]): delta for delta in deltas}
+
+            # reorder and change index to match new position
+            reordered = []
+            for new_idx, old_idx in enumerate(order):
+                delta = by_order[old_idx]  # always present as gvars are densified
+                delta.attrib["pt"] = str(new_idx)
+                reordered.append(delta)
+
+            # normalized points should be inserted after any other tuple
+            # subelements (e.g. coordinates)
+            for delta in deltas:
+                tup.remove(delta)
+            non_deltas = list(tup)
+            for el in non_deltas:
+                tup.remove(el)
+            tup.extend(non_deltas + reordered)
 
 
 # https://github.com/googlefonts/fontc/issues/1173
@@ -722,7 +775,8 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         stat_like_fontmake(ttx)
         remove_mark_and_kern_lookups(ttx)
 
-        normalize_glyf_contours(ttx)
+        point_orders = normalize_glyf_contours(ttx)
+        normalize_gvar_contours(ttx, point_orders)
 
         erase_type_from_stranded_points(ttx)
         remove_gdef_lig_caret_and_var_store(ttx)
