@@ -49,6 +49,9 @@ from cdifflib import CSequenceMatcher as SequenceMatcher
 from typing import Any, Dict, Optional, Sequence, Tuple
 from glyphsLib import GSFont
 from fontTools.designspaceLib import DesignSpaceDocument
+from fontTools.varLib.iup import iup_delta
+from fontTools.ttLib import TTFont
+from fontTools.misc.fixedTools import otRound
 import time
 
 
@@ -641,6 +644,64 @@ def reorder_contextual_class_based_rules(ttx: etree.ElementTree, tag: str):
                     remap_values(class_rule, lookahead_class_order, "LookAhead")
 
 
+def fill_in_gvar_deltas(
+    fontc: etree.ElementTree,
+    fontc_ttf: Path,
+    fontmake: etree.ElementTree,
+    fontmake_ttf: Path,
+):
+    fontc_font = TTFont(fontc_ttf)
+    fontmake_font = TTFont(fontmake_ttf)
+    densify_gvar(fontc_font, fontc)
+    densify_gvar(fontmake_font, fontmake)
+
+
+def densify_gvar(font: TTFont, ttx: etree.ElementTree):
+    gvar = ttx.find("gvar")
+    if gvar is None:
+        return
+    glyf = font["glyf"]
+    hMetrics = font["hmtx"].metrics
+    vMetrics = getattr(font.get("vmtx"), "metrics", None)
+
+    total_deltas_filled = 0
+    for variations in gvar.xpath(".//glyphVariations"):
+        coords, g = glyf._getCoordinatesAndControls(
+            variations.attrib["glyph"], hMetrics, vMetrics
+        )
+        total_deltas_filled += int(densify_one_glyph(coords, g.endPts, variations))
+
+    if total_deltas_filled > 0:
+        eprint(f"densified {total_deltas_filled} glyphVariations")
+
+
+def densify_one_glyph(coords, ends, variations: etree.ElementTree):
+    did_work = False
+    for tuple_ in variations.findall("tuple"):
+        deltas = [None] * len(coords)
+        for delta in tuple_.findall("delta"):
+            idx = int(delta.attrib["pt"])
+            deltas[idx] = (int(delta.attrib["x"]), int(delta.attrib["y"]))
+
+        if any(d is None for d in deltas):
+            did_work = True
+            filled_deltas = iup_delta(deltas, coords, ends)
+            for delta in tuple_.findall("delta"):
+                tuple_.remove(delta)
+
+            new_deltas = [
+                {"pt": str(i), "x": str(otRound(x)), "y": str(otRound(y))}
+                for (i, (x, y)) in enumerate(filled_deltas)
+            ]
+            for attrs in new_deltas:
+                new_delta = etree.Element("delta", attrs)
+                tuple_.append(new_delta)
+
+            etree.indent(tuple_, level=3)
+
+    return did_work
+
+
 def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
     sort_fontmake_feature_lookups(fontmake)
     reorder_contextual_class_based_rules(fontc, "GSUB")
@@ -722,6 +783,7 @@ def generate_output(
 
     fontc = etree.parse(fontc_ttx)
     fontmake = etree.parse(fontmake_ttx)
+    fill_in_gvar_deltas(fontc, fontc_ttf, fontmake, fontmake_ttf)
     reduce_diff_noise(fontc, fontmake)
 
     fontc = extract_comparables(fontc, build_dir, "fontc")
