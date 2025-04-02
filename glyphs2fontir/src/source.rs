@@ -509,7 +509,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
         for master in font.masters.iter() {
             let pos = font_info.locations.get(&master.axes_values).unwrap();
 
-            // glyphsLib <https://github.com/googlefonts/glyphsLib/blob/1cb4fc5ae2cf385df95d2b7768e7ab4eb60a5ac3/Lib/glyphsLib/classes.py#L1590-L1601>
+            // glyphsLib <https://github.com/googlefonts/glyphsLib/blob/1cb4fc5ae2/Lib/glyphsLib/classes.py#L1590-L1601>
             let cap_height = master.cap_height().unwrap_or(700.0);
             let x_height = master.x_height().unwrap_or(500.0);
             let ascender = master.ascender().unwrap_or(800.0);

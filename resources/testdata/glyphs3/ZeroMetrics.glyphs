@@ -1,0 +1,56 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+familyName = "New Font";
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+over = 12;
+pos = 789;
+},
+{
+over = 16;
+},
+{
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

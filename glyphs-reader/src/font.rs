@@ -1052,8 +1052,7 @@ impl FontMaster {
     fn read_metric(&self, metric_name: &str) -> Option<f64> {
         self.metric_values
             .get(metric_name)
-            .and_then(|metric| metric.pos)
-            .map(|x| x.into_inner())
+            .map(|metric| metric.pos.unwrap_or_default().into_inner())
     }
 
     pub fn ascender(&self) -> Option<f64> {
@@ -4046,5 +4045,16 @@ mod tests {
                     .map(|s| s.as_str()),
             ]
         );
+    }
+
+    #[test]
+    fn zero_value_metrics() {
+        let font = Font::load(&glyphs3_dir().join("ZeroMetrics.glyphs")).unwrap();
+        let master = font.default_master();
+        assert_eq!(master.ascender(), Some(789.));
+        // this has no value set, but has overshoot set, so this should be a 0
+        assert_eq!(master.cap_height(), Some(0.));
+        // this has neither value nor overshoot, so it should be ignored
+        assert_eq!(master.x_height(), None);
     }
 }
