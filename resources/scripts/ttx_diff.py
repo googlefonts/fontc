@@ -487,6 +487,17 @@ def normalize_gvar_contours(ttx: etree.ElementTree, point_orders: dict[str, list
             tup.extend(non_deltas + reordered)
 
 
+def normalize_null_tags(ttx: etree.ElementTree, xpath: str, attr):
+    """replace the tag 'NONE' with the tag '    '"""
+    for el in ttx.xpath(xpath):
+        if attr:
+            if el.attrib.get(attr, "") == "NONE":
+                el.attrib[attr] = "    "
+        else:
+            if el.text == "NONE":
+                el.text = "    "
+
+
 # https://github.com/googlefonts/fontc/issues/1173
 def erase_type_from_stranded_points(ttx):
     for contour in ttx.xpath("//glyf/TTGlyph/contour"):
@@ -787,6 +798,7 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         name_id_to_name(ttx, "//AxisNameID", "value")
         name_id_to_name(ttx, "//UINameID", "value")
         name_id_to_name(ttx, "//AxisNameID", None)
+        normalize_null_tags(ttx, "//OS_2/achVendID", "value")
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
         drop_weird_names(ttx)
