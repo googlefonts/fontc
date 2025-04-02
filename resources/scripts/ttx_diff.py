@@ -446,14 +446,15 @@ def normalize_gvar_contours(ttx: etree.ElementTree, point_orders: dict[str, list
         # apply the same order to every tuple
         for tup in glyph.xpath("./tuple"):
             deltas = tup.xpath("./delta")
-            by_order = {int(delta.attrib["pt"]): delta for delta in deltas}
+            assert len(order) + 4 == len(deltas), "gvar is not dense"
 
             # reorder and change index to match new position
             reordered = []
             for new_idx, old_idx in enumerate(order):
-                delta = by_order[old_idx]  # always present as gvars are densified
+                delta = deltas[old_idx]  # always present as gvars are densified
                 delta.attrib["pt"] = str(new_idx)
                 reordered.append(delta)
+            reordered += deltas[-4:]  # phantom points
 
             # normalized points should be inserted after any other tuple
             # subelements (e.g. coordinates)
