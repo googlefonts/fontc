@@ -44,6 +44,7 @@ import shutil
 import subprocess
 import sys
 import os
+import re
 from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -325,13 +326,17 @@ def copy(old, new):
     return new
 
 
-def name_id_to_name(ttx, xpath, attr):
-    id_to_name = {
-        el.attrib["nameID"]: el.text.strip()
+def get_name_to_id_map(ttx: etree.ElementTree):
+    return {
+        el.attrib["nameID"]: el.text
         for el in ttx.xpath(
             "//name/namerecord[@platformID='3' and @platEncID='1' and @langID='0x409']"
         )
     }
+
+
+def name_id_to_name(ttx, xpath, attr):
+    id_to_name = get_name_to_id_map(ttx)
     for el in ttx.xpath(xpath):
         if attr is None:
             if el.text is None:
@@ -340,7 +345,7 @@ def name_id_to_name(ttx, xpath, attr):
             # names <= 255 have specific assigned slots, names > 255 not
             if name_id <= 255:
                 continue
-            el.text = id_to_name[el.text]
+            el.text = id_to_name[el.text].strip()
         else:
             if attr not in el.attrib:
                 continue
@@ -348,7 +353,23 @@ def name_id_to_name(ttx, xpath, attr):
             name_id = int(el.attrib[attr])
             if name_id <= 255:
                 continue
-            el.attrib[attr] = id_to_name[el.attrib[attr]]
+            el.attrib[attr] = id_to_name[el.attrib[attr]].strip()
+
+
+def normalize_name_ids(fontc: etree.ElementTree, fontmake: etree.ElementTree):
+    name = fontc.find("name")
+    fontmake_map = get_name_to_id_map(fontmake)
+    fontc_map = get_name_to_id_map(fontc)
+    # only normalize if we have the same length and the same strings
+    if (
+        name is None
+        or len(fontmake_map) != len(fontc_map)
+        or set(fontmake_map.values()) != set(fontc_map.values())
+    ):
+        return
+
+    for record in name.xpath(".//namerecord"):
+        record.text = fontmake_map.get(record.attrib["nameID"], record.text)
 
 
 def find_table(ttx, tag):
@@ -783,6 +804,9 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         remove_gdef_lig_caret_and_var_store(ttx)
         sort_gdef_mark_filter_sets(ttx)
 
+    # sort names within the name table (do this at the end, so ids are correct
+    # for earlier steps)
+    normalize_name_ids(fontc, fontmake)
     allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
     allow_some_off_by_ones(
         fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
