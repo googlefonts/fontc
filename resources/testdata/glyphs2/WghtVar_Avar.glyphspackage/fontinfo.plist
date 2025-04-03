@@ -34,6 +34,7 @@ fontMaster = (
 ascender = 800;
 capHeight = 700;
 descender = -200;
+baseline = 0;
 id = "A7771C0D-4005-44AE-9B1F-ED6CCEC719DA";
 weight = Light;
 weightValue = 300;

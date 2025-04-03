@@ -794,7 +794,7 @@ pub struct AxisMapping {
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
 struct RawMetric {
     // So named to let FromPlist populate it from a field called "type"
-    type_: Option<String>,
+    type_: String,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
@@ -1043,7 +1043,7 @@ pub struct FontMaster {
     pub id: String,
     pub name: String,
     pub axes_values: Vec<OrderedFloat<f64>>,
-    metric_values: BTreeMap<String, RawMetricValue>,
+    metric_values: BTreeMap<String, MetricValue>,
     pub number_values: BTreeMap<SmolStr, OrderedFloat<f64>>,
     pub custom_parameters: CustomParameters,
 }
@@ -1052,7 +1052,7 @@ impl FontMaster {
     fn read_metric(&self, metric_name: &str) -> Option<f64> {
         self.metric_values
             .get(metric_name)
-            .map(|metric| metric.pos.unwrap_or_default().into_inner())
+            .map(|metric| metric.pos.into_inner())
     }
 
     pub fn ascender(&self) -> Option<f64> {
@@ -1120,14 +1120,23 @@ struct RawFontMaster {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
-pub struct RawMetricValue {
+struct RawMetricValue {
     pos: Option<OrderedFloat<f64>>,
     over: Option<OrderedFloat<f64>>,
 }
 
-impl RawMetricValue {
-    fn is_empty(&self) -> bool {
-        self.pos.is_none() && self.over.is_none()
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MetricValue {
+    pos: OrderedFloat<f64>,
+    over: OrderedFloat<f64>,
+}
+
+impl From<RawMetricValue> for MetricValue {
+    fn from(src: RawMetricValue) -> MetricValue {
+        MetricValue {
+            pos: src.pos.unwrap_or_default(),
+            over: src.over.unwrap_or_default(),
+        }
     }
 }
 
@@ -1537,7 +1546,35 @@ impl RawFont {
         self.metrics = V3_METRIC_NAMES
             .iter()
             .map(|n| RawMetric {
-                type_: Some(n.to_string()),
+                type_: n.to_string(),
+            })
+            .collect();
+
+        let mut used_metrics = [false; 6];
+        // first which metric occurs in any master:
+        for m in &self.font_master {
+            for (i, val) in [
+                m.ascender,
+                m.baseline,
+                m.descender,
+                m.cap_height,
+                m.x_height,
+                m.italic_angle,
+            ]
+            .iter()
+            .enumerate()
+            {
+                used_metrics[i] |= val.is_some();
+            }
+        }
+
+        // add only used metrics to the metric list
+        self.metrics = V3_METRIC_NAMES
+            .into_iter()
+            .zip(used_metrics)
+            .filter(|(_, used)| *used)
+            .map(|(name, _)| RawMetric {
+                type_: name.to_string(),
             })
             .collect();
 
@@ -1545,22 +1582,22 @@ impl RawFont {
 
         // in each font master setup the parallel array
         for (i, master) in self.font_master.iter_mut().enumerate() {
-            // Copy the v2 metrics from actual fields into the parallel array rig
-            // the order matters :(
-            let mut metric_values: Vec<_> = [
-                master.ascender,
-                master.baseline,
-                master.descender,
-                master.cap_height,
-                master.x_height,
-                master.italic_angle,
-            ]
-            .into_iter()
-            .map(|pos| RawMetricValue {
-                pos: pos.filter(|x| *x != 0.),
-                over: None,
-            })
-            .collect();
+            // each master has to have an entry for each defined metric,
+            // even if it is 'None', and they need to be in the same order
+            // as in the self.metrics list.
+            let mut metric_values = vec![RawMetricValue::default(); self.metrics.len()];
+            for (metric_idx, name) in self.metrics.iter().enumerate() {
+                let value = match name.type_.as_ref() {
+                    "ascender" => master.ascender,
+                    "baseline" => master.baseline,
+                    "descender" => master.descender,
+                    "cap height" => master.cap_height,
+                    "x-height" => master.x_height,
+                    "italic angle" => master.italic_angle,
+                    _ => unreachable!("only these values exist in V3_METRIC_NAMES"),
+                };
+                metric_values[metric_idx].pos = value;
+            }
 
             // "alignmentZones is now a set of over (overshoot) properties attached to metrics"
             for alignment_zone in &master.alignment_zones {
@@ -1578,7 +1615,14 @@ impl RawFont {
                 // we know where that is in our vec (and it has pos: None, set
                 // above)
                 if pos == 0. {
-                    metric_values[1].over = Some(over);
+                    if let Some((idx, _)) = self
+                        .metrics
+                        .iter()
+                        .enumerate()
+                        .find(|(_, name)| name.type_ == "baseline")
+                    {
+                        metric_values[idx].over = Some(over);
+                    }
                     continue;
                 }
 
@@ -1604,7 +1648,7 @@ impl RawFont {
                 let next_zone = new_metrics.len() + 1;
                 let idx = self.metrics.len();
                 self.metrics.push(RawMetric {
-                    type_: Some(format!("zone {next_zone}")),
+                    type_: format!("zone {next_zone}"),
                 });
                 new_metrics.insert(pos, idx);
             }
@@ -2628,7 +2672,7 @@ impl TryFrom<RawFont> for Font {
             .metrics
             .into_iter()
             .enumerate()
-            .filter_map(|(idx, metric)| metric.type_.map(|name| (idx, name)))
+            .map(|(idx, metric)| (idx, metric.type_))
             .collect();
 
         let masters = from
@@ -2647,12 +2691,11 @@ impl TryFrom<RawFont> for Font {
                         .filter_map(|(idx, value)| {
                             metric_names.get(&idx).map(|name| (name.clone(), value))
                         })
-                        .filter(|(_, metric)| !metric.is_empty())
                         .fold(BTreeMap::new(), |mut acc, (name, value)| {
                             // only insert a metric if one with the same name hasn't been added
                             // yet; matches glyphsLib's behavior where the first duplicate wins
                             // https://github.com/googlefonts/fontc/issues/1269
-                            acc.entry(name).or_insert(value);
+                            acc.entry(name).or_insert(value.into());
                             acc
                         }),
                     number_values: from
@@ -3717,10 +3760,10 @@ mod tests {
 
     // a little helper used in tests below
     impl FontMaster {
-        fn get_metric(&self, name: &str) -> Option<(Option<f64>, Option<f64>)> {
+        fn get_metric(&self, name: &str) -> Option<(f64, f64)> {
             self.metric_values
                 .get(name)
-                .map(|raw| (raw.pos.map(|x| x.0), raw.over.map(|x| x.0)))
+                .map(|raw| (raw.pos.0, raw.over.0))
         }
     }
 
@@ -3729,17 +3772,11 @@ mod tests {
         let font = Font::load(&glyphs2_dir().join("alignment_zones_v2.glyphs")).unwrap();
         let master = font.default_master();
 
-        assert_eq!(master.get_metric("ascender"), Some((Some(800.), Some(17.))));
-        assert_eq!(
-            master.get_metric("cap height"),
-            Some((Some(700.), Some(16.)))
-        );
-        assert_eq!(master.get_metric("baseline"), Some((None, Some(-16.))));
-        assert_eq!(
-            master.get_metric("descender"),
-            Some((Some(-200.), Some(-17.)))
-        );
-        assert_eq!(master.get_metric("x-height"), Some((Some(500.), Some(15.))));
+        assert_eq!(master.get_metric("ascender"), Some((800., 17.)));
+        assert_eq!(master.get_metric("cap height"), Some((700., 16.)));
+        assert_eq!(master.get_metric("baseline"), Some((0., -16.)));
+        assert_eq!(master.get_metric("descender"), Some((-200., -17.)));
+        assert_eq!(master.get_metric("x-height"), Some((500., 15.)));
         assert_eq!(master.get_metric("italic angle"), None);
     }
 
@@ -3753,15 +3790,15 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("WghtVar_OS2.glyphs")).unwrap();
         let master = font.default_master();
 
-        assert_eq!(master.get_metric("x-height"), Some((Some(501.), None)));
+        assert_eq!(master.get_metric("x-height"), Some((501., 0.)));
     }
 
     #[test]
     fn v2_preserve_custom_alignment_zones() {
         let font = Font::load(&glyphs2_dir().join("alignment_zones_v2.glyphs")).unwrap();
         let master = font.default_master();
-        assert_eq!(master.get_metric("zone 1"), Some((Some(1000.), Some(20.))));
-        assert_eq!(master.get_metric("zone 2"), Some((Some(-100.), Some(-15.))));
+        assert_eq!(master.get_metric("zone 1"), Some((1000., 20.)));
+        assert_eq!(master.get_metric("zone 2"), Some((-100., -15.)));
     }
 
     // If category is unknown, we should ignore and compute it
@@ -4054,7 +4091,10 @@ mod tests {
         assert_eq!(master.ascender(), Some(789.));
         // this has no value set, but has overshoot set, so this should be a 0
         assert_eq!(master.cap_height(), Some(0.));
-        // this has neither value nor overshoot, so it should be ignored
-        assert_eq!(master.x_height(), None);
+        // this has neither value nor overshoot, but since the metric is defined,
+        // it's still here and still zero
+        assert_eq!(master.x_height(), Some(0.));
+        // but this metric is not defined in the font, so it it's `None`
+        assert_eq!(master.italic_angle(), None);
     }
 }

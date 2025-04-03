@@ -22,8 +22,6 @@ over = -16;
 over = -16;
 pos = -200;
 },
-{
-}
 );
 name = Regular;
 }
@@ -46,9 +44,6 @@ type = baseline;
 {
 type = descender;
 },
-{
-type = "italic angle";
-}
 );
 unitsPerEm = 1000;
 versionMajor = 1;

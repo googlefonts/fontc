@@ -15,6 +15,7 @@ alignmentZones = (
 ascender = 800;
 capHeight = 700;
 descender = -200;
+baseline = 0;
 id = "CEAF8881-3B30-4737-AC29-09BAEF72AFFD";
 xHeight = 500;
 }

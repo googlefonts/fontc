@@ -14,12 +14,8 @@ Tag = wght;
 familyName = InfWght;
 fontMaster = (
 {
-ascender = 0;
-capHeight = 0;
-descender = 0;
 id = m01;
 weightValue = 400;
-xHeight = 0;
 }
 );
 unitsPerEm = 1000;

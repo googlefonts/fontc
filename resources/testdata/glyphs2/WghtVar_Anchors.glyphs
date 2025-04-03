@@ -21,6 +21,7 @@ alignmentZones = (
 );
 ascender = 800;
 capHeight = 0;
+baseline = 0;
 descender = -200;
 id = m01;
 weightValue = 400;
