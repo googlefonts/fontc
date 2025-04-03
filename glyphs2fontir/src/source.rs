@@ -158,9 +158,7 @@ fn try_name_id(name: &str) -> Option<NameId> {
         "WWSFamilyName" => Some(NameId::WWS_FAMILY_NAME),
         "preferredFamilyNames" => Some(NameId::TYPOGRAPHIC_FAMILY_NAME),
         "preferredSubfamilyNames" => Some(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
-        // python skips this currently:
-        // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f/Lib/glyphsLib/builder/custom_params.py#L405
-        //"variationsPostScriptNamePrefix" => Some(NameId::VARIATIONS_POSTSCRIPT_NAME_PREFIX),
+        "variationsPostScriptNamePrefix" => Some(NameId::VARIATIONS_POSTSCRIPT_NAME_PREFIX),
         "vendorID" => None, // handled separately
         _ => {
             warn!("Unknown 'name' entry {name}");
@@ -1592,6 +1590,10 @@ mod tests {
                 (
                     NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
                     "Pref Regular".to_string(),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::VARIATIONS_POSTSCRIPT_NAME_PREFIX),
+                    "Name 25?!".to_string(),
                 ),
             ],
         );
