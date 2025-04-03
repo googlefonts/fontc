@@ -172,7 +172,7 @@ impl SourceResolver for FileSystemResolver {
 
 impl FileId {
     /// A reserved FileId used during parsing.
-    pub(crate) const CURRENT_FILE: FileId = FileId(unsafe { NonZeroU32::new_unchecked(1) });
+    pub(crate) const CURRENT_FILE: FileId = FileId(NonZeroU32::new(1).unwrap());
 
     pub(crate) fn next() -> FileId {
         use std::sync::atomic;
