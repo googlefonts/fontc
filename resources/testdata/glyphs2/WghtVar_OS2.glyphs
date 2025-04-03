@@ -57,6 +57,7 @@ alignmentZones = (
 );
 ascender = 737;
 capHeight = 702;
+baseline = 0;
 customParameters = (
 {
 name = typoAscender;

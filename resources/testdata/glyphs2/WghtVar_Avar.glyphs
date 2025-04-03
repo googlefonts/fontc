@@ -46,6 +46,7 @@ alignmentZones = (
 "{-42, -16}"
 );
 ascender = 737;
+baseline = 0;
 capHeight = 702;
 descender = -42;
 id = m01;

@@ -20,6 +20,7 @@ alignmentZones = (
 "{-200, -16}"
 );
 ascender = 800;
+baseline = 0;
 capHeight = 0;
 descender = -200;
 id = m01;

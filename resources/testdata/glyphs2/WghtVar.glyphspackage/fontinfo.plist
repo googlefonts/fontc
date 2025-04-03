@@ -54,6 +54,7 @@ xHeight = 501;
 {
 ascender = 800;
 capHeight = 700;
+baseline = 0;
 descender = -200;
 id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
 weight = Bold;

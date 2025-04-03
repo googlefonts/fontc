@@ -38,6 +38,7 @@ alignmentZones = (
 );
 ascender = 737;
 capHeight = 702;
+baseline = 0;
 descender = -42;
 id = m01;
 weightValue = 400;
