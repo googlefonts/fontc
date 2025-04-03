@@ -756,6 +756,8 @@ def densify_one_glyph(coords, ends, variations: etree.ElementTree):
         deltas = [None] * len(coords)
         for delta in tuple_.findall("delta"):
             idx = int(delta.attrib["pt"])
+            if idx >= len(deltas):
+                continue
             deltas[idx] = (int(delta.attrib["x"]), int(delta.attrib["y"]))
 
         if any(d is None for d in deltas):
