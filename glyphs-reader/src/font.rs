@@ -1741,30 +1741,36 @@ impl RawFont {
             "manufacturerURL",
         ));
 
-        let mut v2_to_v3_param = |v2_name: &str, v3_name: &str| {
+        // glyphsLib tries both long and short names, with short names taking precedence
+        //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f456d64ebe9993818770e170454/Lib/glyphsLib/builder/custom_params.py#L258
+        let mut v2_to_v3_param = |v2_names: &[&str], v3_name: &str| {
             if properties.iter().any(|n| n.key == v3_name && !n.is_empty()) {
                 return;
             }
-            properties.extend(v2_to_v3_name(
-                self.custom_parameters.string(v2_name),
-                v3_name,
-            ));
+            for v2_name in v2_names {
+                if let Some(value) = v2_to_v3_name(self.custom_parameters.string(v2_name), v3_name)
+                {
+                    properties.push(value);
+                    return;
+                }
+            }
         };
-        v2_to_v3_param("description", "descriptions");
-        v2_to_v3_param("licenseURL", "licenseURL");
-        v2_to_v3_param("versionString", "versionString");
-        v2_to_v3_param("compatibleFullName", "compatibleFullNames");
-        v2_to_v3_param("license", "licenses");
-        v2_to_v3_param("uniqueID", "uniqueID");
-        v2_to_v3_param("trademark", "trademarks");
-        v2_to_v3_param("sampleText", "sampleTexts");
-        v2_to_v3_param("postscriptFullName", "postscriptFullName");
-        v2_to_v3_param("postscriptFontName", "postscriptFontName");
-        v2_to_v3_param("WWSFamilyName", "WWSFamilyName");
-        // glyphsLib tries both long and short names, with short names taking precedence
-        //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f456d64ebe9993818770e170454/Lib/glyphsLib/builder/custom_params.py#L258
-        v2_to_v3_param("vendorID", "vendorID");
-        v2_to_v3_param("openTypeOS2VendorID", "vendorID");
+
+        v2_to_v3_param(&["description", "openTypeNameDescription"], "descriptions");
+        v2_to_v3_param(&["licenseURL", "openTypeNameLicenseURL"], "licenseURL");
+        v2_to_v3_param(&["versionString", "openTypeNameVersion"], "versionString");
+        v2_to_v3_param(&["compatibleFullName"], "compatibleFullNames");
+        v2_to_v3_param(&["license", "openTypeNameLicense"], "licenses");
+        v2_to_v3_param(&["uniqueID", "openTypeNameUniqueID"], "uniqueID");
+        v2_to_v3_param(&["trademark"], "trademarks");
+        v2_to_v3_param(&["sampleText", "openTypeNameSampleText"], "sampleTexts");
+        v2_to_v3_param(&["postscriptFullName"], "postscriptFullName");
+        v2_to_v3_param(&["postscriptFontName"], "postscriptFontName");
+        v2_to_v3_param(
+            &["WWSFamilyName", "openTypeNameWWSFamilyName"],
+            "WWSFamilyName",
+        );
+        v2_to_v3_param(&["vendorID", "openTypeOS2VendorID"], "vendorID");
 
         self.properties = properties;
 
@@ -3520,9 +3526,33 @@ mod tests {
     }
 
     #[test]
-    fn v2_full_vendor_name() {
-        let v2 = Font::load(&glyphs2_dir().join("OtherVendorName.glyphs")).unwrap();
-        assert_eq!(v2.names.get("vendorID").cloned().as_deref(), Some("DERP"))
+    fn v2_long_param_names() {
+        let v2 = Font::load(&glyphs2_dir().join("LongParamNames.glyphs")).unwrap();
+        assert_eq!(v2.names.get("vendorID").cloned().as_deref(), Some("DERP"));
+        assert_eq!(
+            v2.names.get("descriptions").cloned().as_deref(),
+            Some("legacy description")
+        );
+        assert_eq!(
+            v2.names.get("licenseURL").cloned().as_deref(),
+            Some("www.example.com/legacy")
+        );
+        assert_eq!(
+            v2.names.get("version").cloned().as_deref(),
+            Some("legacy version")
+        );
+        assert_eq!(
+            v2.names.get("licenses").cloned().as_deref(),
+            Some("legacy license")
+        );
+        assert_eq!(
+            v2.names.get("uniqueID").cloned().as_deref(),
+            Some("legacy unique id")
+        );
+        assert_eq!(
+            v2.names.get("sampleTexts").cloned().as_deref(),
+            Some("legacy sample text")
+        );
     }
 
     #[test]
