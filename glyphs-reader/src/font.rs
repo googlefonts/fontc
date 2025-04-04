@@ -1761,7 +1761,10 @@ impl RawFont {
         v2_to_v3_param("postscriptFullName", "postscriptFullName");
         v2_to_v3_param("postscriptFontName", "postscriptFontName");
         v2_to_v3_param("WWSFamilyName", "WWSFamilyName");
+        // glyphsLib tries both long and short names, with short names taking precedence
+        //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f456d64ebe9993818770e170454/Lib/glyphsLib/builder/custom_params.py#L258
         v2_to_v3_param("vendorID", "vendorID");
+        v2_to_v3_param("openTypeOS2VendorID", "vendorID");
 
         self.properties = properties;
 
@@ -3514,6 +3517,12 @@ mod tests {
         let v2 = Font::load(&glyphs2_dir().join("TheBestNames.glyphs")).unwrap();
         let v3 = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         assert_eq!(v3.names, v2.names);
+    }
+
+    #[test]
+    fn v2_full_vendor_name() {
+        let v2 = Font::load(&glyphs2_dir().join("OtherVendorName.glyphs")).unwrap();
+        assert_eq!(v2.names.get("vendorID").cloned().as_deref(), Some("DERP"))
     }
 
     #[test]
