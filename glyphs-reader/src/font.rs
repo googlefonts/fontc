@@ -1385,11 +1385,11 @@ impl Path {
     }
 }
 
-fn v2_to_v3_name(properties: &mut Vec<RawName>, v2_prop: Option<&str>, v3_name: &str) {
+fn v2_to_v3_name(v2_prop: Option<&str>, v3_name: &str) -> Option<RawName> {
     // https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#properties
     // Keys ending with "s" are localizable that means the second key is values
-    if let Some(value) = v2_prop {
-        properties.push(if v3_name.ends_with('s') {
+    v2_prop.map(|value| {
+        if v3_name.ends_with('s') {
             RawName {
                 key: v3_name.into(),
                 value: None,
@@ -1404,8 +1404,8 @@ fn v2_to_v3_name(properties: &mut Vec<RawName>, v2_prop: Option<&str>, v3_name: 
                 value: Some(value.to_string()),
                 values: vec![],
             }
-        });
-    }
+        }
+    })
 }
 
 impl RawFont {
@@ -1732,29 +1732,23 @@ impl RawFont {
         // Take properties to avoid incompatible borrowing against self
         let mut properties = std::mem::take(&mut self.properties);
 
-        v2_to_v3_name(&mut properties, self.copyright.as_deref(), "copyrights");
-        v2_to_v3_name(&mut properties, self.designer.as_deref(), "designers");
-        v2_to_v3_name(&mut properties, self.designerURL.as_deref(), "designerURL");
-        v2_to_v3_name(
-            &mut properties,
-            self.manufacturer.as_deref(),
-            "manufacturers",
-        );
-        v2_to_v3_name(
-            &mut properties,
+        properties.extend(v2_to_v3_name(self.copyright.as_deref(), "copyrights"));
+        properties.extend(v2_to_v3_name(self.designer.as_deref(), "designers"));
+        properties.extend(v2_to_v3_name(self.designerURL.as_deref(), "designerURL"));
+        properties.extend(v2_to_v3_name(self.manufacturer.as_deref(), "manufacturers"));
+        properties.extend(v2_to_v3_name(
             self.manufacturerURL.as_deref(),
             "manufacturerURL",
-        );
+        ));
 
         let mut v2_to_v3_param = |v2_name: &str, v3_name: &str| {
-            if let Some(v3) = properties.iter().find(|n| n.key == v3_name) {
-                if !v3.is_empty() {
-                    return;
-                }
+            if properties.iter().any(|n| n.key == v3_name && !n.is_empty()) {
+                return;
             }
-            if let Some(value) = self.custom_parameters.string(v2_name) {
-                v2_to_v3_name(&mut properties, Some(value), v3_name);
-            }
+            properties.extend(v2_to_v3_name(
+                self.custom_parameters.string(v2_name),
+                v3_name,
+            ));
         };
         v2_to_v3_param("description", "descriptions");
         v2_to_v3_param("licenseURL", "licenseURL");
