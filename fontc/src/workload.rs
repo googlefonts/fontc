@@ -342,7 +342,9 @@ impl Workload {
             return;
         }
 
-        let mut deps = AccessBuilder::<AnyWorkId>::new().variant(FeWorkIdentifier::StaticMetadata);
+        let mut deps = AccessBuilder::<AnyWorkId>::new()
+            .variant(FeWorkIdentifier::StaticMetadata)
+            .variant(FeWorkIdentifier::GlobalMetrics);
 
         let mut has_components = false;
         for inst in glyph.sources().values() {

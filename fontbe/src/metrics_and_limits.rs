@@ -249,6 +249,13 @@ pub(crate) fn advance_height(instance: &GlyphInstance, metrics: &GlobalMetricsIn
         .ot_round()
 }
 
+pub(crate) fn vertical_origin(instance: &GlyphInstance, metrics: &GlobalMetricsInstance) -> i16 {
+    instance
+        .vertical_origin
+        .unwrap_or(metrics.os2_typo_ascender.into_inner())
+        .ot_round()
+}
+
 impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
     fn id(&self) -> AnyWorkId {
         WorkId::Hmtx.into()
@@ -370,10 +377,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                         let instance = glyph.default_instance();
 
                         let advance = advance_height(instance, &default_metrics);
-                        let vertical_origin: i16 = instance
-                            .vertical_origin
-                            .unwrap_or(default_metrics.os2_typo_ascender.into_inner())
-                            .ot_round();
+                        let vertical_origin = vertical_origin(instance, &default_metrics);
 
                         let glyph = context.glyphs.get(&WorkId::GlyfFragment(gn.clone()).into());
 
