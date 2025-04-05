@@ -9,7 +9,10 @@ use std::{
 };
 
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
-use fontir::orchestration::WorkId as FeWorkId;
+use fontir::{
+    ir::{GlobalMetricsInstance, GlyphInstance},
+    orchestration::WorkId as FeWorkId,
+};
 use write_fonts::{
     dump_table,
     tables::{
@@ -239,6 +242,13 @@ impl MaxBuilder {
     }
 }
 
+pub(crate) fn advance_height(instance: &GlyphInstance, metrics: &GlobalMetricsInstance) -> u16 {
+    instance
+        .height
+        .unwrap_or_else(|| metrics.hhea_ascender.into_inner() - metrics.hhea_descender.into_inner())
+        .ot_round()
+}
+
 impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
     fn id(&self) -> AnyWorkId {
         WorkId::Hmtx.into()
@@ -352,9 +362,6 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
         context.hmtx.set(raw_hmtx);
 
         if static_metadata.build_vertical {
-            let default_height = default_metrics.hhea_ascender.into_inner()
-                - default_metrics.hhea_descender.into_inner();
-
             let mut vert_builder =
                 glyph_order
                     .iter()
@@ -362,7 +369,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                         let glyph = context.ir.get_glyph(gn.clone());
                         let instance = glyph.default_instance();
 
-                        let advance = instance.height.unwrap_or(default_height).ot_round();
+                        let advance = advance_height(instance, &default_metrics);
                         let vertical_origin: i16 = instance
                             .vertical_origin
                             .unwrap_or(default_metrics.os2_typo_ascender.into_inner())
