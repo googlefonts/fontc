@@ -11,7 +11,8 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
-use fontir::{ir::Glyph, orchestration::WorkId as FeWorkId, variations::VariationModel};
+use fontir::{orchestration::WorkId as FeWorkId, variations::VariationModel};
+use write_fonts::tables::variations::ItemVariationStore;
 use write_fonts::{
     dump_table,
     tables::{
@@ -46,8 +47,8 @@ where
     Ok(data.len())
 }
 
-/// Helper to collect advance width deltas for all glyphs in a font
-struct AdvanceWidthDeltas {
+/// Collate glyphs' advance deltas and build a variation store
+pub(crate) struct AdvanceDeltasBuilder {
     /// Variation axes
     axes: Axes,
     /// Sparse variation models, keyed by the set of locations they define
@@ -58,8 +59,8 @@ struct AdvanceWidthDeltas {
     glyph_locations: HashSet<NormalizedLocation>,
 }
 
-impl AdvanceWidthDeltas {
-    fn new<'a>(
+impl AdvanceDeltasBuilder {
+    pub(crate) fn new<'a>(
         global_model: VariationModel,
         glyph_locations: impl IntoIterator<Item = &'a NormalizedLocation>,
     ) -> Self {
@@ -74,7 +75,7 @@ impl AdvanceWidthDeltas {
         let global_locations = global_model.locations().cloned().collect::<BTreeSet<_>>();
         let mut models = HashMap::new();
         models.insert(global_locations, global_model);
-        AdvanceWidthDeltas {
+        AdvanceDeltasBuilder {
             axes,
             models,
             deltas: Vec::new(),
@@ -82,18 +83,14 @@ impl AdvanceWidthDeltas {
         }
     }
 
-    fn add(&mut self, glyph: &Glyph) -> Result<(), Error> {
-        let mut advance_widths: HashMap<_, Vec<f64>> = glyph
-            .sources()
-            .iter()
-            // widths must be rounded before the computing deltas to match fontmake
-            // https://github.com/googlefonts/fontc/issues/1043
-            .map(|(loc, src)| (loc.subset_axes(&self.axes), vec![src.width.ot_round()]))
-            .collect();
-        let name = glyph.name.clone();
+    pub(crate) fn add(
+        &mut self,
+        name: GlyphName,
+        mut advances: HashMap<NormalizedLocation, Vec<f64>>,
+    ) -> Result<(), Error> {
         let i = self.deltas.len();
-        if advance_widths.len() == 1 {
-            assert!(advance_widths.keys().next().unwrap().is_default());
+        if advances.len() == 1 {
+            assert!(advances.keys().next().unwrap().is_default());
             // this glyph has no variations (it's only defined at the default location),
             // therefore the deltas returned from VariationModel will be an empty Vec.
             // However, when this is the first .notdef glyph we would like to treat it
@@ -108,11 +105,11 @@ impl AdvanceWidthDeltas {
             // for the first .notdef glyph similarly "dense", by copying its default instance to
             // all other glyph locations...
             if i == 0 && name == GlyphName::NOTDEF {
-                let notdef_width = advance_widths.values().next().unwrap()[0];
+                let notdef_advance = advances.values().next().unwrap()[0];
                 for loc in self.glyph_locations.iter() {
-                    advance_widths
+                    advances
                         .entry(loc.clone())
-                        .or_insert_with(|| vec![notdef_width]);
+                        .or_insert_with(|| vec![notdef_advance]);
                 }
             } else {
                 // spare the model the work of computing no-op deltas
@@ -120,15 +117,14 @@ impl AdvanceWidthDeltas {
                 return Ok(());
             }
         }
-        let locations = advance_widths.keys().cloned().collect::<BTreeSet<_>>();
+        let locations = advances.keys().cloned().collect::<BTreeSet<_>>();
         let model = self.models.entry(locations).or_insert_with(|| {
             // this glyph defines its own set of locations, a new sparse model is needed
-            VariationModel::new(advance_widths.keys().cloned().collect(), self.axes.clone())
-                .unwrap()
+            VariationModel::new(advances.keys().cloned().collect(), self.axes.clone()).unwrap()
         });
         self.deltas.push(
             model
-                .deltas(&advance_widths)
+                .deltas(&advances)
                 .map_err(|e| Error::GlyphDeltaError(name.clone(), e))?
                 .into_iter()
                 .filter_map(|(region, values)| {
@@ -147,59 +143,22 @@ impl AdvanceWidthDeltas {
         Ok(())
     }
 
-    fn is_single_model(&self) -> bool {
-        self.models.len() == 1
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &Vec<(VariationRegion, i16)>> {
-        self.deltas.iter()
-    }
-}
-
-impl Work<Context, AnyWorkId, Error> for HvarWork {
-    fn id(&self) -> AnyWorkId {
-        WorkId::Hvar.into()
-    }
-
-    fn read_access(&self) -> Access<AnyWorkId> {
-        AccessBuilder::new()
-            .variant(FeWorkId::StaticMetadata)
-            .variant(FeWorkId::GlyphOrder)
-            .variant(FeWorkId::Glyph(GlyphName::NOTDEF))
-            .build()
-    }
-
-    /// Generate [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR)
-    fn exec(&self, context: &Context) -> Result<(), Error> {
-        let static_metadata = context.ir.static_metadata.get();
-        if static_metadata.axes.is_empty() {
-            log::debug!("skipping HVAR, font has no axes");
-            return Ok(());
-        }
-        let var_model = &static_metadata.variation_model;
-        let glyph_order = context.ir.glyph_order.get();
-        let axis_count = var_model.axes().count().try_into().unwrap();
-        let glyphs: Vec<_> = glyph_order
-            .names()
-            .map(|name| context.ir.glyphs.get(&FeWorkId::Glyph(name.clone())))
-            .collect();
-        let glyph_locations = glyphs.iter().flat_map(|glyph| glyph.sources().keys());
-
-        let mut glyph_width_deltas = AdvanceWidthDeltas::new(var_model.clone(), glyph_locations);
-        for glyph in glyphs.into_iter() {
-            glyph_width_deltas.add(glyph.as_ref())?;
-        }
+    pub(crate) fn build(
+        self: &AdvanceDeltasBuilder,
+        glyph_count: usize,
+    ) -> Result<(ItemVariationStore, Option<DeltaSetIndexMap>), Error> {
+        let axis_count = self.axes.len().try_into().unwrap();
 
         // if we have a single model, we can try to build a VariationStore with implicit variation
         // indices (a single ItemVariationData, outer index 0, inner index => gid).
         let mut var_idxes = Vec::new();
-        let direct_store = if glyph_width_deltas.is_single_model() {
+        let direct_store = if self.models.len() == 1 {
             let mut direct_builder = VariationStoreBuilder::new_with_implicit_indices(axis_count);
-            for deltas in glyph_width_deltas.iter() {
+            for deltas in self.deltas.iter() {
                 var_idxes.push(direct_builder.add_deltas(deltas.clone()));
             }
             // sanity checks
-            assert_eq!(var_idxes.len(), glyph_order.len());
+            assert_eq!(var_idxes.len(), glyph_count);
             assert!(var_idxes
                 .drain(..)
                 .enumerate()
@@ -212,7 +171,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
 
         // also build an indirect VariationStore with a DeltaSetIndexMap to map gid => varidx
         let mut indirect_builder = VariationStoreBuilder::new(axis_count);
-        for deltas in glyph_width_deltas.iter() {
+        for deltas in self.deltas.iter() {
             var_idxes.push(indirect_builder.add_deltas(deltas.clone()));
         }
         let (indirect_store, varidx_map) = indirect_builder.build();
@@ -236,6 +195,59 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                 varstore = direct_store;
             }
         }
+
+        Ok((varstore, varidx_map))
+    }
+}
+
+impl Work<Context, AnyWorkId, Error> for HvarWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Hvar.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        AccessBuilder::new()
+            .variant(FeWorkId::StaticMetadata)
+            .variant(FeWorkId::GlyphOrder)
+            .variant(FeWorkId::Glyph(GlyphName::NOTDEF)) // Assumed in AdvanceDeltasBuilder
+            .build()
+    }
+
+    /// Generate [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR)
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let static_metadata = context.ir.static_metadata.get();
+        if static_metadata.axes.is_empty() {
+            log::debug!("skipping HVAR, font has no axes");
+            return Ok(());
+        }
+        let var_model = &static_metadata.variation_model;
+        let glyph_order = context.ir.glyph_order.get();
+        let glyphs: Vec<_> = glyph_order
+            .names()
+            .map(|name| context.ir.glyphs.get(&FeWorkId::Glyph(name.clone())))
+            .collect();
+        let glyph_locations = glyphs.iter().flat_map(|glyph| glyph.sources().keys());
+
+        let mut glyph_advance_deltas =
+            AdvanceDeltasBuilder::new(var_model.clone(), glyph_locations);
+        for glyph in glyphs.into_iter() {
+            let name = glyph.name.clone();
+            let advances = glyph
+                .sources()
+                .iter()
+                // advances must be rounded before the computing deltas to match fontmake
+                // https://github.com/googlefonts/fontc/issues/1043
+                .map(|(loc, src)| {
+                    (
+                        loc.subset_axes(&static_metadata.axes),
+                        vec![src.width.ot_round()],
+                    )
+                })
+                .collect();
+            glyph_advance_deltas.add(name, advances)?;
+        }
+
+        let (varstore, varidx_map) = glyph_advance_deltas.build(glyph_order.len())?;
 
         let hvar = Hvar::new(varstore, varidx_map, None, None);
         context.hvar.set(hvar);
