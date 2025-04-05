@@ -1234,6 +1234,7 @@ mod tests {
                 42.,
                 categories,
                 None,
+                false,
             )
             .unwrap()
         }
