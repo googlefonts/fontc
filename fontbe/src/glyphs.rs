@@ -39,7 +39,6 @@ use write_fonts::{
 
 use crate::{
     error::{Error, GlyphProblem},
-    metrics_and_limits::{advance_height, vertical_origin},
     orchestration::{AnyWorkId, BeWork, Context, Glyph, GvarFragment, WorkId},
 };
 
@@ -221,8 +220,8 @@ fn add_phantom_points(
             // topSideY = topSideBearing + glyph.yMax
             // bottomSideY = topSideY - verticalAdvanceWidth
             // We currently always set tsb to vertical_origin - yMax so topSideY = verticalOrigin.
-            let top = vertical_origin(instance, metrics) as f64;
-            let bottom = top - advance_height(instance, metrics) as f64;
+            let top = instance.vertical_origin(metrics) as f64;
+            let bottom = top - instance.height(metrics) as f64;
             (top, bottom)
         })
         .unwrap_or_default();

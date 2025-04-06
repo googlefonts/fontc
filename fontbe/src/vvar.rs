@@ -10,7 +10,6 @@ use write_fonts::tables::vvar::Vvar;
 use write_fonts::types::MajorMinor;
 
 use crate::hvar::AdvanceDeltasBuilder;
-use crate::metrics_and_limits::advance_height;
 use crate::{
     error::Error,
     orchestration::{AnyWorkId, BeWork, Context, WorkId},
@@ -82,7 +81,7 @@ impl Work<Context, AnyWorkId, Error> for VvarWork {
                     (
                         loc.subset_axes(&axis_tags),
                         // TODO: Use metrics at location - blocked on interpolated metrics.
-                        vec![advance_height(src, &default_metrics) as f64],
+                        vec![src.height(&default_metrics) as f64],
                     )
                 })
                 .collect();

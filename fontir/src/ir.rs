@@ -1932,9 +1932,9 @@ impl From<Glyph> for GlyphBuilder {
 pub struct GlyphInstance {
     /// Advance width.
     pub width: f64,
-    /// Advance height; if None, assumed to equal font's ascender - descender.
+    /// Advance height; if None, assumed to equal font's typo ascender - descender.
     pub height: Option<f64>,
-    /// Vertical origin; if None, assumed to equal font's ascender.
+    /// Vertical origin; if None, assumed to equal font's typo ascender.
     pub vertical_origin: Option<f64>,
     /// List of glyph contours.
     pub contours: Vec<BezPath>,
@@ -1961,6 +1961,31 @@ impl GlyphInstance {
             .iter()
             .flat_map(|c| c.elements().iter().map(path_el_type))
             .collect()
+    }
+
+    /// Get the advance height of this instance, falling back to a value derived
+    /// from the metrics for this instance's position.
+    ///
+    /// See [`Self::height`](field@Self::height).
+    pub fn height(&self, metrics: &GlobalMetricsInstance) -> u16 {
+        // https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/glyph.py#L359-L389
+        // TODO: UFO always defines this; should it be made non-optional?
+        self.height
+            .unwrap_or_else(|| {
+                metrics.os2_typo_ascender.into_inner() - metrics.os2_typo_descender.into_inner()
+            })
+            .ot_round()
+    }
+
+    /// Get the vertical origin of this instance, falling back to a value
+    /// derived from the metrics for this instance's position.
+    ///
+    /// See [`Self::vertical_origin`](field@Self::vertical_origin).
+    pub fn vertical_origin(&self, metrics: &GlobalMetricsInstance) -> i16 {
+        // https://github.com/googlefonts/ufo2ft/blob/16ed156b/Lib/ufo2ft/outlineCompiler.py#L74-L81
+        self.vertical_origin
+            .unwrap_or(metrics.os2_typo_ascender.into_inner())
+            .ot_round()
     }
 }
 

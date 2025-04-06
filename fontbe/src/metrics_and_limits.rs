@@ -9,10 +9,7 @@ use std::{
 };
 
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
-use fontir::{
-    ir::{GlobalMetricsInstance, GlyphInstance},
-    orchestration::WorkId as FeWorkId,
-};
+use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
     dump_table,
     tables::{
@@ -242,20 +239,6 @@ impl MaxBuilder {
     }
 }
 
-pub(crate) fn advance_height(instance: &GlyphInstance, metrics: &GlobalMetricsInstance) -> u16 {
-    instance
-        .height
-        .unwrap_or_else(|| metrics.hhea_ascender.into_inner() - metrics.hhea_descender.into_inner())
-        .ot_round()
-}
-
-pub(crate) fn vertical_origin(instance: &GlyphInstance, metrics: &GlobalMetricsInstance) -> i16 {
-    instance
-        .vertical_origin
-        .unwrap_or(metrics.os2_typo_ascender.into_inner())
-        .ot_round()
-}
-
 impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
     fn id(&self) -> AnyWorkId {
         WorkId::Hmtx.into()
@@ -376,8 +359,8 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                         let glyph = context.ir.get_glyph(gn.clone());
                         let instance = glyph.default_instance();
 
-                        let advance = advance_height(instance, &default_metrics);
-                        let vertical_origin = vertical_origin(instance, &default_metrics);
+                        let advance = instance.height(&default_metrics);
+                        let vertical_origin = instance.vertical_origin(&default_metrics);
 
                         let glyph = context.glyphs.get(&WorkId::GlyfFragment(gn.clone()).into());
 
