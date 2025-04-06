@@ -1537,6 +1537,10 @@ impl GlyphBuilder {
         path.line_to((x_min, y_min));
         path.close_path();
 
+        // TODO: Should this be None to match other glyphs' heights? This would deviate from ufo2ft
+        // See https://github.com/googlefonts/ufo2ft/blob/b3895a96/Lib/ufo2ft/outlineCompiler.py#L1656-L1658
+        let height = Some(ascender - descender);
+
         Self {
             name: GlyphName::NOTDEF.clone(),
             emit_to_binary: true,
@@ -1545,6 +1549,7 @@ impl GlyphBuilder {
                 default_location,
                 GlyphInstance {
                     width,
+                    height,
                     contours: vec![path],
                     ..Default::default()
                 },
