@@ -35,6 +35,7 @@ use write_fonts::{
         os2::SelectionFlags,
     },
     types::{NameId, Tag},
+    OtRound,
 };
 
 use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
@@ -855,7 +856,10 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Variant(WorkId::StaticMetadata)
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlobalMetrics)
+            .build()
     }
 
     fn write_access(&self) -> Access<WorkId> {
@@ -876,6 +880,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 
         let static_metadata = context.static_metadata.get();
         let axes = &static_metadata.all_source_axes;
+
+        let global_metrics = context.global_metrics.get();
 
         let glyph = font
             .glyphs
@@ -912,11 +918,9 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 .into());
             };
             let master = &font.masters[*master_idx];
-            let mut location = font_info
-                .locations
-                .get(&master.axes_values)
-                .unwrap()
-                .clone();
+            let master_location = font_info.locations.get(&master.axes_values).unwrap();
+
+            let mut location = master_location.clone();
             // intermediate (aka 'brace') layers can override axis values from their
             // associated master
             if !instance.attributes.coordinates.is_empty() {
@@ -933,6 +937,11 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 axis_positions.entry(*tag).or_default().insert(*coord);
             }
 
+            // See https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/glyph.py#L359-L389
+            let vertical_origin = instance.vert_origin.map(|origin| {
+                (global_metrics.at(master_location).os2_typo_ascender - origin).ot_round()
+            });
+
             // TODO populate width and height properly
             let (contours, components) =
                 to_ir_contours_and_components(self.glyph_name.clone(), &instance.shapes)?;
@@ -943,7 +952,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                     0.0
                 },
                 height: instance.vert_width.map(|x| x.into_inner()),
-                vertical_origin: instance.vert_origin.map(|x| x.into_inner()),
+                vertical_origin,
                 contours,
                 components,
             };
