@@ -278,6 +278,9 @@ def run_gftools(
     tool = "fontmake" if fontc_bin is None else "fontc"
     filename = tool + ".ttf"
     out_file = build_dir / filename
+    if out_file.exists():
+        eprint(f"reusing {out_file}")
+        return
     out_dir = build_dir / "gftools_temp_dir"
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -738,14 +741,17 @@ def fill_in_gvar_deltas(
 ):
     fontc_font = TTFont(fontc_ttf)
     fontmake_font = TTFont(fontmake_ttf)
-    densify_gvar(fontc_font, fontc)
-    densify_gvar(fontmake_font, fontmake)
+    dense_fontc_count = densify_gvar(fontc_font, fontc)
+    dense_fontmake_count = densify_gvar(fontmake_font, fontmake)
+
+    if dense_fontc_count + dense_fontmake_count > 0:
+        eprint(f"densified {dense_fontc_count} glyphVariations in fontc, {dense_fontmake_count} in fontmake")
 
 
 def densify_gvar(font: TTFont, ttx: etree.ElementTree):
     gvar = ttx.find("gvar")
     if gvar is None:
-        return
+        return 0
     glyf = font["glyf"]
     hMetrics = font["hmtx"].metrics
     vMetrics = getattr(font.get("vmtx"), "metrics", None)
@@ -757,8 +763,7 @@ def densify_gvar(font: TTFont, ttx: etree.ElementTree):
         )
         total_deltas_filled += int(densify_one_glyph(coords, g.endPts, variations))
 
-    if total_deltas_filled > 0:
-        eprint(f"densified {total_deltas_filled} glyphVariations")
+    return total_deltas_filled
 
 
 def densify_one_glyph(coords, ends, variations: etree.ElementTree):
