@@ -1,0 +1,44 @@
+{
+.appVersion = "3151";
+copyright = "Copy!";
+customParameters = (
+{
+name = openTypeOS2VendorID;
+value = "DERP";
+},
+{
+name = openTypeNameDescription;
+value = "legacy description";
+},
+{
+name = openTypeNameLicenseURL;
+value = "www.example.com/legacy";
+},
+{
+name = openTypeNameVersion;
+value = "legacy version";
+},
+{
+name = openTypeNameLicense;
+value = "legacy license";
+},
+{
+name = openTypeNameUniqueID;
+value = "legacy unique id";
+},
+{
+name = openTypeNameSampleText;
+value = "legacy sample text";
+},
+);
+fontMaster = (
+{
+id = "m01";
+},
+);
+
+designer = "Designed by me!";
+designerURL = "https://example.com/designer";
+familyName = FamilyName;
+unitsPerEm = 1000;
+}
