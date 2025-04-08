@@ -102,11 +102,18 @@ impl<'a> CornerErasureCtx<'a> {
         let Some(maybe_corner) = self.possible_corner(seg_ix) else {
             return false;
         };
+        log::trace!("considering segment starting at {}", maybe_corner.one.end());
         if !maybe_corner.points_are_right_of_line() {
+            log::trace!(
+                "crossing points {} and {} not on same side of line",
+                maybe_corner.point_before_line(),
+                maybe_corner.point_after_line()
+            );
             return false;
         }
 
         let Some(intersection) = maybe_corner.intersection() else {
+            log::trace!("no intersections");
             return false;
         };
 
@@ -114,10 +121,12 @@ impl<'a> CornerErasureCtx<'a> {
         // invert value of t0 so for both values '0' means at the open corner
         // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da5/Lib/glyphsLib/filters/eraseOpenCorners.py#L105>
         let t0_inv = 1.0 - t0;
+        log::trace!("found intersections at {t0_inv} and {t1}");
         if ((t0_inv < 0.5 && t1 < 0.5) || t0_inv < 0.3 || t1 < 0.3)
             && t1 > 0.0001
             && t0_inv > 0.0001
         {
+            log::debug!("found an open corner");
             // this looks like an open corner, so now do the deletion
             let new_prev = maybe_corner.one.subsegment(0.0..intersection.t0);
             let first_ix = maybe_corner.first_el_idx;
@@ -370,7 +379,7 @@ fn seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
 // https://github.com/fonttools/fonttools/blob/cb159dea72/Lib/fontTools/misc/bezierTools.py#L1307
 const PY_ACCURACY: f64 = 1e-3;
 
-// based on impl after impl in fonttools/bezierTools; we split it in two,
+// based on impl in fonttools/bezierTools; we split it in two,
 // with the recursive bit below, and this as a little wrapper.
 //https://github.com/fonttools/fonttools/blob/cb159dea72703/Lib/fontTools/misc/bezierTools.py#L1306
 fn curve_curve_intersection_py(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
