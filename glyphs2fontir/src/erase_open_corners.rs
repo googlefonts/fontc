@@ -333,7 +333,7 @@ fn point_is_left_of_line(line: Line, point: Point) -> bool {
     (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x) >= 0.0
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Intersection {
     // location of hit on first segment, in range 0..=1
     t0: f64,
@@ -344,13 +344,13 @@ struct Intersection {
 /// Find an intersection of two segments, if any exist
 ///
 /// It is possible for segments to intersect multiple times; in this case we
-/// will return the segment nearest to the end of `seg1``
+/// will return the segment nearest to the start of `seg1``
 fn seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
     match (seg1, seg2) {
         (PathSeg::Line(line), seg) => seg
             .intersect_line(line)
             .iter()
-            .min_by_key(|hit| OrderedFloat(hit.segment_t))
+            .min_by_key(|hit| OrderedFloat(hit.line_t))
             .map(|hit| Intersection {
                 t0: hit.line_t,
                 t1: hit.segment_t,
@@ -358,7 +358,7 @@ fn seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
         (seg, PathSeg::Line(line)) => seg
             .intersect_line(line)
             .iter()
-            .min_by_key(|hit| OrderedFloat(hit.line_t))
+            .min_by_key(|hit| OrderedFloat(hit.segment_t))
             .map(|hit| Intersection {
                 t0: hit.segment_t,
                 t1: hit.line_t,
@@ -785,5 +785,42 @@ mod tests {
         path.close_path();
 
         assert!(erase_open_corners(&path).is_none());
+    }
+
+    // ensure that we match fonttools when intersection produces more than one
+    // hit (in this case fonttools returns the hit with the lowest `t0`)
+    #[test]
+    fn seg_seg_intersect_order() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let seg1 = PathSeg::Cubic(CubicBez::new(
+            (21.0, 34.0),
+            (21.0, 33.0),
+            (21.0, 33.0),
+            (22.0, 33.0),
+        ));
+
+        let seg2 = Line::new((22.0, 32.0), (21.0, 34.0));
+
+        let raw_intersections = seg1.intersect_line(seg2);
+        assert_eq!(raw_intersections.len(), 2);
+        let one_intersection = seg_seg_intersection(seg1, seg2.into()).unwrap();
+        assert_eq!(
+            one_intersection.t0,
+            raw_intersections
+                .iter()
+                .min_by_key(|hit| OrderedFloat(hit.segment_t))
+                .unwrap()
+                .segment_t
+        );
+
+        let reverse_intersection = seg_seg_intersection(seg2.into(), seg1).unwrap();
+        assert_eq!(
+            reverse_intersection.t0,
+            raw_intersections
+                .iter()
+                .min_by_key(|hit| OrderedFloat(hit.line_t))
+                .unwrap()
+                .line_t
+        )
     }
 }
