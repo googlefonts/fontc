@@ -355,7 +355,7 @@ struct Intersection {
 /// It is possible for segments to intersect multiple times; in this case we
 /// will return the segment nearest to the start of `seg1``
 fn seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
-    match (seg1, seg2) {
+    let hit = match (seg1, seg2) {
         (PathSeg::Line(line), seg) => seg
             .intersect_line(line)
             .iter()
@@ -372,8 +372,42 @@ fn seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
                 t0: hit.segment_t,
                 t1: hit.line_t,
             }),
-        (bez0, bez1) => curve_curve_intersection_py(bez0, bez1),
+        (bez0, bez1) => return curve_curve_intersection_py(bez0, bez1),
+    }?;
+    if let (PathSeg::Line(l1), PathSeg::Line(l2)) = (seg1, seg2) {
+        let pt = l1.eval(hit.t0);
+        // the bezierTools code for line intersections has a bunch of special
+        // cases that were causing us to deviate, so we try to cover those here
+        // as they come up:
+        //
+        // special check for close x coords:
+        // https://github.com/fonttools/fonttools/blob/a6f59a4f87a011/Lib/fontTools/misc/bezierTools.py#L1193-L1212
+
+        if py_isclose(l1.end().x, l1.start().x) || py_isclose(l2.start().x, l2.end().x) {
+            return Some(hit);
+        }
+        // final guard statement
+        // https://github.com/fonttools/fonttools/blob/a6f59a4f87a/Lib/fontTools/misc/bezierTools.py#L1221-L1223
+        if !(both_points_are_on_same_side_of_origin(pt, l1.p1, l1.p0)
+            && both_points_are_on_same_side_of_origin(pt, l2.p0, l2.p1))
+        {
+            return None;
+        }
     }
+    Some(hit)
+}
+
+// https://docs.python.org/3.13/library/math.html#math.isclose
+fn py_isclose(a: f64, b: f64) -> bool {
+    const TOLERANCE: f64 = 1e-09;
+    (a - b).abs() <= (TOLERANCE * a.abs().max(b.abs()))
+}
+
+//https://github.com/fonttools/fonttools/blob/a6f59a4f87a01110/Lib/fontTools/misc/bezierTools.py#L1148
+fn both_points_are_on_same_side_of_origin(a: Point, b: Point, origin: Point) -> bool {
+    let x_diff = (a.x - origin.x) * (b.x - origin.x);
+    let y_diff = (a.y - origin.y) * (b.y - origin.y);
+    !(x_diff <= 0.0 && y_diff <= 0.0)
 }
 
 // https://github.com/fonttools/fonttools/blob/cb159dea72/Lib/fontTools/misc/bezierTools.py#L1307
@@ -831,5 +865,38 @@ mod tests {
                 .unwrap()
                 .line_t
         )
+    }
+
+    #[test]
+    fn corner_with_t() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let mut path = BezPath::new();
+        path.move_to((11.0, 4.0));
+        path.line_to((17.0, 34.0));
+        path.line_to((8.0, 29.0));
+        path.line_to((7.0, 27.0));
+        path.curve_to((7.0, 27.0), (6.0, 25.0), (6.0, 24.0));
+        path.line_to((9.0, 25.0));
+        path.line_to((7.0, 24.0));
+        path.line_to((1.0, 24.0));
+        path.line_to((11.0, 4.0));
+        path.close_path();
+
+        assert!(erase_open_corners(&path).is_none());
+    }
+
+    #[test]
+    fn corner_with_t_2() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let mut path = BezPath::new();
+        path.move_to((3.0, 155.0));
+        path.line_to((14.0, 155.0));
+        path.line_to((14.0, 0.0));
+        path.line_to((80.0, 111.0));
+        path.line_to((14.0, 111.0));
+        path.line_to((3.0, 155.0));
+        path.close_path();
+
+        assert!(erase_open_corners(&path).is_some());
     }
 }
