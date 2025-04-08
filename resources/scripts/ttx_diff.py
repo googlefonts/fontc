@@ -527,14 +527,16 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
             eprint(f"no item where {name_attr}='{name}' in {container}")
             continue
 
-        for fontmake_el, fontc_el in zip(
-            fontmake_container.iter(), fontc_container.iter()
-        ):
-            if fontmake_el.tag != fontc_el.tag:
-                break
-            if fontmake_el.tag != coord_tag:
-                continue
+        fontc_els = [el for el in fontc_container.iter() if el.tag == coord_tag]
+        fontmake_els = [el for el in fontmake_container.iter() if el.tag == coord_tag]
 
+        if len(fontc_els) != len(fontmake_els):
+            eprint(
+                f"length of {container} '{name}' differs ({len(fontc_els)}/{len(fontmake_els)}), skipping"
+            )
+            continue
+
+        for fontmake_el, fontc_el in zip(fontc_els, fontmake_els):
             for attr in ("x", "y"):
                 delta_x = abs(
                     float(fontmake_el.attrib[attr]) - float(fontc_el.attrib[attr])
