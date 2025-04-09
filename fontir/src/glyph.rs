@@ -13,14 +13,14 @@ use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
 };
-use kurbo::Affine;
+use kurbo::{Affine, BezPath};
 use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
-use write_fonts::types::GlyphId16;
+use write_fonts::{types::GlyphId16, OtRound};
 
 use crate::{
     error::{BadGlyph, BadGlyphKind, Error},
-    ir::{Component, Glyph, GlyphBuilder, GlyphOrder},
+    ir::{Component, GlobalMetric, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
     orchestration::{Context, Flags, IrWork, WorkId},
 };
 
@@ -416,21 +416,88 @@ fn ensure_notdef_exists_and_is_gid_0(
         None => {
             trace!("Generate {} and make it gid 0", GlyphName::NOTDEF);
             glyph_order.set_glyph_id(&GlyphName::NOTDEF, 0);
-            let static_metadata = context.static_metadata.get();
-            let metrics = context
-                .global_metrics
-                .get()
-                .at(static_metadata.default_location());
-            let builder = GlyphBuilder::new_notdef(
-                static_metadata.default_location().clone(),
-                static_metadata.units_per_em,
-                metrics.ascender.0,
-                metrics.descender.0,
-            );
-            context.glyphs.set(builder.build()?);
+            let notdef = synthesize_notdef(context)?;
+            context.glyphs.set(notdef);
         }
     }
     Ok(())
+}
+
+/// Create a (possibly variable) .notdef glyph
+///
+/// * see <https://github.com/googlefonts/ufo2ft/blob/b3895a96ca910c1764df016bfee4719448cfec4a/Lib/ufo2ft/outlineCompiler.py#L1666-L1694>
+/// * and <https://github.com/googlefonts/fontc/issues/1262>
+fn synthesize_notdef(context: &Context) -> Result<Glyph, BadGlyph> {
+    let static_metadata = context.static_metadata.get();
+    let global_metrics = context.global_metrics.get();
+
+    let mut builder = GlyphBuilder::new(GlyphName::NOTDEF);
+    let upem = static_metadata.units_per_em;
+    let width = (upem as f64 * 0.5).ot_round();
+    let default = global_metrics.at(static_metadata.default_location());
+    let default_outline = make_notdef_outline(upem, default.ascender.0, default.descender.0);
+    builder.try_add_source(
+        static_metadata.default_location(),
+        GlyphInstance {
+            width,
+            contours: vec![default_outline],
+            ..Default::default()
+        },
+    )?;
+    if static_metadata.axes.is_empty() {
+        return builder.build();
+    }
+
+    for location in static_metadata.variation_model.locations() {
+        let ascender = global_metrics.get(GlobalMetric::Ascender, location);
+        let descender = global_metrics.get(GlobalMetric::Descender, location);
+        if (ascender, descender) == (default.ascender, default.descender) {
+            continue;
+        }
+        let outline = make_notdef_outline(upem, ascender.0, descender.0);
+
+        let instance = GlyphInstance {
+            width,
+            contours: vec![outline],
+            ..Default::default()
+        };
+        builder.try_add_source(location, instance)?;
+    }
+
+    builder.build()
+}
+
+fn make_notdef_outline(upm: u16, ascender: f64, descender: f64) -> BezPath {
+    let upm = upm as f64;
+    let width = OtRound::<u16>::ot_round(upm * 0.5) as f64;
+    let stroke = OtRound::<u16>::ot_round(upm * 0.05) as f64;
+
+    let mut path = BezPath::new();
+
+    // outer box
+    let x_min = stroke;
+    let x_max = width - stroke;
+    let y_max = ascender;
+    let y_min = descender;
+    path.move_to((x_min, y_min));
+    path.line_to((x_max, y_min));
+    path.line_to((x_max, y_max));
+    path.line_to((x_min, y_max));
+    path.line_to((x_min, y_min));
+    path.close_path();
+
+    // inner, cut out, box
+    let x_min = x_min + stroke;
+    let x_max = x_max - stroke;
+    let y_max = y_max - stroke;
+    let y_min = y_min + stroke;
+    path.move_to((x_min, y_min));
+    path.line_to((x_min, y_max));
+    path.line_to((x_max, y_max));
+    path.line_to((x_max, y_min));
+    path.line_to((x_min, y_min));
+    path.close_path();
+    path
 }
 
 impl Work<Context, WorkId, Error> for GlyphOrderWork {

@@ -16,7 +16,6 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{gasp::GaspRange, gdef::GlyphClassDef, os2::SelectionFlags},
     types::{GlyphId16, NameId, Tag},
-    OtRound,
 };
 
 use fontdrasil::{
@@ -769,10 +768,19 @@ impl GlobalMetrics {
 
     pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f64> {
         let Some(value) = self.values(metric).get(pos) else {
-            panic!("interpolated metric values are not yet supported");
+            panic!("interpolated metric values are not yet supported '{pos:?}'");
         };
         *value
     }
+
+    // this should not be necessary
+    //pub fn try_get(
+    //&self,
+    //metric: GlobalMetric,
+    //pos: &NormalizedLocation,
+    //) -> Option<OrderedFloat<f64>> {
+    //self.values(metric).get(pos).copied()
+    //}
 
     pub fn set(
         &mut self,
@@ -1811,60 +1819,6 @@ impl GlyphBuilder {
         Ok(())
     }
 
-    /// * see <https://github.com/googlefonts/ufo2ft/blob/b3895a96ca910c1764df016bfee4719448cfec4a/Lib/ufo2ft/outlineCompiler.py#L1666-L1694>
-    pub fn new_notdef(
-        default_location: NormalizedLocation,
-        upem: u16,
-        ascender: f64,
-        descender: f64,
-    ) -> Self {
-        let upem = upem as f64;
-        let width: u16 = (upem * 0.5).ot_round();
-        let width = width as f64;
-        let stroke: u16 = (upem * 0.05).ot_round();
-        let stroke = stroke as f64;
-
-        let mut path = BezPath::new();
-
-        // outer box
-        let x_min = stroke;
-        let x_max = width - stroke;
-        let y_max = ascender;
-        let y_min = descender;
-        path.move_to((x_min, y_min));
-        path.line_to((x_max, y_min));
-        path.line_to((x_max, y_max));
-        path.line_to((x_min, y_max));
-        path.line_to((x_min, y_min));
-        path.close_path();
-
-        // inner, cut out, box
-        let x_min = x_min + stroke;
-        let x_max = x_max - stroke;
-        let y_max = y_max - stroke;
-        let y_min = y_min + stroke;
-        path.move_to((x_min, y_min));
-        path.line_to((x_min, y_max));
-        path.line_to((x_max, y_max));
-        path.line_to((x_max, y_min));
-        path.line_to((x_min, y_min));
-        path.close_path();
-
-        Self {
-            name: GlyphName::NOTDEF.clone(),
-            emit_to_binary: true,
-            codepoints: HashSet::new(),
-            sources: HashMap::from([(
-                default_location,
-                GlyphInstance {
-                    width,
-                    contours: vec![path],
-                    ..Default::default()
-                },
-            )]),
-        }
-    }
-
     pub fn build(self) -> Result<Glyph, BadGlyph> {
         Glyph::new(
             self.name,
@@ -1991,7 +1945,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use fontdrasil::coords::{CoordConverter, NormalizedCoord, UserCoord};
-    use write_fonts::{tables::os2::SelectionFlags, types::NameId};
+    use write_fonts::{tables::os2::SelectionFlags, types::NameId, OtRound};
 
     use crate::{ir::Axis, variations::VariationModel};
 
