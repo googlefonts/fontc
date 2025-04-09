@@ -102,11 +102,18 @@ impl<'a> CornerErasureCtx<'a> {
         let Some(maybe_corner) = self.possible_corner(seg_ix) else {
             return false;
         };
+        log::trace!("considering segment starting at {}", maybe_corner.one.end());
         if !maybe_corner.points_are_right_of_line() {
+            log::trace!(
+                "crossing points {} and {} not on same side of line",
+                maybe_corner.point_before_line(),
+                maybe_corner.point_after_line()
+            );
             return false;
         }
 
         let Some(intersection) = maybe_corner.intersection() else {
+            log::trace!("no intersections");
             return false;
         };
 
@@ -114,10 +121,12 @@ impl<'a> CornerErasureCtx<'a> {
         // invert value of t0 so for both values '0' means at the open corner
         // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da5/Lib/glyphsLib/filters/eraseOpenCorners.py#L105>
         let t0_inv = 1.0 - t0;
+        log::trace!("found intersections at {t0_inv} and {t1}");
         if ((t0_inv < 0.5 && t1 < 0.5) || t0_inv < 0.3 || t1 < 0.3)
             && t1 > 0.0001
             && t0_inv > 0.0001
         {
+            log::debug!("found an open corner");
             // this looks like an open corner, so now do the deletion
             let new_prev = maybe_corner.one.subsegment(0.0..intersection.t0);
             let first_ix = maybe_corner.first_el_idx;
@@ -346,7 +355,7 @@ struct Intersection {
 /// It is possible for segments to intersect multiple times; in this case we
 /// will return the segment nearest to the start of `seg1``
 fn seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
-    match (seg1, seg2) {
+    let hit = match (seg1, seg2) {
         (PathSeg::Line(line), seg) => seg
             .intersect_line(line)
             .iter()
@@ -363,14 +372,58 @@ fn seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
                 t0: hit.segment_t,
                 t1: hit.line_t,
             }),
-        (bez0, bez1) => curve_curve_intersection_py(bez0, bez1),
+        (bez0, bez1) => return curve_curve_intersection_py(bez0, bez1),
+    }?;
+    if let (PathSeg::Line(l1), PathSeg::Line(l2)) = (seg1, seg2) {
+        let pt = l1.eval(hit.t0);
+        // the bezierTools code for line intersections has a bunch of special
+        // cases that were causing us to deviate, so we try to cover those here
+        // as they come up:
+        //
+        // special check for close x coords:
+        // https://github.com/fonttools/fonttools/blob/a6f59a4f87a011/Lib/fontTools/misc/bezierTools.py#L1193-L1212
+
+        if py_isclose(l1.end().x, l1.start().x) || py_isclose(l2.start().x, l2.end().x) {
+            return Some(hit);
+        }
+        // final guard statement
+        // https://github.com/fonttools/fonttools/blob/a6f59a4f87a/Lib/fontTools/misc/bezierTools.py#L1221-L1223
+        if !(l1.p0.points_are_on_same_side(pt, l1.p1) && l2.p1.points_are_on_same_side(pt, l2.p0)) {
+            return None;
+        }
+    }
+    Some(hit)
+}
+
+// https://docs.python.org/3.13/library/math.html#math.isclose
+fn py_isclose(a: f64, b: f64) -> bool {
+    const TOLERANCE: f64 = 1e-09;
+    (a - b).abs() <= (TOLERANCE * a.abs().max(b.abs()))
+}
+
+/// A helper for testing the position of a pair of points in reference to an origin
+///
+/// This is intended to reproduce the behaviour of the
+/// [`_both_points_are_on_same_side_of_origin`][pyref] function in python.
+///
+/// [pyref]: https://github.com/fonttools/fonttools/blob/a6f59a4f87a01110/Lib/fontTools/misc/bezierTools.py#L1148
+trait SameSide {
+    /// Test whether both points
+    fn points_are_on_same_side(&self, a: Point, b: Point) -> bool;
+}
+
+impl SameSide for Point {
+    fn points_are_on_same_side(&self, a: Point, b: Point) -> bool {
+        let x_diff = (a.x - self.x) * (b.x - self.x);
+        let y_diff = (a.y - self.y) * (b.y - self.y);
+        x_diff > 0.0 || y_diff > 0.0
     }
 }
 
 // https://github.com/fonttools/fonttools/blob/cb159dea72/Lib/fontTools/misc/bezierTools.py#L1307
 const PY_ACCURACY: f64 = 1e-3;
 
-// based on impl after impl in fonttools/bezierTools; we split it in two,
+// based on impl in fonttools/bezierTools; we split it in two,
 // with the recursive bit below, and this as a little wrapper.
 //https://github.com/fonttools/fonttools/blob/cb159dea72703/Lib/fontTools/misc/bezierTools.py#L1306
 fn curve_curve_intersection_py(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
@@ -422,6 +475,7 @@ fn curve_curve_py_impl(
 #[cfg(test)]
 mod tests {
 
+    use kurbo::Vec2;
     use write_fonts::OtRound;
 
     use super::*;
@@ -822,5 +876,70 @@ mod tests {
                 .unwrap()
                 .line_t
         )
+    }
+
+    #[test]
+    fn corner_with_t() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let mut path = BezPath::new();
+        path.move_to((11.0, 4.0));
+        path.line_to((17.0, 34.0));
+        path.line_to((8.0, 29.0));
+        path.line_to((7.0, 27.0));
+        path.curve_to((7.0, 27.0), (6.0, 25.0), (6.0, 24.0));
+        path.line_to((9.0, 25.0));
+        path.line_to((7.0, 24.0));
+        path.line_to((1.0, 24.0));
+        path.line_to((11.0, 4.0));
+        path.close_path();
+
+        assert!(erase_open_corners(&path).is_none());
+    }
+
+    #[test]
+    fn corner_with_t_2() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let mut path = BezPath::new();
+        path.move_to((3.0, 155.0));
+        path.line_to((14.0, 155.0));
+        path.line_to((14.0, 0.0));
+        path.line_to((80.0, 111.0));
+        path.line_to((14.0, 111.0));
+        path.line_to((3.0, 155.0));
+        path.close_path();
+
+        assert!(erase_open_corners(&path).is_some());
+    }
+
+    #[test]
+    fn same_sidedness() {
+        let origin = Point { x: 1.0, y: 1.0 };
+        // both right
+        assert!(origin
+            .points_are_on_same_side(origin + Vec2::new(1.0, 1.0), origin + Vec2::new(1.0, -1.0)));
+        // both left
+        assert!(origin.points_are_on_same_side(
+            origin + Vec2::new(-1.0, 1.0),
+            origin + Vec2::new(-1.0, -1.0)
+        ));
+        //// both above
+        assert!(origin
+            .points_are_on_same_side(origin + Vec2::new(-1.0, 1.0), origin + Vec2::new(-1.0, 1.0)));
+
+        // both below
+        assert!(origin.points_are_on_same_side(
+            origin + Vec2::new(-1.0, -1.0),
+            origin + Vec2::new(1.0, -1.0)
+        ));
+
+        // one up-left and one down-right (fail)
+        assert!(!origin
+            .points_are_on_same_side(origin + Vec2::new(-1.0, 1.0), origin + Vec2::new(1.0, -1.0)));
+
+        // zero doesn't count
+        assert!(!origin
+            .points_are_on_same_side(origin + Vec2::new(0.0, -1.0), origin + Vec2::new(0.0, 1.0)));
+        assert!(!origin
+            .points_are_on_same_side(origin + Vec2::new(-1.0, 0.0), origin + Vec2::new(1.0, 0.0)));
     }
 }
