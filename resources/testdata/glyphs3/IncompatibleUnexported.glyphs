@@ -1,0 +1,198 @@
+{
+.appVersion = "3217";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = "Incompatible Unexported";
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+800
+);
+id = "96BF320B-D509-417D-A49A-02D51FD1CC94";
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+}
+);
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(200,0,l),
+(200,200,l),
+(0,200,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "96BF320B-D509-417D-A49A-02D51FD1CC94";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(500,0,l),
+(500,500,l),
+(0,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+export = 0;
+glyphname = doesnt_matter;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(105,102,l),
+(518,102,l),
+(518,515,l),
+(105,515,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = doesntmatter;
+pos = (294,632);
+}
+);
+layerId = "96BF320B-D509-417D-A49A-02D51FD1CC94";
+shapes = (
+{
+closed = 1;
+nodes = (
+(451,109,o),
+(539,197,o),
+(539,305,cs),
+(539,412,o),
+(451,500,o),
+(344,500,cs),
+(236,500,o),
+(148,412,o),
+(148,305,cs),
+(148,197,o),
+(236,109,o),
+(344,109,cs)
+);
+}
+);
+width = 600;
+}
+);
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "96BF320B-D509-417D-A49A-02D51FD1CC94";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

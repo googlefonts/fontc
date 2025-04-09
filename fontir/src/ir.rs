@@ -1499,19 +1499,20 @@ impl AnchorBuilder {
     }
 
     pub fn build(self) -> Result<GlyphAnchors, BadGlyph> {
-        // It would be nice if everyone was defined at default
-        for (anchor, positions) in &self.anchors {
-            if !positions.keys().any(|loc| !loc.has_any_non_zero()) {
-                return Err(BadGlyph::new(
-                    self.glyph_name.clone(),
-                    BadAnchor::new(anchor.clone(), BadAnchorReason::NoDefault),
-                ));
-            }
-        }
-
         let anchors = self
             .anchors
             .into_iter()
+            .filter(|(name, positions)| {
+                if !positions.keys().any(|loc| !loc.has_any_non_zero()) {
+                    log::warn!(
+                        "anchor '{name}' in glyph '{}' missing value for default location",
+                        self.glyph_name
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
             .map(|(name, positions)| {
                 AnchorKind::new(&name)
                     .map(|type_| Anchor {

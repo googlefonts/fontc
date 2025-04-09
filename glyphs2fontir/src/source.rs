@@ -2052,4 +2052,11 @@ mod tests {
         // this is a spacing-combining mark, so we shouldn't zero it's width
         assert!(glyph.default_instance().width != 0.0);
     }
+
+    #[test]
+    fn skip_inconsistent_anchors() {
+        let (source, context) =
+            build_static_metadata(glyphs3_dir().join("IncompatibleUnexported.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+    }
 }
