@@ -388,9 +388,7 @@ fn seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
         }
         // final guard statement
         // https://github.com/fonttools/fonttools/blob/a6f59a4f87a/Lib/fontTools/misc/bezierTools.py#L1221-L1223
-        if !(both_points_are_on_same_side_of_origin(pt, l1.p1, l1.p0)
-            && both_points_are_on_same_side_of_origin(pt, l2.p0, l2.p1))
-        {
+        if !(l1.p0.points_are_on_same_side(pt, l1.p1) && l2.p1.points_are_on_same_side(pt, l2.p0)) {
             return None;
         }
     }
@@ -403,11 +401,23 @@ fn py_isclose(a: f64, b: f64) -> bool {
     (a - b).abs() <= (TOLERANCE * a.abs().max(b.abs()))
 }
 
-//https://github.com/fonttools/fonttools/blob/a6f59a4f87a01110/Lib/fontTools/misc/bezierTools.py#L1148
-fn both_points_are_on_same_side_of_origin(a: Point, b: Point, origin: Point) -> bool {
-    let x_diff = (a.x - origin.x) * (b.x - origin.x);
-    let y_diff = (a.y - origin.y) * (b.y - origin.y);
-    !(x_diff <= 0.0 && y_diff <= 0.0)
+/// A helper for testing the position of a pair of points in reference to an origin
+///
+/// This is intended to reproduce the behaviour of the
+/// [`_both_points_are_on_same_side_of_origin`][pyref] function in python.
+///
+/// [pyref]: https://github.com/fonttools/fonttools/blob/a6f59a4f87a01110/Lib/fontTools/misc/bezierTools.py#L1148
+trait SameSide {
+    /// Test whether both points
+    fn points_are_on_same_side(&self, a: Point, b: Point) -> bool;
+}
+
+impl SameSide for Point {
+    fn points_are_on_same_side(&self, a: Point, b: Point) -> bool {
+        let x_diff = (a.x - self.x) * (b.x - self.x);
+        let y_diff = (a.y - self.y) * (b.y - self.y);
+        x_diff > 0.0 || y_diff > 0.0
+    }
 }
 
 // https://github.com/fonttools/fonttools/blob/cb159dea72/Lib/fontTools/misc/bezierTools.py#L1307
@@ -465,6 +475,7 @@ fn curve_curve_py_impl(
 #[cfg(test)]
 mod tests {
 
+    use kurbo::Vec2;
     use write_fonts::OtRound;
 
     use super::*;
@@ -898,5 +909,37 @@ mod tests {
         path.close_path();
 
         assert!(erase_open_corners(&path).is_some());
+    }
+
+    #[test]
+    fn same_sidedness() {
+        let origin = Point { x: 1.0, y: 1.0 };
+        // both right
+        assert!(origin
+            .points_are_on_same_side(origin + Vec2::new(1.0, 1.0), origin + Vec2::new(1.0, -1.0)));
+        // both left
+        assert!(origin.points_are_on_same_side(
+            origin + Vec2::new(-1.0, 1.0),
+            origin + Vec2::new(-1.0, -1.0)
+        ));
+        //// both above
+        assert!(origin
+            .points_are_on_same_side(origin + Vec2::new(-1.0, 1.0), origin + Vec2::new(-1.0, 1.0)));
+
+        // both below
+        assert!(origin.points_are_on_same_side(
+            origin + Vec2::new(-1.0, -1.0),
+            origin + Vec2::new(1.0, -1.0)
+        ));
+
+        // one up-left and one down-right (fail)
+        assert!(!origin
+            .points_are_on_same_side(origin + Vec2::new(-1.0, 1.0), origin + Vec2::new(1.0, -1.0)));
+
+        // zero doesn't count
+        assert!(!origin
+            .points_are_on_same_side(origin + Vec2::new(0.0, -1.0), origin + Vec2::new(0.0, 1.0)));
+        assert!(!origin
+            .points_are_on_same_side(origin + Vec2::new(-1.0, 0.0), origin + Vec2::new(1.0, 0.0)));
     }
 }
