@@ -1665,65 +1665,6 @@ impl GlyphBuilder {
         }
     }
 
-    /// * see <https://github.com/googlefonts/ufo2ft/blob/b3895a96ca910c1764df016bfee4719448cfec4a/Lib/ufo2ft/outlineCompiler.py#L1666-L1694>
-    pub fn new_notdef(
-        default_location: NormalizedLocation,
-        upem: u16,
-        ascender: f64,
-        descender: f64,
-    ) -> Self {
-        let upem = upem as f64;
-        let width: u16 = (upem * 0.5).ot_round();
-        let width = width as f64;
-        let stroke: u16 = (upem * 0.05).ot_round();
-        let stroke = stroke as f64;
-
-        let mut path = BezPath::new();
-
-        // outer box
-        let x_min = stroke;
-        let x_max = width - stroke;
-        let y_max = ascender;
-        let y_min = descender;
-        path.move_to((x_min, y_min));
-        path.line_to((x_max, y_min));
-        path.line_to((x_max, y_max));
-        path.line_to((x_min, y_max));
-        path.line_to((x_min, y_min));
-        path.close_path();
-
-        // inner, cut out, box
-        let x_min = x_min + stroke;
-        let x_max = x_max - stroke;
-        let y_max = y_max - stroke;
-        let y_min = y_min + stroke;
-        path.move_to((x_min, y_min));
-        path.line_to((x_min, y_max));
-        path.line_to((x_max, y_max));
-        path.line_to((x_max, y_min));
-        path.line_to((x_min, y_min));
-        path.close_path();
-
-        // TODO: Should this be None to match other glyphs' heights? This would deviate from ufo2ft
-        // See https://github.com/googlefonts/ufo2ft/blob/b3895a96/Lib/ufo2ft/outlineCompiler.py#L1656-L1658
-        let height = Some(ascender - descender);
-
-        Self {
-            name: GlyphName::NOTDEF.clone(),
-            emit_to_binary: true,
-            codepoints: HashSet::new(),
-            sources: HashMap::from([(
-                default_location,
-                GlyphInstance {
-                    width,
-                    height,
-                    contours: vec![path],
-                    ..Default::default()
-                },
-            )]),
-        }
-    }
-
     pub fn build(self) -> Result<Glyph, BadGlyph> {
         Glyph::new(
             self.name,
@@ -2008,7 +1949,7 @@ mod tests {
     use std::collections::HashMap;
 
     use fontdrasil::types::Axis;
-    use write_fonts::types::NameId;
+    use write_fonts::{types::NameId, OtRound};
 
     use pretty_assertions::assert_eq;
 

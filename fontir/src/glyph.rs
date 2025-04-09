@@ -14,14 +14,14 @@ use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
 };
-use kurbo::Affine;
+use kurbo::{Affine, BezPath};
 use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
-use write_fonts::types::GlyphId16;
+use write_fonts::{types::GlyphId16, OtRound};
 
 use crate::{
     error::{BadGlyph, Error},
-    ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
+    ir::{Component, GlobalMetric, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
     variations::VariationModel,
 };
@@ -634,21 +634,95 @@ fn ensure_notdef_exists_and_is_gid_0(
         None => {
             trace!("Generate {} and make it gid 0", GlyphName::NOTDEF);
             glyph_order.set_glyph_id(&GlyphName::NOTDEF, 0);
-            let static_metadata = context.static_metadata.get();
-            let metrics = context
-                .global_metrics
-                .get()
-                .at(static_metadata.default_location());
-            let builder = GlyphBuilder::new_notdef(
-                static_metadata.default_location().clone(),
-                static_metadata.units_per_em,
-                metrics.ascender.0,
-                metrics.descender.0,
-            );
-            context.glyphs.set(builder.build()?);
+            let notdef = synthesize_notdef(context)?;
+            context.glyphs.set(notdef);
         }
     }
     Ok(())
+}
+
+/// Create a (possibly variable) .notdef glyph
+///
+/// * see <https://github.com/googlefonts/ufo2ft/blob/b3895a96ca/Lib/ufo2ft/outlineCompiler.py#L1666-L1694>
+/// * and <https://github.com/googlefonts/fontc/issues/1262>
+fn synthesize_notdef(context: &Context) -> Result<Glyph, BadGlyph> {
+    let static_metadata = context.static_metadata.get();
+    let global_metrics = context.global_metrics.get();
+
+    let mut builder = GlyphBuilder::new(GlyphName::NOTDEF);
+    let upem = static_metadata.units_per_em;
+    let width = (upem as f64 * 0.5).ot_round();
+    let default = global_metrics.at(static_metadata.default_location());
+    let default_outline = make_notdef_outline(upem, default.ascender.0, default.descender.0);
+    // NOTE: Most glyphs have `None` heights, but here we are just matching ufo2ft:
+    // See https://github.com/googlefonts/ufo2ft/blob/b3895a96/Lib/ufo2ft/outlineCompiler.py#L1656-L1
+    let height = Some(default.ascender.0 - default.descender.0);
+
+    builder.try_add_source(
+        static_metadata.default_location(),
+        GlyphInstance {
+            width,
+            height,
+            contours: vec![default_outline],
+            ..Default::default()
+        },
+    )?;
+    if static_metadata.axes.is_empty() {
+        return builder.build();
+    }
+
+    for location in static_metadata.variation_model.locations() {
+        let ascender = global_metrics.get(GlobalMetric::Ascender, location);
+        let descender = global_metrics.get(GlobalMetric::Descender, location);
+        if (ascender, descender) == (default.ascender, default.descender) {
+            continue;
+        }
+        let outline = make_notdef_outline(upem, ascender.0, descender.0);
+
+        let instance = GlyphInstance {
+            width,
+            height: Some(ascender.0 - descender.0),
+            contours: vec![outline],
+            ..Default::default()
+        };
+        builder.try_add_source(location, instance)?;
+    }
+
+    builder.build()
+}
+
+/// Make a tofu outline: a rectangle sized based on the provided metrics
+fn make_notdef_outline(upm: u16, ascender: f64, descender: f64) -> BezPath {
+    let upm = upm as f64;
+    let width = OtRound::<u16>::ot_round(upm * 0.5) as f64;
+    let stroke = OtRound::<u16>::ot_round(upm * 0.05) as f64;
+
+    let mut path = BezPath::new();
+
+    // outer box
+    let x_min = stroke;
+    let x_max = width - stroke;
+    let y_max = ascender;
+    let y_min = descender;
+    path.move_to((x_min, y_min));
+    path.line_to((x_max, y_min));
+    path.line_to((x_max, y_max));
+    path.line_to((x_min, y_max));
+    path.line_to((x_min, y_min));
+    path.close_path();
+
+    // inner, cut out, box
+    let x_min = x_min + stroke;
+    let x_max = x_max - stroke;
+    let y_max = y_max - stroke;
+    let y_min = y_min + stroke;
+    path.move_to((x_min, y_min));
+    path.line_to((x_min, y_max));
+    path.line_to((x_max, y_max));
+    path.line_to((x_max, y_min));
+    path.line_to((x_min, y_min));
+    path.close_path();
+    path
 }
 
 impl Work<Context, WorkId, Error> for GlyphOrderWork {
@@ -799,7 +873,10 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
+        ir::{
+            Component, GlobalMetricsBuilder, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
+            StaticMetadata,
+        },
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
     };
@@ -920,6 +997,35 @@ mod tests {
                 Affine::translate((5.0, 0.0)),
             ),
         }
+    }
+
+    fn make_notdef_with_ascenders(ascender: &[(&NormalizedLocation, f64)]) -> Glyph {
+        let context = test_context_with_locations(ascender.iter().map(|x| x.0.clone()).collect());
+        let mut global_metrics = GlobalMetricsBuilder::new();
+        for (loc, val) in ascender {
+            global_metrics.populate_defaults(loc, 1000, None, Some(*val), Some(0.0), None);
+        }
+        let global_metrics = global_metrics
+            .build(&context.static_metadata.get().axes)
+            .unwrap();
+        context.global_metrics.set(global_metrics);
+        synthesize_notdef(&context).unwrap()
+    }
+
+    #[test]
+    fn variable_notdef() {
+        let [loc0, loc1] = make_wght_locations([0.0, 1.0]);
+        let notdef = make_notdef_with_ascenders(&[(&loc0, 600.), (&loc1, 700.)]);
+        assert_eq!(notdef.sources()[&loc0].height, Some(600.));
+        assert_eq!(notdef.sources()[&loc1].height, Some(700.));
+    }
+
+    #[test]
+    fn non_variable_notdef() {
+        let [loc0, loc1] = make_wght_locations([0.0, 1.0]);
+        let notdef = make_notdef_with_ascenders(&[(&loc0, 600.), (&loc1, 600.)]);
+        assert_eq!(notdef.sources().len(), 1);
+        assert_eq!(notdef.sources()[&loc0].height, Some(600.));
     }
 
     #[test]
