@@ -995,7 +995,7 @@ fn scripts_using_abvm() -> HashSet<UnicodeShortName> {
         .iter()
         .chain(USE_SCRIPTS)
         .chain(std::iter::once(&"Khmr"))
-        .filter_map(|s| UnicodeShortName::from_str(s).ok())
+        .filter_map(|s| UnicodeShortName::try_from_str(s).ok())
         .collect()
 }
 

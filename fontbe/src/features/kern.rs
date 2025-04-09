@@ -537,7 +537,7 @@ fn assign_lookups_to_scripts(
         let (mut ltr_lookups, mut rtl_lookups) = (Vec::new(), Vec::new());
         for (script, lookups) in lookups_by_script
             .iter()
-            .filter(|(script, _)| !dist_enabled_scripts.contains(script))
+            .filter(|(script, _)| !dist_enabled_scripts.contains(*script))
         {
             match ScriptDirection::for_script(script) {
                 ScriptDirection::LeftToRight => ltr_lookups.extend(lookups.iter().copied()),
@@ -1929,7 +1929,7 @@ mod tests {
         let (ast, errs) = fea_rs::parse::parse_string(fea);
         assert!(errs.is_empty());
         // make one dummy lookup
-        let script = UnicodeShortName::from_bytes_lossy(b"Latn");
+        let script = UnicodeShortName::try_from_str("Latn").unwrap();
         let lookups = BTreeMap::from([(script, vec![1])]);
         let features = assign_lookups_to_scripts(lookups, &ast, KERN);
         let dflt_mah = FeatureKey::new(KERN, Tag::new(b"MAH "), DFLT_SCRIPT);
