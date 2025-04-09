@@ -14,7 +14,7 @@ readme = "README.md"
 [dependencies]
 ascii_plist_derive = { version = "0.0.1", path = "ascii_plist_derive" }
 fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
-quick-xml = "0.36"
+quick-xml = "0.37"
 ordered-float.workspace = true
 kurbo.workspace = true
 indexmap.workspace = true

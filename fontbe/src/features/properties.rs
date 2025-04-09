@@ -207,7 +207,7 @@ pub(crate) fn dist_feature_enabled_scripts() -> HashSet<UnicodeShortName> {
         .iter()
         .chain(USE_SCRIPTS)
         .chain(["Khmr", "Mymr"].iter())
-        .map(|s| UnicodeShortName::from_str(s).unwrap())
+        .map(|s| UnicodeShortName::try_from_str(s).unwrap())
         .collect()
 }
 
@@ -256,51 +256,51 @@ pub(crate) fn scripts_for_codepoint(cp: u32) -> impl Iterator<Item = UnicodeShor
 // - https://unicode-org.atlassian.net/browse/ICU-21821
 // - https://unicode.org/Public/16.0.0/ucd/ScriptExtensions.txt
 fn script_ext_for_cp_override(cp: u32) -> Option<&'static [UnicodeShortName]> {
-    const AVST: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Avst");
-    const CARI: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Cari");
-    const COPT: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Copt");
-    const DUPL: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Dupl");
-    const ELBA: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Elba");
-    const GEOR: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Geor");
-    const GLAG: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Glag");
-    const GONG: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Gong");
-    const GOTH: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Goth");
-    const GREK: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Grek");
-    const HANI: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Hani");
-    const LATN: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Latn");
-    const LYDI: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Lydi");
-    const MAHJ: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Mahj");
-    const PERM: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Perm");
-    const SHAW: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Shaw");
-    const BENG: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Beng");
-    const CYRL: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Cyrl");
-    const DEVA: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Deva");
-    const LISU: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Lisu");
-    const THAI: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Thai");
-    const TOTO: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Toto");
-    const BOPO: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Bopo");
-    const CHER: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Cher");
-    const OSGE: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Osge");
-    const SUNU: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Sunu");
-    const TALE: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Tale");
-    const SYRC: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Syrc");
-    const TFNG: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Tfng");
-    const TODR: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Todr");
-    const AGHB: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Aghb");
-    const KANA: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Kana");
-    const HEBR: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Hebr");
-    const ARMN: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Armn");
-    const ETHI: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Ethi");
-    const RUNR: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Runr");
-    const ADLM: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Adlm");
-    const ARAB: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Arab");
-    const HUNG: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Hung");
-    const KTHI: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Kthi");
-    const LYCI: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Lyci");
-    const ORKH: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Orkh");
-    const MERO: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Mero");
-    const SAMR: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Samr");
-    const TANG: UnicodeShortName = UnicodeShortName::from_bytes_lossy(b"Tang");
+    const AVST: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Avst", b' ');
+    const CARI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Cari", b' ');
+    const COPT: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Copt", b' ');
+    const DUPL: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Dupl", b' ');
+    const ELBA: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Elba", b' ');
+    const GEOR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Geor", b' ');
+    const GLAG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Glag", b' ');
+    const GONG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Gong", b' ');
+    const GOTH: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Goth", b' ');
+    const GREK: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Grek", b' ');
+    const HANI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Hani", b' ');
+    const LATN: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Latn", b' ');
+    const LYDI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Lydi", b' ');
+    const MAHJ: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Mahj", b' ');
+    const PERM: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Perm", b' ');
+    const SHAW: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Shaw", b' ');
+    const BENG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Beng", b' ');
+    const CYRL: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Cyrl", b' ');
+    const DEVA: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Deva", b' ');
+    const LISU: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Lisu", b' ');
+    const THAI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Thai", b' ');
+    const TOTO: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Toto", b' ');
+    const BOPO: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Bopo", b' ');
+    const CHER: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Cher", b' ');
+    const OSGE: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Osge", b' ');
+    const SUNU: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Sunu", b' ');
+    const TALE: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Tale", b' ');
+    const SYRC: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Syrc", b' ');
+    const TFNG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Tfng", b' ');
+    const TODR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Todr", b' ');
+    const AGHB: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Aghb", b' ');
+    const KANA: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Kana", b' ');
+    const HEBR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Hebr", b' ');
+    const ARMN: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Armn", b' ');
+    const ETHI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Ethi", b' ');
+    const RUNR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Runr", b' ');
+    const ADLM: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Adlm", b' ');
+    const ARAB: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Arab", b' ');
+    const HUNG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Hung", b' ');
+    const KTHI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Kthi", b' ');
+    const LYCI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Lyci", b' ');
+    const ORKH: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Orkh", b' ');
+    const MERO: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Mero", b' ');
+    const SAMR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Samr", b' ');
+    const TANG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Tang", b' ');
 
     match cp {
         0x0B7 => Some(&[
@@ -364,7 +364,7 @@ fn get_script_short_name(script: Script) -> Option<UnicodeShortName> {
     let lookup = PropertyNamesShort::<Script>::new();
     lookup
         .get(script)
-        .and_then(|script| tinystr::TinyStr4::from_str(script).ok())
+        .and_then(|script| tinystr::TinyStr4::try_from_str(script).ok())
 }
 
 /// Takes an OpenType script tag and returns a unicode script identifier
@@ -384,7 +384,7 @@ pub(crate) fn ot_tag_to_script(script_tag: Tag) -> Option<UnicodeShortName> {
         .binary_search_exact(&tag)
         .or_else(|| NEW_SCRIPTS.binary_search_exact(&tag))
     {
-        return Some(UnicodeShortName::from_str(exception).unwrap());
+        return Some(UnicodeShortName::try_from_str(exception).unwrap());
     }
 
     // finally, algorithmic conversion
