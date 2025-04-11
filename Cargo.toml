@@ -56,3 +56,9 @@ members = [
 
 [patch.crates-io]
 tidy-sys = { version = "0.8.2", git = "https://github.com/cmyr/tidy-sys.git", branch = "cmake-hotfix" }
+
+# REBASE TO REMOVE BEFORE MERGE
+font-types = { git="https://github.com/Hoolean/fontations.git", branch="write-vvar" }
+read-fonts = { git="https://github.com/Hoolean/fontations.git", branch="write-vvar" }
+write-fonts = { git="https://github.com/Hoolean/fontations.git", branch="write-vvar" }
+skrifa = { git="https://github.com/Hoolean/fontations.git", branch="write-vvar" }

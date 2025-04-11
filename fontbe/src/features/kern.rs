@@ -1268,6 +1268,7 @@ mod tests {
                     categories: self.opentype_categories,
                 },
                 None,
+                false,
             )
             .unwrap();
             let kerns = finalize_kerning(

@@ -35,6 +35,7 @@ use write_fonts::{
         os2::SelectionFlags,
     },
     types::{NameId, Tag},
+    OtRound,
 };
 
 use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
@@ -311,6 +312,15 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         let categories = make_glyph_categories(font);
 
+        // Only build vertical metrics if at least one glyph defines a vertical
+        // attribute.
+        // https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/builders.py#L191-L199
+        let build_vertical = font
+            .glyphs
+            .values()
+            .flat_map(|glyph| glyph.layers.iter())
+            .any(|layer| layer.vert_width.is_some() || layer.vert_origin.is_some());
+
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
             names(font, selection_flags),
@@ -321,6 +331,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             italic_angle,
             categories,
             number_values,
+            build_vertical,
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
@@ -580,6 +591,41 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             set_metric!(UnderlineThickness, underline_thickness, 50.0);
             // -100.0 is the Glyphs default <https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/custom_params.py#L1136-L1156>
             set_metric!(UnderlinePosition, underline_position, -100.0);
+            set_metric!(VheaCaretSlopeRise, vhea_caret_slope_rise);
+            set_metric!(VheaCaretSlopeRun, vhea_caret_slope_run);
+            set_metric!(VheaCaretOffset, vhea_caret_offset);
+
+            // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f456d64ebe9993818770e170454/Lib/glyphsLib/builder/masters.py#L74-L92
+            metrics.set(
+                GlobalMetric::VheaAscender,
+                pos.clone(),
+                master
+                    .custom_parameters
+                    .vhea_ascender
+                    .or(font.custom_parameters.vhea_ascender)
+                    .map(|v| v as f64)
+                    .unwrap_or(font.units_per_em as f64 / 2.0),
+            );
+            metrics.set(
+                GlobalMetric::VheaDescender,
+                pos.clone(),
+                master
+                    .custom_parameters
+                    .vhea_descender
+                    .or(font.custom_parameters.vhea_descender)
+                    .map(|v| v as f64)
+                    .unwrap_or(-(font.units_per_em as f64 / 2.0)),
+            );
+            metrics.set(
+                GlobalMetric::VheaLineGap,
+                pos.clone(),
+                master
+                    .custom_parameters
+                    .vhea_line_gap
+                    .or(font.custom_parameters.vhea_line_gap)
+                    .map(|v| v as f64)
+                    .unwrap_or(font.units_per_em as f64),
+            );
 
             metrics.populate_defaults(
                 pos,
@@ -810,7 +856,10 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Variant(WorkId::StaticMetadata)
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlobalMetrics)
+            .build()
     }
 
     fn write_access(&self) -> Access<WorkId> {
@@ -831,6 +880,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 
         let static_metadata = context.static_metadata.get();
         let axes = &static_metadata.all_source_axes;
+
+        let global_metrics = context.global_metrics.get();
 
         let glyph = font
             .glyphs
@@ -867,11 +918,9 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 .into());
             };
             let master = &font.masters[*master_idx];
-            let mut location = font_info
-                .locations
-                .get(&master.axes_values)
-                .unwrap()
-                .clone();
+            let master_location = font_info.locations.get(&master.axes_values).unwrap();
+
+            let mut location = master_location.clone();
             // intermediate (aka 'brace') layers can override axis values from their
             // associated master
             if !instance.attributes.coordinates.is_empty() {
@@ -888,6 +937,11 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 axis_positions.entry(*tag).or_default().insert(*coord);
             }
 
+            // See https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/glyph.py#L359-L389
+            let vertical_origin = instance.vert_origin.map(|origin| {
+                (global_metrics.at(master_location).os2_typo_ascender - origin).ot_round()
+            });
+
             // TODO populate width and height properly
             let (contours, components) =
                 to_ir_contours_and_components(self.glyph_name.clone(), &instance.shapes)?;
@@ -897,7 +951,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 } else {
                     0.0
                 },
-                height: None,
+                height: instance.vert_width.map(|x| x.into_inner()),
+                vertical_origin,
                 contours,
                 components,
             };
@@ -1665,6 +1720,10 @@ mod tests {
                 hhea_ascender: 1158.0.into(),
                 hhea_descender: (-42.0).into(),
                 hhea_line_gap: 0.0.into(),
+                vhea_ascender: 500.0.into(),
+                vhea_descender: (-500.0).into(),
+                vhea_line_gap: 1000.0.into(),
+                vhea_caret_slope_run: 1.0.into(),
                 underline_thickness: 50.0.into(),
                 underline_position: (-100.0).into(),
                 ..Default::default()
@@ -1821,6 +1880,10 @@ mod tests {
                     hhea_ascender: 950.0.into(),
                     hhea_descender: (-350.0).into(),
                     hhea_line_gap: 0.0.into(),
+                    vhea_ascender: 500.0.into(),
+                    vhea_descender: (-500.0).into(),
+                    vhea_line_gap: 1000.0.into(),
+                    vhea_caret_slope_run: 1.0.into(),
                     underline_thickness: 40.0.into(), // overridden from global value
                     underline_position: (-300.0).into(),
                     ..Default::default()
@@ -1854,6 +1917,10 @@ mod tests {
                 hhea_ascender: 1000.0.into(),
                 hhea_descender: (-400.0).into(),
                 hhea_line_gap: 0.0.into(),
+                vhea_ascender: 500.0.into(),
+                vhea_descender: (-500.0).into(),
+                vhea_line_gap: 1000.0.into(),
+                vhea_caret_slope_run: 1.0.into(),
                 underline_thickness: 42.0.into(), // global value
                 underline_position: (-300.0).into(),
                 ..Default::default()
