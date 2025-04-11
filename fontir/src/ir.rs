@@ -1128,15 +1128,14 @@ impl NameBuilder {
 
         // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/outlineCompiler.py#L417-L421
         // Drop typographic names if they match the legacy ones
-        if let Some(family) = self.get(NameId::FAMILY_NAME) {
-            if Some(family) == self.get(NameId::TYPOGRAPHIC_FAMILY_NAME) {
-                self.remove(NameId::TYPOGRAPHIC_FAMILY_NAME);
-            }
-        }
-        if let Some(subfamily) = self.get(NameId::SUBFAMILY_NAME) {
-            if Some(subfamily) == self.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME) {
-                self.remove(NameId::TYPOGRAPHIC_SUBFAMILY_NAME);
-            }
+        let family = self.get(NameId::FAMILY_NAME);
+        let sub_family = self.get(NameId::SUBFAMILY_NAME);
+        if (family.is_some() && sub_family.is_some())
+            && (family == self.get(NameId::TYPOGRAPHIC_FAMILY_NAME)
+                && sub_family == self.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
+        {
+            self.remove(NameId::TYPOGRAPHIC_FAMILY_NAME);
+            self.remove(NameId::TYPOGRAPHIC_SUBFAMILY_NAME);
         }
     }
 
