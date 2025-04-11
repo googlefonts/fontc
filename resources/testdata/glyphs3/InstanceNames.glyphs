@@ -1,0 +1,35 @@
+{
+.appVersion = "3340";
+.formatVersion = 3;
+familyName = Cormorant;
+fontMaster = (
+{
+axesValues = (
+40
+);
+iconName = Light;
+id = "2373B5BC-5F65-41C1-A640-5B37284EFBFD";
+name = Light;
+},
+);
+instances = (
+{
+name = Italic;
+properties = (
+{
+key = preferredSubfamilyNames;
+values = (
+{
+language = dflt;
+value = "Italic";
+}
+);
+},
+);
+type = variable;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 4;
+versionMinor = 2;
+}
