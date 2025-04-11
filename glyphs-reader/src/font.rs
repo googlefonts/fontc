@@ -808,6 +808,29 @@ impl RawName {
     fn is_empty(&self) -> bool {
         self.value.is_none() && self.values.is_empty()
     }
+
+    fn get_value(&self) -> Option<&str> {
+        if let Some(value) = &self.value {
+            return Some(value.as_str());
+        }
+
+        // This is a localized (multivalued) name. Pick a winner.
+        // See <https://github.com/googlefonts/fontc/issues/1011>
+        // In order of preference: dflt, default, ENG, whatever is first
+        // <https://github.com/googlefonts/glyphsLib/blob/1cb4fc5ae2cf385df95d2b7768e7ab4eb60a5ac3/Lib/glyphsLib/classes.py#L3155-L3161>
+        self.values
+            .iter()
+            .enumerate()
+            // (score [lower better], index)
+            .map(|(i, raw)| match raw.language.as_str() {
+                "dflt" => (-3, raw.value.as_str()),
+                "default" => (-2, raw.value.as_str()),
+                "ENG" => (-1, raw.value.as_str()),
+                _ => (i as i32, raw.value.as_str()),
+            })
+            .min()
+            .map(|(_, raw)| raw)
+    }
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
@@ -2571,32 +2594,7 @@ fn codepage_range_bit(codepage: u32) -> Result<u32, Error> {
 fn update_names(names: &mut BTreeMap<String, String>, raw_names: &[RawName]) {
     for name in raw_names {
         // Name may have one value, in which case use it, or lots, in which case try to pick a winner
-        if let Some(value) = name.value.as_deref().or_else(|| {
-            // This is a localized (multivalued) name. Pick a winner.
-            // See <https://github.com/googlefonts/fontc/issues/1011>
-            // In order of preference: dflt, default, ENG, whatever is first
-            // <https://github.com/googlefonts/glyphsLib/blob/1cb4fc5ae2cf385df95d2b7768e7ab4eb60a5ac3/Lib/glyphsLib/classes.py#L3155-L3161>
-            name.values
-                .iter()
-                .enumerate()
-                // (score [lower better], index)
-                .map(|(i, n)| match n.language.as_str() {
-                    "dflt" => (-3, i),
-                    "default" => (-2, i),
-                    "ENG" => (-1, i),
-                    _ => (i as i32, i),
-                })
-                .reduce(
-                    |(best_score, best_index), (candidate_score, candidate_index)| {
-                        if best_score < candidate_score {
-                            (best_score, best_index)
-                        } else {
-                            (candidate_score, candidate_index)
-                        }
-                    },
-                )
-                .map(|(_, i)| name.values[i].value.as_str())
-        }) {
+        if let Some(value) = name.get_value() {
             names.insert(name.key.clone(), value.to_string());
         }
     }
