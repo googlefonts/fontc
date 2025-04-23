@@ -1128,15 +1128,14 @@ impl NameBuilder {
 
         // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/outlineCompiler.py#L417-L421
         // Drop typographic names if they match the legacy ones
-        if let Some(family) = self.get(NameId::FAMILY_NAME) {
-            if Some(family) == self.get(NameId::TYPOGRAPHIC_FAMILY_NAME) {
-                self.remove(NameId::TYPOGRAPHIC_FAMILY_NAME);
-            }
-        }
-        if let Some(subfamily) = self.get(NameId::SUBFAMILY_NAME) {
-            if Some(subfamily) == self.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME) {
-                self.remove(NameId::TYPOGRAPHIC_SUBFAMILY_NAME);
-            }
+        let family = self.get(NameId::FAMILY_NAME);
+        let sub_family = self.get(NameId::SUBFAMILY_NAME);
+        if (family.is_some() && sub_family.is_some())
+            && (family == self.get(NameId::TYPOGRAPHIC_FAMILY_NAME)
+                && sub_family == self.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
+        {
+            self.remove(NameId::TYPOGRAPHIC_FAMILY_NAME);
+            self.remove(NameId::TYPOGRAPHIC_SUBFAMILY_NAME);
         }
     }
 
@@ -2356,5 +2355,41 @@ mod tests {
             .0
             .ot_round();
         assert_eq!(451, rounded);
+    }
+
+    #[test]
+    fn only_clear_preferred_names_if_both_identical() {
+        fn make_builder(names: &[(NameId, &str)]) -> NameBuilder {
+            let mut builder = NameBuilder::default();
+            for (id, name) in names {
+                builder.add(*id, name.to_string());
+            }
+            builder.apply_default_fallbacks("cmyr");
+            builder
+        }
+
+        let identical = make_builder(&[
+            (NameId::FAMILY_NAME, "Derp"),
+            (NameId::TYPOGRAPHIC_FAMILY_NAME, "Derp"),
+            (NameId::SUBFAMILY_NAME, "Regular"),
+            (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Regular"),
+        ]);
+
+        assert!(identical.get(NameId::TYPOGRAPHIC_FAMILY_NAME).is_none());
+        assert!(identical.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME).is_none());
+
+        let different_subfamily = make_builder(&[
+            (NameId::FAMILY_NAME, "Derp"),
+            (NameId::TYPOGRAPHIC_FAMILY_NAME, "Derp"),
+            (NameId::SUBFAMILY_NAME, "Regular"),
+            (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Regular Italic"),
+        ]);
+
+        assert!(different_subfamily
+            .get(NameId::TYPOGRAPHIC_FAMILY_NAME)
+            .is_some());
+        assert!(different_subfamily
+            .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
+            .is_some());
     }
 }
