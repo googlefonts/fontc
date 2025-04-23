@@ -2547,6 +2547,17 @@ impl Instance {
             custom_parameters: value.custom_parameters.to_custom_params()?,
         })
     }
+
+    fn family_name(&self) -> Option<&str> {
+        self.properties
+            .iter()
+            .find(|raw| raw.key == "familyNames")
+            .and_then(RawName::get_value)
+        // glyphsLib here also checks for 'familyName' in customParams, but we
+        // don't have that key? Possible that we're ignoring it in the raw params
+        // conversion..
+        // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577/Lib/glyphsLib/classes.py#L3271
+    }
 }
 
 /// Glyphs appears to use code page identifiers rather than bits
@@ -2654,12 +2665,14 @@ impl TryFrom<RawFont> for Font {
         let mut names = BTreeMap::new();
         update_names(&mut names, &from.properties);
         // Evidently names can come from instances too! They are higher priority so do them last (overwriting prior values)
-        if let Some(name) = from
-            .font_master
-            .get(default_master_idx)
-            .and_then(|m| m.name.as_deref())
-        {
-            if let Some(instance) = variable_instance_for(&instances, name) {
+        for instance in &instances {
+            if instance.active
+                && instance.type_ == InstanceType::Variable
+                    // glyphsLib has instance.familyName return the root familyName
+                    // if it has no other value; we just unwrap_or_true here
+                    // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577/Lib/glyphsLib/classes.py#L3272
+                && instance.family_name().map(|name| name ==  from.family_name.as_str()).unwrap_or(true)
+            {
                 update_names(&mut names, &instance.properties);
             }
         }
@@ -4127,5 +4140,13 @@ mod tests {
         assert_eq!(master.x_height(), Some(0.));
         // but this metric is not defined in the font, so it it's `None`
         assert_eq!(master.italic_angle(), None);
+    }
+
+    /// If there is a variable instance and it does not have a set familyName,
+    /// we should still use names stored in that instance.
+    #[test]
+    fn names_from_instances() {
+        let font = Font::load(&glyphs3_dir().join("InstanceNames.glyphs")).unwrap();
+        assert_eq!(font.names.get("preferredSubfamilyNames").unwrap(), "Italic")
     }
 }
