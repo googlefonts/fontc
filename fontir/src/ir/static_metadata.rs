@@ -16,7 +16,7 @@ use write_fonts::{
 };
 
 use fontdrasil::{
-    coords::{NormalizedCoord, NormalizedLocation, UserLocation},
+    coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserLocation},
     types::{Axis, GlyphName},
 };
 
@@ -73,6 +73,8 @@ pub struct StaticMetadata {
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
     pub gdef_categories: GdefCategories,
+    /// Feature variation rules
+    pub variations: Option<VariableFeature>,
 }
 
 /// IR for a named position in variation space
@@ -225,6 +227,61 @@ pub struct Panose {
     pub x_height: u8,
 }
 
+/// A series of substitution rules to be applied to layout features
+/// at specific points in design space.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct VariableFeature {
+    /// The features that for which these rules should apply, as part of a
+    /// [`FeatureVariations`] table.
+    ///
+    /// [`FeatureVariations`]: write_fonts::tables::layout::FeatureVariations
+    pub features: Vec<Tag>,
+    pub rules: Vec<Rule>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Rule {
+    /// sets of conditions that trigger this rule.
+    ///
+    /// Only one of these needs to be true for the substitutions to be applied.
+    pub conditions: Vec<ConditionSet>,
+    /// Substitutions to be applied if a condition matches.
+    pub substitutions: Vec<Substitution>,
+}
+
+/// A glyph substitution
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Substitution {
+    /// The glyph to be substituted
+    pub replace: GlyphName,
+    /// The substitute glyph
+    pub with: GlyphName,
+}
+
+/// A series of [`Condition`]s.
+///
+/// All conditions in the set must be true for it to to be applied.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ConditionSet(pub Vec<Condition>);
+
+/// A range on an axis.
+///
+/// One of `min` or `max` must be set.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Condition {
+    pub axis: Tag,
+    /// The minimum position for this condition, in design space coordinates.
+    pub min: Option<DesignCoord>,
+    /// The maximum position for this condition, in design space coordinates.
+    pub max: Option<DesignCoord>,
+}
+
+impl FromIterator<Condition> for ConditionSet {
+    fn from_iter<T: IntoIterator<Item = Condition>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
 impl StaticMetadata {
     const DEFAULT_VENDOR_ID_TAG: Tag = Tag::new(b"NONE");
     // TODO: we could consider a builder or something for this?
@@ -310,6 +367,7 @@ impl StaticMetadata {
                 us_width_class: None,
                 gasp: Vec::new(),
             },
+            variations: None,
         })
     }
 
@@ -444,6 +502,7 @@ mod tests {
                 gasp: Vec::new(),
             },
             number_values: Default::default(),
+            variations: None,
         }
     }
 

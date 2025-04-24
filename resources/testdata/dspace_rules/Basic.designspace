@@ -1,0 +1,26 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="400" maximum="700" default="400"/>
+  </axes>
+  <rules>
+    <rule name="BRACKET.550.900">
+      <conditionset>
+        <condition name="Weight" minimum="550" maximum="700"/>
+      </conditionset>
+      <sub name="bar" with="plus"/>
+    </rule>
+  </rules>
+  <sources>
+      <source filename="../WghtVar-Regular.ufo" name="Wght Var Regular" familyname="Wght Var" stylename="Regular">
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </source>
+    <source filename="../WghtVar-Bold.ufo" name="Wght Var Bold" familyname="Wght Var" stylename="Bold">
+      <location>
+        <dimension name="Weight" xvalue="700"/>
+      </location>
+    </source>
+  </sources>
+</designspace>

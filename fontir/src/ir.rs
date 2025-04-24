@@ -29,8 +29,8 @@ mod static_metadata;
 
 pub use path_builder::GlyphPathBuilder;
 pub use static_metadata::{
-    GdefCategories, MetaTableValues, MiscMetadata, NameKey, NamedInstance, Panose, PostscriptNames,
-    StaticMetadata,
+    Condition, ConditionSet, GdefCategories, MetaTableValues, MiscMetadata, NameKey, NamedInstance,
+    Panose, PostscriptNames, Rule, StaticMetadata, Substitution, VariableFeature,
 };
 
 pub const DEFAULT_VENDOR_ID: &str = "NONE";
