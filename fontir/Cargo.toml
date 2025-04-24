@@ -1,6 +1,6 @@
 [package]
 name = "fontir"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Intermediate Representation used by fontc, a font compiler."
@@ -35,6 +35,5 @@ smol_str.workspace = true
 
 [dev-dependencies]
 diff.workspace = true
-ansi_term.workspace = true
 tempfile.workspace = true
 pretty_assertions.workspace = true
