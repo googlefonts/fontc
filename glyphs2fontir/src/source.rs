@@ -2052,4 +2052,11 @@ mod tests {
         // this is a spacing-combining mark, so we shouldn't zero it's width
         assert!(glyph.default_instance().width != 0.0);
     }
+
+    // this font causes a crash when we try to generate the notdef glyph, due to
+    // funny phantom locations?
+    #[test]
+    fn hmm() {
+        let (_source, _context) = build_static_metadata(glyphs2_dir().join("Component.glyphs"));
+    }
 }
