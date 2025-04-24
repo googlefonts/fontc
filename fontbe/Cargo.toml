@@ -1,6 +1,6 @@
 [package]
 name = "fontbe"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "the backend for fontc, a font compiler."
@@ -39,7 +39,6 @@ chrono.workspace = true
 
 [dev-dependencies]
 diff.workspace = true
-ansi_term.workspace = true
 tempfile.workspace = true
 more-asserts.workspace = true
 temp-env.workspace = true
