@@ -180,12 +180,16 @@ pub fn to_ir_glyph(
         for location in locations {
             glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph)?)?;
 
-            for anchor in norad_glyph.anchors.iter() {
-                anchors.add(
-                    anchor.name.as_ref().unwrap().as_str().into(),
-                    location.clone(),
-                    (anchor.x, anchor.y).into(),
-                )?;
+            // we only care about anchors from exportable glyphs
+            // https://github.com/googlefonts/fontc/issues/1397
+            if emit_to_binary {
+                for anchor in norad_glyph.anchors.iter() {
+                    anchors.add(
+                        anchor.name.as_ref().unwrap().as_str().into(),
+                        location.clone(),
+                        (anchor.x, anchor.y).into(),
+                    )?;
+                }
             }
         }
     }
