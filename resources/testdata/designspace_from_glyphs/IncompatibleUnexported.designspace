@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="400" maximum="800" default="400"/>
+  </axes>
+  <sources>
+    <source filename="IncompatibleUnexported-Regular.ufo" name="Incompatible Unexported Regular" familyname="Incompatible Unexported" stylename="Regular">
+      <lib copy="1"/>
+      <groups copy="1"/>
+      <features copy="1"/>
+      <info copy="1"/>
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </source>
+    <source filename="IncompatibleUnexported-Bold.ufo" name="Incompatible Unexported Bold" familyname="Incompatible Unexported" stylename="Bold">
+      <location>
+        <dimension name="Weight" xvalue="800"/>
+      </location>
+    </source>
+  </sources>
+  <lib>
+    <dict>
+      <key>public.skipExportGlyphs</key>
+      <array>
+        <string>doesnt_matter</string>
+      </array>
+    </dict>
+  </lib>
+</designspace>

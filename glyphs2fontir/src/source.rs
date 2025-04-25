@@ -904,8 +904,12 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 
             ir_glyph.try_add_source(&location, glyph_instance)?;
 
-            for anchor in instance.anchors.iter() {
-                ir_anchors.add(anchor.name.as_str().into(), location.clone(), anchor.pos)?;
+            // we only care about anchors from exportable glyphs
+            // https://github.com/googlefonts/fontc/issues/1397
+            if glyph.export {
+                for anchor in instance.anchors.iter() {
+                    ir_anchors.add(anchor.name.as_str().into(), location.clone(), anchor.pos)?;
+                }
             }
         }
 

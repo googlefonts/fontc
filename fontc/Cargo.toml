@@ -49,6 +49,7 @@ skrifa.workspace = true
 kurbo.workspace = true
 chrono.workspace = true
 ordered-float.workspace = true
+rstest.workspace = true
 
 [build-dependencies]
 vergen-gitcl = { version = "1.0", features = ["build", "cargo", "rustc"] }
