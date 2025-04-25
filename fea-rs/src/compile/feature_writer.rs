@@ -1,9 +1,16 @@
 //! API for the client to manually add additional features
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use write_fonts::{
-    tables::layout::{builders::LookupBuilder, LookupFlag},
+    tables::{
+        gpos::builders::{
+            CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder,
+            PairPosBuilder,
+        },
+        gsub::builders::SingleSubBuilder,
+        layout::{builders::LookupBuilder, ConditionSet, LookupFlag},
+    },
     types::{GlyphId16, Tag},
 };
 
@@ -12,7 +19,10 @@ use crate::GlyphSet;
 use super::{
     features::{AllFeatures, FeatureLookups},
     language_system::{DefaultLanguageSystems, LanguageSystem},
-    lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, LookupIdMap, PositionLookup},
+    lookups::{
+        AllLookups, FeatureKey, FilterSetId, LookupId, LookupIdMap, PositionLookup,
+        SubstitutionLookup,
+    },
     tables::{GdefBuilder, Tables},
     CaretValue,
 };
@@ -30,23 +40,31 @@ impl FeatureProvider for NopFeatureProvider {
     fn add_features(&self, _: &mut FeatureBuilder) {}
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct RawFeatureVariations {
+    pub(crate) features: Vec<Tag>,
+    pub(crate) conditions: Vec<(ConditionSet, Vec<LookupId>)>,
+}
+
 /// A structure that allows client code to add additional features to the compilation.
 pub struct FeatureBuilder<'a> {
     pub(crate) language_systems: &'a DefaultLanguageSystems,
     pub(crate) tables: &'a mut Tables,
-    pub(crate) lookups: Vec<(LookupId, PositionLookup)>,
+    pub(crate) pos_lookups: Vec<(LookupId, PositionLookup)>,
+    pub(crate) sub_lookups: Vec<(LookupId, SubstitutionLookup)>,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
     mark_filter_sets: &'a mut HashMap<GlyphSet, FilterSetId>,
+    feature_variations: Option<RawFeatureVariations>,
 }
 
-pub trait GposSubtableBuilder: Sized {
+pub trait LookupSubtableBuilder: Sized {
     #[doc(hidden)]
     fn to_pos_lookup(
         flags: LookupFlag,
         filter_set: Option<FilterSetId>,
         subtables: Vec<Self>,
-    ) -> ExternalGposLookup;
+    ) -> ExternalLookup;
 }
 
 /// A lookup generated outside of user FEA
@@ -58,6 +76,10 @@ pub struct PendingLookup<T> {
     subtables: Vec<T>,
     flags: LookupFlag,
     mark_filter_set: Option<GlyphSet>,
+    /// If `true`, this lookup will be inserted at the front of the lookup list.
+    ///
+    /// This is required for lookups referenced by the `rvrn` feature.
+    goes_to_front_of_list: bool,
 }
 
 impl<T> PendingLookup<T> {
@@ -69,7 +91,18 @@ impl<T> PendingLookup<T> {
             subtables,
             flags,
             mark_filter_set,
+            goes_to_front_of_list: false,
         }
+    }
+
+    /// Builder-style method to mark this lookup as needing to be at the front
+    /// of the lookup list.
+    ///
+    /// Lookups with this flag set will be ordered first, and will otherwise
+    /// maintain the order in which they were added.
+    pub fn at_front_of_list(mut self, flag: bool) -> Self {
+        self.goes_to_front_of_list = flag;
+        self
     }
 
     /// Return a reference to the subtables in this lookup.
@@ -83,10 +116,16 @@ impl<T> PendingLookup<T> {
     }
 }
 
-/// An externally created GPOS lookup.
+/// An externally created lookup.
 ///
-/// This only exists so that we can avoid making our internal types `pub`.
-pub struct ExternalGposLookup(PositionLookup);
+/// This exists so that we can avoid making our internal types `pub`.
+pub struct ExternalLookup(Inner);
+
+// private so as not to expose the payloads
+enum Inner {
+    Gpos(PositionLookup),
+    Gsub(SubstitutionLookup),
+}
 
 impl<'a> FeatureBuilder<'a> {
     pub(crate) fn new(
@@ -97,9 +136,11 @@ impl<'a> FeatureBuilder<'a> {
         Self {
             language_systems,
             tables,
-            lookups: Default::default(),
+            pos_lookups: Default::default(),
+            sub_lookups: Default::default(),
             features: Default::default(),
             mark_filter_sets,
+            feature_variations: Default::default(),
             lig_carets: Default::default(),
         }
     }
@@ -123,16 +164,26 @@ impl<'a> FeatureBuilder<'a> {
     ///
     /// The `LookupId` that is returned can then be included in features (i.e,
     /// passed to [`add_feature`](Self::add_feature).)
-    pub fn add_lookup<T: GposSubtableBuilder>(&mut self, lookup: PendingLookup<T>) -> LookupId {
+    pub fn add_lookup<T: LookupSubtableBuilder>(&mut self, lookup: PendingLookup<T>) -> LookupId {
         let PendingLookup {
             subtables,
             flags,
             mark_filter_set,
+            goes_to_front_of_list,
         } = lookup;
         let filter_set_id = mark_filter_set.map(|cls| self.get_filter_set_id(cls));
         let lookup = T::to_pos_lookup(flags, filter_set_id, subtables);
-        let next_id = LookupId::External(self.lookups.len());
-        self.lookups.push((next_id, lookup.0));
+        let next_id = match &lookup.0 {
+            Inner::Gpos(_) => LookupId::ExternalGpos(self.pos_lookups.len()),
+            Inner::Gsub(_) if goes_to_front_of_list => {
+                LookupId::ExternalFrontOfList(self.sub_lookups.len())
+            }
+            Inner::Gsub(_) => LookupId::ExternalGsub(self.sub_lookups.len()),
+        };
+        match lookup.0 {
+            Inner::Gpos(lookup) => self.pos_lookups.push((next_id, lookup)),
+            Inner::Gsub(lookup) => self.sub_lookups.push((next_id, lookup)),
+        }
         next_id
     }
 
@@ -154,6 +205,27 @@ impl<'a> FeatureBuilder<'a> {
         self.features.entry(key).or_default().base = lookups;
     }
 
+    /// Add feature variations.
+    ///
+    /// The variations will be added to each feature in `tags`.
+    ///
+    /// For each feature tag:
+    /// - if any `FeatureRecord`s exist with that tag, the variations will be
+    ///   added to them.
+    /// - if none exist, a new feature will be registered for the default
+    ///   language systems, and the variations will be added to these features.
+    pub fn add_feature_variations(
+        &mut self,
+        features: Vec<Tag>,
+        conditions: Vec<(ConditionSet, Vec<LookupId>)>,
+    ) {
+        assert!(self.feature_variations.is_none(), "can only be added once");
+        self.feature_variations = Some(RawFeatureVariations {
+            features,
+            conditions,
+        })
+    }
+
     fn get_filter_set_id(&mut self, cls: GlyphSet) -> FilterSetId {
         let next_id = self.mark_filter_sets.len();
         *self.mark_filter_sets.entry(cls).or_insert_with(|| {
@@ -166,32 +238,45 @@ impl<'a> FeatureBuilder<'a> {
 
     pub(crate) fn finish(self) -> ExternalFeatures {
         let FeatureBuilder {
-            lookups,
+            pos_lookups,
+            sub_lookups,
             features,
             lig_carets,
+            feature_variations,
             ..
         } = self;
         ExternalFeatures {
             features,
-            lookups,
+            pos_lookups,
+            sub_lookups,
+            feature_variations,
             lig_carets,
         }
     }
 }
 
-impl<T> GposSubtableBuilder for T
-where
-    T: Default,
-    LookupBuilder<T>: Into<PositionLookup>,
-{
-    fn to_pos_lookup(
-        flags: LookupFlag,
-        filter_set: Option<FilterSetId>,
-        subtables: Vec<Self>,
-    ) -> ExternalGposLookup {
-        ExternalGposLookup(LookupBuilder::new_with_lookups(flags, filter_set, subtables).into())
-    }
+macro_rules! impl_builder_trait {
+    ($builder:ty, $var:ident) => {
+        impl LookupSubtableBuilder for $builder {
+            fn to_pos_lookup(
+                flags: LookupFlag,
+                filter_set: Option<FilterSetId>,
+                subtables: Vec<Self>,
+            ) -> ExternalLookup {
+                ExternalLookup(Inner::$var(
+                    LookupBuilder::new_with_lookups(flags, filter_set, subtables).into(),
+                ))
+            }
+        }
+    };
 }
+
+impl_builder_trait!(SingleSubBuilder, Gsub);
+impl_builder_trait!(PairPosBuilder, Gpos);
+impl_builder_trait!(MarkToBaseBuilder, Gpos);
+impl_builder_trait!(MarkToMarkBuilder, Gpos);
+impl_builder_trait!(MarkToLigBuilder, Gpos);
+impl_builder_trait!(CursivePosBuilder, Gpos);
 
 // features that can be added by a feature writer
 const CURS: Tag = Tag::new(b"curs");
@@ -204,9 +289,11 @@ const DIST: Tag = Tag::new(b"dist");
 
 /// All of the state that is generated by the external provider
 pub(crate) struct ExternalFeatures {
-    pub(crate) lookups: Vec<(LookupId, PositionLookup)>,
+    pub(crate) pos_lookups: Vec<(LookupId, PositionLookup)>,
+    pub(crate) sub_lookups: Vec<(LookupId, SubstitutionLookup)>,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
+    pub(crate) feature_variations: Option<RawFeatureVariations>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
@@ -226,8 +313,10 @@ struct MergeCtx<'a> {
     all_feats: &'a mut AllFeatures,
     // that were explicit
     insert_markers: &'a HashMap<Tag, InsertionPoint>,
-    ext_lookups: BTreeMap<LookupId, PositionLookup>,
+    ext_pos_lookups: BTreeMap<LookupId, PositionLookup>,
+    ext_sub_lookups: BTreeMap<LookupId, SubstitutionLookup>,
     ext_features: BTreeMap<FeatureKey, FeatureLookups>,
+    feature_variations: Option<RawFeatureVariations>,
     // ready for insertion
     processed_lookups: Vec<(InsertionPoint, Vec<(LookupId, PositionLookup)>)>,
     // track how many groups of lookups have been appended on the end,
@@ -264,13 +353,18 @@ impl MergeCtx<'_> {
         // okay so now 'processed_lookups' should contain insertion points for
         // all of our lookups
 
-        if !self.ext_lookups.is_empty() {
+        if !self.ext_pos_lookups.is_empty() {
             log::warn!("feature merging left unhandled features!");
         }
-        self.finalize();
+        let mut id_map = self.finalize_gpos();
+        self.finalize_gsub(&mut id_map);
+
+        self.all_feats.merge_external_features(self.ext_features);
+        self.all_feats.remap_ids(&id_map);
+        self.all_lookups.remap_ids(&id_map);
     }
 
-    fn finalize(mut self) {
+    fn finalize_gpos(&mut self) -> LookupIdMap {
         self.processed_lookups.sort_by_key(|(key, _)| *key);
 
         // this is the actual logic for inserting the lookups into the main
@@ -282,7 +376,7 @@ impl MergeCtx<'_> {
         // 'adjustments' stores the state we need to remap existing ids, if needed.
         let mut adjustments = Vec::new();
 
-        for (insert_point, mut lookups) in self.processed_lookups {
+        for (insert_point, lookups) in &mut self.processed_lookups {
             let first_id = insert_point.lookup_id.to_raw();
             // within a feature, the lookups should honor the ordering they were
             // assigned by the user
@@ -296,7 +390,7 @@ impl MergeCtx<'_> {
             let insert_at = first_id + inserted_so_far;
             inserted_so_far += lookups.len();
             self.all_lookups
-                .splice_gpos(insert_at, lookups.into_iter().map(|v| v.1.clone()));
+                .splice_gpos(insert_at, lookups.iter().map(|v| v.1.clone()));
             adjustments.push((first_id, inserted_so_far));
         }
 
@@ -317,10 +411,81 @@ impl MergeCtx<'_> {
             }
             (range_start, adjust, adjustments) = (*next_start, *next_adjust, remaining);
         }
+        map
+    }
 
-        self.all_feats.merge_external_features(self.ext_features);
-        self.all_feats.remap_ids(&map);
-        self.all_lookups.remap_ids(&map);
+    fn finalize_gsub(&mut self, id_map: &mut LookupIdMap) {
+        let (start, end): (Vec<_>, Vec<_>) = self
+            .ext_sub_lookups
+            .iter()
+            .partition(|(id, _)| matches!(id, LookupId::ExternalFrontOfList(_)));
+
+        self.all_lookups
+            .splice_gsub(0, start.iter().map(|(_, lk)| (*lk).clone()));
+
+        let last_id = self.all_lookups.next_gsub_id().to_raw();
+        self.all_lookups
+            .splice_gsub(last_id, end.iter().map(|(_, lk)| (*lk).clone()));
+
+        for (i, (temp_id, _)) in start.iter().enumerate() {
+            id_map.insert(**temp_id, LookupId::Gsub(i));
+        }
+
+        for (i, (temp_id, _)) in end.iter().enumerate() {
+            id_map.insert(**temp_id, LookupId::Gsub(last_id + i));
+        }
+        self.add_feature_variations();
+    }
+
+    fn add_feature_variations(&mut self) {
+        let Some(RawFeatureVariations {
+            features,
+            conditions,
+        }) = self.feature_variations.take()
+        else {
+            return;
+        };
+
+        let feat_tags = features.into_iter().collect::<HashSet<_>>();
+        log::info!("adding feature variations for {feat_tags:?}");
+
+        // first check if any of the added features already exist; if they do,
+        // the replacement feature will include the old lookups.
+        let mut done_tags = HashSet::new();
+        for (key, feat) in self.all_feats.features.iter_mut() {
+            if !feat_tags.contains(&key.feature) {
+                continue;
+            }
+            done_tags.insert(key.feature);
+            for (cond, lookups) in &conditions {
+                let combined_lookups = feat.base.iter().chain(lookups.iter()).copied().collect();
+                log::debug!(
+                    "adding feature variations to existing feature '{}'",
+                    key.feature
+                );
+                if let Some(_prev) = feat.variations.insert(cond.to_owned(), combined_lookups) {
+                    log::warn!("feature writer replaced existing variations for {key:?}");
+                }
+            }
+        }
+
+        // then create new features for any remaining, and add to all known language systems
+        let all_lang_systems = self
+            .all_feats
+            .features
+            .keys()
+            .map(|key| (key.script, key.language))
+            .collect::<HashSet<_>>();
+
+        for feature_tag in feat_tags.difference(&done_tags) {
+            for (script, lang) in &all_lang_systems {
+                let key = FeatureKey::new(*feature_tag, *lang, *script);
+                self.all_feats
+                    .get_or_insert(key)
+                    .variations
+                    .extend(conditions.iter().cloned());
+            }
+        }
     }
 
     fn do_curs(&mut self) {
@@ -419,7 +584,7 @@ impl MergeCtx<'_> {
     fn take_lookups_for_features(&mut self, features: &[Tag]) -> Vec<(LookupId, PositionLookup)> {
         self.lookup_ids_for_features(features)
             .into_iter()
-            .map(|id| (id, self.ext_lookups.remove(&id).unwrap()))
+            .map(|id| (id, self.ext_pos_lookups.remove(&id).unwrap()))
             .collect()
     }
 
@@ -444,8 +609,10 @@ impl ExternalFeatures {
         let ctx = MergeCtx {
             all_lookups,
             all_feats,
-            ext_lookups: self.lookups.iter().cloned().collect(),
+            ext_pos_lookups: self.pos_lookups.iter().cloned().collect(),
+            ext_sub_lookups: self.sub_lookups.iter().cloned().collect(),
             ext_features: self.features.clone(),
+            feature_variations: self.feature_variations.clone(),
             insert_markers: markers,
             processed_lookups: Default::default(),
             append_priority: 1_000_000_000,
@@ -456,6 +623,8 @@ impl ExternalFeatures {
 
 #[cfg(test)]
 mod tests {
+    use write_fonts::tables::layout::ConditionSet;
+
     use super::*;
 
     use crate::compile::tags::{LANG_DFLT, SCRIPT_DFLT};
@@ -487,10 +656,10 @@ mod tests {
             (0..8).map(|_| PositionLookup::Single(Default::default())),
         );
 
-        let lookups = (0..6)
+        let pos_lookups = (0..6)
             .map(|id| {
                 (
-                    LookupId::External(id),
+                    LookupId::ExternalGpos(id),
                     PositionLookup::Pair(Default::default()),
                 )
             })
@@ -499,8 +668,10 @@ mod tests {
             [(MARK, [0].as_slice()), (MKMK, &[1, 2]), (KERN, &[3, 4, 5])]
                 .iter()
                 .map(|(tag, ids)| {
-                    let mut features = FeatureLookups::default();
-                    features.base = ids.iter().copied().map(LookupId::External).collect();
+                    let features = FeatureLookups {
+                        base: ids.iter().copied().map(LookupId::ExternalGpos).collect(),
+                        variations: Default::default(),
+                    };
                     (FeatureKey::new(*tag, LANG_DFLT, SCRIPT_DFLT), features)
                 })
                 .collect();
@@ -524,9 +695,11 @@ mod tests {
         ]);
 
         let mut external_features = ExternalFeatures {
-            lookups,
+            pos_lookups,
+            sub_lookups: Default::default(),
             features,
             lig_carets: Default::default(),
+            feature_variations: Default::default(),
         };
 
         let mut all_features = AllFeatures::default();
@@ -545,24 +718,92 @@ mod tests {
         }
     }
 
+    #[test]
+    fn merge_rvrn_features_before_other_one() {
+        const RVRN: Tag = Tag::new(b"rvrn");
+        const RCLT: Tag = Tag::new(b"rclt");
+
+        let mut sub_lookups = Vec::new();
+        let mut features = BTreeMap::new();
+        for (id, tag) in [(0, RCLT), (1, RCLT), (2, RVRN), (3, RVRN)] {
+            let id = if tag == RCLT {
+                LookupId::ExternalGsub(id)
+            } else {
+                LookupId::ExternalFrontOfList(id)
+            };
+            let lookup = SubstitutionLookup::Single(Default::default());
+            let key = FeatureKey::new(tag, LANG_DFLT, SCRIPT_DFLT);
+            features
+                .entry(key)
+                .or_insert(FeatureLookups::default())
+                .variations
+                .entry(ConditionSet::default())
+                .or_default()
+                .push(id);
+            sub_lookups.push((id, lookup));
+        }
+
+        let mut external_features = ExternalFeatures {
+            pos_lookups: Default::default(),
+            sub_lookups,
+            features,
+            lig_carets: Default::default(),
+            feature_variations: Default::default(),
+        };
+
+        let markers = make_markers_with_order([]);
+        let mut all = AllLookups::default();
+        all.splice_gsub(
+            0,
+            (0..3).map(|_| SubstitutionLookup::Multiple(Default::default())),
+        );
+
+        let mut all_feats = AllFeatures::default();
+        external_features.merge_into(&mut all, &mut all_feats, &markers);
+
+        let rvrn = all_feats
+            .features
+            .get(&FeatureKey::new(RVRN, LANG_DFLT, SCRIPT_DFLT))
+            .unwrap();
+
+        // rvrn ids go at the front
+        assert_eq!(
+            rvrn.iter_ids().map(LookupId::to_raw).collect::<Vec<_>>(),
+            [0, 1]
+        );
+        let rclt = all_feats
+            .features
+            .get(&FeatureKey::new(RCLT, LANG_DFLT, SCRIPT_DFLT))
+            .unwrap();
+        // other ids go at the back
+        assert_eq!(
+            rclt.iter_ids().map(LookupId::to_raw).collect::<Vec<_>>(),
+            [5, 6]
+        );
+    }
+
     fn mock_external_features(tags: &[Tag]) -> ExternalFeatures {
-        let mut lookups = Vec::new();
+        let mut pos_lookups = Vec::new();
         let mut features = BTreeMap::new();
 
         for (i, feature) in tags.iter().enumerate() {
-            let id = LookupId::External(i);
+            let id = LookupId::ExternalGpos(i);
             let lookup = PositionLookup::Single(Default::default());
             let key = FeatureKey::new(*feature, LANG_DFLT, SCRIPT_DFLT);
 
-            let mut feature_lookups = FeatureLookups::default();
-            feature_lookups.base = vec![id];
-            lookups.push((id, lookup));
+            let feature_lookups = FeatureLookups {
+                base: vec![id],
+                variations: Default::default(),
+            };
+            pos_lookups.push((id, lookup));
             features.insert(key, feature_lookups);
         }
         ExternalFeatures {
-            lookups,
+            pos_lookups,
+            sub_lookups: Default::default(),
             features,
             lig_carets: Default::default(),
+            feature_variations: Default::default(),
         }
     }
 

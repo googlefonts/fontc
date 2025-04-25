@@ -1,6 +1,6 @@
 //! Logic for tracking features during compilation
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{hash_map, BTreeMap, HashMap, HashSet};
 
 use smol_str::SmolStr;
 use write_fonts::{
@@ -19,7 +19,7 @@ use super::{
 pub(crate) struct FeatureLookups {
     /// the base (not variation specific) lookups
     pub(crate) base: Vec<LookupId>,
-    variations: HashMap<ConditionSet, Vec<LookupId>>,
+    pub(crate) variations: HashMap<ConditionSet, Vec<LookupId>>,
 }
 
 /// A type to store accumulated features during compilation
@@ -240,9 +240,22 @@ impl AllFeatures {
         features: BTreeMap<FeatureKey, FeatureLookups>,
     ) {
         for (key, lookups) in features {
-            self.get_or_insert(key).base.extend(lookups.base);
-            if !lookups.variations.is_empty() {
-                panic!("specifying feature variations from feature writer is not yet supported");
+            let thingie = self.get_or_insert(key);
+            thingie.base.extend(lookups.base);
+            for (condset, lookups) in lookups.variations {
+                match thingie.variations.entry(condset) {
+                    // this is very unlikely; it would require feature variations
+                    // specified in FEA as well as from a designspace or similar.
+                    // In this case we will just append, but maybe we should log too?
+                    hash_map::Entry::Occupied(entry) => {
+                        let var_lookups = entry.into_mut();
+                        var_lookups.extend_from_slice(&lookups);
+                        log::warn!("feature variations exist for {} in FEA and also in feature writer; this is weird!", key.feature);
+                    }
+                    hash_map::Entry::Vacant(entry) => {
+                        entry.insert(lookups);
+                    }
+                }
             }
         }
     }
@@ -450,7 +463,11 @@ fn split_lookups(lookups: &[LookupId]) -> (Vec<u16>, Vec<u16>) {
             LookupId::Gpos(_) => gpos.push(lookup.to_gpos_id_or_die()),
             LookupId::Gsub(_) => gsub.push(lookup.to_gsub_id_or_die()),
             LookupId::Empty => (),
-            LookupId::External(_) => panic!("external lookups should not be present at split time"),
+            LookupId::ExternalGpos(_)
+            | LookupId::ExternalGsub(_)
+            | LookupId::ExternalFrontOfList(_) => {
+                panic!("external lookups should not be present at split time")
+            }
         }
     }
 

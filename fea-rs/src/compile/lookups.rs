@@ -82,21 +82,22 @@ pub(crate) enum PositionLookup {
 // Note: this is only used in the API for adding external features ( aka feature
 // writers) and so we only implement the conversion for the specific lookup types
 // that we want to allow the client to add externally.
-macro_rules! impl_into_pos_lookup {
-    ($builder:ty, $variant:ident) => {
-        impl From<LookupBuilder<$builder>> for PositionLookup {
-            fn from(src: LookupBuilder<$builder>) -> PositionLookup {
-                PositionLookup::$variant(src)
+macro_rules! impl_into_lookup {
+    ($builder:ty, $typ:ident, $variant:ident) => {
+        impl From<LookupBuilder<$builder>> for $typ {
+            fn from(src: LookupBuilder<$builder>) -> $typ {
+                $typ::$variant(src)
             }
         }
     };
 }
 
-impl_into_pos_lookup!(PairPosBuilder, Pair);
-impl_into_pos_lookup!(MarkToBaseBuilder, MarkToBase);
-impl_into_pos_lookup!(MarkToMarkBuilder, MarkToMark);
-impl_into_pos_lookup!(MarkToLigBuilder, MarkToLig);
-impl_into_pos_lookup!(CursivePosBuilder, Cursive);
+impl_into_lookup!(PairPosBuilder, PositionLookup, Pair);
+impl_into_lookup!(MarkToBaseBuilder, PositionLookup, MarkToBase);
+impl_into_lookup!(MarkToMarkBuilder, PositionLookup, MarkToMark);
+impl_into_lookup!(MarkToLigBuilder, PositionLookup, MarkToLig);
+impl_into_lookup!(CursivePosBuilder, PositionLookup, Cursive);
+impl_into_lookup!(SingleSubBuilder, SubstitutionLookup, Single);
 
 #[derive(Clone, Debug)]
 pub(crate) enum SubstitutionLookup {
@@ -124,11 +125,18 @@ pub enum LookupId {
     Gpos(usize),
     /// An id for a GSUB lookup
     Gsub(usize),
-    /// A temporary ID assigned to a lookup constructed by the client.
+    /// A temporary ID assigned to a GPOS lookup constructed by the client.
     ///
     /// This id will be remapped when the external features are merged into
     /// the features generated from the FEA.
-    External(usize),
+    ExternalGpos(usize),
+    /// Like above, but for GSUB.
+    ExternalGsub(usize),
+    /// A temporary ID assigned to a lookup constructed by the client that should
+    /// be at the front of the lookup list.
+    ///
+    /// This is required for rvrn feature variations.
+    ExternalFrontOfList(usize),
     /// Used when a named lookup block has no rules.
     ///
     /// We parse this, but then discard it immediately whenever it is referenced.
@@ -374,6 +382,10 @@ impl AllLookups {
         LookupId::Gpos(self.gpos.len())
     }
 
+    pub(crate) fn next_gsub_id(&self) -> LookupId {
+        LookupId::Gsub(self.gsub.len())
+    }
+
     /// insert a sequence of lookups into the GPOS list at a specific pos.
     ///
     /// After calling this, any existing items after `pos` will have invalid
@@ -385,6 +397,19 @@ impl AllLookups {
         lookups: impl IntoIterator<Item = PositionLookup>,
     ) {
         self.gpos.splice(pos..pos, lookups);
+    }
+
+    /// insert a sequence of lookups into the GPOS list at a specific pos.
+    ///
+    /// After calling this, any existing items after `pos` will have invalid
+    /// `LookupId`s! the caller is expected to be doing bookkeeping, and to
+    /// subsequently remap ids.
+    pub(crate) fn splice_gsub(
+        &mut self,
+        pos: usize,
+        lookups: impl IntoIterator<Item = SubstitutionLookup>,
+    ) {
+        self.gsub.splice(pos..pos, lookups);
     }
 
     /// Returns `true` if there is an active lookup of this kind
@@ -679,7 +704,9 @@ impl LookupId {
             LookupId::Gpos(idx) => idx,
             LookupId::Gsub(idx) => idx,
             LookupId::Empty => usize::MAX,
-            LookupId::External(idx) => idx,
+            LookupId::ExternalGpos(idx)
+            | LookupId::ExternalGsub(idx)
+            | LookupId::ExternalFrontOfList(idx) => idx,
         }
     }
 
