@@ -1,0 +1,153 @@
+{
+.appVersion = "3413";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+familyName = "Incompatible Unexported";
+fontMaster = (
+{
+alignmentZones = (
+"{800, 16}",
+"{700, 16}",
+"{500, 16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = m01;
+weightValue = 400;
+xHeight = 500;
+},
+{
+alignmentZones = (
+"{800, 16}",
+"{700, 16}",
+"{500, 16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "96BF320B-D509-417D-A49A-02D51FD1CC94";
+weight = Bold;
+weightValue = 800;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"0 0 LINE",
+"200 0 LINE",
+"200 200 LINE",
+"0 200 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "96BF320B-D509-417D-A49A-02D51FD1CC94";
+paths = (
+{
+closed = 1;
+nodes = (
+"0 0 LINE",
+"500 0 LINE",
+"500 500 LINE",
+"0 500 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0041;
+},
+{
+export = 0;
+glyphname = doesnt_matter;
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"105 102 LINE",
+"518 102 LINE",
+"518 515 LINE",
+"105 515 LINE"
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = doesntmatter;
+position = "{294, 632}";
+}
+);
+layerId = "96BF320B-D509-417D-A49A-02D51FD1CC94";
+paths = (
+{
+closed = 1;
+nodes = (
+"451 109 OFFCURVE",
+"539 197 OFFCURVE",
+"539 305 CURVE SMOOTH",
+"539 412 OFFCURVE",
+"451 500 OFFCURVE",
+"344 500 CURVE SMOOTH",
+"236 500 OFFCURVE",
+"148 412 OFFCURVE",
+"148 305 CURVE SMOOTH",
+"148 197 OFFCURVE",
+"236 109 OFFCURVE",
+"344 109 CURVE SMOOTH"
+);
+}
+);
+width = 600;
+}
+);
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "96BF320B-D509-417D-A49A-02D51FD1CC94";
+width = 600;
+}
+);
+unicode = 0020;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

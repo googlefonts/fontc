@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="doesnt_matter" format="2">
+  <advance width="600"/>
+  <anchor x="294" y="632" name="doesntmatter"/>
+  <outline>
+    <contour>
+      <point x="344" y="109" type="curve" smooth="yes"/>
+      <point x="451" y="109"/>
+      <point x="539" y="197"/>
+      <point x="539" y="305" type="curve" smooth="yes"/>
+      <point x="539" y="412"/>
+      <point x="451" y="500"/>
+      <point x="344" y="500" type="curve" smooth="yes"/>
+      <point x="236" y="500"/>
+      <point x="148" y="412"/>
+      <point x="148" y="305" type="curve" smooth="yes"/>
+      <point x="148" y="197"/>
+      <point x="236" y="109"/>
+    </contour>
+  </outline>
+</glyph>

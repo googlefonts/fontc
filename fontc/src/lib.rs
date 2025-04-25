@@ -200,6 +200,7 @@ mod tests {
     use kurbo::{Point, Rect};
     use log::info;
     use pretty_assertions::assert_eq;
+    use rstest::rstest;
 
     use skrifa::{charmap::Charmap, instance::Size, outline::DrawSettings, MetadataProvider};
     use tempfile::{tempdir, TempDir};
@@ -291,6 +292,10 @@ mod tests {
                 .get()
                 .glyph_id(name)
                 .map(|v| v.to_u16() as u32)
+        }
+
+        fn contains_glyph(&self, name: &str) -> bool {
+            self.get_glyph_index(name).is_some()
         }
 
         /// Returns the GlyphId16 (or NOTDEF, if not present)
@@ -2244,7 +2249,7 @@ mod tests {
     fn assert_noexport(source: &str) {
         let result = TestCompile::compile_source(source);
 
-        assert!(result.get_glyph_index("hyphen").is_none());
+        assert!(!result.contains_glyph("hyphen"));
         let fe_hyphen_consumer = result
             .fe_context
             .glyphs
@@ -3014,5 +3019,16 @@ mod tests {
     fn colr_grayscale() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
         result.font().colr().unwrap(); // for now just check the table exists
+    }
+
+    #[rstest]
+    #[case("glyphs2/IncompatibleUnexported.glyphs")]
+    #[case("glyphs3/IncompatibleUnexported.glyphs")]
+    #[case("designspace_from_glyphs/IncompatibleUnexported.designspace")]
+    fn skip_unexported_glyph_anchors(#[case] source: &str) {
+        let result = TestCompile::compile_source(source);
+        assert!(result.contains_glyph("A"));
+        assert!(result.contains_glyph("space"));
+        assert!(!result.contains_glyph("doesnt_matter"));
     }
 }
