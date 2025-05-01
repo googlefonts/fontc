@@ -584,11 +584,13 @@ def sort_gdef_mark_filter_sets(ttx: etree.ElementTree):
     assert len(markglyphs) == 1
     markglyphs = markglyphs[0]
 
-    coverages = sorted(markglyphs.findall("Coverage"), key=lambda cov: [g.attrib["value"] for g in cov])
+    coverages = sorted(
+        markglyphs.findall("Coverage"), key=lambda cov: [g.attrib["value"] for g in cov]
+    )
     for c in coverages:
         markglyphs.remove(c)
 
-    for (i, c) in enumerate(coverages):
+    for i, c in enumerate(coverages):
         c.attrib["index"] = str(i)
         markglyphs.append(c)
 
@@ -747,7 +749,9 @@ def fill_in_gvar_deltas(
     dense_fontmake_count = densify_gvar(fontmake_font, fontmake)
 
     if dense_fontc_count + dense_fontmake_count > 0:
-        eprint(f"densified {dense_fontc_count} glyphVariations in fontc, {dense_fontmake_count} in fontmake")
+        eprint(
+            f"densified {dense_fontc_count} glyphVariations in fontc, {dense_fontmake_count} in fontmake"
+        )
 
 
 def densify_gvar(font: TTFont, ttx: etree.ElementTree):
