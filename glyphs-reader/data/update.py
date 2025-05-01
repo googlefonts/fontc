@@ -32,15 +32,14 @@ class GlyphInfo:
 
     def has_codepoint(self) -> bool:
         return self.codepoint is not None
-    
+
     def production_name_or_empty(self) -> str:
         if self.production_name is None:
             return ""
         return self.production_name
-    
+
     def production_name_file_bytes(self) -> bytes:
         return ProdNamePattern.for_glyph_info(self).file_bytes(self)
-
 
 
 @dataclass(frozen=True)
@@ -53,7 +52,10 @@ class ProdNamePattern:
         for pattern in _PROD_NAME_PATTERNS:
             if pattern.pred(gi):
                 return pattern
-        raise ValueError(f"At least 1 pattern should always match, somehow {gi} defeated us")
+        raise ValueError(
+            f"At least 1 pattern should always match, somehow {gi} defeated us"
+        )
+
 
 # Production names are heavily patterned, try to take advantage to compress representation
 # Meant to be probed in order
@@ -65,20 +67,25 @@ _PROD_NAME_PATTERNS = (
     ),
     ProdNamePattern(
         "uni-prefix",
-        lambda gi: gi.has_codepoint() and gi.production_name == f"uni{gi.codepoint:04X}" and gi.codepoint <= 0xFFFF,
+        lambda gi: gi.has_codepoint()
+        and gi.production_name == f"uni{gi.codepoint:04X}"
+        and gi.codepoint <= 0xFFFF,
         lambda gi: b"u" + gi.codepoint.to_bytes(3, "little"),
     ),
     ProdNamePattern(
-        "u-prefix", 
-        lambda gi: gi.has_codepoint() and gi.production_name == f"u{gi.codepoint:04X}" and gi.codepoint > 0xFFFF,
+        "u-prefix",
+        lambda gi: gi.has_codepoint()
+        and gi.production_name == f"u{gi.codepoint:04X}"
+        and gi.codepoint > 0xFFFF,
         lambda gi: b"v" + gi.codepoint.to_bytes(3, "little"),
     ),
     ProdNamePattern(
-        "custom", 
+        "custom",
         lambda gi: True,
         lambda gi: b"s" + gi.production_name.encode("ascii"),
     ),
 )
+
 
 def prod_name_from_codepoint(cp: int) -> str:
     if cp <= 0xFFFF:
@@ -126,7 +133,10 @@ def read_glyph_info(file: str) -> Tuple[GlyphInfo]:
                 print(f'Ignoring alt name "{alt_name}", already taken')
                 continue
             by_name[alt_name] = dataclasses.replace(
-                by_name[e.attrib["name"]], name=alt_name, codepoint=None, production_name=None,
+                by_name[e.attrib["name"]],
+                name=alt_name,
+                codepoint=None,
+                production_name=None,
             )
 
     return tuple(by_name.values())
@@ -140,7 +150,7 @@ def write_enum_conversion(name: str, values: Tuple[str], optional: bool) -> str:
     lines = []
     typ = name
     if optional:
-       typ = f"Option<{name}>" 
+        typ = f"Option<{name}>"
     lines.append(f"impl BundledEntry for {typ} {{")
     lines.append("    fn element_size() -> usize {")
     lines.append("        1")
@@ -149,13 +159,13 @@ def write_enum_conversion(name: str, values: Tuple[str], optional: bool) -> str:
     lines.append("        match raw[0] {")
 
     if optional:
-        for (i, value) in enumerate(values):
+        for i, value in enumerate(values):
             lines.append(f"            {i} => Some({name}::{value}),")
         lines.append(f"            255 => None,")
     else:
-        for (i, value) in enumerate(values):
+        for i, value in enumerate(values):
             lines.append(f"            {i} => {name}::{value},")
-    lines.append(f"            v => panic!(\"What is {{v}}\"),")
+    lines.append(f'            v => panic!("What is {{v}}"),')
     lines.append("        }")
     lines.append("    }")
     lines.append("}")
@@ -166,7 +176,7 @@ def write_enum_conversion(name: str, values: Tuple[str], optional: bool) -> str:
 def write_list(offset_file: Path, data_file: Path, content: Iterable[bytes]):
     offset = 0
     with open(offset_file, "wb") as f_offsets:
-        with open(data_file, "wb") as f_data:            
+        with open(data_file, "wb") as f_data:
             for data in content:
                 writeU24(f_offsets, offset)
                 f_data.write(data)
@@ -186,8 +196,12 @@ def main():
     )
     names = {g.name for g in glyph_infos}
     categories = sorted({g.category for g in glyph_infos})
-    subcategories = sorted({g.subcategory for g in glyph_infos if g.subcategory is not None})
-    scripts = sorted({g.script for g in glyph_infos if g.script is not None}, key=camel_case)
+    subcategories = sorted(
+        {g.subcategory for g in glyph_infos if g.subcategory is not None}
+    )
+    scripts = sorted(
+        {g.script for g in glyph_infos if g.script is not None}, key=camel_case
+    )
 
     assert len(names) == len(glyph_infos), "Names aren't unique?"
     codepoints = {}
@@ -214,18 +228,28 @@ def main():
 
     name_offsets_file = Path(__file__).parent.parent / "resources" / "name_offsets.dat"
     name_data_file = Path(__file__).parent.parent / "resources" / "names.dat"
-    codepoint_to_idx_file = Path(__file__).parent.parent / "resources" / "codepoints_to_idx.dat"
+    codepoint_to_idx_file = (
+        Path(__file__).parent.parent / "resources" / "codepoints_to_idx.dat"
+    )
     codepoint_file = Path(__file__).parent.parent / "resources" / "codepoints.dat"
     category_file = Path(__file__).parent.parent / "resources" / "categories.dat"
     subcategory_file = Path(__file__).parent.parent / "resources" / "subcategories.dat"
     script_file = Path(__file__).parent.parent / "resources" / "scripts.dat"
     enums_file = Path(__file__).parent.parent / "src" / "glyphslib_enums.rs"
-    prod_name_offsets_file = Path(__file__).parent.parent / "resources" / "prod_name_offsets.dat"
+    prod_name_offsets_file = (
+        Path(__file__).parent.parent / "resources" / "prod_name_offsets.dat"
+    )
     prod_name_data_file = Path(__file__).parent.parent / "resources" / "prod_names.dat"
-    prod_name_bitmap_file = Path(__file__).parent.parent / "resources" / "prod_name_bitmap.dat"
+    prod_name_bitmap_file = (
+        Path(__file__).parent.parent / "resources" / "prod_name_bitmap.dat"
+    )
     readme_file = Path(__file__).parent.parent / "resources" / "README.md"
 
-    write_list(name_offsets_file, name_data_file, [gi.name.encode("ascii") for gi in glyph_infos])
+    write_list(
+        name_offsets_file,
+        name_data_file,
+        [gi.name.encode("ascii") for gi in glyph_infos],
+    )
 
     prod_names_by_type = defaultdict(int)
     for gi in glyph_infos:
@@ -249,29 +273,39 @@ def main():
         prod_name_bitmap[i] |= 1 << (cp % 8)
         num_predicted += 1
     custom_prod_names = []
-    for (i, gi) in enumerate(glyph_infos):
+    for i, gi in enumerate(glyph_infos):
         if gi.production_name is None:
             continue
-        if gi.has_codepoint() and prod_name_from_codepoint(gi.codepoint).lower() == gi.production_name.lower():
+        if (
+            gi.has_codepoint()
+            and prod_name_from_codepoint(gi.codepoint).lower()
+            == gi.production_name.lower()
+        ):
             continue
         custom_prod_names.append((i, gi))
 
-    print(f"{num_predicted}/{num_predicted + len(custom_prod_names)} non-blank production names are predictable")
-    with open(prod_name_bitmap_file, "wb") as f:        
+    print(
+        f"{num_predicted}/{num_predicted + len(custom_prod_names)} non-blank production names are predictable"
+    )
+    with open(prod_name_bitmap_file, "wb") as f:
         f.write(prod_name_bitmap)
 
     prod_names = [(gi.production_name, i) for (i, gi) in custom_prod_names]
     prod_names.sort()
-    write_list(prod_name_offsets_file, prod_name_data_file, [i.to_bytes(3, "little") + name.encode("ascii") for (name, i) in prod_names])
+    write_list(
+        prod_name_offsets_file,
+        prod_name_data_file,
+        [i.to_bytes(3, "little") + name.encode("ascii") for (name, i) in prod_names],
+    )
 
     with open(codepoint_file, "wb") as f:
-        rev_codepoints = {i:cp for (cp, i) in codepoints.items()}
+        rev_codepoints = {i: cp for (cp, i) in codepoints.items()}
         for i in range(0, len(glyph_infos)):
             codepoint = rev_codepoints.get(i, 0)
             writeU24(f, codepoint)
 
     with open(codepoint_to_idx_file, "wb") as f:
-        for (codepoint, i) in sorted(codepoints.items()):
+        for codepoint, i in sorted(codepoints.items()):
             writeU24(f, codepoint)
             writeU24(f, i)
 
@@ -293,13 +327,14 @@ def main():
                 i = scripts.index(gi.script)
             f.write(i.to_bytes(1))
 
-
     # Generate binary : enum translations
     with open(enums_file, "w") as f:
         f.write("//! Generated by glyphs-reader/data/update.py\n")
         f.write("\n")
 
-        f.write("use crate::{glyphdata::{Category, Script, Subcategory}, glyphdata_bundled::BundledEntry};\n")
+        f.write(
+            "use crate::{glyphdata::{Category, Script, Subcategory}, glyphdata_bundled::BundledEntry};\n"
+        )
         f.write("\n")
 
         f.write(write_enum_conversion("Category", categories, False))
@@ -310,7 +345,9 @@ def main():
         f.write("\n")
 
         f.write("/// The script of a given glyph\n")
-        f.write(write_enum_conversion("Script", tuple(camel_case(s) for s in scripts), True))
+        f.write(
+            write_enum_conversion("Script", tuple(camel_case(s) for s in scripts), True)
+        )
         f.write("\n")
 
     with open(readme_file, "w") as f:
