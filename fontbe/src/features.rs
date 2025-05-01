@@ -54,6 +54,8 @@ mod kern;
 mod marks;
 mod ot_tags;
 mod properties;
+#[cfg(test)]
+mod test_helpers;
 
 pub use kern::{create_gather_ir_kerning_work, create_kern_segment_work, create_kerns_work};
 pub use marks::create_mark_work;
