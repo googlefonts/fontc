@@ -1001,8 +1001,6 @@ fn scripts_using_abvm() -> HashSet<UnicodeShortName> {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::Path, sync::Arc};
-
     use fea_rs::compile::Compilation;
     use fontdrasil::{
         agl,
@@ -1021,7 +1019,7 @@ mod tests {
         tables::gdef::CaretValue as RawCaretValue,
     };
 
-    use crate::features::FeaVariationInfo;
+    use crate::features::test_helpers::{LayoutOutput, LayoutOutputBuilder};
 
     use super::*;
 
@@ -1064,7 +1062,7 @@ mod tests {
         anchors: BTreeMap<GlyphName, Vec<Anchor>>,
         categories: BTreeMap<GlyphName, GlyphClassDef>,
         char_map: HashMap<u32, GlyphName>,
-        user_fea: Arc<str>,
+        user_fea: &'static str,
     }
 
     struct AnchorBuilder<const N: usize> {
@@ -1141,7 +1139,7 @@ mod tests {
                 .try_into()
                 .unwrap();
             Self {
-                user_fea: "languagesystem DFLT dflt;".into(),
+                user_fea: "languagesystem DFLT dflt;",
                 locations,
                 anchors: Default::default(),
                 categories: Default::default(),
@@ -1153,8 +1151,8 @@ mod tests {
         /// Provide custom user FEA.
         ///
         /// By default we use a single 'languagesytem DFLT dflt' statement.
-        fn set_user_fea(&mut self, fea: &str) -> &mut Self {
-            self.user_fea = fea.into();
+        fn set_user_fea(&mut self, fea: &'static str) -> &mut Self {
+            self.user_fea = fea;
             self
         }
 
@@ -1195,7 +1193,7 @@ mod tests {
             self
         }
 
-        fn make_static_metadata(&self) -> StaticMetadata {
+        fn make_layout_output(&self) -> LayoutOutput {
             let (min, default, max) = (Coord::new(-1.), Coord::new(0.0), Coord::new(1.0));
             let axes = self.locations[0]
                 .axis_tags()
@@ -1224,60 +1222,37 @@ mod tests {
                 categories: self.categories.clone(),
                 prefer_gdef_categories_in_fea: self.prefer_gdef_categories_in_fea,
             };
-            StaticMetadata::new(
-                1000,
-                Default::default(),
-                axes,
-                named_instances,
-                glyph_locations,
-                Default::default(),
-                42.,
-                categories,
-                None,
-            )
-            .unwrap()
+            LayoutOutputBuilder::new()
+                .with_axes(axes)
+                .with_instances(named_instances)
+                .with_locations(glyph_locations)
+                .with_categories(categories)
+                .with_user_fea(self.user_fea)
+                .with_glyph_order(self.anchors.keys().cloned().collect())
+                .build()
         }
 
         // you can pass in a closure and look at the builder; this is useful
         // for at least one test
         fn compile_and_inspect(&self, f: impl FnOnce(&MarkLookupBuilder)) -> Compilation {
-            let static_metadata = self.make_static_metadata();
-            let fea = self.user_fea.clone();
-            let glyph_map = self.anchors.keys().cloned().collect();
-            // first get the AST, which we need to use as input
-            let (ast, _) = fea_rs::parse::parse_root(
-                "memory".into(),
-                Some(&glyph_map),
-                Box::new(move |x: &Path| {
-                    if x == Path::new("memory") {
-                        Ok(fea.clone())
-                    } else {
-                        unreachable!("our FEA has no include statements");
-                    }
-                }),
-            )
-            .unwrap();
-
-            let first_pass_fea = FeaFirstPassOutput::for_test(ast, &glyph_map).unwrap();
-
+            let layout_output = self.make_layout_output();
             let anchors = self
                 .anchors
                 .iter()
                 .map(|(name, anchors)| GlyphAnchors::new(name.clone(), anchors.clone()))
                 .collect::<Vec<_>>();
             let anchorsref = anchors.iter().collect();
-            let glyph_order: GlyphOrder = self.anchors.keys().cloned().collect();
             let char_map = self
                 .char_map
                 .iter()
-                .map(|(uv, name)| (*uv, glyph_order.glyph_id(name).unwrap()))
+                .map(|(uv, name)| (*uv, layout_output.glyph_order.glyph_id(name).unwrap()))
                 .collect();
 
             let ctx = MarkLookupBuilder::new(
                 anchorsref,
-                &glyph_order,
-                &static_metadata,
-                &first_pass_fea,
+                &layout_output.glyph_order,
+                &layout_output.static_metadata,
+                &layout_output.first_pass_fea,
                 char_map,
             )
             .unwrap();
@@ -1285,17 +1260,7 @@ mod tests {
             f(&ctx);
 
             let marks = ctx.build().unwrap();
-            let var_info = FeaVariationInfo::new(&static_metadata);
-            // then compile with fea-rs, passing in our generated marks:
-            let (result, _) = fea_rs::compile::compile(
-                &first_pass_fea.ast,
-                &glyph_map,
-                Some(&var_info),
-                Some(&marks),
-                Default::default(),
-            )
-            .unwrap();
-            result
+            layout_output.compile(&marks)
         }
 
         // a thin wrapper, this is what most tests want to use

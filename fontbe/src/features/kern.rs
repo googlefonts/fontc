@@ -1081,11 +1081,11 @@ fn merge_scripts(
 
 #[cfg(test)]
 mod tests {
-    use std::{path::Path, sync::Arc};
 
-    use fea_rs::compile::NopVariationInfo;
     use fontir::ir::GdefCategories;
     use write_fonts::read::FontRead;
+
+    use crate::features::test_helpers::LayoutOutputBuilder;
 
     use super::*;
 
@@ -1122,7 +1122,7 @@ mod tests {
         non_spacing: HashSet<GlyphId16>,
         opentype_categories: BTreeMap<GlyphName, GlyphClassDef>,
         glyph_order: GlyphOrder,
-        user_fea: Arc<str>,
+        user_fea: &'static str,
     }
 
     trait ToKernSide {
@@ -1181,13 +1181,13 @@ mod tests {
                 glyph_order,
                 pairs: Default::default(),
                 non_spacing: Default::default(),
-                user_fea: "".into(),
+                user_fea: "",
                 opentype_categories: Default::default(),
             }
         }
 
-        fn with_user_fea(mut self, fea: &str) -> Self {
-            self.user_fea = fea.into();
+        fn with_user_fea(mut self, fea: &'static str) -> Self {
+            self.user_fea = fea;
             self
         }
 
@@ -1241,53 +1241,26 @@ mod tests {
         /// Returns the raw lookups/features as well as otl-normalizer output
         fn build(self) -> (FeaRsKerns, String) {
             let pairs = self.pairs.iter().collect::<Vec<_>>();
-            let glyph_map = self.glyph_order.names().cloned().collect();
-            let (ast, _) = fea_rs::parse::parse_root(
-                "memory".into(),
-                Some(&glyph_map),
-                Box::new(move |x: &Path| {
-                    if x == Path::new("memory") {
-                        Ok(self.user_fea.clone())
-                    } else {
-                        unreachable!("our FEA has no include statements");
-                    }
-                }),
-            )
-            .unwrap();
-            let fea_first_pass = FeaFirstPassOutput::for_test(ast, &glyph_map).unwrap();
-            let fake_meta = StaticMetadata::new(
-                1000,
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                42.,
-                GdefCategories {
-                    prefer_gdef_categories_in_fea: self.opentype_categories.is_empty(),
-                    categories: self.opentype_categories,
-                },
-                None,
-            )
-            .unwrap();
+            let categories = GdefCategories {
+                prefer_gdef_categories_in_fea: self.opentype_categories.is_empty(),
+                categories: self.opentype_categories,
+            };
+            let layout_output = LayoutOutputBuilder::new()
+                .with_categories(categories)
+                .with_user_fea(self.user_fea)
+                .with_glyph_order(self.glyph_order.clone())
+                .build();
             let kerns = finalize_kerning(
                 &pairs,
-                &fea_first_pass,
-                &fake_meta,
+                &layout_output.first_pass_fea,
+                &layout_output.static_metadata,
                 &self.glyph_order,
                 self.charmap,
                 self.non_spacing,
             )
             .unwrap();
 
-            let (comp, _) = fea_rs::compile::compile::<NopVariationInfo, _>(
-                &fea_first_pass.ast,
-                &glyph_map,
-                None,
-                Some(&kerns),
-                Default::default(),
-            )
-            .unwrap();
+            let comp = layout_output.compile(&kerns);
             let gpos_bytes = write_fonts::dump_table(comp.gpos.as_ref().unwrap()).unwrap();
             let gpos =
                 write_fonts::read::tables::gpos::Gpos::read(gpos_bytes.as_slice().into()).unwrap();
