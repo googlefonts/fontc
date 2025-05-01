@@ -132,15 +132,17 @@ mod tests {
 
     #[test]
     fn no_fvar_for_point_axes() {
-        let static_metadata = create_static_metadata(&[axis(400.0, 400.0, 400.0)]);
+        let static_metadata = create_static_metadata(&[axis("wght", 400.0, 400.0, 400.0)]);
         let fvar = generate_fvar(&static_metadata);
         assert!(fvar.is_none());
     }
 
     #[test]
     fn fvar_includes_only_variable_axes() {
-        let static_metadata =
-            create_static_metadata(&[axis(400.0, 400.0, 700.0), axis(400.0, 400.0, 400.0)]);
+        let static_metadata = create_static_metadata(&[
+            axis("wght", 400.0, 400.0, 700.0),
+            axis("wdth", 400.0, 400.0, 400.0),
+        ]);
         let fvar = generate_fvar(&static_metadata).unwrap();
         assert_eq!(
             vec![(400.0, 400.0, 700.0),],

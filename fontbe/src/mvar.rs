@@ -164,10 +164,7 @@ impl Work<Context, AnyWorkId, Error> for MvarWork {
 mod tests {
     use std::str::FromStr;
 
-    use fontdrasil::{
-        coords::{CoordConverter, UserCoord},
-        types::Axis,
-    };
+    use fontdrasil::types::Axis;
     use write_fonts::{
         dump_table,
         read::{
@@ -178,21 +175,7 @@ mod tests {
     };
 
     use super::*;
-
-    fn axis(tag: &str, min: f64, default: f64, max: f64) -> Axis {
-        let min = UserCoord::new(min);
-        let default = UserCoord::new(default);
-        let max = UserCoord::new(max);
-        Axis {
-            name: tag.to_string(),
-            tag: Tag::from_str(tag).unwrap(),
-            min,
-            default,
-            max,
-            hidden: false,
-            converter: CoordConverter::unmapped(min, default, max),
-        }
-    }
+    use crate::test_util;
 
     fn new_mvar_builder(locations: Vec<&NormalizedLocation>, axes: Vec<Axis>) -> MvarBuilder {
         let locations = locations.into_iter().cloned().collect();
@@ -226,7 +209,7 @@ mod tests {
         let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let mut builder = new_mvar_builder(
             vec![&regular, &bold],
-            vec![axis("wght", 400.0, 400.0, 700.0)],
+            vec![test_util::axis("wght", 400.0, 400.0, 700.0)],
         );
 
         add_sources(&mut builder, "xhgt", &[(&regular, 500.0), (&bold, 550.0)]);
@@ -264,7 +247,7 @@ mod tests {
         let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let mut builder = new_mvar_builder(
             vec![&regular, &bold],
-            vec![axis("wght", 400.0, 400.0, 700.0)],
+            vec![test_util::axis("wght", 400.0, 400.0, 700.0)],
         );
 
         add_sources(&mut builder, "xhgt", &[(&regular, 500.0), (&bold, 500.0)]);
@@ -300,7 +283,7 @@ mod tests {
         let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let mut builder = new_mvar_builder(
             vec![&regular, &medium, &bold],
-            vec![axis("wght", 400.0, 400.0, 700.0)],
+            vec![test_util::axis("wght", 400.0, 400.0, 700.0)],
         );
         // 'xhgt' defines a value for all three locations
         add_sources(

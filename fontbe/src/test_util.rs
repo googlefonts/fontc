@@ -9,7 +9,7 @@ use fontdrasil::{
 use write_fonts::types::Tag;
 
 #[cfg(test)]
-pub(crate) fn axis(min: f64, default: f64, max: f64) -> Axis {
+pub(crate) fn axis(tag: &str, min: f64, default: f64, max: f64) -> Axis {
     let mut mappings = Vec::new();
     if min < default {
         mappings.push((UserCoord::new(min), DesignCoord::new(min / 10.0)));
@@ -20,8 +20,8 @@ pub(crate) fn axis(min: f64, default: f64, max: f64) -> Axis {
     }
     let default_idx = cmp::min(mappings.len() - 1, 1);
     Axis {
-        name: "Test".to_string(),
-        tag: Tag::from_str("TEST").unwrap(),
+        name: tag.to_string(),
+        tag: Tag::from_str(tag).unwrap(),
         min: UserCoord::new(min),
         default: UserCoord::new(default),
         max: UserCoord::new(max),

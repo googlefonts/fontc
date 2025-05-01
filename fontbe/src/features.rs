@@ -755,17 +755,14 @@ mod tests {
 
     use fea_rs::compile::VariationInfo;
     use fontdrasil::{
-        coords::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
+        coords::{CoordConverter, NormalizedCoord, UserCoord},
         types::Axis,
     };
     use fontir::ir::StaticMetadata;
 
     use super::*;
 
-    fn weight_variable_static_metadata(min: f64, def: f64, max: f64) -> StaticMetadata {
-        let min_wght_user = UserCoord::new(min);
-        let def_wght_user = UserCoord::new(def);
-        let max_wght_user = UserCoord::new(max);
+    fn weight_variable_static_metadata() -> StaticMetadata {
         let wght = Tag::new(b"wght");
         let min_wght = vec![(wght, NormalizedCoord::new(-1.0))].into();
         let def_wght = vec![(wght, NormalizedCoord::new(0.0))].into();
@@ -774,23 +771,7 @@ mod tests {
             1024,
             Default::default(),
             vec![
-                Axis {
-                    name: "Weight".to_string(),
-                    tag: Tag::new(b"wght"),
-                    min: min_wght_user,
-                    default: def_wght_user,
-                    max: max_wght_user,
-                    hidden: false,
-                    converter: CoordConverter::new(
-                        vec![
-                            // the design values don't really matter
-                            (min_wght_user, DesignCoord::new(0.0)),
-                            (def_wght_user, DesignCoord::new(1.0)),
-                            (max_wght_user, DesignCoord::new(2.0)),
-                        ],
-                        1,
-                    ),
-                },
+                Axis::for_test("wght"),
                 // no-op 'point' axis, should be ignored
                 Axis {
                     name: "Width".to_string(),
@@ -824,7 +805,7 @@ mod tests {
     fn resolve_kern() {
         let _ = env_logger::builder().is_test(true).try_init();
         let wght = Tag::new(b"wght");
-        let static_metadata = weight_variable_static_metadata(300.0, 400.0, 700.0);
+        let static_metadata = weight_variable_static_metadata();
         let var_info = FeaVariationInfo::new(&static_metadata);
 
         let (default, regions) = var_info
