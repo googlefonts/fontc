@@ -14,7 +14,10 @@ use write_fonts::{
     types::{GlyphId16, Tag},
 };
 
-use crate::GlyphSet;
+use crate::{
+    compile::tags::{LANG_DFLT, SCRIPT_DFLT},
+    GlyphSet,
+};
 
 use super::{
     features::{AllFeatures, FeatureLookups},
@@ -470,12 +473,16 @@ impl MergeCtx<'_> {
         }
 
         // then create new features for any remaining, and add to all known language systems
-        let all_lang_systems = self
+        let mut all_lang_systems = self
             .all_feats
             .features
             .keys()
             .map(|key| (key.script, key.language))
             .collect::<HashSet<_>>();
+
+        if all_lang_systems.is_empty() {
+            all_lang_systems.insert((SCRIPT_DFLT, LANG_DFLT));
+        }
 
         for feature_tag in feat_tags.difference(&done_tags) {
             for (script, lang) in &all_lang_systems {

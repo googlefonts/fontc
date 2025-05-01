@@ -213,6 +213,7 @@ mod tests {
                 gasp::GaspRangeBehavior,
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
                 gpos::{AnchorTable, Gpos, MarkBasePosFormat1Marker, PositionLookup},
+                gsub::{SingleSubst, SubstitutionLookup},
                 hmtx::Hmtx,
                 layout::FeatureParams,
                 loca::Loca,
@@ -3030,5 +3031,53 @@ mod tests {
         assert!(result.contains_glyph("A"));
         assert!(result.contains_glyph("space"));
         assert!(!result.contains_glyph("doesnt_matter"));
+    }
+
+    #[test]
+    fn designspace_rvrn() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
+        let gsub = result.font().gsub().unwrap();
+        let feature_list = gsub.feature_list().unwrap();
+        assert_eq!(feature_list.feature_records().len(), 1);
+        assert_eq!(feature_list.feature_records()[0].feature_tag(), "rvrn");
+        assert!(feature_list.feature_records()[0]
+            .feature(feature_list.offset_data())
+            .unwrap()
+            .lookup_list_indices()
+            .is_empty());
+
+        let featvars = gsub.feature_variations().unwrap().unwrap();
+        let var_rec = featvars.feature_variation_records()[0];
+        let thingie = var_rec
+            .feature_table_substitution(featvars.offset_data())
+            .unwrap()
+            .unwrap();
+
+        let feat = thingie.substitutions()[0]
+            .alternate_feature(thingie.offset_data())
+            .unwrap();
+
+        assert_eq!(feat.lookup_list_indices(), [0]);
+        let lookup_list = gsub.lookup_list().unwrap();
+        assert_eq!(lookup_list.lookup_count(), 1);
+        let lookup = lookup_list.lookups().get(0).unwrap();
+        let SubstitutionLookup::Single(lookup) = lookup else {
+            panic!("wrong lookup type: {lookup:?}");
+        };
+
+        assert_eq!(lookup.sub_table_count(), 1);
+        let SingleSubst::Format1(subtable) = lookup.subtables().get(0).unwrap() else {
+            panic!("wrong subtable type");
+        };
+
+        assert_eq!(
+            subtable.coverage().unwrap().iter().collect::<Vec<_>>(),
+            [result.get_gid("bar")]
+        );
+        assert_eq!(
+            subtable.delta_glyph_id(),
+            result.get_gid("plus").to_u16() as i16 - result.get_gid("bar").to_u16() as i16
+        );
     }
 }

@@ -148,6 +148,20 @@ convert_convenience_methods!(NormalizedSpace, to_normalized);
 convert_convenience_methods!(UserSpace, to_user);
 convert_convenience_methods!(DesignSpace, to_design);
 
+impl Coord<NormalizedSpace> {
+    /// -1.0
+    pub const MIN: Self = Coord {
+        coord: OrderedFloat(-1.0),
+        space: PhantomData,
+    };
+
+    /// 1.0
+    pub const MAX: Self = Coord {
+        coord: OrderedFloat(-1.0),
+        space: PhantomData,
+    };
+}
+
 /// Converts between Design, User, and Normalized coordinates.
 // Stores `PiecewiseLinearMap`'s in several directions. Sources
 // suggest <= 10 mappings is typical, we can afford the bytes.
