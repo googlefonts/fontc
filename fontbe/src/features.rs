@@ -11,6 +11,7 @@ use std::{
     time::Instant,
 };
 
+use feature_variations::FeatureVariationsProvider;
 use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
@@ -50,6 +51,7 @@ use crate::{
     },
 };
 
+mod feature_variations;
 mod kern;
 mod marks;
 mod ot_tags;
@@ -257,14 +259,20 @@ pub(crate) fn resolve_variable_metric<'a>(
 struct FeatureWriter<'a> {
     kerning: &'a FeaRsKerns,
     marks: &'a FeaRsMarks,
+    feature_variations: Option<FeatureVariationsProvider>,
     timing: RefCell<Vec<(&'static str, Instant)>>,
 }
 
 impl<'a> FeatureWriter<'a> {
-    fn new(kerning: &'a FeaRsKerns, marks: &'a FeaRsMarks) -> Self {
+    fn new(
+        kerning: &'a FeaRsKerns,
+        marks: &'a FeaRsMarks,
+        feature_variations: Option<FeatureVariationsProvider>,
+    ) -> Self {
         FeatureWriter {
             marks,
             kerning,
+            feature_variations,
             timing: Default::default(),
         }
     }
@@ -305,12 +313,20 @@ impl<'a> FeatureWriter<'a> {
                 .push(("End add marks", Instant::now()));
         }
     }
+
+    /// Add any feature variations
+    fn add_feature_variations(&self, builder: &mut FeatureBuilder) {
+        if let Some(variations) = self.feature_variations.as_ref() {
+            variations.add_features(builder);
+        }
+    }
 }
 
 impl FeatureProvider for FeatureWriter<'_> {
     fn add_features(&self, builder: &mut FeatureBuilder) {
         self.add_kerning_features(builder);
         self.add_marks(builder);
+        self.add_feature_variations(builder);
     }
 }
 
@@ -406,12 +422,24 @@ impl FeatureCompilationWork {
     fn compile(
         &self,
         static_metadata: &StaticMetadata,
+        glyph_order: &GlyphOrder,
         ast: &FeaFirstPassOutput,
         kerns: &FeaRsKerns,
         marks: &FeaRsMarks,
     ) -> Result<Compilation, Error> {
+        let feature_variations = static_metadata
+            .variations
+            .as_ref()
+            .map(|ir_variations| {
+                feature_variations::make_gsub_feature_variations(
+                    ir_variations,
+                    static_metadata,
+                    glyph_order,
+                )
+            })
+            .transpose()?;
         let var_info = FeaVariationInfo::new(static_metadata);
-        let feature_writer = FeatureWriter::new(kerns, marks);
+        let feature_writer = FeatureWriter::new(kerns, marks, feature_variations);
         // we've already validated the AST, so we only need to compile
         match fea_rs::compile::compile(
             &ast.ast,
@@ -599,7 +627,13 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
         let kerns = context.fea_rs_kerns.get();
         let marks = context.fea_rs_marks.get();
 
-        let mut result = self.compile(&static_metadata, &ast, kerns.as_ref(), marks.as_ref())?;
+        let mut result = self.compile(
+            &static_metadata,
+            &glyph_order,
+            &ast,
+            kerns.as_ref(),
+            marks.as_ref(),
+        )?;
         if result.gdef_classes.is_none() && !static_metadata.gdef_categories.categories.is_empty() {
             // the FEA did not contain an explicit GDEF block with glyph categories,
             // so let's use the ones from the source, if present (i.e. from

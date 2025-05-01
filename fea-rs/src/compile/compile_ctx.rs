@@ -288,6 +288,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         );
         writer.add_features(&mut builder);
         let mut external_features = builder.finish();
+
+        // we need to register any ConditionSets here, because we want a
+        // stable sort order when we compile
+        if let Some(conditions) = external_features.feature_variations.as_ref() {
+            for conditionset in conditions.conditions.iter().map(|(cs, _)| cs) {
+                self.conditionset_defs.register_use(conditionset);
+            }
+        }
         external_features.merge_into(&mut self.lookups, &mut self.features, &self.insert_markers);
         external_features.lig_carets
     }
