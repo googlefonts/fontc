@@ -200,6 +200,26 @@ impl From<&str> for ProductionName {
     }
 }
 
+impl From<u32> for ProductionName {
+    fn from(v: u32) -> ProductionName {
+        if v <= 0xFFFF {
+            ProductionName::Bmp(v)
+        } else {
+            ProductionName::NonBmp(v)
+        }
+    }
+}
+
+impl Display for ProductionName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProductionName::Bmp(cp) => write!(f, "uni{:04X}", cp),
+            ProductionName::NonBmp(cp) => write!(f, "u{:X}", cp),
+            ProductionName::Custom(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 /// A queryable set of glyph data
 ///
 /// Always queries static data from glyphsLib. Optionally includes a set of override values as well.
