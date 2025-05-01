@@ -369,12 +369,12 @@ impl Persistable for StaticMetadata {
 
 #[cfg(test)]
 mod tests {
-    use fontdrasil::coords::{CoordConverter, UserCoord};
+    use fontdrasil::coords::UserCoord;
 
     use super::*;
 
     fn test_static_metadata() -> StaticMetadata {
-        let axis = test_axis();
+        let axis = Axis::for_test("wght");
         let mut point_axis = axis.clone();
         point_axis.min = point_axis.default;
         point_axis.max = point_axis.default;
@@ -449,22 +449,6 @@ mod tests {
 
     const WGHT: Tag = Tag::from_be_bytes(*b"wght");
 
-    fn test_axis() -> Axis {
-        let min = UserCoord::new(100.0);
-        let default = UserCoord::new(400.0);
-        let max = UserCoord::new(900.0);
-        let converter = CoordConverter::unmapped(min, default, max);
-        Axis {
-            name: String::from("Weight"),
-            tag: WGHT,
-            min,
-            default,
-            max,
-            hidden: false,
-            converter,
-        }
-    }
-
     fn assert_yml_round_trip<T>(thing: T)
     where
         for<'a> T: Serialize + Deserialize<'a> + PartialEq + Debug,
@@ -483,12 +467,12 @@ mod tests {
 
     #[test]
     fn axis_yaml() {
-        assert_yml_round_trip(test_axis());
+        assert_yml_round_trip(Axis::for_test("wght"));
     }
 
     #[test]
     fn axis_bincode() {
-        assert_bincode_round_trip(test_axis());
+        assert_bincode_round_trip(Axis::for_test("wght"));
     }
 
     #[test]

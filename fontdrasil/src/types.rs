@@ -135,6 +135,44 @@ impl Axis {
             _ => axis_name,
         }
     }
+
+    /// Convenience constructor for use during tests.
+    ///
+    /// Panics if tag is not one of 'wght', 'wdth', 'ital', 'foo', 'bar', or 'axis'.
+    #[doc(hidden)]
+    pub fn for_test(tag: &str) -> Self {
+        let (name, tag, min, default, max) = match tag {
+            "wght" => ("Weight", "wght", 300, 400, 700),
+            "wdth" => ("Width", "wdth", 75, 100, 125),
+            "ital" => ("Italic", "ital", 0, 0, 1),
+            "foo" => ("Foo", "foo ", -1, 0, 1),
+            "bar" => ("Bar", "bar ", -1, 0, 1),
+            "axis" => ("Axis", "axis", 0, 0, 1),
+            _ => panic!("No definition for {tag}, add it?"),
+        };
+        let min = UserCoord::new(min as f64);
+        let default = UserCoord::new(default as f64);
+        let max = UserCoord::new(max as f64);
+        Axis {
+            name: name.to_string(),
+            tag: std::str::FromStr::from_str(tag).unwrap(),
+            min,
+            default,
+            max,
+            hidden: false,
+            converter: CoordConverter::new(
+                vec![
+                    (min, crate::coords::DesignCoord::new(min.into_inner())),
+                    (
+                        default,
+                        crate::coords::DesignCoord::new(default.into_inner()),
+                    ),
+                    (max, crate::coords::DesignCoord::new(max.into_inner())),
+                ],
+                1,
+            ),
+        }
+    }
 }
 
 // OS/2 width class

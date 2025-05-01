@@ -858,37 +858,6 @@ mod tests {
 
     use super::*;
 
-    fn axis(tag: &str) -> Axis {
-        let (name, tag, min, default, max) = match tag {
-            "wght" => ("Weight", "wght", 300, 400, 700),
-            "wdth" => ("Width", "wdth", 75, 100, 125),
-            "ital" => ("Italic", "ital", 0, 0, 1),
-            "foo" => ("Foo", "foo ", -1, 0, 1),
-            "bar" => ("Bar", "bar ", -1, 0, 1),
-            "axis" => ("Axis", "axis", 0, 0, 1),
-            _ => panic!("No definition for {tag}, add it?"),
-        };
-        let min = UserCoord::new(min as f64);
-        let default = UserCoord::new(default as f64);
-        let max = UserCoord::new(max as f64);
-        Axis {
-            name: name.to_string(),
-            tag: Tag::from_str(tag).unwrap(),
-            min,
-            default,
-            max,
-            hidden: false,
-            converter: CoordConverter::new(
-                vec![
-                    (min, DesignCoord::new(min.into_inner())),
-                    (default, DesignCoord::new(default.into_inner())),
-                    (max, DesignCoord::new(max.into_inner())),
-                ],
-                1,
-            ),
-        }
-    }
-
     fn default_master_weight() -> Vec<(usize, OrderedFloat<f64>)> {
         // no locations are contributing deltas
         Vec::new()
@@ -986,7 +955,7 @@ mod tests {
     fn delta_weights_for_static_family_one_axis() {
         let loc = NormalizedLocation::new();
         let locations = HashSet::from([loc]);
-        let axes = vec![axis("wght")];
+        let axes = vec![Axis::for_test("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
@@ -1006,7 +975,11 @@ mod tests {
     fn delta_weights_for_static_family_many_axes() {
         let loc = NormalizedLocation::for_pos(&[("wght", 0.0), ("ital", 0.0), ("wdth", 0.0)]);
         let locations = HashSet::from([loc.clone()]);
-        let axes = vec![axis("wdth"), axis("wght"), axis("ital")];
+        let axes = vec![
+            Axis::for_test("wdth"),
+            Axis::for_test("wght"),
+            Axis::for_test("ital"),
+        ];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(vec![loc], model.locations);
@@ -1026,7 +999,7 @@ mod tests {
         let weight_0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
         let weight_1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let locations = HashSet::from([weight_1.clone(), weight_0.clone()]);
-        let axes = vec![axis("wght")];
+        let axes = vec![Axis::for_test("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(vec![weight_0, weight_1], model.locations);
@@ -1050,7 +1023,7 @@ mod tests {
         let weight_0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
         let weight_1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let locations = HashSet::from([weight_1.clone(), weight_0.clone(), weight_minus_1.clone()]);
-        let axes = vec![axis("wght")];
+        let axes = vec![Axis::for_test("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(vec![weight_0, weight_minus_1, weight_1], model.locations);
@@ -1084,7 +1057,7 @@ mod tests {
             wght1_wdth0.clone(),
             wght1_wdth1.clone(),
         ]);
-        let axes = vec![axis("wght"), axis("wdth")];
+        let axes = vec![Axis::for_test("wght"), Axis::for_test("wdth")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
@@ -1132,7 +1105,7 @@ mod tests {
             // A fixup or knockout
             fixup.clone(),
         ]);
-        let axes = vec![axis("wght"), axis("wdth")];
+        let axes = vec![Axis::for_test("wght"), Axis::for_test("wdth")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
@@ -1175,7 +1148,7 @@ mod tests {
             NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]),
             NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 0.0)]),
         ]);
-        let axes = vec![axis("wght"), axis("wdth")];
+        let axes = vec![Axis::for_test("wght"), Axis::for_test("wdth")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
@@ -1239,7 +1212,7 @@ mod tests {
             NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 0.5)]),
             NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 1.0)]),
         ]);
-        let axes = vec![axis("bar"), axis("foo")];
+        let axes = vec![Axis::for_test("bar"), Axis::for_test("foo")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
@@ -1289,7 +1262,7 @@ mod tests {
             NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.75)]),
             NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 1.0)]),
         ]);
-        let axes = vec![axis("bar"), axis("foo")];
+        let axes = vec![Axis::for_test("bar"), Axis::for_test("foo")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
@@ -1350,7 +1323,7 @@ mod tests {
             max_wdth.clone(),
             max_wght_wdth.clone(),
         ]);
-        let axes = vec![axis("wght"), axis("wdth")];
+        let axes = vec![Axis::for_test("wght"), Axis::for_test("wdth")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         let point_seqs = HashMap::from([
@@ -1393,7 +1366,7 @@ mod tests {
         let max_wght = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let min_wght = NormalizedLocation::for_pos(&[("wght", -1.0)]);
         let locations = HashSet::from([origin.clone(), max_wght.clone(), min_wght.clone()]);
-        let axes = vec![axis("wght")];
+        let axes = vec![Axis::for_test("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         let point_seqs = HashMap::from([
@@ -1469,8 +1442,11 @@ mod tests {
             .map(|(loc, values)| (loc.clone(), values.iter().map(|v| NoRoundF64(*v)).collect()))
             .collect();
 
-        let model =
-            VariationModel::new(locations.into_iter().collect(), vec![axis("axis")]).unwrap();
+        let model = VariationModel::new(
+            locations.into_iter().collect(),
+            vec![Axis::for_test("axis")],
+        )
+        .unwrap();
 
         let mut num_bad_errors = 0;
         for i in 0..num_samples {
