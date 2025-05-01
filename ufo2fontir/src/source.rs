@@ -7,16 +7,17 @@ use std::{
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use fontdrasil::{
-    coords::{DesignLocation, NormalizedLocation, UserCoord},
+    coords::{DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
 };
 use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
-        AnchorBuilder, FeaturesSource, GdefCategories, GlobalMetric, GlobalMetrics, GlyphOrder,
-        KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey,
-        NamedInstance, Panose, PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
+        AnchorBuilder, Condition, ConditionSet, FeaturesSource, GdefCategories, GlobalMetric,
+        GlobalMetrics, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        MetaTableValues, NameBuilder, NameKey, NamedInstance, Panose, PostscriptNames, Rule,
+        StaticMetadata, Substitution, VariableFeature, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -26,6 +27,7 @@ use norad::{
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
 };
+use plist::{Dictionary, Value};
 use write_fonts::{
     read::tables::gasp::GaspRangeBehavior,
     tables::{gasp::GaspRange, gdef::GlyphClassDef, os2::SelectionFlags},
@@ -730,6 +732,13 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         let tags_by_name = axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
         let axes_by_tag = axes.iter().map(|a| (a.tag, a)).collect();
+        let variations = to_ir_variations(
+            &self.designspace.rules,
+            &self.designspace.lib,
+            &axes_by_tag,
+            &tags_by_name,
+        )?;
+
         let family_prefix = names
             .get(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
             .map(|name| name.clone() + " ")
@@ -928,6 +937,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 })
                 .collect();
         }
+        static_metadata.variations = variations;
 
         context.preliminary_glyph_order.set(glyph_order);
         context.static_metadata.set(static_metadata);
@@ -1006,6 +1016,96 @@ fn populate_default_metrics(
         descender,
         italic_angle,
     );
+}
+
+pub fn to_ir_variations(
+    rules: &designspace::Rules,
+    lib: &Dictionary,
+    axis_map: &HashMap<Tag, &fontdrasil::types::Axis>,
+    tags_by_name: &HashMap<&str, Tag>,
+) -> Result<Option<VariableFeature>, Error> {
+    //https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#rules-element
+    static FEATURE_VARS_FEATURE_TAG: &str = "com.github.fonttools.varLib.featureVarsFeatureTag";
+
+    if rules.rules.is_empty() {
+        return Ok(None);
+    }
+
+    let features = match lib.get(FEATURE_VARS_FEATURE_TAG) {
+        Some(Value::String(tags)) => tags
+            .split(',')
+            .map(|tag| {
+                Tag::from_str(tag).map_err(|cause| Error::InvalidTag {
+                    raw_tag: tag.into(),
+                    cause,
+                })
+            })
+            .collect::<Result<_, _>>()?,
+        Some(_) => {
+            return Err(Error::InvalidEntry(
+                "wrong type for lib key",
+                FEATURE_VARS_FEATURE_TAG.to_string(),
+            ))
+        }
+        //https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#rules-element
+        None => match rules.processing {
+            designspace::RuleProcessing::First => vec![Tag::new(b"rvrn")],
+            designspace::RuleProcessing::Last => vec![Tag::new(b"rclt")],
+        },
+    };
+
+    let rules = rules
+        .rules
+        .iter()
+        .map(|ds_rule| {
+            Ok(Rule {
+                conditions: ds_rule
+                    .condition_sets
+                    .iter()
+                    .map(|ds_cond| to_ir_condition_set(ds_cond, axis_map, tags_by_name))
+                    .collect::<Result<_, _>>()?,
+                substitutions: ds_rule
+                    .substitutions
+                    .iter()
+                    .map(|ds_sub| Substitution {
+                        replace: ds_sub.name.as_str().into(),
+                        with: ds_sub.with.as_str().into(),
+                    })
+                    .collect(),
+            })
+        })
+        .collect::<Result<_, Error>>()?;
+
+    Ok(Some(VariableFeature { features, rules }))
+}
+
+fn to_ir_condition_set(
+    ds_cond: &designspace::ConditionSet,
+    axis_map: &HashMap<Tag, &fontdrasil::types::Axis>,
+    tags_by_name: &HashMap<&str, Tag>,
+) -> Result<ConditionSet, Error> {
+    let to_ir_cond = |ds_cond: &designspace::Condition| -> Result<Condition, Error> {
+        let tag = *tags_by_name
+            .get(ds_cond.name.as_str())
+            .ok_or_else(|| Error::UnknownEntry("axis name", ds_cond.name.clone()))?;
+        if !axis_map.contains_key(&tag) {
+            return Err(Error::UnknownEntry("axis", tag.to_string()));
+        }
+        let min = ds_cond.minimum.map(|min| DesignCoord::new(min as f64));
+        let max = ds_cond.maximum.map(|max| DesignCoord::new(max as f64));
+        if min.is_none() && max.is_none() {
+            return Err(Error::InvalidEntry(
+                "designspace condition",
+                format!("'{}': one of min or max must be present", ds_cond.name),
+            ));
+        }
+        Ok(Condition {
+            axis: tag,
+            min,
+            max,
+        })
+    };
+    ds_cond.conditions.iter().map(to_ir_cond).collect()
 }
 
 impl Work<Context, WorkId, Error> for GlobalMetricsWork {
@@ -2396,5 +2496,39 @@ mod tests {
     #[test]
     fn fixed_pitch_off() {
         assert_eq!(None, fixed_pitch_of("wght_var.designspace"));
+    }
+
+    #[test]
+    fn basic_feature_variations() {
+        let (_, context) =
+            build_static_metadata("dspace_rules/Basic.designspace", default_test_flags());
+        let variations = context.static_metadata.get().variations.clone().unwrap();
+        assert_eq!(variations.features, [Tag::new(b"rvrn")]);
+        assert_eq!(variations.rules.len(), 1);
+        let condition = &variations.rules[0].conditions[0].0[0];
+        assert_eq!(condition.axis, "wght");
+        assert_eq!(condition.min.unwrap(), 550.0);
+        assert_eq!(condition.max.unwrap(), 700.0);
+    }
+
+    #[test]
+    fn rclt_feature_variations() {
+        let (_, context) =
+            build_static_metadata("dspace_rules/Last.designspace", default_test_flags());
+        let variations = context.static_metadata.get().variations.clone().unwrap();
+        assert_eq!(variations.features, [Tag::new(b"rclt")]);
+    }
+
+    #[test]
+    fn custom_feature_variations() {
+        let (_, context) = build_static_metadata(
+            "dspace_rules/CustomFeatures.designspace",
+            default_test_flags(),
+        );
+        let variations = context.static_metadata.get().variations.clone().unwrap();
+        assert_eq!(
+            variations.features,
+            [Tag::new(b"derp"), Tag::new(b"merp"), Tag::new(b"burp")]
+        );
     }
 }

@@ -81,6 +81,11 @@ pub enum Error {
         n: usize,
         size_n: usize,
     },
+    // Look ma, I replace UnknownAxis as well!
+    #[error("Unknown {0}: {1}")]
+    UnknownEntry(&'static str, String),
+    #[error("Invalid {0}: {1}")]
+    InvalidEntry(&'static str, String),
 }
 
 /// An error related to loading source input files
