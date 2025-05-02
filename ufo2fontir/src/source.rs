@@ -2558,4 +2558,68 @@ mod tests {
             [Tag::new(b"derp"), Tag::new(b"merp"), Tag::new(b"burp")]
         );
     }
+
+    #[test]
+    fn selection_flags_implicit_no_fallback() {
+        let font_info = norad::FontInfo {
+            style_map_style_name: Some(StyleMapStyle::Italic),
+            open_type_name_preferred_subfamily_name: Some(String::from("Bold")),
+            style_name: Some(String::from("Bold")),
+            ..Default::default()
+        };
+        assert_eq!(selection_flags_implicit(&font_info), SelectionFlags::ITALIC);
+    }
+
+    #[test]
+    fn selection_flags_implicit_fallback_1_preferred() {
+        let font_info = norad::FontInfo {
+            style_map_style_name: None,
+            open_type_name_preferred_subfamily_name: Some(String::from("Bold Italic")),
+            style_name: Some(String::from("Bold")),
+            ..Default::default()
+        };
+        assert_eq!(
+            selection_flags_implicit(&font_info),
+            SelectionFlags::BOLD | SelectionFlags::ITALIC
+        );
+    }
+
+    #[test]
+    fn selection_flags_implicit_fallback_2_style_name_is_ribbi() {
+        let font_info = norad::FontInfo {
+            style_map_style_name: None,
+            open_type_name_preferred_subfamily_name: None,
+            style_name: Some(String::from("Bold")),
+            ..Default::default()
+        };
+        assert_eq!(selection_flags_implicit(&font_info), SelectionFlags::BOLD);
+    }
+
+    #[test]
+    fn selection_flags_implicit_fallback_2_style_name_not_ribbi() {
+        let font_info = norad::FontInfo {
+            style_map_style_name: None,
+            open_type_name_preferred_subfamily_name: None,
+            style_name: Some(String::from("Chiseled")),
+            ..Default::default()
+        };
+        assert_eq!(
+            selection_flags_implicit(&font_info),
+            SelectionFlags::REGULAR
+        );
+    }
+
+    #[test]
+    fn selection_flags_implicit_default() {
+        let font_info = norad::FontInfo {
+            style_map_style_name: None,
+            open_type_name_preferred_subfamily_name: None,
+            style_name: None,
+            ..Default::default()
+        };
+        assert_eq!(
+            selection_flags_implicit(&font_info),
+            SelectionFlags::REGULAR
+        );
+    }
 }
