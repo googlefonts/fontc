@@ -157,7 +157,7 @@ impl Coord<NormalizedSpace> {
 
     /// 1.0
     pub const MAX: Self = Coord {
-        coord: OrderedFloat(-1.0),
+        coord: OrderedFloat(1.0),
         space: PhantomData,
     };
 }
