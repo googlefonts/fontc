@@ -1732,6 +1732,7 @@ mod tests {
     use norad::designspace;
 
     use pretty_assertions::assert_eq;
+    use rstest::rstest;
     use write_fonts::types::NameId;
 
     use crate::{
@@ -2559,67 +2560,35 @@ mod tests {
         );
     }
 
-    #[test]
-    fn selection_flags_implicit_no_fallback() {
+    #[rstest]
+    #[case::no_fallback(
+        Some(StyleMapStyle::Italic),
+        Some("Bold"),
+        Some("Bold"),
+        SelectionFlags::ITALIC
+    )]
+    #[case::fallback_1_preferred(
+        None,
+        Some("Bold Italic"),
+        Some("Bold"),
+        SelectionFlags::BOLD | SelectionFlags::ITALIC,
+    )]
+    #[case::fallback_2_style_name_is_ribbi(None, None, Some("Bold"), SelectionFlags::BOLD)]
+    #[case::fallback_2_style_name_not_ribbi(None, None, Some("Chiseled"), SelectionFlags::REGULAR)]
+    #[case::default(None, None, None, SelectionFlags::REGULAR)]
+    fn test_selection_flags_implicit(
+        #[case] style_map_style_name: Option<StyleMapStyle>,
+        #[case] open_type_name_preferred_subfamily_name: Option<&str>,
+        #[case] style_name: Option<&str>,
+        #[case] expected_flags: SelectionFlags,
+    ) {
         let font_info = norad::FontInfo {
-            style_map_style_name: Some(StyleMapStyle::Italic),
-            open_type_name_preferred_subfamily_name: Some(String::from("Bold")),
-            style_name: Some(String::from("Bold")),
+            style_map_style_name,
+            open_type_name_preferred_subfamily_name: open_type_name_preferred_subfamily_name
+                .map(String::from),
+            style_name: style_name.map(String::from),
             ..Default::default()
         };
-        assert_eq!(selection_flags_implicit(&font_info), SelectionFlags::ITALIC);
-    }
-
-    #[test]
-    fn selection_flags_implicit_fallback_1_preferred() {
-        let font_info = norad::FontInfo {
-            style_map_style_name: None,
-            open_type_name_preferred_subfamily_name: Some(String::from("Bold Italic")),
-            style_name: Some(String::from("Bold")),
-            ..Default::default()
-        };
-        assert_eq!(
-            selection_flags_implicit(&font_info),
-            SelectionFlags::BOLD | SelectionFlags::ITALIC
-        );
-    }
-
-    #[test]
-    fn selection_flags_implicit_fallback_2_style_name_is_ribbi() {
-        let font_info = norad::FontInfo {
-            style_map_style_name: None,
-            open_type_name_preferred_subfamily_name: None,
-            style_name: Some(String::from("Bold")),
-            ..Default::default()
-        };
-        assert_eq!(selection_flags_implicit(&font_info), SelectionFlags::BOLD);
-    }
-
-    #[test]
-    fn selection_flags_implicit_fallback_2_style_name_not_ribbi() {
-        let font_info = norad::FontInfo {
-            style_map_style_name: None,
-            open_type_name_preferred_subfamily_name: None,
-            style_name: Some(String::from("Chiseled")),
-            ..Default::default()
-        };
-        assert_eq!(
-            selection_flags_implicit(&font_info),
-            SelectionFlags::REGULAR
-        );
-    }
-
-    #[test]
-    fn selection_flags_implicit_default() {
-        let font_info = norad::FontInfo {
-            style_map_style_name: None,
-            open_type_name_preferred_subfamily_name: None,
-            style_name: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            selection_flags_implicit(&font_info),
-            SelectionFlags::REGULAR
-        );
+        assert_eq!(selection_flags_implicit(&font_info), expected_flags);
     }
 }
