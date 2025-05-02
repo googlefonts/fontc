@@ -795,7 +795,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
         // Start with the bits from selection flags
-        let selection_flags = font_info_at_default
+        let selection_flags_explicit = font_info_at_default
             .open_type_os2_selection
             .as_ref()
             .map(|flags| {
@@ -803,18 +803,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                     acc | SelectionFlags::from_bits_truncate(1 << e)
                 })
             })
-            .unwrap_or_default()
-            // Also set any bits implied by the style map style name
-            | match font_info_at_default
-                .style_map_style_name
-                .as_ref()
-                .unwrap_or(&StyleMapStyle::Regular)
-            {
-                StyleMapStyle::Regular => SelectionFlags::REGULAR,
-                StyleMapStyle::Bold => SelectionFlags::BOLD,
-                StyleMapStyle::Italic => SelectionFlags::ITALIC,
-                StyleMapStyle::BoldItalic => SelectionFlags::BOLD | SelectionFlags::ITALIC,
-            };
+            .unwrap_or_default();
+        // Also set any bits implied by the style map style name
+        let selection_flags_implicit = selection_flags_implicit(font_info_at_default);
+        let selection_flags = selection_flags_explicit | selection_flags_implicit;
 
         let postscript_names = if context.flags.contains(Flags::PRODUCTION_NAMES) {
             postscript_names(&lib_plist)?
@@ -942,6 +934,41 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         context.preliminary_glyph_order.set(glyph_order);
         context.static_metadata.set(static_metadata);
         Ok(())
+    }
+}
+
+fn selection_flags_implicit(font_info_at_default: &norad::FontInfo) -> SelectionFlags {
+    // Implement ufo2ft's fallback mechanism:
+    // 1. Fallback to `openTypeNamePreferredSubfamilyName` if it is one of
+    //    `regular`, `bold`, `italic`, `bold italic`, otherwise fallback to
+    //    `regular`.
+    //    https://github.com/googlefonts/ufo2ft/blob/2f11b0ff84ef1f2494e54d1a7a15d92806d8337b/Lib/ufo2ft/fontInfoData.py#L76
+    // 2. `openTypeNamePreferredSubfamilyName` has its own fallback to `styleName`.
+    //    https://github.com/googlefonts/ufo2ft/blob/2f11b0ff84ef1f2494e54d1a7a15d92806d8337b/Lib/ufo2ft/fontInfoData.py#L192
+    // FIXME: there are many other ufo2ft fallback mechanisms in that file,
+    // should any other be implemented? Should there be a more general system to
+    // implement the fallbacks?
+    if let Some(style_map_style) = font_info_at_default.style_map_style_name.as_ref() {
+        return match style_map_style {
+            StyleMapStyle::Regular => SelectionFlags::REGULAR,
+            StyleMapStyle::Bold => SelectionFlags::BOLD,
+            StyleMapStyle::Italic => SelectionFlags::ITALIC,
+            StyleMapStyle::BoldItalic => SelectionFlags::BOLD | SelectionFlags::ITALIC,
+        };
+    }
+    match font_info_at_default
+        .open_type_name_preferred_subfamily_name
+        .as_deref()
+        .or(font_info_at_default.style_name.as_deref())
+        .map(str::trim)
+        .map(str::to_lowercase)
+        .as_deref()
+    {
+        Some("regular") => SelectionFlags::REGULAR,
+        Some("italic") => SelectionFlags::ITALIC,
+        Some("bold") => SelectionFlags::BOLD,
+        Some("bold italic") => SelectionFlags::BOLD | SelectionFlags::ITALIC,
+        _ => SelectionFlags::REGULAR,
     }
 }
 
