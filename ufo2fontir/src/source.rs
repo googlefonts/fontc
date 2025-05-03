@@ -817,6 +817,16 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L360
         let italic_angle = font_info_at_default.italic_angle.unwrap_or(0.0);
 
+        // Only build vertical metrics if all vhea metrics are defined.
+        // https://github.com/googlefonts/ufo2ft/blob/16ed156bd/Lib/ufo2ft/outlineCompiler.py#L154-L163
+        let build_vertical = [
+            font_info_at_default.open_type_vhea_vert_typo_ascender,
+            font_info_at_default.open_type_vhea_vert_typo_descender,
+            font_info_at_default.open_type_vhea_vert_typo_line_gap,
+        ]
+        .into_iter()
+        .all(|metric| metric.is_some());
+
         let mut static_metadata = StaticMetadata::new(
             units_per_em,
             names,
@@ -827,6 +837,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             italic_angle,
             glyph_categories,
             None,
+            build_vertical,
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
@@ -1289,6 +1300,36 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
                 GlobalMetric::UnderlinePosition,
                 pos.clone(),
                 font_info.postscript_underline_position,
+            );
+            metrics.set_if_some(
+                GlobalMetric::VheaAscender,
+                pos.clone(),
+                font_info.open_type_vhea_vert_typo_ascender,
+            );
+            metrics.set_if_some(
+                GlobalMetric::VheaDescender,
+                pos.clone(),
+                font_info.open_type_vhea_vert_typo_descender,
+            );
+            metrics.set_if_some(
+                GlobalMetric::VheaLineGap,
+                pos.clone(),
+                font_info.open_type_vhea_vert_typo_line_gap,
+            );
+            metrics.set_if_some(
+                GlobalMetric::VheaCaretSlopeRise,
+                pos.clone(),
+                font_info.open_type_vhea_caret_slope_rise,
+            );
+            metrics.set_if_some(
+                GlobalMetric::VheaCaretSlopeRun,
+                pos.clone(),
+                font_info.open_type_vhea_caret_slope_run,
+            );
+            metrics.set_if_some(
+                GlobalMetric::VheaCaretOffset,
+                pos.clone(),
+                font_info.open_type_vhea_caret_offset,
             );
 
             populate_default_metrics(
@@ -2152,6 +2193,7 @@ mod tests {
                 hhea_ascender: 1194.0.into(),
                 hhea_descender: (-290.0).into(),
                 hhea_line_gap: 43.0.into(),
+                vhea_caret_slope_run: 1.0.into(),
                 underline_thickness: 50.0.into(),
                 underline_position: (-75.0).into(),
                 ..Default::default()

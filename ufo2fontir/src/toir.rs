@@ -83,9 +83,18 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, Error
     for contour in glyph.contours.iter() {
         contours.push(to_ir_contour(glyph.name().as_str().into(), contour)?);
     }
+
+    let vertical_origin = glyph.lib.get("public.verticalOrigin").map(|value| {
+        value
+            .as_real()
+            .or(value.as_signed_integer().map(|int| int as f64))
+            .expect("'public.verticalOrigin' must be a number")
+    });
+
     Ok(ir::GlyphInstance {
         width: glyph.width,
         height: Some(glyph.height),
+        vertical_origin,
         contours,
         components: glyph.components.iter().map(to_ir_component).collect(),
     })

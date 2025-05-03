@@ -70,6 +70,11 @@ pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/post>.
     pub italic_angle: OrderedFloat<f64>,
 
+    /// Records whether this font contains sufficient non-default vertical data
+    /// to warrant building a vhea and vmtx table. (The criteria for Glyphs and
+    /// UFO sources is different.)
+    pub build_vertical: bool,
+
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
     pub gdef_categories: GdefCategories,
@@ -298,6 +303,7 @@ impl StaticMetadata {
         glyphsapp_number_values: Option<
             HashMap<NormalizedLocation, BTreeMap<SmolStr, OrderedFloat<f64>>>,
         >,
+        build_vertical: bool,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
@@ -345,6 +351,7 @@ impl StaticMetadata {
             italic_angle: italic_angle.into(),
             gdef_categories,
             number_values: glyphsapp_number_values.unwrap_or_default(),
+            build_vertical,
             misc: MiscMetadata {
                 fs_type: None, // default is, sigh, inconsistent across source formats
                 is_fixed_pitch: None,
@@ -503,6 +510,7 @@ mod tests {
             },
             number_values: Default::default(),
             variations: None,
+            build_vertical: false,
         }
     }
 

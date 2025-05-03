@@ -73,6 +73,7 @@ impl LayoutOutputBuilder {
             42.0,
             self.categories.clone().unwrap_or_default(),
             None,
+            false,
         )
         .unwrap();
 
