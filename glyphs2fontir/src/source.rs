@@ -1338,7 +1338,10 @@ mod tests {
                 panic!("{:?} should be glyph work!", work.id());
             };
             let task_context = context.copy_for_work(
-                Access::Variant(WorkId::StaticMetadata),
+                AccessBuilder::new()
+                    .variant(WorkId::StaticMetadata)
+                    .variant(WorkId::GlobalMetrics)
+                    .build(),
                 AccessBuilder::new()
                     .specific_instance(WorkId::Glyph(glyph_name.clone()))
                     .specific_instance(WorkId::Anchor(glyph_name.clone()))
@@ -1353,7 +1356,7 @@ mod tests {
     fn glyph_user_locations() {
         let glyph_name: GlyphName = "space".into();
         let (source, context) =
-            build_static_metadata(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
+            build_global_metrics(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         build_glyphs(&source, &context).unwrap(); // we dont' care about geometry
 
         let static_metadata = context.static_metadata.get();
@@ -1392,7 +1395,7 @@ mod tests {
     fn glyph_normalized_locations() {
         let glyph_name: GlyphName = "space".into();
         let (source, context) =
-            build_static_metadata(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
+            build_global_metrics(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         build_glyphs(&source, &context).unwrap();
 
         let mut expected_locations = HashSet::new();
@@ -1445,7 +1448,7 @@ mod tests {
 
     #[test]
     fn captures_single_codepoints() {
-        let (source, context) = build_static_metadata(glyphs2_dir().join("WghtVar.glyphs"));
+        let (source, context) = build_global_metrics(glyphs2_dir().join("WghtVar.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("hyphen".into()));
         assert_eq!(HashSet::from([0x002d]), glyph.codepoints);
@@ -1454,7 +1457,7 @@ mod tests {
     #[test]
     fn captures_single_codepoints_unquoted_dec() {
         let (source, context) =
-            build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDec.glyphs"));
+            build_global_metrics(glyphs3_dir().join("Unicode-UnquotedDec.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("name".into()));
         assert_eq!(HashSet::from([182]), glyph.codepoints);
@@ -1463,7 +1466,7 @@ mod tests {
     #[test]
     fn captures_multiple_codepoints_unquoted_dec() {
         let (source, context) =
-            build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
+            build_global_metrics(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("name".into()));
         assert_eq!(HashSet::from([1619, 1764]), glyph.codepoints);
@@ -1769,7 +1772,7 @@ mod tests {
         let glyph_name = "i";
         let expected = "M302,584 Q328,584 346,602 Q364,620 364,645 Q364,670 346,687.5 Q328,705 302,705 Q276,705 257.5,687.5 Q239,670 239,645 Q239,620 257.5,602 Q276,584 302,584 Z";
         for test_dir in &[glyphs2_dir(), glyphs3_dir()] {
-            let (source, context) = build_static_metadata(test_dir.join("QCurve.glyphs"));
+            let (source, context) = build_global_metrics(test_dir.join("QCurve.glyphs"));
             build_glyphs(&source, &context).unwrap();
             let glyph = context.get_glyph(glyph_name);
             let default_instance = glyph
@@ -1802,7 +1805,7 @@ mod tests {
     fn captures_anchors() {
         let base_name = "A".into();
         let mark_name = "macroncomb".into();
-        let (source, context) = build_static_metadata(glyphs3_dir().join("WghtVar_Anchors.glyphs"));
+        let (source, context) = build_global_metrics(glyphs3_dir().join("WghtVar_Anchors.glyphs"));
         build_glyphs(&source, &context).unwrap();
 
         let base = context.anchors.get(&WorkId::Anchor(base_name));
@@ -1826,8 +1829,7 @@ mod tests {
 
     #[test]
     fn reads_skip_export_glyphs() {
-        let (source, context) =
-            build_static_metadata(glyphs3_dir().join("WghtVar_NoExport.glyphs"));
+        let (source, context) = build_global_metrics(glyphs3_dir().join("WghtVar_NoExport.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let is_export = |name: &str| {
             context
@@ -2125,7 +2127,7 @@ mod tests {
 
     #[test]
     fn mark_width_zeroing() {
-        let (source, context) = build_static_metadata(glyphs3_dir().join("SpacingMark.glyphs"));
+        let (source, context) = build_global_metrics(glyphs3_dir().join("SpacingMark.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.get_glyph("descender-cy");
         // this is a spacing-combining mark, so we shouldn't zero it's width
