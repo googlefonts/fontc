@@ -35,7 +35,6 @@ use write_fonts::{
         os2::SelectionFlags,
     },
     types::{NameId, Tag},
-    OtRound,
 };
 
 use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
@@ -938,9 +937,18 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             }
 
             // See https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/glyph.py#L359-L389
-            let vertical_origin = instance.vert_origin.map(|origin| {
-                (global_metrics.at(master_location).os2_typo_ascender - origin).ot_round()
-            });
+            let local_metrics = global_metrics.at(master_location);
+            let height = instance
+                .vert_width
+                .unwrap_or_else(|| {
+                    local_metrics.os2_typo_ascender - local_metrics.os2_typo_descender
+                })
+                .into_inner();
+            let vertical_origin = instance
+                .vert_origin
+                .map(|origin| local_metrics.os2_typo_ascender - origin)
+                .unwrap_or(local_metrics.os2_typo_ascender)
+                .into_inner();
 
             // TODO populate width and height properly
             let (contours, components) =
@@ -951,8 +959,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 } else {
                     0.0
                 },
-                height: instance.vert_width.map(|x| x.into_inner()),
-                vertical_origin,
+                height: Some(height),
+                vertical_origin: Some(vertical_origin),
                 contours,
                 components,
             };
