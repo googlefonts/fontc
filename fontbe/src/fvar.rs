@@ -31,11 +31,18 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
         return None;
     }
 
-    let reverse_names: HashMap<_, _> = static_metadata
-        .names
-        .iter()
-        .map(|(key, name)| (name.as_str(), key.name_id))
-        .collect();
+    // Prefer the smallest ID if an existing name can be reused
+    let reverse_names =
+        static_metadata
+            .names
+            .iter()
+            .fold(HashMap::new(), |mut accum, (key, name)| {
+                accum
+                    .entry(name.as_str())
+                    .and_modify(|value| *value = key.name_id.min(*value))
+                    .or_insert(key.name_id);
+                accum
+            });
 
     let axes_and_instances = AxisInstanceArrays::new(
         static_metadata
