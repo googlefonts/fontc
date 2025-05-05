@@ -415,10 +415,9 @@ impl GlobalMetrics {
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
         set_if_absent(GlobalMetric::CapHeight, 0.7 * units_per_em);
-        set_if_absent(
-            GlobalMetric::XHeight,
-            x_height.unwrap_or(0.5 * units_per_em),
-        );
+
+        let x_height = x_height.unwrap_or(0.5 * units_per_em);
+        set_if_absent(GlobalMetric::XHeight, x_height);
 
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L133-L148
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L151-L161
@@ -463,11 +462,15 @@ impl GlobalMetrics {
             set_if_absent(GlobalMetric::UnderlineThickness, 0.05 * units_per_em);
         set_if_absent(GlobalMetric::UnderlinePosition, -0.1 * units_per_em);
 
-        // // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L313-L316
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3/Lib/ufo2ft/outlineCompiler.py#L609-L616
         set_if_absent(GlobalMetric::StrikeoutSize, underline_thickness.0);
         set_if_absent(
             GlobalMetric::StrikeoutPosition,
-            x_height.map(|v| v * 0.6).unwrap_or(units_per_em * 0.22),
+            if x_height != 0. {
+                x_height * 0.6
+            } else {
+                units_per_em * 0.22
+            },
         );
     }
 
@@ -1909,5 +1912,35 @@ mod tests {
         assert!(different_subfamily
             .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
             .is_some());
+    }
+
+    // If x-height is undefined, ufo2ft derives the strikeout position from its
+    // default fallback:
+    //    https://github.com/googlefonts/ufo2ft/blob/2f11b0ff/Lib/ufo2ft/outlineCompiler.py#L587
+    //    https://github.com/googlefonts/ufo2ft/blob/2f11b0ff/Lib/ufo2ft/outlineCompiler.py#L633
+    #[test]
+    fn default_strikeout_when_xheight_none() {
+        let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+
+        let mut metrics = GlobalMetrics::new();
+        metrics.populate_defaults(&pos, 1000, None, None, None, None);
+
+        let default = metrics.get(GlobalMetric::StrikeoutPosition, &pos);
+        assert_eq!(default.into_inner(), 300.);
+    }
+
+    // An explicit x-height of zero has specific semantic meaning:
+    //    https://learn.microsoft.com/en-us/typography/opentype/spec/os2#sxheight
+    // and ufo2ft derives strikeout position from UPM instead in this scenario:
+    //    https://github.com/googlefonts/ufo2ft/blob/2f11b0ff/Lib/ufo2ft/outlineCompiler.py#L633
+    #[test]
+    fn default_strikeout_when_xheight_zero() {
+        let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+
+        let mut metrics = GlobalMetrics::new();
+        metrics.populate_defaults(&pos, 1000, Some(0.), None, None, None);
+
+        let default = metrics.get(GlobalMetric::StrikeoutPosition, &pos);
+        assert_eq!(default.into_inner(), 220.);
     }
 }
