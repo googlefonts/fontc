@@ -385,7 +385,7 @@ impl StaticMetadata {
     pub fn reverse_names(&self) -> HashMap<&str, NameId> {
         self.names
             .iter()
-            .fold(HashMap::new(), |mut accum: HashMap<&str, NameId>, (key, name)| {
+            .fold(HashMap::new(), |mut accum, (key, name)| {
                 accum
                     .entry(name.as_str())
                     .and_modify(|value| *value = key.name_id.min(*value))
@@ -475,6 +475,10 @@ mod tests {
                     "Fam".to_string(),
                 ),
                 (
+                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
+                    "Fam".to_string(),
+                ),
+                (
                     NameKey::new_bmp_only(NameId::new(256)),
                     "Weight".to_string(),
                 ),
@@ -556,5 +560,12 @@ mod tests {
     #[test]
     fn static_metadata_bincode() {
         assert_bincode_round_trip(test_static_metadata());
+    }
+
+    #[test]
+    fn static_metadata_smallest_id() {
+        let static_metadata = test_static_metadata();
+        let reverse_names = static_metadata.reverse_names();
+        assert_eq!(reverse_names.get("Fam").unwrap(), &NameId::FAMILY_NAME);
     }
 }
