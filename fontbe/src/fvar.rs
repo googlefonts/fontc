@@ -1,7 +1,6 @@
 //! Generates a [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar) table.
 
 use log::trace;
-use std::collections::HashMap;
 
 use fontdrasil::orchestration::{Access, Work};
 use fontir::{ir::StaticMetadata, orchestration::WorkId as FeWorkId};
@@ -31,18 +30,10 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
         return None;
     }
 
-    // Prefer the smallest ID if an existing name can be reused
-    let reverse_names =
-        static_metadata
-            .names
-            .iter()
-            .fold(HashMap::new(), |mut accum, (key, name)| {
-                accum
-                    .entry(name.as_str())
-                    .and_modify(|value| *value = key.name_id.min(*value))
-                    .or_insert(key.name_id);
-                accum
-            });
+    // If possible, reuse a matching name with the smallest ID to follow fonttools:
+    // https://github.com/fonttools/fonttools/blob/d5aec1b9/Lib/fontTools/varLib/__init__.py#L133-L135
+    // https://github.com/fonttools/fonttools/blob/d5aec1b9/Lib/fontTools/ttLib/tables/_n_a_m_e.py#L326-L329
+    let reverse_names = static_metadata.reverse_names();
 
     let axes_and_instances = AxisInstanceArrays::new(
         static_metadata

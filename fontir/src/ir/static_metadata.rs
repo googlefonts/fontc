@@ -379,6 +379,20 @@ impl StaticMetadata {
     pub fn axis(&self, tag: &Tag) -> Option<&Axis> {
         self.axes.iter().find(|a| &a.tag == tag)
     }
+
+    /// Calculate a deterministic mapping of existing name text to the smallest
+    /// name ID that provides it.
+    pub fn reverse_names(&self) -> HashMap<&str, NameId> {
+        self.names
+            .iter()
+            .fold(HashMap::new(), |mut accum: HashMap<&str, NameId>, (key, name)| {
+                accum
+                    .entry(name.as_str())
+                    .and_modify(|value| *value = key.name_id.min(*value))
+                    .or_insert(key.name_id);
+                accum
+            })
+    }
 }
 
 impl From<[u8; 10]> for Panose {
