@@ -62,9 +62,7 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
 }
 
 fn make_stat(static_metadata: &StaticMetadata) -> Stat {
-    // If possible, reuse a matching name with the smallest ID to follow fonttools:
-    // https://github.com/fonttools/fonttools/blob/d5aec1b9/Lib/fontTools/otlLib/builder.py#L2884-L2886
-    // https://github.com/fonttools/fonttools/blob/d5aec1b9/Lib/fontTools/ttLib/tables/_n_a_m_e.py#L326-L329
+    // Reuse an existing name record if possible.
     let reverse_names = static_metadata.reverse_names();
 
     Stat {

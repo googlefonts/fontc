@@ -383,6 +383,7 @@ impl StaticMetadata {
     /// Calculate a deterministic mapping of existing name text to the smallest
     /// name ID that provides it.
     pub fn reverse_names(&self) -> HashMap<&str, NameId> {
+        // https://github.com/fonttools/fonttools/blob/d5aec1b9/Lib/fontTools/ttLib/tables/_n_a_m_e.py#L326-L329
         self.names
             .iter()
             .fold(HashMap::new(), |mut accum, (key, name)| {
