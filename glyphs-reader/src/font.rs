@@ -422,13 +422,20 @@ impl Shape {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+enum FormatVersion {
+    #[default]
+    V2,
+    V3,
+}
+
 // The font you get directly from a plist, minimally modified
 // Types chosen specifically to accomodate plist translation.
 #[derive(Default, Debug, PartialEq, FromPlist)]
 #[allow(non_snake_case)]
 struct RawFont {
     #[fromplist(key = ".formatVersion")]
-    format_version: i64,
+    format_version: FormatVersion,
     units_per_em: Option<i64>,
     metrics: Vec<RawMetric>,
     family_name: String,
@@ -469,6 +476,26 @@ struct RawCustomParameterValue {
     name: SmolStr,
     value: Plist,
     disabled: Option<bool>,
+}
+
+impl FromPlist for FormatVersion {
+    fn parse(tokenizer: &mut Tokenizer) -> Result<Self, crate::plist::Error> {
+        let raw: i64 = FromPlist::parse(tokenizer)?;
+        if raw == 3 {
+            Ok(FormatVersion::V3)
+        } else {
+            // format version 2 is the default value, if no explicit version is set
+            Err(crate::plist::Error::Parse(
+                "'3' is the only known format version".into(),
+            ))
+        }
+    }
+}
+
+impl FormatVersion {
+    fn is_v2(self) -> bool {
+        self == FormatVersion::V2
+    }
 }
 
 impl FromPlist for RawCustomParameters {
@@ -1511,10 +1538,6 @@ impl RawFont {
         // ignore UIState.plist which stuff like displayStrings that are not used by us
 
         Ok(raw_font)
-    }
-
-    fn is_v2(&self) -> bool {
-        self.format_version < 3
     }
 
     fn v2_to_v3_axes(&mut self) -> Result<Vec<String>, Error> {
@@ -2615,7 +2638,7 @@ impl TryFrom<RawFont> for Font {
     type Error = Error;
 
     fn try_from(mut from: RawFont) -> Result<Self, Self::Error> {
-        if from.is_v2() {
+        if from.format_version.is_v2() {
             from.v2_to_v3()?;
         } else {
             // <https://github.com/googlefonts/fontc/issues/1029>
@@ -2625,7 +2648,7 @@ impl TryFrom<RawFont> for Font {
         // TODO: this should be provided in a manner that allows for overrides
         let glyph_data = GlyphData::default();
 
-        let radix = if from.is_v2() { 16 } else { 10 };
+        let radix = if from.format_version.is_v2() { 16 } else { 10 };
 
         let mut custom_parameters = from.custom_parameters.to_custom_params()?;
         let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
@@ -2824,15 +2847,8 @@ impl From<Affine> for AffineForEqAndHash {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        font::{
-            default_master_idx, normalized_rotation, AxisUserToDesignMap, Color, Gradient,
-            RawFeature, RawFont, RawFontMaster, UserToDesignMapping,
-        },
-        glyphdata::{Category, GlyphData},
-        plist::FromPlist,
-        Font, FontMaster, Node, Shape,
-    };
+    use super::*;
+    use crate::{plist::FromPlist, Font, FontMaster, Node, Shape};
     use std::{
         collections::{BTreeMap, BTreeSet, HashSet},
         path::{Path, PathBuf},
@@ -2871,6 +2887,26 @@ mod tests {
             *c = (*c * m).round() / m;
         }
         Affine::new(coeffs)
+    }
+
+    #[test]
+    fn v2_format_version() {
+        let v2_font = glyphs2_dir().join("Mono.glyphs");
+        let as_str = std::fs::read_to_string(&v2_font).unwrap();
+        assert!(!as_str.contains(".formatVersion"), "only exists in v3");
+        let font = RawFont::load(&v2_font).unwrap();
+        // falls back to default
+        assert_eq!(font.format_version, FormatVersion::V2);
+    }
+
+    #[test]
+    fn v3_format_version() {
+        let v3_font = glyphs3_dir().join("MasterNames.glyphs");
+        let as_str = std::fs::read_to_string(&v3_font).unwrap();
+        assert!(as_str.contains(".formatVersion"), "exists in v3");
+        let font = RawFont::load(&v3_font).unwrap();
+        // falls back to default
+        assert_eq!(font.format_version, FormatVersion::V3);
     }
 
     #[test]
