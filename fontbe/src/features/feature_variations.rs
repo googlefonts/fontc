@@ -47,7 +47,7 @@ pub(super) fn make_gsub_feature_variations(
         let mut region = Region::default();
         for conditions in &rule.conditions {
             let mut space = NBox::default();
-            for condition in &conditions.0 {
+            for condition in conditions {
                 let axis = static_metadata
                     .axis(&condition.axis)
                     .expect("checked already");
