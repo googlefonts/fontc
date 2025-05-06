@@ -13,6 +13,8 @@ use log::trace;
 use norad::designspace::{self, Dimension};
 use write_fonts::types::Tag;
 
+use crate::source::vertical_origin;
+
 pub(crate) fn to_design_location(
     tags_by_name: &HashMap<&str, Tag>,
     loc: &[Dimension],
@@ -78,18 +80,13 @@ fn to_ir_component(component: &norad::Component) -> ir::Component {
     }
 }
 
-fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, Error> {
+fn to_ir_glyph_instance(glyph: &norad::Glyph, path: &PathBuf) -> Result<ir::GlyphInstance, Error> {
     let mut contours = Vec::new();
     for contour in glyph.contours.iter() {
         contours.push(to_ir_contour(glyph.name().as_str().into(), contour)?);
     }
 
-    let vertical_origin = glyph.lib.get("public.verticalOrigin").map(|value| {
-        value
-            .as_real()
-            .or(value.as_signed_integer().map(|int| int as f64))
-            .expect("'public.verticalOrigin' must be a number")
-    });
+    let vertical_origin = vertical_origin(glyph, path)?;
 
     Ok(ir::GlyphInstance {
         width: glyph.width,
@@ -187,7 +184,7 @@ pub fn to_ir_glyph(
             glyph.codepoints.insert(cp as u32);
         });
         for location in locations {
-            glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph)?)?;
+            glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph, glif_file)?)?;
 
             // we only care about anchors from exportable glyphs
             // https://github.com/googlefonts/fontc/issues/1397

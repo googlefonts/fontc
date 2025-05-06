@@ -541,6 +541,25 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, Ba
     Ok(postscript_names)
 }
 
+pub(crate) fn vertical_origin(
+    glyph: &norad::Glyph,
+    path: &PathBuf,
+) -> Result<Option<f64>, BadSource> {
+    glyph
+        .lib
+        .get("public.verticalOrigin")
+        .map(|value| {
+            value
+                .as_real()
+                .or(value.as_signed_integer().map(|int| int as f64))
+                .ok_or(BadSource::custom(
+                    path,
+                    "'public.verticalOrigin' must be a number",
+                ))
+        })
+        .transpose()
+}
+
 fn units_per_em<'a>(font_infos: impl Iterator<Item = &'a norad::FontInfo>) -> Result<u16, Error> {
     const MIN_UPEM: f64 = 16.0;
     const MAX_UPEM: f64 = 16384.0;
