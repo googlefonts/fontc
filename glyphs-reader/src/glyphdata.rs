@@ -449,14 +449,6 @@ impl GlyphData {
     // See https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L94
     pub fn query(&self, name: &str, codepoints: Option<&BTreeSet<u32>>) -> Option<QueryResult> {
         self.query_no_synthesis(name, codepoints)
-            .or_else(|| {
-                // Try without suffix, those can confuse matters. E.g. ogonek.A => ogonek
-                // <https://github.com/googlefonts/fontc/issues/780#issuecomment-2674853729>
-                match name.rfind('.') {
-                    Some(idx) if idx > 0 => self.query_no_synthesis(&name[..idx], codepoints),
-                    _ => None,
-                }
-            })
             // we don't have info for this glyph: can we synthesize it?
             .or_else(|| self.construct_category(name))
     }
