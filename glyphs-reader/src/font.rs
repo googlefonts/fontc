@@ -320,7 +320,15 @@ impl Layer {
 pub struct LayerAttributes {
     pub coordinates: Vec<OrderedFloat<f64>>,
     pub color: bool,
-    // TODO: add axisRules, etc.
+    // in the same order that axes are declared for the font
+    axis_rules: Vec<AxisRule>,
+}
+
+#[derive(Clone, Default, FromPlist, Debug, PartialEq, Hash)]
+pub struct AxisRule {
+    // if missing, assume default min/max for font
+    pub min: Option<i64>,
+    pub max: Option<i64>,
 }
 
 // hand-parse because they can take multiple shapes
@@ -328,6 +336,7 @@ impl FromPlist for LayerAttributes {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
         let mut coordinates = Vec::new();
         let mut color = false;
+        let mut axis_rules = Vec::new();
 
         tokenizer.eat(b'{')?;
 
@@ -341,6 +350,7 @@ impl FromPlist for LayerAttributes {
             match key.as_str() {
                 "coordinates" => coordinates = tokenizer.parse()?,
                 "color" => color = tokenizer.parse()?,
+                "axisRules" => axis_rules = tokenizer.parse()?,
                 // skip unsupported attributes for now
                 // TODO: match the others
                 _ => tokenizer.skip_rec()?,
@@ -348,7 +358,11 @@ impl FromPlist for LayerAttributes {
             tokenizer.eat(b';')?;
         }
 
-        Ok(LayerAttributes { coordinates, color })
+        Ok(LayerAttributes {
+            coordinates,
+            color,
+            axis_rules,
+        })
     }
 }
 
@@ -4225,5 +4239,29 @@ mod tests {
         // GlyphData.xml is used
         assert_eq!(glyphs[2].name, "nbspace");
         assert_eq!(glyphs[2].production_name, Some("uni00A0".into()));
+    }
+
+    #[test]
+    fn parse_axis_rules() {
+        let raw = RawFont::load(&glyphs3_dir().join("AxisRules.glyphs")).unwrap();
+        let space = &raw.glyphs[0];
+        let axes = &space.layers[0].attributes.axis_rules;
+        assert_eq!(
+            axes,
+            &[
+                AxisRule {
+                    min: None,
+                    max: Some(400.0.into())
+                },
+                AxisRule {
+                    min: Some(100.0.into()),
+                    max: None,
+                },
+                AxisRule {
+                    min: None,
+                    max: None,
+                },
+            ]
+        )
     }
 }
