@@ -272,6 +272,9 @@ pub enum GlobalMetric {
     HheaAscender,
     HheaDescender,
     HheaLineGap,
+    VheaAscender,
+    VheaDescender,
+    VheaLineGap,
     Os2TypoAscender,
     Os2TypoDescender,
     Os2TypoLineGap,
@@ -281,6 +284,9 @@ pub enum GlobalMetric {
     CaretSlopeRise,
     CaretSlopeRun,
     CaretOffset,
+    VheaCaretSlopeRise,
+    VheaCaretSlopeRun,
+    VheaCaretOffset,
     UnderlineThickness,
     UnderlinePosition,
     XHeight,
@@ -313,17 +319,15 @@ impl GlobalMetric {
             GlobalMetric::Os2TypoLineGap => Some(Tag::new(b"hlgp")),
             GlobalMetric::Os2WinAscent => Some(Tag::new(b"hcla")),
             GlobalMetric::Os2WinDescent => Some(Tag::new(b"hcld")),
-            // TODO: support vertical global metrics
-            // https://github.com/googlefonts/fontc/issues/668
-            // GlobalMetric::VheaAscender => Some(Tag::new(b"vasc")),
-            // GlobalMetric::VheaDescender => Some(Tag::new(b"vdsc")),
-            // GlobalMetric::VheaLineGap => Some(Tag::new(b"vlgp")),
+            GlobalMetric::VheaAscender => Some(Tag::new(b"vasc")),
+            GlobalMetric::VheaDescender => Some(Tag::new(b"vdsc")),
+            GlobalMetric::VheaLineGap => Some(Tag::new(b"vlgp")),
             GlobalMetric::CaretSlopeRise => Some(Tag::new(b"hcrs")),
             GlobalMetric::CaretSlopeRun => Some(Tag::new(b"hcrn")),
             GlobalMetric::CaretOffset => Some(Tag::new(b"hcof")),
-            // GlobalMetric::VheaCaretSlopeRise => Some(Tag::new(b"vcrs")),
-            // GlobalMetric::VheaCaretSlopeRun => Some(Tag::new(b"vcrn")),
-            // GlobalMetric::VheaCaretOffset => Some(Tag::new(b"vcof")),
+            GlobalMetric::VheaCaretSlopeRise => Some(Tag::new(b"vcrs")),
+            GlobalMetric::VheaCaretSlopeRun => Some(Tag::new(b"vcrn")),
+            GlobalMetric::VheaCaretOffset => Some(Tag::new(b"vcof")),
             GlobalMetric::XHeight => Some(Tag::new(b"xhgt")),
             GlobalMetric::CapHeight => Some(Tag::new(b"cpht")),
             GlobalMetric::SubscriptXSize => Some(Tag::new(b"sbxs")),
@@ -472,6 +476,18 @@ impl GlobalMetrics {
                 units_per_em * 0.22
             },
         );
+
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L403-L408
+        set_if_absent(GlobalMetric::VheaCaretSlopeRise, 0.0);
+        set_if_absent(GlobalMetric::VheaCaretSlopeRun, 1.0);
+        set_if_absent(GlobalMetric::VheaCaretOffset, 0.0);
+
+        // XXX: These should _always_ be overwritten if the static metadata
+        // indicates that there is vertical data to build.
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L397-L402
+        set_if_absent(GlobalMetric::VheaAscender, 0.0);
+        set_if_absent(GlobalMetric::VheaDescender, 0.0);
+        set_if_absent(GlobalMetric::VheaLineGap, 0.0);
     }
 
     fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
@@ -547,6 +563,12 @@ impl GlobalMetrics {
             hhea_ascender: self.get(GlobalMetric::HheaAscender, pos),
             hhea_descender: self.get(GlobalMetric::HheaDescender, pos),
             hhea_line_gap: self.get(GlobalMetric::HheaLineGap, pos),
+            vhea_ascender: self.get(GlobalMetric::VheaAscender, pos),
+            vhea_descender: self.get(GlobalMetric::VheaDescender, pos),
+            vhea_line_gap: self.get(GlobalMetric::VheaLineGap, pos),
+            vhea_caret_slope_rise: self.get(GlobalMetric::VheaCaretSlopeRise, pos),
+            vhea_caret_slope_run: self.get(GlobalMetric::VheaCaretSlopeRun, pos),
+            vhea_caret_offset: self.get(GlobalMetric::VheaCaretOffset, pos),
             underline_thickness: self.get(GlobalMetric::UnderlineThickness, pos),
             underline_position: self.get(GlobalMetric::UnderlinePosition, pos),
         }
@@ -576,6 +598,12 @@ pub struct GlobalMetricsInstance {
     pub hhea_ascender: OrderedFloat<f64>,
     pub hhea_descender: OrderedFloat<f64>,
     pub hhea_line_gap: OrderedFloat<f64>,
+    pub vhea_ascender: OrderedFloat<f64>,
+    pub vhea_descender: OrderedFloat<f64>,
+    pub vhea_line_gap: OrderedFloat<f64>,
+    pub vhea_caret_slope_rise: OrderedFloat<f64>,
+    pub vhea_caret_slope_run: OrderedFloat<f64>,
+    pub vhea_caret_offset: OrderedFloat<f64>,
     pub strikeout_position: OrderedFloat<f64>,
     pub strikeout_size: OrderedFloat<f64>,
     pub subscript_x_offset: OrderedFloat<f64>,
@@ -614,6 +642,7 @@ pub mod test_helpers {
                 ascender: self.ascender.round2(),
                 descender: self.descender.round2(),
                 caret_slope_rise: self.caret_slope_rise.round2(),
+                vhea_caret_slope_rise: self.vhea_caret_slope_rise.round2(),
                 cap_height: self.cap_height.round2(),
                 x_height: self.x_height.round2(),
                 subscript_x_size: self.subscript_x_size.round2(),
@@ -632,10 +661,15 @@ pub mod test_helpers {
                 hhea_ascender: self.hhea_ascender.round2(),
                 hhea_descender: self.hhea_descender.round2(),
                 hhea_line_gap: self.hhea_line_gap.round2(),
+                vhea_ascender: self.vhea_ascender.round2(),
+                vhea_descender: self.vhea_descender.round2(),
+                vhea_line_gap: self.vhea_line_gap.round2(),
                 underline_thickness: self.underline_thickness.round2(),
                 underline_position: self.underline_position.round2(),
                 caret_slope_run: self.caret_slope_run.round2(),
                 caret_offset: self.caret_offset.round2(),
+                vhea_caret_slope_run: self.vhea_caret_slope_run.round2(),
+                vhea_caret_offset: self.vhea_caret_offset.round2(),
                 subscript_x_offset: self.subscript_x_offset.round2(),
                 superscript_x_offset: self.superscript_x_offset.round2(),
             }
@@ -1506,6 +1540,10 @@ impl GlyphBuilder {
         path.line_to((x_min, y_min));
         path.close_path();
 
+        // TODO: Should this be None to match other glyphs' heights? This would deviate from ufo2ft
+        // See https://github.com/googlefonts/ufo2ft/blob/b3895a96/Lib/ufo2ft/outlineCompiler.py#L1656-L1658
+        let height = Some(ascender - descender);
+
         Self {
             name: GlyphName::NOTDEF.clone(),
             emit_to_binary: true,
@@ -1514,6 +1552,7 @@ impl GlyphBuilder {
                 default_location,
                 GlyphInstance {
                     width,
+                    height,
                     contours: vec![path],
                     ..Default::default()
                 },
@@ -1547,8 +1586,10 @@ impl From<Glyph> for GlyphBuilder {
 pub struct GlyphInstance {
     /// Advance width.
     pub width: f64,
-    /// Advance height; if None, assumed to equal font's ascender - descender.
+    /// Advance height; if None, assumed to equal font's typo ascender - descender.
     pub height: Option<f64>,
+    /// Vertical origin; if None, assumed to equal font's typo ascender.
+    pub vertical_origin: Option<f64>,
     /// List of glyph contours.
     pub contours: Vec<BezPath>,
     /// List of glyph components.
@@ -1574,6 +1615,31 @@ impl GlyphInstance {
             .iter()
             .flat_map(|c| c.elements().iter().map(path_el_type))
             .collect()
+    }
+
+    /// Get the advance height of this instance, falling back to a value derived
+    /// from the metrics for this instance's position.
+    ///
+    /// See [`Self::height`](field@Self::height).
+    pub fn height(&self, metrics: &GlobalMetricsInstance) -> u16 {
+        // https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/glyph.py#L359-L389
+        // TODO: UFO always defines this; should it be made non-optional?
+        self.height
+            .unwrap_or_else(|| {
+                metrics.os2_typo_ascender.into_inner() - metrics.os2_typo_descender.into_inner()
+            })
+            .ot_round()
+    }
+
+    /// Get the vertical origin of this instance, falling back to a value
+    /// derived from the metrics for this instance's position.
+    ///
+    /// See [`Self::vertical_origin`](field@Self::vertical_origin).
+    pub fn vertical_origin(&self, metrics: &GlobalMetricsInstance) -> i16 {
+        // https://github.com/googlefonts/ufo2ft/blob/16ed156b/Lib/ufo2ft/outlineCompiler.py#L74-L81
+        self.vertical_origin
+            .unwrap_or(metrics.os2_typo_ascender.into_inner())
+            .ot_round()
     }
 }
 

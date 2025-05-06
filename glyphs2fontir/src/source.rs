@@ -311,6 +311,15 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         let categories = make_glyph_categories(font);
 
+        // Only build vertical metrics if at least one glyph defines a vertical
+        // attribute.
+        // https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/builders.py#L191-L199
+        let build_vertical = font
+            .glyphs
+            .values()
+            .flat_map(|glyph| glyph.layers.iter())
+            .any(|layer| layer.vert_width.is_some() || layer.vert_origin.is_some());
+
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
             names(font, selection_flags),
@@ -321,6 +330,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             italic_angle,
             categories,
             number_values,
+            build_vertical,
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
@@ -580,6 +590,41 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             set_metric!(UnderlineThickness, underline_thickness, 50.0);
             // -100.0 is the Glyphs default <https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/custom_params.py#L1136-L1156>
             set_metric!(UnderlinePosition, underline_position, -100.0);
+            set_metric!(VheaCaretSlopeRise, vhea_caret_slope_rise);
+            set_metric!(VheaCaretSlopeRun, vhea_caret_slope_run);
+            set_metric!(VheaCaretOffset, vhea_caret_offset);
+
+            // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f456d64ebe9993818770e170454/Lib/glyphsLib/builder/masters.py#L74-L92
+            metrics.set(
+                GlobalMetric::VheaAscender,
+                pos.clone(),
+                master
+                    .custom_parameters
+                    .vhea_ascender
+                    .or(font.custom_parameters.vhea_ascender)
+                    .map(|v| v as f64)
+                    .unwrap_or(font.units_per_em as f64 / 2.0),
+            );
+            metrics.set(
+                GlobalMetric::VheaDescender,
+                pos.clone(),
+                master
+                    .custom_parameters
+                    .vhea_descender
+                    .or(font.custom_parameters.vhea_descender)
+                    .map(|v| v as f64)
+                    .unwrap_or(-(font.units_per_em as f64 / 2.0)),
+            );
+            metrics.set(
+                GlobalMetric::VheaLineGap,
+                pos.clone(),
+                master
+                    .custom_parameters
+                    .vhea_line_gap
+                    .or(font.custom_parameters.vhea_line_gap)
+                    .map(|v| v as f64)
+                    .unwrap_or(font.units_per_em as f64),
+            );
 
             metrics.populate_defaults(
                 pos,
@@ -810,7 +855,10 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Variant(WorkId::StaticMetadata)
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlobalMetrics)
+            .build()
     }
 
     fn write_access(&self) -> Access<WorkId> {
@@ -831,6 +879,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 
         let static_metadata = context.static_metadata.get();
         let axes = &static_metadata.all_source_axes;
+
+        let global_metrics = context.global_metrics.get();
 
         let glyph = font
             .glyphs
@@ -867,11 +917,9 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 .into());
             };
             let master = &font.masters[*master_idx];
-            let mut location = font_info
-                .locations
-                .get(&master.axes_values)
-                .unwrap()
-                .clone();
+            let master_location = font_info.locations.get(&master.axes_values).unwrap();
+
+            let mut location = master_location.clone();
             // intermediate (aka 'brace') layers can override axis values from their
             // associated master
             if !instance.attributes.coordinates.is_empty() {
@@ -888,6 +936,20 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 axis_positions.entry(*tag).or_default().insert(*coord);
             }
 
+            // See https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/glyph.py#L359-L389
+            let local_metrics = global_metrics.at(master_location);
+            let height = instance
+                .vert_width
+                .unwrap_or_else(|| {
+                    local_metrics.os2_typo_ascender - local_metrics.os2_typo_descender
+                })
+                .into_inner();
+            let vertical_origin = instance
+                .vert_origin
+                .map(|origin| local_metrics.os2_typo_ascender - origin)
+                .unwrap_or(local_metrics.os2_typo_ascender)
+                .into_inner();
+
             // TODO populate width and height properly
             let (contours, components) =
                 to_ir_contours_and_components(self.glyph_name.clone(), &instance.shapes)?;
@@ -897,7 +959,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 } else {
                     0.0
                 },
-                height: None,
+                height: Some(height),
+                vertical_origin: Some(vertical_origin),
                 contours,
                 components,
             };
@@ -1275,7 +1338,10 @@ mod tests {
                 panic!("{:?} should be glyph work!", work.id());
             };
             let task_context = context.copy_for_work(
-                Access::Variant(WorkId::StaticMetadata),
+                AccessBuilder::new()
+                    .variant(WorkId::StaticMetadata)
+                    .variant(WorkId::GlobalMetrics)
+                    .build(),
                 AccessBuilder::new()
                     .specific_instance(WorkId::Glyph(glyph_name.clone()))
                     .specific_instance(WorkId::Anchor(glyph_name.clone()))
@@ -1290,7 +1356,7 @@ mod tests {
     fn glyph_user_locations() {
         let glyph_name: GlyphName = "space".into();
         let (source, context) =
-            build_static_metadata(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
+            build_global_metrics(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         build_glyphs(&source, &context).unwrap(); // we dont' care about geometry
 
         let static_metadata = context.static_metadata.get();
@@ -1329,7 +1395,7 @@ mod tests {
     fn glyph_normalized_locations() {
         let glyph_name: GlyphName = "space".into();
         let (source, context) =
-            build_static_metadata(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
+            build_global_metrics(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         build_glyphs(&source, &context).unwrap();
 
         let mut expected_locations = HashSet::new();
@@ -1382,7 +1448,7 @@ mod tests {
 
     #[test]
     fn captures_single_codepoints() {
-        let (source, context) = build_static_metadata(glyphs2_dir().join("WghtVar.glyphs"));
+        let (source, context) = build_global_metrics(glyphs2_dir().join("WghtVar.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("hyphen".into()));
         assert_eq!(HashSet::from([0x002d]), glyph.codepoints);
@@ -1391,7 +1457,7 @@ mod tests {
     #[test]
     fn captures_single_codepoints_unquoted_dec() {
         let (source, context) =
-            build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDec.glyphs"));
+            build_global_metrics(glyphs3_dir().join("Unicode-UnquotedDec.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("name".into()));
         assert_eq!(HashSet::from([182]), glyph.codepoints);
@@ -1400,7 +1466,7 @@ mod tests {
     #[test]
     fn captures_multiple_codepoints_unquoted_dec() {
         let (source, context) =
-            build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
+            build_global_metrics(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("name".into()));
         assert_eq!(HashSet::from([1619, 1764]), glyph.codepoints);
@@ -1669,6 +1735,10 @@ mod tests {
                 hhea_ascender: 1158.0.into(),
                 hhea_descender: (-42.0).into(),
                 hhea_line_gap: 0.0.into(),
+                vhea_ascender: 500.0.into(),
+                vhea_descender: (-500.0).into(),
+                vhea_line_gap: 1000.0.into(),
+                vhea_caret_slope_run: 1.0.into(),
                 underline_thickness: 50.0.into(),
                 underline_position: (-100.0).into(),
                 ..Default::default()
@@ -1702,7 +1772,7 @@ mod tests {
         let glyph_name = "i";
         let expected = "M302,584 Q328,584 346,602 Q364,620 364,645 Q364,670 346,687.5 Q328,705 302,705 Q276,705 257.5,687.5 Q239,670 239,645 Q239,620 257.5,602 Q276,584 302,584 Z";
         for test_dir in &[glyphs2_dir(), glyphs3_dir()] {
-            let (source, context) = build_static_metadata(test_dir.join("QCurve.glyphs"));
+            let (source, context) = build_global_metrics(test_dir.join("QCurve.glyphs"));
             build_glyphs(&source, &context).unwrap();
             let glyph = context.get_glyph(glyph_name);
             let default_instance = glyph
@@ -1735,7 +1805,7 @@ mod tests {
     fn captures_anchors() {
         let base_name = "A".into();
         let mark_name = "macroncomb".into();
-        let (source, context) = build_static_metadata(glyphs3_dir().join("WghtVar_Anchors.glyphs"));
+        let (source, context) = build_global_metrics(glyphs3_dir().join("WghtVar_Anchors.glyphs"));
         build_glyphs(&source, &context).unwrap();
 
         let base = context.anchors.get(&WorkId::Anchor(base_name));
@@ -1759,8 +1829,7 @@ mod tests {
 
     #[test]
     fn reads_skip_export_glyphs() {
-        let (source, context) =
-            build_static_metadata(glyphs3_dir().join("WghtVar_NoExport.glyphs"));
+        let (source, context) = build_global_metrics(glyphs3_dir().join("WghtVar_NoExport.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let is_export = |name: &str| {
             context
@@ -1825,6 +1894,10 @@ mod tests {
                     hhea_ascender: 950.0.into(),
                     hhea_descender: (-350.0).into(),
                     hhea_line_gap: 0.0.into(),
+                    vhea_ascender: 500.0.into(),
+                    vhea_descender: (-500.0).into(),
+                    vhea_line_gap: 1000.0.into(),
+                    vhea_caret_slope_run: 1.0.into(),
                     underline_thickness: 40.0.into(), // overridden from global value
                     underline_position: (-300.0).into(),
                     ..Default::default()
@@ -1858,6 +1931,10 @@ mod tests {
                 hhea_ascender: 1000.0.into(),
                 hhea_descender: (-400.0).into(),
                 hhea_line_gap: 0.0.into(),
+                vhea_ascender: 500.0.into(),
+                vhea_descender: (-500.0).into(),
+                vhea_line_gap: 1000.0.into(),
+                vhea_caret_slope_run: 1.0.into(),
                 underline_thickness: 42.0.into(), // global value
                 underline_position: (-300.0).into(),
                 ..Default::default()
@@ -2050,7 +2127,7 @@ mod tests {
 
     #[test]
     fn mark_width_zeroing() {
-        let (source, context) = build_static_metadata(glyphs3_dir().join("SpacingMark.glyphs"));
+        let (source, context) = build_global_metrics(glyphs3_dir().join("SpacingMark.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.get_glyph("descender-cy");
         // this is a spacing-combining mark, so we shouldn't zero it's width
