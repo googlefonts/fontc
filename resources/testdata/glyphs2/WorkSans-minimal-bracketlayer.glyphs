@@ -1,0 +1,184 @@
+{
+.appVersion = "1342";
+copyright = "Copyright 2019 The Work Sans Project Authors (https://github.com/weiweihuanghuang/Work-Sans)";
+customParameters = (
+{
+name = "Variable Font Origin";
+value = "4A17B37A-CBFD-40E5-9E02-2080A0E1F76C";
+},
+{
+name = license;
+value = "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL";
+},
+{
+name = Axes;
+value = (
+{
+Name = weight;
+Tag = wght;
+}
+);
+}
+);
+fontMaster = (
+{
+id = "1C7CD022-87C7-4E11-B656-E47B18819458";
+},
+{
+id = "4A17B37A-CBFD-40E5-9E02-2080A0E1F76C";
+},
+{
+id = "99EB5860-B45A-4B60-BB0B-F826C8F71D42";
+}
+);
+glyphs = (
+{
+glyphname = colonsign;
+layers = (
+{
+layerId = "1C7CD022-87C7-4E11-B656-E47B18819458";
+paths = (
+{
+closed = 1;
+nodes = (
+"411 -10 OFFCURVE",
+"502 49 OFFCURVE",
+"532 169 CURVE",
+"518 176 LINE",
+"490 61 OFFCURVE",
+"407 4 OFFCURVE",
+"317 4 CURVE SMOOTH",
+);
+},
+);
+width = 586;
+},
+{
+layerId = "4A17B37A-CBFD-40E5-9E02-2080A0E1F76C";
+paths = (
+{
+closed = 1;
+nodes = (
+"466 -10 OFFCURVE",
+"553 56 OFFCURVE",
+"590 169 CURVE",
+"521 192 LINE",
+"497 103 OFFCURVE",
+"433 58 OFFCURVE",
+"349 58 CURVE SMOOTH",
+);
+},
+);
+width = 644;
+},
+{
+layerId = "99EB5860-B45A-4B60-BB0B-F826C8F71D42";
+paths = (
+{
+closed = 1;
+nodes = (
+"506 0 OFFCURVE",
+"615 57 OFFCURVE",
+"641 183 CURVE",
+"471 228 LINE",
+"461 172 OFFCURVE",
+"426 149 OFFCURVE",
+"371 149 CURVE SMOOTH",
+);
+},
+);
+width = 649;
+},
+{
+associatedMasterId = "1C7CD022-87C7-4E11-B656-E47B18819458";
+layerId = "62AD20DC-FAAE-4A47-96F9-313C54F06DA0";
+name = "Thin [137]";
+paths = (
+{
+closed = 1;
+nodes = (
+"411 -10 OFFCURVE",
+"502 49 OFFCURVE",
+"532 169 CURVE",
+"518 176 LINE",
+"490 61 OFFCURVE",
+"407 4 OFFCURVE",
+"317 4 CURVE SMOOTH",
+);
+},
+);
+width = 586;
+},
+{
+associatedMasterId = "4A17B37A-CBFD-40E5-9E02-2080A0E1F76C";
+layerId = "D67AB62C-1D6E-4280-B3CC-EB0447388401";
+name = "Regular [137]";
+paths = (
+{
+closed = 1;
+nodes = (
+"466 -10 OFFCURVE",
+"553 56 OFFCURVE",
+"590 169 CURVE",
+"521 192 LINE",
+"497 103 OFFCURVE",
+"433 58 OFFCURVE",
+"349 58 CURVE SMOOTH",
+);
+},
+);
+width = 644;
+},
+{
+associatedMasterId = "99EB5860-B45A-4B60-BB0B-F826C8F71D42";
+layerId = "8F8FCC74-622C-4AAD-A306-B7E8749CE680";
+name = "Black [137]";
+paths = (
+{
+closed = 1;
+nodes = (
+"506 0 OFFCURVE",
+"615 57 OFFCURVE",
+"641 183 CURVE",
+"471 228 LINE",
+"461 172 OFFCURVE",
+"426 149 OFFCURVE",
+"371 149 CURVE SMOOTH",
+);
+},
+);
+width = 649;
+}
+);
+unicode = 20A1;
+},
+);
+instances = (
+{
+interpolationWeight = 16;
+instanceInterpolations = {
+"1C7CD022-87C7-4E11-B656-E47B18819458" = 1;
+};
+name = Thin;
+weightClass = Thin;
+},
+{
+interpolationWeight = 80;
+instanceInterpolations = {
+"4A17B37A-CBFD-40E5-9E02-2080A0E1F76C" = 1;
+};
+name = Regular;
+},
+{
+interpolationWeight = 230;
+instanceInterpolations = {
+"99EB5860-B45A-4B60-BB0B-F826C8F71D42" = 1;
+};
+name = Black;
+weightClass = Black;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 2;
+versionMinor = 12;
+}

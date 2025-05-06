@@ -258,6 +258,7 @@ pub struct Glyph {
     pub name: SmolStr,
     pub export: bool,
     pub layers: Vec<Layer>,
+    pub bracket_layers: Vec<Layer>,
     pub unicode: BTreeSet<u32>,
     /// The left kerning group
     pub left_kern: Option<SmolStr>,
@@ -343,7 +344,6 @@ impl AxisRule {
     ///
     /// See <https://glyphsapp.com/learn/alternating-glyph-shapes> for an
     /// overview of the naming conventions.
-    #[cfg(test)] // will be used in actual code soon
     fn from_layer_name(name: &str) -> Option<Self> {
         // the pattern can either be "$name [100]" or "$name ]100]"
         // (python uses a regex for this:)
@@ -546,6 +546,13 @@ impl FromPlist for FormatVersion {
 impl FormatVersion {
     fn is_v2(self) -> bool {
         self == FormatVersion::V2
+    }
+
+    fn codepoint_radix(self) -> u32 {
+        match self {
+            FormatVersion::V2 => 16,
+            FormatVersion::V3 => 10,
+        }
     }
 }
 
@@ -987,6 +994,22 @@ impl RawLayer {
     /// color layer, we can assume the non-master layer is a draft.
     fn is_draft(&self) -> bool {
         self.associated_master_id.is_some() && self.attributes == Default::default()
+    }
+
+    /// Glyphs uses the concept of 'bracket layers' to represent GSUB feature variations.
+    ///
+    /// See <https://glyphsapp.com/learn/switching-shapes#g-1-alternate-layers-bracket-layers>
+    /// for more information.
+    fn is_bracket_layer(&self, format_version: FormatVersion) -> bool {
+        // can't be a bracket without an associated_master_id
+        //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d57/Lib/glyphsLib/builder/builders.py#L270
+        self.associated_master_id.is_some()
+            && self.associated_master_id.as_ref() != Some(&self.layer_id)
+            //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d5/Lib/glyphsLib/classes.py#L3942
+            && match format_version {
+                FormatVersion::V2 => AxisRule::from_layer_name(&self.name).is_some(),
+                FormatVersion::V3 => !self.attributes.axis_rules.is_empty(),
+            }
     }
 
     fn v2_to_v3_attributes(&mut self) {
@@ -2272,10 +2295,8 @@ fn map_and_push_if_present<T, U>(dest: &mut Vec<T>, src: Vec<U>, map: fn(U) -> T
     src.into_iter().map(map).for_each(|v| dest.push(v));
 }
 
-impl TryFrom<RawLayer> for Layer {
-    type Error = Error;
-
-    fn try_from(from: RawLayer) -> Result<Self, Self::Error> {
+impl RawLayer {
+    fn build(self, format_version: FormatVersion) -> Result<Layer, Error> {
         // we do what glyphsLib does:
         // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f4/Lib/glyphsLib/classes.py#L3662
         // which is apparently standard, in that if a field is missing it has
@@ -2285,15 +2306,15 @@ impl TryFrom<RawLayer> for Layer {
         let mut shapes = Vec::new();
 
         // Glyphs v2 uses paths and components
-        map_and_push_if_present(&mut shapes, from.paths, Shape::Path);
-        map_and_push_if_present(&mut shapes, from.components, Shape::Component);
+        map_and_push_if_present(&mut shapes, self.paths, Shape::Path);
+        map_and_push_if_present(&mut shapes, self.components, Shape::Component);
 
         // Glyphs v3 uses shapes for both
-        for raw_shape in from.shapes {
+        for raw_shape in self.shapes {
             shapes.push(raw_shape.try_into()?);
         }
 
-        let anchors = from
+        let anchors = self
             .anchors
             .into_iter()
             .map(|ra| {
@@ -2308,28 +2329,41 @@ impl TryFrom<RawLayer> for Layer {
             })
             .collect();
 
+        let mut attributes = self.attributes;
+        // convert v2 bracket layers (based on name) into AxisRule attrs
+        if let Some(axis_rule) =
+            AxisRule::from_layer_name(&self.name).filter(|_| format_version.is_v2())
+        {
+            assert!(
+                attributes.axis_rules.is_empty(),
+                "glyphs v2 does not use axisRules attr"
+            );
+            attributes.axis_rules.push(axis_rule);
+        }
         Ok(Layer {
-            layer_id: from.layer_id,
-            associated_master_id: from.associated_master_id,
-            width: from.width.unwrap_or(DEFAULT_LAYER_WIDTH.into()),
-            vert_width: from.vert_width,
-            vert_origin: from.vert_origin,
+            layer_id: self.layer_id,
+            associated_master_id: self.associated_master_id,
+            width: self.width.unwrap_or(DEFAULT_LAYER_WIDTH.into()),
+            vert_width: self.vert_width,
+            vert_origin: self.vert_origin,
             shapes,
             anchors,
-            attributes: from.attributes,
+            attributes,
         })
     }
 }
 
 impl RawGlyph {
     // we pass in the radix because it depends on the version, stored in the font struct
-    fn build(self, codepoint_radix: u32, glyph_data: &GlyphData) -> Result<Glyph, Error> {
+    fn build(self, format_version: FormatVersion, glyph_data: &GlyphData) -> Result<Glyph, Error> {
         let mut instances = Vec::new();
+        let mut bracket_layers = Vec::new();
         for layer in self.layers {
-            if layer.is_draft() {
-                continue;
+            if layer.is_bracket_layer(format_version) {
+                bracket_layers.push(layer.build(format_version)?);
+            } else if !layer.is_draft() {
+                instances.push(layer.build(format_version)?);
             }
-            instances.push(layer.try_into()?);
         }
         // if category/subcategory were set in the source, we keep them;
         // otherwise we look them up based on the bundled GlyphData.
@@ -2355,7 +2389,7 @@ impl RawGlyph {
 
         let codepoints = self
             .unicode
-            .map(|s| parse_codepoint_str(&s, codepoint_radix))
+            .map(|s| parse_codepoint_str(&s, format_version.codepoint_radix()))
             .unwrap_or_default();
 
         if category.is_none() || sub_category.is_none() || production_name.is_none() {
@@ -2373,6 +2407,7 @@ impl RawGlyph {
             name: self.glyphname,
             export: self.export.unwrap_or(true),
             layers: instances,
+            bracket_layers,
             left_kern: self.kern_left,
             right_kern: self.kern_right,
             unicode: codepoints,
@@ -2722,26 +2757,22 @@ impl TryFrom<RawFont> for Font {
         // TODO: this should be provided in a manner that allows for overrides
         let glyph_data = GlyphData::default();
 
-        let radix = if from.format_version.is_v2() { 16 } else { 10 };
-
         let mut custom_parameters = from.custom_parameters.to_custom_params()?;
         let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
 
-        let axes = from.axes.clone();
+        let default_master_idx = default_master_idx(&from);
         let instances: Vec<_> = from
             .instances
             .iter()
-            .map(|ri| Instance::new(&axes, ri))
+            .map(|ri| Instance::new(&from.axes, ri))
             .collect::<Result<Vec<_>, Error>>()?;
-
-        let default_master_idx = default_master_idx(&from);
         let axis_mappings = UserToDesignMapping::new(&from, &instances);
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
             glyphs.insert(
                 raw_glyph.glyphname.clone(),
-                raw_glyph.build(radix, &glyph_data)?,
+                raw_glyph.build(from.format_version, &glyph_data)?,
             );
         }
 
@@ -2823,7 +2854,7 @@ impl TryFrom<RawFont> for Font {
         let virtual_masters = custom_parameters.virtual_masters.take().unwrap_or_default();
         Ok(Font {
             units_per_em,
-            axes,
+            axes: from.axes,
             masters,
             default_master_idx,
             glyphs,
@@ -3964,7 +3995,7 @@ mod tests {
             ..Default::default()
         };
 
-        let cooked = raw.build(16, &GlyphData::default()).unwrap();
+        let cooked = raw.build(FormatVersion::V2, &GlyphData::default()).unwrap();
         assert_eq!(
             (cooked.category, cooked.sub_category),
             (Some(Category::Letter), None)
@@ -4339,5 +4370,39 @@ mod tests {
         for name in &["[hi]", "[45opsz]", "Medium [499‹wg]"] {
             assert!(AxisRule::from_layer_name(name).is_none(), "{name}")
         }
+    }
+
+    #[test]
+    fn v2_bracket_layers() {
+        let font = Font::load(&glyphs2_dir().join("WorkSans-minimal-bracketlayer.glyphs")).unwrap();
+        let glyph = font.glyphs.get("colonsign").unwrap();
+        assert_eq!(glyph.layers.len(), 3);
+        assert_eq!(glyph.bracket_layers.len(), 3);
+
+        assert!(glyph
+            .layers
+            .iter()
+            .all(|l| l.attributes.axis_rules.is_empty()));
+        assert!(glyph
+            .bracket_layers
+            .iter()
+            .all(|l| !l.attributes.axis_rules.is_empty()));
+    }
+
+    #[test]
+    fn v3_bracket_layers() {
+        let font = Font::load(&glyphs3_dir().join("LibreFranklin-bracketlayer.glyphs")).unwrap();
+        let glyph = font.glyphs.get("peso").unwrap();
+        assert_eq!(glyph.layers.len(), 2);
+        assert_eq!(glyph.bracket_layers.len(), 2);
+
+        assert!(glyph
+            .layers
+            .iter()
+            .all(|l| l.attributes.axis_rules.is_empty()));
+        assert!(glyph
+            .bracket_layers
+            .iter()
+            .all(|l| !l.attributes.axis_rules.is_empty()));
     }
 }

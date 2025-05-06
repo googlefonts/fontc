@@ -897,7 +897,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 continue;
             }
 
-            let (location, instance) = process_layer(&glyph, layer, font_info, &global_metrics)?;
+            let (location, instance) = process_layer(glyph, layer, font_info, &global_metrics)?;
 
             for (tag, coord) in location.iter() {
                 axis_positions.entry(*tag).or_default().insert(*coord);
