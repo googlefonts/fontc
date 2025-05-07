@@ -266,13 +266,16 @@ pub struct Substitution {
 /// A series of [`Condition`]s.
 ///
 /// All conditions in the set must be true for it to to be applied.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct ConditionSet(pub Vec<Condition>);
+///
+/// This type can be constructed with `collect()` from an iterator of `Condition`.
+/// The inner conditions are always sorted.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ConditionSet(Vec<Condition>);
 
 /// A range on an axis.
 ///
 /// One of `min` or `max` must be set.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Condition {
     pub axis: Tag,
     /// The minimum position for this condition, in design space coordinates.
@@ -281,9 +284,34 @@ pub struct Condition {
     pub max: Option<DesignCoord>,
 }
 
+impl Condition {
+    pub fn new(axis: Tag, min: Option<DesignCoord>, max: Option<DesignCoord>) -> Self {
+        Self { axis, min, max }
+    }
+}
+
 impl FromIterator<Condition> for ConditionSet {
     fn from_iter<T: IntoIterator<Item = Condition>>(iter: T) -> Self {
-        Self(iter.into_iter().collect())
+        let mut inner: Vec<_> = iter.into_iter().collect();
+        inner.sort();
+        Self(inner)
+    }
+}
+
+impl<'a> IntoIterator for &'a ConditionSet {
+    type Item = &'a Condition;
+
+    type IntoIter = std::slice::Iter<'a, Condition>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.as_slice().iter()
+    }
+}
+
+impl std::ops::Deref for ConditionSet {
+    type Target = [Condition];
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -576,5 +604,17 @@ mod tests {
         let static_metadata = test_static_metadata();
         let reverse_names = static_metadata.reverse_names();
         assert_eq!(reverse_names.get("Fam").unwrap(), &NameId::FAMILY_NAME);
+    }
+
+    #[test]
+    fn condition_set_sorted() {
+        let one = Condition::new(Tag::new(b"test"), None, None);
+        let two = Condition::new(Tag::new(b"blah"), None, None);
+        let tre = Condition::new(Tag::new(b"derp"), None, None);
+
+        assert_eq!(
+            [one, two, tre].into_iter().collect::<ConditionSet>(),
+            [two, tre, one].into_iter().collect()
+        );
     }
 }

@@ -2594,7 +2594,7 @@ mod tests {
         let variations = context.static_metadata.get().variations.clone().unwrap();
         assert_eq!(variations.features, [Tag::new(b"rvrn")]);
         assert_eq!(variations.rules.len(), 1);
-        let condition = &variations.rules[0].conditions[0].0[0];
+        let condition = &variations.rules[0].conditions[0][0];
         assert_eq!(condition.axis, "wght");
         assert_eq!(condition.min.unwrap(), 550.0);
         assert_eq!(condition.max.unwrap(), 700.0);
