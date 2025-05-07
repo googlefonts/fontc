@@ -938,6 +938,7 @@ impl Display for Subcategory {
 mod tests {
 
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn simple_overrides() {
@@ -1133,5 +1134,91 @@ mod tests {
             Some((Category::Letter, None)),
             get_category("uni17BF.b", &[]),
         )
+    }
+
+    #[rstest(name, expected,
+        case("A", None),  // AGLFN names *are* production names
+        case("z", None),
+        case("nbspace", Some("uni00A0")),
+        case("nonbreakingspace", Some("uni00A0")),  // altNames map to the same prod name
+        case("uni00A0", Some("uni00A0")),  // prod names are already prod
+        // the «» punctuation marks are spelled with an 'guillemets' in French, but for
+        // some reasons the AGLFN has 'guillemot' (that's actually a bird! :shrug:)
+        case("guillemetleft", Some("guillemotleft")),
+        case("twosevenths", Some("two_fraction_seven")),
+        case("idotaccent", Some("i.loclTRK")),
+        case("idotless", Some("dotlessi")),
+        case("Jacute", Some("uni004A0301")),
+        case("scurl", Some("u1DF1E")),
+        // In the old AGL, Delta was confused with increment 0x2206 so now it's banned
+        // from the Greek alphabet.
+        case("Delta", Some("uni0394")),
+        case("increment", Some("uni2206")),
+        case("dog-ko", Some("uniB3C5")),
+        case("bau-kannada", Some("uni0CAC0CCC")),
+        case("EnglandFlag", Some("u1F3F4E0067E0062E0065E006EE0067E007F")),
+        case("pileOfPoo", Some("u1F4A9")),
+    )]
+    fn query_production_names(name: &str, expected: Option<&str>) {
+        let production_name = GlyphData::new(None)
+            .query_no_synthesis(name, None)
+            .unwrap()
+            .production_name
+            .map(|p| p.to_string());
+        assert_eq!(
+            production_name,
+            expected.map(Into::into),
+            "{name}: {production_name:?} != {expected:?}"
+        );
+    }
+
+    // Python original test cases for synthetic production names:
+    // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d59bec0c9437da3a748c58f2999911/tests/glyphdata_test.py#L196-L409
+    // Note that I removed a bunch of them as they were too many and repetitive
+    #[ignore] // TODO: remove this once we actually implement
+    #[rstest(
+        name,
+        expected,
+        case("Ech_Vew-arm.liga", "uni0535054E.liga"),
+        case("aiMatra_anusvara-deva", "uni09480902"),
+        case("aiMatra_reph_anusvara-deva", "uni09480930094D0902"),
+        case("ca_iMatra-tamil", "uni0B9A0BBF"),
+        case("ch_ya-deva", "uni091B094D092F"),
+        case("d_dh_ya-deva", "uni0926094D0927094D092F"),
+        case("da-khmer.below.ro", "uni17D2178A.ro"),
+        case("da_rVocalicMatra-deva", "uni09260943"),
+        case("dd_dda-deva", "uni0921094D0921"),
+        case("eShortMatra_reph_anusvara-deva", "uni09460930094D0902"),
+        case("ech_vew-arm.liga.sc", "uni0565057E.liga.sc"),
+        case("finalkaf_qamats-hb", "uni05DA05B8"),
+        case("finalkaf_sheva-hb", "uni05DA05B0"),
+        case("finalkafdagesh_qamats-hb", "uniFB3A05B8"),
+        case("finalkafdagesh_sheva-hb", "uniFB3A05B0"),
+        case("h_la-deva", "uni0939094D0932"),
+        case("ha_iMatra-tamil", "uni0BB90BBF"),
+        case("hatafpatah_siluqleft-hb", "uni05B205BD"),
+        case("iMark_toandakhiat-khmer.narrow", "uni17B717CD.narrow"),
+        case("idotaccent.sc", "i.loclTRK.sc"),
+        case("iiMatra_reph-deva", "uni09400930094D"),
+        case("iiMatra_reph-deva.alt2", "uni09400930094D.alt2"),
+        case("j_ny-deva", "uni091C094D091E094D"),
+        case("j_ny-deva.alt2", "uni091C094D091E094D.alt2"),
+        case("mo-khmer.below.ro", "uni17D21798.ro"),
+        case("moMa_underscore-thai", "uni0E21005F"),
+        case("nno-khmer.below.narrow1", "uni17D2178E.narrow1"),
+        case("nyo-khmer.full.below.narrow", "uni17D21789.full.below.narrow"),
+        case("sh_ra_iiMatra-tamil", "uni0BB60BCD0BB00BC0")
+    )]
+    fn synthetic_production_names(name: &str, expected: &str) {
+        let production_name = GlyphData::new(None)
+            .query(name, None)
+            .unwrap()
+            .production_name
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            &production_name, expected,
+            "{name}: {production_name:?} != {expected:?}"
+        );
     }
 }
