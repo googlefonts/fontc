@@ -353,6 +353,11 @@ impl StaticMetadata {
             .iter()
             .map(|axis| axis.ui_label_name())
             .chain(named_instances.iter().map(|ni| ni.name.as_ref()))
+            .chain(
+                named_instances
+                    .iter()
+                    .flat_map(|ni| ni.postscript_name.as_deref()),
+            )
             .for_each(|name| {
                 if !visited.insert(name.to_string()) {
                     return;
