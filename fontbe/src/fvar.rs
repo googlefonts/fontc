@@ -1,7 +1,6 @@
 //! Generates a [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar) table.
 
 use log::trace;
-use std::collections::HashMap;
 
 use fontdrasil::orchestration::{Access, Work};
 use fontir::{ir::StaticMetadata, orchestration::WorkId as FeWorkId};
@@ -31,11 +30,8 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
         return None;
     }
 
-    let reverse_names: HashMap<_, _> = static_metadata
-        .names
-        .iter()
-        .map(|(key, name)| (name.as_str(), key.name_id))
-        .collect();
+    // Reuse an existing name record if possible.
+    let reverse_names = static_metadata.reverse_names();
 
     let axes_and_instances = AxisInstanceArrays::new(
         static_metadata

@@ -386,6 +386,21 @@ impl StaticMetadata {
     pub fn axis(&self, tag: &Tag) -> Option<&Axis> {
         self.axes.iter().find(|a| &a.tag == tag)
     }
+
+    /// Calculate a deterministic mapping of existing name text to the smallest
+    /// name ID that provides it.
+    pub fn reverse_names(&self) -> HashMap<&str, NameId> {
+        // https://github.com/fonttools/fonttools/blob/d5aec1b9/Lib/fontTools/ttLib/tables/_n_a_m_e.py#L326-L329
+        self.names
+            .iter()
+            .fold(HashMap::new(), |mut accum, (key, name)| {
+                accum
+                    .entry(name.as_str())
+                    .and_modify(|value| *value = key.name_id.min(*value))
+                    .or_insert(key.name_id);
+                accum
+            })
+    }
 }
 
 impl From<[u8; 10]> for Panose {
@@ -465,6 +480,10 @@ mod tests {
             names: HashMap::from([
                 (
                     NameKey::new_bmp_only(NameId::FAMILY_NAME),
+                    "Fam".to_string(),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
                     "Fam".to_string(),
                 ),
                 (
@@ -550,5 +569,12 @@ mod tests {
     #[test]
     fn static_metadata_bincode() {
         assert_bincode_round_trip(test_static_metadata());
+    }
+
+    #[test]
+    fn static_metadata_smallest_id() {
+        let static_metadata = test_static_metadata();
+        let reverse_names = static_metadata.reverse_names();
+        assert_eq!(reverse_names.get("Fam").unwrap(), &NameId::FAMILY_NAME);
     }
 }

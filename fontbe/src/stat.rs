@@ -1,7 +1,5 @@
 //! Generates a [stat](https://learn.microsoft.com/en-us/typography/opentype/spec/stat) table.
 
-use std::collections::HashMap;
-
 use log::trace;
 
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
@@ -64,11 +62,8 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
 }
 
 fn make_stat(static_metadata: &StaticMetadata) -> Stat {
-    let reverse_names: HashMap<_, _> = static_metadata
-        .names
-        .iter()
-        .map(|(key, name)| (name.as_str(), key.name_id))
-        .collect();
+    // Reuse an existing name record if possible.
+    let reverse_names = static_metadata.reverse_names();
 
     Stat {
         design_axes: static_metadata
