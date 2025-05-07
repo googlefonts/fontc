@@ -2601,6 +2601,15 @@ impl Instance {
         // conversion..
         // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577/Lib/glyphsLib/classes.py#L3271
     }
+
+    /// Get the optional postscript name to use for the `fvar` named instance.
+    pub fn postscript_name(&self) -> Option<&str> {
+        // https://handbook.glyphsapp.com/custom-parameter-descriptions/
+        self.properties
+            .iter()
+            .find(|raw| raw.key == "variablePostscriptFontName")
+            .and_then(RawName::get_value)
+    }
 }
 
 /// Glyphs appears to use code page identifiers rather than bits

@@ -781,6 +781,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                             None => inst.name.clone().unwrap(),
                         }
                     }),
+                    postscript_name: inst.postscriptfontname.clone(),
                     location: to_design_location(&tags_by_name, &inst.location)
                         .to_user(&axes_by_tag),
                 }

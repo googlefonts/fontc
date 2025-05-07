@@ -86,6 +86,7 @@ pub struct StaticMetadata {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct NamedInstance {
     pub name: String,
+    pub postscript_name: Option<String>,
     pub location: UserLocation,
 }
 
@@ -493,6 +494,7 @@ mod tests {
             axes: vec![axis.clone()],
             named_instances: vec![NamedInstance {
                 name: "Nobody".to_string(),
+                postscript_name: None,
                 location: vec![(WGHT, UserCoord::new(100.0))].into(),
             }],
             variation_model: VariationModel::new(

@@ -1214,6 +1214,7 @@ mod tests {
                 .enumerate()
                 .map(|(i, loc)| NamedInstance {
                     name: format!("instance{i}"),
+                    postscript_name: None,
                     location: loc.to_user(&axis_map),
                 })
                 .collect();

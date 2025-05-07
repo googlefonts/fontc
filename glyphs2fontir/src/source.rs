@@ -259,6 +259,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 }
                 Some(NamedInstance {
                     name: inst.name.clone(),
+                    postscript_name: inst.postscript_name().map(str::to_string),
                     location: font_info
                         .locations
                         .get(&inst.axes_values)
