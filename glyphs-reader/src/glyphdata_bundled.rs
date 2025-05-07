@@ -1,10 +1,7 @@
 //! Accessors for bundled glyphsLib data
 
 use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    marker::PhantomData,
-    str::from_utf8_unchecked,
+    cmp::Ordering, collections::HashMap, marker::PhantomData, str::from_utf8_unchecked,
     sync::LazyLock,
 };
 
@@ -197,10 +194,9 @@ pub(crate) fn get(i: usize) -> Option<QueryResult> {
     } else {
         None
     };
-    let production_name = if codepoint.is_some() && has_predictable_prod_name(codepoint.unwrap()) {
-        Some(ProductionName::from(codepoint.unwrap()))
-    } else {
-        REVERSE_PROD_NAMES.get(&i).map(|name| name.clone())
+    let production_name = match codepoint {
+        Some(cp) if has_predictable_prod_name(cp) => Some(ProductionName::from(cp)),
+        _ => REVERSE_PROD_NAMES.get(&i).cloned(),
     };
 
     Some(QueryResult {
