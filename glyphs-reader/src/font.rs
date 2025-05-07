@@ -320,7 +320,39 @@ impl Layer {
 pub struct LayerAttributes {
     pub coordinates: Vec<OrderedFloat<f64>>,
     pub color: bool,
-    // TODO: add axisRules, etc.
+    // in the same order that axes are declared for the font
+    axis_rules: Vec<AxisRule>,
+}
+
+#[derive(Clone, Default, FromPlist, Debug, PartialEq, Hash)]
+pub struct AxisRule {
+    // if missing, assume default min/max for font
+    pub min: Option<i64>,
+    pub max: Option<i64>,
+}
+
+impl AxisRule {
+    /// Parse an AxisRule from a glyphs v2 layer name.
+    ///
+    /// See <https://glyphsapp.com/learn/alternating-glyph-shapes> for an
+    /// overview of the naming conventions.
+    #[cfg(test)] // will be used in actual code soon
+    fn from_layer_name(name: &str) -> Option<Self> {
+        // the pattern can either be "$name [100]" or "$name ]100]"
+        // (python uses a regex for this:)
+        // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/classes.py#L3938
+        let idx = name.find([']', '['])?;
+        let reversed = name.as_bytes()[idx] == b']';
+        let tail = name.get(idx + 1..)?;
+        let (value, _) = tail.split_once(']')?;
+        let value = str::parse::<u32>(value.trim()).ok()?;
+        let (min, max) = if reversed {
+            (None, Some(value as _))
+        } else {
+            (Some(value as _), None)
+        };
+        Some(AxisRule { min, max })
+    }
 }
 
 // hand-parse because they can take multiple shapes
@@ -328,6 +360,7 @@ impl FromPlist for LayerAttributes {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
         let mut coordinates = Vec::new();
         let mut color = false;
+        let mut axis_rules = Vec::new();
 
         tokenizer.eat(b'{')?;
 
@@ -341,6 +374,7 @@ impl FromPlist for LayerAttributes {
             match key.as_str() {
                 "coordinates" => coordinates = tokenizer.parse()?,
                 "color" => color = tokenizer.parse()?,
+                "axisRules" => axis_rules = tokenizer.parse()?,
                 // skip unsupported attributes for now
                 // TODO: match the others
                 _ => tokenizer.skip_rec()?,
@@ -348,7 +382,11 @@ impl FromPlist for LayerAttributes {
             tokenizer.eat(b';')?;
         }
 
-        Ok(LayerAttributes { coordinates, color })
+        Ok(LayerAttributes {
+            coordinates,
+            color,
+            axis_rules,
+        })
     }
 }
 
@@ -4225,5 +4263,65 @@ mod tests {
         // GlyphData.xml is used
         assert_eq!(glyphs[2].name, "nbspace");
         assert_eq!(glyphs[2].production_name, Some("uni00A0".into()));
+    }
+
+    #[test]
+    fn parse_axis_rules() {
+        let raw = RawFont::load(&glyphs3_dir().join("AxisRules.glyphs")).unwrap();
+        let space = &raw.glyphs[0];
+        let axes = &space.layers[0].attributes.axis_rules;
+        assert_eq!(
+            axes,
+            &[
+                AxisRule {
+                    min: None,
+                    max: Some(400)
+                },
+                AxisRule {
+                    min: Some(100),
+                    max: None,
+                },
+                AxisRule {
+                    min: None,
+                    max: None,
+                },
+            ]
+        )
+    }
+
+    #[test]
+    fn parse_layer_normal() {
+        for name in &["[60]", "Light Extended [ 60 ]"] {
+            let rule = AxisRule::from_layer_name(name);
+            assert_eq!(
+                rule,
+                Some(AxisRule {
+                    min: Some(60),
+                    max: None
+                }),
+                "{name}"
+            )
+        }
+    }
+
+    #[test]
+    fn parse_layer_reversed() {
+        for name in &["]60]", "Light Extended ] 60 ]"] {
+            let rule = AxisRule::from_layer_name(name);
+            assert_eq!(
+                rule,
+                Some(AxisRule {
+                    min: None,
+                    max: Some(60)
+                })
+            )
+        }
+    }
+
+    #[test]
+    fn parse_layer_fails() {
+        for name in &["[hi]", "[45opsz]", "Medium [499‹wg]"] {
+            assert!(AxisRule::from_layer_name(name).is_none(), "{name}")
+        }
     }
 }

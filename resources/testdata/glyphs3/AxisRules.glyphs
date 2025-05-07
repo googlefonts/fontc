@@ -1,0 +1,36 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+familyName = NoMetaTable;
+fontMaster = (
+{
+id = master01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+attr = {
+axisRules = (
+{
+max = 400;
+},
+{
+min = 100;
+},
+{
+}
+);
+};
+layerId = master01;
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+unitsPerEm = 1000;
+}
