@@ -42,7 +42,6 @@ use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features
 
 #[derive(Debug, Clone)]
 pub struct GlyphsIrSource {
-    glyph_names: Arc<HashSet<GlyphName>>,
     font_info: Arc<FontInfo>,
 }
 
@@ -69,15 +68,7 @@ impl Source for GlyphsIrSource {
             )
         })?)?;
 
-        let glyph_names = font_info
-            .font
-            .glyphs
-            .keys()
-            .map(|s| s.as_str().into())
-            .collect();
-
         Ok(Self {
-            glyph_names: Arc::new(glyph_names),
             font_info: Arc::new(font_info),
         })
     }
@@ -92,9 +83,9 @@ impl Source for GlyphsIrSource {
 
     fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, fontir::error::Error> {
         let mut work: Vec<Box<IrWork>> = Vec::new();
-        for glyph_name in self.glyph_names.iter() {
+        for glyph_name in self.font_info.font.glyph_order.iter().cloned() {
             work.push(Box::new(self.create_work_for_one_glyph(
-                glyph_name.clone(),
+                glyph_name.into(),
                 self.font_info.clone(),
             )?));
         }
@@ -436,12 +427,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         context.static_metadata.set(static_metadata);
 
-        let glyph_order = font
-            .glyph_order
-            .iter()
-            .map(|s| s.as_str().into())
-            .filter(|gn| self.0.glyph_names.contains(gn))
-            .collect();
+        let glyph_order = font.glyph_order.iter().cloned().map(Into::into).collect();
         context.preliminary_glyph_order.set(glyph_order);
         Ok(())
     }
