@@ -5,29 +5,6 @@ familyName = "Production Names";
 fontMaster = (
 {
 id = m01;
-metricValues = (
-{
-over = 16;
-pos = 800;
-},
-{
-over = 16;
-pos = 700;
-},
-{
-over = 16;
-pos = 500;
-},
-{
-over = -16;
-},
-{
-over = -16;
-pos = -200;
-},
-{
-}
-);
 name = Regular;
 }
 );
@@ -62,26 +39,6 @@ width = 600;
 }
 );
 unicode = 160;
-}
-);
-metrics = (
-{
-type = ascender;
-},
-{
-type = "cap height";
-},
-{
-type = "x-height";
-},
-{
-type = baseline;
-},
-{
-type = descender;
-},
-{
-type = "italic angle";
 }
 );
 unitsPerEm = 1000;

@@ -3,18 +3,7 @@
 familyName = "Production Names";
 fontMaster = (
 {
-alignmentZones = (
-"{800, 16}",
-"{700, 16}",
-"{500, 16}",
-"{0, -16}",
-"{-200, -16}"
-);
-ascender = 800;
-capHeight = 700;
-descender = -200;
 id = m01;
-xHeight = 500;
 }
 );
 glyphs = (
