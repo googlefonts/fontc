@@ -86,6 +86,7 @@ pub struct StaticMetadata {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct NamedInstance {
     pub name: String,
+    pub postscript_name: Option<String>,
     pub location: UserLocation,
 }
 
@@ -352,6 +353,11 @@ impl StaticMetadata {
             .iter()
             .map(|axis| axis.ui_label_name())
             .chain(named_instances.iter().map(|ni| ni.name.as_ref()))
+            .chain(
+                named_instances
+                    .iter()
+                    .flat_map(|ni| ni.postscript_name.as_deref()),
+            )
             .for_each(|name| {
                 if !visited.insert(name.to_string()) {
                     return;
@@ -493,6 +499,7 @@ mod tests {
             axes: vec![axis.clone()],
             named_instances: vec![NamedInstance {
                 name: "Nobody".to_string(),
+                postscript_name: None,
                 location: vec![(WGHT, UserCoord::new(100.0))].into(),
             }],
             variation_model: VariationModel::new(

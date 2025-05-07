@@ -6,7 +6,7 @@ use fontdrasil::orchestration::{Access, Work};
 use fontir::{ir::StaticMetadata, orchestration::WorkId as FeWorkId};
 use write_fonts::{
     tables::fvar::{AxisInstanceArrays, Fvar, InstanceRecord, VariationAxisRecord},
-    types::Fixed,
+    types::{Fixed, NameId},
 };
 
 use crate::{
@@ -15,6 +15,10 @@ use crate::{
 };
 
 const HIDDEN_AXIS: u16 = 0x0001;
+
+// Explicitly specify that an instance has no postscript name.
+// https://learn.microsoft.com/en-us/typography/opentype/spec/fvar#instancerecord
+const NO_POSTSCRIPT_NAME: NameId = NameId::new(0xFFFF);
 
 #[derive(Debug)]
 struct FvarWork {}
@@ -32,6 +36,15 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
 
     // Reuse an existing name record if possible.
     let reverse_names = static_metadata.reverse_names();
+
+    // If a single postscript name is present, we must provide one or explicitly
+    // indicate absence for every instance. fontations only expects None when NO
+    // instances have one.
+    // https://github.com/googlefonts/fontations/blob/b4136692/write-fonts/src/tables/fvar.rs#L13-L21
+    let has_postscript_names = static_metadata
+        .named_instances
+        .iter()
+        .any(|instance| instance.postscript_name.is_some());
 
     let axes_and_instances = AxisInstanceArrays::new(
         static_metadata
@@ -57,6 +70,12 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
             .iter()
             .map(|ni| InstanceRecord {
                 subfamily_name_id: *reverse_names.get(ni.name.as_str()).unwrap(),
+                post_script_name_id: has_postscript_names.then(|| {
+                    ni.postscript_name
+                        .as_deref()
+                        .map(|text| *reverse_names.get(text).unwrap())
+                        .unwrap_or(NO_POSTSCRIPT_NAME)
+                }),
                 coordinates: static_metadata
                     .axes
                     .iter()
