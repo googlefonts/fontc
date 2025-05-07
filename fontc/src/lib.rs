@@ -3080,4 +3080,41 @@ mod tests {
             result.get_gid("plus").to_u16() as i16 - result.get_gid("bar").to_u16() as i16
         );
     }
+
+    #[test]
+    fn compile_instance_postscript_names() {
+        let result = TestCompile::compile_source("glyphs3/InstancePostscript.glyphs");
+        let font = result.font();
+
+        let fvar = font.fvar().unwrap();
+        let name = font.name().unwrap();
+
+        let actual = fvar
+            .instances()
+            .unwrap()
+            .iter()
+            .map(|instance| {
+                instance
+                    .unwrap()
+                    .post_script_name_id
+                    .map(|id| resolve_name(&name, id).unwrap())
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(actual, vec![None, Some("PostBold".to_string())]);
+    }
+
+    #[test]
+    fn dont_compile_instance_postscript_names_if_none() {
+        let result = TestCompile::compile_source("glyphs3/InstanceNoPostscript.glyphs");
+        let font = result.font();
+
+        let fvar = font.fvar().unwrap();
+
+        assert!(fvar
+            .instances()
+            .unwrap()
+            .iter()
+            .all(|instance| instance.unwrap().post_script_name_id.is_none()));
+    }
 }
