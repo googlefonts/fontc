@@ -17,9 +17,10 @@ use fontir::{
     ir::{
         self, AnchorBuilder, Color, ColorPalettes, GdefCategories, GlobalMetric, GlobalMetrics,
         GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
-        MetaTableValues, NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+        MetaTableValues, NameBuilder, NameKey, NamedInstance, PostscriptNames, StaticMetadata,
+        DEFAULT_VENDOR_ID,
     },
-    orchestration::{Context, IrWork, WorkId},
+    orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
 };
 use glyphs_reader::{
@@ -320,13 +321,25 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .flat_map(|glyph| glyph.layers.iter())
             .any(|layer| layer.vert_width.is_some() || layer.vert_origin.is_some());
 
+        let mut postscript_names = PostscriptNames::default();
+        if context.flags.contains(Flags::PRODUCTION_NAMES) {
+            for glyph in font.glyphs.values() {
+                if let Some(production_name) = glyph.production_name.as_ref() {
+                    postscript_names.insert(
+                        GlyphName::from(glyph.name.as_str()),
+                        GlyphName::from(production_name.as_str()),
+                    );
+                }
+            }
+        };
+
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
             names(font, selection_flags),
             axes,
             named_instances,
             global_locations,
-            Default::default(), // TODO: impl reading PS names from Glyphs
+            postscript_names,
             italic_angle,
             categories,
             number_values,
