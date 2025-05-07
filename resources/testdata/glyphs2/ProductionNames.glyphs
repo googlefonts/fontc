@@ -1,0 +1,56 @@
+{
+.appVersion = "3413";
+familyName = "Production Names";
+fontMaster = (
+{
+alignmentZones = (
+"{800, 16}",
+"{700, 16}",
+"{500, 16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = m01;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+unicode = 0041;
+},
+{
+glyphname = idotless;
+production = uni0131;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+unicode = 0131;
+},
+{
+glyphname = nbspace;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+unicode = 00A0;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
