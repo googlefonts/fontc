@@ -8,17 +8,17 @@ use chrono::DateTime;
 use log::{debug, trace, warn};
 
 use fontdrasil::{
-    coords::{NormalizedCoord, NormalizedLocation},
+    coords::{DesignCoord, NormalizedCoord, NormalizedLocation},
     orchestration::{Access, AccessBuilder, Work},
-    types::GlyphName,
+    types::{Axes, GlyphName},
 };
 use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
     ir::{
-        self, AnchorBuilder, Color, ColorPalettes, GdefCategories, GlobalMetric, GlobalMetrics,
-        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
-        MetaTableValues, NameBuilder, NameKey, NamedInstance, PostscriptNames, StaticMetadata,
-        DEFAULT_VENDOR_ID,
+        self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, GdefCategories,
+        GlobalMetric, GlobalMetrics, GlyphAnchors, GlyphInstance, GlyphOrder, KernGroup, KernSide,
+        KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance,
+        PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -51,9 +51,14 @@ impl GlyphsIrSource {
         glyph_name: GlyphName,
         font_info: Arc<FontInfo>,
     ) -> Result<GlyphIrWork, Error> {
+        let glyph = font_info.font.glyphs.get(glyph_name.as_str()).unwrap();
+        let bracket_glyphs = bracket_glyph_names(glyph, &font_info.axes)
+            .map(|(name, _)| name)
+            .collect();
         Ok(GlyphIrWork {
             glyph_name,
             font_info,
+            bracket_glyphs,
         })
     }
 }
@@ -431,12 +436,53 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             }
         }
 
-        context.static_metadata.set(static_metadata);
-
         let glyph_order = font.glyph_order.iter().cloned().map(Into::into).collect();
+
+        context.static_metadata.set(static_metadata);
         context.preliminary_glyph_order.set(glyph_order);
         Ok(())
     }
+}
+
+// group bracket layers by the glyph they'll end up in
+pub(crate) fn bracket_glyph_names<'a>(
+    glyph: &'a glyphs_reader::Glyph,
+    axes: &Axes,
+) -> impl Iterator<Item = (GlyphName, Vec<&'a Layer>)> {
+    //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f/Lib/glyphsLib/builder/bracket_layers.py#L127
+    let mut seen_sets = HashMap::new();
+    for layer in &glyph.bracket_layers {
+        let condition_set = get_bracket_info(layer, axes);
+        let next_alt = seen_sets.len() + 1;
+        seen_sets
+            .entry(condition_set)
+            .or_insert_with(|| {
+                (
+                    smol_str::format_smolstr!("{}.BRACKET.varAlt{next_alt:02}", glyph.name,).into(),
+                    Vec::new(),
+                )
+            })
+            .1
+            .push(layer);
+    }
+    seen_sets.into_values()
+}
+
+// https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/classes.py#L3947
+fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
+    assert!(
+        !layer.attributes.axis_rules.is_empty(),
+        "all bracket layers have axis rules"
+    );
+
+    axes.iter()
+        .zip(&layer.attributes.axis_rules)
+        .map(|(axis, rule)| {
+            let min = rule.min.map(|v| DesignCoord::new(v as f64));
+            let max = rule.max.map(|v| DesignCoord::new(v as f64));
+            Condition::new(axis.tag, min, max)
+        })
+        .collect()
 }
 
 fn make_glyph_categories(font: &Font) -> GdefCategories {
@@ -833,6 +879,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 #[derive(Debug)]
 struct GlyphIrWork {
     glyph_name: GlyphName,
+    bracket_glyphs: Vec<GlyphName>,
     font_info: Arc<FontInfo>,
 }
 
@@ -867,14 +914,22 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
     }
 
     fn write_access(&self) -> Access<WorkId> {
-        AccessBuilder::new()
+        let mut builder = AccessBuilder::new()
             .specific_instance(WorkId::Glyph(self.glyph_name.clone()))
-            .specific_instance(WorkId::Anchor(self.glyph_name.clone()))
-            .build()
+            .specific_instance(WorkId::Anchor(self.glyph_name.clone()));
+        for name in self.bracket_glyphs.iter() {
+            builder = builder.specific_instance(WorkId::Glyph(name.clone()));
+            builder = builder.specific_instance(WorkId::Anchor(name.clone()));
+        }
+        builder.build()
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::Anchor(self.glyph_name.clone())]
+        self.bracket_glyphs
+            .iter()
+            .flat_map(|name| [WorkId::Glyph(name.clone()), WorkId::Anchor(name.clone())])
+            .chain(Some(WorkId::Anchor(self.glyph_name.clone())))
+            .collect()
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
@@ -919,6 +974,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             }
         }
 
+        let anchors = ir_anchors.build()?;
+
         // It's helpful if glyphs are defined at default
         for axis in axes.iter() {
             let default = axis.default.to_normalized(&axis.converter);
@@ -928,7 +985,52 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             check_pos(&self.glyph_name, positions, axis, &default)?;
         }
 
-        context.anchors.set(ir_anchors.build()?);
+        for (name, layers) in bracket_glyph_names(glyph, axes) {
+            let mut seen_master_ids = HashSet::new();
+            let mut bracket_builder = ir::GlyphBuilder::new(name.clone());
+            bracket_builder.emit_to_binary = ir_glyph.emit_to_binary;
+            for bracket_layer in layers {
+                seen_master_ids.insert(bracket_layer.master_id());
+                let (loc, instance) =
+                    process_layer(glyph, bracket_layer, font_info, &global_metrics)?;
+                bracket_builder.try_add_source(&loc, instance)?;
+            }
+
+            // If any master locations don't have a bracket layer, reuse the
+            // base layer for that location. See "Switching Only One Master" at
+            // https://glyphsapp.com/tutorials/alternating-glyph-shapes.
+            //
+            // - see also https://github.com/googlefonts/glyphsLib/blob/c4db6b981d5/Lib/glyphsLib/builder/bracket_layers.py#L78
+
+            for missing_master_id in font
+                .masters
+                .iter()
+                .map(|m| m.id.as_str())
+                .filter(|id| !seen_master_ids.contains(id))
+            {
+                // we use ids instead of locations because in glyphs2 you can
+                // have the funny default axes in the instances
+                if let Some(layer) = glyph
+                    .layers
+                    .iter()
+                    .find(|l| l.master_id() == missing_master_id)
+                {
+                    let (loc, instance) = process_layer(glyph, layer, font_info, &global_metrics)?;
+                    bracket_builder.try_add_source(&loc, instance)?;
+                }
+            }
+            context.glyphs.set(bracket_builder.build()?);
+            let bracket_anchors = GlyphAnchors {
+                glyph_name: name,
+                anchors: anchors.anchors.clone(),
+            };
+            context.anchors.set(bracket_anchors);
+        }
+
+        //TODO: swap components in bracket layers if base glyph also has bracket layers
+        //TODO: expand kerning to brackets
+
+        context.anchors.set(anchors);
         context.glyphs.set(ir_glyph.build()?);
         Ok(())
     }
@@ -2125,5 +2227,31 @@ mod tests {
         let glyph = context.get_glyph("descender-cy");
         // this is a spacing-combining mark, so we shouldn't zero it's width
         assert!(glyph.default_instance().width != 0.0);
+    }
+
+    fn make_glyph_order<'a>(raw: impl IntoIterator<Item = &'a str>) -> GlyphOrder {
+        raw.into_iter().map(GlyphName::from).collect()
+    }
+
+    #[test]
+    fn bracket_glyph_names_v2() {
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("WorkSans-minimal-bracketlayer.glyphs"));
+        let glyphorder = context.preliminary_glyph_order.get();
+        assert_eq!(
+            glyphorder.as_ref(),
+            &make_glyph_order(["colonsign", "colonsign.BRACKET.varAlt01"])
+        );
+    }
+
+    #[test]
+    fn bracket_glyph_names_v3() {
+        let (_, context) =
+            build_static_metadata(glyphs3_dir().join("LibreFranklin-bracketlayer.glyphs"));
+        let glyphorder = context.preliminary_glyph_order.get();
+        assert_eq!(
+            glyphorder.as_ref(),
+            &make_glyph_order(["peso", "peso.BRACKET.varAlt01"])
+        );
     }
 }
