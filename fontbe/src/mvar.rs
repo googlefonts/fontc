@@ -7,7 +7,7 @@ use fontdrasil::orchestration::AccessBuilder;
 use fontdrasil::{
     coords::NormalizedLocation,
     orchestration::{Access, Work},
-    types::Axis,
+    types::Axes,
 };
 use fontir::{
     ir::GlobalMetricValues, orchestration::WorkId as FeWorkId, variations::VariationModel,
@@ -37,7 +37,7 @@ pub fn create_mvar_work() -> Box<BeWork> {
 /// Helper to build MVAR table from global metrics sources.
 struct MvarBuilder {
     /// Variation axes
-    axes: Vec<Axis>,
+    axes: Axes,
     /// Sparse variation models, keyed by the set of locations they define
     models: HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
     /// Metrics deltas keyed by MVAR tag
@@ -46,7 +46,7 @@ struct MvarBuilder {
 
 impl MvarBuilder {
     fn new(global_model: VariationModel) -> Self {
-        let axes = global_model.axes().cloned().collect::<Vec<_>>();
+        let axes = global_model.axes().cloned().collect();
         let global_locations = global_model.locations().cloned().collect::<BTreeSet<_>>();
         let mut models = HashMap::new();
         models.insert(global_locations, global_model);
@@ -179,7 +179,7 @@ mod tests {
 
     fn new_mvar_builder(locations: Vec<&NormalizedLocation>, axes: Vec<Axis>) -> MvarBuilder {
         let locations = locations.into_iter().cloned().collect();
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes.into()).unwrap();
         MvarBuilder::new(model)
     }
 

@@ -5,10 +5,11 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use fontdrasil::orchestration::AccessBuilder;
 
+use fontdrasil::types::Axes;
 use fontdrasil::{
     coords::NormalizedLocation,
     orchestration::{Access, Work},
-    types::{Axis, GlyphName},
+    types::GlyphName,
 };
 use fontir::{ir::Glyph, orchestration::WorkId as FeWorkId, variations::VariationModel};
 use write_fonts::types::MajorMinor;
@@ -18,7 +19,6 @@ use write_fonts::{
         hvar::Hvar,
         variations::{ivs_builder::VariationStoreBuilder, DeltaSetIndexMap, VariationRegion},
     },
-    types::Tag,
     validate::Validate,
     FontWrite, OtRound,
 };
@@ -50,9 +50,7 @@ where
 /// Helper to collect advance width deltas for all glyphs in a font
 struct AdvanceWidthDeltas {
     /// Variation axes
-    axes: Vec<Axis>,
-    /// Set of axis tags
-    axis_tags: BTreeSet<Tag>,
+    axes: Axes,
     /// Sparse variation models, keyed by the set of locations they define
     models: HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
     /// Glyph's advance width deltas sorted by glyph order
@@ -66,21 +64,19 @@ impl AdvanceWidthDeltas {
         global_model: VariationModel,
         glyph_locations: impl IntoIterator<Item = &'a NormalizedLocation>,
     ) -> Self {
-        let axes = global_model.axes().cloned().collect::<Vec<_>>();
-        let axis_tags: BTreeSet<_> = axes.iter().map(|axis| axis.tag).collect();
+        let axes = global_model.axes().cloned().collect();
         // prune axes that are not in the global model (e.g. 'point' axes) which might
         // be confused for a distinct sub-model
         // https://github.com/googlefonts/fontc/issues/1256
         let glyph_locations = glyph_locations
             .into_iter()
-            .map(|loc| loc.subset_axes(&axis_tags))
+            .map(|loc| loc.subset_axes(&axes))
             .collect();
         let global_locations = global_model.locations().cloned().collect::<BTreeSet<_>>();
         let mut models = HashMap::new();
         models.insert(global_locations, global_model);
         AdvanceWidthDeltas {
             axes,
-            axis_tags,
             models,
             deltas: Vec::new(),
             glyph_locations,
@@ -93,7 +89,7 @@ impl AdvanceWidthDeltas {
             .iter()
             // widths must be rounded before the computing deltas to match fontmake
             // https://github.com/googlefonts/fontc/issues/1043
-            .map(|(loc, src)| (loc.subset_axes(&self.axis_tags), vec![src.width.ot_round()]))
+            .map(|(loc, src)| (loc.subset_axes(&self.axes), vec![src.width.ot_round()]))
             .collect();
         let name = glyph.name.clone();
         let i = self.deltas.len();

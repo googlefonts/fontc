@@ -750,11 +750,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let axes = to_ir_axes(&self.designspace.axes)?;
 
         let tags_by_name = axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
-        let axes_by_tag = axes.iter().map(|a| (a.tag, a)).collect();
         let variations = to_ir_variations(
             &self.designspace.rules,
             &self.designspace.lib,
-            &axes_by_tag,
+            &axes,
             &tags_by_name,
         )?;
 
@@ -782,8 +781,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                         }
                     }),
                     postscript_name: inst.postscriptfontname.clone(),
-                    location: to_design_location(&tags_by_name, &inst.location)
-                        .to_user(&axes_by_tag),
+                    location: to_design_location(&tags_by_name, &inst.location).to_user(&axes),
                 }
             })
             .collect();
@@ -850,7 +848,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let mut static_metadata = StaticMetadata::new(
             units_per_em,
             names,
-            axes,
+            axes.into_inner(),
             named_instances,
             global_locations,
             postscript_names,
@@ -1079,7 +1077,7 @@ fn populate_default_metrics(
 pub fn to_ir_variations(
     rules: &designspace::Rules,
     lib: &Dictionary,
-    axis_map: &HashMap<Tag, &fontdrasil::types::Axis>,
+    axis_map: &fontdrasil::types::Axes,
     tags_by_name: &HashMap<&str, Tag>,
 ) -> Result<Option<VariableFeature>, Error> {
     //https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#rules-element
@@ -1139,14 +1137,14 @@ pub fn to_ir_variations(
 
 fn to_ir_condition_set(
     ds_cond: &designspace::ConditionSet,
-    axis_map: &HashMap<Tag, &fontdrasil::types::Axis>,
+    axis_map: &fontdrasil::types::Axes,
     tags_by_name: &HashMap<&str, Tag>,
 ) -> Result<ConditionSet, Error> {
     let to_ir_cond = |ds_cond: &designspace::Condition| -> Result<Condition, Error> {
         let tag = *tags_by_name
             .get(ds_cond.name.as_str())
             .ok_or_else(|| Error::UnknownEntry("axis name", ds_cond.name.clone()))?;
-        if !axis_map.contains_key(&tag) {
+        if !axis_map.contains(&tag) {
             return Err(Error::UnknownEntry("axis", tag.to_string()));
         }
         let min = ds_cond.minimum.map(|min| DesignCoord::new(min as f64));
@@ -1703,16 +1701,11 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         let static_metadata = context.static_metadata.get();
 
         // Migrate glif_files into internal coordinates
-        let axes_by_name = static_metadata
-            .all_source_axes
-            .iter()
-            .map(|a| (a.tag, a))
-            .collect();
         let mut glif_files = HashMap::new();
         for (path, design_locations) in self.glif_files.iter() {
             let normalized_locations: Vec<NormalizedLocation> = design_locations
                 .iter()
-                .map(|dl| dl.to_normalized(&axes_by_name))
+                .map(|dl| dl.to_normalized(&static_metadata.all_source_axes))
                 .collect();
             glif_files.insert(path, normalized_locations);
         }
@@ -2232,7 +2225,7 @@ mod tests {
     fn global_locations() {
         let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
         let static_metadata = &context.static_metadata.get();
-        let wght = static_metadata.axes.first().unwrap();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
 
         assert_eq!(
             vec![
@@ -2254,7 +2247,7 @@ mod tests {
     fn no_metrics_for_glyph_only_sources() {
         let (_, context) = build_global_metrics("wght_var.designspace");
         let static_metadata = &context.static_metadata.get();
-        let wght = static_metadata.axes.first().unwrap();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
         let mut metric_locations = context
             .global_metrics
             .get()

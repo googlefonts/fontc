@@ -2,7 +2,10 @@
 //!
 //! Particularly types where it's nice for FE and BE to match.
 
-use std::fmt::{Debug, Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
@@ -85,12 +88,25 @@ impl PartialEq<&str> for GlyphName {
     }
 }
 
+/// A set of axes, defining a design space.
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+pub struct Axes {
+    axes: Vec<Axis>,
+    by_tag: HashMap<Tag, usize>,
+}
+
+/// A variable font axis.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Axis {
+    /// A human-readable name, like 'Weight'.
     pub name: String,
+    /// The axis tag, like 'wght'.
     pub tag: Tag,
+    /// The minimum value for this axis, in [`UserSpace`][super::coords::UserSpace].
     pub min: UserCoord,
+    /// The default value for this axis, in [`UserSpace`][super::coords::UserSpace].
     pub default: UserCoord,
+    /// The max value for this axis, in [`UserSpace`][super::coords::UserSpace].
     pub max: UserCoord,
     pub hidden: bool,
     pub converter: CoordConverter,
@@ -172,6 +188,54 @@ impl Axis {
                 1,
             ),
         }
+    }
+}
+
+impl Axes {
+    pub fn new(axes: Vec<Axis>) -> Self {
+        let by_tag = axes.iter().enumerate().map(|(i, ax)| (ax.tag, i)).collect();
+        Self { axes, by_tag }
+    }
+
+    #[doc(hidden)]
+    pub fn for_test(tags: &[&str]) -> Self {
+        tags.iter().copied().map(Axis::for_test).collect()
+    }
+
+    pub fn into_inner(self) -> Vec<Axis> {
+        self.axes
+    }
+
+    pub fn len(&self) -> usize {
+        self.axes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.axes.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Axis> {
+        self.axes.iter()
+    }
+
+    pub fn get(&self, tag: &Tag) -> Option<&Axis> {
+        self.by_tag.get(tag).and_then(|idx| self.axes.get(*idx))
+    }
+
+    pub fn contains(&self, tag: &Tag) -> bool {
+        self.by_tag.contains_key(tag)
+    }
+}
+
+impl FromIterator<Axis> for Axes {
+    fn from_iter<T: IntoIterator<Item = Axis>>(iter: T) -> Self {
+        Axes::new(iter.into_iter().collect())
+    }
+}
+
+impl From<Vec<Axis>> for Axes {
+    fn from(src: Vec<Axis>) -> Axes {
+        Axes::new(src)
     }
 }
 

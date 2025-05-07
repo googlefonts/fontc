@@ -1206,8 +1206,7 @@ mod tests {
                     hidden: false,
                     converter: CoordConverter::unmapped(min, default, max),
                 })
-                .collect::<Vec<_>>();
-            let axis_map = axes.iter().map(|a| (a.tag, a)).collect();
+                .collect();
             let named_instances = self
                 .locations
                 .iter()
@@ -1215,7 +1214,7 @@ mod tests {
                 .map(|(i, loc)| NamedInstance {
                     name: format!("instance{i}"),
                     postscript_name: None,
-                    location: loc.to_user(&axis_map),
+                    location: loc.to_user(&axes),
                 })
                 .collect();
             let glyph_locations = self.locations.iter().cloned().collect();

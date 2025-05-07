@@ -3,7 +3,7 @@
 //! See <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::BTreeMap,
     fmt::{Debug, Write},
     marker::PhantomData,
     ops::Sub,
@@ -13,7 +13,7 @@ use ordered_float::OrderedFloat;
 use serde::{ser::SerializeSeq, Deserialize, Deserializer, Serialize};
 use write_fonts::types::{F2Dot14, Fixed, Tag};
 
-use crate::{piecewise_linear_map::PiecewiseLinearMap, types::Axis};
+use crate::{piecewise_linear_map::PiecewiseLinearMap, types::Axes};
 
 /// A trait for converting coordinates between coordinate spaces.
 ///
@@ -138,7 +138,7 @@ macro_rules! convert_convenience_methods {
         where
             Space: ConvertSpace<$space>,
         {
-            pub fn $fn_name(&self, axes: &HashMap<Tag, &Axis>) -> Location<$space> {
+            pub fn $fn_name(&self, axes: &Axes) -> Location<$space> {
                 self.convert(axes)
             }
         }
@@ -347,7 +347,7 @@ impl<Space> Location<Space> {
     }
 
     /// Creates a new `Location` containing only the axis tags contained in the given set.
-    pub fn subset_axes(&self, axis_tags: &BTreeSet<Tag>) -> Self {
+    pub fn subset_axes(&self, axis_tags: &Axes) -> Self {
         Self(
             self.0
                 .iter()
@@ -362,7 +362,7 @@ impl<Space> Location<Space> {
         )
     }
 
-    pub fn convert<ToSpace>(&self, axes: &HashMap<Tag, &Axis>) -> Location<ToSpace>
+    pub fn convert<ToSpace>(&self, axes: &Axes) -> Location<ToSpace>
     where
         Space: ConvertSpace<ToSpace>,
     {

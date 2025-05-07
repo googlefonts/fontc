@@ -425,7 +425,7 @@ impl Debug for NBox {
 mod tests {
     use std::str::FromStr;
 
-    use fontdrasil::{coords::DesignCoord, types::Axis};
+    use fontdrasil::{coords::DesignCoord, types::Axes};
     use fontir::ir::{Condition, Rule, Substitution};
     use write_fonts::tables::{gsub::Gsub, layout::FeatureVariations};
 
@@ -664,7 +664,7 @@ mod tests {
     } test;
     "#,
             )
-            .with_axes(vec![Axis::for_test("wght")])
+            .with_axes(Axes::for_test(&["wght"]))
             .with_glyph_order(
                 ["one", "two", "a", "a.bracket600"]
                     .into_iter()
