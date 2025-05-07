@@ -1,6 +1,12 @@
 //! Accessors for bundled glyphsLib data
 
-use std::{cmp::Ordering, marker::PhantomData, str::from_utf8_unchecked};
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+    marker::PhantomData,
+    str::from_utf8_unchecked,
+    sync::LazyLock,
+};
 
 use smol_str::SmolStr;
 
@@ -104,6 +110,19 @@ fn custom_prod_name(idx: usize) -> (ProductionName, usize) {
     (ProductionName::Custom(SmolStr::new_static(name)), idx)
 }
 
+// PROD_NAME_OFFSETS/PROD_NAMES let us bsearch the index into the GlyphData for a given production name.
+// The map below is for when we need to go in the other direction, i.e. look up the (optional)
+// production name given a GlyphData index.  LazyLock ensures that this is only built once
+// on first access, in a thread-safe way.
+static REVERSE_PROD_NAMES: LazyLock<HashMap<usize, ProductionName>> = LazyLock::new(|| {
+    let mut map = HashMap::new();
+    for i in 0..PROD_NAME_OFFSETS.len() {
+        let (name, idx) = custom_prod_name(i);
+        map.insert(idx, name);
+    }
+    map
+});
+
 fn bsearch<T: Ord>(len: usize, needle: T, get: impl Fn(usize) -> (T, usize)) -> Option<usize> {
     let mut upper = len as i32 - 1;
     let mut lower = 0;
@@ -119,18 +138,22 @@ fn bsearch<T: Ord>(len: usize, needle: T, get: impl Fn(usize) -> (T, usize)) -> 
     None
 }
 
+fn has_predictable_prod_name(cp: u32) -> bool {
+    // See if predictable name bit is set for this codepoint
+    // Most production names work this way
+    let i = (cp / 8) as usize;
+    let bit = 1 << cp.rem_euclid(8);
+    let bits = PROD_NAME_PREDICTABLE_BITMAP
+        .get(i)
+        .copied()
+        .unwrap_or_default();
+    bit & bits == bit
+}
+
 pub(crate) fn find_pos_by_prod_name(needle: ProductionName) -> Option<usize> {
     match needle {
         ProductionName::Bmp(cp) | ProductionName::NonBmp(cp) => {
-            // See if predictable name bit is set for this codepoint
-            // Most production names work this way
-            let i = (cp / 8) as usize;
-            let bit = 1 << cp.rem_euclid(8);
-            let bits = PROD_NAME_PREDICTABLE_BITMAP
-                .get(i)
-                .copied()
-                .unwrap_or_default();
-            if bit & bits == bit {
+            if has_predictable_prod_name(cp) {
                 find_pos_by_codepoint(cp)
             } else {
                 None
@@ -174,12 +197,18 @@ pub(crate) fn get(i: usize) -> Option<QueryResult> {
     } else {
         None
     };
+    let production_name = if codepoint.is_some() && has_predictable_prod_name(codepoint.unwrap()) {
+        Some(ProductionName::from(codepoint.unwrap()))
+    } else {
+        REVERSE_PROD_NAMES.get(&i).map(|name| name.clone())
+    };
 
     Some(QueryResult {
         category,
         subcategory,
         codepoint,
         script,
+        production_name,
     })
 }
 
@@ -223,6 +252,7 @@ mod tests {
                     subcategory: Some(Subcategory::Emoji),
                     codepoint: Some(0x1F63C),
                     script: None,
+                    production_name: Some("u1F63C".into()),
                 }
             ),
             result_for_codepoint(0x1F63C)
@@ -255,6 +285,7 @@ mod tests {
                     subcategory: Some(Subcategory::Quote),
                     codepoint: Some(0x2E42),
                     script: None,
+                    production_name: Some("uni2E42".into()),
                 }
             ),
             result_for_idx(find_pos_by_prod_name("uni2E42".into()).unwrap())
@@ -271,6 +302,7 @@ mod tests {
                     subcategory: Some(Subcategory::Format),
                     codepoint: Some(0xE007E),
                     script: None,
+                    production_name: Some("uE007E".into()),
                 }
             ),
             result_for_idx(find_pos_by_prod_name("uE007E".into()).unwrap())
@@ -293,6 +325,7 @@ mod tests {
                     subcategory: None,
                     codepoint: None,
                     script: None,
+                    production_name: Some(".null".into()),
                 }
             ),
             result_for_idx(find_pos_by_prod_name(".null".into()).unwrap())
@@ -322,6 +355,7 @@ mod tests {
                     subcategory: Some(Subcategory::Emoji),
                     codepoint: None,
                     script: None,
+                    production_name: Some("u1F1E61F1E9".into()),
                 }
             ),
             result_for_idx(find_pos_by_prod_name("u1F1E61F1E9".into()).unwrap())
