@@ -17,7 +17,7 @@ use write_fonts::{
 
 use fontdrasil::{
     coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserLocation},
-    types::{Axis, GlyphName},
+    types::{Axes, Axis, GlyphName},
 };
 
 use crate::{error::VariationModelError, orchestration::Persistable, variations::VariationModel};
@@ -37,12 +37,12 @@ pub struct StaticMetadata {
     /// Every axis used by the font being compiled, including point axes.
     ///
     /// This is relatively rarely what you want.
-    pub all_source_axes: Vec<Axis>,
+    pub all_source_axes: Axes,
 
     /// Every variable (non-point) axis used by the font being compiled.
     ///
     /// If empty this is a static font.
-    pub axes: Vec<Axis>,
+    pub axes: Axes,
 
     /// Named locations in variation space
     pub named_instances: Vec<NamedInstance>,
@@ -270,13 +270,13 @@ pub struct Substitution {
 ///
 /// This type can be constructed with `collect()` from an iterator of `Condition`.
 /// The inner conditions are always sorted.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConditionSet(Vec<Condition>);
 
 /// A range on an axis.
 ///
 /// One of `min` or `max` must be set.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Condition {
     pub axis: Tag,
     /// The minimum position for this condition, in design space coordinates.
@@ -335,7 +335,7 @@ impl StaticMetadata {
         build_vertical: bool,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
-        let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
+        let variable_axes: Axes = axes.iter().filter(|a| !a.is_point()).cloned().collect();
 
         // Named instances of static fonts are unhelpful <https://github.com/googlefonts/fontc/issues/1008>
         let named_instances = if !variable_axes.is_empty() {
@@ -376,7 +376,7 @@ impl StaticMetadata {
         Ok(StaticMetadata {
             units_per_em,
             names: key_to_name,
-            all_source_axes: axes,
+            all_source_axes: Axes::new(axes),
             axes: variable_axes,
             named_instances,
             variation_model,
@@ -495,8 +495,8 @@ mod tests {
 
         StaticMetadata {
             units_per_em: 1000,
-            all_source_axes: vec![axis.clone(), point_axis],
-            axes: vec![axis.clone()],
+            all_source_axes: vec![axis.clone(), point_axis].into(),
+            axes: Axes::new(vec![axis.clone()]),
             named_instances: vec![NamedInstance {
                 name: "Nobody".to_string(),
                 postscript_name: None,
@@ -508,7 +508,7 @@ mod tests {
                     vec![(WGHT, NormalizedCoord::new(0.0))].into(),
                     vec![(WGHT, NormalizedCoord::new(1.0))].into(),
                 ]),
-                vec![axis.clone()],
+                vec![axis.clone()].into(),
             )
             .unwrap(),
             default_location: vec![(WGHT, NormalizedCoord::new(0.0))].into(),

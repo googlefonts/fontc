@@ -141,7 +141,7 @@ pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features
 }
 
 pub(crate) fn design_location(
-    axes: &[fontdrasil::types::Axis],
+    axes: &fontdrasil::types::Axes,
     axes_values: &[OrderedFloat<f64>],
 ) -> DesignLocation {
     axes.iter()
@@ -222,7 +222,7 @@ fn to_ir_axis(
     })
 }
 
-fn ir_axes(font: &Font) -> Result<Vec<fontdrasil::types::Axis>, Error> {
+fn ir_axes(font: &Font) -> Result<fontdrasil::types::Axes, Error> {
     // Every master should have a value for every axis
     for master in font.masters.iter() {
         if font.axes.len() != master.axes_values.len() {
@@ -268,7 +268,7 @@ pub(crate) struct FontInfo {
     pub master_positions: HashMap<String, NormalizedLocation>,
     /// Axes values => location for every instance and master
     pub locations: HashMap<Vec<OrderedFloat<f64>>, NormalizedLocation>,
-    pub axes: Vec<fontdrasil::types::Axis>,
+    pub axes: fontdrasil::types::Axes,
 }
 
 impl TryFrom<Font> for FontInfo {
@@ -284,20 +284,19 @@ impl TryFrom<Font> for FontInfo {
 
         let axes = ir_axes(&font)?;
 
-        let axes_by_name = axes.iter().map(|a| (a.tag, a)).collect();
         let locations: HashMap<_, _> = font
             .masters
             .iter()
             .map(|m| {
                 (
                     m.axes_values.clone(),
-                    design_location(&axes, &m.axes_values).to_normalized(&axes_by_name),
+                    design_location(&axes, &m.axes_values).to_normalized(&axes),
                 )
             })
             .chain(font.instances.iter().map(|i| {
                 (
                     i.axes_values.clone(),
-                    design_location(&axes, &i.axes_values).to_normalized(&axes_by_name),
+                    design_location(&axes, &i.axes_values).to_normalized(&axes),
                 )
             }))
             .collect();

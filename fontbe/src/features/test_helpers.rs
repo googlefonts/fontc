@@ -3,7 +3,7 @@
 use std::{collections::HashSet, path::Path, sync::Arc};
 
 use fea_rs::compile::{Compilation, FeatureProvider};
-use fontdrasil::{coords::NormalizedLocation, types::Axis};
+use fontdrasil::{coords::NormalizedLocation, types::Axes};
 use fontir::ir::{GdefCategories, GlyphOrder, NamedInstance, StaticMetadata};
 
 use crate::orchestration::FeaFirstPassOutput;
@@ -12,7 +12,7 @@ use super::FeaVariationInfo;
 
 /// A builder for constructing  [`LayoutOutput`]
 pub(crate) struct LayoutOutputBuilder {
-    axes: Vec<Axis>,
+    axes: Axes,
     categories: Option<GdefCategories>,
     named_instances: Vec<NamedInstance>,
     glyph_locations: HashSet<NormalizedLocation>,
@@ -32,7 +32,7 @@ impl LayoutOutputBuilder {
         Default::default()
     }
 
-    pub(crate) fn with_axes(&mut self, axes: Vec<Axis>) -> &mut Self {
+    pub(crate) fn with_axes(&mut self, axes: Axes) -> &mut Self {
         self.axes = axes;
         self
     }
@@ -66,7 +66,7 @@ impl LayoutOutputBuilder {
         let static_metadata = StaticMetadata::new(
             1000,
             Default::default(),
-            self.axes.clone(),
+            self.axes.clone().into_inner(),
             self.named_instances.clone(),
             self.glyph_locations.clone(),
             Default::default(),

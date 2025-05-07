@@ -99,23 +99,22 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph, path: &PathBuf) -> Result<ir::Glyp
 
 /// Create a map from source filename (e.g. x.ufo) => normalized location
 pub fn master_locations<'a>(
-    axes: &[fontdrasil::types::Axis],
+    axes: &fontdrasil::types::Axes,
     sources: impl IntoIterator<Item = &'a designspace::Source>,
 ) -> HashMap<String, NormalizedLocation> {
     let tags_by_name: HashMap<_, _> = axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
-    let axes = axes.iter().map(|a| (a.tag, a)).collect();
     sources
         .into_iter()
         .map(|s| {
             (
                 s.name.clone().unwrap(),
-                to_design_location(&tags_by_name, &s.location).to_normalized(&axes),
+                to_design_location(&tags_by_name, &s.location).to_normalized(axes),
             )
         })
         .collect()
 }
 
-pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<Vec<fontdrasil::types::Axis>, Error> {
+pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<fontdrasil::types::Axes, Error> {
     axes.iter().map(to_ir_axis).collect()
 }
 

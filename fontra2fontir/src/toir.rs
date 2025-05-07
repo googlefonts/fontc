@@ -219,7 +219,7 @@ fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath,
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use fontdrasil::types::Axis;
+    use fontdrasil::types::Axes;
     use fontir::ir::Glyph;
     use kurbo::{BezPath, PathEl};
     use write_fonts::types::Tag;
@@ -232,7 +232,7 @@ mod tests {
 
     use super::to_ir_glyph;
 
-    fn axis_tuples(axes: &[Axis]) -> Vec<(&str, Tag, f64, f64, f64)> {
+    fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
         axes.iter()
             .map(|a| {
                 (

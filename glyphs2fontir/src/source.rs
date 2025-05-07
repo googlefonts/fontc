@@ -240,7 +240,6 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 .unwrap_or("<nameless family>")
         );
         let axes = font_info.axes.clone();
-        let axis_map = axes.iter().map(|a| (a.tag, a)).collect();
         let named_instances = font
             .instances
             .iter()
@@ -254,7 +253,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                     location: font_info
                         .locations
                         .get(&inst.axes_values)
-                        .map(|nc| nc.to_user(&axis_map))
+                        .map(|nc| nc.to_user(&axes))
                         .unwrap(),
                 })
             })
@@ -328,7 +327,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
             names(font, selection_flags),
-            axes,
+            axes.into_inner(),
             named_instances,
             global_locations,
             postscript_names,
@@ -899,7 +898,6 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<Tag, HashSet<NormalizedCoord>> = HashMap::new();
-        let axes_by_name = font_info.axes.iter().map(|a| (a.tag, a)).collect();
         for instance in glyph.layers.iter() {
             // skip not-yet-supported types of layers (e.g. alternate, color, etc.)
             if !(instance.is_master() || instance.is_intermediate()) {
@@ -925,7 +923,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             if !instance.attributes.coordinates.is_empty() {
                 for (tag, coord) in
                     design_location(&font_info.axes, &instance.attributes.coordinates)
-                        .to_normalized(&axes_by_name)
+                        .to_normalized(&font_info.axes)
                         .iter()
                 {
                     location.insert(*tag, *coord);
@@ -1268,7 +1266,7 @@ mod tests {
                     ),
                 },
             ],
-            static_metadata.all_source_axes
+            static_metadata.all_source_axes.clone().into_inner()
         );
     }
 
@@ -1360,11 +1358,6 @@ mod tests {
         build_glyphs(&source, &context).unwrap(); // we dont' care about geometry
 
         let static_metadata = context.static_metadata.get();
-        let axes = static_metadata
-            .all_source_axes
-            .iter()
-            .map(|a| (a.tag, a))
-            .collect();
 
         let mut expected_locations = HashSet::new();
         for (opsz, wght) in &[
@@ -1385,7 +1378,7 @@ mod tests {
             .get_glyph(glyph_name)
             .sources()
             .keys()
-            .map(|c| c.to_user(&axes))
+            .map(|c| c.to_user(&static_metadata.axes))
             .collect::<HashSet<_>>();
 
         assert_eq!(expected_locations, actual_locations);
@@ -1428,7 +1421,7 @@ mod tests {
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar_AxisLocation.glyphs"));
         let wght = &context.static_metadata.get().all_source_axes;
         assert_eq!(1, wght.len());
-        let wght = &wght[0];
+        let wght = wght.iter().next().unwrap();
 
         for (design, user) in &[
             (0.0, 400.0),
