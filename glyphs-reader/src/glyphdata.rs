@@ -200,6 +200,26 @@ impl From<&str> for ProductionName {
     }
 }
 
+impl From<u32> for ProductionName {
+    fn from(v: u32) -> ProductionName {
+        if v <= 0xFFFF {
+            ProductionName::Bmp(v)
+        } else {
+            ProductionName::NonBmp(v)
+        }
+    }
+}
+
+impl Display for ProductionName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProductionName::Bmp(cp) => write!(f, "uni{:04X}", cp),
+            ProductionName::NonBmp(cp) => write!(f, "u{:X}", cp),
+            ProductionName::Custom(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 /// A queryable set of glyph data
 ///
 /// Always queries static data from glyphsLib. Optionally includes a set of override values as well.
@@ -241,12 +261,13 @@ impl GlyphData {
 /// The category and subcategory to use
 ///
 /// Used for overrides and as the result of [`GlyphData::query`]
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct QueryResult {
     pub category: Category,
     pub subcategory: Option<Subcategory>,
     pub codepoint: Option<u32>,
     pub script: Option<Script>,
+    pub production_name: Option<ProductionName>,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -325,6 +346,7 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
                 subcategory: info.subcategory,
                 codepoint: info.codepoint,
                 script: info.script,
+                production_name: info.production_name.clone(),
             },
         );
         for alt in info.alt_names {
@@ -335,6 +357,7 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
                     subcategory: info.subcategory,
                     codepoint: None,
                     script: info.script,
+                    production_name: info.production_name.clone(),
                 },
             ));
         }
@@ -365,6 +388,7 @@ struct GlyphInfoFromXml {
     subcategory: Option<Subcategory>,
     codepoint: Option<u32>,
     script: Option<Script>,
+    production_name: Option<ProductionName>,
 }
 
 fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError> {
@@ -374,6 +398,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
     let mut unicode = None;
     let mut alt_names = None;
     let mut script = None;
+    let mut production_name = None;
 
     for attr in item.attributes() {
         let attr = attr?;
@@ -385,7 +410,8 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
             b"unicode" => unicode = Some(value),
             b"altNames" => alt_names = Some(value),
             b"script" => script = Some(value),
-            b"production" | b"unicodeLegacy" | b"case" | b"direction" | b"description" => (),
+            b"production" => production_name = Some(value.as_ref().into()),
+            b"unicodeLegacy" | b"case" | b"direction" | b"description" => (),
             other => {
                 return Err(GlyphDataError::UnknownAttribute(
                     String::from_utf8_lossy(other).into_owned(),
@@ -434,6 +460,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
         subcategory,
         codepoint,
         script,
+        production_name,
     })
 }
 
@@ -482,6 +509,7 @@ impl GlyphData {
                     subcategory: override_result.subcategory,
                     codepoint: override_result.codepoint,
                     script: override_result.script,
+                    production_name: override_result.production_name.clone(),
                 });
             }
         }
@@ -537,6 +565,7 @@ impl GlyphData {
                         subcategory: first_attr.subcategory,
                         codepoint: None,
                         script: None,
+                        production_name: None,
                     });
                 } else if first_attr.category == Category::Letter {
                     // if first is letter and rest are marks/separators, we use info from first
@@ -551,6 +580,7 @@ impl GlyphData {
                             subcategory: first_attr.subcategory,
                             codepoint: None,
                             script: None,
+                            production_name: None,
                         });
                     } else {
                         return Some(QueryResult {
@@ -558,6 +588,7 @@ impl GlyphData {
                             subcategory: Some(Subcategory::Ligature),
                             codepoint: None,
                             script: None,
+                            production_name: None,
                         });
                     }
                 }
@@ -585,6 +616,7 @@ impl GlyphData {
                     subcategory: Some(Subcategory::Ligature),
                     codepoint: None,
                     script: None,
+                    production_name: None,
                 });
             } else {
                 return Some(QueryResult {
@@ -592,6 +624,7 @@ impl GlyphData {
                     subcategory,
                     codepoint: None,
                     script: None,
+                    production_name: None,
                 });
             }
         }
@@ -915,11 +948,17 @@ mod tests {
                 subcategory: Some(Subcategory::SpacingCombining),
                 codepoint: Some(b'A' as u32),
                 script: Some(Script::Alchemical),
+                production_name: Some(ProductionName::Custom("MagicA".into())),
             },
         )]);
         let data = GlyphData::new(Some(overrides));
 
-        assert_eq!(data.query("A", None).unwrap().category, Category::Mark);
+        let result = data.query("A", None).unwrap();
+        assert_eq!(result.category, Category::Mark);
+        assert_eq!(result.subcategory, Some(Subcategory::SpacingCombining));
+        assert_eq!(result.codepoint, Some(b'A' as u32));
+        assert_eq!(result.script, Some(Script::Alchemical));
+        assert_eq!(result.production_name, Some("MagicA".into()));
     }
 
     #[test]
@@ -928,6 +967,10 @@ mod tests {
             GlyphData::with_override_file(Path::new("./data/GlyphData_override_test.xml")).unwrap();
         assert_eq!(data.query("zero", None).unwrap().category, Category::Other);
         assert_eq!(data.query("C", None).unwrap().category, Category::Number);
+        assert_eq!(
+            data.query("Yogh", None).unwrap().production_name,
+            Some("Yolo".into())
+        );
     }
 
     fn get_category(name: &str, codepoints: &[u32]) -> Option<(Category, Option<Subcategory>)> {

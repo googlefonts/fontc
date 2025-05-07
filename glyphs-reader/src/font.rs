@@ -265,6 +265,7 @@ pub struct Glyph {
     pub right_kern: Option<SmolStr>,
     pub category: Option<Category>,
     pub sub_category: Option<Subcategory>,
+    pub production_name: Option<SmolStr>,
 }
 
 impl Glyph {
@@ -909,6 +910,8 @@ struct RawGlyph {
     unicode: Option<String>,
     category: Option<SmolStr>,
     sub_category: Option<SmolStr>,
+    #[fromplist(alt_name = "production")]
+    production_name: Option<SmolStr>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
 }
@@ -2303,17 +2306,21 @@ impl RawGlyph {
 
         let mut category = parse_category(self.category.as_deref(), &self.glyphname);
         let mut sub_category = parse_category(self.sub_category.as_deref(), &self.glyphname);
+        let mut production_name = self.production_name;
 
         let codepoints = self
             .unicode
             .map(|s| parse_codepoint_str(&s, codepoint_radix))
             .unwrap_or_default();
 
-        if category.is_none() || sub_category.is_none() {
+        if category.is_none() || sub_category.is_none() || production_name.is_none() {
             if let Some(result) = glyph_data.query(&self.glyphname, Some(&codepoints)) {
                 // if they were manually set don't change them, otherwise do
                 category = category.or(Some(result.category));
                 sub_category = sub_category.or(result.subcategory);
+                production_name = production_name.or(result
+                    .production_name
+                    .map(|s| smol_str::format_smolstr!("{s}")));
             }
         }
 
@@ -2326,6 +2333,7 @@ impl RawGlyph {
             unicode: codepoints,
             category,
             sub_category,
+            production_name,
         })
     }
 }
@@ -4196,5 +4204,26 @@ mod tests {
     fn names_from_instances() {
         let font = Font::load(&glyphs3_dir().join("InstanceNames.glyphs")).unwrap();
         assert_eq!(font.names.get("preferredSubfamilyNames").unwrap(), "Italic")
+    }
+
+    #[rstest]
+    #[case::v2(glyphs2_dir())]
+    #[case::v3(glyphs3_dir())]
+    fn glyph_production_names(#[case] glyphs_dir: PathBuf) {
+        let font = Font::load(&glyphs_dir.join("ProductionNames.glyphs")).unwrap();
+        let glyphs = font.glyphs.values().collect::<Vec<_>>();
+
+        // this glyph has no production name in GlyphData.xml nor in the .glyphs file
+        assert_eq!(glyphs[0].name, "A");
+        assert_eq!(glyphs[0].production_name, None);
+
+        // this one would have 'dotlessi' in GlyphData.xml, but the .glyphs file overrides it
+        assert_eq!(glyphs[1].name, "idotless");
+        assert_eq!(glyphs[1].production_name, Some("uni0131".into()));
+
+        // this has no custom production_name in the .glyphs file, and the one from
+        // GlyphData.xml is used
+        assert_eq!(glyphs[2].name, "nbspace");
+        assert_eq!(glyphs[2].production_name, Some("uni00A0".into()));
     }
 }
