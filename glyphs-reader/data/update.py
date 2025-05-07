@@ -136,7 +136,8 @@ def read_glyph_info(file: str) -> Tuple[GlyphInfo]:
                 by_name[e.attrib["name"]],
                 name=alt_name,
                 codepoint=None,
-                production_name=None,
+                production_name=e.attrib.get("production", None),
+                script=e.attrib.get("script", None),
             )
 
     return tuple(by_name.values())
