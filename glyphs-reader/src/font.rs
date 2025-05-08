@@ -302,6 +302,13 @@ impl Layer {
         self.associated_master_id.is_none()
     }
 
+    /// associated master id if set, else layer id
+    pub fn master_id(&self) -> &str {
+        self.associated_master_id
+            .as_deref()
+            .unwrap_or(&self.layer_id)
+    }
+
     pub fn is_intermediate(&self) -> bool {
         self.associated_master_id.is_some() && !self.attributes.coordinates.is_empty()
     }
