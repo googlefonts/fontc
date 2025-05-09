@@ -2356,9 +2356,7 @@ impl RawGlyph {
                 // if they were manually set don't change them, otherwise do
                 category = category.or(Some(result.category));
                 sub_category = sub_category.or(result.subcategory);
-                production_name = production_name.or(result
-                    .production_name
-                    .map(|s| smol_str::format_smolstr!("{s}")));
+                production_name = production_name.or(result.production_name.map(Into::into));
             }
         }
 
