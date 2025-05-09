@@ -226,8 +226,8 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         fontc_bin,
         # uncomment this to compare output w/ fontmake --keep-direction
         # "--keep-direction",
-        # no longer required, still useful to get human-readable glyph names in diff
-        "--no-production-names",
+        # uncomment to get human-readable glyph names in diff
+        # "--no-production-names",
         "--build-dir",
         ".",
         "-o",
@@ -255,8 +255,8 @@ def build_fontmake(source: Path, build_dir: Path):
         out_file.name,
         "--drop-implied-oncurves",
         # "--keep-direction",
-        # no longer required, still useful to get human-readable glyph names in diff
-        "--no-production-names",
+        # uncomment to get human-readable glyph names in diff
+        # "--no-production-names",
         # helpful for troubleshooting
         "--debug-feature-file",
         "debug.fea",
