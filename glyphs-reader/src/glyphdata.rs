@@ -220,6 +220,16 @@ impl Display for ProductionName {
     }
 }
 
+impl From<ProductionName> for SmolStr {
+    fn from(v: ProductionName) -> SmolStr {
+        match v {
+            ProductionName::Bmp(cp) => format!("uni{:04X}", cp).into(),
+            ProductionName::NonBmp(cp) => format!("u{:X}", cp).into(),
+            ProductionName::Custom(s) => s,
+        }
+    }
+}
+
 /// A queryable set of glyph data
 ///
 /// Always queries static data from glyphsLib. Optionally includes a set of override values as well.
@@ -477,7 +487,7 @@ impl GlyphData {
     pub fn query(&self, name: &str, codepoints: Option<&BTreeSet<u32>>) -> Option<QueryResult> {
         self.query_no_synthesis(name, codepoints)
             // we don't have info for this glyph: can we synthesize it?
-            .or_else(|| self.construct_category(name))
+            .or_else(|| self.construct_result(name))
     }
 
     /// As [`Self::query`] but without a fallback to computed values.
@@ -538,18 +548,32 @@ impl GlyphData {
         bundled::find_pos_by_name(name).is_some()
     }
 
+    fn construct_result(&self, name: &str) -> Option<QueryResult> {
+        let category_subcategory = self.construct_category(name);
+        let production_name = self.construct_production_name(name);
+        if category_subcategory.is_none() && production_name.is_none() {
+            return None;
+        }
+        // if we have a production name but no category, 'Other' is good enough
+        let (category, subcategory) = category_subcategory.unwrap_or((Category::Other, None));
+        Some(QueryResult {
+            category,
+            subcategory,
+            codepoint: None,
+            script: None,
+            production_name,
+        })
+    }
+
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L199
-    fn construct_category(&self, name: &str) -> Option<QueryResult> {
+    fn construct_category(&self, name: &str) -> Option<(Category, Option<Subcategory>)> {
         // in glyphs.app '_' prefix means "no export"
         if name.starts_with('_') {
             return None;
         }
-        let base_name = self
-            .split_glyph_suffix(name)
-            .map(|(base, _)| base)
-            .unwrap_or(name);
+        let (base_name, _) = self.split_glyph_suffix(name);
         if let Some(result) = self.query_no_synthesis(base_name, None) {
-            return Some(result);
+            return Some((result.category, result.subcategory));
         }
 
         if let Some(base_names) = self.split_ligature_glyph_name(base_name) {
@@ -560,13 +584,7 @@ impl GlyphData {
             if let Some(first_attr) = base_names_attributes.first() {
                 // if first is mark, we're a mark
                 if first_attr.category == Category::Mark {
-                    return Some(QueryResult {
-                        category: Category::Mark,
-                        subcategory: first_attr.subcategory,
-                        codepoint: None,
-                        script: None,
-                        production_name: None,
-                    });
+                    return Some((Category::Mark, first_attr.subcategory));
                 } else if first_attr.category == Category::Letter {
                     // if first is letter and rest are marks/separators, we use info from first
                     if base_names_attributes
@@ -575,21 +593,9 @@ impl GlyphData {
                         .map(|result| result.category)
                         .all(|cat| matches!(cat, Category::Mark | Category::Separator))
                     {
-                        return Some(QueryResult {
-                            category: first_attr.category,
-                            subcategory: first_attr.subcategory,
-                            codepoint: None,
-                            script: None,
-                            production_name: None,
-                        });
+                        return Some((first_attr.category, first_attr.subcategory));
                     } else {
-                        return Some(QueryResult {
-                            category: Category::Letter,
-                            subcategory: Some(Subcategory::Ligature),
-                            codepoint: None,
-                            script: None,
-                            production_name: None,
-                        });
+                        return Some((Category::Letter, Some(Subcategory::Ligature)));
                     }
                 }
             }
@@ -599,9 +605,73 @@ impl GlyphData {
         Self::construct_category_via_agl(base_name)
     }
 
+    // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d5/Lib/glyphsLib/glyphdata.py#L351
+    fn construct_production_name(&self, name: &str) -> Option<ProductionName> {
+        fn append_suffix(base_name: &mut String, suffix: Option<&str>) {
+            if let Some(suffix) = suffix {
+                base_name.push('.');
+                base_name.push_str(suffix);
+            }
+        }
+
+        fn is_u_name(name: &str) -> bool {
+            name.starts_with("u") && name[1..].bytes().all(|b| b.is_ascii_hexdigit())
+        }
+
+        let (base_name, suffix) = self.split_glyph_suffix(name);
+        let base_names = self
+            .split_ligature_glyph_name(base_name)
+            .unwrap_or_else(|| vec![base_name.into()]);
+        // Attempt to find a production name for each ligature component (or the whole base name).
+        // Return early if any such names have no GlyphData entry
+        // OR the entry doesn't specify a production name AND they aren't already AGLFN names...
+        let prod_names: Vec<SmolStr> = base_names
+            .into_iter()
+            .map(|name| {
+                self.query_no_synthesis(&name, None).and_then(|result| {
+                    result.production_name.map(Into::into).or_else(|| {
+                        // if no production name, return the name itself if already in AGLFN
+                        fontdrasil::agl::char_for_agl_name(name.as_ref()).map(|_| name)
+                    })
+                })
+            })
+            .collect::<Option<_>>()?;
+
+        // only (uniXXXX, uniYYYY, etc.) names with 4 hex digits can be concatenated using the
+        // more compact format uniXXXXYYYY... uXXXXX names for characters beyond BMP are joined
+        // in ligatures using the usual '_'.
+        let any_characters_outside_bmp = prod_names
+            .iter()
+            .any(|name| name.len() > 5 && is_u_name(name.as_ref()));
+        let any_uni_names = prod_names.iter().any(|name| name.starts_with("uni"));
+
+        if !any_characters_outside_bmp && any_uni_names {
+            let mut uni_names = Vec::new();
+            for part in prod_names {
+                if let Some(stripped) = part.strip_prefix("uni") {
+                    uni_names.push(stripped.to_string());
+                } else if part.len() == 5 && is_u_name(part.as_ref()) {
+                    uni_names.push(part[1..].to_string());
+                } else if let Some(char) = fontdrasil::agl::char_for_agl_name(part.as_ref()) {
+                    uni_names.push(format!("{:04X}", char as u32));
+                } else {
+                    panic!("Unexpected part while constructing production name: {part}");
+                }
+            }
+            let mut result = String::from("uni");
+            result.push_str(&uni_names.join(""));
+            append_suffix(&mut result, suffix);
+            return Some(result.as_str().into());
+        }
+
+        let mut result = prod_names.join("_");
+        append_suffix(&mut result, suffix);
+        Some(result.as_str().into())
+    }
+
     // this doesn't need a &self param, but we want it locally close to the
     // code that calls it, so we'll make it a type method :shrug:
-    fn construct_category_via_agl(base_name: &str) -> Option<QueryResult> {
+    fn construct_category_via_agl(base_name: &str) -> Option<(Category, Option<Subcategory>)> {
         if let Some(first_char) = fontdrasil::agl::glyph_name_to_unicode(base_name)
             .chars()
             .next()
@@ -611,27 +681,15 @@ impl GlyphData {
             // Exception: Something like "one_two" should be a (_, Ligature),
             // "acutecomb_brevecomb" should however stay (Mark, Nonspacing).
             if base_name.contains('_') && category != Category::Mark {
-                return Some(QueryResult {
-                    category,
-                    subcategory: Some(Subcategory::Ligature),
-                    codepoint: None,
-                    script: None,
-                    production_name: None,
-                });
+                return Some((category, Some(Subcategory::Ligature)));
             } else {
-                return Some(QueryResult {
-                    category,
-                    subcategory,
-                    codepoint: None,
-                    script: None,
-                    production_name: None,
-                });
+                return Some((category, subcategory));
             }
         }
         None
     }
 
-    fn split_glyph_suffix<'n>(&self, name: &'n str) -> Option<(&'n str, &'n str)> {
+    fn split_glyph_suffix<'n>(&self, name: &'n str) -> (&'n str, Option<&'n str>) {
         let multi_suffix = name.bytes().filter(|b| *b == b'.').count() > 1;
         if multi_suffix {
             // with multiple suffixes, try adding them one at a time and seeing if
@@ -646,12 +704,14 @@ impl GlyphData {
             {
                 let (base, suffix) = name.split_at(idx);
                 if self.contains_name(base) {
-                    return Some((base, suffix));
+                    // suffix starts with '.' so we strip it to match split_once below
+                    return (base, Some(&suffix[1..]));
                 }
             }
         }
-        // finally just split at the first dot
+        // finally just split at the first dot, or the whole name if no suffix
         name.split_once('.')
+            .map_or_else(|| (name, None), |(base, suffix)| (base, Some(suffix)))
     }
 
     /// Split a ligature glyph into component parts
@@ -1175,7 +1235,6 @@ mod tests {
     // Python original test cases for synthetic production names:
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d59bec0c9437da3a748c58f2999911/tests/glyphdata_test.py#L196-L409
     // Note that I removed a bunch of them as they were too many and repetitive
-    #[ignore] // TODO: remove this once we actually implement
     #[rstest(
         name,
         expected,
