@@ -12,7 +12,6 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{ir::Glyph, orchestration::WorkId as FeWorkId, variations::VariationModel};
-use write_fonts::types::MajorMinor;
 use write_fonts::{
     dump_table,
     tables::{
@@ -238,7 +237,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             }
         }
 
-        let hvar = Hvar::new(MajorMinor::VERSION_1_0, varstore, varidx_map, None, None);
+        let hvar = Hvar::new(varstore, varidx_map, None, None);
         context.hvar.set(hvar);
 
         Ok(())
