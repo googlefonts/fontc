@@ -3157,6 +3157,14 @@ mod tests {
                 post.glyph_name(result.get_gid("duplicate.2")),
                 Some("uniF8FF.1")
             );
+            assert_eq!(
+                post.glyph_name(result.get_gid("A_nbspace_idotless")),
+                Some("uni004100A00131")
+            );
+            assert_eq!(
+                post.glyph_name(result.get_gid("A_nbspace_idotless.ss01")),
+                Some("uni004100A00131.ss01")
+            );
         } else {
             // original names are preserved
             let glyph_order = result.fe_context.glyph_order.get();

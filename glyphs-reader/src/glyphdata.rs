@@ -1266,7 +1266,13 @@ mod tests {
         case("moMa_underscore-thai", "uni0E21005F"),
         case("nno-khmer.below.narrow1", "uni17D2178E.narrow1"),
         case("nyo-khmer.full.below.narrow", "uni17D21789.full.below.narrow"),
-        case("sh_ra_iiMatra-tamil", "uni0BB60BCD0BB00BC0")
+        case("sh_ra_iiMatra-tamil", "uni0BB60BCD0BB00BC0"),
+        // plus some more tests that are not in glyphsLib
+        case("A_A", "A_A"),
+        case("a_a.sc", "a_a.sc"),
+        case("brevecomb_acutecomb", "uni03060301"),
+        case("brevecomb_acutecomb.case", "uni03060301.case"),
+        case("pileOfPoo_pileOfPoo", "u1F4A9_u1F4A9"),
     )]
     fn synthetic_production_names(name: &str, expected: &str) {
         let production_name = GlyphData::new(None)

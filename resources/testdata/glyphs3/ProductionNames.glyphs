@@ -20,6 +20,28 @@ width = 600;
 unicode = 65;
 },
 {
+glyphname = A_nbspace_idotless;
+layers = (
+{
+layerId = m01;
+width = 1200;
+}
+);
+metricLeft = A;
+metricRight = idotless;
+},
+{
+glyphname = A_nbspace_idotless.ss01;
+layers = (
+{
+layerId = m01;
+width = 1200;
+}
+);
+metricLeft = A_nbspace_idotless;
+metricRight = A_nbspace_idotless;
+},
+{
 glyphname = idotless;
 layers = (
 {
