@@ -132,7 +132,11 @@ impl MetricsBuilder {
                 .map(|v| min(v, second_side_bearing))
                 .or(Some(second_side_bearing));
 
-            let extent = (side_bearing as i32 + bounds_advance).try_into().unwrap();
+            let extent = match side_bearing as i32 + bounds_advance {
+                value if value < i16::MIN as i32 => i16::MIN,
+                value if value > i16::MAX as i32 => i16::MAX,
+                value => value as i16,
+            };
             self.max_extent = self.max_extent.map(|v| max(v, extent)).or(Some(extent));
         }
     }
