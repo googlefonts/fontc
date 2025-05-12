@@ -68,6 +68,7 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
             .get()
             .at(static_metadata.default_location());
 
+        // Collate vertical metrics
         let builder =
             glyph_order
                 .iter()
@@ -75,6 +76,7 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
                     let glyph = context.ir.get_glyph(gn.clone());
                     let instance = glyph.default_instance();
 
+                    // https://github.com/googlefonts/ufo2ft/blob/2f11b0ff/Lib/ufo2ft/outlineCompiler.py#L882-L890
                     let advance = instance.height(&default_metrics);
                     let vertical_origin = instance.vertical_origin(&default_metrics);
 
@@ -93,6 +95,7 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
 
         let metrics = builder.build();
 
+        // Build and send vertical metrics tables out into the world
         let vhea = Vhea {
             ascender: FWord::new(default_metrics.vhea_ascender.into_inner().ot_round()),
             descender: FWord::new(default_metrics.vhea_descender.into_inner().ot_round()),

@@ -35,7 +35,8 @@ pub fn create_metric_and_limit_work() -> Box<BeWork> {
     Box::new(MetricAndLimitWork {})
 }
 
-/// Metrics and their limits, for constructing Hhea/Hmtx or Vhea/Vmtx.
+/// A builder for aggregating metrics and calculating their limits, for
+/// populating Hhea/Vhea and Hmtx/Vmtx respectively.
 #[derive(Debug, Default)]
 pub(crate) struct MetricsBuilder {
     long_metrics: Vec<LongMetric>,
@@ -46,11 +47,11 @@ pub(crate) struct MetricsBuilder {
     max_extent: Option<i16>,
 }
 
-// Finished and explicit horizontal/vertical metrics, ready for immediate
-// serialisation by Hhea/Hmtx or Vhea/Vmtx.
+/// The finished and explicit metrics, casted and with defaults populated for
+/// immediate serialisation.
 #[derive(Debug)]
 pub(crate) struct Metrics {
-    // The metrics themselves.
+    // The actual metrics.
     pub(crate) long_metrics: Vec<LongMetric>,
     pub(crate) first_side_bearings: Vec<i16>,
 
@@ -61,7 +62,7 @@ pub(crate) struct Metrics {
     pub(crate) max_extent: FWord,
 }
 
-/// Maximum contents and bounds, for constructing maxp and populating head.
+/// Maximum contents and bounds, for constructing `maxp` and finishing `head`.
 #[derive(Debug, Default)]
 struct MaxBuilder {
     max_points: u16,
@@ -319,10 +320,12 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             .get()
             .at(static_metadata.default_location());
 
+        // Collate horizontal metrics
         let builder =
             glyph_order
                 .iter()
                 .fold(MetricsBuilder::default(), |mut builder, (_gid, gn)| {
+                    // https://github.com/googlefonts/ufo2ft/blob/2f11b0ff/Lib/ufo2ft/outlineCompiler.py#L741-L747
                     let advance: u16 = context
                         .ir
                         .get_glyph(gn.clone())
@@ -344,6 +347,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
 
         let metrics = builder.build();
 
+        // Build and send horizontal metrics tables out into the world
         let hhea = Hhea {
             ascender: FWord::new(default_metrics.hhea_ascender.into_inner().ot_round()),
             descender: FWord::new(default_metrics.hhea_descender.into_inner().ot_round()),
