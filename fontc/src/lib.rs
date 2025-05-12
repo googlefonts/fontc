@@ -219,6 +219,7 @@ mod tests {
                 loca::Loca,
                 name::Name,
                 os2::SelectionFlags,
+                post::Post,
                 variations::{DeltaSetIndexMap, ItemVariationData},
             },
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider, TableRef,
@@ -3116,5 +3117,52 @@ mod tests {
             .unwrap()
             .iter()
             .all(|instance| instance.unwrap().post_script_name_id.is_none()));
+    }
+
+    #[rstest]
+    #[case::yes(true)]
+    #[case::no(false)]
+    fn rename_glyphs_to_production_names(#[case] use_production_names: bool) {
+        let result = TestCompile::compile("glyphs3/ProductionNames.glyphs", |mut args| {
+            args.no_production_names = !use_production_names;
+            args
+        });
+
+        let raw_post = dump_table(result.be_context.post.get().as_ref()).unwrap();
+        let post = Post::read(FontData::new(&raw_post)).unwrap();
+
+        if use_production_names {
+            assert_eq!(post.glyph_name(result.get_gid("A")), Some("A"));
+            assert_eq!(post.glyph_name(result.get_gid("idotless")), Some("uni0131"));
+            assert_eq!(post.glyph_name(result.get_gid("nbspace")), Some("uni00A0"));
+            // hyphen is not valid PS character and gets stripped from final name
+            assert_eq!(
+                post.glyph_name(result.get_gid("foobar-cy")),
+                Some("foobarcy")
+            );
+            // number suffixes are added to avoid duplicates
+            assert_eq!(
+                post.glyph_name(result.get_gid("foobarcy")),
+                Some("foobarcy.1")
+            );
+            assert_eq!(
+                post.glyph_name(result.get_gid("foobarcy.1")),
+                Some("foobarcy.1.1")
+            );
+            assert_eq!(
+                post.glyph_name(result.get_gid("duplicate.1")),
+                Some("uniF8FF")
+            );
+            assert_eq!(
+                post.glyph_name(result.get_gid("duplicate.2")),
+                Some("uniF8FF.1")
+            );
+        } else {
+            // original names are preserved
+            let glyph_order = result.fe_context.glyph_order.get();
+            for name in glyph_order.iter().map(|(_, name)| name.as_str()) {
+                assert_eq!(post.glyph_name(result.get_gid(name)), Some(name));
+            }
+        }
     }
 }

@@ -4256,20 +4256,23 @@ mod tests {
     #[case::v3(glyphs3_dir())]
     fn glyph_production_names(#[case] glyphs_dir: PathBuf) {
         let font = Font::load(&glyphs_dir.join("ProductionNames.glyphs")).unwrap();
-        let glyphs = font.glyphs.values().collect::<Vec<_>>();
+        let glyphs = font.glyphs;
 
         // this glyph has no production name in GlyphData.xml nor in the .glyphs file
-        assert_eq!(glyphs[0].name, "A");
-        assert_eq!(glyphs[0].production_name, None);
+        assert_eq!(glyphs.get("A").unwrap().production_name, None);
 
         // this one would have 'dotlessi' in GlyphData.xml, but the .glyphs file overrides it
-        assert_eq!(glyphs[1].name, "idotless");
-        assert_eq!(glyphs[1].production_name, Some("uni0131".into()));
+        assert_eq!(
+            glyphs.get("idotless").unwrap().production_name,
+            Some("uni0131".into())
+        );
 
         // this has no custom production_name in the .glyphs file, and the one from
         // GlyphData.xml is used
-        assert_eq!(glyphs[2].name, "nbspace");
-        assert_eq!(glyphs[2].production_name, Some("uni00A0".into()));
+        assert_eq!(
+            glyphs.get("nbspace").unwrap().production_name,
+            Some("uni00A0".into())
+        );
     }
 
     #[test]

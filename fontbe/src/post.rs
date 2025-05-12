@@ -1,7 +1,8 @@
 //! Generates a [post](https://learn.microsoft.com/en-us/typography/opentype/spec/post) table.
 
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
-use fontir::orchestration::WorkId as FeWorkId;
+use fontir::orchestration::{Flags, WorkId as FeWorkId};
+use std::collections::HashMap;
 use write_fonts::{
     tables::post::Post,
     types::{FWord, Fixed},
@@ -44,13 +45,42 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
             .global_metrics
             .get()
             .at(static_metadata.default_location());
-        let postscript_names = &static_metadata.postscript_names;
-        let glyph_order = context.ir.glyph_order.get();
-        let mut post = Post::new_v2(
-            glyph_order
-                .names()
-                .map(|g| postscript_names.get(g).unwrap_or(g).as_str()),
-        );
+        // Whether to rename glyphs for 'production' using the provided remame map
+        let do_production_names = context.flags.contains(Flags::PRODUCTION_NAMES);
+        let rename_map = &static_metadata.postscript_names;
+        let mut seen = HashMap::new();
+        let final_glyph_names: Vec<_> = context
+            .ir
+            .glyph_order
+            .get()
+            .names()
+            .map(|g| {
+                if !do_production_names {
+                    // pass through the original name
+                    return g.to_string();
+                }
+                let mut name = rename_map.get(g).unwrap_or(g).to_string();
+                // Adobe Glyph List spec forbids any characters not in [A-Za-z0-9._]; it also say glyphs
+                // must not start with a digit or period (except .notdef) and shouldn't exceed 63 chars,
+                // but ufo2ft only enforces the first rule so we simply follow that.
+                // https://github.com/googlefonts/ufo2ft/blob/2f11b0f/Lib/ufo2ft/postProcessor.py#L220-L233
+                name.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_');
+                // make duplicates unique by adding a number suffix to match fonttools/ufo2ft:
+                // https://github.com/googlefonts/ufo2ft/blob/2f11b0f/Lib/ufo2ft/postProcessor.py#L239-L248
+                if let Some(n) = seen.get(&name) {
+                    let mut n = *n;
+                    while seen.contains_key(&format!("{}.{}", name, n)) {
+                        n += 1;
+                    }
+                    seen.insert(name.clone(), n + 1);
+                    name = format!("{}.{}", name, n);
+                }
+                seen.insert(name.clone(), 1);
+                name
+            })
+            .collect();
+
+        let mut post = Post::new_v2(final_glyph_names.iter().map(|g| g.as_str()));
         post.is_fixed_pitch = static_metadata.misc.is_fixed_pitch.unwrap_or_default() as u32;
         post.italic_angle = Fixed::from_f64(static_metadata.italic_angle.into_inner());
         post.underline_position = FWord::new(metrics.underline_position.ot_round());
