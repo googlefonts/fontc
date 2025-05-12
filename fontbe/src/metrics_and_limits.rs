@@ -17,10 +17,9 @@ use write_fonts::{
         hhea::Hhea,
         hmtx::Hmtx,
         maxp::Maxp,
-        vhea::Vhea,
-        vmtx::{LongMetric, Vmtx},
+        vmtx::LongMetric,
     },
-    types::{FWord, GlyphId16},
+    types::{FWord, GlyphId16, UfWord},
     OtRound,
 };
 
@@ -38,13 +37,28 @@ pub fn create_metric_and_limit_work() -> Box<BeWork> {
 
 /// Metrics and their limits, for constructing Hhea/Hmtx or Vhea/Vmtx.
 #[derive(Debug, Default)]
-struct MetricsBuilder {
+pub(crate) struct MetricsBuilder {
     long_metrics: Vec<LongMetric>,
-    advance_max: u16,
 
+    advance_max: u16,
     min_first_side_bearing: Option<i16>,
     min_second_side_bearing: Option<i16>,
     max_extent: Option<i16>,
+}
+
+// Finished and explicit horizontal/vertical metrics, ready for immediate
+// serialisation by Hhea/Hmtx or Vhea/Vmtx.
+#[derive(Debug)]
+pub(crate) struct Metrics {
+    // The metrics themselves.
+    pub(crate) long_metrics: Vec<LongMetric>,
+    pub(crate) first_side_bearings: Vec<i16>,
+
+    // Aggregated summaries for the header table.
+    pub(crate) advance_max: UfWord,
+    pub(crate) min_first_side_bearing: FWord,
+    pub(crate) min_second_side_bearing: FWord,
+    pub(crate) max_extent: FWord,
 }
 
 /// Maximum contents and bounds, for constructing maxp and populating head.
@@ -89,7 +103,7 @@ impl GlyphLimits {
 }
 
 impl MetricsBuilder {
-    fn update(&mut self, advance: u16, side_bearing: i16, bounds_advance: Option<i32>) {
+    pub(crate) fn update(&mut self, advance: u16, side_bearing: i16, bounds_advance: Option<i32>) {
         // https://github.com/googlefonts/ufo2ft/blob/16ed156bd6a8b9bc035d0aa8045a1271ef79a52e/Lib/ufo2ft/outlineCompiler.py#L797-L816
         self.long_metrics.push(LongMetric {
             advance,
@@ -123,12 +137,20 @@ impl MetricsBuilder {
         }
     }
 
-    fn build_bearings(&mut self) -> Vec<i16> {
+    pub(crate) fn build(self) -> Metrics {
+        let Self {
+            mut long_metrics,
+            advance_max,
+            min_first_side_bearing,
+            min_second_side_bearing,
+            max_extent,
+        } = self;
+
         // If there's a run at the end with matching advances we can save some bytes
-        let num_lsb_only = if !self.long_metrics.is_empty() {
-            let last_advance = self.long_metrics.last().unwrap().advance;
+        let num_lsb_only = if !long_metrics.is_empty() {
+            let last_advance = long_metrics.last().unwrap().advance;
             let mut lsb_run = 0;
-            for metric in self.long_metrics.iter().rev() {
+            for metric in long_metrics.iter().rev() {
                 if metric.advance != last_advance {
                     break;
                 }
@@ -142,11 +164,21 @@ impl MetricsBuilder {
             0
         };
 
-        self.long_metrics
-            .split_off(self.long_metrics.len() - num_lsb_only)
+        let first_side_bearings = long_metrics
+            .split_off(long_metrics.len() - num_lsb_only)
             .into_iter()
             .map(|metric| metric.side_bearing)
-            .collect()
+            .collect();
+
+        Metrics {
+            long_metrics,
+            first_side_bearings,
+
+            advance_max: advance_max.into(),
+            min_first_side_bearing: min_first_side_bearing.unwrap_or_default().into(),
+            min_second_side_bearing: min_second_side_bearing.unwrap_or_default().into(),
+            max_extent: max_extent.unwrap_or_default().into(),
+        }
     }
 }
 
@@ -260,18 +292,11 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             .variant(WorkId::Hhea)
             .variant(WorkId::Maxp)
             .variant(WorkId::Head)
-            .variant(WorkId::Vmtx)
-            .variant(WorkId::Vhea)
             .build()
     }
 
     fn also_completes(&self) -> Vec<AnyWorkId> {
-        vec![
-            WorkId::Hhea.into(),
-            WorkId::Maxp.into(),
-            WorkId::Vhea.into(),
-            WorkId::Vmtx.into(),
-        ]
+        vec![WorkId::Hhea.into(), WorkId::Maxp.into()]
     }
 
     /// Generate:
@@ -290,7 +315,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             .get()
             .at(static_metadata.default_location());
 
-        let mut horiz_builder =
+        let builder =
             glyph_order
                 .iter()
                 .fold(MetricsBuilder::default(), |mut builder, (_gid, gn)| {
@@ -313,36 +338,29 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                     builder
                 });
 
-        // Before we cede ownership of Hmtx grab a few notes for Hhea
-        let lsbs = horiz_builder.build_bearings();
+        let metrics = builder.build();
+
         let hhea = Hhea {
             ascender: FWord::new(default_metrics.hhea_ascender.into_inner().ot_round()),
             descender: FWord::new(default_metrics.hhea_descender.into_inner().ot_round()),
             line_gap: FWord::new(default_metrics.hhea_line_gap.into_inner().ot_round()),
-            advance_width_max: horiz_builder.advance_max.into(),
-            min_left_side_bearing: horiz_builder
-                .min_first_side_bearing
-                .unwrap_or_default()
-                .into(),
-            min_right_side_bearing: horiz_builder
-                .min_second_side_bearing
-                .unwrap_or_default()
-                .into(),
-            x_max_extent: horiz_builder.max_extent.unwrap_or_default().into(),
+            advance_width_max: metrics.advance_max,
+            min_left_side_bearing: metrics.min_first_side_bearing,
+            min_right_side_bearing: metrics.min_second_side_bearing,
+            x_max_extent: metrics.max_extent,
             caret_slope_rise: default_metrics.caret_slope_rise.into_inner().ot_round(),
             caret_slope_run: default_metrics.caret_slope_run.into_inner().ot_round(),
             caret_offset: default_metrics.caret_offset.into_inner().ot_round(),
-            number_of_h_metrics: horiz_builder.long_metrics.len().try_into().map_err(|_| {
+            number_of_h_metrics: metrics.long_metrics.len().try_into().map_err(|_| {
                 Error::OutOfBounds {
                     what: "number_of_long_metrics".into(),
-                    value: format!("{}", horiz_builder.long_metrics.len()),
+                    value: format!("{}", metrics.long_metrics.len()),
                 }
             })?,
         };
         context.hhea.set(hhea);
 
-        // Send hmtx out into the world
-        let hmtx = Hmtx::new(horiz_builder.long_metrics, lsbs);
+        let hmtx = Hmtx::new(metrics.long_metrics, metrics.first_side_bearings);
         let raw_hmtx = dump_table(&hmtx)
             .map_err(|e| Error::DumpTableError {
                 e,
@@ -350,71 +368,6 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             })?
             .into();
         context.hmtx.set(raw_hmtx);
-
-        if static_metadata.build_vertical {
-            let mut vert_builder =
-                glyph_order
-                    .iter()
-                    .fold(MetricsBuilder::default(), |mut builder, (_gid, gn)| {
-                        let glyph = context.ir.get_glyph(gn.clone());
-                        let instance = glyph.default_instance();
-
-                        let advance = instance.height(&default_metrics);
-                        let vertical_origin = instance.vertical_origin(&default_metrics);
-
-                        let glyph = context.glyphs.get(&WorkId::GlyfFragment(gn.clone()).into());
-
-                        let side_bearing = vertical_origin
-                            - glyph.data.bbox().map(|bbox| bbox.y_max).unwrap_or_default();
-                        let bounds_advance = glyph
-                            .data
-                            .bbox()
-                            .map(|bbox| bbox.y_max as i32 - bbox.y_min as i32);
-
-                        builder.update(advance, side_bearing, bounds_advance);
-                        builder
-                    });
-
-            let tsbs = vert_builder.build_bearings();
-            let vhea = Vhea {
-                ascender: FWord::new(default_metrics.vhea_ascender.into_inner().ot_round()),
-                descender: FWord::new(default_metrics.vhea_descender.into_inner().ot_round()),
-                line_gap: FWord::new(default_metrics.vhea_line_gap.into_inner().ot_round()),
-                advance_height_max: vert_builder.advance_max.into(),
-                min_top_side_bearing: vert_builder
-                    .min_first_side_bearing
-                    .unwrap_or_default()
-                    .into(),
-                min_bottom_side_bearing: vert_builder
-                    .min_second_side_bearing
-                    .unwrap_or_default()
-                    .into(),
-                y_max_extent: vert_builder.max_extent.unwrap_or_default().into(),
-                caret_slope_rise: default_metrics
-                    .vhea_caret_slope_rise
-                    .into_inner()
-                    .ot_round(),
-                caret_slope_run: default_metrics.vhea_caret_slope_run.into_inner().ot_round(),
-                caret_offset: default_metrics.vhea_caret_offset.into_inner().ot_round(),
-                number_of_long_ver_metrics: vert_builder.long_metrics.len().try_into().map_err(
-                    |_| Error::OutOfBounds {
-                        what: "number_of_long_metrics".into(),
-                        value: format!("{}", vert_builder.long_metrics.len()),
-                    },
-                )?,
-            };
-            context.vhea.set(vhea);
-
-            // Send vmtx out into the world
-            let vmtx = Vmtx::new(vert_builder.long_metrics, tsbs);
-            let raw_vmtx = dump_table(&vmtx)
-                .map_err(|e| Error::DumpTableError {
-                    e,
-                    context: "vmtx".into(),
-                })?
-                .into();
-            context.vmtx.set(raw_vmtx);
-        }
 
         let mut max_builder =
             glyph_order
