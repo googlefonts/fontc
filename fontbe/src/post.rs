@@ -60,10 +60,11 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
                     return g.to_string();
                 }
                 let mut name = rename_map.get(g).unwrap_or(g).to_string();
-                // Adobe Glyph List spec forbids any characters not in [A-Za-z0-9._]; it also say glyphs
+                // Adobe Glyph List spec forbids any characters not in [A-Za-z0-9._]; it also says glyphs
                 // must not start with a digit or period (except .notdef) and shouldn't exceed 63 chars,
                 // but ufo2ft only enforces the first rule so we simply follow that.
                 // https://github.com/googlefonts/ufo2ft/blob/2f11b0f/Lib/ufo2ft/postProcessor.py#L220-L233
+                // https://github.com/adobe-type-tools/agl-specification
                 name.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_');
                 // make duplicates unique by adding a number suffix to match fonttools/ufo2ft:
                 // https://github.com/googlefonts/ufo2ft/blob/2f11b0f/Lib/ufo2ft/postProcessor.py#L239-L248
