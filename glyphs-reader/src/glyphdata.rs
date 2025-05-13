@@ -8,6 +8,7 @@ use quick_xml::{
     Reader,
 };
 use std::{
+    borrow::Cow,
     collections::{BTreeSet, HashMap},
     fmt::Display,
     num::ParseIntError,
@@ -646,20 +647,22 @@ impl GlyphData {
         let any_uni_names = prod_names.iter().any(|name| name.starts_with("uni"));
 
         if !any_characters_outside_bmp && any_uni_names {
-            let mut uni_names = Vec::new();
-            for part in prod_names {
+            let mut uni_names: Vec<Cow<str>> = Vec::new();
+            for part in &prod_names {
                 if let Some(stripped) = part.strip_prefix("uni") {
-                    uni_names.push(stripped.to_string());
+                    uni_names.push(Cow::Borrowed(stripped));
                 } else if part.len() == 5 && is_u_name(part.as_ref()) {
-                    uni_names.push(part[1..].to_string());
-                } else if let Some(char) = fontdrasil::agl::char_for_agl_name(part.as_ref()) {
-                    uni_names.push(format!("{:04X}", char as u32));
+                    uni_names.push(Cow::Borrowed(&part.as_ref()[1..]));
+                } else if let Some(ch) = fontdrasil::agl::char_for_agl_name(part.as_ref()) {
+                    uni_names.push(Cow::Owned(format!("{:04X}", ch as u32)));
                 } else {
                     panic!("Unexpected part while constructing production name: {part}");
                 }
             }
             let mut result = String::from("uni");
-            result.push_str(&uni_names.join(""));
+            for segment in uni_names {
+                result.push_str(segment.as_ref());
+            }
             append_suffix(&mut result, suffix);
             return Some(result.as_str().into());
         }
