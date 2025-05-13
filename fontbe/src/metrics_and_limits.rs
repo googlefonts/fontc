@@ -288,6 +288,8 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             .variant(WorkId::Head)
             .variant(FeWorkId::ALL_GLYPHS)
             .variant(WorkId::ALL_GLYF_FRAGMENTS)
+            // We need composite bboxes to be calculated:
+            .variant(WorkId::Glyf)
             .build()
     }
 
