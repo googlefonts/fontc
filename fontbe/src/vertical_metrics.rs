@@ -35,6 +35,8 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
             .variant(FeWorkId::GlyphOrder)
             .variant(FeWorkId::ALL_GLYPHS)
             .variant(WorkId::ALL_GLYF_FRAGMENTS)
+            // We need composite bboxes to be calculated:
+            .variant(WorkId::Glyf)
             .build()
     }
 
