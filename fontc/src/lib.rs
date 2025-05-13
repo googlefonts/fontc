@@ -3122,16 +3122,16 @@ mod tests {
     #[rstest]
     #[case::yes(true)]
     #[case::no(false)]
-    fn rename_glyphs_to_production_names(#[case] use_production_names: bool) {
+    fn rename_glyphs_to_production_names(#[case] use_adobe_style_post_names: bool) {
         let result = TestCompile::compile("glyphs3/ProductionNames.glyphs", |mut args| {
-            args.no_production_names = !use_production_names;
+            args.no_production_names = !use_adobe_style_post_names;
             args
         });
 
         let raw_post = dump_table(result.be_context.post.get().as_ref()).unwrap();
         let post = Post::read(FontData::new(&raw_post)).unwrap();
 
-        if use_production_names {
+        if use_adobe_style_post_names {
             assert_eq!(post.glyph_name(result.get_gid("A")), Some("A"));
             assert_eq!(post.glyph_name(result.get_gid("idotless")), Some("uni0131"));
             assert_eq!(post.glyph_name(result.get_gid("nbspace")), Some("uni00A0"));
