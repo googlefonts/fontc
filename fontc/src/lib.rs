@@ -3135,7 +3135,13 @@ mod tests {
             assert_eq!(post.glyph_name(result.get_gid("A")), Some("A"));
             assert_eq!(post.glyph_name(result.get_gid("idotless")), Some("uni0131"));
             assert_eq!(post.glyph_name(result.get_gid("nbspace")), Some("uni00A0"));
-            // hyphen is not valid PS character and gets stripped from final name
+            // We don't check if user-defined prod names actually follow AGL rules;
+            // e.g. in this case 'uni' prefix is NOT followed by groups of 4 hex digits
+            assert_eq!(
+                post.glyph_name(result.get_gid("invalid_prod_name")),
+                Some("uni99")
+            );
+            // We just strip invalid PS characters (e.g. hyphens)
             assert_eq!(
                 post.glyph_name(result.get_gid("foobar-cy")),
                 Some("foobarcy")

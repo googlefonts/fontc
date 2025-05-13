@@ -81,6 +81,16 @@ width = 600;
 );
 },
 {
+glyphname = invalid_prod_name;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+production = uni99;
+},
+{
 glyphname = duplicate.1;
 layers = (
 {
