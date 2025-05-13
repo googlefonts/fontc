@@ -116,6 +116,11 @@ flags.DEFINE_float(
 )
 flags.DEFINE_bool("json", False, "print results in machine-readable JSON format")
 flags.DEFINE_string("outdir", default=None, help="directory to store generated files")
+flags.DEFINE_bool(
+    "production_names",
+    True,
+    "rename glyphs to AGL-compliant names (uniXXXX, etc.) suitable for production. Disable to see the original glyph names.",
+)
 
 
 def to_xml_string(e) -> str:
@@ -226,8 +231,6 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         fontc_bin,
         # uncomment this to compare output w/ fontmake --keep-direction
         # "--keep-direction",
-        # uncomment to get human-readable glyph names in diff
-        # "--no-production-names",
         "--build-dir",
         ".",
         "-o",
@@ -235,6 +238,8 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         source,
         "--emit-debug",
     ]
+    if not FLAGS.production_names:
+        cmd.append("--no-production-names")
     build(cmd, build_dir)
 
 
@@ -255,12 +260,12 @@ def build_fontmake(source: Path, build_dir: Path):
         out_file.name,
         "--drop-implied-oncurves",
         # "--keep-direction",
-        # uncomment to get human-readable glyph names in diff
-        # "--no-production-names",
         # helpful for troubleshooting
         "--debug-feature-file",
         "debug.fea",
     ]
+    if not FLAGS.production_names:
+        cmd.append("--no-production-names")
     if not variable:
         # fontmake static builds perform overlaps removal, but fontc can't do that yet.
         # Disable the filter to make the diff less noisy.
@@ -293,6 +298,8 @@ def run_gftools(
         "--experimental-single-source",
         source.name,
     ]
+    if not FLAGS.production_names:
+        cmd.append("--experimental-extra-arg=--no-production-names")
     if fontc_bin is not None:
         cmd += ["--experimental-fontc", fontc_bin]
 
