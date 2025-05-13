@@ -224,8 +224,8 @@ impl Display for ProductionName {
 impl From<ProductionName> for SmolStr {
     fn from(v: ProductionName) -> SmolStr {
         match v {
-            ProductionName::Bmp(cp) => format!("uni{:04X}", cp).into(),
-            ProductionName::NonBmp(cp) => format!("u{:X}", cp).into(),
+            ProductionName::Bmp(cp) => smol_str::format_smolstr!("uni{:04X}", cp),
+            ProductionName::NonBmp(cp) => smol_str::format_smolstr!("u{:X}", cp),
             ProductionName::Custom(s) => s,
         }
     }
