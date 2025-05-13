@@ -640,18 +640,22 @@ def remove_gdef_lig_caret_and_var_store(ttx: etree.ElementTree):
             gdef.remove(subtable)
 
 
-# reassign class ids within a ClassDef, matching the fonttools behaviour.
+# reassign class ids within a ClassDef, matching the fontc behaviour.
 # returns a map of new -> old ids, which can be used to reorder elements that
 # used the class ids as indices
-def remap_class_def_ids_like_fonttools(class_def: etree.ElementTree) -> Dict[int, int]:
+def remap_class_def_ids_like_fontc(
+    class_def: etree.ElementTree, glyph_map: Dict[str, int]
+) -> Dict[int, int]:
     current_classes = defaultdict(list)
     for glyph in class_def.xpath(".//ClassDef"):
         cls = glyph.attrib["class"]
         current_classes[cls].append(glyph.attrib["glyph"])
 
-    # match the sorting used in fonttools:
-    # https://github.com/fonttools/fonttools/blob/8a89f4f81b0068/Lib/fontTools/otlLib/builder.py#L2689
-    new_order = sorted(current_classes.values(), key=lambda s: (-len(s), s))
+    # match the sorting used in write-fonts by using the min GID as the tiebreaker
+    # https://github.com/googlefonts/fontations/blob/3fcc52e/write-fonts/src/tables/layout/builders.rs#L183-L189
+    new_order = sorted(
+        current_classes.values(), key=lambda s: (-len(s), min(glyph_map[g] for g in s))
+    )
     new_order_map = {name: i + 1 for (i, cls) in enumerate(new_order) for name in cls}
     result = dict()
     for glyph in class_def.xpath(".//ClassDef"):
@@ -700,7 +704,9 @@ def remap_values(
 
 # fontmake and fontc assign glyph classes differently for class-based tables;
 # fontc uses GIDs but fontmake uses glyph names, so we reorder them to be consistent.
-def reorder_contextual_class_based_rules(ttx: etree.ElementTree, tag: str):
+def reorder_contextual_class_based_rules(
+    ttx: etree.ElementTree, tag: str, glyph_map: Dict[str, int]
+):
     if tag == "GSUB":
         chain_name = "ChainContextSubst"
         class_set_name = "ChainSubClassSet"
@@ -720,15 +726,15 @@ def reorder_contextual_class_based_rules(ttx: etree.ElementTree, tag: str):
         for chain_ctx in lookup.findall(chain_name):
             if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
                 continue
-            input_class_order = remap_class_def_ids_like_fonttools(
-                chain_ctx.find("InputClassDef")
+            input_class_order = remap_class_def_ids_like_fontc(
+                chain_ctx.find("InputClassDef"), glyph_map
             )
             reorder_rules(chain_ctx, input_class_order, class_set_name)
-            backtrack_class_order = remap_class_def_ids_like_fonttools(
-                chain_ctx.find("BacktrackClassDef")
+            backtrack_class_order = remap_class_def_ids_like_fontc(
+                chain_ctx.find("BacktrackClassDef"), glyph_map
             )
-            lookahead_class_order = remap_class_def_ids_like_fonttools(
-                chain_ctx.find("LookAheadClassDef")
+            lookahead_class_order = remap_class_def_ids_like_fontc(
+                chain_ctx.find("LookAheadClassDef"), glyph_map
             )
             for class_set in chain_ctx.findall(class_set_name):
                 for class_rule in class_set.findall(class_rule_name):
@@ -802,9 +808,14 @@ def densify_one_glyph(coords, ends, variations: etree.ElementTree):
 
 
 def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
+    fontmake_glyph_map = {
+        el.attrib["name"]: int(el.attrib["id"])
+        for el in fontmake.xpath("//GlyphOrder/GlyphID")
+    }
+
     sort_fontmake_feature_lookups(fontmake)
-    reorder_contextual_class_based_rules(fontc, "GSUB")
-    reorder_contextual_class_based_rules(fontc, "GPOS")
+    reorder_contextual_class_based_rules(fontmake, "GSUB", fontmake_glyph_map)
+    reorder_contextual_class_based_rules(fontmake, "GPOS", fontmake_glyph_map)
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")

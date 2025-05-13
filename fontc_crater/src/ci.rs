@@ -95,6 +95,11 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let fontc_rev = super::get_git_rev(None).unwrap();
     let pip_freeze_sha = super::pip_freeze_sha();
     let input_file_sha = super::get_input_sha(&args.to_run);
+
+    let cache_dir = args.cache_dir();
+    log::info!("using cache dir {}", cache_dir.display());
+    let results_cache = ResultsCache::in_dir(&cache_dir);
+
     if let Some(last_run) = prev_runs.last() {
         if last_run.fontc_rev == fontc_rev
             && input_file_sha == last_run.input_file_sha
@@ -103,19 +108,14 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
             log::info!("no changes since last run, skipping");
             return Ok(());
         }
+        if pip_freeze_sha != last_run.pip_freeze_sha || ttx_diff_has_changes(&last_run.fontc_rev) {
+            log::info!("python deps or ttx_diff have changed, clearing cached results");
+            results_cache.delete_all();
+        }
     }
 
     let out_file = result_path_for_current_date();
     let out_path = args.out_dir.join(&out_file);
-    // for now we are going to be cloning each repo freshly
-    let cache_dir = args.cache_dir();
-    log::info!("using cache dir {}", cache_dir.display());
-    let results_cache = ResultsCache::in_dir(&cache_dir);
-    if Some(&pip_freeze_sha) != prev_runs.last().map(|run| &run.pip_freeze_sha) {
-        log::info!("pip output has changed, clearing cached results");
-        results_cache.delete_all();
-    }
-
     // we want to build fontc & normalizer once, and then move them out of the
     // build directory so that they aren't accidentally rebuilt or deleted
     // while we're running
@@ -192,6 +192,17 @@ fn result_path_for_current_date() -> String {
     let now = chrono::Utc::now();
     let timestamp = now.format("%Y-%m-%d-%H%M%S");
     format!("{timestamp}.json")
+}
+
+fn ttx_diff_has_changes(last_run_sha: &str) -> bool {
+    let output = std::process::Command::new("git")
+        .args(["diff", "--stat"])
+        .arg(last_run_sha)
+        .output()
+        .unwrap();
+    std::str::from_utf8(&output.stdout)
+        .unwrap()
+        .contains("ttx_diff.py")
 }
 
 #[derive(Debug, Default)]
