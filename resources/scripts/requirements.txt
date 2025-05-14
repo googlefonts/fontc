@@ -129,7 +129,7 @@ gflanguages==0.7.3
     #   glyphsets
 gfsubsets==2024.9.25
     # via gftools
-gftools==0.9.78
+gftools==0.9.83
     # via -r requirements.in
 gitdb==4.0.12
     # via gitpython
