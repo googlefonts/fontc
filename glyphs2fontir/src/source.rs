@@ -322,18 +322,29 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .dont_use_production_names
             .unwrap_or(false);
 
-        let mut postscript_names = None;
-        if context.flags.contains(Flags::PRODUCTION_NAMES) && !dont_use_prod_names {
-            postscript_names = Some(PostscriptNames::default());
-            for glyph in font.glyphs.values() {
-                if let Some(production_name) = glyph.production_name.as_ref() {
-                    postscript_names.as_mut().unwrap().insert(
-                        GlyphName::from(glyph.name.as_str()),
-                        GlyphName::from(production_name.as_str()),
-                    );
+        let postscript_names =
+            if context.flags.contains(Flags::PRODUCTION_NAMES) && !dont_use_prod_names {
+                let mut postscript_names = PostscriptNames::default();
+                for glyph in font.glyphs.values() {
+                    if let Some(production_name) = glyph.production_name.as_ref() {
+                        postscript_names
+                            .insert(glyph.name.clone().into(), production_name.clone().into());
+
+                        for (bracket_name, _) in bracket_glyph_names(glyph, &axes) {
+                            let bracket_suffix = bracket_name
+                                .as_str()
+                                .strip_prefix(glyph.name.as_str())
+                                .expect("glyph name always a prefix of bracket glyph name");
+                            let bracket_prod_name =
+                                smol_str::format_smolstr!("{production_name}{bracket_suffix}");
+                            postscript_names.insert(bracket_name, bracket_prod_name.into());
+                        }
+                    }
                 }
-            }
-        };
+                Some(postscript_names)
+            } else {
+                None
+            };
 
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
