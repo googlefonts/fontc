@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="100" maximum="100" default="100"/>
+  </axes>
+  <sources>
+    <source filename="DontuseProductionNames-Regular.ufo" name="Don't use Production Names Regular" familyname="Don't use Production Names" stylename="Regular">
+      <lib copy="1"/>
+      <groups copy="1"/>
+      <features copy="1"/>
+      <info copy="1"/>
+      <location>
+        <dimension name="Weight" xvalue="100"/>
+      </location>
+    </source>
+  </sources>
+</designspace>
