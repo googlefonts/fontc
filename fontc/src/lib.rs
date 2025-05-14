@@ -3179,4 +3179,19 @@ mod tests {
             }
         }
     }
+
+    #[rstest]
+    #[case("glyphs3/DontUseProductionNames.glyphs")]
+    #[case("glyphs2/DontUseProductionNames.glyphs")]
+    #[case("designspace_from_glyphs/DontUseProductionNames.designspace")]
+    fn dont_use_production_names_custom_parameter(#[case] source: &str) {
+        // these sources have the "Don't use Production Names" custom parameter set to true
+        // (or the ufo2ft equivalent "useProductionNames" lib key set to false).
+        let result = TestCompile::compile_source(source);
+        let font = result.font();
+        let post = font.post().unwrap();
+
+        // this would have been 'uni00A0' if glyphs had been renamed to production names
+        assert_eq!(post.glyph_name(result.get_gid("nbspace")), Some("nbspace"));
+    }
 }
