@@ -3136,6 +3136,25 @@ mod tests {
         );
     }
 
+    fn get_first_feature_substitution(
+        gsub: write_fonts::read::tables::gsub::Gsub,
+        expected_sub_idx: usize,
+    ) -> write_fonts::read::tables::layout::Feature {
+        let featvars = gsub.feature_variations().unwrap().unwrap();
+        let var_rec = featvars.feature_variation_records()[0];
+        let feature_substitution = var_rec
+            .feature_table_substitution(featvars.offset_data())
+            .unwrap()
+            .unwrap();
+
+        let sub_record = feature_substitution.substitutions()[0];
+
+        assert_eq!(sub_record.feature_index() as usize, expected_sub_idx);
+        sub_record
+            .alternate_feature(feature_substitution.offset_data())
+            .unwrap()
+    }
+
     #[test]
     fn designspace_rvrn_feature_variation() {
         // do we create a feature variation record, pointing at the expected values?
@@ -3156,22 +3175,51 @@ mod tests {
             .lookup_list_indices()
             .is_empty());
 
-        let featvars = gsub.feature_variations().unwrap().unwrap();
-        let var_rec = featvars.feature_variation_records()[0];
-        let feature_substitution = var_rec
-            .feature_table_substitution(featvars.offset_data())
-            .unwrap()
-            .unwrap();
-
-        let rvrn_sub_record = feature_substitution.substitutions()[0];
-
-        assert_eq!(rvrn_sub_record.feature_index() as usize, rvrn_idx);
-        let rvrn_replacement = rvrn_sub_record
-            .alternate_feature(feature_substitution.offset_data())
-            .unwrap();
-
+        let rvrn_replacement = get_first_feature_substitution(gsub, rvrn_idx);
         // rvrn at the front
         assert_eq!(rvrn_replacement.lookup_list_indices(), [0, 1]);
+    }
+
+    #[test]
+    fn glyphs_feature_variations() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let result = TestCompile::compile_source("glyphs3/LibreFranklin-bracketlayer.glyphs");
+        let gsub = result.font().gsub().unwrap();
+        let lookup_list = gsub.lookup_list().unwrap();
+        assert_eq!(lookup_list.lookup_count(), 1);
+        let feature_list = gsub.feature_list().unwrap();
+        // by default, glyphs puts feature variations in rlig
+        let rlig_idx = feature_list
+            .feature_records()
+            .iter()
+            .position(|rec| rec.feature_tag() == "rlig")
+            .unwrap();
+        let rlig = feature_list.feature_records()[rlig_idx];
+        // base rlig feature has no lookups
+        assert!(rlig
+            .feature(feature_list.offset_data())
+            .unwrap()
+            .lookup_list_indices()
+            .is_empty());
+
+        let rlig_replacement = get_first_feature_substitution(gsub, rlig_idx);
+        assert_eq!(rlig_replacement.lookup_list_indices(), [0]);
+    }
+
+    #[test]
+    fn glyphs_feature_variations_custom_feature() {
+        // honor the 'Feature for Feature Variations' key
+        let _ = env_logger::builder().is_test(true).try_init();
+        let result = TestCompile::compile_source("glyphs2/WorkSans-minimal-bracketlayer.glyphs");
+        let gsub = result.font().gsub().unwrap();
+        let lookup_list = gsub.lookup_list().unwrap();
+        assert_eq!(lookup_list.lookup_count(), 1);
+        let feature_list = gsub.feature_list().unwrap();
+        assert_eq!(feature_list.feature_records().len(), 1);
+        assert_eq!(feature_list.feature_records()[0].feature_tag(), "rclt");
+
+        let replacement = get_first_feature_substitution(gsub, 0);
+        assert_eq!(replacement.lookup_list_indices(), [0]);
     }
 
     #[test]

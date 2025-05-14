@@ -18,7 +18,7 @@ use fontir::{
         self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, GdefCategories,
         GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups,
         KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance, PostscriptNames,
-        StaticMetadata, DEFAULT_VENDOR_ID,
+        Rule, StaticMetadata, Substitution, VariableFeature, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -349,6 +349,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 None
             };
 
+        let variations = make_feature_variations(font_info);
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
             names(font, selection_flags),
@@ -363,6 +364,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
+        static_metadata.variations = variations;
         // treat "    " (four spaces) as equivalent to no value; it means
         // 'null', per the spec
         if let Some(vendor_id) = font.vendor_id().filter(|id| *id != "    ") {
@@ -462,12 +464,58 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     }
 }
 
-// group bracket layers by the glyph they'll end up in
+fn make_feature_variations(fontinfo: &FontInfo) -> Option<VariableFeature> {
+    // by default, glyphs registers feature variations under 'rlig'
+    // https://glyphsapp.com/learn/switching-shapes#g-1-alternate-layers-bracket-layers__feature-variations
+    const DEFAULT_FEATURE: Tag = Tag::new(b"rlig");
+    let mut conditions = HashMap::new();
+    for glyph in fontinfo.font.glyphs.values().filter(|g| g.export) {
+        for (condset, (sub_name, _layers)) in bracket_glyphs(glyph, &fontinfo.axes) {
+            conditions
+                .entry(condset)
+                .or_insert(Vec::new())
+                .push(Substitution {
+                    replace: glyph.name.clone().into(),
+                    with: sub_name,
+                });
+        }
+    }
+    if conditions.is_empty() {
+        return None;
+    }
+
+    let raw_feature = fontinfo
+        .font
+        .custom_parameters
+        .feature_for_feature_variations
+        .as_ref();
+    let feature = raw_feature.and_then(|s| s.parse::<Tag>().ok());
+    if feature.is_none() {
+        log::warn!("invalid or missing param 'Feature for Feature Variations': {raw_feature:?}");
+    }
+    let features = vec![feature.unwrap_or(DEFAULT_FEATURE)];
+    let rules = conditions
+        .into_iter()
+        .map(|(condset, substitutions)| Rule {
+            conditions: vec![condset],
+            substitutions,
+        })
+        .collect();
+
+    Some(VariableFeature { features, rules })
+}
+
 pub(crate) fn bracket_glyph_names<'a>(
     glyph: &'a glyphs_reader::Glyph,
     axes: &Axes,
 ) -> impl Iterator<Item = (GlyphName, Vec<&'a Layer>)> {
-    //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f/Lib/glyphsLib/builder/bracket_layers.py#L127
+    bracket_glyphs(glyph, axes).map(|x| x.1)
+}
+
+fn bracket_glyphs<'a>(
+    glyph: &'a glyphs_reader::Glyph,
+    axes: &Axes,
+) -> impl Iterator<Item = (ConditionSet, (GlyphName, Vec<&'a Layer>))> {
     let mut seen_sets = HashMap::new();
     for layer in &glyph.bracket_layers {
         let condition_set = get_bracket_info(layer, axes);
@@ -476,6 +524,7 @@ pub(crate) fn bracket_glyph_names<'a>(
             .entry(condition_set)
             .or_insert_with(|| {
                 (
+                    //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f/Lib/glyphsLib/builder/bracket_layers.py#L127
                     smol_str::format_smolstr!("{}.BRACKET.varAlt{next_alt:02}", glyph.name,).into(),
                     Vec::new(),
                 )
@@ -483,7 +532,7 @@ pub(crate) fn bracket_glyph_names<'a>(
             .1
             .push(layer);
     }
-    seen_sets.into_values()
+    seen_sets.into_iter()
 }
 
 // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/classes.py#L3947
