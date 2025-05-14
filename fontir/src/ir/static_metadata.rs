@@ -63,7 +63,7 @@ pub struct StaticMetadata {
 
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/post> and
     /// <https://github.com/adobe-type-tools/agl-specification>
-    pub postscript_names: PostscriptNames,
+    pub postscript_names: Option<PostscriptNames>,
 
     /// Italic angle in counter-clockwise degrees from the vertical. Zero for
     /// upright fonts, negative for right-leaning fonts.
@@ -326,7 +326,7 @@ impl StaticMetadata {
         axes: Vec<Axis>,
         named_instances: Vec<NamedInstance>,
         global_locations: HashSet<NormalizedLocation>,
-        postscript_names: PostscriptNames,
+        postscript_names: Option<PostscriptNames>,
         italic_angle: f64,
         gdef_categories: GdefCategories,
         glyphsapp_number_values: Option<
@@ -530,7 +530,7 @@ mod tests {
                     "Nobody".to_string(),
                 ),
             ]),
-            postscript_names: HashMap::from([("lhs".into(), "rhs".into())]),
+            postscript_names: Some(HashMap::from([("lhs".into(), "rhs".into())])),
             italic_angle: 0.0.into(),
             gdef_categories: GdefCategories {
                 categories: [

@@ -1,7 +1,7 @@
 //! Generates a [post](https://learn.microsoft.com/en-us/typography/opentype/spec/post) table.
 
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
-use fontir::orchestration::{Flags, WorkId as FeWorkId};
+use fontir::orchestration::WorkId as FeWorkId;
 use std::collections::HashMap;
 use write_fonts::{
     tables::post::Post,
@@ -47,9 +47,8 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
             .at(static_metadata.default_location());
         let glyph_order = context.ir.glyph_order.get();
 
-        let mut post = if context.flags.contains(Flags::PRODUCTION_NAMES) {
+        let mut post = if let Some(rename_map) = &static_metadata.postscript_names {
             // rename glyphs for 'production' using the provided rename map
-            let rename_map = &static_metadata.postscript_names;
             let mut seen = HashMap::new();
             let final_glyph_names: Vec<_> = glyph_order
                 .names()

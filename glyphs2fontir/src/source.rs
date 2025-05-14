@@ -312,11 +312,17 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .flat_map(|glyph| glyph.layers.iter())
             .any(|layer| layer.vert_width.is_some() || layer.vert_origin.is_some());
 
-        let mut postscript_names = PostscriptNames::default();
-        if context.flags.contains(Flags::PRODUCTION_NAMES) {
+        let dont_use_prod_names = font
+            .custom_parameters
+            .dont_use_production_names
+            .unwrap_or(false);
+
+        let mut postscript_names = None;
+        if context.flags.contains(Flags::PRODUCTION_NAMES) && !dont_use_prod_names {
+            postscript_names = Some(PostscriptNames::default());
             for glyph in font.glyphs.values() {
                 if let Some(production_name) = glyph.production_name.as_ref() {
-                    postscript_names.insert(
+                    postscript_names.as_mut().unwrap().insert(
                         GlyphName::from(glyph.name.as_str()),
                         GlyphName::from(production_name.as_str()),
                     );
