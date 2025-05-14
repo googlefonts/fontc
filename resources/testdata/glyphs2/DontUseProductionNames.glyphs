@@ -1,0 +1,44 @@
+{
+.appVersion = "3413";
+customParameters = (
+{
+name = "Don't use Production Names";
+value = 1;
+}
+);
+familyName = "Don't use Production Names";
+fontMaster = (
+{
+ascender = 800;
+capHeight = 9223372036854775808;
+descender = 0;
+id = m01;
+xHeight = 9223372036854775808;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+unicode = 0041;
+},
+{
+glyphname = nbspace;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+unicode = 00A0;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
