@@ -3183,7 +3183,7 @@ mod tests {
     #[rstest]
     #[case("glyphs3/DontUseProductionNames.glyphs")]
     #[case("glyphs2/DontUseProductionNames.glyphs")]
-    #[case("designspace_from_glyphs/DontUseProductionNames.designspace")]
+    #[case("designspace_from_glyphs/DontuseProductionNames.designspace")]
     fn dont_use_production_names_custom_parameter(#[case] source: &str) {
         // these sources have the "Don't use Production Names" custom parameter set to true
         // (or the ufo2ft equivalent "useProductionNames" lib key set to false).
