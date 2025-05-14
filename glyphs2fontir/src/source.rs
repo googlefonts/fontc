@@ -25,7 +25,7 @@ use fontir::{
 };
 use glyphs_reader::{
     glyphdata::{Category, Subcategory},
-    Font, InstanceType,
+    Font, InstanceType, Layer,
 };
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
@@ -875,10 +875,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         trace!("Generate IR for '{}'", self.glyph_name.as_str());
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
-
         let static_metadata = context.static_metadata.get();
         let axes = &static_metadata.all_source_axes;
-
         let global_metrics = context.global_metrics.get();
 
         let glyph = font
@@ -888,88 +886,29 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 
         let mut ir_glyph = ir::GlyphBuilder::new(self.glyph_name.clone());
         ir_glyph.emit_to_binary = glyph.export;
-
         ir_glyph.codepoints.extend(glyph.unicode.iter().copied());
-
-        // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
-        let zero_width = glyph.is_nonspacing_mark();
 
         let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
 
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<Tag, HashSet<NormalizedCoord>> = HashMap::new();
-        for instance in glyph.layers.iter() {
-            // skip not-yet-supported types of layers (e.g. alternate, color, etc.)
-            if !(instance.is_master() || instance.is_intermediate()) {
+        for layer in glyph.layers.iter() {
+            if !(layer.is_master() || layer.is_intermediate()) {
                 continue;
             }
-            let master_id = instance
-                .associated_master_id
-                .as_ref()
-                .unwrap_or(&instance.layer_id);
-            let Some(master_idx) = font_info.master_indices.get(master_id) else {
-                return Err(BadGlyph::new(
-                    self.glyph_name.clone(),
-                    BadGlyphKind::MissingMaster(master_id.clone()),
-                )
-                .into());
-            };
-            let master = &font.masters[*master_idx];
-            let master_location = font_info.locations.get(&master.axes_values).unwrap();
 
-            let mut location = master_location.clone();
-            // intermediate (aka 'brace') layers can override axis values from their
-            // associated master
-            if !instance.attributes.coordinates.is_empty() {
-                for (tag, coord) in
-                    design_location(&font_info.axes, &instance.attributes.coordinates)
-                        .to_normalized(&font_info.axes)
-                        .iter()
-                {
-                    location.insert(*tag, *coord);
-                }
-            }
+            let (location, instance) = process_layer(glyph, layer, font_info, &global_metrics)?;
 
             for (tag, coord) in location.iter() {
                 axis_positions.entry(*tag).or_default().insert(*coord);
             }
-
-            // See https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/glyph.py#L359-L389
-            let local_metrics = global_metrics.at(master_location);
-            let height = instance
-                .vert_width
-                .unwrap_or_else(|| {
-                    local_metrics.os2_typo_ascender - local_metrics.os2_typo_descender
-                })
-                .into_inner();
-            let vertical_origin = instance
-                .vert_origin
-                .map(|origin| local_metrics.os2_typo_ascender - origin)
-                .unwrap_or(local_metrics.os2_typo_ascender)
-                .into_inner();
-
-            // TODO populate width and height properly
-            let (contours, components) =
-                to_ir_contours_and_components(self.glyph_name.clone(), &instance.shapes)?;
-            let glyph_instance = GlyphInstance {
-                width: if !zero_width {
-                    instance.width.into_inner()
-                } else {
-                    0.0
-                },
-                height: Some(height),
-                vertical_origin: Some(vertical_origin),
-                contours,
-                components,
-            };
-
-            ir_glyph.try_add_source(&location, glyph_instance)?;
+            ir_glyph.try_add_source(&location, instance)?;
 
             // we only care about anchors from exportable glyphs
             // https://github.com/googlefonts/fontc/issues/1397
             if glyph.export {
-                for anchor in instance.anchors.iter() {
-                    ir_anchors.add(anchor.name.as_str().into(), location.clone(), anchor.pos)?;
+                for anchor in layer.anchors.iter() {
+                    ir_anchors.add(anchor.name.clone(), location.clone(), anchor.pos)?;
                 }
             }
         }
@@ -977,13 +916,9 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         // It's helpful if glyphs are defined at default
         for axis in axes.iter() {
             let default = axis.default.to_normalized(&axis.converter);
-            let Some(positions) = axis_positions.get(&axis.tag) else {
-                return Err(BadGlyph::new(
-                    self.glyph_name.clone(),
-                    BadGlyphKind::NoAxisPosition(axis.tag),
-                )
-                .into());
-            };
+            let positions = axis_positions.get(&axis.tag).ok_or_else(|| {
+                BadGlyph::new(&self.glyph_name, BadGlyphKind::NoAxisPosition(axis.tag))
+            })?;
             check_pos(&self.glyph_name, positions, axis, &default)?;
         }
 
@@ -991,6 +926,65 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         context.glyphs.set(ir_glyph.build()?);
         Ok(())
     }
+}
+
+fn process_layer(
+    glyph: &glyphs_reader::Glyph,
+    instance: &Layer,
+    font_info: &FontInfo,
+    global_metrics: &GlobalMetrics,
+) -> Result<(NormalizedLocation, GlyphInstance), Error> {
+    // skip not-yet-supported types of layers (e.g. alternate, color, etc.)
+    let master_id = instance.master_id();
+    let master_idx = font_info.master_indices.get(master_id).ok_or_else(|| {
+        BadGlyph::new(
+            glyph.name.clone(),
+            BadGlyphKind::MissingMaster(master_id.to_owned()),
+        )
+    })?;
+    let master = &font_info.font.masters[*master_idx];
+    let master_location = font_info.locations.get(&master.axes_values).unwrap();
+
+    let mut location = master_location.clone();
+    // intermediate (aka 'brace') layers can override axis values from their
+    // associated master
+    if !instance.attributes.coordinates.is_empty() {
+        for (tag, coord) in design_location(&font_info.axes, &instance.attributes.coordinates)
+            .to_normalized(&font_info.axes)
+            .iter()
+        {
+            location.insert(*tag, *coord);
+        }
+    }
+
+    // See https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/glyph.py#L359-L389
+    let local_metrics = global_metrics.at(master_location);
+    let height = instance
+        .vert_width
+        .unwrap_or_else(|| local_metrics.os2_typo_ascender - local_metrics.os2_typo_descender)
+        .into_inner();
+    let vertical_origin = instance
+        .vert_origin
+        .map(|origin| local_metrics.os2_typo_ascender - origin)
+        .unwrap_or(local_metrics.os2_typo_ascender)
+        .into_inner();
+
+    // TODO populate width and height properly
+    let (contours, components) =
+        to_ir_contours_and_components(glyph.name.clone().into(), &instance.shapes)?;
+    let glyph_instance = GlyphInstance {
+        // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
+        width: if glyph.is_nonspacing_mark() {
+            0.0
+        } else {
+            instance.width.into_inner()
+        },
+        height: Some(height),
+        vertical_origin: Some(vertical_origin),
+        contours,
+        components,
+    };
+    Ok((location, glyph_instance))
 }
 
 #[derive(Debug)]
