@@ -108,6 +108,7 @@ pub struct CustomParameters {
     pub vhea_caret_slope_rise: Option<i64>,
     pub vhea_caret_offset: Option<i64>,
     pub meta_table: Option<MetaTableValues>,
+    pub dont_use_production_names: Option<bool>,
     // these fields are parsed via the config, but are stored
     // in the top-level `Font` struct
     pub virtual_masters: Option<Vec<BTreeMap<String, OrderedFloat<f64>>>>,
@@ -802,6 +803,9 @@ impl RawCustomParameters {
                 }
                 "meta Table" => {
                     add_and_report_issues!(meta_table, MetaTableValues::from_plist)
+                }
+                "Don't use Production Names" => {
+                    add_and_report_issues!(dont_use_production_names, Plist::as_bool)
                 }
                 // these might need to be handled? they're in the same list as
                 // the items above:

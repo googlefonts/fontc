@@ -826,11 +826,15 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let selection_flags_implicit = selection_flags_implicit(font_info_at_default);
         let selection_flags = selection_flags_explicit | selection_flags_implicit;
 
-        let postscript_names = if context.flags.contains(Flags::PRODUCTION_NAMES) {
-            postscript_names(&lib_plist)?
-        } else {
-            PostscriptNames::default()
-        };
+        let use_production_names = lib_plist
+            .get("com.github.googlei18n.ufo2ft.useProductionNames")
+            .and_then(|v| v.as_boolean())
+            .is_none_or(|v| v); // true if None or Some(true)
+
+        let postscript_names = (context.flags.contains(Flags::PRODUCTION_NAMES)
+            && use_production_names)
+            .then(|| postscript_names(&lib_plist))
+            .transpose()?;
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L360
         let italic_angle = font_info_at_default.italic_angle.unwrap_or(0.0);
@@ -2463,10 +2467,10 @@ mod tests {
 
         assert_eq!(
             static_metadata.postscript_names,
-            PostscriptNames::from_iter([(
+            Some(PostscriptNames::from_iter([(
                 GlyphName::from("manual-component"),
                 GlyphName::from("manualcomponent")
-            )]),
+            )])),
         );
     }
 
@@ -2479,7 +2483,7 @@ mod tests {
         );
 
         let static_metadata = context.static_metadata.get();
-        assert!(static_metadata.postscript_names.is_empty());
+        assert!(static_metadata.postscript_names.is_none());
     }
 
     #[test]
