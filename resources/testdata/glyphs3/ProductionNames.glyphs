@@ -20,6 +20,28 @@ width = 600;
 unicode = 65;
 },
 {
+glyphname = A_nbspace_idotless;
+layers = (
+{
+layerId = m01;
+width = 1200;
+}
+);
+metricLeft = A;
+metricRight = idotless;
+},
+{
+glyphname = A_nbspace_idotless.ss01;
+layers = (
+{
+layerId = m01;
+width = 1200;
+}
+);
+metricLeft = A_nbspace_idotless;
+metricRight = A_nbspace_idotless;
+},
+{
 glyphname = idotless;
 layers = (
 {
@@ -39,6 +61,63 @@ width = 600;
 }
 );
 unicode = 160;
+},
+{
+glyphname = "foobar-cy";
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+},
+{
+glyphname = foobarcy;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+},
+{
+glyphname = invalid_prod_name;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+production = uni99;
+},
+{
+glyphname = duplicate.1;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+production = uniF8FF;
+},
+{
+glyphname = duplicate.2;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+production = uniF8FF;
+},
+{
+glyphname = foobarcy.1;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
 }
 );
 unitsPerEm = 1000;

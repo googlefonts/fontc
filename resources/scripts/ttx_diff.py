@@ -44,10 +44,12 @@ import shutil
 import subprocess
 import sys
 import os
-import re
+import yaml
 from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
-from typing import Any, Dict, Optional, Sequence, Tuple
+from contextlib import contextmanager
+from tempfile import NamedTemporaryFile
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
 from glyphsLib import GSFont
 from fontTools.designspaceLib import DesignSpaceDocument
 from fontTools.varLib.iup import iup_delta
@@ -116,6 +118,11 @@ flags.DEFINE_float(
 )
 flags.DEFINE_bool("json", False, "print results in machine-readable JSON format")
 flags.DEFINE_string("outdir", default=None, help="directory to store generated files")
+flags.DEFINE_bool(
+    "production_names",
+    True,
+    "rename glyphs to AGL-compliant names (uniXXXX, etc.) suitable for production. Disable to see the original glyph names.",
+)
 
 
 def to_xml_string(e) -> str:
@@ -226,8 +233,6 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         fontc_bin,
         # uncomment this to compare output w/ fontmake --keep-direction
         # "--keep-direction",
-        # no longer required, still useful to get human-readable glyph names in diff
-        "--no-production-names",
         "--build-dir",
         ".",
         "-o",
@@ -235,6 +240,8 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         source,
         "--emit-debug",
     ]
+    if not FLAGS.production_names:
+        cmd.append("--no-production-names")
     build(cmd, build_dir)
 
 
@@ -255,12 +262,12 @@ def build_fontmake(source: Path, build_dir: Path):
         out_file.name,
         "--drop-implied-oncurves",
         # "--keep-direction",
-        # no longer required, still useful to get human-readable glyph names in diff
-        "--no-production-names",
         # helpful for troubleshooting
         "--debug-feature-file",
         "debug.fea",
     ]
+    if not FLAGS.production_names:
+        cmd.append("--no-production-names")
     if not variable:
         # fontmake static builds perform overlaps removal, but fontc can't do that yet.
         # Disable the filter to make the diff less noisy.
@@ -270,6 +277,63 @@ def build_fontmake(source: Path, build_dir: Path):
     cmd.append(str(source))
 
     build(cmd, build_dir)
+
+
+@contextmanager
+def modified_gftools_config(
+    cmdline: List[str], extra_args: Sequence[str]
+) -> Generator[None, None, None]:
+    """Modify the gftools config file to add extra arguments.
+
+    A temporary config file is created with the extra args added to the
+    `extraFontmakeArgs` key, and replaces the original config file in the
+    command line arguments' list, which is modified in-place.
+    The temporary file is deleted after the context manager exits.
+    If the extra_args list is empty, the context manager does nothing.
+
+    Args:
+        cmdline: The command line arguments passed to gftools. This must include
+            the path to a config.yaml file.
+        extra_args: Extra arguments to add to the config file. Can be empty.
+    """
+    if extra_args:
+        try:
+            config_idx, config_path = next(
+                (
+                    (i, arg)
+                    for i, arg in enumerate(cmdline)
+                    if arg.endswith((".yaml", ".yml"))
+                )
+            )
+        except StopIteration:
+            raise ValueError(
+                "No config file found in command line arguments. "
+                "Please provide a config.yaml file."
+            )
+
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        config["extraFontmakeArgs"] = config.get("extraFontmakeArgs", "") + " ".join(
+            extra_args
+        )
+
+        with NamedTemporaryFile(
+            mode="w",
+            prefix="config_",
+            suffix=".yaml",
+            delete=False,
+            dir=Path(config_path).parent,
+        ) as f:
+            yaml.dump(config, f)
+        temp_path = Path(f.name)
+
+        cmdline[config_idx] = temp_path
+
+    yield
+
+    if extra_args:
+        temp_path.unlink()
 
 
 def run_gftools(
@@ -296,7 +360,12 @@ def run_gftools(
     if fontc_bin is not None:
         cmd += ["--experimental-fontc", fontc_bin]
 
-    build(cmd, None)
+    extra_args = []
+    if not FLAGS.production_names:
+        extra_args.append("--no-production-names")
+
+    with modified_gftools_config(cmd, extra_args):
+        build(cmd, None)
 
     # return a concise error if gftools produces != one output
     contents = list(out_dir.iterdir()) if out_dir.exists() else list()
