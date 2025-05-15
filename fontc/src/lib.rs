@@ -3044,7 +3044,22 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
         let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
         let gsub = result.font().gsub().unwrap();
+        let features = gsub.feature_list().unwrap();
+        let all_referenced_lookups = features
+            .feature_records()
+            .iter()
+            .flat_map(|rec| {
+                rec.feature(features.offset_data())
+                    .unwrap()
+                    .lookup_list_indices()
+            })
+            .map(|x| x.get())
+            .collect::<HashSet<_>>();
         let lookups = gsub.lookup_list().unwrap();
+
+        // these are the lookups referenced via the feature substitution
+        assert!(!all_referenced_lookups.contains(&0));
+        assert!(!all_referenced_lookups.contains(&1));
 
         let one = lookups.lookups().get(0).unwrap();
         let two = lookups.lookups().get(1).unwrap();
@@ -3067,46 +3082,78 @@ mod tests {
     }
 
     #[test]
-    fn designspace_rvrn() {
+    fn rvrn_aalt_lookup_order() {
+        // do we put lookups in the right order?
+        // - aalt goes at the front
+        // - except for rvrn, which goes at the front-front
         let _ = env_logger::builder().is_test(true).try_init();
         let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
         let gsub = result.font().gsub().unwrap();
         let feature_list = gsub.feature_list().unwrap();
-        assert_eq!(feature_list.feature_records().len(), 2);
-        assert_eq!(feature_list.feature_records()[1].feature_tag(), "rvrn");
-        assert!(feature_list.feature_records()[1]
+        assert_eq!(feature_list.feature_records().len(), 3);
+        assert_eq!(
+            feature_list
+                .feature_records()
+                .iter()
+                .map(|rec| rec.feature_tag())
+                .collect::<Vec<_>>(),
+            ["aalt", "rvrn", "salt"]
+        );
+        let salt = feature_list.feature_records()[2];
+        let aalt = feature_list.feature_records()[0];
+        // rvrn is 0 & 1
+        // aalt is 2
+        // salt is 3
+        assert_eq!(
+            aalt.feature(feature_list.offset_data())
+                .unwrap()
+                .lookup_list_indices(),
+            [2]
+        );
+        assert_eq!(
+            salt.feature(feature_list.offset_data())
+                .unwrap()
+                .lookup_list_indices(),
+            [3]
+        );
+    }
+
+    #[test]
+    fn designspace_rvrn_feature_variation() {
+        // do we create a feature variation record, pointing at the expected values?
+        let _ = env_logger::builder().is_test(true).try_init();
+        let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
+        let gsub = result.font().gsub().unwrap();
+        let feature_list = gsub.feature_list().unwrap();
+        let rvrn_idx = feature_list
+            .feature_records()
+            .iter()
+            .position(|rec| rec.feature_tag() == "rvrn")
+            .unwrap();
+        let rvrn = feature_list.feature_records()[rvrn_idx];
+        // base rvrn feature has no lookups
+        assert!(rvrn
             .feature(feature_list.offset_data())
             .unwrap()
             .lookup_list_indices()
             .is_empty());
 
-        let liga = feature_list.feature_records()[0];
-        assert_eq!(liga.feature_tag(), "liga");
-        // the liga look should have index 1, with rvrn at index 0
-        assert_eq!(
-            liga.feature(feature_list.offset_data())
-                .unwrap()
-                .lookup_list_indices(),
-            [2] // we have two rvrn lookups at the front
-        );
-
         let featvars = gsub.feature_variations().unwrap().unwrap();
         let var_rec = featvars.feature_variation_records()[0];
-        let thingie = var_rec
+        let feature_substitution = var_rec
             .feature_table_substitution(featvars.offset_data())
             .unwrap()
             .unwrap();
 
-        let feat = thingie.substitutions()[0]
-            .alternate_feature(thingie.offset_data())
+        let rvrn_sub_record = feature_substitution.substitutions()[0];
+
+        assert_eq!(rvrn_sub_record.feature_index() as usize, rvrn_idx);
+        let rvrn_replacement = rvrn_sub_record
+            .alternate_feature(feature_substitution.offset_data())
             .unwrap();
 
-        // rvrn lookup goes ahead of liga
-        assert_eq!(feat.lookup_list_indices(), [0, 1]);
-        let lookup_list = gsub.lookup_list().unwrap();
-        assert_eq!(lookup_list.lookup_count(), 3);
-        let liga_lookup = lookup_list.lookups().get(2).unwrap();
-        assert!(matches!(liga_lookup, SubstitutionLookup::Ligature(_)));
+        // rvrn at the front
+        assert_eq!(rvrn_replacement.lookup_list_indices(), [0, 1]);
     }
 
     #[test]
