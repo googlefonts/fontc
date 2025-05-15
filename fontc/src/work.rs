@@ -172,8 +172,8 @@ impl AnyAccess {
 }
 
 pub enum AnyContext {
-    Fe(FeContext),
-    Be(BeContext),
+    Fe(Box<FeContext>),
+    Be(Box<BeContext>),
 }
 
 impl AnyContext {
@@ -185,12 +185,16 @@ impl AnyContext {
         write_access: AnyAccess,
     ) -> AnyContext {
         match work_id {
-            AnyWorkId::Be(..) => {
-                AnyContext::Be(be_root.copy_for_work(read_access.to_be(), write_access.to_be()))
-            }
-            AnyWorkId::Fe(..) => {
-                AnyContext::Fe(fe_root.copy_for_work(read_access.to_fe(), write_access.to_fe()))
-            }
+            AnyWorkId::Be(..) => AnyContext::Be(
+                be_root
+                    .copy_for_work(read_access.to_be(), write_access.to_be())
+                    .into(),
+            ),
+            AnyWorkId::Fe(..) => AnyContext::Fe(
+                fe_root
+                    .copy_for_work(read_access.to_fe(), write_access.to_fe())
+                    .into(),
+            ),
             AnyWorkId::InternalTiming(..) => {
                 panic!("Should never create a context for internal timing")
             }
