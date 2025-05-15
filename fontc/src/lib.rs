@@ -3036,6 +3036,37 @@ mod tests {
     }
 
     #[test]
+    fn feature_variation_lookup_order_like_fontmake() {
+        // when we generate lookups from designspace rules, we want the lookups
+        // (in the lookup list) to be ordered like fontmake, which means sorted
+        // by the glyphnames of the rules, not the GIDs.
+
+        let _ = env_logger::builder().is_test(true).try_init();
+        let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
+        let gsub = result.font().gsub().unwrap();
+        let lookups = gsub.lookup_list().unwrap();
+
+        let one = lookups.lookups().get(0).unwrap();
+        let two = lookups.lookups().get(1).unwrap();
+
+        fn get_first_gid_or_die_trying(lookup: SubstitutionLookup) -> GlyphId16 {
+            match lookup {
+                SubstitutionLookup::Single(sub) => match sub.subtables().get(0).unwrap() {
+                    SingleSubst::Format1(sub) => sub.coverage().unwrap().iter().next().unwrap(),
+                    SingleSubst::Format2(sub) => sub.coverage().unwrap().iter().next().unwrap(),
+                },
+                _ => panic!("oops"),
+            }
+        }
+
+        let one_gid = get_first_gid_or_die_trying(one);
+        let two_gid = get_first_gid_or_die_trying(two);
+
+        assert_eq!(result.get_gid("bar"), one_gid);
+        assert_eq!(result.get_gid("plus"), two_gid);
+    }
+
+    #[test]
     fn designspace_rvrn() {
         let _ = env_logger::builder().is_test(true).try_init();
         let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
@@ -3049,13 +3080,14 @@ mod tests {
             .lookup_list_indices()
             .is_empty());
 
+        let liga = feature_list.feature_records()[0];
+        assert_eq!(liga.feature_tag(), "liga");
         // the liga look should have index 1, with rvrn at index 0
         assert_eq!(
-            feature_list.feature_records()[0]
-                .feature(feature_list.offset_data())
+            liga.feature(feature_list.offset_data())
                 .unwrap()
                 .lookup_list_indices(),
-            [1]
+            [2] // we have two rvrn lookups at the front
         );
 
         let featvars = gsub.feature_variations().unwrap().unwrap();
@@ -3070,29 +3102,11 @@ mod tests {
             .unwrap();
 
         // rvrn lookup goes ahead of liga
-        assert_eq!(feat.lookup_list_indices(), [0]);
+        assert_eq!(feat.lookup_list_indices(), [0, 1]);
         let lookup_list = gsub.lookup_list().unwrap();
-        assert_eq!(lookup_list.lookup_count(), 2);
-        let liga_lookup = lookup_list.lookups().get(1).unwrap();
+        assert_eq!(lookup_list.lookup_count(), 3);
+        let liga_lookup = lookup_list.lookups().get(2).unwrap();
         assert!(matches!(liga_lookup, SubstitutionLookup::Ligature(_)));
-        let rvrn_lookup = lookup_list.lookups().get(0).unwrap();
-        let SubstitutionLookup::Single(rvrn_lookup) = rvrn_lookup else {
-            panic!("wrong lookup type: {rvrn_lookup:?}");
-        };
-
-        assert_eq!(rvrn_lookup.sub_table_count(), 1);
-        let SingleSubst::Format1(subtable) = rvrn_lookup.subtables().get(0).unwrap() else {
-            panic!("wrong subtable type");
-        };
-
-        assert_eq!(
-            subtable.coverage().unwrap().iter().collect::<Vec<_>>(),
-            [result.get_gid("bar")]
-        );
-        assert_eq!(
-            subtable.delta_glyph_id(),
-            result.get_gid("plus").to_u16() as i16 - result.get_gid("bar").to_u16() as i16
-        );
     }
 
     #[test]
