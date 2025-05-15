@@ -3268,4 +3268,46 @@ mod tests {
         // this would have been 'uni00A0' if glyphs had been renamed to production names
         assert_eq!(post.glyph_name(result.get_gid("nbspace")), Some("nbspace"));
     }
+
+    #[test]
+    fn glyphs2_bracket_glyphs() {
+        let result = TestCompile::compile_source("glyphs2/WorkSans-minimal-bracketlayer.glyphs");
+        let glyphs = result
+            .fe_context
+            .glyph_order
+            .get()
+            .names()
+            .filter(|g| g.as_str().contains("colonsign"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            vec![
+                GlyphName::new("colonsign"),
+                GlyphName::new("colonsign.BRACKET.varAlt01")
+            ],
+            glyphs
+        );
+    }
+
+    #[test]
+    fn glyphs3_bracket_glyphs() {
+        let result = TestCompile::compile_source("glyphs3/LibreFranklin-bracketlayer.glyphs");
+        let glyphs = result
+            .fe_context
+            .glyph_order
+            .get()
+            .names()
+            .filter(|g| g.as_str().contains("peso") || g.as_str().contains("yen"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            vec![
+                GlyphName::new("peso"),
+                GlyphName::new("peso.BRACKET.varAlt01"),
+                GlyphName::new("yen"),
+                GlyphName::new("yen.BRACKET.varAlt01")
+            ],
+            glyphs
+        );
+    }
 }
