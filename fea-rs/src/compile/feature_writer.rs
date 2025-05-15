@@ -423,6 +423,13 @@ impl MergeCtx<'_> {
             .iter()
             .partition(|(id, _)| matches!(id, LookupId::ExternalFrontOfList(_)));
 
+        if !start.is_empty() {
+            // if we're adding items at the start, we need to go and remap all the existing ids
+            for old_id in 0..self.all_lookups.next_gsub_id().to_raw() {
+                id_map.insert(LookupId::Gsub(old_id), LookupId::Gsub(old_id + start.len()));
+            }
+        }
+
         self.all_lookups
             .splice_gsub(0, start.iter().map(|(_, lk)| (*lk).clone()));
 

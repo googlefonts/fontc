@@ -1,0 +1,5 @@
+# for testing that rvrn lookups go to front of list,
+# we need to have at least one other lookup
+feature liga {
+    sub bar plus by plus;
+} liga;

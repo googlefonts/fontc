@@ -969,6 +969,7 @@ mod tests {
             vec![
                 Tag::new(b"GDEF"),
                 Tag::new(b"GPOS"),
+                Tag::new(b"GSUB"),
                 Tag::new(b"HVAR"),
                 Tag::new(b"MVAR"),
                 Tag::new(b"OS/2"),
@@ -3040,13 +3041,22 @@ mod tests {
         let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
         let gsub = result.font().gsub().unwrap();
         let feature_list = gsub.feature_list().unwrap();
-        assert_eq!(feature_list.feature_records().len(), 1);
-        assert_eq!(feature_list.feature_records()[0].feature_tag(), "rvrn");
-        assert!(feature_list.feature_records()[0]
+        assert_eq!(feature_list.feature_records().len(), 2);
+        assert_eq!(feature_list.feature_records()[1].feature_tag(), "rvrn");
+        assert!(feature_list.feature_records()[1]
             .feature(feature_list.offset_data())
             .unwrap()
             .lookup_list_indices()
             .is_empty());
+
+        // the liga look should have index 1, with rvrn at index 0
+        assert_eq!(
+            feature_list.feature_records()[0]
+                .feature(feature_list.offset_data())
+                .unwrap()
+                .lookup_list_indices(),
+            [1]
+        );
 
         let featvars = gsub.feature_variations().unwrap().unwrap();
         let var_rec = featvars.feature_variation_records()[0];
@@ -3059,16 +3069,19 @@ mod tests {
             .alternate_feature(thingie.offset_data())
             .unwrap();
 
+        // rvrn lookup goes ahead of liga
         assert_eq!(feat.lookup_list_indices(), [0]);
         let lookup_list = gsub.lookup_list().unwrap();
-        assert_eq!(lookup_list.lookup_count(), 1);
-        let lookup = lookup_list.lookups().get(0).unwrap();
-        let SubstitutionLookup::Single(lookup) = lookup else {
-            panic!("wrong lookup type: {lookup:?}");
+        assert_eq!(lookup_list.lookup_count(), 2);
+        let liga_lookup = lookup_list.lookups().get(1).unwrap();
+        assert!(matches!(liga_lookup, SubstitutionLookup::Ligature(_)));
+        let rvrn_lookup = lookup_list.lookups().get(0).unwrap();
+        let SubstitutionLookup::Single(rvrn_lookup) = rvrn_lookup else {
+            panic!("wrong lookup type: {rvrn_lookup:?}");
         };
 
-        assert_eq!(lookup.sub_table_count(), 1);
-        let SingleSubst::Format1(subtable) = lookup.subtables().get(0).unwrap() else {
+        assert_eq!(rvrn_lookup.sub_table_count(), 1);
+        let SingleSubst::Format1(subtable) = rvrn_lookup.subtables().get(0).unwrap() else {
             panic!("wrong subtable type");
         };
 
