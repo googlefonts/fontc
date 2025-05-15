@@ -69,15 +69,16 @@ pub(super) fn make_gsub_feature_variations(
         conditional_subs.push((region, substitutions));
     }
     let substitutions = overlay_feature_variations(conditional_subs);
-    let (lookups, lookup_map) = make_substitution_lookups(&substitutions);
+    let (lookups, lookup_map) = make_substitution_lookups(&substitutions, glyph_order);
 
     let conditions = substitutions
         .iter()
         .map(|(cond_set, subs)| {
-            let indices = subs
+            let mut indices = subs
                 .iter()
                 .map(|subs| lookup_map.get(&subs).copied().unwrap())
                 .collect::<Vec<_>>();
+            indices.sort();
             let condition_set = cond_set.to_condition_set(static_metadata);
             (condition_set, indices)
         })
@@ -92,11 +93,12 @@ pub(super) fn make_gsub_feature_variations(
 
 /// returns a vec of lookups, and a map from the raw lookups to the indices in the vec.
 #[allow(clippy::type_complexity)] // ugly but only used in one place
-fn make_substitution_lookups(
-    subs: &[(NBox, Vec<BTreeMap<GlyphId16, GlyphId16>>)],
+fn make_substitution_lookups<'a>(
+    subs: &'a [(NBox, Vec<BTreeMap<GlyphId16, GlyphId16>>)],
+    glyph_order: &GlyphOrder, // used to match fonttools sort order for generated lookups
 ) -> (
     Vec<PendingLookup<SingleSubBuilder>>,
-    HashMap<&BTreeMap<GlyphId16, GlyphId16>, usize>,
+    HashMap<&'a BTreeMap<GlyphId16, GlyphId16>, usize>,
 ) {
     fn make_single_sub_lookup(
         subs: &BTreeMap<GlyphId16, GlyphId16>,
@@ -111,7 +113,20 @@ fn make_substitution_lookups(
     let mut lookups = Vec::new();
     let mut lookup_map = HashMap::new();
 
-    for sub_rules in subs.iter().flat_map(|(_, subs)| subs.iter()) {
+    // we create an intermediate vec here so we can match fontmake's sorting for
+    // the lookups, which is based on glyph name.
+
+    let mut sub_rules = subs.iter().flat_map(|x| x.1.iter()).collect::<Vec<_>>();
+    sub_rules.sort_by_key(|subs| {
+        subs.iter().next().map(|(g1, g2)| {
+            (
+                glyph_order.glyph_name(g1.to_u16() as _),
+                glyph_order.glyph_name(g2.to_u16() as _),
+            )
+        })
+    });
+    sub_rules.dedup();
+    for sub_rules in sub_rules {
         if lookup_map.contains_key(sub_rules) {
             continue;
         }
