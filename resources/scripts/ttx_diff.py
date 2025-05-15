@@ -626,21 +626,18 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
             f"INFO fixed {spent} off-by-ones in {container} (budget {off_by_one_budget})"
         )
 
-
-# the order of lookups in a feature's lookuplist do not matter;
-# fontc always has them in sorted order but fontmake doesn't, so sort them
-def sort_fontmake_feature_lookups(ttx):
-    gpos = ttx.find("GPOS")
-    if gpos is None:
+# In various cases we have a list of indices where the order doesn't matter;
+# often fontc sorts these and fontmake doesn't, so this lets us sort them there.
+def sort_indices(ttx, table_tag: str, container_xpath: str, el_name: str):
+    table = ttx.find(table_tag)
+    if table is None:
         return
-    features = gpos.xpath("//Feature")
-
-    for feature in features:
-        # the first item is 'Feature', the second always a comment
-        lookup_indices = [el for el in feature.iter() if el.tag == "LookupListIndex"]
-        values = sorted(int(v.attrib["value"]) for v in lookup_indices)
-        for i, lookup_index in enumerate(lookup_indices):
-            lookup_index.attrib["value"] = str(values[i])
+    containers = table.xpath(f"{container_xpath}")
+    for container in containers:
+        indices = [el for el in container.iter() if el.tag == el_name]
+        values = sorted(int(v.attrib["value"]) for v in indices)
+        for i, index in enumerate(indices):
+            index.attrib["value"] = str(values[i])
 
 
 # the same sets can be assigned different ids, but normalizer
@@ -882,7 +879,9 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         for el in fontmake.xpath("//GlyphOrder/GlyphID")
     }
 
-    sort_fontmake_feature_lookups(fontmake)
+    sort_indices(fontmake, "GPOS", "//Feature", "LookupListIndex")
+    sort_indices(fontmake, "GSUB", "//LangSys", "FeatureIndex")
+    sort_indices(fontmake, "GSUB", "//DefaultLangSys", "FeatureIndex")
     reorder_contextual_class_based_rules(fontmake, "GSUB", fontmake_glyph_map)
     reorder_contextual_class_based_rules(fontmake, "GPOS", fontmake_glyph_map)
     for ttx in (fontc, fontmake):
