@@ -1,4 +1,5 @@
-[![CI Build Status](https://github.com/googlefonts/fontc/workflows/Continuous%20integration/badge.svg?branch=main)](https://github.com/googlefonts/fontc/actions/workflows/rust.yml?query=workflow%3AContinuous+integration+branch%3Amain)
+[![CI Status](https://github.com/googlefonts/fontations/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/googlefonts/fontc/actions/workflows/rust.yml?query=branch%3Amain)
+[![Crates.io](https://img.shields.io/crates/v/fontc.svg)](https://crates.io/crates/fontc)
 
 # fontc
 
