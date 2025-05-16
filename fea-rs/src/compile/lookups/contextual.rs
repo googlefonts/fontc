@@ -430,9 +430,12 @@ impl ContextRule {
             .enumerate()
             .flat_map(|(i, (_, lookups))| {
                 lookups.iter().map(move |lookup_id| {
-                    let lookup_id = in_gpos
-                        .then(|| lookup_id.to_gpos_id_or_die())
-                        .unwrap_or_else(|| lookup_id.to_gsub_id_or_die());
+                    let lookup_id = if in_gpos {
+                        lookup_id.to_gpos_id_or_die()
+                    } else {
+                        lookup_id.to_gsub_id_or_die()
+                    };
+
                     write_layout::SequenceLookupRecord::new(i.try_into().unwrap(), lookup_id)
                 })
             })
