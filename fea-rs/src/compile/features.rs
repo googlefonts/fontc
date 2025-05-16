@@ -172,15 +172,24 @@ impl AllFeatures {
             }
         }
 
+        // aalt lookups get inserted at the front, but behind rvrn lookups:
+        let insert_point = self
+            .features
+            .iter()
+            .filter(|(k, _)| k.feature == "rvrn")
+            .flat_map(|(_, feat)| feat.iter_ids())
+            .collect::<HashSet<_>>()
+            .len();
+
         // now we have all of our referenced lookups, and so we want to use that
         // to construct the aalt lookups:
         let aalt_lookup_indices =
-            all_lookups.insert_aalt_lookups(std::mem::take(&mut aalt.all_alts));
+            all_lookups.insert_aalt_lookups(insert_point, std::mem::take(&mut aalt.all_alts));
 
         // now adjust our previously set lookupids, which are now invalid,
         // since we're going to insert the aalt lookups in front of the lookup
         // list:
-        self.adjust_gsub_ids(aalt_lookup_indices.len());
+        self.adjust_gsub_ids(insert_point, aalt_lookup_indices.len());
         // finally add the aalt feature to all the default language systems
         for sys in default_lang_systems.iter() {
             self.insert(sys.to_feature_key(tags::AALT), aalt_lookup_indices.clone());
@@ -203,9 +212,9 @@ impl AllFeatures {
     // when adding the aalt feature we insert a bunch of lookups at the front
     // of the lookup list, which requires us to adjust any previously-computed
     // lookup ids
-    fn adjust_gsub_ids(&mut self, delta: usize) {
+    fn adjust_gsub_ids(&mut self, from: usize, delta: usize) {
         for feat in self.features.values_mut() {
-            feat.adjust_gsub_ids(delta)
+            feat.adjust_gsub_ids(from, delta)
         }
     }
 
@@ -267,10 +276,11 @@ impl AllFeatures {
 }
 
 impl FeatureLookups {
-    fn adjust_gsub_ids(&mut self, delta: usize) {
+    fn adjust_gsub_ids(&mut self, from: usize, delta: usize) {
         self.base
             .iter_mut()
             .chain(self.variations.values_mut().flat_map(|x| x.iter_mut()))
+            .filter(|id| id.to_raw() >= from)
             .for_each(|id| id.adjust_if_gsub(delta));
     }
 

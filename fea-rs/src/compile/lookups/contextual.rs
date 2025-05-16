@@ -313,10 +313,10 @@ impl ContextBuilder {
     }
 
     // for adjusting ids if we insert aalt at the front
-    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
+    pub(crate) fn bump_all_lookup_ids(&mut self, from: usize, by: usize) {
         self.rules
             .iter_mut()
-            .for_each(|rule| rule.bump_all_lookup_ids(by))
+            .for_each(|rule| rule.bump_all_lookup_ids(from, by))
     }
 
     /// Iterate all referenced lookups
@@ -401,10 +401,11 @@ impl SubContextBuilder {
 }
 
 impl ContextRule {
-    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
+    pub(crate) fn bump_all_lookup_ids(&mut self, from: usize, by: usize) {
         for (_, lookups) in &mut self.context {
             lookups
                 .iter_mut()
+                .filter(|x| x.to_raw() >= from)
                 .for_each(|x| *x = LookupId::Gsub(x.to_raw() + by))
         }
     }
@@ -687,13 +688,13 @@ impl ChainContextBuilder {
 }
 
 impl SubContextBuilder {
-    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
-        self.0.bump_all_lookup_ids(by)
+    pub(crate) fn bump_all_lookup_ids(&mut self, from: usize, by: usize) {
+        self.0.bump_all_lookup_ids(from, by)
     }
 }
 impl SubChainContextBuilder {
-    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
-        self.0 .0.bump_all_lookup_ids(by)
+    pub(crate) fn bump_all_lookup_ids(&mut self, from: usize, by: usize) {
+        self.0 .0.bump_all_lookup_ids(from, by)
     }
 
     pub(crate) fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {

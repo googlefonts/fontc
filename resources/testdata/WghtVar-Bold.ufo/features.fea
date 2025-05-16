@@ -1,5 +1,11 @@
-# for testing that rvrn lookups go to front of list,
-# we need to have at least one other lookup
-feature liga {
-    sub bar plus by plus;
-} liga;
+# aalt lookups are supposed to go "at the front" but it goes after rvrn
+feature aalt {
+    feature salt;
+    sub plus by bar;
+} aalt;
+
+
+# salt lookup should end up at the end
+feature salt {
+    sub bar by plus;
+} salt;

@@ -589,6 +589,7 @@ impl AllLookups {
 
     pub(crate) fn insert_aalt_lookups(
         &mut self,
+        insert_point: usize,
         all_alts: HashMap<GlyphId16, Vec<GlyphId16>>,
     ) -> Vec<LookupId> {
         let mut single = SingleSubBuilder::default();
@@ -617,7 +618,9 @@ impl AllLookups {
         });
 
         let lookups = one.into_iter().chain(two).collect::<Vec<_>>();
-        let lookup_ids = (0..lookups.len()).map(LookupId::Gsub).collect();
+        let lookup_ids = (insert_point..insert_point + lookups.len())
+            .map(LookupId::Gsub)
+            .collect();
 
         // now we need to insert these lookups at the front of our gsub lookups,
         // and bump all of their ids:
@@ -626,16 +629,15 @@ impl AllLookups {
             SubstitutionLookup::Contextual(lookup) => lookup
                 .subtables
                 .iter_mut()
-                .for_each(|sub| sub.bump_all_lookup_ids(lookups.len())),
+                .for_each(|sub| sub.bump_all_lookup_ids(insert_point, lookups.len())),
             SubstitutionLookup::ChainedContextual(lookup) => lookup
                 .subtables
                 .iter_mut()
-                .for_each(|sub| sub.bump_all_lookup_ids(lookups.len())),
+                .for_each(|sub| sub.bump_all_lookup_ids(insert_point, lookups.len())),
             _ => (),
         });
 
-        let prev_lookups = std::mem::replace(&mut self.gsub, lookups);
-        self.gsub.extend(prev_lookups);
+        self.gsub.splice(insert_point..insert_point, lookups);
 
         lookup_ids
     }
@@ -713,6 +715,14 @@ impl LookupId {
     pub(crate) fn adjust_if_gsub(&mut self, value: usize) {
         if let LookupId::Gsub(idx) = self {
             *idx += value;
+        }
+        if matches!(
+            self,
+            LookupId::ExternalGsub(_)
+                | LookupId::ExternalGpos(_)
+                | LookupId::ExternalFrontOfList(_)
+        ) {
+            panic!("external ids should be resolved before adjustment")
         }
     }
 
