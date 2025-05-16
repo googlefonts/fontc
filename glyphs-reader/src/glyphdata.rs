@@ -620,6 +620,21 @@ impl GlyphData {
         }
 
         let (base_name, suffix) = self.split_glyph_suffix(name);
+
+        // if we have a production name for the base name, append the suffix and go home
+        let prod_name_with_suffix = suffix.and_then(|_| {
+            self.query_no_synthesis(base_name, None)
+                .and_then(|result| result.production_name)
+                .map(|base_prod_name| {
+                    let mut prod_name = base_prod_name.to_string();
+                    append_suffix(&mut prod_name, suffix);
+                    prod_name.as_str().into()
+                })
+        });
+        if prod_name_with_suffix.is_some() {
+            return prod_name_with_suffix;
+        }
+
         let base_names = self
             .split_ligature_glyph_name(base_name)
             .unwrap_or_else(|| vec![base_name.into()]);
@@ -1221,6 +1236,7 @@ mod tests {
         case("bau-kannada", Some("uni0CAC0CCC")),
         case("EnglandFlag", Some("u1F3F4E0067E0062E0065E006EE0067E007F")),
         case("pileOfPoo", Some("u1F4A9")),
+        case("lam_alef-ar.fina", Some("uni06440627.fina")),
     )]
     fn query_production_names(name: &str, expected: Option<&str>) {
         let production_name = GlyphData::new(None)
@@ -1276,6 +1292,8 @@ mod tests {
         case("brevecomb_acutecomb", "uni03060301"),
         case("brevecomb_acutecomb.case", "uni03060301.case"),
         case("pileOfPoo_pileOfPoo", "u1F4A9_u1F4A9"),
+        case("pileOfPoo.ss01", "u1F4A9.ss01"),
+        case("lam_alef-ar.fina.ss02", "uni06440627.fina.ss02"),
     )]
     fn synthetic_production_names(name: &str, expected: &str) {
         let production_name = GlyphData::new(None)
