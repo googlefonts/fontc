@@ -11,13 +11,13 @@ use write_fonts::types::Tag;
 
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
-    types::GlyphName,
+    types::{Axes, GlyphName},
 };
 use fontir::{
     error::{BadGlyph, Error, PathConversionError},
-    ir::{self, GlyphPathBuilder},
+    ir::{self, Condition, ConditionSet, GlyphPathBuilder},
 };
-use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
+use glyphs_reader::{Component, FeatureSnippet, Font, Layer, NodeType, Path, Shape};
 
 pub(crate) fn to_ir_contours_and_components(
     glyph_name: GlyphName,
@@ -269,6 +269,8 @@ pub(crate) struct FontInfo {
     /// Axes values => location for every instance and master
     pub locations: HashMap<Vec<OrderedFloat<f64>>, NormalizedLocation>,
     pub axes: fontdrasil::types::Axes,
+    /// Maps the bracket glyph name to the parent glyph
+    pub bracket_glyphs: HashMap<GlyphName, GlyphName>,
 }
 
 impl TryFrom<Font> for FontInfo {
@@ -317,14 +319,72 @@ impl TryFrom<Font> for FontInfo {
             })
             .collect();
 
+        let mut bracket_glyphs = HashMap::new();
+        for glyph in font.glyphs.values() {
+            for bracket_glyph_name in glyph.bracket_glyph_names(&axes).map(|(gn, _)| gn) {
+                bracket_glyphs.insert(bracket_glyph_name, GlyphName::new(&glyph.name));
+            }
+        }
+
         Ok(FontInfo {
             font,
             master_indices,
             master_positions,
             locations,
             axes,
+            bracket_glyphs,
         })
     }
+}
+
+/// A glyph that produces bracket glyphs.
+///
+/// Meant to be implemented exclusively by [`glyphs_reader::Glyph`]
+/// Exists here because glyphs_reader doesn't know about IR concepts.
+pub(crate) trait BracketGlyphs {
+    /// The bracket glyphs that need to be produced for this glyph
+    ///
+    /// See <https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f/Lib/glyphsLib/builder/bracket_layers.py#L127>
+    fn bracket_glyph_names(&self, axes: &Axes) -> impl Iterator<Item = (GlyphName, Vec<&Layer>)>;
+}
+
+impl BracketGlyphs for &glyphs_reader::Glyph {
+    fn bracket_glyph_names(&self, axes: &Axes) -> impl Iterator<Item = (GlyphName, Vec<&Layer>)> {
+        let mut seen_sets = HashMap::new();
+        for layer in &self.bracket_layers {
+            let condition_set = get_bracket_info(layer, axes);
+            let next_alt = seen_sets.len() + 1;
+            seen_sets
+                .entry(condition_set)
+                .or_insert_with(|| {
+                    (
+                        smol_str::format_smolstr!("{}.BRACKET.varAlt{next_alt:02}", self.name,)
+                            .into(),
+                        Vec::new(),
+                    )
+                })
+                .1
+                .push(layer);
+        }
+        seen_sets.into_values()
+    }
+}
+
+/// <https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/classes.py#L3947>
+fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
+    assert!(
+        !layer.attributes.axis_rules.is_empty(),
+        "all bracket layers have axis rules"
+    );
+
+    axes.iter()
+        .zip(&layer.attributes.axis_rules)
+        .map(|(axis, rule)| {
+            let min = rule.min.map(|v| DesignCoord::new(v as f64));
+            let max = rule.max.map(|v| DesignCoord::new(v as f64));
+            Condition::new(axis.tag, min, max)
+        })
+        .collect()
 }
 
 #[cfg(test)]
