@@ -8,17 +8,17 @@ use chrono::DateTime;
 use log::{debug, trace, warn};
 
 use fontdrasil::{
-    coords::{DesignCoord, NormalizedCoord, NormalizedLocation},
+    coords::{NormalizedCoord, NormalizedLocation},
     orchestration::{Access, AccessBuilder, Work},
     types::{Axes, GlyphName},
 };
 use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
     ir::{
-        self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, GdefCategories,
-        GlobalMetric, GlobalMetrics, GlyphAnchors, GlyphInstance, GlyphOrder, KernGroup, KernSide,
-        KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance,
-        PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
+        self, AnchorBuilder, Color, ColorPalettes, GdefCategories, GlobalMetric, GlobalMetrics,
+        GlyphAnchors, GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups,
+        KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance, PostscriptNames,
+        StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -38,7 +38,9 @@ use write_fonts::{
     types::{NameId, Tag},
 };
 
-use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
+use crate::toir::{
+    design_location, to_ir_contours_and_components, to_ir_features, BracketGlyphs, FontInfo,
+};
 
 #[derive(Debug, Clone)]
 pub struct GlyphsIrSource {
@@ -50,16 +52,21 @@ impl GlyphsIrSource {
         &self,
         glyph_name: GlyphName,
         font_info: Arc<FontInfo>,
-    ) -> Result<GlyphIrWork, Error> {
-        let glyph = font_info.font.glyphs.get(glyph_name.as_str()).unwrap();
-        let bracket_glyphs = bracket_glyph_names(glyph, &font_info.axes)
-            .map(|(name, _)| name)
-            .collect();
-        Ok(GlyphIrWork {
-            glyph_name,
-            font_info,
-            bracket_glyphs,
-        })
+    ) -> Result<Box<IrWork>, Error> {
+        // This is either a glyph directly declared in the font or a bracket glyph
+        if font_info.font.glyphs.contains_key(glyph_name.as_str()) {
+            return Ok(Box::new(GlyphIrWork {
+                glyph_name,
+                font_info,
+            }));
+        };
+        if font_info.bracket_glyphs.contains_key(&glyph_name) {
+            return Ok(Box::new(BracketGlyphIrWork {
+                glyph_name,
+                font_info,
+            }));
+        }
+        Err(Error::NoGlyphForName(glyph_name))
     }
 }
 
@@ -88,11 +95,17 @@ impl Source for GlyphsIrSource {
 
     fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, fontir::error::Error> {
         let mut work: Vec<Box<IrWork>> = Vec::new();
-        for glyph_name in self.font_info.font.glyph_order.iter().cloned() {
-            work.push(Box::new(self.create_work_for_one_glyph(
-                glyph_name.into(),
-                self.font_info.clone(),
-            )?));
+        // We need IrWork for all the glyphs directly declared in the source
+        // *and* all the bracket glyphs that emerge from those glyphs
+        for glyph_name in self
+            .font_info
+            .font
+            .glyph_order
+            .iter()
+            .map(GlyphName::new)
+            .chain(self.font_info.bracket_glyphs.keys().cloned())
+        {
+            work.push(self.create_work_for_one_glyph(glyph_name, self.font_info.clone())?);
         }
         Ok(work)
     }
@@ -322,22 +335,41 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .dont_use_production_names
             .unwrap_or(false);
 
+        let mut bracket_glyph_names = font
+            .glyphs
+            .values()
+            .filter_map(|g| {
+                let bracket_glyphs = g
+                    .bracket_glyph_names(&axes)
+                    .map(|(gn, _)| gn)
+                    .collect::<Vec<_>>();
+                if !bracket_glyphs.is_empty() {
+                    Some((GlyphName::new(&g.name), bracket_glyphs))
+                } else {
+                    None
+                }
+            })
+            .collect::<HashMap<GlyphName, _>>();
+
         let postscript_names =
             if context.flags.contains(Flags::PRODUCTION_NAMES) && !dont_use_prod_names {
                 let mut postscript_names = PostscriptNames::default();
                 for glyph in font.glyphs.values() {
                     if let Some(production_name) = glyph.production_name.as_ref() {
-                        postscript_names
-                            .insert(glyph.name.clone().into(), production_name.clone().into());
+                        let glyph_name = GlyphName::new(&glyph.name);
+                        postscript_names.insert(glyph_name.clone(), production_name.clone().into());
 
-                        for (bracket_name, _) in bracket_glyph_names(glyph, &axes) {
-                            let bracket_suffix = bracket_name
-                                .as_str()
-                                .strip_prefix(glyph.name.as_str())
-                                .expect("glyph name always a prefix of bracket glyph name");
-                            let bracket_prod_name =
-                                smol_str::format_smolstr!("{production_name}{bracket_suffix}");
-                            postscript_names.insert(bracket_name, bracket_prod_name.into());
+                        if let Some(bracket_glyph_names) = bracket_glyph_names.get(&glyph_name) {
+                            for bracket_glyph_name in bracket_glyph_names {
+                                let bracket_suffix = bracket_glyph_name
+                                    .as_str()
+                                    .strip_prefix(glyph.name.as_str())
+                                    .expect("glyph name always a prefix of bracket glyph name");
+                                let bracket_prod_name =
+                                    smol_str::format_smolstr!("{production_name}{bracket_suffix}");
+                                postscript_names
+                                    .insert(bracket_glyph_name.clone(), bracket_prod_name.into());
+                            }
                         }
                     }
                 }
@@ -447,53 +479,25 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             }
         }
 
-        let glyph_order = font.glyph_order.iter().cloned().map(Into::into).collect();
+        let mut glyph_order = font
+            .glyph_order
+            .iter()
+            .map(GlyphName::new)
+            .collect::<GlyphOrder>();
+        for i in (0..glyph_order.len()).rev() {
+            let glyph_name = glyph_order.glyph_name(i).unwrap();
+            let Some(bracket_glyph_names) = bracket_glyph_names.remove(glyph_name) else {
+                continue;
+            };
+            for bracket_glyph_name in bracket_glyph_names {
+                glyph_order.insert_sorted(bracket_glyph_name);
+            }
+        }
 
         context.static_metadata.set(static_metadata);
         context.preliminary_glyph_order.set(glyph_order);
         Ok(())
     }
-}
-
-// group bracket layers by the glyph they'll end up in
-pub(crate) fn bracket_glyph_names<'a>(
-    glyph: &'a glyphs_reader::Glyph,
-    axes: &Axes,
-) -> impl Iterator<Item = (GlyphName, Vec<&'a Layer>)> {
-    //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f/Lib/glyphsLib/builder/bracket_layers.py#L127
-    let mut seen_sets = HashMap::new();
-    for layer in &glyph.bracket_layers {
-        let condition_set = get_bracket_info(layer, axes);
-        let next_alt = seen_sets.len() + 1;
-        seen_sets
-            .entry(condition_set)
-            .or_insert_with(|| {
-                (
-                    smol_str::format_smolstr!("{}.BRACKET.varAlt{next_alt:02}", glyph.name,).into(),
-                    Vec::new(),
-                )
-            })
-            .1
-            .push(layer);
-    }
-    seen_sets.into_values()
-}
-
-// https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/classes.py#L3947
-fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
-    assert!(
-        !layer.attributes.axis_rules.is_empty(),
-        "all bracket layers have axis rules"
-    );
-
-    axes.iter()
-        .zip(&layer.attributes.axis_rules)
-        .map(|(axis, rule)| {
-            let min = rule.min.map(|v| DesignCoord::new(v as f64));
-            let max = rule.max.map(|v| DesignCoord::new(v as f64));
-            Condition::new(axis.tag, min, max)
-        })
-        .collect()
 }
 
 fn make_glyph_categories(font: &Font) -> GdefCategories {
@@ -890,8 +894,19 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 #[derive(Debug)]
 struct GlyphIrWork {
     glyph_name: GlyphName,
-    bracket_glyphs: Vec<GlyphName>,
     font_info: Arc<FontInfo>,
+}
+
+#[derive(Debug)]
+struct BracketGlyphIrWork {
+    glyph_name: GlyphName,
+    font_info: Arc<FontInfo>,
+}
+
+impl BracketGlyphIrWork {
+    fn parent_glyph_name(&self) -> &GlyphName {
+        self.font_info.bracket_glyphs.get(&self.glyph_name).unwrap()
+    }
 }
 
 fn check_pos(
@@ -912,6 +927,107 @@ fn check_pos(
     Ok(())
 }
 
+impl Work<Context, WorkId, Error> for BracketGlyphIrWork {
+    fn id(&self) -> WorkId {
+        WorkId::Glyph(self.glyph_name.clone())
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        // We need access to the glyph whence we emerged (bracket glyphs come from non-bracket glyphs)
+        // and it's anchors
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlobalMetrics)
+            .specific_instance(WorkId::Glyph(self.parent_glyph_name().clone()))
+            .specific_instance(WorkId::Anchor(self.parent_glyph_name().clone()))
+            .build()
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .specific_instance(WorkId::Glyph(self.glyph_name.clone()))
+            .specific_instance(WorkId::Anchor(self.glyph_name.clone()))
+            .build()
+    }
+
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::Anchor(self.glyph_name.clone())]
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        trace!("Generate IR for '{}'", self.glyph_name.as_str());
+
+        let font_info = self.font_info.as_ref();
+        let font = &font_info.font;
+        let static_metadata = context.static_metadata.get();
+        let axes = &static_metadata.all_source_axes;
+        let global_metrics = context.global_metrics.get();
+
+        let parent_glyph_ir = context.get_glyph(self.parent_glyph_name());
+        let parent_glyph_anchors = context.get_anchor(self.parent_glyph_name());
+        let parent_glyph_src = font
+            .glyphs
+            .get(parent_glyph_ir.name.as_str())
+            .ok_or_else(|| Error::NoGlyphForName(parent_glyph_ir.name.clone()))?;
+
+        for (name, layers) in parent_glyph_src.bracket_glyph_names(axes) {
+            // TODO: this is a bit silly, we should know which layers to process from prior work
+            if name != self.glyph_name {
+                continue;
+            }
+            let mut seen_master_ids = HashSet::new();
+            let mut bracket_builder = ir::GlyphBuilder::new(name.clone());
+            bracket_builder.emit_to_binary = parent_glyph_ir.emit_to_binary;
+            for bracket_layer in layers {
+                seen_master_ids.insert(bracket_layer.master_id());
+                let (loc, instance) =
+                    process_layer(parent_glyph_src, bracket_layer, font_info, &global_metrics)?;
+                bracket_builder.try_add_source(&loc, instance)?;
+            }
+
+            // If any master locations don't have a bracket layer, reuse the
+            // base layer for that location. See "Switching Only One Master" at
+            // https://glyphsapp.com/tutorials/alternating-glyph-shapes.
+            //
+            // - see also https://github.com/googlefonts/glyphsLib/blob/c4db6b981d5/Lib/glyphsLib/builder/bracket_layers.py#L78
+
+            for missing_master_id in font
+                .masters
+                .iter()
+                .map(|m| m.id.as_str())
+                .filter(|id| !seen_master_ids.contains(id))
+            {
+                // we use ids instead of locations because in glyphs2 you can
+                // have the funny default axes in the instances
+                if let Some(layer) = parent_glyph_src
+                    .layers
+                    .iter()
+                    .find(|l| l.master_id() == missing_master_id)
+                {
+                    let (loc, instance) =
+                        process_layer(parent_glyph_src, layer, font_info, &global_metrics)?;
+                    bracket_builder.try_add_source(&loc, instance)?;
+                }
+            }
+
+            let mut bracket_glyph = bracket_builder.build()?;
+            update_bracket_glyph_components(&mut bracket_glyph, font, axes);
+
+            context.glyphs.set(bracket_glyph);
+            let bracket_anchors = GlyphAnchors {
+                glyph_name: name,
+                anchors: parent_glyph_anchors.anchors.clone(),
+            };
+            context.anchors.set(bracket_anchors);
+        }
+
+        //TODO: swap components in bracket layers if base glyph also has bracket layers
+        //TODO: expand kerning to brackets
+
+        Ok(())
+    }
+}
+
 impl Work<Context, WorkId, Error> for GlyphIrWork {
     fn id(&self) -> WorkId {
         WorkId::Glyph(self.glyph_name.clone())
@@ -925,22 +1041,14 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
     }
 
     fn write_access(&self) -> Access<WorkId> {
-        let mut builder = AccessBuilder::new()
+        AccessBuilder::new()
             .specific_instance(WorkId::Glyph(self.glyph_name.clone()))
-            .specific_instance(WorkId::Anchor(self.glyph_name.clone()));
-        for name in self.bracket_glyphs.iter() {
-            builder = builder.specific_instance(WorkId::Glyph(name.clone()));
-            builder = builder.specific_instance(WorkId::Anchor(name.clone()));
-        }
-        builder.build()
+            .specific_instance(WorkId::Anchor(self.glyph_name.clone()))
+            .build()
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
-        self.bracket_glyphs
-            .iter()
-            .flat_map(|name| [WorkId::Glyph(name.clone()), WorkId::Anchor(name.clone())])
-            .chain(Some(WorkId::Anchor(self.glyph_name.clone())))
-            .collect()
+        vec![WorkId::Anchor(self.glyph_name.clone())]
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
@@ -985,8 +1093,6 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             }
         }
 
-        let anchors = ir_anchors.build()?;
-
         // It's helpful if glyphs are defined at default
         for axis in axes.iter() {
             let default = axis.default.to_normalized(&axis.converter);
@@ -996,56 +1102,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             check_pos(&self.glyph_name, positions, axis, &default)?;
         }
 
-        for (name, layers) in bracket_glyph_names(glyph, axes) {
-            let mut seen_master_ids = HashSet::new();
-            let mut bracket_builder = ir::GlyphBuilder::new(name.clone());
-            bracket_builder.emit_to_binary = ir_glyph.emit_to_binary;
-            for bracket_layer in layers {
-                seen_master_ids.insert(bracket_layer.master_id());
-                let (loc, instance) =
-                    process_layer(glyph, bracket_layer, font_info, &global_metrics)?;
-                bracket_builder.try_add_source(&loc, instance)?;
-            }
-
-            // If any master locations don't have a bracket layer, reuse the
-            // base layer for that location. See "Switching Only One Master" at
-            // https://glyphsapp.com/tutorials/alternating-glyph-shapes.
-            //
-            // - see also https://github.com/googlefonts/glyphsLib/blob/c4db6b981d5/Lib/glyphsLib/builder/bracket_layers.py#L78
-
-            for missing_master_id in font
-                .masters
-                .iter()
-                .map(|m| m.id.as_str())
-                .filter(|id| !seen_master_ids.contains(id))
-            {
-                // we use ids instead of locations because in glyphs2 you can
-                // have the funny default axes in the instances
-                if let Some(layer) = glyph
-                    .layers
-                    .iter()
-                    .find(|l| l.master_id() == missing_master_id)
-                {
-                    let (loc, instance) = process_layer(glyph, layer, font_info, &global_metrics)?;
-                    bracket_builder.try_add_source(&loc, instance)?;
-                }
-            }
-
-            let mut bracket_glyph = bracket_builder.build()?;
-            update_bracket_glyph_components(&mut bracket_glyph, font, axes);
-
-            context.glyphs.set(bracket_glyph);
-            let bracket_anchors = GlyphAnchors {
-                glyph_name: name,
-                anchors: anchors.anchors.clone(),
-            };
-            context.anchors.set(bracket_anchors);
-        }
-
-        //TODO: swap components in bracket layers if base glyph also has bracket layers
-        //TODO: expand kerning to brackets
-
-        context.anchors.set(anchors);
+        context.anchors.set(ir_anchors.build()?);
         context.glyphs.set(ir_glyph.build()?);
         Ok(())
     }
@@ -1119,7 +1176,7 @@ fn update_bracket_glyph_components(glyph: &mut ir::Glyph, font: &Font, axes: &Ax
         .iter()
         .flat_map(|comp| {
             let raw_glyph = font.glyphs.get(comp.base.as_str())?;
-            for (component_bracket_name, _) in bracket_glyph_names(raw_glyph, axes) {
+            for (component_bracket_name, _) in raw_glyph.bracket_glyph_names(axes) {
                 let suffix = component_bracket_name.as_str().rsplit_once('.').unwrap().1;
                 if comp.base.as_str().ends_with(suffix) {
                     return Some((comp.base.clone(), component_bracket_name));
@@ -1416,9 +1473,9 @@ mod tests {
         );
     }
 
-    fn build_static_metadata(glyphs_file: PathBuf) -> (impl Source, Context) {
+    fn build_static_metadata(glyphs_file: &Path) -> (impl Source, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
-        let (source, context) = context_for(&glyphs_file);
+        let (source, context) = context_for(glyphs_file);
         let task_context = context.copy_for_work(
             Access::None,
             AccessBuilder::new()
@@ -1434,7 +1491,7 @@ mod tests {
         (source, context)
     }
 
-    fn build_global_metrics(glyphs_file: PathBuf) -> (impl Source, Context) {
+    fn build_global_metrics(glyphs_file: &Path) -> (impl Source, Context) {
         let (source, context) = build_static_metadata(glyphs_file);
         let task_context = context.copy_for_work(
             Access::Variant(WorkId::StaticMetadata),
@@ -1448,7 +1505,7 @@ mod tests {
         (source, context)
     }
 
-    fn build_kerning(glyphs_file: PathBuf) -> (impl Source, Context) {
+    fn build_kerning(glyphs_file: &Path) -> (impl Source, Context) {
         let (source, context) = build_static_metadata(glyphs_file);
 
         // static metadata includes preliminary glyph order; just copy it to be the final one
@@ -1488,7 +1545,7 @@ mod tests {
     fn glyph_user_locations() {
         let glyph_name: GlyphName = "space".into();
         let (source, context) =
-            build_global_metrics(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
+            build_global_metrics(&glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         build_glyphs(&source, &context).unwrap(); // we dont' care about geometry
 
         let static_metadata = context.static_metadata.get();
@@ -1522,7 +1579,7 @@ mod tests {
     fn glyph_normalized_locations() {
         let glyph_name: GlyphName = "space".into();
         let (source, context) =
-            build_global_metrics(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
+            build_global_metrics(&glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         build_glyphs(&source, &context).unwrap();
 
         let mut expected_locations = HashSet::new();
@@ -1552,7 +1609,8 @@ mod tests {
 
     #[test]
     fn read_axis_location() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar_AxisLocation.glyphs"));
+        let (_, context) =
+            build_static_metadata(&glyphs3_dir().join("WghtVar_AxisLocation.glyphs"));
         let wght = &context.static_metadata.get().all_source_axes;
         assert_eq!(1, wght.len());
         let wght = wght.iter().next().unwrap();
@@ -1575,7 +1633,7 @@ mod tests {
 
     #[test]
     fn captures_single_codepoints() {
-        let (source, context) = build_global_metrics(glyphs2_dir().join("WghtVar.glyphs"));
+        let (source, context) = build_global_metrics(&glyphs2_dir().join("WghtVar.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("hyphen".into()));
         assert_eq!(HashSet::from([0x002d]), glyph.codepoints);
@@ -1584,7 +1642,7 @@ mod tests {
     #[test]
     fn captures_single_codepoints_unquoted_dec() {
         let (source, context) =
-            build_global_metrics(glyphs3_dir().join("Unicode-UnquotedDec.glyphs"));
+            build_global_metrics(&glyphs3_dir().join("Unicode-UnquotedDec.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("name".into()));
         assert_eq!(HashSet::from([182]), glyph.codepoints);
@@ -1593,7 +1651,7 @@ mod tests {
     #[test]
     fn captures_multiple_codepoints_unquoted_dec() {
         let (source, context) =
-            build_global_metrics(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
+            build_global_metrics(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("name".into()));
         assert_eq!(HashSet::from([1619, 1764]), glyph.codepoints);
@@ -1620,7 +1678,7 @@ mod tests {
     // It's so minimal it's a good test
     #[test]
     fn loads_minimal() {
-        let (_, context) = build_static_metadata(glyphs2_dir().join("NotDef.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs2_dir().join("NotDef.glyphs"));
         assert_eq!(1000, context.static_metadata.get().units_per_em);
     }
 
@@ -1832,7 +1890,7 @@ mod tests {
 
     #[test]
     fn captures_global_metrics() {
-        let (_, context) = build_global_metrics(glyphs3_dir().join("WghtVar.glyphs"));
+        let (_, context) = build_global_metrics(&glyphs3_dir().join("WghtVar.glyphs"));
         let static_metadata = &context.static_metadata.get();
         let default_metrics = context
             .global_metrics
@@ -1876,7 +1934,7 @@ mod tests {
 
     #[test]
     fn captures_abs_of_win_descent() {
-        let (_, context) = build_global_metrics(glyphs3_dir().join("MVAR.glyphs"));
+        let (_, context) = build_global_metrics(&glyphs3_dir().join("MVAR.glyphs"));
         let static_metadata = &context.static_metadata.get();
         let default_metrics = context
             .global_metrics
@@ -1887,7 +1945,7 @@ mod tests {
 
     #[test]
     fn captures_vendor_id() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("TheBestNames.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("TheBestNames.glyphs"));
         assert_eq!(
             Tag::new(b"RODS"),
             context.static_metadata.get().misc.vendor_id
@@ -1899,7 +1957,7 @@ mod tests {
         let glyph_name = "i";
         let expected = "M302,584 Q328,584 346,602 Q364,620 364,645 Q364,670 346,687.5 Q328,705 302,705 Q276,705 257.5,687.5 Q239,670 239,645 Q239,620 257.5,602 Q276,584 302,584 Z";
         for test_dir in &[glyphs2_dir(), glyphs3_dir()] {
-            let (source, context) = build_global_metrics(test_dir.join("QCurve.glyphs"));
+            let (source, context) = build_global_metrics(&test_dir.join("QCurve.glyphs"));
             build_glyphs(&source, &context).unwrap();
             let glyph = context.get_glyph(glyph_name);
             let default_instance = glyph
@@ -1916,7 +1974,7 @@ mod tests {
     // when XXXX and wdth are point axes that won't be in fvar. Oswald was hitting this.
     #[test]
     fn kern_positions_on_live_axes() {
-        let (_, context) = build_kerning(glyphs2_dir().join("KernImplicitAxes.glyphs"));
+        let (_, context) = build_kerning(&glyphs2_dir().join("KernImplicitAxes.glyphs"));
         let kerns = context.kerning_at.all();
         assert!(!kerns.is_empty());
 
@@ -1932,7 +1990,7 @@ mod tests {
     fn captures_anchors() {
         let base_name = "A".into();
         let mark_name = "macroncomb".into();
-        let (source, context) = build_global_metrics(glyphs3_dir().join("WghtVar_Anchors.glyphs"));
+        let (source, context) = build_global_metrics(&glyphs3_dir().join("WghtVar_Anchors.glyphs"));
         build_glyphs(&source, &context).unwrap();
 
         let base = context.anchors.get(&WorkId::Anchor(base_name));
@@ -1956,7 +2014,8 @@ mod tests {
 
     #[test]
     fn reads_skip_export_glyphs() {
-        let (source, context) = build_global_metrics(glyphs3_dir().join("WghtVar_NoExport.glyphs"));
+        let (source, context) =
+            build_global_metrics(&glyphs3_dir().join("WghtVar_NoExport.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let is_export = |name: &str| {
             context
@@ -1976,20 +2035,20 @@ mod tests {
 
     #[test]
     fn reads_fs_type_0x0000() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("fstype_0x0000.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("fstype_0x0000.glyphs"));
         assert_eq!(Some(0), context.static_metadata.get().misc.fs_type);
     }
 
     #[test]
     fn reads_fs_type_0x0104() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("fstype_0x0104.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("fstype_0x0104.glyphs"));
         assert_eq!(Some(0x104), context.static_metadata.get().misc.fs_type);
     }
 
     #[test]
     fn captures_global_metrics_from_font() {
         let (_, context) =
-            build_global_metrics(glyphs3_dir().join("GlobalMetrics_font_customParameters.glyphs"));
+            build_global_metrics(&glyphs3_dir().join("GlobalMetrics_font_customParameters.glyphs"));
         let static_metadata = &context.static_metadata.get();
         let default_metrics = context
             .global_metrics
@@ -2090,7 +2149,7 @@ mod tests {
     #[test]
     fn glyphs_specific_default_underline_metrics() {
         // 1290 upem in honor of soft-type-jacquard/sources/Jacquard24Charted.glyphs which used to not match fontmake
-        let (_, context) = build_global_metrics(glyphs3_dir().join("WghtVar1290upem.glyphs"));
+        let (_, context) = build_global_metrics(&glyphs3_dir().join("WghtVar1290upem.glyphs"));
         let metrics = context.global_metrics.get();
         let underline_pos = unique_value(&metrics, GlobalMetric::UnderlinePosition);
         let underline_thickness = unique_value(&metrics, GlobalMetric::UnderlineThickness);
@@ -2099,7 +2158,7 @@ mod tests {
 
     #[test]
     fn glyphs_specific_default_height_metrics() {
-        let (_, context) = build_global_metrics(glyphs3_dir().join("WghtVar1290upem.glyphs"));
+        let (_, context) = build_global_metrics(&glyphs3_dir().join("WghtVar1290upem.glyphs"));
         let metrics = context.global_metrics.get();
         let x_height = unique_value(&metrics, GlobalMetric::XHeight);
         let cap_height = unique_value(&metrics, GlobalMetric::CapHeight);
@@ -2114,7 +2173,7 @@ mod tests {
     #[test]
     fn captures_panose() {
         // short parameter name
-        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanose.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("WghtVarPanose.glyphs"));
         assert_eq!(
             Some([2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into()),
             context.static_metadata.get().misc.panose
@@ -2124,7 +2183,7 @@ mod tests {
     #[test]
     fn captures_panose_long() {
         // long parameter name
-        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanoseLong.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("WghtVarPanoseLong.glyphs"));
         assert_eq!(
             Some([2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into()),
             context.static_metadata.get().misc.panose
@@ -2134,7 +2193,7 @@ mod tests {
     #[test]
     fn captures_panose_precedence() {
         // both parameters; value under short name should be preferred
-        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanoseBoth.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("WghtVarPanoseBoth.glyphs"));
         assert_eq!(
             Some([2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into()),
             context.static_metadata.get().misc.panose
@@ -2144,12 +2203,12 @@ mod tests {
     #[test]
     fn capture_unsual_params() {
         // both parameters; value under short name should be preferred
-        let (_, context) = build_static_metadata(glyphs3_dir().join("UnusualCustomParams.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("UnusualCustomParams.glyphs"));
         let meta = context.static_metadata.get();
         assert_eq!(meta.misc.lowest_rec_ppm, 7);
 
         // some of these end up as metrics:
-        let (_, context) = build_global_metrics(glyphs3_dir().join("UnusualCustomParams.glyphs"));
+        let (_, context) = build_global_metrics(&glyphs3_dir().join("UnusualCustomParams.glyphs"));
         let metrics = context.global_metrics.get();
         assert_eq!(unique_value(&metrics, GlobalMetric::CaretOffset), 2.);
         assert_eq!(unique_value(&metrics, GlobalMetric::CaretSlopeRise), 1.);
@@ -2159,7 +2218,7 @@ mod tests {
     // <https://github.com/googlefonts/fontc/issues/1157>
     #[test]
     fn identifies_italicness() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("An-Italic.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("An-Italic.glyphs"));
         let static_metadata = context.static_metadata.get();
         let selection_flags = static_metadata.misc.selection_flags;
         let name = |id: NameId| {
@@ -2199,14 +2258,14 @@ mod tests {
 
     #[test]
     fn prefer_vendorid_in_properties() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("MultipleVendorIDs.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("MultipleVendorIDs.glyphs"));
         let static_metadata = context.static_metadata.get();
         assert_eq!(Tag::new(b"RGHT"), static_metadata.misc.vendor_id);
     }
 
     #[test]
     fn prefer_default_master_panose() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("MultiplePanose.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("MultiplePanose.glyphs"));
         let static_metadata = context.static_metadata.get();
         assert_eq!(
             Some(Panose::from([2u8, 3, 4, 5, 6, 7, 8, 9, 10, 11])),
@@ -2215,7 +2274,7 @@ mod tests {
     }
 
     fn fixed_pitch_of(glyphs_file: PathBuf) -> Option<bool> {
-        let (_, context) = build_static_metadata(glyphs_file);
+        let (_, context) = build_static_metadata(&glyphs_file);
         let static_metadata = context.static_metadata.get();
         static_metadata.misc.is_fixed_pitch
     }
@@ -2235,7 +2294,7 @@ mod tests {
 
     #[test]
     fn invalid_vendor_id_no_crashy() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("InvalidVendorID.glyphs"));
+        let (_, context) = build_static_metadata(&glyphs3_dir().join("InvalidVendorID.glyphs"));
         let static_metadata = context.static_metadata.get();
         assert_eq!(Tag::new(b"NONE"), static_metadata.misc.vendor_id);
     }
@@ -2244,7 +2303,7 @@ mod tests {
     fn which_panose_shall_i_get() {
         // Learned from GSC that panose can live in instances
         let (_, context) =
-            build_static_metadata(glyphs3_dir().join("WghtVarInstancePanose.glyphs"));
+            build_static_metadata(&glyphs3_dir().join("WghtVarInstancePanose.glyphs"));
         let static_metadata = context.static_metadata.get();
         assert_eq!(
             Some(Panose::from([4, 5, 6, 7, 8, 9, 10, 11, 12, 13])),
@@ -2254,55 +2313,41 @@ mod tests {
 
     #[test]
     fn mark_width_zeroing() {
-        let (source, context) = build_global_metrics(glyphs3_dir().join("SpacingMark.glyphs"));
+        let (source, context) = build_global_metrics(&glyphs3_dir().join("SpacingMark.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let glyph = context.get_glyph("descender-cy");
         // this is a spacing-combining mark, so we shouldn't zero it's width
         assert!(glyph.default_instance().width != 0.0);
     }
 
-    fn make_glyph_order<'a>(raw: impl IntoIterator<Item = &'a str>) -> GlyphOrder {
-        raw.into_iter().map(GlyphName::from).collect()
-    }
-
-    fn get_glyph_names(context: &Context) -> Vec<GlyphName> {
-        let mut result: Vec<_> = context
-            .glyphs
-            .all()
-            .iter()
-            .map(|g| g.1.name.clone())
-            .collect();
-        result.sort();
-        result
+    fn assert_preliminary_glyph_order(glyphs_file: &Path, expected: &[&str]) {
+        let (source, context) = build_global_metrics(glyphs_file);
+        build_glyphs(&source, &context).unwrap();
+        let glyph_order = context.preliminary_glyph_order.get();
+        assert_eq!(
+            expected,
+            glyph_order.names().map(|g| g.as_str()).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn bracket_glyph_names_v2() {
-        let (source, context) =
-            build_global_metrics(glyphs2_dir().join("WorkSans-minimal-bracketlayer.glyphs"));
-        build_glyphs(&source, &context).unwrap();
-        let prelim_order = context.preliminary_glyph_order.get();
-        assert_eq!(prelim_order.as_ref(), &make_glyph_order(["colonsign"]));
-        let final_glyphs = get_glyph_names(&context);
-        assert_eq!(final_glyphs, ["colonsign", "colonsign.BRACKET.varAlt01"]);
+        assert_preliminary_glyph_order(
+            &glyphs2_dir().join("WorkSans-minimal-bracketlayer.glyphs"),
+            &["colonsign", "colonsign.BRACKET.varAlt01"],
+        );
     }
 
     #[test]
     fn bracket_glyph_names_v3() {
-        let (source, context) =
-            build_global_metrics(glyphs3_dir().join("LibreFranklin-bracketlayer.glyphs"));
-        build_glyphs(&source, &context).unwrap();
-        let prelim_order = context.preliminary_glyph_order.get();
-        assert_eq!(prelim_order.as_ref(), &make_glyph_order(["peso", "yen"]));
-        let final_glyphs = get_glyph_names(&context);
-        assert_eq!(
-            final_glyphs,
-            [
+        assert_preliminary_glyph_order(
+            &glyphs3_dir().join("LibreFranklin-bracketlayer.glyphs"),
+            &[
                 "peso",
                 "peso.BRACKET.varAlt01",
                 "yen",
-                "yen.BRACKET.varAlt01"
-            ]
+                "yen.BRACKET.varAlt01",
+            ],
         );
     }
 }
