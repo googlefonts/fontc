@@ -471,7 +471,7 @@ fn write_debug_glyph_order(context: &Context, glyphs: &GlyphOrder) {
 fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &str) {
     if !context.flags.contains(Flags::EMIT_DEBUG) {
         if is_error {
-            warn!("Debug fea not written for '{why}' because --emit_debug is off");
+            warn!("Debug fea not written for '{why}' because --emit-debug is off");
         }
         return;
     }
