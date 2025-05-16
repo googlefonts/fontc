@@ -335,7 +335,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .dont_use_production_names
             .unwrap_or(false);
 
-        let mut bracket_glyph_names = font
+        let bracket_glyph_names = font
             .glyphs
             .values()
             .filter_map(|g| {
@@ -484,14 +484,12 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .iter()
             .map(GlyphName::new)
             .collect::<GlyphOrder>();
-        for i in (0..glyph_order.len()).rev() {
-            let glyph_name = glyph_order.glyph_name(i).unwrap();
-            let Some(bracket_glyph_names) = bracket_glyph_names.remove(glyph_name) else {
-                continue;
-            };
-            for bracket_glyph_name in bracket_glyph_names {
-                glyph_order.insert_sorted(bracket_glyph_name);
-            }
+
+        for bracket_glyph_name in bracket_glyph_names
+            .into_values()
+            .flat_map(|names| names.into_iter())
+        {
+            glyph_order.insert_sorted(bracket_glyph_name);
         }
 
         context.static_metadata.set(static_metadata);
