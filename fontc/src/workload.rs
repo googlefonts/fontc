@@ -34,6 +34,7 @@ use fontbe::{
     os2::create_os2_work,
     post::create_post_work,
     stat::create_stat_work,
+    vertical_metrics::create_vertical_metrics_work,
 };
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -189,6 +190,7 @@ impl Workload {
         workload.add_skippable_feature_work(create_mark_work());
         workload.add(create_metric_and_limit_work());
         workload.add(create_hvar_work());
+        workload.add(create_vertical_metrics_work());
         workload.add(create_mvar_work());
         workload.add(create_name_work());
         workload.add(create_os2_work());
