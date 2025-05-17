@@ -483,16 +483,13 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         let mut todo = VecDeque::new();
         for glyph_name in new_glyph_order.names() {
             let glyph = original_glyphs.get(glyph_name).unwrap();
-            let consistent_components = glyph.has_consistent_components();
-            let components_and_contours = has_components_and_contours(glyph);
-            trace!("{glyph_name} consistent components? {consistent_components} contours and components? {components_and_contours}");
-            if !consistent_components {
+            if !glyph.has_consistent_components() {
                 debug!(
                     "Coalescing '{glyph_name}' into a simple glyph because \
                         component 2x2s vary across the designspace"
                 );
                 todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
-            } else if components_and_contours {
+            } else if has_components_and_contours(glyph) {
                 if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
                     todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
                     debug!(

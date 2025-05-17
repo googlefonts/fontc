@@ -104,10 +104,6 @@ impl GlyphOrder {
         self.0.insert(name)
     }
 
-    pub fn insert_sorted(&mut self, name: GlyphName) -> bool {
-        self.0.insert_sorted(name).1
-    }
-
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

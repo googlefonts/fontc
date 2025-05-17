@@ -330,7 +330,7 @@ pub struct LayerAttributes {
     pub coordinates: Vec<OrderedFloat<f64>>,
     pub color: bool,
     // in the same order that axes are declared for the font
-    pub axis_rules: Vec<AxisRule>,
+    axis_rules: Vec<AxisRule>,
 }
 
 #[derive(Clone, Default, FromPlist, Debug, PartialEq, Hash)]

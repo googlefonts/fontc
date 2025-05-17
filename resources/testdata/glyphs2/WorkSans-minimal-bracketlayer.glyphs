@@ -23,15 +23,12 @@ Tag = wght;
 fontMaster = (
 {
 id = "1C7CD022-87C7-4E11-B656-E47B18819458";
-weightValue = 16;
 },
 {
 id = "4A17B37A-CBFD-40E5-9E02-2080A0E1F76C";
-weightValue = 80;
 },
 {
 id = "99EB5860-B45A-4B60-BB0B-F826C8F71D42";
-weightValue = 230;
 }
 );
 glyphs = (

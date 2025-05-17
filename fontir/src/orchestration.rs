@@ -509,9 +509,4 @@ impl Context {
         let id = WorkId::Glyph(name.into());
         self.glyphs.get(&id)
     }
-
-    pub fn get_anchor(&self, name: impl Into<GlyphName>) -> Arc<ir::GlyphAnchors> {
-        let id = WorkId::Anchor(name.into());
-        self.anchors.get(&id)
-    }
 }
