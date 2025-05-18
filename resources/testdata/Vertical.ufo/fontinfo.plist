@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>ascender</key>
+    <integer>1234</integer>
+    <key>descender</key>
+    <integer>-567</integer>
+    <key>openTypeOS2Selection</key>
+    <array>
+      <integer>7</integer>
+    </array>
+    <key>openTypeOS2TypoAscender</key>
+    <integer>2345</integer>
+    <key>openTypeOS2TypoDescender</key>
+    <integer>-678</integer>
+    <key>openTypeOS2TypoLineGap</key>
+    <integer>901</integer>
+    <key>openTypeVheaCaretOffset</key>
+    <integer>250</integer>
+    <key>openTypeVheaCaretSlopeRise</key>
+    <integer>500</integer>
+    <key>openTypeVheaCaretSlopeRun</key>
+    <integer>1000</integer>
+    <key>openTypeVheaVertTypoAscender</key>
+    <integer>3456</integer>
+    <key>openTypeVheaVertTypoDescender</key>
+    <integer>-789</integer>
+    <key>openTypeVheaVertTypoLineGap</key>
+    <integer>12</integer>
+  </dict>
+</plist>
