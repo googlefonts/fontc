@@ -765,9 +765,9 @@ impl RawCustomParameters {
                 "hheaAscender" => add_and_report_issues!(hhea_ascender, Plist::as_i64),
                 "hheaDescender" => add_and_report_issues!(hhea_descender, Plist::as_i64),
                 "hheaLineGap" => add_and_report_issues!(hhea_line_gap, Plist::as_i64),
-                "vheaAscender" => add_and_report_issues!(vhea_ascender, Plist::as_i64),
-                "vheaDescender" => add_and_report_issues!(vhea_descender, Plist::as_i64),
-                "vheaLineGap" => add_and_report_issues!(vhea_line_gap, Plist::as_i64),
+                "vheaVertAscender" => add_and_report_issues!(vhea_ascender, Plist::as_i64),
+                "vheaVertDescender" => add_and_report_issues!(vhea_descender, Plist::as_i64),
+                "vheaVertLineGap" => add_and_report_issues!(vhea_line_gap, Plist::as_i64),
                 "underlineThickness" => {
                     add_and_report_issues!(underline_thickness, Plist::as_ordered_f64)
                 }
