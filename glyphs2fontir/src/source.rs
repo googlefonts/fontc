@@ -2338,4 +2338,26 @@ mod tests {
             ["peso.BRACKET.varAlt01"]
         );
     }
+
+    #[test]
+    fn bracket_glyph_anchors() {
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("LibreFranklin-bracketlayer.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+
+        let peso_anchors = context.get_anchor("peso");
+
+        // non-bracket layer anchor x-positions are all even numbers
+        assert!(peso_anchors
+            .anchors
+            .iter()
+            .all(|a| a.default_pos().x as u32 % 2 == 0));
+
+        // bracket anchor x positions are odd numbers
+        let peso_bracket_anchors = context.get_anchor("peso.BRACKET.varAlt01");
+        assert!(peso_bracket_anchors
+            .anchors
+            .iter()
+            .all(|a| a.default_pos().x as u32 % 2 == 1));
+    }
 }
