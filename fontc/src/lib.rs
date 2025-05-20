@@ -3268,4 +3268,33 @@ mod tests {
         // this would have been 'uni00A0' if glyphs had been renamed to production names
         assert_eq!(post.glyph_name(result.get_gid("nbspace")), Some("nbspace"));
     }
+
+    #[test]
+    fn bracket_glyphs() {
+        let result = TestCompile::compile_source("glyphs3/LibreFranklin-bracketlayer.glyphs");
+        let glyph_data = result.glyphs();
+        let glyphs = glyph_data.read();
+        assert_eq!(glyphs.len(), 5); // includes NOTDEF
+
+        let yen_gid = result.get_gid("yen");
+        let yen_bracket_gid = result.get_gid("yen.BRACKET.varAlt01");
+        let peso_gid = result.get_gid("peso");
+        let peso_bracket_gid = result.get_gid("peso.BRACKET.varAlt01");
+
+        assert!([yen_gid, yen_bracket_gid, peso_gid, peso_bracket_gid]
+            .iter()
+            .all(|gid| *gid > GlyphId16::NOTDEF));
+
+        fn get_component_gids(glyph: &glyf::Glyph) -> Vec<GlyphId16> {
+            match glyph {
+                glyf::Glyph::Simple(_) => panic!("not a composite"),
+                glyf::Glyph::Composite(g) => g.components().map(|comp| comp.glyph).collect(),
+            }
+        }
+
+        let yen = glyphs[yen_gid.to_u32() as usize].as_ref().unwrap();
+        let yen_bracket = glyphs[yen_bracket_gid.to_u32() as usize].as_ref().unwrap();
+        assert_eq!(get_component_gids(yen), [peso_gid]);
+        assert_eq!(get_component_gids(yen_bracket), [peso_bracket_gid]);
+    }
 }
