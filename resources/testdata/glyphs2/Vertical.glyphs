@@ -1,0 +1,115 @@
+{
+.appVersion = "895";
+fontMaster = (
+{
+ascender = 1234;
+capHeight = 0;
+customParameters = (
+{
+name = typoAscender;
+value = 2345;
+},
+{
+name = typoDescender;
+value = -678;
+},
+{
+name = typoLineGap;
+value = 901;
+},
+{
+name = vheaVertAscender;
+value = 3456;
+},
+{
+name = vheaVertDescender;
+value = -789;
+},
+{
+name = vheaVertLineGap;
+value = 12;
+},
+{
+name = openTypeVheaCaretSlopeRun;
+value = 1000;
+},
+{
+name = openTypeVheaCaretSlopeRise;
+value = 500;
+},
+{
+name = openTypeVheaCaretOffset;
+value = 250;
+},
+{
+name = glyphOrder;
+value = (
+a,
+b,
+c,
+d
+);
+}
+);
+descender = -567;
+id = "396A60E1-0927-4D6B-9AF4-066AC5036A02";
+xHeight = 0;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+layerId = "396A60E1-0927-4D6B-9AF4-066AC5036A02";
+paths = (
+{
+closed = 1;
+nodes = (
+"200 8000 LINE",
+"300 -4000 LINE",
+"100 0 LINE"
+);
+}
+);
+vertOrigin = -155;
+vertWidth = 3333;
+width = 0;
+}
+);
+},
+{
+glyphname = b;
+layers = (
+{
+layerId = "396A60E1-0927-4D6B-9AF4-066AC5036A02";
+vertWidth = 0;
+width = 0;
+}
+);
+},
+{
+glyphname = c;
+layers = (
+{
+layerId = "396A60E1-0927-4D6B-9AF4-066AC5036A02";
+vertWidth = 2000;
+width = 0;
+}
+);
+},
+{
+glyphname = d;
+layers = (
+{
+layerId = "396A60E1-0927-4D6B-9AF4-066AC5036A02";
+vertWidth = 2000;
+width = 0;
+}
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

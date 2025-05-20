@@ -394,6 +394,8 @@ mod tests {
             BeWorkIdentifier::Os2.into(),
             BeWorkIdentifier::Post.into(),
             BeWorkIdentifier::Stat.into(),
+            BeWorkIdentifier::Vhea.into(),
+            BeWorkIdentifier::Vmtx.into(),
         ];
 
         expected.extend(
@@ -3283,5 +3285,106 @@ mod tests {
 
         // this would have been 'uni00A0' if glyphs had been renamed to production names
         assert_eq!(post.glyph_name(result.get_gid("nbspace")), Some("nbspace"));
+    }
+
+    /// End-to-end test that `vhea` is built correctly.
+    #[rstest]
+    #[case("glyphs2/Vertical.glyphs")]
+    #[case("Vertical.ufo")]
+    fn compile_vertical_typesetting_header(#[case] source: &str) {
+        let result = TestCompile::compile_source(source);
+        let font = result.font();
+
+        let maxp = font.maxp().unwrap();
+        let vhea = font.vhea().expect("should include vertical table");
+
+        // Explicit global metrics in sources.
+        assert_eq!(vhea.ascender().to_i16(), 3456);
+        assert_eq!(vhea.descender().to_i16(), -789);
+        assert_eq!(vhea.line_gap().to_i16(), 12);
+
+        assert_eq!(vhea.caret_slope_rise(), 500);
+        assert_eq!(vhea.caret_slope_run(), 1000);
+        assert_eq!(vhea.caret_offset(), 250);
+
+        // Derived from glyph metrics; all glyphs need full vertical metrics
+        // except the last one, as it shares it predecessor's advance.
+        assert_eq!(vhea.number_of_long_ver_metrics(), maxp.num_glyphs() - 1);
+
+        // Derived from glyph metrics and outlines. To make the calculations
+        // below more obvious, 'a' has been given extreme values to take the
+        // crown for all of them.
+        let big_advance = 3333;
+        let big_v_origin = 2500;
+        let (big_y_max, big_y_min) = (8000, -4000);
+
+        // 'a' has the largest advance height.
+        assert_eq!(vhea.advance_height_max().to_u16(), big_advance);
+
+        // 'a' has outlines highest above its vertical origin.
+        assert_eq!(
+            vhea.min_top_side_bearing().to_i16(),
+            big_v_origin - big_y_max
+        );
+
+        // 'a' has outlines lowest below its advance-offset origin.
+        assert_eq!(
+            vhea.min_bottom_side_bearing().to_i16(),
+            big_y_min - (big_v_origin - big_advance as i16)
+        );
+
+        // 'a' has outlines lowest below its vertical origin.
+        assert_eq!(vhea.y_max_extent().to_i16(), big_v_origin - big_y_min);
+    }
+
+    /// End-to-end test that `vmtx` is built correctly.
+    #[rstest]
+    #[case("glyphs2/Vertical.glyphs")]
+    #[case("Vertical.ufo")]
+    fn compile_vertical_typesetting_metrics(#[case] source: &str) {
+        let result = TestCompile::compile_source(source);
+        let font = result.font();
+        let vmtx = font.vmtx().expect("should include vertical table");
+
+        // Global *horizontal* metrics of test case.
+        let (ascender, descender) = (1234, -567);
+        let typo_asc = 2345;
+
+        // Derived default values.
+        let notdef_height = (ascender - descender) as u16;
+        let notdef_y_max = ascender;
+
+        let default_vert_origin = typo_asc;
+        let empty_y_max = 0;
+
+        // Assert that long metrics are correct.
+        assert_eq!(
+            vmtx.v_metrics()
+                .iter()
+                .map(|long_metric| (long_metric.advance(), long_metric.side_bearing()))
+                .collect::<Vec<_>>(),
+            vec![
+                // '.notdef', auto-generated: explicit height, default vertical origin.
+                (notdef_height, default_vert_origin - notdef_y_max),
+                // 'a': explicit height, explicit vertical origin and yMax of 8000.
+                (3333, 2500 - 8000),
+                // 'b': explicit height, default vertical origin with no outlines.
+                (0, default_vert_origin - empty_y_max),
+                // 'c': explicit height, default vertical origin with no outlines.
+                (2000, default_vert_origin - empty_y_max)
+            ]
+        );
+
+        // Assert that accompanying bearing for implicit long metric is correct.
+        assert_eq!(
+            vmtx.top_side_bearings()
+                .iter()
+                .map(|value| value.get())
+                .collect::<Vec<_>>(),
+            vec![
+                // 'd': same explicit height as 'c', default vertical origin with no outlines
+                default_vert_origin - empty_y_max
+            ]
+        );
     }
 }
