@@ -50,6 +50,10 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub decompose_transformed_components: bool,
 
+    /// Whether to decompose all components (superseding the above two flags).
+    #[arg(long, default_value = "false")]
+    pub decompose_components: bool,
+
     /// Whether to out timing data, notably a visualization of threadpool execution of tasks.
     ///
     /// See <https://github.com/googlefonts/fontc/pull/443>
@@ -117,6 +121,7 @@ impl Args {
             Flags::DECOMPOSE_TRANSFORMED_COMPONENTS,
             self.decompose_transformed_components,
         );
+        flags.set(Flags::DECOMPOSE_COMPONENTS, self.decompose_components);
         flags.set(Flags::EMIT_TIMING, self.emit_timing);
         flags.set(Flags::KEEP_DIRECTION, self.keep_direction);
         flags.set(Flags::PRODUCTION_NAMES, !self.no_production_names);
@@ -138,6 +143,7 @@ impl Args {
             flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
             decompose_transformed_components: Flags::default()
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
+            decompose_components: Flags::default().contains(Flags::DECOMPOSE_COMPONENTS),
             skip_features: false,
             keep_direction: false,
             no_production_names: false,

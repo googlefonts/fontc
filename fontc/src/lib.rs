@@ -856,6 +856,22 @@ mod tests {
     }
 
     #[test]
+    fn decompose_all_components() {
+        let result = TestCompile::compile("glyphs2/Component.glyphs", |mut args| {
+            args.decompose_components = true;
+            args
+        });
+
+        // We expect ALL composite glyphs to be simplified with --decompose-components
+        let glyph_data = result.glyphs();
+        for (i, glyph) in glyph_data.read().iter().enumerate() {
+            let Some(glyf::Glyph::Simple(_)) = glyph else {
+                panic!("Expected a simple glyph at index {}", i);
+            };
+        }
+    }
+
+    #[test]
     fn writes_cmap() {
         let result = TestCompile::compile_source("glyphs2/Component.glyphs");
 
