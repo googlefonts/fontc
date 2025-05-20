@@ -30,6 +30,12 @@ glyphs = (
 glyphname = peso;
 layers = (
 {
+anchors = (
+{
+name = top;
+pos = (10,40);
+}
+);
 layerId = "91AB5BCA-6A50-42DA-B2F7-8181BF189245";
 shapes = (
 {
@@ -45,6 +51,12 @@ nodes = (
 width = 750;
 },
 {
+anchors = (
+{
+name = top;
+pos = (20,50);
+}
+);
 layerId = "258ED206-D907-4350-8EBA-CBDDA1C16BF7";
 shapes = (
 {
@@ -60,6 +72,12 @@ nodes = (
 width = 786;
 },
 {
+anchors = (
+{
+name = top;
+pos = (15,50);
+}
+);
 associatedMasterId = "258ED206-D907-4350-8EBA-CBDDA1C16BF7";
 attr = {
 axisRules = (
@@ -83,6 +101,12 @@ nodes = (
 width = 746;
 },
 {
+anchors = (
+{
+name = top;
+pos = (11,41);
+}
+);
 associatedMasterId = "91AB5BCA-6A50-42DA-B2F7-8181BF189245";
 attr = {
 axisRules = (

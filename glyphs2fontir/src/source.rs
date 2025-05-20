@@ -16,9 +16,9 @@ use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
     ir::{
         self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, GdefCategories,
-        GlobalMetric, GlobalMetrics, GlyphAnchors, GlyphInstance, GlyphOrder, KernGroup, KernSide,
-        KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance,
-        PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
+        GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups,
+        KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance, PostscriptNames,
+        StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -1003,12 +1003,18 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         for (name, layers) in bracket_glyph_names(glyph, axes) {
             let mut seen_master_ids = HashSet::new();
             let mut bracket_builder = ir::GlyphBuilder::new(name.clone());
+            let mut bracket_anchors = AnchorBuilder::new(name.clone());
             bracket_builder.emit_to_binary = ir_glyph.emit_to_binary;
             for bracket_layer in layers {
                 seen_master_ids.insert(bracket_layer.master_id());
                 let (loc, instance) =
                     process_layer(glyph, bracket_layer, font_info, &global_metrics)?;
                 bracket_builder.try_add_source(&loc, instance)?;
+                if glyph.export {
+                    for anchor in &bracket_layer.anchors {
+                        bracket_anchors.add(anchor.name.clone(), loc.clone(), anchor.pos)?;
+                    }
+                }
             }
 
             // If any master locations don't have a bracket layer, reuse the
@@ -1039,15 +1045,10 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             update_bracket_glyph_components(&mut bracket_glyph, font, axes);
 
             context.glyphs.set(bracket_glyph);
-            let bracket_anchors = GlyphAnchors {
-                glyph_name: name,
-                anchors: anchors.anchors.clone(),
-            };
-            context.anchors.set(bracket_anchors);
+            context.anchors.set(bracket_anchors.build()?);
         }
 
         //TODO: expand kerning to brackets
-        //TODO: don't blindly copy anchors
 
         context.anchors.set(anchors);
         context.glyphs.set(ir_glyph.build()?);
@@ -2324,5 +2325,27 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["peso.BRACKET.varAlt01"]
         );
+    }
+
+    #[test]
+    fn bracket_glyph_anchors() {
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("LibreFranklin-bracketlayer.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+
+        let peso_anchors = context.get_anchor("peso");
+
+        // non-bracket layer anchor x-positions are all even numbers
+        assert!(peso_anchors
+            .anchors
+            .iter()
+            .all(|a| a.default_pos().x as u32 % 2 == 0));
+
+        // bracket anchor x positions are odd numbers
+        let peso_bracket_anchors = context.get_anchor("peso.BRACKET.varAlt01");
+        assert!(peso_bracket_anchors
+            .anchors
+            .iter()
+            .all(|a| a.default_pos().x as u32 % 2 == 1));
     }
 }
