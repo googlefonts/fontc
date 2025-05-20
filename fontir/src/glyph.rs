@@ -368,13 +368,24 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
 
 /// Run some optional transformations on the glyphs listed.
 ///
-/// This includes decomposing components with non-identity 2x2 transforms
-/// and flattening nested composite glyphs so that they all have depth 1
-/// (no components that reference components).
+/// This includes decomposing all components, or only those with non-identity
+/// 2x2 transforms, and flattening nested composite glyphs so that they all
+/// have depth 1 (no components that reference components).
 fn apply_optional_transformations(
     context: &Context,
     glyph_order: &GlyphOrder,
 ) -> Result<(), BadGlyph> {
+    // If we are decomposing all components, the rest of the flags can be ignored
+    if context.flags.contains(Flags::DECOMPOSE_COMPONENTS) {
+        for glyph_name in glyph_order.names() {
+            let glyph = context.get_glyph(glyph_name.clone());
+            if !glyph.default_instance().components.is_empty() {
+                convert_components_to_contours(context, &glyph)?;
+            }
+        }
+        return Ok(());
+    }
+
     // If both --flatten-components and --decompose-transformed-components flags
     // are set, we want to decompose any transformed components first and *then*
     // flatten the rest. That's how fontmake (ufo2ft) does, and also tends to

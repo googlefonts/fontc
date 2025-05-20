@@ -38,6 +38,8 @@ bitflags! {
         const KEEP_DIRECTION = 0b01000000;
         // If set, production names are read & used
         const PRODUCTION_NAMES = 0b10000000;
+        // If set, all the composite glyphs will be decomposed to simple glyphs
+        const DECOMPOSE_COMPONENTS = 0b100000000;
     }
 }
 
