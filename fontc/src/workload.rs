@@ -437,25 +437,10 @@ impl Workload {
                 .into();
         }
 
-        if let AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) = &success {
-            self.update_be_glyph_work(fe_root, glyph_name.to_owned());
-            // we also need to update for any bracket glyphs that were finished
-            // alongside this glyph.
-            let bracket_glyphs = self
-                .also_completes
-                .get(&success)
-                .into_iter()
-                .flat_map(|ids| {
-                    ids.iter().filter_map(|id| match id {
-                        AnyWorkId::Fe(FeWorkIdentifier::Glyph(name)) => Some(name.clone()),
-                        _ => None,
-                    })
-                })
-                .collect::<Vec<_>>();
-            for bracket_glyph in bracket_glyphs {
-                self.update_be_glyph_work(fe_root, bracket_glyph);
-            }
+        if let AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) = success {
+            self.update_be_glyph_work(fe_root, glyph_name);
         }
+
         Ok(())
     }
 
