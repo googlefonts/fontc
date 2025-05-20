@@ -4,7 +4,7 @@
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
 use std::{
-    collections::{BTreeSet, HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -471,35 +471,20 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // In particular, glyphs with both paths and components need to push the path into a component
         let arc_current = context.preliminary_glyph_order.get();
         let current_glyph_order = &*arc_current;
-        // Anything the source specifically said not to retain shouldn't end up in the final font
-        let mut new_glyph_order = current_glyph_order.clone();
-
-        // add any generated bracket glyphs
-        let bracket_glyphs = context
-            .glyphs
-            .all()
-            .iter()
-            .filter_map(|g| {
-                if g.1.emit_to_binary && g.1.name.as_str().contains(".BRACKET.") {
-                    Some(g.1.name.clone())
-                } else {
-                    None
-                }
-            })
-            .collect::<BTreeSet<_>>(); // so they're sorted
-        new_glyph_order.extend(bracket_glyphs);
-
-        let original_glyphs: HashMap<_, _> = new_glyph_order
+        let original_glyphs: HashMap<_, _> = current_glyph_order
             .names()
-            .map(|gn| (gn.clone(), context.get_glyph(gn.clone())))
+            .map(|gn| (gn, context.get_glyph(gn.clone())))
             .collect();
 
+        // Anything the source specifically said not to retain shouldn't end up in the final font
+        let mut new_glyph_order = current_glyph_order.clone();
         for glyph_name in current_glyph_order.names() {
             let glyph = original_glyphs.get(glyph_name).unwrap();
             if !glyph.emit_to_binary {
                 new_glyph_order.remove(glyph_name);
             }
         }
+
         // Glyphs with paths and components, and glyphs whose component 2x2
         // transforms vary over designspace are not directly supported in fonts.
         // To resolve we must do one of:

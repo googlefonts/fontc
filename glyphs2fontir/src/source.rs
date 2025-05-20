@@ -447,7 +447,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             }
         }
 
-        let glyph_order = font.glyph_order.iter().cloned().map(Into::into).collect();
+        let mut glyph_order: GlyphOrder =
+            font.glyph_order.iter().cloned().map(Into::into).collect();
+        glyph_order.extend(font.glyphs.values().filter(|g| g.export).flat_map(|g| {
+            bracket_glyph_names(g, &static_metadata.axes).map(|(bracket_name, _)| bracket_name)
+        }));
 
         context.static_metadata.set(static_metadata);
         context.preliminary_glyph_order.set(glyph_order);
@@ -1042,8 +1046,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             context.anchors.set(bracket_anchors);
         }
 
-        //TODO: swap components in bracket layers if base glyph also has bracket layers
         //TODO: expand kerning to brackets
+        //TODO: don't blindly copy anchors
 
         context.anchors.set(anchors);
         context.glyphs.set(ir_glyph.build()?);
@@ -2265,26 +2269,16 @@ mod tests {
         raw.into_iter().map(GlyphName::from).collect()
     }
 
-    fn get_glyph_names(context: &Context) -> Vec<GlyphName> {
-        let mut result: Vec<_> = context
-            .glyphs
-            .all()
-            .iter()
-            .map(|g| g.1.name.clone())
-            .collect();
-        result.sort();
-        result
-    }
-
     #[test]
     fn bracket_glyph_names_v2() {
         let (source, context) =
             build_global_metrics(glyphs2_dir().join("WorkSans-minimal-bracketlayer.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let prelim_order = context.preliminary_glyph_order.get();
-        assert_eq!(prelim_order.as_ref(), &make_glyph_order(["colonsign"]));
-        let final_glyphs = get_glyph_names(&context);
-        assert_eq!(final_glyphs, ["colonsign", "colonsign.BRACKET.varAlt01"]);
+        assert_eq!(
+            prelim_order.as_ref(),
+            &make_glyph_order(["colonsign", "colonsign.BRACKET.varAlt01"])
+        );
     }
 
     #[test]
@@ -2293,16 +2287,14 @@ mod tests {
             build_global_metrics(glyphs3_dir().join("LibreFranklin-bracketlayer.glyphs"));
         build_glyphs(&source, &context).unwrap();
         let prelim_order = context.preliminary_glyph_order.get();
-        assert_eq!(prelim_order.as_ref(), &make_glyph_order(["peso", "yen"]));
-        let final_glyphs = get_glyph_names(&context);
         assert_eq!(
-            final_glyphs,
-            [
+            prelim_order.as_ref(),
+            &make_glyph_order([
                 "peso",
-                "peso.BRACKET.varAlt01",
                 "yen",
+                "peso.BRACKET.varAlt01",
                 "yen.BRACKET.varAlt01"
-            ]
+            ])
         );
     }
 

@@ -387,14 +387,6 @@ impl Workload {
                 .get()
                 .difference(&preliminary_glyph_order)
             {
-                let id = AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name.clone()));
-                // bracket glyphs weren't in the perlim order, but because
-                // they exist in IR they get added along with the main BE glyph
-                // work.
-                if self.jobs_pending.contains_key(&id) || self.success.contains(&id) {
-                    log::debug!("job exists for {glyph_name}, skipping");
-                    continue;
-                }
                 debug!("Generating a BE job for {glyph_name}");
                 self.add(create_glyf_work(glyph_name.clone()));
 
