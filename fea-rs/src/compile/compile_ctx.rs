@@ -621,6 +621,16 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
                 lookup.add_gsub_type_2(target, vec![replacement]);
             }
+        } else if self.lookups.has_current_kind(Kind::GsubType4)
+            && self.lookups.has_same_flags(self.lookup_flags)
+        {
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType4);
+            for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
+                if lookup.add_gsub_type_4(vec![target], replacement) {
+                    self.error(node.range(), "Ligature substitution shadows existing rule");
+                    return;
+                }
+            }
         } else {
             let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
             for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
@@ -703,6 +713,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .map(|g| self.resolve_glyph_or_class(&g))
             .collect::<Vec<_>>();
         let replacement = self.resolve_glyph(&node.replacement());
+        // we combine mixed single & ligature sub rules into a ligature-sub lookup.
+        self.lookups.promote_single_sub_to_liga_if_necessary();
         let lookup = self.ensure_current_lookup_type(Kind::GsubType4);
 
         for target in sequence_enumerator(&target) {

@@ -1,0 +1,11 @@
+feature liga {
+    # single first, then liga
+    sub a by c;
+    sub e d by f;
+
+    lookup derp {
+        # liga first, then single
+        sub h i by j;
+        sub x by z;
+    } derp;
+} liga;

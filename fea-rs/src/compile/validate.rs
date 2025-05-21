@@ -797,6 +797,8 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                     // we allow mixed rules in this specific case
                     Some(Kind::GsubType1 | Kind::GsubType2)
                         if matches!(item.kind(), Kind::GsubType1 | Kind::GsubType2) => {}
+                    Some(Kind::GsubType1 | Kind::GsubType4)
+                        if matches!(item.kind(), Kind::GsubType1 | Kind::GsubType4) => {}
                     Some(kind) if kind != item.kind() => self.error(
                         item.range(),
                         format!(
