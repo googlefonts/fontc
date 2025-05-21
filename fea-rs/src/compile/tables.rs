@@ -74,7 +74,6 @@ impl HeadBuilder {
 
                 // I think we should still use the known default values but this matches
                 // feaLib tests so :shrug:
-                head.magic_number = 0;
                 head.font_direction_hint = 0;
                 head
             });
