@@ -156,7 +156,7 @@ mod tests {
     fn load_glyph_map() {
         let raw = std::fs::read_to_string("./test-data/simple_glyph_order.txt").unwrap();
         let glyph_map = parse_glyph_order(&raw).unwrap();
-        assert_eq!(glyph_map.len(), 215);
+        assert_eq!(glyph_map.len(), 222);
         assert_eq!(glyph_map.get("space"), Some(GlyphId16::new(1)));
         assert_eq!(glyph_map.get("e.fina"), Some(GlyphId16::new(214)));
         assert!(!glyph_map.contains("e.nada"));
