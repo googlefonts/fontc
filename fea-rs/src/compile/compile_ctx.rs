@@ -706,7 +706,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let lookup = self.ensure_current_lookup_type(Kind::GsubType4);
 
         for target in sequence_enumerator(&target) {
-            lookup.add_gsub_type_4(target, replacement);
+            if lookup.add_gsub_type_4(target, replacement) {
+                self.error(node.range(), "Ligature substitution shadows existing rule");
+                return;
+            }
         }
     }
 

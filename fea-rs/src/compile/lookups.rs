@@ -975,13 +975,24 @@ impl SomeLookup {
         }
     }
 
-    pub(crate) fn add_gsub_type_4(&mut self, target: Vec<GlyphId16>, replacement: GlyphId16) {
+    /// Returns `true` if this replacement shadows an existing rule.
+    ///
+    /// In this case the rule is not added, and the client should report an error.
+    pub(crate) fn add_gsub_type_4(
+        &mut self,
+        target: Vec<GlyphId16>,
+        replacement: GlyphId16,
+    ) -> bool {
         if let SomeLookup::GsubLookup(SubstitutionLookup::Ligature(table)) = self {
             let subtable = table.last_mut().unwrap();
+            if !subtable.can_add(&target, replacement) {
+                return true;
+            }
             subtable.insert(target, replacement);
         } else {
             panic!("lookup mismatch");
         }
+        false
     }
 
     pub(crate) fn add_gsub_type_8(

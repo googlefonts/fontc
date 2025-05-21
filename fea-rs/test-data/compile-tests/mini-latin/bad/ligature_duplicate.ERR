@@ -1,0 +1,5 @@
+error: Ligature substitution shadows existing rule
+in ./test-data/compile-tests/mini-latin/bad/ligature_duplicate.fea at 3:4
+  | 
+3 |     sub a b  by four; # per fonttools, this replaces the earlier declaration.
+  |     ^^^^^^^^^^^^^^^^^

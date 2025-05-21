@@ -1,0 +1,4 @@
+feature liga {
+    sub a b  by one;
+    sub a b  by four; # per fonttools, this replaces the earlier declaration.
+} liga;
