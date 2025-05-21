@@ -7,6 +7,10 @@ name = "Variable Font Origin";
 value = "4A17B37A-CBFD-40E5-9E02-2080A0E1F76C";
 },
 {
+name = "Feature for Feature Variations";
+value = rclt;
+},
+{
 name = license;
 value = "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL";
 },

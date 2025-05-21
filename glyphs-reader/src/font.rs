@@ -114,6 +114,7 @@ pub struct CustomParameters {
     pub virtual_masters: Option<Vec<BTreeMap<String, OrderedFloat<f64>>>>,
     pub glyph_order: Option<Vec<SmolStr>>,
     pub gasp_table: Option<BTreeMap<i64, i64>>,
+    pub feature_for_feature_variations: Option<SmolStr>,
 }
 
 /// Values for the 'meta Table' custom parameter
@@ -839,6 +840,9 @@ impl RawCustomParameters {
                 "openTypeOS2Panose" => panose_old = value.as_vec_of_ints(),
                 "glyphOrder" => add_and_report_issues!(glyph_order, Plist::as_vec_of_string),
                 "gasp Table" => add_and_report_issues!(gasp_table, Plist::as_gasp_table),
+                "Feature for Feature Variations" => {
+                    add_and_report_issues!(feature_for_feature_variations, Plist::as_str, into)
+                }
                 _ => log::warn!("unknown custom parameter '{name}'"),
             }
         }
