@@ -334,7 +334,10 @@ def main():
         f.write("\n")
 
         f.write(
-            "use crate::{glyphdata::{Category, Script, Subcategory}, glyphdata_bundled::BundledEntry};\n"
+            "use crate::{\n"
+            "    glyphdata::{Category, Script, Subcategory},\n"
+            "    glyphdata_bundled::BundledEntry,\n"
+            "};"
         )
         f.write("\n")
 
@@ -349,7 +352,6 @@ def main():
         f.write(
             write_enum_conversion("Script", tuple(camel_case(s) for s in scripts), True)
         )
-        f.write("\n")
 
     with open(readme_file, "w") as f:
         f.write("# Dat files\n")

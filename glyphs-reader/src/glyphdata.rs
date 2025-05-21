@@ -155,6 +155,7 @@ pub enum Script {
     Tibet,
     Tifinagh,
     Vai,
+    Yezidi,
     Yi,
 }
 
