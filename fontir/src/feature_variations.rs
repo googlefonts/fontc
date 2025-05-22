@@ -8,11 +8,11 @@ use std::{
 };
 
 use crate::ir::StaticMetadata;
-use fontdrasil::coords::NormalizedCoord;
+use fontdrasil::{coords::NormalizedCoord, types::GlyphName};
 use indexmap::IndexMap;
 use write_fonts::{
     tables::layout::{ConditionFormat1, ConditionSet},
-    types::{F2Dot14, GlyphId16, Tag},
+    types::{F2Dot14, Tag},
 };
 
 /// A rectilinear region of an n-dimensional designspace.
@@ -72,7 +72,9 @@ impl NBox {
             .unwrap_or((NormalizedCoord::MIN, NormalizedCoord::MAX))
     }
 
-    fn iter(&self) -> impl Iterator<Item = (Tag, (NormalizedCoord, NormalizedCoord))> + use<'_> {
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (Tag, (NormalizedCoord, NormalizedCoord))> + use<'_> {
         self.0.iter().map(|(k, (min, max))| (*k, (*min, *max)))
     }
 
@@ -177,8 +179,8 @@ impl Region {
 
 /// <https://github.com/fonttools/fonttools/blob/08962727756/Lib/fontTools/varLib/featureVars.py#L122>
 pub fn overlay_feature_variations(
-    conditional_subs: Vec<(Region, BTreeMap<GlyphId16, GlyphId16>)>,
-) -> Vec<(NBox, Vec<BTreeMap<GlyphId16, GlyphId16>>)> {
+    conditional_subs: Vec<(Region, BTreeMap<GlyphName, GlyphName>)>,
+) -> Vec<(NBox, Vec<BTreeMap<GlyphName, GlyphName>>)> {
     // preflight stuff:
     let conditional_subs = merge_same_sub_rules(conditional_subs);
     let conditional_subs = merge_same_region_rules(conditional_subs);
@@ -230,8 +232,8 @@ pub fn overlay_feature_variations(
 
 //https://github.com/fonttools/fonttools/blob/1c2704dfc/Lib/fontTools/varLib/featureVars.py#L168
 fn merge_same_sub_rules(
-    conditional_substitutions: Vec<(Region, BTreeMap<GlyphId16, GlyphId16>)>,
-) -> Vec<(Region, BTreeMap<GlyphId16, GlyphId16>)> {
+    conditional_substitutions: Vec<(Region, BTreeMap<GlyphName, GlyphName>)>,
+) -> Vec<(Region, BTreeMap<GlyphName, GlyphName>)> {
     let mut merged = IndexMap::new();
     for (region, subs) in conditional_substitutions {
         match merged.entry(subs) {
@@ -247,8 +249,8 @@ fn merge_same_sub_rules(
 }
 
 fn merge_same_region_rules(
-    conditional_substitutions: Vec<(Region, BTreeMap<GlyphId16, GlyphId16>)>,
-) -> Vec<(Region, BTreeMap<GlyphId16, GlyphId16>)> {
+    conditional_substitutions: Vec<(Region, BTreeMap<GlyphName, GlyphName>)>,
+) -> Vec<(Region, BTreeMap<GlyphName, GlyphName>)> {
     let mut merged = IndexMap::new();
     // we add in reverse order here because we want earlier rules to overwrite
     // later rules
@@ -289,6 +291,12 @@ impl Debug for NBox {
     }
 }
 
+impl From<Vec<NBox>> for Region {
+    fn from(src: Vec<NBox>) -> Region {
+        Region(src)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -313,20 +321,20 @@ mod tests {
 
     fn make_overlay_input(
         region: &[&[(&str, (f64, f64))]],
-        subs: &[(u16, u16)],
-    ) -> (Region, BTreeMap<GlyphId16, GlyphId16>) {
+        subs: &[(&str, &str)],
+    ) -> (Region, BTreeMap<GlyphName, GlyphName>) {
         (
             Region(region.iter().map(|nbox| NBox::for_test(nbox)).collect()),
             subs.iter()
-                .map(|(a, b)| (GlyphId16::new(*a), GlyphId16::new(*b)))
+                .map(|(a, b)| ((*a).into(), (*b).into()))
                 .collect(),
         )
     }
 
-    fn match_condition(
+    fn match_condition<'a>(
         location: &[(&str, f64)],
-        overlaps: &[(NBox, Vec<BTreeMap<GlyphId16, GlyphId16>>)],
-    ) -> Vec<(u16, u16)> {
+        overlaps: &'a [(NBox, Vec<BTreeMap<GlyphName, GlyphName>>)],
+    ) -> Vec<(&'a str, &'a str)> {
         for (nbox, substitutions) in overlaps {
             for (tag, coord) in location {
                 let tag = Tag::from_str(tag).unwrap();
@@ -335,7 +343,7 @@ mod tests {
                     let mut merged = substitutions
                         .iter()
                         .flat_map(|sub_set| sub_set.iter())
-                        .map(|(a, b)| (a.to_u16(), b.to_u16()))
+                        .map(|(a, b)| (a.as_str(), b.as_str()))
                         .collect::<Vec<_>>();
                     merged.sort();
                     return merged;
@@ -349,73 +357,73 @@ mod tests {
     #[test]
     fn overlaps_1() {
         let conds = vec![
-            make_overlay_input(&[&[("abcd", (0.4, 0.9))]], &[(0, 0)]),
-            make_overlay_input(&[&[("abcd", (0.5, 1.))]], &[(1, 1)]),
-            make_overlay_input(&[&[("abcd", (0., 0.8))]], &[(2, 2)]),
-            make_overlay_input(&[&[("abcd", (0.3, 0.7))]], &[(3, 3)]),
+            make_overlay_input(&[&[("abcd", (0.4, 0.9))]], &[("0", "0")]),
+            make_overlay_input(&[&[("abcd", (0.5, 1.))]], &[("1", "1")]),
+            make_overlay_input(&[&[("abcd", (0., 0.8))]], &[("2", "2")]),
+            make_overlay_input(&[&[("abcd", (0.3, 0.7))]], &[("3", "3")]),
         ];
 
         let overlaps = overlay_feature_variations(conds);
         //dbg!(&overlaps);
-        assert_eq!(match_condition(&[("abcd", 0.)], &overlaps), [(2, 2)]);
-        assert_eq!(match_condition(&[("abcd", 0.1)], &overlaps), [(2, 2)]);
+        assert_eq!(match_condition(&[("abcd", 0.)], &overlaps), [("2", "2")]);
+        assert_eq!(match_condition(&[("abcd", 0.1)], &overlaps), [("2", "2")]);
         assert_eq!(
             match_condition(&[("abcd", 0.3)], &overlaps),
-            [(2, 2), (3, 3)]
+            [("2", "2"), ("3", "3")]
         );
         assert_eq!(
             match_condition(&[("abcd", 0.4)], &overlaps),
-            [(0, 0), (2, 2), (3, 3)]
+            [("0", "0"), ("2", "2"), ("3", "3")]
         );
         assert_eq!(
             match_condition(&[("abcd", 0.5)], &overlaps),
-            [(0, 0), (1, 1), (2, 2), (3, 3)]
+            [("0", "0"), ("1", "1"), ("2", "2"), ("3", "3")]
         );
         assert_eq!(
             match_condition(&[("abcd", 0.7)], &overlaps),
-            [(0, 0), (1, 1), (2, 2), (3, 3)]
+            [("0", "0"), ("1", "1"), ("2", "2"), ("3", "3")]
         );
         assert_eq!(
             match_condition(&[("abcd", 0.8)], &overlaps),
-            [(0, 0), (1, 1), (2, 2),]
+            [("0", "0"), ("1", "1"), ("2", "2"),]
         );
         assert_eq!(
             match_condition(&[("abcd", 0.9)], &overlaps),
-            [(0, 0), (1, 1)]
+            [("0", "0"), ("1", "1")]
         );
-        assert_eq!(match_condition(&[("abcd", 1.0)], &overlaps), [(1, 1)]);
+        assert_eq!(match_condition(&[("abcd", 1.0)], &overlaps), [("1", "1")]);
     }
 
     //https://github.com/fonttools/fonttools/blob/1c2704dfc79d/Tests/varLib/featureVars_test.py#L245
     #[test]
     fn overlaps_2() {
         let conds = vec![
-            make_overlay_input(&[&[("abcd", (0.1, 0.9))]], &[(0, 0)]),
-            make_overlay_input(&[&[("abcd", (0.8, 1.))]], &[(1, 1)]),
-            make_overlay_input(&[&[("abcd", (0.3, 0.4))]], &[(2, 2)]),
-            make_overlay_input(&[&[("abcd", (0.1, 1.0))]], &[(3, 3)]),
+            make_overlay_input(&[&[("abcd", (0.1, 0.9))]], &[("0", "0")]),
+            make_overlay_input(&[&[("abcd", (0.8, 1.))]], &[("1", "1")]),
+            make_overlay_input(&[&[("abcd", (0.3, 0.4))]], &[("2", "2")]),
+            make_overlay_input(&[&[("abcd", (0.1, 1.0))]], &[("3", "3")]),
         ];
         let overlaps = overlay_feature_variations(conds);
         assert_eq!(match_condition(&[("abcd", 0.0)], &overlaps), []);
         assert_eq!(
             match_condition(&[("abcd", 0.1)], &overlaps),
-            [(0, 0), (3, 3)]
+            [("0", "0"), ("3", "3")]
         );
         assert_eq!(
             match_condition(&[("abcd", 0.2)], &overlaps),
-            [(0, 0), (3, 3)]
+            [("0", "0"), ("3", "3")]
         );
         assert_eq!(
             match_condition(&[("abcd", 0.3)], &overlaps),
-            [(0, 0), (2, 2), (3, 3)]
+            [("0", "0"), ("2", "2"), ("3", "3")]
         );
         assert_eq!(
             match_condition(&[("abcd", 0.5)], &overlaps),
-            [(0, 0), (3, 3)]
+            [("0", "0"), ("3", "3")]
         );
         assert_eq!(
             match_condition(&[("abcd", 1.0)], &overlaps),
-            [(1, 1), (3, 3)]
+            [("1", "1"), ("3", "3")]
         );
     }
 

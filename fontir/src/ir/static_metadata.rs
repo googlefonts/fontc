@@ -291,6 +291,35 @@ impl Condition {
     }
 }
 
+impl Rule {
+    /// `condition_sets` is a slice of slices of (axis, (min, max))
+    #[doc(hidden)]
+    pub fn for_test(condition_sets: &[&[(&str, (f64, f64))]], subs: &[(&str, &str)]) -> Rule {
+        Rule {
+            conditions: condition_sets
+                .iter()
+                .map(|cond_set| {
+                    cond_set
+                        .iter()
+                        .map(|(tag, (min, max))| Condition {
+                            axis: std::str::FromStr::from_str(tag).unwrap(),
+                            min: Some(DesignCoord::new(*min)),
+                            max: Some(DesignCoord::new(*max)),
+                        })
+                        .collect()
+                })
+                .collect(),
+            substitutions: subs
+                .iter()
+                .map(|(a, b)| Substitution {
+                    replace: GlyphName::new(a),
+                    with: GlyphName::new(b),
+                })
+                .collect(),
+        }
+    }
+}
+
 impl FromIterator<Condition> for ConditionSet {
     fn from_iter<T: IntoIterator<Item = Condition>>(iter: T) -> Self {
         let mut inner: Vec<_> = iter.into_iter().collect();

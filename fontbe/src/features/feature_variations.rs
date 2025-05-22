@@ -12,7 +12,7 @@ use fontir::{
 };
 use write_fonts::{
     tables::{gsub::builders::SingleSubBuilder, layout::ConditionSet},
-    types::{GlyphId16, Tag},
+    types::Tag,
 };
 
 use crate::error::Error;
@@ -33,11 +33,6 @@ pub(super) fn make_gsub_feature_variations(
     glyph_order: &GlyphOrder,
 ) -> Result<FeatureVariationsProvider, Error> {
     let mut conditional_subs = Vec::new();
-    let get_gid_or_err = |name: &GlyphName| -> Result<GlyphId16, Error> {
-        glyph_order.glyph_id(name).ok_or_else(|| {
-            Error::GlyphError(name.clone(), crate::error::GlyphProblem::NotInGlyphOrder)
-        })
-    };
 
     for rule in &ir_variations.rules {
         let mut region = Region::default();
@@ -56,11 +51,8 @@ pub(super) fn make_gsub_feature_variations(
         let substitutions = rule
             .substitutions
             .iter()
-            .map(|ir_sub| {
-                get_gid_or_err(&ir_sub.replace)
-                    .and_then(|a| get_gid_or_err(&ir_sub.with).map(|b| (a, b)))
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()?;
+            .map(|ir_sub| (ir_sub.replace.clone(), ir_sub.with.clone()))
+            .collect::<BTreeMap<_, _>>();
 
         conditional_subs.push((region, substitutions));
     }
@@ -90,18 +82,21 @@ pub(super) fn make_gsub_feature_variations(
 /// returns a vec of lookups, and a map from the raw lookups to the indices in the vec.
 #[allow(clippy::type_complexity)] // ugly but only used in one place
 fn make_substitution_lookups<'a>(
-    subs: &'a [(NBox, Vec<BTreeMap<GlyphId16, GlyphId16>>)],
+    subs: &'a [(NBox, Vec<BTreeMap<GlyphName, GlyphName>>)],
     glyph_order: &GlyphOrder, // used to match fonttools sort order for generated lookups
 ) -> (
     Vec<PendingLookup<SingleSubBuilder>>,
-    HashMap<&'a BTreeMap<GlyphId16, GlyphId16>, usize>,
+    HashMap<&'a BTreeMap<GlyphName, GlyphName>, usize>,
 ) {
     fn make_single_sub_lookup(
-        subs: &BTreeMap<GlyphId16, GlyphId16>,
+        subs: &BTreeMap<GlyphName, GlyphName>,
+        glyph_order: &GlyphOrder,
     ) -> PendingLookup<SingleSubBuilder> {
         let mut builder = SingleSubBuilder::default();
         for (target, replacement) in subs.iter() {
-            builder.insert(*target, *replacement);
+            let target = glyph_order.glyph_id(target).unwrap();
+            let replacement = glyph_order.glyph_id(replacement).unwrap();
+            builder.insert(target, replacement);
         }
         PendingLookup::new(vec![builder], Default::default(), None)
     }
@@ -111,16 +106,8 @@ fn make_substitution_lookups<'a>(
 
     // we create an intermediate vec here so we can match fontmake's sorting for
     // the lookups, which is based on glyph name.
-
     let mut sub_rules = subs.iter().flat_map(|x| x.1.iter()).collect::<Vec<_>>();
-    sub_rules.sort_by_key(|subs| {
-        subs.iter().next().map(|(g1, g2)| {
-            (
-                glyph_order.glyph_name(g1.to_u16() as _),
-                glyph_order.glyph_name(g2.to_u16() as _),
-            )
-        })
-    });
+    sub_rules.sort();
     sub_rules.dedup();
     for sub_rules in sub_rules {
         if lookup_map.contains_key(sub_rules) {
@@ -128,7 +115,7 @@ fn make_substitution_lookups<'a>(
         }
 
         lookup_map.insert(sub_rules, lookups.len());
-        let lookup = make_single_sub_lookup(sub_rules);
+        let lookup = make_single_sub_lookup(sub_rules, glyph_order);
         lookups.push(lookup)
     }
     (lookups, lookup_map)
@@ -160,10 +147,8 @@ impl FeatureProvider for FeatureVariationsProvider {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use fontdrasil::{coords::DesignCoord, types::Axes};
-    use fontir::ir::{Condition, Rule, Substitution};
+    use fontdrasil::types::Axes;
+    use fontir::ir::Rule;
     use write_fonts::tables::{gsub::Gsub, layout::FeatureVariations};
 
     use crate::features::test_helpers::{LayoutOutput, LayoutOutputBuilder};
@@ -171,31 +156,6 @@ mod tests {
     use super::*;
 
     const RCLT: Tag = Tag::new(b"rclt");
-
-    fn make_rule(condition_sets: &[&[(&str, (f64, f64))]], subs: &[(&str, &str)]) -> Rule {
-        Rule {
-            conditions: condition_sets
-                .iter()
-                .map(|cond_set| {
-                    cond_set
-                        .iter()
-                        .map(|(tag, (min, max))| Condition {
-                            axis: Tag::from_str(tag).unwrap(),
-                            min: Some(DesignCoord::new(*min)),
-                            max: Some(DesignCoord::new(*max)),
-                        })
-                        .collect()
-                })
-                .collect(),
-            substitutions: subs
-                .iter()
-                .map(|(a, b)| Substitution {
-                    replace: GlyphName::new(a),
-                    with: GlyphName::new(b),
-                })
-                .collect(),
-        }
-    }
 
     trait FeatureVariationsOutput {
         fn compile_feature_variations(&self, variations: VariableFeature) -> Gsub;
@@ -213,7 +173,7 @@ mod tests {
     fn simple_feature_variations(feature: Tag) -> FeatureVariations {
         let variations = VariableFeature {
             features: vec![feature],
-            rules: vec![make_rule(
+            rules: vec![Rule::for_test(
                 &[&[("wght", (600.0, 700.0))]],
                 &[("a", "a.bracket600")],
             )],

@@ -14,6 +14,7 @@ use fontdrasil::{
 };
 use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
+    feature_variations::{overlay_feature_variations, NBox},
     ir::{
         self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, GdefCategories,
         GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups,
@@ -470,21 +471,21 @@ fn make_feature_variations(fontinfo: &FontInfo) -> Option<VariableFeature> {
     // but glyphsLib uses rvrn, so we go with that?
     // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/builder/bracket_layers.py#L63
     const DEFAULT_FEATURE: Tag = Tag::new(b"rvrn");
-    let mut conditions = HashMap::new();
+    let mut rules = Vec::new();
     for glyph in fontinfo.font.glyphs.values().filter(|g| g.export) {
         for (condset, (sub_name, _layers)) in bracket_glyphs(glyph, &fontinfo.axes) {
-            conditions
-                .entry(condset)
-                .or_insert(Vec::new())
-                .push(Substitution {
-                    replace: glyph.name.clone().into(),
-                    with: sub_name,
-                });
+            let nbox = condset_to_nbox(condset, &fontinfo.axes);
+            rules.push((
+                vec![nbox].into(),
+                BTreeMap::from([(glyph.name.clone().into(), sub_name)]),
+            ));
         }
     }
-    if conditions.is_empty() {
+    if rules.is_empty() {
         return None;
     }
+
+    let overlayed = overlay_feature_variations(rules);
 
     let raw_feature = fontinfo
         .font
@@ -496,15 +497,54 @@ fn make_feature_variations(fontinfo: &FontInfo) -> Option<VariableFeature> {
         log::warn!("invalid or missing param 'Feature for Feature Variations': {raw_feature:?}");
     }
     let features = vec![feature.unwrap_or(DEFAULT_FEATURE)];
-    let rules = conditions
+    let rules = overlayed
         .into_iter()
         .map(|(condset, substitutions)| Rule {
-            conditions: vec![condset],
-            substitutions,
+            conditions: vec![nbox_to_condset(condset, &fontinfo.axes)],
+            substitutions: substitutions
+                .into_iter()
+                .flatten()
+                .map(|(replace, with)| Substitution { replace, with })
+                .collect(),
         })
         .collect();
 
     Some(VariableFeature { features, rules })
+}
+
+fn nbox_to_condset(nbox: NBox, axes: &Axes) -> ConditionSet {
+    nbox.iter()
+        .map(|(tag, (min, max))| {
+            let axis = axes.get(&tag).unwrap();
+
+            Condition::new(
+                tag,
+                Some(min.to_design(&axis.converter)),
+                Some(max.to_design(&axis.converter)),
+            )
+        })
+        .collect()
+}
+
+fn condset_to_nbox(condset: ConditionSet, axes: &Axes) -> NBox {
+    condset
+        .iter()
+        .map(|cond| {
+            let axis = axes.get(&cond.axis).expect("checked already");
+
+            (
+                cond.axis,
+                (
+                    cond.min
+                        .map(|ds| ds.to_normalized(&axis.converter))
+                        .unwrap_or(NormalizedCoord::MIN),
+                    cond.max
+                        .map(|ds| ds.to_normalized(&axis.converter))
+                        .unwrap_or(NormalizedCoord::MAX),
+                ),
+            )
+        })
+        .collect()
 }
 
 pub(crate) fn bracket_glyph_names<'a>(
@@ -2410,5 +2450,46 @@ mod tests {
             .anchors
             .iter()
             .all(|a| a.default_pos().x as u32 % 2 == 1));
+    }
+
+    #[test]
+    fn bracket_glyphs_to_dspace_rules() {
+        // this is taken from a real world font that didn't compile correctly
+        // unless we did overlay_feature_variations as part of generating the dspace rules.
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("Alexandria-bracketglyphs.glyphs"));
+        let feat_vars = context.static_metadata.get().variations.clone().unwrap();
+
+        assert_eq!(
+            feat_vars.rules,
+            vec![
+                Rule::for_test(
+                    &[&[("wght", (130., 215.))]],
+                    &[
+                        ("Udieresis.alt", "Udieresis.alt.BRACKET.varAlt01"),
+                        ("Udieresis.ss01.alt", "Udieresis.ss01.alt.BRACKET.varAlt01"),
+                        ("naira", "naira.BRACKET.varAlt01"),
+                        ("peso", "peso.BRACKET.varAlt01"),
+                        ("won", "won.BRACKET.varAlt01")
+                    ]
+                ),
+                Rule::for_test(
+                    &[&[("wght", (125., 130.))]],
+                    &[
+                        ("Udieresis.alt", "Udieresis.alt.BRACKET.varAlt01"),
+                        ("Udieresis.ss01.alt", "Udieresis.ss01.alt.BRACKET.varAlt01"),
+                        ("naira", "naira.BRACKET.varAlt01"),
+                        ("peso", "peso.BRACKET.varAlt01"),
+                    ]
+                ),
+                Rule::for_test(
+                    &[&[("wght", (120., 130.))]],
+                    &[
+                        ("naira", "naira.BRACKET.varAlt01"),
+                        ("peso", "peso.BRACKET.varAlt01"),
+                    ]
+                ),
+            ]
+        )
     }
 }
