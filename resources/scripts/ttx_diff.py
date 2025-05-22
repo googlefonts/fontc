@@ -428,20 +428,33 @@ def name_id_to_name(ttx, xpath, attr):
             el.attrib[attr] = id_to_name[el.attrib[attr]].strip()
 
 
-def normalize_name_ids(fontc: etree.ElementTree, fontmake: etree.ElementTree):
-    name = fontc.find("name")
-    fontmake_map = get_name_to_id_map(fontmake)
-    fontc_map = get_name_to_id_map(fontc)
-    # only normalize if we have the same length and the same strings
-    if (
-        name is None
-        or len(fontmake_map) != len(fontc_map)
-        or set(fontmake_map.values()) != set(fontc_map.values())
-    ):
+def normalize_name_ids(ttx: etree.ElementTree):
+    name = ttx.find("name")
+    if name is None:
         return
 
-    for record in name.xpath(".//namerecord"):
-        record.text = fontmake_map.get(record.attrib["nameID"], record.text)
+    records = name.xpath(".//namerecord")
+    for record in records:
+        name.remove(record)
+        # User-defined name IDs get replaced by there value where they are
+        # used, so the ID itself is not interesting and we replace them with a
+        # fixed value
+        if int(record.attrib["nameID"]) > 255:
+            record.attrib["nameID"] = "USER_ID"
+
+    records = sorted(
+        records,
+        key=lambda x: (
+            x.attrib["platformID"],
+            x.attrib["platEncID"],
+            x.attrib["langID"],
+            x.attrib["nameID"],
+            x.text,
+        ),
+    )
+
+    for record in records:
+        name.append(record)
 
 
 def find_table(ttx, tag):
@@ -910,9 +923,10 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         remove_gdef_lig_caret_and_var_store(ttx)
         sort_gdef_mark_filter_sets(ttx)
 
-    # sort names within the name table (do this at the end, so ids are correct
-    # for earlier steps)
-    normalize_name_ids(fontc, fontmake)
+        # sort names within the name table (do this at the end, so ids are correct
+        # for earlier steps)
+        normalize_name_ids(ttx)
+
     allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
     allow_some_off_by_ones(
         fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
