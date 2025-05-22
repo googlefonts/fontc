@@ -501,6 +501,29 @@ impl AllLookups {
         )));
     }
 
+    pub(crate) fn promote_single_sub_to_liga_if_necessary(&mut self) {
+        if !self.has_current_kind(Kind::GsubType1) {
+            return;
+        }
+
+        let Some(SomeLookup::GsubLookup(SubstitutionLookup::Single(lookup))) = self.current.take()
+        else {
+            return;
+        };
+        let promoted = LookupBuilder {
+            flags: lookup.flags,
+            mark_set: lookup.mark_set,
+            subtables: lookup
+                .subtables
+                .into_iter()
+                .map(SingleSubBuilder::promote_to_ligature_sub)
+                .collect(),
+        };
+        self.current = Some(SomeLookup::GsubLookup(SubstitutionLookup::Ligature(
+            promoted,
+        )));
+    }
+
     pub(crate) fn infer_glyph_classes(&self, mut f: impl FnMut(GlyphId16, GlyphClassDef)) {
         for lookup in &self.gpos {
             match lookup {
