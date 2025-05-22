@@ -1,5 +1,4 @@
-# the glyph order used in most feaLib ttx tests. We don't currently use this
-# file, but it is useful for manually running the compiler.
+# the glyph order used in most feaLib ttx tests.
 
 .notdef
 space
@@ -216,3 +215,10 @@ table
 uni0327
 uni0328
 e.fina
+idotbelow
+idotless
+iogonek
+acutecomb
+brevecomb
+ogonekcomb
+dotbelowcomb
