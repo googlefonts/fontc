@@ -3188,22 +3188,22 @@ mod tests {
         let lookup_list = gsub.lookup_list().unwrap();
         assert_eq!(lookup_list.lookup_count(), 1);
         let feature_list = gsub.feature_list().unwrap();
-        // by default, glyphs puts feature variations in rlig
-        let rlig_idx = feature_list
+        // by default, glyphsLib puts feature variations in rvrn
+        let rvrn_idx = feature_list
             .feature_records()
             .iter()
-            .position(|rec| rec.feature_tag() == "rlig")
+            .position(|rec| rec.feature_tag() == "rvrn")
             .unwrap();
-        let rlig = feature_list.feature_records()[rlig_idx];
-        // base rlig feature has no lookups
-        assert!(rlig
+        let rvrn = feature_list.feature_records()[rvrn_idx];
+        // base rvrn feature has no lookups
+        assert!(rvrn
             .feature(feature_list.offset_data())
             .unwrap()
             .lookup_list_indices()
             .is_empty());
 
-        let rlig_replacement = get_first_feature_substitution(gsub, rlig_idx);
-        assert_eq!(rlig_replacement.lookup_list_indices(), [0]);
+        let rvrn_replacement = get_first_feature_substitution(gsub, rvrn_idx);
+        assert_eq!(rvrn_replacement.lookup_list_indices(), [0]);
     }
 
     #[test]
