@@ -413,19 +413,21 @@ def name_id_to_name(ttx, xpath, attr):
         if attr is None:
             if el.text is None:
                 continue
-            name_id = int(el.text)
+            name_id = el.text
             # names <= 255 have specific assigned slots, names > 255 not
-            if name_id <= 255:
+            if int(name_id) <= 255:
                 continue
-            el.text = id_to_name[el.text].strip()
+            name = id_to_name.get(name_id, f"NonExistingNameID {name_id}").strip()
+            el.text = name
         else:
             if attr not in el.attrib:
                 continue
             # names <= 255 have specific assigned slots, names > 255 not
-            name_id = int(el.attrib[attr])
-            if name_id <= 255:
+            name_id = el.attrib[attr]
+            if int(name_id) <= 255:
                 continue
-            el.attrib[attr] = id_to_name[el.attrib[attr]].strip()
+            name = id_to_name.get(name_id, f"NonExistingNameID {name_id}").strip()
+            el.attrib[attr] = name
 
 
 def normalize_name_ids(ttx: etree.ElementTree):
