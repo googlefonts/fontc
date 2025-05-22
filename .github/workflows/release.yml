@@ -226,8 +226,12 @@ jobs:
       # this requirements.txt can be used to pip install fontc more securely
       # https://pip.pypa.io/en/stable/topics/secure-installs/
       - name: Generate requirements.txt with SHA256 hashes
+        # Pin pip due to incompatibility of later releases with pip-tools
+        # https://github.com/jazzband/pip-tools/issues/2176
         run: |
-          echo fontc | pipx run --spec pip-tools pip-compile - --no-index --find-links wheels/ --no-emit-find-links --generate-hashes --pip-args '--only-binary=:all:' --no-annotate --no-header --output-file requirements.txt
+          pipx install pip-tools
+          pipx runpip pip-tools install 'pip==25.0.1'
+          echo fontc | pip-compile - --no-index --find-links wheels/ --no-emit-find-links --generate-hashes --pip-args '--only-binary=:all:' --no-annotate --no-header --output-file requirements.txt
 
       - name: Compute checksums of release assets
         run: |
