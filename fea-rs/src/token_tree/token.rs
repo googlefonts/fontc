@@ -174,13 +174,21 @@ pub enum Kind {
     // adding it to the parent.
     GsubNodeNeedsRewrite,
 
+    /// Single
     GsubType1,
+    /// Multiple
     GsubType2,
+    /// Alternate
     GsubType3,
+    /// Ligature
     GsubType4,
+    /// Contextual
     GsubType5,
+    /// Chaining contextual
     GsubType6,
+    /// Extension
     GsubType7,
+    /// Reverse chaining contextual
     GsubType8,
     GsubIgnore,
 
@@ -189,13 +197,21 @@ pub enum Kind {
     // A node containing marked glyphs, and which needs to be rewritten.
     GposNodeNeedsRewrite,
 
+    /// Single
     GposType1,
+    /// Pair
     GposType2,
+    /// Cursive
     GposType3,
+    /// Mark-to-base
     GposType4,
+    /// Mark-to-lig
     GposType5,
+    /// Markt-mark
     GposType6,
+    /// Contextual
     GposType7,
+    /// Chained contextual
     GposType8,
     GposIgnore,
 
