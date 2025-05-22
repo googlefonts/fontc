@@ -2451,4 +2451,45 @@ mod tests {
             .iter()
             .all(|a| a.default_pos().x as u32 % 2 == 1));
     }
+
+    #[test]
+    fn bracket_glyphs_to_dspace_rules() {
+        // this is taken from a real world font that didn't compile correctly
+        // unless we did overlay_feature_variations as part of generating the dspace rules.
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("Alexandria-bracketglyphs.glyphs"));
+        let feat_vars = context.static_metadata.get().variations.clone().unwrap();
+
+        assert_eq!(
+            feat_vars.rules,
+            vec![
+                Rule::for_test(
+                    &[&[("wght", (130., 215.))]],
+                    &[
+                        ("Udieresis.alt", "Udieresis.alt.BRACKET.varAlt01"),
+                        ("Udieresis.ss01.alt", "Udieresis.ss01.alt.BRACKET.varAlt01"),
+                        ("naira", "naira.BRACKET.varAlt01"),
+                        ("peso", "peso.BRACKET.varAlt01"),
+                        ("won", "won.BRACKET.varAlt01")
+                    ]
+                ),
+                Rule::for_test(
+                    &[&[("wght", (125., 130.))]],
+                    &[
+                        ("Udieresis.alt", "Udieresis.alt.BRACKET.varAlt01"),
+                        ("Udieresis.ss01.alt", "Udieresis.ss01.alt.BRACKET.varAlt01"),
+                        ("naira", "naira.BRACKET.varAlt01"),
+                        ("peso", "peso.BRACKET.varAlt01"),
+                    ]
+                ),
+                Rule::for_test(
+                    &[&[("wght", (120., 130.))]],
+                    &[
+                        ("naira", "naira.BRACKET.varAlt01"),
+                        ("peso", "peso.BRACKET.varAlt01"),
+                    ]
+                ),
+            ]
+        )
+    }
 }

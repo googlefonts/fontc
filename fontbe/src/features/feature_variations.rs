@@ -147,10 +147,8 @@ impl FeatureProvider for FeatureVariationsProvider {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use fontdrasil::{coords::DesignCoord, types::Axes};
-    use fontir::ir::{Condition, Rule, Substitution};
+    use fontdrasil::types::Axes;
+    use fontir::ir::Rule;
     use write_fonts::tables::{gsub::Gsub, layout::FeatureVariations};
 
     use crate::features::test_helpers::{LayoutOutput, LayoutOutputBuilder};
@@ -158,31 +156,6 @@ mod tests {
     use super::*;
 
     const RCLT: Tag = Tag::new(b"rclt");
-
-    fn make_rule(condition_sets: &[&[(&str, (f64, f64))]], subs: &[(&str, &str)]) -> Rule {
-        Rule {
-            conditions: condition_sets
-                .iter()
-                .map(|cond_set| {
-                    cond_set
-                        .iter()
-                        .map(|(tag, (min, max))| Condition {
-                            axis: Tag::from_str(tag).unwrap(),
-                            min: Some(DesignCoord::new(*min)),
-                            max: Some(DesignCoord::new(*max)),
-                        })
-                        .collect()
-                })
-                .collect(),
-            substitutions: subs
-                .iter()
-                .map(|(a, b)| Substitution {
-                    replace: GlyphName::new(a),
-                    with: GlyphName::new(b),
-                })
-                .collect(),
-        }
-    }
 
     trait FeatureVariationsOutput {
         fn compile_feature_variations(&self, variations: VariableFeature) -> Gsub;
@@ -200,7 +173,7 @@ mod tests {
     fn simple_feature_variations(feature: Tag) -> FeatureVariations {
         let variations = VariableFeature {
             features: vec![feature],
-            rules: vec![make_rule(
+            rules: vec![Rule::for_test(
                 &[&[("wght", (600.0, 700.0))]],
                 &[("a", "a.bracket600")],
             )],
