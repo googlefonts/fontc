@@ -485,6 +485,19 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
             }
         }
 
+        // Resolve component references to glyphs that are not retained by conversion to contours
+        // Glyphs have to have consistent components at this point so it's safe to just check the default
+        // See https://github.com/googlefonts/fontc/issues/532
+        for glyph_name in new_glyph_order.names() {
+            // We are only int
+            let glyph = context.get_glyph(glyph_name.clone());
+            for component in glyph.default_instance().components.iter() {
+                if !new_glyph_order.contains(&component.base) {
+                    convert_components_to_contours(context, &glyph)?;
+                }
+            }
+        }
+
         // Glyphs with paths and components, and glyphs whose component 2x2
         // transforms vary over designspace are not directly supported in fonts.
         // To resolve we must do one of:
@@ -524,19 +537,6 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
             },
         )?;
         drop(original_glyphs); // lets not accidentally use that from here on
-
-        // Resolve component references to glyphs that are not retained by conversion to contours
-        // Glyphs have to have consistent components at this point so it's safe to just check the default
-        // See https://github.com/googlefonts/fontc/issues/532
-        for glyph_name in new_glyph_order.names() {
-            // We are only int
-            let glyph = context.get_glyph(glyph_name.clone());
-            for component in glyph.default_instance().components.iter() {
-                if !new_glyph_order.contains(&component.base) {
-                    convert_components_to_contours(context, &glyph)?;
-                }
-            }
-        }
 
         apply_optional_transformations(context, &new_glyph_order)?;
 
