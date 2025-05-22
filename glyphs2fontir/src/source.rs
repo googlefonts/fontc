@@ -467,7 +467,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 fn make_feature_variations(fontinfo: &FontInfo) -> Option<VariableFeature> {
     // by default, glyphs registers feature variations under 'rlig'
     // https://glyphsapp.com/learn/switching-shapes#g-1-alternate-layers-bracket-layers__feature-variations
-    const DEFAULT_FEATURE: Tag = Tag::new(b"rlig");
+    // but glyphsLib uses rvrn, so we go with that?
+    // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/builder/bracket_layers.py#L63
+    const DEFAULT_FEATURE: Tag = Tag::new(b"rvrn");
     let mut conditions = HashMap::new();
     for glyph in fontinfo.font.glyphs.values().filter(|g| g.export) {
         for (condset, (sub_name, _layers)) in bracket_glyphs(glyph, &fontinfo.axes) {
