@@ -525,8 +525,6 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         )?;
         drop(original_glyphs); // lets not accidentally use that from here on
 
-        apply_optional_transformations(context, &new_glyph_order)?;
-
         // Resolve component references to glyphs that are not retained by conversion to contours
         // Glyphs have to have consistent components at this point so it's safe to just check the default
         // See https://github.com/googlefonts/fontc/issues/532
@@ -539,6 +537,8 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
                 }
             }
         }
+
+        apply_optional_transformations(context, &new_glyph_order)?;
 
         ensure_notdef_exists_and_is_gid_0(context, &mut new_glyph_order)?;
 

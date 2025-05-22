@@ -2303,6 +2303,39 @@ mod tests {
         assert_noexport("designspace_from_glyphs/WghtVar_NoExport.designspace");
     }
 
+    #[test]
+    fn compile_do_not_decompose_nested_no_export_glyphs() {
+        let result = TestCompile::compile("glyphs3/NestedNoExportComponent.glyphs", |mut args| {
+            args.flatten_components = true;
+            args
+        });
+
+        assert!(!result.contains_glyph("_glyph"));
+        for name in ["glyph2", "glyph3"] {
+            let be_glyph = result
+                .be_context
+                .glyphs
+                .get(&BeWorkIdentifier::GlyfFragment(name.into()).into());
+            assert!(
+                be_glyph.is_composite(),
+                "{be_glyph:?} should be a composite glyph"
+            );
+
+            let fe_glyph = result
+                .fe_context
+                .glyphs
+                .get(&FeWorkIdentifier::Glyph(name.into()));
+            assert!(
+                fe_glyph
+                    .default_instance()
+                    .components
+                    .iter()
+                    .all(|c| c.base == "glyph1"),
+                "IR glyph should reference glyph1 {fe_glyph:?}"
+            );
+        }
+    }
+
     fn assert_fs_type(source: &str, expected_fs_type: u16) {
         let compile = TestCompile::compile_source(source);
         let os2 = compile.font().os2().unwrap();
