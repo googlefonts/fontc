@@ -1555,9 +1555,13 @@ impl RawFont {
 
         debug!("Read glyphs {glyphs_file:?}");
         let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
-        let raw_content = preprocess_unparsed_plist(&raw_content);
-        Self::parse_plist(&raw_content)
+        Self::load_from_string(&raw_content)
             .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), e.to_string()))
+    }
+
+    pub fn load_from_string(raw_content: &str) -> Result<Self, crate::plist::Error> {
+        let raw_content = preprocess_unparsed_plist(raw_content);
+        Self::parse_plist(&raw_content)
     }
 
     /// load from a .glyphspackage
@@ -2908,6 +2912,15 @@ impl Font {
     // load without propagating anchors
     pub(crate) fn load_raw(glyphs_file: impl AsRef<path::Path>) -> Result<Font, Error> {
         RawFont::load(glyphs_file.as_ref()).and_then(Font::try_from)
+    }
+
+    pub fn load_from_string(data: &str) -> Result<Font, Error> {
+        let raw_font = RawFont::load_from_string(data)?;
+        let mut font = Font::try_from(raw_font)?;
+        if font.custom_parameters.propagate_anchors.unwrap_or(true) {
+            font.propagate_all_anchors();
+        }
+        Ok(font)
     }
 
     pub fn default_master(&self) -> &FontMaster {
