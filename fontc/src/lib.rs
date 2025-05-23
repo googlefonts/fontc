@@ -52,6 +52,18 @@ fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum InMemorySource {
+    Glyphs(String),
+}
+
+/// Creates a [`Source`] from a source file loaded in memory
+fn create_in_memory_source(source: &InMemorySource) -> Result<Box<dyn Source>, Error> {
+    match source {
+        InMemorySource::Glyphs(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+    }
+}
+
 /// Run the compiler with the provided arguments
 pub fn run(args: Args, mut timer: Option<JobTimer>) -> Result<(), Error> {
     let time = timer.as_ref().map(|_| {

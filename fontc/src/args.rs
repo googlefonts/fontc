@@ -7,6 +7,8 @@ use fontir::orchestration::Flags;
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::InMemorySource;
+
 /// What font can we build for you today?
 #[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
 #[command(version)]
@@ -22,6 +24,10 @@ pub struct Args {
     /// DEPRECATED: old name for positional input file
     #[arg(short, long)]
     source: Option<PathBuf>,
+
+    #[clap(skip)]
+    #[serde(skip)]
+    pub input_binary: Option<InMemorySource>,
 
     /// Whether to write IR to disk.
     #[arg(short, long, default_value = "false")]
@@ -133,6 +139,7 @@ impl Args {
         Args {
             glyph_name_filter: None,
             input_source: Some(input_source),
+            input_binary: None,
             source: None,
             emit_ir: false,
             output_file: None,
