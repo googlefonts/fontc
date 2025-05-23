@@ -20,12 +20,34 @@ pub struct JobTimer {
     job_times: HashMap<ThreadId, Vec<JobTime>>,
 }
 
+impl Default for JobTimer {
+    fn default() -> Self {
+        Self {
+            t0: Instant::now(),
+            job_times: Default::default(),
+        }
+    }
+}
+
 impl JobTimer {
     /// Prepare to time things using the provided time zero.
-    pub fn new(t0: Instant) -> Self {
-        JobTimer {
-            t0,
-            job_times: Default::default(),
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    /// Start timing a job.
+    ///
+    /// Meant to be called when a job is runnable, that is it's ready to be
+    /// submitted to an execution system such as a threadpool.
+    ///
+    /// nth_wave shows on mouseover in the final output. Each time we release
+    /// a group of jobs - because their dependencies are complate - we increment
+    /// it so one can see the graph progression in the timing svg output.
+    pub fn create_timer(&self, id: AnyWorkId, nth_wave: usize) -> JobTimeRunnable {
+        JobTimeRunnable {
+            id,
+            nth_wave,
+            runnable: Instant::now(),
         }
     }
 
@@ -181,22 +203,6 @@ fn color(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::GvarFragment(..)) => "#008786",
         AnyWorkId::InternalTiming(..) => "#009a00",
         _ => "gray",
-    }
-}
-
-/// Start timing a job.
-///
-/// Meant to be called when a job is runnable, that is it's ready to be
-/// submitted to an execution system such as a threadpool.
-///
-/// nth_wave shows on mouseover in the final output. Each time we release
-/// a group of jobs - because their dependencies are complate - we increment
-/// it so one can see the graph progression in the timing svg output.
-pub fn create_timer(id: AnyWorkId, nth_wave: usize) -> JobTimeRunnable {
-    JobTimeRunnable {
-        id,
-        nth_wave,
-        runnable: Instant::now(),
     }
 }
 
