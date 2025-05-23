@@ -50,7 +50,7 @@ use log::{debug, trace, warn};
 
 use crate::{
     create_source,
-    timing::{JobTime, JobTimeQueued, JobTimer},
+    timing::{JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
     Args, Error,
 };
@@ -120,7 +120,6 @@ impl Workload {
     pub fn new(args: Args, mut timer: JobTimer) -> Result<Self, Error> {
         let time = timer
             .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
-            .queued()
             .run();
 
         let source = create_source(args.source())?;
@@ -128,7 +127,6 @@ impl Workload {
         timer.add(time.complete());
         let time = timer
             .create_timer(AnyWorkId::InternalTiming("Create workload"), 0)
-            .queued()
             .run();
 
         let mut workload = Self {
@@ -514,7 +512,6 @@ impl Workload {
         let timing = self
             .timer
             .create_timer(AnyWorkId::InternalTiming("Launchable"), 0)
-            .queued()
             .run();
 
         launchable.clear();
@@ -561,7 +558,7 @@ impl Workload {
 
         let run_queue = Arc::new(Mutex::new(Vec::<(
             AnyWork,
-            JobTimeQueued,
+            JobTime,
             AnyContext,
             Vec<Arc<AtomicUsize>>,
         )>::with_capacity(512)));
@@ -599,7 +596,6 @@ impl Workload {
                 if !launchable.is_empty() {
                     nth_wave += 1;
                     let timing = self.timer.create_timer(AnyWorkId::InternalTiming("run_q"), nth_wave)
-                        .queued()
                         .run();
 
                     {
@@ -635,7 +631,6 @@ impl Workload {
 
                     // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
                     let timing = self.timer.create_timer(AnyWorkId::InternalTiming("spawn"), nth_wave)
-                        .queued()
                         .run();
                     for _ in 0..launchable.len() {
                         let send = send.clone();
@@ -700,12 +695,10 @@ impl Workload {
                 // Complete everything that has reported since our last check
                 if successes.is_empty() {
                     let timing = self.timer.create_timer(AnyWorkId::InternalTiming("rc"), nth_wave)
-                        .queued()
                         .run();
                     self.read_completions(&mut successes, &recv, RecvType::Blocking)?;
                     self.timer.add(timing.complete());
                     let timing = self.timer.create_timer(AnyWorkId::InternalTiming("hs"), nth_wave)
-                        .queued()
                         .run();
                     for (success, timing) in successes.iter() {
                         self.handle_success(fe_root, be_root, success.clone(), timing.clone())?;
