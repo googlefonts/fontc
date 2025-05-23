@@ -28,8 +28,7 @@ use fontir::{
     source::Source,
 };
 
-use fontbe::orchestration::Context as BeContext;
-use fontbe::paths::Paths as BePaths;
+use fontbe::{orchestration::Context as BeContext, paths::Paths as BePaths};
 use fontir::paths::Paths as IrPaths;
 
 use log::debug;
@@ -83,6 +82,7 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
     let mut timing = workload.exec(&fe_root, &be_root)?;
 
+    #[cfg(not(target_family = "wasm"))]
     if args.flags().contains(Flags::EMIT_TIMING) {
         let path = args.build_dir.join("threads.svg");
         let out_file = OpenOptions::new()
