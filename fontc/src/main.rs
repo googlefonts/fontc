@@ -61,7 +61,7 @@ fn run(args: Args) -> Result<(), Error> {
     log_cfg.init();
     timer.add(time.complete());
 
-    fontc::run(args, timer)
+    fontc::run(args, Some(timer))
 }
 
 fn print_verbose_version() -> Result<(), std::io::Error> {

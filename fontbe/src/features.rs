@@ -260,6 +260,7 @@ struct FeatureWriter<'a> {
     kerning: &'a FeaRsKerns,
     marks: &'a FeaRsMarks,
     feature_variations: Option<FeatureVariationsProvider>,
+    #[cfg(not(target_family = "wasm"))]
     timing: RefCell<Vec<(&'static str, Instant)>>,
 }
 
@@ -273,6 +274,7 @@ impl<'a> FeatureWriter<'a> {
             marks,
             kerning,
             feature_variations,
+            #[cfg(not(target_family = "wasm"))]
             timing: Default::default(),
         }
     }
@@ -280,6 +282,7 @@ impl<'a> FeatureWriter<'a> {
     /// We did most of the work in the kerning job, take the data and populate a builder
     fn add_kerning_features(&self, builder: &mut FeatureBuilder) {
         self.kerning.add_features(builder);
+        #[cfg(not(target_family = "wasm"))]
         {
             self.timing
                 .borrow_mut()
@@ -300,6 +303,7 @@ impl<'a> FeatureWriter<'a> {
     /// * <https://github.com/googlefonts/ufo2ft/issues/563>
     //TODO: could we generate as a separate task, and then just add here.
     fn add_marks(&self, builder: &mut FeatureBuilder) {
+        #[cfg(not(target_family = "wasm"))]
         {
             self.timing
                 .borrow_mut()
@@ -307,6 +311,7 @@ impl<'a> FeatureWriter<'a> {
         }
         self.marks.add_features(builder);
 
+        #[cfg(not(target_family = "wasm"))]
         {
             self.timing
                 .borrow_mut()

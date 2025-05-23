@@ -28,8 +28,7 @@ use fontir::{
     source::Source,
 };
 
-use fontbe::orchestration::Context as BeContext;
-use fontbe::paths::Paths as BePaths;
+use fontbe::{orchestration::Context as BeContext, paths::Paths as BePaths};
 use fontir::paths::Paths as IrPaths;
 
 use log::debug;
@@ -53,39 +52,65 @@ fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum InMemorySource {
+    Glyphs(String),
+}
+
+/// Creates a [`Source`] from a source file loaded in memory
+fn create_in_memory_source(source: &InMemorySource) -> Result<Box<dyn Source>, Error> {
+    match source {
+        InMemorySource::Glyphs(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+    }
+}
+
 /// Run the compiler with the provided arguments
-pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
-    let time = create_timer(AnyWorkId::InternalTiming("Init config"), 0)
-        .queued()
-        .run();
+pub fn run(args: Args, mut timer: Option<JobTimer>) -> Result<(), Error> {
+    let time = timer.as_ref().map(|_| {
+        create_timer(AnyWorkId::InternalTiming("Init config"), 0)
+            .queued()
+            .run()
+    });
     let (ir_paths, be_paths) = init_paths(&args)?;
-    timer.add(time.complete());
+    if let Some(t) = timer.as_mut() {
+        t.add(time.unwrap().complete())
+    }
 
     let workload = Workload::new(args.clone(), timer)?;
 
     let fe_root = FeContext::new_root(args.flags(), ir_paths);
     let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
-    let mut timing = workload.exec(&fe_root, &be_root)?;
-
-    if args.flags().contains(Flags::EMIT_TIMING) {
-        let path = args.build_dir.join("threads.svg");
-        let out_file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&path)
-            .map_err(|source| Error::FileIo {
-                path: path.clone(),
-                source,
-            })?;
-        let mut buf = BufWriter::new(out_file);
-        timing
-            .write_svg(&mut buf)
-            .map_err(|source| Error::FileIo { path, source })?;
+    if let Some(mut timing) = workload.exec(&fe_root, &be_root)? {
+        #[cfg(not(target_family = "wasm"))]
+        if args.flags().contains(Flags::EMIT_TIMING) {
+            let path = args.build_dir.join("threads.svg");
+            let out_file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&path)
+                .map_err(|source| Error::FileIo {
+                    path: path.clone(),
+                    source,
+                })?;
+            let mut buf = BufWriter::new(out_file);
+            timing
+                .write_svg(&mut buf)
+                .map_err(|source| Error::FileIo { path, source })?;
+        }
     }
-
     // At long last!
     write_font_file(&args, &be_root)
+}
+
+/// Run and return a binary
+pub fn run_binary(args: Args) -> Result<Vec<u8>, Error> {
+    let (ir_paths, be_paths) = init_paths(&args)?;
+    let workload = Workload::new(args.clone(), None)?;
+    let fe_root = FeContext::new_root(args.flags(), ir_paths);
+    let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
+    workload.exec(&fe_root, &be_root)?;
+    Ok(be_root.font.get().get().to_vec())
 }
 
 pub fn require_dir(dir: &Path) -> Result<(), Error> {
@@ -276,7 +301,7 @@ mod tests {
                 raw_font: Vec::new(),
             };
 
-            let mut workload = Workload::new(args.clone(), timer).unwrap();
+            let mut workload = Workload::new(args.clone(), Some(timer)).unwrap();
             let completed = workload.run_for_test(&result.fe_context, &result.be_context);
 
             result.work_executed = completed;

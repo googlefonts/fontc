@@ -136,6 +136,20 @@ impl Source for GlyphsIrSource {
     }
 }
 
+impl GlyphsIrSource {
+    pub fn new_from_memory(data: &str) -> Result<Self, Error> {
+        let font = Font::load_from_string(data).map_err(|e| {
+            BadSource::custom(
+                "<memory>".to_string(),
+                format!("Unable to read glyphs file: {e}"),
+            )
+        })?;
+        Ok(Self {
+            font_info: Arc::new(FontInfo::try_from(font)?),
+        })
+    }
+}
+
 fn try_name_id(name: &str) -> Option<NameId> {
     match name {
         "copyrights" => Some(NameId::COPYRIGHT_NOTICE),
