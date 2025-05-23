@@ -16,6 +16,7 @@ use std::{collections::HashMap, io, thread::ThreadId, time::Instant};
 #[derive(Debug)]
 pub struct JobTimer {
     /// The beginning of time
+    #[cfg(not(target_family = "wasm"))]
     t0: Instant,
     job_times: HashMap<ThreadId, Vec<JobTimeState>>,
 }
@@ -23,6 +24,7 @@ pub struct JobTimer {
 impl Default for JobTimer {
     fn default() -> Self {
         Self {
+            #[cfg(not(target_family = "wasm"))]
             t0: Instant::now(),
             job_times: Default::default(),
         }
@@ -44,16 +46,14 @@ impl JobTimer {
     /// a group of jobs - because their dependencies are complate - we increment
     /// it so one can see the graph progression in the timing svg output.
     pub fn create_timer(&self, id: AnyWorkId, nth_wave: usize) -> JobTime {
-        let now = Instant::now();
-        let state = JobTimeState {
-            id,
-            nth_wave,
-            thread_id: std::thread::current().id(),
-            queued: now,
-            run: now,
-            complete: now,
-        };
-        JobTime::Runnable(state)
+        #[cfg(not(target_family = "wasm"))]
+        {
+            JobTime::Runnable(JobTimeState::new(id, nth_wave))
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            JobTime::Nop
+        }
     }
 
     pub fn add(&mut self, timing: JobTime) {
@@ -220,6 +220,7 @@ fn color(id: &AnyWorkId) -> &'static str {
 
 /// Inner state for timing tasks.
 #[derive(Debug, Clone)]
+#[cfg(not(target_family = "wasm"))]
 pub struct JobTimeState {
     id: AnyWorkId,
     nth_wave: usize,
@@ -229,8 +230,24 @@ pub struct JobTimeState {
     complete: Instant,
 }
 
+#[cfg(not(target_family = "wasm"))]
+impl JobTimeState {
+    fn new(id: AnyWorkId, nth_wave: usize) -> Self {
+        let now = Instant::now();
+        JobTimeState {
+            id,
+            nth_wave,
+            thread_id: std::thread::current().id(),
+            queued: now,
+            run: now,
+            complete: now,
+        }
+    }
+}
+
 /// A state machine tracking timer state.
 #[derive(Debug, Clone)]
+#[cfg(not(target_family = "wasm"))]
 pub enum JobTime {
     /// Initial state of a runnable job.
     Runnable(JobTimeState),
@@ -242,8 +259,16 @@ pub enum JobTime {
     Done(JobTimeState),
 }
 
+#[cfg(target_family = "wasm")]
+/// Timer on wasm does nothing
+pub enum JobTime {
+    #[derive(Debug, Clone)]
+    Nop,
+}
+
 impl JobTime {
     /// Queue the timer. Expects the timer to be runnable.
+    #[cfg(not(target_family = "wasm"))]
     pub fn queued(self) -> Self {
         match self {
             JobTime::Runnable(mut state) => {
@@ -257,9 +282,15 @@ impl JobTime {
         }
     }
 
+    #[cfg(target_family = "wasm")]
+    pub fn queued(self) -> Self {
+        self
+    }
+
     /// Run the work.
     ///
     /// Expects the timer to be runnable or queued.
+    #[cfg(not(target_family = "wasm"))]
     pub fn run(self) -> Self {
         match self {
             // you can call 'run' without queuing, if needed
@@ -274,7 +305,13 @@ impl JobTime {
         }
     }
 
+    #[cfg(target_family = "wasm")]
+    pub fn run(self) -> Self {
+        self
+    }
+
     /// Finish the timer. Expects the timer to be running.
+    #[cfg(not(target_family = "wasm"))]
     pub fn complete(self) -> Self {
         match self {
             JobTime::Running(mut s) => {
@@ -286,5 +323,10 @@ impl JobTime {
                 other
             }
         }
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn complete(self) -> Self {
+        self
     }
 }
