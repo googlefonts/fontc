@@ -132,7 +132,7 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, PathCon
 
 pub(crate) fn to_ir_features(
     features: &[FeatureSnippet],
-    include_dir: PathBuf,
+    include_dir: Option<PathBuf>,
 ) -> Result<ir::FeaturesSource, Error> {
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L74
     // TODO: token expansion
@@ -140,7 +140,7 @@ pub(crate) fn to_ir_features(
     let fea_snippets: Vec<_> = features.iter().filter_map(|f| f.str_if_enabled()).collect();
     Ok(ir::FeaturesSource::Memory {
         fea_content: fea_snippets.join("\n\n"),
-        include_dir: include_dir.into(),
+        include_dir,
     })
 }
 

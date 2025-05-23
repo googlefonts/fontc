@@ -44,7 +44,7 @@ use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features
 #[derive(Debug, Clone)]
 pub struct GlyphsIrSource {
     font_info: Arc<FontInfo>,
-    source_path: Arc<Path>,
+    source_path: Option<Arc<Path>>,
 }
 
 impl GlyphsIrSource {
@@ -73,7 +73,7 @@ impl Source for GlyphsIrSource {
 
         Ok(Self {
             font_info: Arc::new(font_info),
-            source_path: glyphs_file.into(),
+            source_path: Some(glyphs_file.into()),
         })
     }
 
@@ -138,6 +138,21 @@ impl Source for GlyphsIrSource {
         Ok(Box::new(PaintGraphWork {
             _font_info: self.font_info.clone(),
         }))
+    }
+}
+
+impl GlyphsIrSource {
+    pub fn new_from_memory(data: &str) -> Result<Self, Error> {
+        let font = Font::load_from_string(data).map_err(|e| {
+            BadSource::custom(
+                "<memory>".to_string(),
+                format!("Unable to read glyphs file: {e}"),
+            )
+        })?;
+        Ok(Self {
+            font_info: Arc::new(FontInfo::try_from(font)?),
+            source_path: None,
+        })
     }
 }
 
@@ -830,7 +845,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
 #[derive(Debug)]
 struct FeatureWork {
     font_info: Arc<FontInfo>,
-    font_file_path: Arc<Path>,
+    font_file_path: Option<Arc<Path>>,
 }
 
 impl Work<Context, WorkId, Error> for FeatureWork {
@@ -845,12 +860,13 @@ impl Work<Context, WorkId, Error> for FeatureWork {
 
         context.features.set(to_ir_features(
             &font.features,
-            self.font_file_path
-                .canonicalize() // if we got this far, the path must exist
-                .unwrap()
-                .parent()
-                .unwrap() // the path must be in a directory
-                .to_path_buf(),
+            self.font_file_path.as_ref().map(|path| {
+                path.canonicalize()
+                    .unwrap()
+                    .parent()
+                    .unwrap() // the path must be in a directory
+                    .to_path_buf()
+            }),
         )?);
         Ok(())
     }
