@@ -34,8 +34,12 @@ impl NBox {
         min: Option<NormalizedCoord>,
         max: Option<NormalizedCoord>,
     ) {
-        let min = min.unwrap_or(NormalizedCoord::new(-1.0));
-        let max = max.unwrap_or(NormalizedCoord::new(1.0));
+        let min = min
+            .unwrap_or(NormalizedCoord::MIN)
+            .max(NormalizedCoord::MIN);
+        let max = max
+            .unwrap_or(NormalizedCoord::MAX)
+            .min(NormalizedCoord::MAX);
         self.0.insert(axis, (min, max));
     }
 
@@ -475,5 +479,19 @@ mod tests {
         let (intersection, remainder) = top.overlay_onto(&bottom);
         assert_eq!(intersection, Some(NBox::for_test(&[("wght", (0.55, 0.6))])));
         assert_eq!(remainder, Some(NBox::for_test(&[("wght", (0.6, 0.8))])));
+    }
+
+    // it's possible that design coordinates are out of bounds, which leads to
+    // out of bounds normalized coordinates:
+    #[test]
+    fn box_clamps() {
+        let mut nbox = NBox::default();
+        nbox.insert(
+            Tag::new(b"derp"),
+            Some(NormalizedCoord::new(-45.0)),
+            Some(NormalizedCoord::new(101.)),
+        );
+
+        assert_eq!(nbox, NBox::for_test(&[("derp", (-1.0, 1.0))]))
     }
 }
