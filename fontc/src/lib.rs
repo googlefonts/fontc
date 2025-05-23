@@ -57,7 +57,6 @@ fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
 pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
-        .queued()
         .run();
     let (ir_paths, be_paths) = init_paths(&args)?;
     timer.add(time.complete());

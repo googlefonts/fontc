@@ -17,7 +17,7 @@ use std::{collections::HashMap, io, thread::ThreadId, time::Instant};
 pub struct JobTimer {
     /// The beginning of time
     t0: Instant,
-    job_times: HashMap<ThreadId, Vec<JobTime>>,
+    job_times: HashMap<ThreadId, Vec<JobTimeState>>,
 }
 
 impl Default for JobTimer {
@@ -43,19 +43,31 @@ impl JobTimer {
     /// nth_wave shows on mouseover in the final output. Each time we release
     /// a group of jobs - because their dependencies are complate - we increment
     /// it so one can see the graph progression in the timing svg output.
-    pub fn create_timer(&self, id: AnyWorkId, nth_wave: usize) -> JobTimeRunnable {
-        JobTimeRunnable {
+    pub fn create_timer(&self, id: AnyWorkId, nth_wave: usize) -> JobTime {
+        let now = Instant::now();
+        let state = JobTimeState {
             id,
             nth_wave,
-            runnable: Instant::now(),
-        }
+            thread_id: std::thread::current().id(),
+            queued: now,
+            run: now,
+            complete: now,
+        };
+        JobTime::Runnable(state)
     }
 
     pub fn add(&mut self, timing: JobTime) {
+        let state = match timing {
+            JobTime::Done(state) => state,
+            other => {
+                log::warn!("trying to add unfinished timing '{other:?}'");
+                return;
+            }
+        };
         self.job_times
-            .entry(timing.thread_id)
+            .entry(state.thread_id)
             .or_default()
-            .push(timing);
+            .push(state);
     }
 
     pub fn write_svg(&mut self, out: &mut impl io::Write) -> Result<(), io::Error> {
@@ -206,101 +218,73 @@ fn color(id: &AnyWorkId) -> &'static str {
     }
 }
 
-/// The initial state of a runnable job.
-///
-/// It may have queued from t0 to launchable but now it's go-time!
-pub struct JobTimeRunnable {
-    id: AnyWorkId,
-    nth_wave: usize,
-    runnable: Instant,
-}
-
-impl JobTimeRunnable {
-    /// Time of submission to execution queue, e.g. thread pool submission
-    pub fn queued(self) -> JobTimeQueued {
-        JobTimeQueued {
-            id: self.id,
-            nth_wave: self.nth_wave,
-            runnable: self.runnable,
-            queued: Instant::now(),
-        }
-    }
-}
-
-pub struct JobTimeQueued {
-    id: AnyWorkId,
-    nth_wave: usize,
-    runnable: Instant,
-    queued: Instant,
-}
-
-impl JobTimeQueued {
-    /// Time job actually starts running, e.g. beginning of thread pool execution
-    ///
-    /// Jobs are presumed to not hop threads; we capture the current thread so we
-    /// can aggregate the time of jobs on each runner thread.
-    pub fn run(self) -> JobTimeRunning {
-        JobTimeRunning {
-            id: self.id,
-            nth_wave: self.nth_wave,
-            thread: std::thread::current().id(),
-            runnable: self.runnable,
-            queued: self.queued,
-            run: Instant::now(),
-        }
-    }
-}
-
-pub struct JobTimeRunning {
-    id: AnyWorkId,
-    nth_wave: usize,
-    thread: ThreadId,
-    runnable: Instant,
-    queued: Instant,
-    run: Instant,
-}
-
-impl JobTimeRunning {
-    /// Jobs done, we have all the significant time slices.
-    ///
-    /// Gives us the final timing to submit to [JobTimer]
-    pub fn complete(self) -> JobTime {
-        JobTime {
-            id: self.id,
-            nth_wave: self.nth_wave,
-            thread_id: self.thread,
-            _runnable: self.runnable,
-            queued: self.queued,
-            run: self.run,
-            complete: Instant::now(),
-        }
-    }
-}
-
-/// Times are relative to t0 in a [JobTimer]
+/// Inner state for timing tasks.
 #[derive(Debug, Clone)]
-pub struct JobTime {
+pub struct JobTimeState {
     id: AnyWorkId,
     nth_wave: usize,
     thread_id: ThreadId,
-    _runnable: Instant,
     queued: Instant,
     run: Instant,
-    pub(crate) complete: Instant,
+    complete: Instant,
+}
+
+/// A state machine tracking timer state.
+#[derive(Debug, Clone)]
+pub enum JobTime {
+    /// Initial state of a runnable job.
+    Runnable(JobTimeState),
+    /// State after submission to an execution queue.
+    Queued(JobTimeState),
+    /// State after the job starts running
+    Running(JobTimeState),
+    /// State when the job has finished.
+    Done(JobTimeState),
 }
 
 impl JobTime {
-    /// A JobTime for something that took no time, a nop
-    pub fn nop(id: AnyWorkId) -> Self {
-        let now = Instant::now();
-        JobTime {
-            id,
-            nth_wave: 0,
-            thread_id: std::thread::current().id(),
-            _runnable: now,
-            queued: now,
-            run: now,
-            complete: now,
+    /// Queue the timer. Expects the timer to be runnable.
+    pub fn queued(self) -> Self {
+        match self {
+            JobTime::Runnable(mut state) => {
+                state.queued = Instant::now();
+                JobTime::Queued(state)
+            }
+            other => {
+                log::warn!("attempting to queue non-runnable timer: {other:?}");
+                other
+            }
+        }
+    }
+
+    /// Run the work.
+    ///
+    /// Expects the timer to be runnable or queued.
+    pub fn run(self) -> Self {
+        match self {
+            // you can call 'run' without queuing, if needed
+            JobTime::Runnable(mut state) | JobTime::Queued(mut state) => {
+                state.run = Instant::now();
+                JobTime::Running(state)
+            }
+            other => {
+                log::warn!("attempting to rerun timer: {other:?}");
+                other
+            }
+        }
+    }
+
+    /// Finish the timer. Expects the timer to be running.
+    pub fn complete(self) -> Self {
+        match self {
+            JobTime::Running(mut s) => {
+                s.complete = Instant::now();
+                JobTime::Done(s)
+            }
+            other => {
+                log::warn!("attempting to complete non-running timer: {other:?}");
+                other
+            }
         }
     }
 }
