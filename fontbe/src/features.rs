@@ -2,13 +2,11 @@
 
 use std::{
     borrow::Cow,
-    cell::RefCell,
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
     fs,
     path::{Path, PathBuf},
     sync::Arc,
-    time::Instant,
 };
 
 use feature_variations::FeatureVariationsProvider;
@@ -260,7 +258,6 @@ struct FeatureWriter<'a> {
     kerning: &'a FeaRsKerns,
     marks: &'a FeaRsMarks,
     feature_variations: Option<FeatureVariationsProvider>,
-    timing: RefCell<Vec<(&'static str, Instant)>>,
 }
 
 impl<'a> FeatureWriter<'a> {
@@ -273,18 +270,12 @@ impl<'a> FeatureWriter<'a> {
             marks,
             kerning,
             feature_variations,
-            timing: Default::default(),
         }
     }
 
     /// We did most of the work in the kerning job, take the data and populate a builder
     fn add_kerning_features(&self, builder: &mut FeatureBuilder) {
         self.kerning.add_features(builder);
-        {
-            self.timing
-                .borrow_mut()
-                .push(("End add kerning", Instant::now()));
-        }
     }
 
     /// Generate mark to base and mark to mark features
@@ -300,18 +291,7 @@ impl<'a> FeatureWriter<'a> {
     /// * <https://github.com/googlefonts/ufo2ft/issues/563>
     //TODO: could we generate as a separate task, and then just add here.
     fn add_marks(&self, builder: &mut FeatureBuilder) {
-        {
-            self.timing
-                .borrow_mut()
-                .push(("Start add marks", Instant::now()));
-        }
         self.marks.add_features(builder);
-
-        {
-            self.timing
-                .borrow_mut()
-                .push(("End add marks", Instant::now()));
-        }
     }
 
     /// Add any feature variations
