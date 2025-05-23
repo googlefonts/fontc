@@ -102,6 +102,16 @@ pub fn run(args: Args, mut timer: Option<JobTimer>) -> Result<(), Error> {
     write_font_file(&args, &be_root)
 }
 
+/// Run and return a binary
+pub fn run_binary(args: Args) -> Result<Vec<u8>, Error> {
+    let (ir_paths, be_paths) = init_paths(&args)?;
+    let workload = Workload::new(args.clone(), None)?;
+    let fe_root = FeContext::new_root(args.flags(), ir_paths);
+    let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
+    workload.exec(&fe_root, &be_root)?;
+    Ok(be_root.font.get().get().to_vec())
+}
+
 pub fn require_dir(dir: &Path) -> Result<(), Error> {
     // skip empty paths
     if dir == Path::new("") {
