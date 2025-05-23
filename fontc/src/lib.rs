@@ -81,6 +81,7 @@ pub fn run(args: Args, mut timer: Option<JobTimer>) -> Result<(), Error> {
     let fe_root = FeContext::new_root(args.flags(), ir_paths);
     let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
     if let Some(mut timing) = workload.exec(&fe_root, &be_root)? {
+        #[cfg(not(target_family = "wasm"))]
         if args.flags().contains(Flags::EMIT_TIMING) {
             let path = args.build_dir.join("threads.svg");
             let out_file = OpenOptions::new()

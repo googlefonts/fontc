@@ -36,6 +36,7 @@ impl JobTimer {
             .push(timing);
     }
 
+    #[cfg(not(target_family = "wasm"))]
     pub fn write_svg(&mut self, out: &mut impl io::Write) -> Result<(), io::Error> {
         let names: HashMap<_, _> = self
             .job_times
@@ -196,6 +197,7 @@ pub fn create_timer(id: AnyWorkId, nth_wave: usize) -> JobTimeRunnable {
     JobTimeRunnable {
         id,
         nth_wave,
+        #[cfg(not(target_family = "wasm"))]
         runnable: Instant::now(),
     }
 }
@@ -206,6 +208,7 @@ pub fn create_timer(id: AnyWorkId, nth_wave: usize) -> JobTimeRunnable {
 pub struct JobTimeRunnable {
     id: AnyWorkId,
     nth_wave: usize,
+    #[cfg(not(target_family = "wasm"))]
     runnable: Instant,
 }
 
@@ -215,7 +218,9 @@ impl JobTimeRunnable {
         JobTimeQueued {
             id: self.id,
             nth_wave: self.nth_wave,
+            #[cfg(not(target_family = "wasm"))]
             runnable: self.runnable,
+            #[cfg(not(target_family = "wasm"))]
             queued: Instant::now(),
         }
     }
@@ -224,7 +229,9 @@ impl JobTimeRunnable {
 pub struct JobTimeQueued {
     id: AnyWorkId,
     nth_wave: usize,
+    #[cfg(not(target_family = "wasm"))]
     runnable: Instant,
+    #[cfg(not(target_family = "wasm"))]
     queued: Instant,
 }
 
@@ -238,8 +245,11 @@ impl JobTimeQueued {
             id: self.id,
             nth_wave: self.nth_wave,
             thread: std::thread::current().id(),
+            #[cfg(not(target_family = "wasm"))]
             runnable: self.runnable,
+            #[cfg(not(target_family = "wasm"))]
             queued: self.queued,
+            #[cfg(not(target_family = "wasm"))]
             run: Instant::now(),
         }
     }
@@ -249,8 +259,11 @@ pub struct JobTimeRunning {
     id: AnyWorkId,
     nth_wave: usize,
     thread: ThreadId,
+    #[cfg(not(target_family = "wasm"))]
     runnable: Instant,
+    #[cfg(not(target_family = "wasm"))]
     queued: Instant,
+    #[cfg(not(target_family = "wasm"))]
     run: Instant,
 }
 
@@ -263,9 +276,13 @@ impl JobTimeRunning {
             id: self.id,
             nth_wave: self.nth_wave,
             thread_id: self.thread,
+            #[cfg(not(target_family = "wasm"))]
             _runnable: self.runnable,
+            #[cfg(not(target_family = "wasm"))]
             queued: self.queued,
+            #[cfg(not(target_family = "wasm"))]
             run: self.run,
+            #[cfg(not(target_family = "wasm"))]
             complete: Instant::now(),
         }
     }
@@ -277,23 +294,32 @@ pub struct JobTime {
     id: AnyWorkId,
     nth_wave: usize,
     thread_id: ThreadId,
+    #[cfg(not(target_family = "wasm"))]
     _runnable: Instant,
+    #[cfg(not(target_family = "wasm"))]
     queued: Instant,
+    #[cfg(not(target_family = "wasm"))]
     run: Instant,
+    #[cfg(not(target_family = "wasm"))]
     pub(crate) complete: Instant,
 }
 
 impl JobTime {
     /// A JobTime for something that took no time, a nop
     pub fn nop(id: AnyWorkId) -> Self {
+        #[cfg(not(target_family = "wasm"))]
         let now = Instant::now();
         JobTime {
             id,
             nth_wave: 0,
             thread_id: std::thread::current().id(),
+            #[cfg(not(target_family = "wasm"))]
             _runnable: now,
+            #[cfg(not(target_family = "wasm"))]
             queued: now,
+            #[cfg(not(target_family = "wasm"))]
             run: now,
+            #[cfg(not(target_family = "wasm"))]
             complete: now,
         }
     }
