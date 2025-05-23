@@ -158,7 +158,7 @@ impl NBox {
 
             remainder.insert(*axis, Some(min), Some(max));
         }
-        if fully_inside || remainder.0.is_empty() {
+        if fully_inside {
             // other is fully inside self
             (Some(intersection), None)
         } else {
@@ -448,7 +448,7 @@ mod tests {
         let bottom = NBox::default();
         let (intersection, remainder) = top.overlay_onto(&bottom);
         assert_eq!(intersection, Some(top));
-        assert!(remainder.is_none(), "{remainder:?}");
+        assert_eq!(remainder, Some(NBox::default()));
     }
 
     #[test]
