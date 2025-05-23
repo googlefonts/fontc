@@ -70,7 +70,7 @@ pub struct Workload {
     pub(crate) jobs_pending: HashMap<AnyWorkId, Job>,
     pub(crate) count_pending: HashMap<IdentifierDiscriminant, Arc<AtomicUsize>>,
 
-    pub(crate) timer: JobTimer,
+    pub(crate) timer: Option<JobTimer>,
 }
 
 /// A unit of executable work plus the identifiers of work that it depends on
@@ -117,17 +117,23 @@ fn priority(id: &AnyWorkId) -> u32 {
 
 impl Workload {
     // Pass in timer to enable t0 to be as early as possible
-    pub fn new(args: Args, mut timer: JobTimer) -> Result<Self, Error> {
-        let time = create_timer(AnyWorkId::InternalTiming("create_source"), 0)
-            .queued()
-            .run();
+    pub fn new(args: Args, mut timer: Option<JobTimer>) -> Result<Self, Error> {
+        let time = timer.as_ref().map(|_| {
+            create_timer(AnyWorkId::InternalTiming("create_source"), 0)
+                .queued()
+                .run()
+        });
 
         let source = create_source(args.source())?;
 
-        timer.add(time.complete());
-        let time = create_timer(AnyWorkId::InternalTiming("Create workload"), 0)
-            .queued()
-            .run();
+        if let Some(t) = timer.as_mut() {
+            t.add(time.unwrap().complete())
+        }
+        let time = timer.as_ref().map(|_| {
+            create_timer(AnyWorkId::InternalTiming("Create workload"), 0)
+                .queued()
+                .run()
+        });
 
         let mut workload = Self {
             args,
@@ -199,7 +205,9 @@ impl Workload {
         // Make a damn font
         workload.add(create_font_work());
 
-        workload.timer.add(time.complete());
+        if let Some(t) = workload.timer.as_mut() {
+            t.add(time.unwrap().complete())
+        }
 
         Ok(workload)
     }
@@ -374,7 +382,9 @@ impl Workload {
     ) -> Result<(), Error> {
         log::debug!("{success:?} successful");
 
-        self.timer.add(timing);
+        if let Some(t) = self.timer.as_mut() {
+            t.add(timing)
+        }
 
         self.complete_one(success.clone());
         self.mark_also_completed(&success);
@@ -521,7 +531,9 @@ impl Workload {
             launchable.push(id.clone());
         }
 
-        self.timer.add(timing.complete());
+        if let Some(t) = self.timer.as_mut() {
+            t.add(timing.complete())
+        }
     }
 
     fn counters(&self, id: &AnyWorkId) -> Vec<Arc<AtomicUsize>> {
@@ -547,7 +559,11 @@ impl Workload {
         counters
     }
 
-    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
+    pub fn exec(
+        mut self,
+        fe_root: &FeContext,
+        be_root: &BeContext,
+    ) -> Result<Option<JobTimer>, Error> {
         // Async work will send us it's ID on completion
         let (send, recv) =
             crossbeam_channel::unbounded::<(AnyWorkId, Result<(), Error>, JobTime)>();
@@ -627,7 +643,7 @@ impl Workload {
                         // <https://github.com/googlefonts/fontc/issues/456>, <https://github.com/googlefonts/fontc/pull/565>
                         run_queue.sort_by_cached_key(|(work, ..)| priority(&work.id()));
                     }
-                    self.timer.add(timing.complete());
+                    if let Some(t) = self.timer.as_mut() { t.add(timing.complete()) }
 
                     // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
                     let timing = create_timer(AnyWorkId::InternalTiming("spawn"), nth_wave)
@@ -690,7 +706,7 @@ impl Workload {
                             }
                         })
                     }
-                    self.timer.add(timing.complete());
+                    if let Some(t) = self.timer.as_mut() { t.add(timing.complete()) }
                 }
 
                 // Complete everything that has reported since our last check
@@ -699,14 +715,14 @@ impl Workload {
                         .queued()
                         .run();
                     self.read_completions(&mut successes, &recv, RecvType::Blocking)?;
-                    self.timer.add(timing.complete());
+                    if let Some(t) = self.timer.as_mut() { t.add(timing.complete()) }
                     let timing = create_timer(AnyWorkId::InternalTiming("hs"), nth_wave)
                         .queued()
                         .run();
                     for (success, timing) in successes.iter() {
                         self.handle_success(fe_root, be_root, success.clone(), timing.clone())?;
                     }
-                    self.timer.add(timing.complete());
+                    if let Some(t) = self.timer.as_mut() { t.add(timing.complete()) }
                 }
 
                 if launchable.is_empty() && successes.is_empty() {
