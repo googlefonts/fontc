@@ -50,7 +50,7 @@ use log::{debug, trace, warn};
 
 use crate::{
     create_source,
-    timing::{create_timer, JobTime, JobTimeQueued, JobTimer},
+    timing::{JobTime, JobTimeQueued, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
     Args, Error,
 };
@@ -118,14 +118,16 @@ fn priority(id: &AnyWorkId) -> u32 {
 impl Workload {
     // Pass in timer to enable t0 to be as early as possible
     pub fn new(args: Args, mut timer: JobTimer) -> Result<Self, Error> {
-        let time = create_timer(AnyWorkId::InternalTiming("create_source"), 0)
+        let time = timer
+            .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
             .queued()
             .run();
 
         let source = create_source(args.source())?;
 
         timer.add(time.complete());
-        let time = create_timer(AnyWorkId::InternalTiming("Create workload"), 0)
+        let time = timer
+            .create_timer(AnyWorkId::InternalTiming("Create workload"), 0)
             .queued()
             .run();
 
@@ -509,7 +511,9 @@ impl Workload {
 
     /// Populate launchable with jobs ready to run from highest to lowest priority
     pub fn update_launchable(&mut self, launchable: &mut Vec<AnyWorkId>) {
-        let timing = create_timer(AnyWorkId::InternalTiming("Launchable"), 0)
+        let timing = self
+            .timer
+            .create_timer(AnyWorkId::InternalTiming("Launchable"), 0)
             .queued()
             .run();
 
@@ -594,7 +598,7 @@ impl Workload {
                 // Get launchables ready to run
                 if !launchable.is_empty() {
                     nth_wave += 1;
-                    let timing = create_timer(AnyWorkId::InternalTiming("run_q"), nth_wave)
+                    let timing = self.timer.create_timer(AnyWorkId::InternalTiming("run_q"), nth_wave)
                         .queued()
                         .run();
 
@@ -602,7 +606,7 @@ impl Workload {
                         let mut run_queue = run_queue.lock().unwrap();
 
                         for id in launchable.iter() {
-                            let timing = create_timer(id.clone(), nth_wave);
+                            let timing = self.timer.create_timer(id.clone(), nth_wave);
 
                             let job = self.jobs_pending.get_mut(id).unwrap();
                             log::trace!("Start {:?}", id);
@@ -630,7 +634,7 @@ impl Workload {
                     self.timer.add(timing.complete());
 
                     // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
-                    let timing = create_timer(AnyWorkId::InternalTiming("spawn"), nth_wave)
+                    let timing = self.timer.create_timer(AnyWorkId::InternalTiming("spawn"), nth_wave)
                         .queued()
                         .run();
                     for _ in 0..launchable.len() {
@@ -695,12 +699,12 @@ impl Workload {
 
                 // Complete everything that has reported since our last check
                 if successes.is_empty() {
-                    let timing = create_timer(AnyWorkId::InternalTiming("rc"), nth_wave)
+                    let timing = self.timer.create_timer(AnyWorkId::InternalTiming("rc"), nth_wave)
                         .queued()
                         .run();
                     self.read_completions(&mut successes, &recv, RecvType::Blocking)?;
                     self.timer.add(timing.complete());
-                    let timing = create_timer(AnyWorkId::InternalTiming("hs"), nth_wave)
+                    let timing = self.timer.create_timer(AnyWorkId::InternalTiming("hs"), nth_wave)
                         .queued()
                         .run();
                     for (success, timing) in successes.iter() {
@@ -868,7 +872,7 @@ impl Workload {
             }
 
             let id = &launchable[0];
-            let timing = create_timer(id.clone(), 0);
+            let timing = self.timer.create_timer(id.clone(), 0);
             let job = self.jobs_pending.get(id).unwrap();
 
             let timing = timing.queued();

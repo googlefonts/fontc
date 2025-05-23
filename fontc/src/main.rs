@@ -1,9 +1,9 @@
-use std::{io::Write, time::Instant};
+use std::io::Write;
 
 use clap::Parser;
 
 use fontbe::orchestration::AnyWorkId;
-use fontc::{create_timer, Args, Error, JobTimer};
+use fontc::{Args, Error, JobTimer};
 use log::{error, warn};
 
 fn main() {
@@ -38,8 +38,9 @@ fn run(args: Args) -> Result<(), Error> {
         print_verbose_version().map_err(Error::StdioWriteFail)?;
         std::process::exit(0);
     }
-    let mut timer = JobTimer::new(Instant::now());
-    let time = create_timer(AnyWorkId::InternalTiming("Init logger"), 0)
+    let mut timer = JobTimer::new();
+    let time = timer
+        .create_timer(AnyWorkId::InternalTiming("Init logger"), 0)
         .queued()
         .run();
     let mut log_cfg = env_logger::builder();

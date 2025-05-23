@@ -11,7 +11,7 @@ pub use error::Error;
 
 use fontra2fontir::source::FontraIrSource;
 use glyphs2fontir::source::GlyphsIrSource;
-pub use timing::{create_timer, JobTimer};
+pub use timing::JobTimer;
 use ufo2fontir::source::DesignSpaceIrSource;
 use workload::Workload;
 
@@ -55,7 +55,8 @@ fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
 
 /// Run the compiler with the provided arguments
 pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
-    let time = create_timer(AnyWorkId::InternalTiming("Init config"), 0)
+    let time = timer
+        .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .queued()
         .run();
     let (ir_paths, be_paths) = init_paths(&args)?;
@@ -179,7 +180,6 @@ mod tests {
         io::Read,
         path::{Path, PathBuf},
         sync::Arc,
-        time::Instant,
     };
 
     use ordered_float::OrderedFloat;
@@ -252,7 +252,7 @@ mod tests {
         }
 
         fn compile(source: &str, adjust_args: impl Fn(Args) -> Args) -> TestCompile {
-            let timer = JobTimer::new(Instant::now());
+            let timer = JobTimer::new();
             let _ = env_logger::builder().is_test(true).try_init();
 
             let temp_dir = tempdir().unwrap();
