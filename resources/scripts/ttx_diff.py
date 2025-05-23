@@ -907,6 +907,7 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         name_id_to_name(ttx, "//UINameID", "value")
         name_id_to_name(ttx, "//AxisNameID", None)
         name_id_to_name(ttx, "//ValueNameID", "value")
+        name_id_to_name(ttx, "//ElidedFallbackNameID", "value")
         normalize_null_tags(ttx, "//OS_2/achVendID", "value")
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
