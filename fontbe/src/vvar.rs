@@ -5,6 +5,7 @@ use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontdrasil::types::GlyphName;
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::tables::vvar::Vvar;
+use write_fonts::OtRound;
 
 use crate::hvar::AdvanceDeltasBuilder;
 use crate::{
@@ -70,7 +71,7 @@ impl Work<Context, AnyWorkId, Error> for VvarWork {
                     let loc = loc.subset_axes(&static_metadata.axes);
                     let metrics = global_metrics.at(&loc);
 
-                    let height = src.height(&metrics) as f64;
+                    let height = (src.height(&metrics) as f64).ot_round();
 
                     (loc, vec![height])
                 })
