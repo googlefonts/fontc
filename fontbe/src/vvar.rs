@@ -55,11 +55,7 @@ impl Work<Context, AnyWorkId, Error> for VvarWork {
             .collect();
         let glyph_locations = glyphs.iter().flat_map(|glyph| glyph.sources().keys());
 
-        let default_metrics = context
-            .ir
-            .global_metrics
-            .get()
-            .at(static_metadata.default_location());
+        let global_metrics = context.ir.global_metrics.get();
 
         let mut glyph_advance_deltas =
             AdvanceDeltasBuilder::new(var_model.clone(), glyph_locations);
@@ -71,11 +67,12 @@ impl Work<Context, AnyWorkId, Error> for VvarWork {
                 // advances must be rounded before the computing deltas to match fontmake
                 // https://github.com/googlefonts/fontc/issues/1043
                 .map(|(loc, src)| {
-                    (
-                        loc.subset_axes(&static_metadata.axes),
-                        // TODO: Use metrics at location - blocked on interpolated metrics.
-                        vec![src.height(&default_metrics) as f64],
-                    )
+                    let loc = loc.subset_axes(&static_metadata.axes);
+                    let metrics = global_metrics.at(&loc);
+
+                    let height = src.height(&metrics) as f64;
+
+                    (loc, vec![height])
                 })
                 .collect();
             glyph_advance_deltas.add(name, advances)?;

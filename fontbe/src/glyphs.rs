@@ -14,7 +14,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, GlobalMetricsInstance, GlyphInstance, GlyphOrder},
+    ir::{self, GlobalMetrics, GlobalMetricsInstance, GlyphInstance, GlyphOrder},
     orchestration::{Flags, WorkId as FeWorkId},
     variations::{VariationModel, VariationRegion},
 };
@@ -234,7 +234,7 @@ fn add_phantom_points(
 fn point_seqs_for_simple_glyph(
     ir_glyph: &ir::Glyph,
     instances: HashMap<NormalizedLocation, SimpleGlyph>,
-    metrics: &GlobalMetricsInstance,
+    global_metrics: &GlobalMetrics,
     vertical: bool,
 ) -> HashMap<NormalizedLocation, Vec<Point>> {
     instances
@@ -248,9 +248,9 @@ fn point_seqs_for_simple_glyph(
                 .collect();
 
             let instance = &ir_glyph.sources()[&loc];
+            let metrics = global_metrics.at(&loc);
 
-            // TODO: Use metrics at location - blocked on interpolated metrics.
-            add_phantom_points(instance, metrics, vertical, &mut points);
+            add_phantom_points(instance, &metrics, vertical, &mut points);
 
             (loc, points)
         })
@@ -260,7 +260,7 @@ fn point_seqs_for_simple_glyph(
 /// See <https://github.com/fonttools/fonttools/blob/86291b6ef62ad4bdb48495a4b915a597a9652dcf/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
 fn point_seqs_for_composite_glyph(
     ir_glyph: &ir::Glyph,
-    metrics: &GlobalMetricsInstance,
+    global_metrics: &GlobalMetrics,
     vertical: bool,
 ) -> HashMap<NormalizedLocation, Vec<Point>> {
     ir_glyph
@@ -275,8 +275,8 @@ fn point_seqs_for_composite_glyph(
                 points.push((dx, dy).into());
             }
 
-            // TODO: Use metrics at location - blocked on interpolated metrics.
-            add_phantom_points(inst, metrics, vertical, &mut points);
+            let metrics = global_metrics.at(loc);
+            add_phantom_points(inst, &metrics, vertical, &mut points);
 
             (loc.clone(), points)
         })
@@ -365,11 +365,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
 
         let static_metadata = context.ir.static_metadata.get();
         let default_location = static_metadata.default_location();
-        let default_metrics = context
-            .ir
-            .global_metrics
-            .get()
-            .at(static_metadata.default_location());
+        let global_metrics = context.ir.global_metrics.get();
         let ir_glyph = &*context
             .ir
             .glyphs
@@ -393,7 +389,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                     .set_unconditionally(Glyph::new(name.clone(), composite));
                 let point_seqs = point_seqs_for_composite_glyph(
                     ir_glyph,
-                    &default_metrics,
+                    &global_metrics,
                     static_metadata.build_vertical,
                 );
                 (name, point_seqs, Vec::new())
@@ -439,7 +435,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                     point_seqs_for_simple_glyph(
                         ir_glyph,
                         instances,
-                        &default_metrics,
+                        &global_metrics,
                         static_metadata.build_vertical,
                     ),
                     contour_ends,
