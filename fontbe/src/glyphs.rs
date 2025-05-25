@@ -203,7 +203,7 @@ fn create_composite(
 fn add_phantom_points(
     instance: &GlyphInstance,
     metrics: &GlobalMetricsInstance,
-    vertical: bool,
+    build_vertical: bool,
     points: &mut Vec<Point>,
 ) {
     // FontTools says
@@ -214,7 +214,7 @@ fn add_phantom_points(
     points.push(Point::new(0.0, 0.0)); // leftSideX, 0
     points.push(Point::new(advance_width as f64, 0.0)); // rightSideX, 0
 
-    let (top, bottom) = vertical
+    let (top, bottom) = build_vertical
         .then(|| {
             // FontTools says
             //      topSideY = topSideBearing + glyph.yMax
@@ -235,7 +235,7 @@ fn point_seqs_for_simple_glyph(
     ir_glyph: &ir::Glyph,
     instances: HashMap<NormalizedLocation, SimpleGlyph>,
     global_metrics: &GlobalMetrics,
-    vertical: bool,
+    build_vertical: bool,
 ) -> HashMap<NormalizedLocation, Vec<Point>> {
     instances
         .into_iter()
@@ -250,7 +250,7 @@ fn point_seqs_for_simple_glyph(
             let instance = &ir_glyph.sources()[&loc];
             let metrics = global_metrics.at(&loc);
 
-            add_phantom_points(instance, &metrics, vertical, &mut points);
+            add_phantom_points(instance, &metrics, build_vertical, &mut points);
 
             (loc, points)
         })
@@ -261,7 +261,7 @@ fn point_seqs_for_simple_glyph(
 fn point_seqs_for_composite_glyph(
     ir_glyph: &ir::Glyph,
     global_metrics: &GlobalMetrics,
-    vertical: bool,
+    build_vertical: bool,
 ) -> HashMap<NormalizedLocation, Vec<Point>> {
     ir_glyph
         .sources()
@@ -276,7 +276,7 @@ fn point_seqs_for_composite_glyph(
             }
 
             let metrics = global_metrics.at(loc);
-            add_phantom_points(inst, &metrics, vertical, &mut points);
+            add_phantom_points(inst, &metrics, build_vertical, &mut points);
 
             (loc.clone(), points)
         })
