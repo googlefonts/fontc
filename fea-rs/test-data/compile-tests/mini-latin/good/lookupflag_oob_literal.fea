@@ -1,0 +1,7 @@
+feature hola {
+    # this literal is nonsensical; we will match fonttools and mask
+    # out the high byte.
+    # https://github.com/googlefonts/fontc/issues/1485
+    lookupflag 512;
+    pos a 10;
+} hola;

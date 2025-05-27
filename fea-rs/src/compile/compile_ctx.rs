@@ -481,8 +481,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     fn set_lookup_flag(&mut self, node: typed::LookupFlag) {
         self.lookup_flags.clear();
         if let Some(number) = node.number() {
-            self.lookup_flags.flags =
-                LookupFlag::from_bits_truncate(number.parse_unsigned().unwrap());
+            let raw = number.parse_unsigned().unwrap() & 0xff;
+            // match fonttools in masking out the high parts:
+            //https://github.com/fonttools/fonttools/blame/e89d7db4f4/Lib/fontTools/feaLib/builder.py#L1198
+            self.lookup_flags.flags = LookupFlag::from_bits_truncate(raw);
             return;
         }
 
