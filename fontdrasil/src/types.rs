@@ -116,6 +116,8 @@ pub struct Axis {
     pub max: UserCoord,
     pub hidden: bool,
     pub converter: CoordConverter,
+    /// Localized names for the axis, e.g. `{"en": "Weight"}`
+    pub localized_names: HashMap<String, String>,
 }
 
 impl Axis {
@@ -135,8 +137,7 @@ impl Axis {
     /// localised, whereas the latter is only used for internal cross-references.
     /// In Designspace documents, these are stored in the axes' `<labelname>` elements.
     /// FontTools uses these to build the name records associated with axis names referenced
-    /// by fvar and STAT tables, or else falls back to the axis.name. fontc doesn't know about
-    /// them until norad is able to parse them (<https://github.com/linebender/norad/issues/323>).
+    /// by fvar and STAT tables, or else falls back to the axis.name.
     /// But even when the labelnames are ommited, there's a special group of registered
     /// axis names that were common in old MutatorMath source files before the `<labelname>`
     /// element itself got standardised, which continue to receive a special treatment in
@@ -146,7 +147,12 @@ impl Axis {
     ///
     /// For additional info see: <https://github.com/googlefonts/fontc/issues/1020>
     pub fn ui_label_name(&self) -> &str {
-        // TODO: support localised labelnames when norad does
+        for (lang, string) in &self.localized_names {
+            if lang == "en" {
+                return string.as_str();
+            }
+        }
+
         let axis_name = self.name.as_str();
         match axis_name {
             "weight" => "Weight",
@@ -193,6 +199,7 @@ impl Axis {
                 ],
                 1,
             ),
+            localized_names: HashMap::new(),
         }
     }
 }
