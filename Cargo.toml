@@ -24,7 +24,7 @@ icu_properties = "2.0.0-beta1"
 # fontations etc
 write-fonts = { version = "0.38.1", features = ["serde", "read"] }
 skrifa = "0.31.0"
-norad = { version = "0.15.0", default-features = false }
+norad = { version = "0.16.0", default-features = false }
 
 # dev dependencies
 diff = "0.1.12"
