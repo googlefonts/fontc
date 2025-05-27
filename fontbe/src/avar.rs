@@ -175,6 +175,7 @@ mod tests {
             max: *mappings.iter().map(|(u, _)| u).max().unwrap(),
             hidden: false,
             converter: CoordConverter::new(mappings, default_idx),
+            localized_names: Default::default(),
         }
     }
 

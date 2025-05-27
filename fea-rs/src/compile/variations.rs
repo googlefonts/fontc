@@ -128,6 +128,7 @@ fn simple_axis(tag: Tag, min: i16, default: i16, max: i16) -> Axis {
             ],
             1,
         ),
+        localized_names: Default::default(),
     }
 }
 

@@ -1290,6 +1290,47 @@ mod tests {
         )
     }
 
+    #[test]
+    fn custom_english_ui_label_name() {
+        // The 'weight' axis has a custom `<labelname xml:lang="en">Heaviness</labelname>`;
+        // we expect this to be used for the axis name for UI purposes (fvar, STAT).
+        let result = TestCompile::compile_source("wght_var_axis_label_names.designspace");
+        let static_metadata = result.fe_context.static_metadata.get();
+
+        assert_eq!(
+            vec!["weight".to_string()],
+            static_metadata
+                .axes
+                .iter()
+                .map(|axis| axis.name.clone())
+                .collect::<Vec<_>>()
+        );
+
+        let font = result.font();
+        let name = font.name().unwrap();
+        let fvar = font.fvar().unwrap();
+
+        assert_eq!(
+            vec!["Heaviness".to_string()],
+            fvar.axes()
+                .unwrap()
+                .iter()
+                .map(|axis| resolve_name(&name, axis.axis_name_id()).unwrap())
+                .collect::<Vec<_>>()
+        );
+
+        let stat = font.stat().unwrap();
+
+        assert_eq!(
+            vec!["Heaviness".to_string()],
+            stat.design_axes()
+                .unwrap()
+                .iter()
+                .map(|axis| resolve_name(&name, axis.axis_name_id()).unwrap())
+                .collect::<Vec<_>>()
+        )
+    }
+
     fn assert_named_instances(source: &str, expected: Vec<(String, Vec<(&str, f64)>)>) {
         let result = TestCompile::compile_source(source);
         let font = result.font();

@@ -219,6 +219,9 @@ fn to_ir_axis(
         default: default.to_user(&converter),
         max: max.to_user(&converter),
         converter,
+        // localized axis names from .glyphs sources aren't supported yet
+        // https://forum.glyphsapp.com/t/localisable-axis-names/19028
+        localized_names: Default::default(),
     })
 }
 

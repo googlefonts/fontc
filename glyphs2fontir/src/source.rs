@@ -1503,6 +1503,7 @@ mod tests {
                         ],
                         4
                     ),
+                    localized_names: Default::default(),
                 },
                 fontdrasil::types::Axis {
                     name: "Optical Size".into(),
@@ -1518,6 +1519,7 @@ mod tests {
                         ],
                         0
                     ),
+                    localized_names: Default::default(),
                 },
             ],
             static_metadata.all_source_axes.clone().into_inner()

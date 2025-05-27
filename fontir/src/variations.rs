@@ -1517,6 +1517,7 @@ mod tests {
                     ],
                     0,
                 ),
+                localized_names: Default::default(),
             }]
             .into(),
         )

@@ -1205,6 +1205,7 @@ mod tests {
                     max,
                     hidden: false,
                     converter: CoordConverter::unmapped(min, default, max),
+                    localized_names: Default::default(),
                 })
                 .collect();
             let named_instances = self

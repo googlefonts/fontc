@@ -156,6 +156,12 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
     } else {
         CoordConverter::unmapped(min, default, max)
     };
+    let localized_names = axis
+        .label_names
+        .iter()
+        .map(|ln| (ln.language.clone(), ln.string.clone()))
+        .collect();
+
     Ok(fontdrasil::types::Axis {
         name: axis.name.clone(),
         tag,
@@ -164,6 +170,7 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
         default,
         max,
         converter,
+        localized_names,
     })
 }
 

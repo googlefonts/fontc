@@ -64,6 +64,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<Static
                 default,
                 max,
                 converter,
+                localized_names: Default::default(),
             })
         })
         .collect::<Result<_, _>>()?;

@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="weight" minimum="400" maximum="700" default="400">
+      <map input="400" output="10"/>
+      <map input="500" output="15"/>
+      <map input="700" output="20"/>
+      <labelname xml:lang="en">Heaviness</labelname>
+    </axis>
+  </axes>
+  <sources>
+    <source filename="WghtVar-Regular.ufo" name="Wght Var Regular" familyname="Wght Var" stylename="Regular">
+      <location>
+        <dimension name="weight" xvalue="10"/>
+      </location>
+    </source>
+    <source filename="WghtVar-Bold.ufo" name="Wght Var Bold" familyname="Wght Var" stylename="Bold">
+      <location>
+        <dimension name="weight" xvalue="20"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <instance name="Wght Var Medium" familyname="Wght Var" stylename="Medium" filename="WghtVar-Medium.ufo">
+      <location>
+        <dimension name="weight" xvalue="15"/>
+      </location>
+    </instance>
+  </instances>
+</designspace>
