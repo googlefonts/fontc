@@ -888,6 +888,20 @@ def densify_one_glyph(coords, ends, variations: etree.ElementTree):
     return did_work
 
 
+def empty(element: etree.Element) -> bool:
+    # empty if has any attributes or non-comment children
+    return (len(element.attrib) == 0
+        and not any(1 for c in element if c.tag is not etree.Comment))
+
+
+def remove_empty_conditionsets(ttx: etree.ElementTree):
+    condsets = list(ttx.xpath("//ConditionSet"))
+    for condset in condsets:
+        if empty(condset):
+            condset.getparent().remove(condset)
+
+
+
 def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
     fontmake_glyph_map = {
         el.attrib["name"]: int(el.attrib["id"])
@@ -929,6 +943,10 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         # sort names within the name table (do this at the end, so ids are correct
         # for earlier steps)
         normalize_name_ids(ttx)
+
+        # null conditionset and empty are equivalent
+        # https://github.com/googlefonts/fontc/pull/1492
+        remove_empty_conditionsets(ttx)
 
     allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
     allow_some_off_by_ones(
