@@ -1102,8 +1102,18 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
 
     fn validate_lookupflag(&mut self, node: &typed::LookupFlag) {
         if let Some(number) = node.number() {
-            if number.text().parse::<u16>().is_err() {
-                self.error(number.range(), "value must be a positive 16 bit integer");
+            match number.text().parse::<u16>() {
+                Ok(val) => {
+                    if val > 0xff {
+                        self.warning(
+                        number.range(),
+                        "the high byte of lookupflag literals is not portable and will be ignored.",
+                    );
+                    }
+                }
+                Err(_) => {
+                    self.error(number.range(), "value must be a positive 16 bit integer");
+                }
             }
             return;
         }
