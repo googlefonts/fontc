@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ttFont>
+
+  <name>
+    <namerecord nameID="256" platformID="3" platEncID="1" langID="0x409">
+      Feature description for GPOS ss01
+    </namerecord>
+    <namerecord nameID="257" platformID="3" platEncID="1" langID="0x409">
+      UI label GPOS cv01
+    </namerecord>
+    <namerecord nameID="258" platformID="3" platEncID="1" langID="0x409">
+      Tooltip GPOS cv01
+    </namerecord>
+    <namerecord nameID="259" platformID="3" platEncID="1" langID="0x409">
+      Sample text GPOS cv01
+    </namerecord>
+    <namerecord nameID="260" platformID="3" platEncID="1" langID="0x409">
+      Param 1 text GPOS cv01
+    </namerecord>
+    <namerecord nameID="261" platformID="3" platEncID="1" langID="0x409">
+      Param 2 text GPOS cv01
+    </namerecord>
+  </name>
+
+  <GPOS>
+    <Version value="0x00010000"/>
+    <ScriptList>
+      <!-- ScriptCount=1 -->
+      <ScriptRecord index="0">
+        <ScriptTag value="DFLT"/>
+        <Script>
+          <DefaultLangSys>
+            <ReqFeatureIndex value="65535"/>
+            <!-- FeatureCount=2 -->
+            <FeatureIndex index="0" value="0"/>
+            <FeatureIndex index="1" value="1"/>
+          </DefaultLangSys>
+          <!-- LangSysCount=0 -->
+        </Script>
+      </ScriptRecord>
+    </ScriptList>
+    <FeatureList>
+      <!-- FeatureCount=2 -->
+      <FeatureRecord index="0">
+        <FeatureTag value="cv01"/>
+        <Feature>
+          <FeatureParamsCharacterVariants Format="0">
+            <Format value="0"/>
+            <FeatUILabelNameID value="257"/>  <!-- UI label GPOS cv01 -->
+            <FeatUITooltipTextNameID value="258"/>  <!-- Tooltip GPOS cv01 -->
+            <SampleTextNameID value="259"/>  <!-- Sample text GPOS cv01 -->
+            <NumNamedParameters value="2"/>
+            <FirstParamUILabelNameID value="260"/>  <!-- Param 1 text GPOS cv01 -->
+            <!-- CharCount=2 -->
+            <Character index="0" value="65"/>
+            <Character index="1" value="66"/>
+          </FeatureParamsCharacterVariants>
+          <!-- LookupCount=1 -->
+          <LookupListIndex index="0" value="1"/>
+        </Feature>
+      </FeatureRecord>
+      <FeatureRecord index="1">
+        <FeatureTag value="ss01"/>
+        <Feature>
+          <FeatureParamsStylisticSet>
+            <Version value="0"/>
+            <UINameID value="256"/>  <!-- Feature description for GPOS ss01 -->
+          </FeatureParamsStylisticSet>
+          <!-- LookupCount=1 -->
+          <LookupListIndex index="0" value="0"/>
+        </Feature>
+      </FeatureRecord>
+    </FeatureList>
+    <LookupList>
+      <!-- LookupCount=2 -->
+      <Lookup index="0">
+        <LookupType value="1"/>
+        <LookupFlag value="0"/>
+        <!-- SubTableCount=1 -->
+        <SinglePos index="0" Format="1">
+          <Coverage>
+            <Glyph value="A"/>
+          </Coverage>
+          <ValueFormat value="4"/>
+          <Value XAdvance="-10"/>
+        </SinglePos>
+      </Lookup>
+      <Lookup index="1">
+        <LookupType value="1"/>
+        <LookupFlag value="0"/>
+        <!-- SubTableCount=1 -->
+        <SinglePos index="0" Format="1">
+          <Coverage>
+            <Glyph value="A"/>
+            <Glyph value="B"/>
+          </Coverage>
+          <ValueFormat value="4"/>
+          <Value XAdvance="-1"/>
+        </SinglePos>
+      </Lookup>
+    </LookupList>
+  </GPOS>
+
+</ttFont>

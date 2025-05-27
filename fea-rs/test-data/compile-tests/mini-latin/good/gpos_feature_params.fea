@@ -1,0 +1,18 @@
+feature ss01 {
+    featureNames { name "Feature description for GPOS ss01"; };
+    pos A -10;
+} ss01;
+
+feature cv01 {
+    cvParameters {
+        FeatUILabelNameID { name "UI label GPOS cv01"; };
+        FeatUITooltipTextNameID { name "Tooltip GPOS cv01"; };
+        SampleTextNameID { name "Sample text GPOS cv01"; };
+        ParamUILabelNameID { name "Param 1 text GPOS cv01"; };
+        ParamUILabelNameID { name "Param 2 text GPOS cv01"; };
+        Character 0x41;
+        Character 0x42;
+    };
+    pos A -1;
+    pos B -1;
+} cv01;

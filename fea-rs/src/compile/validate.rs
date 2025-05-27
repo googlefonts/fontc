@@ -683,7 +683,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             Kind::SampleTextNameIdKw,
             Kind::ParamUiLabelNameIdKw,
         ] {
-            if !node.iter().any(|x| x.kind() == kind) {
+            if node.find_node(kind).is_none() {
                 self.warning(node.keyword().range(), format!("missing '{kind}' node"));
             }
         }
