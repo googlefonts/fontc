@@ -55,3 +55,6 @@ members = [
 
 [patch.crates-io]
 tidy-sys = { version = "0.8.2", git = "https://github.com/cmyr/tidy-sys.git", branch = "cmake-hotfix" }
+
+# TEMP
+norad =  { version = "0.15.0", git = "https://github.com/linebender/norad.git" }
