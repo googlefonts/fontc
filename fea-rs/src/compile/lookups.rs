@@ -1155,8 +1155,14 @@ where
                 .variations
                 .into_iter()
                 .map(|(condset, features)| {
-                    // if this is an empty conditionset, leave the offset null
-                    let condset = (!condset.conditions.is_empty()).then_some(condset);
+                    // TODO: it would be more efficient to skip writing the
+                    // ConditionSet if it is empty, but for the time being we
+                    // are going to match fonttools.
+                    // See https://github.com/fonttools/fonttools/issues/3844
+                    //
+                    // (the old optimization is commented out below)
+                    //let condset = (!condset.conditions.is_empty()).then_some(condset);
+                    let condset = Some(condset);
                     FeatureVariationRecord::new(
                         condset,
                         FeatureTableSubstitution::new(
