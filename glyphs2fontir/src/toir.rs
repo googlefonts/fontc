@@ -219,6 +219,8 @@ fn to_ir_axis(
         default: default.to_user(&converter),
         max: max.to_user(&converter),
         converter,
+        // TODO: support localized axis names from .glyphs sources
+        localized_names: Default::default(),
     })
 }
 

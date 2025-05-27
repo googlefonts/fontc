@@ -795,6 +795,7 @@ mod tests {
                     max: UserCoord::new(0.0),
                     hidden: false,
                     converter: CoordConverter::new(vec![], 0),
+                    localized_names: Default::default(),
                 },
             ],
             Default::default(),
