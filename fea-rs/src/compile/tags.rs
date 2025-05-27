@@ -8,8 +8,6 @@ pub const AALT: Tag = Tag::new(b"aalt");
 pub const SIZE: Tag = Tag::new(b"size");
 pub const LANG_DFLT: Tag = Tag::new(b"dflt");
 pub const SCRIPT_DFLT: Tag = Tag::new(b"DFLT");
-pub const GSUB: Tag = Tag::new(b"GSUB");
-pub const GPOS: Tag = Tag::new(b"GPOS");
 
 pub const WIN_PLATFORM_ID: u16 = 3;
 pub const MAC_PLATFORM_ID: u16 = 1;

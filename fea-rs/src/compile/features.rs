@@ -221,24 +221,21 @@ impl AllFeatures {
     pub(crate) fn build_feature_params(
         &self,
         name_builder: &mut NameBuilder,
-    ) -> HashMap<(Tag, Tag), FeatureParams> {
+    ) -> HashMap<Tag, FeatureParams> {
         let mut result = HashMap::new();
         if let Some(size) = &self.size {
-            result.insert(
-                (tags::GPOS, tags::SIZE),
-                FeatureParams::Size(size.build(name_builder)),
-            );
+            result.insert(tags::SIZE, FeatureParams::Size(size.build(name_builder)));
         }
 
         for (tag, names) in self.stylistic_sets.iter() {
             let id = name_builder.add_anon_group(names);
             let params = FeatureParams::StylisticSet(StylisticSetParams::new(id));
-            result.insert((tags::GSUB, *tag), params);
+            result.insert(*tag, params);
         }
 
         for (tag, cv_params) in self.character_variants.iter() {
             let params = cv_params.build(name_builder);
-            result.insert((tags::GSUB, *tag), FeatureParams::CharacterVariant(params));
+            result.insert(*tag, FeatureParams::CharacterVariant(params));
         }
         result
     }

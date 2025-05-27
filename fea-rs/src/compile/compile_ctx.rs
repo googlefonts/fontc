@@ -227,7 +227,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 });
             }
             for record in gsub.feature_list.feature_records.iter_mut() {
-                if let Some(params) = feature_params.get(&(tags::GSUB, record.feature_tag)) {
+                if let Some(params) = feature_params.get(&record.feature_tag) {
                     record.feature.feature_params = params.clone().into();
                 }
             }
@@ -246,7 +246,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             }
 
             for record in gpos.feature_list.feature_records.iter_mut() {
-                if let Some(params) = feature_params.get(&(tags::GPOS, record.feature_tag)) {
+                if let Some(params) = feature_params.get(&record.feature_tag) {
                     record.feature.feature_params = params.clone().into();
                 }
             }
