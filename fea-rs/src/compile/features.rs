@@ -10,7 +10,7 @@ use write_fonts::{
 
 use super::{
     language_system::{DefaultLanguageSystems, LanguageSystem},
-    lookups::{AllLookups, FeatureKey, LookupId, LookupIdMap},
+    lookups::{AllLookups, FeatureKey, IterAaltPairs, LookupId, LookupIdMap},
     tables::{NameBuilder, NameSpec},
     tags,
 };
@@ -162,12 +162,32 @@ impl AllFeatures {
         // now go through the lookups, ordered by appearance of feature in aalt
         for (_, lookup) in relevant_lookups.iter().flat_map(|x| x.iter()) {
             match lookup {
-                super::lookups::SubstitutionLookup::Single(lookup) => {
-                    aalt.extend(lookup.iter_subtables().flat_map(|sub| sub.iter_pairs()))
+                super::lookups::SubstitutionLookup::Single(lookup) => aalt.extend(
+                    lookup
+                        .iter_subtables()
+                        .flat_map(|sub| sub.iter_aalt_pairs()),
+                ),
+                super::lookups::SubstitutionLookup::Alternate(lookup) => aalt.extend(
+                    lookup
+                        .iter_subtables()
+                        .flat_map(|sub| sub.iter_aalt_pairs()),
+                ),
+                super::lookups::SubstitutionLookup::Multiple(lookup) => {
+                    aalt.extend(
+                        lookup
+                            .iter_subtables()
+                            .flat_map(|sub| sub.iter_aalt_pairs()),
+                    );
                 }
-                super::lookups::SubstitutionLookup::Alternate(lookup) => {
-                    aalt.extend(lookup.iter_subtables().flat_map(|sub| sub.iter_pairs()))
+
+                super::lookups::SubstitutionLookup::Ligature(lookup) => {
+                    aalt.extend(
+                        lookup
+                            .iter_subtables()
+                            .flat_map(|sub| sub.iter_aalt_pairs()),
+                    );
                 }
+
                 _ => (),
             }
         }

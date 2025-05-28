@@ -1,0 +1,15 @@
+feature aalt {
+    feature calt;
+    feature halt;
+    sub a by c;
+} aalt;
+
+feature calt {
+    sub b by d; # this will get promoted to a ligature rule, but we still want it in aalt
+    sub f e by g;
+} calt;
+
+feature halt {
+    sub h by i; # this will be promoted to multisub, but we still want it in aalt
+    sub j by k l;
+} halt;

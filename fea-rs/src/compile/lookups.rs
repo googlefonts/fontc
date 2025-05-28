@@ -197,6 +197,46 @@ impl<T: RemapIds> RemapIds for LookupBuilder<T> {
     }
 }
 
+pub(crate) trait IterAaltPairs {
+    fn iter_aalt_pairs(&self) -> impl Iterator<Item = (GlyphId16, GlyphId16)>;
+}
+
+impl IterAaltPairs for LigatureSubBuilder {
+    fn iter_aalt_pairs(&self) -> impl Iterator<Item = (GlyphId16, GlyphId16)> {
+        self.iter()
+            .flat_map(|(targ, ligs)| ligs.iter().map(|x| (*targ, x)))
+            .filter_map(|(targ, (components, replacement))| {
+                if components.is_empty() {
+                    Some((targ, *replacement))
+                } else {
+                    None
+                }
+            })
+    }
+}
+
+impl IterAaltPairs for MultipleSubBuilder {
+    fn iter_aalt_pairs(&self) -> impl Iterator<Item = (GlyphId16, GlyphId16)> {
+        self.iter()
+            .filter_map(|(targ, replacement)| match replacement.as_slice() {
+                &[just_one] => Some((*targ, just_one)),
+                _ => None,
+            })
+    }
+}
+
+impl IterAaltPairs for AlternateSubBuilder {
+    fn iter_aalt_pairs(&self) -> impl Iterator<Item = (GlyphId16, GlyphId16)> {
+        self.iter_pairs()
+    }
+}
+
+impl IterAaltPairs for SingleSubBuilder {
+    fn iter_aalt_pairs(&self) -> impl Iterator<Item = (GlyphId16, GlyphId16)> {
+        self.iter()
+    }
+}
+
 impl PositionLookup {
     fn remap_ids(&mut self, id_map: &LookupIdMap) {
         match self {
@@ -566,13 +606,17 @@ impl AllLookups {
     /// If lookup is GSUB type 1 or 3, return a single lookup.
     /// If contextual, returns any referenced single-sub lookups.
     pub(crate) fn aalt_lookups(&self, id: LookupId) -> Vec<&SubstitutionLookup> {
-        let lookup = self.get_gsub_lookup(&id);
+        let Some(lookup) = self.get_gsub_lookup(&id) else {
+            return Vec::new();
+        };
 
         match lookup {
-            Some(sub @ SubstitutionLookup::Single(_) | sub @ SubstitutionLookup::Alternate(_)) => {
-                vec![sub]
-            }
-            Some(SubstitutionLookup::Contextual(lookup)) => lookup
+            SubstitutionLookup::Single(_)
+            | SubstitutionLookup::Alternate(_)
+            | SubstitutionLookup::Multiple(_)
+            | SubstitutionLookup::Ligature(_) => vec![lookup],
+
+            SubstitutionLookup::Contextual(lookup) => lookup
                 .subtables
                 .iter()
                 .flat_map(|sub| sub.iter_lookups())
@@ -581,7 +625,7 @@ impl AllLookups {
                     _ => None,
                 })
                 .collect(),
-            Some(SubstitutionLookup::ChainedContextual(lookup)) => lookup
+            SubstitutionLookup::ChainedContextual(lookup) => lookup
                 .subtables
                 .iter()
                 .flat_map(|sub| sub.iter_lookups())
