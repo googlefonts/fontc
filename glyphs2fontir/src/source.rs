@@ -310,7 +310,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             selection_flags |= SelectionFlags::REGULAR;
         }
 
-        let categories = make_glyph_categories(font);
+        let categories = make_glyph_categories(font_info);
 
         // Only build vertical metrics if at least one glyph defines a vertical
         // attribute.
@@ -594,14 +594,25 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
         .collect()
 }
 
-fn make_glyph_categories(font: &Font) -> GdefCategories {
-    let categories = font
+fn make_glyph_categories(font_info: &FontInfo) -> GdefCategories {
+    let categories = font_info
+        .font
         .glyphs
         .iter()
         .filter_map(|(name, glyph)| {
-            category_for_glyph(glyph).map(|cat| (GlyphName::new(name), cat))
+            let category = category_for_glyph(glyph)?;
+
+            // Apply the same category for derived bracket glyphs.
+            let entries = [GlyphName::new(name)]
+                .into_iter()
+                .chain(bracket_glyph_names(glyph, &font_info.axes).map(|(name, _)| name))
+                .map(move |name| (name, category));
+
+            Some(entries)
         })
+        .flatten()
         .collect();
+
     GdefCategories {
         categories,
         prefer_gdef_categories_in_fea: false,
