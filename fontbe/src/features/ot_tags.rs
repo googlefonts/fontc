@@ -71,6 +71,7 @@ pub(crate) static USE_SCRIPTS: &[&str] = &[
     "Ahom", // Ahom
     "Bali", // Balinese
     "Batk", // Batak
+    "Bhks", // Bhaiksuki
     "Brah", // Brahmi
     "Bugi", // Buginese
     "Buhd", // Buhid
@@ -112,8 +113,7 @@ pub(crate) static USE_SCRIPTS: &[&str] = &[
     "Nagm", // Nag Mundari
     "Nand", // Nandinagari
     "Newa", // Newa
-    "Nhks", // Bhaiksuki
-    "Nko ", // Nko
+    "Nkoo", // Nko
     "Ougr", // Old Uyghur
     "Phag", // Phags Pa
     "Phlp", // Psalter Pahlavi
