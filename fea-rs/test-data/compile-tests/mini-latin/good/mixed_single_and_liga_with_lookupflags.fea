@@ -1,0 +1,8 @@
+# breaking down a funny lookup situation from a real font
+feature clig {
+    sub a by b;
+    lookupflag 4;
+    sub e l f by z;
+} clig;
+
+

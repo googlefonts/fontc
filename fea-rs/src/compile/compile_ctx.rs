@@ -697,7 +697,9 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         // we combine mixed single/multi-sub rules into a multi-sub lookup.
         // if this is the first multi-sub rule after a sequence of single-sub rules,
         // we need to promote the current single-sub lookup before continuing.
-        self.lookups.promote_single_sub_to_multi_if_necessary();
+        if self.lookups.has_same_flags(self.lookup_flags) {
+            self.lookups.promote_single_sub_to_multi_if_necessary();
+        }
         let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
         lookup.add_gsub_type_2(target_id, replacement);
     }
@@ -716,7 +718,9 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .collect::<Vec<_>>();
         let replacement = self.resolve_glyph(&node.replacement());
         // we combine mixed single & ligature sub rules into a ligature-sub lookup.
-        self.lookups.promote_single_sub_to_liga_if_necessary();
+        if self.lookups.has_same_flags(self.lookup_flags) {
+            self.lookups.promote_single_sub_to_liga_if_necessary();
+        }
         let lookup = self.ensure_current_lookup_type(Kind::GsubType4);
 
         for target in sequence_enumerator(&target) {
