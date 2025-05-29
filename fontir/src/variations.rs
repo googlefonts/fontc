@@ -1541,4 +1541,68 @@ mod tests {
                 .collect::<Vec<_>>()
         );
     }
+
+    #[test]
+    fn variations_for_tag_interpolation_of_weight_loudness() {
+        // Hypothetical weight axis [200, 800], default 400
+        let wght_min = UserCoord::new(200.0);
+        let wght_default = UserCoord::new(400.0);
+        let wght_max = UserCoord::new(800.0);
+        let weight_axis = Axis {
+            name: "Weight".to_string(),
+            tag: Tag::new(b"wght"),
+            min: wght_min,
+            default: wght_default,
+            max: wght_max,
+            hidden: false,
+            converter: CoordConverter::new(
+                vec![
+                    (wght_default, DesignCoord::new(wght_default.into_inner())),
+                    (wght_max, DesignCoord::new(wght_max.into_inner())),
+                ],
+                0,
+            ),
+            localized_names: Default::default(),
+        };
+
+        // (wght, tag value) tuples basically
+        // Tag values are [0, 100] default 0
+        // wght is expressed in normalized values
+        let master_values = HashMap::from([
+            (NormalizedLocation::for_pos(&[("wght", -1.0)]), vec![0.0]),
+            (NormalizedLocation::for_pos(&[("wght", 0.0)]), vec![0.0]),
+            (NormalizedLocation::for_pos(&[("wght", 1.0)]), vec![90.0]),
+        ]);
+
+        // Make a variation model covering the locations for which we have data
+        let model = VariationModel::new(
+            master_values.keys().cloned().collect(),
+            vec![weight_axis].into(),
+        )
+        .unwrap();
+
+        let deltas = model.deltas(&master_values.clone()).unwrap();
+
+        // Now we can compute the value at in-betweens!
+        let expected_values = vec![
+            // halfway between min and default
+            (NormalizedLocation::for_pos(&[("wght", -0.5)]), 0.0),
+            // halfway between default and max
+            (NormalizedLocation::for_pos(&[("wght", 0.5)]), 45.0),
+            // the max
+            (NormalizedLocation::for_pos(&[("wght", 1.0)]), 90.0),
+        ];
+        assert_eq!(
+            expected_values,
+            expected_values
+                .iter()
+                .map(|(loc, _)| (
+                    loc.clone(),
+                    VariationModel::interpolate_from_deltas(loc, &deltas)
+                        .iter()
+                        .sum()
+                ))
+                .collect::<Vec<_>>()
+        );
+    }
 }
