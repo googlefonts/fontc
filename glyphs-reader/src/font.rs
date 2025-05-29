@@ -323,6 +323,18 @@ impl Layer {
         })
     }
 
+    /// NOTE: panics if called on a non-bracket layer
+    fn bracket_info(&self, axes: &[Axis]) -> BTreeMap<String, (Option<i64>, Option<i64>)> {
+        assert!(
+            !self.attributes.axis_rules.is_empty(),
+            "all bracket layers have axis rules"
+        );
+        axes.iter()
+            .zip(&self.attributes.axis_rules)
+            .map(|(axis, rule)| (axis.tag.clone(), (rule.min, rule.max)))
+            .collect()
+    }
+
     // TODO add is_alternate, is_color, etc.
 }
 
@@ -2898,6 +2910,10 @@ impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
         let mut font = Self::load_raw(glyphs_file)?;
 
+        // ensure that glyphs with components that have bracket layers
+        // also have bracket layers.
+        font.align_bracket_layers();
+
         // propagate anchors by default unless explicitly set to false
         if font.custom_parameters.propagate_anchors.unwrap_or(true) {
             font.propagate_all_anchors();
@@ -2905,7 +2921,79 @@ impl Font {
         Ok(font)
     }
 
-    // load without propagating anchors
+    /// if a glyph has components that have alternate layers, copy the layer
+    /// locations into the glyph.
+    ///
+    /// This is required to correctly handle bracket glyphs.
+    // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/builder/bracket_layers.py#L176
+    fn align_bracket_layers(&mut self) {
+        // python does this recursively but we'll presort instead
+        let todo = self.depth_sorted_composite_glyphs();
+
+        for name in &todo {
+            let mut needed = HashMap::new();
+            let glyph = self.glyphs.get(name).unwrap();
+            let my_bracket_layers = glyph
+                .bracket_layers
+                .iter()
+                .map(|l| l.bracket_info(&self.axes))
+                .collect::<HashSet<_>>();
+            for layer in &glyph.layers {
+                for comp in layer.components() {
+                    let comp_glyph = self.glyphs.get(&comp.name).unwrap();
+
+                    let comp_bracket_layers = comp_glyph
+                        .bracket_layers
+                        .iter()
+                        .map(|l| l.bracket_info(&self.axes))
+                        .collect::<HashSet<_>>();
+                    if comp_bracket_layers != my_bracket_layers {
+                        let missing = comp_bracket_layers.difference(&my_bracket_layers);
+                        needed
+                            .entry(layer.layer_id.clone())
+                            .or_insert(HashSet::new())
+                            .extend(missing.cloned());
+                    }
+                }
+            }
+
+            if needed.is_empty() {
+                // all good, next glyph
+                continue;
+            }
+
+            let mut new_layers = Vec::new();
+            for (master, needed_brackets) in needed {
+                let master_name = self
+                    .masters
+                    .iter()
+                    .find_map(|m| (m.id == master).then_some(m.name.as_str()))
+                    .unwrap_or(master.as_str());
+                if !my_bracket_layers.is_empty() {
+                    log::warn!(
+                        "Glyph {name} in master {master_name} has different bracket layers \
+                        than its components. This is not supported, so some bracket layers \
+                        will not be applied. Consider fixing the source instead."
+                    );
+                }
+
+                for box_ in needed_brackets {
+                    let base_layer = glyph.layers.iter().find(|l| l.layer_id == master).unwrap();
+                    log::debug!("synthesized layer {box_:?} in master {master_name} for '{name}'",);
+                    let new_layer = synthesize_bracket_layer(base_layer, box_, &self.axes);
+                    new_layers.push(new_layer);
+                }
+            }
+
+            self.glyphs
+                .get_mut(name)
+                .unwrap()
+                .bracket_layers
+                .extend_from_slice(&new_layers);
+        }
+    }
+
+    // load without propagating anchors or components
     pub(crate) fn load_raw(glyphs_file: impl AsRef<path::Path>) -> Result<Font, Error> {
         RawFont::load(glyphs_file.as_ref()).and_then(Font::try_from)
     }
@@ -2922,6 +3010,31 @@ impl Font {
     pub fn vendor_id(&self) -> Option<&String> {
         self.names.get("vendorID")
     }
+}
+
+//https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/builder/bracket_layers.py#L258
+fn synthesize_bracket_layer(
+    old_layer: &Layer,
+    box_: BTreeMap<String, (Option<i64>, Option<i64>)>,
+    axes: &[Axis],
+) -> Layer {
+    let mut new_layer = old_layer.clone();
+    new_layer.associated_master_id = Some(std::mem::take(&mut new_layer.layer_id));
+    new_layer.attributes.axis_rules = axes
+        .iter()
+        .map(|axis| {
+            if let Some((min, max)) = box_.get(&axis.tag) {
+                AxisRule {
+                    min: min.map(|x| x as _),
+                    max: max.map(|x| x as _),
+                }
+            } else {
+                Default::default()
+            }
+        })
+        .collect();
+
+    new_layer
 }
 
 /// Convert [kurbo::Point] to this for eq and hash/

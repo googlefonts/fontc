@@ -1349,7 +1349,7 @@ mod tests {
     };
     use fontir::{
         error::Error,
-        ir::{AnchorKind, GlobalMetricsInstance, GlyphOrder, NameKey},
+        ir::{AnchorKind, GlobalMetricsInstance, Glyph, GlyphOrder, NameKey},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
@@ -2415,6 +2415,15 @@ mod tests {
         );
     }
 
+    fn get_components(glyph: &Glyph) -> Vec<&str> {
+        glyph
+            .default_instance()
+            .components
+            .iter()
+            .map(|c| c.base.as_str())
+            .collect()
+    }
+
     #[test]
     fn bracket_glyph_components() {
         let (source, context) =
@@ -2422,25 +2431,24 @@ mod tests {
         build_glyphs(&source, &context).unwrap();
 
         let yen = context.get_glyph("yen");
-        assert_eq!(
-            yen.default_instance()
-                .components
-                .iter()
-                .map(|c| c.base.as_str())
-                .collect::<Vec<_>>(),
-            ["peso"]
-        );
+        assert_eq!(get_components(&yen), ["peso"]);
 
         let yen_bracket = context.get_glyph("yen.BRACKET.varAlt01");
-        assert_eq!(
-            yen_bracket
-                .default_instance()
-                .components
-                .iter()
-                .map(|c| c.base.as_str())
-                .collect::<Vec<_>>(),
-            ["peso.BRACKET.varAlt01"]
-        );
+        assert_eq!(get_components(&yen_bracket), ["peso.BRACKET.varAlt01"]);
+    }
+
+    // if a glyph does not have bracket layers but a component does, we make
+    // fake bracket layers on the glyph.
+    #[test]
+    fn non_bracket_glyph_with_bracket_component() {
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("glyph-with-bracket-component.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+        let yen = context.get_glyph("yen");
+        assert_eq!(get_components(&yen), ["peso"]);
+
+        let yen_bracket = context.get_glyph("yen.BRACKET.varAlt01");
+        assert_eq!(get_components(&yen_bracket), ["peso.BRACKET.varAlt01"]);
     }
 
     #[test]
