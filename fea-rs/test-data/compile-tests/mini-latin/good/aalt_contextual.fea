@@ -1,0 +1,23 @@
+languagesystem DFLT dflt;
+
+# this should include the k -> K and j -> J mappings from the nested
+# contextual lookup
+feature aalt {
+    feature clig;
+} aalt;
+
+# this is a contextual lookup
+lookup base_aa_ligatures {
+	sub k' hyphen by K;
+	sub j' hyphen by J;
+} base_aa_ligatures;
+
+feature clig {
+# this is a contextual lookup which references the above contextual lookup
+lookup km_base_liga {
+  sub [j-k]' lookup base_aa_ligatures hyphen';
+} km_base_liga;
+
+} clig;
+
+
