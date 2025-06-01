@@ -2466,6 +2466,25 @@ mod tests {
     }
 
     #[test]
+    fn bracket_glyph_categories() {
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("LibreFranklin-bracketlayer.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+
+        let categories = &context.static_metadata.get().gdef_categories.categories;
+
+        // When a glyph has a category, its associated bracket glyphs should
+        // have the same one too.
+        assert_eq!(
+            [
+                categories.get("yen"),
+                categories.get("yen.BRACKET.varAlt01")
+            ],
+            [Some(&GlyphClassDef::Base), Some(&GlyphClassDef::Base)]
+        );
+    }
+
+    #[test]
     fn bracket_glyphs_to_dspace_rules() {
         // this is taken from a real world font that didn't compile correctly
         // unless we did overlay_feature_variations as part of generating the dspace rules.
