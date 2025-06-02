@@ -503,28 +503,30 @@ fn glyph_categories(
     Ok(categories)
 }
 
-fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, BadSource> {
-    let postscript_names = match lib_plist.get("public.postscriptNames") {
-        Some(value) => {
-            let postscript_names_lib = value.as_dictionary().ok_or_else(|| {
-                BadSource::custom("lib.plist", "public.postscriptNames isn't a dictionary")
-            })?;
-            postscript_names_lib
-                .iter()
-                .filter_map(|(glyph_name, ps_name)| match ps_name.as_string() {
-                    Some(ps_name) => Some((
-                        GlyphName::from(glyph_name.as_str()),
-                        GlyphName::from(ps_name),
-                    )),
-                    None => {
-                        warn!("public.postscriptNames: \"{glyph_name}\" has a non-string entry");
-                        None
-                    }
-                })
-                .collect()
-        }
-        None => HashMap::new(),
+fn postscript_names(lib_plist: &plist::Dictionary) -> Result<Option<PostscriptNames>, BadSource> {
+    let Some(raw_postscript_names) = lib_plist.get("public.postscriptNames") else {
+        // absence of 'public.postscriptNames' signals intention to keep original 'nice' names
+        // https://github.com/googlefonts/fontc/issues/1505
+        return Ok(None);
     };
+
+    let postscript_names_lib = raw_postscript_names.as_dictionary().ok_or_else(|| {
+        BadSource::custom("lib.plist", "public.postscriptNames isn't a dictionary")
+    })?;
+
+    let postscript_names: HashMap<GlyphName, GlyphName> = postscript_names_lib
+        .iter()
+        .filter_map(|(glyph_name, ps_name)| match ps_name.as_string() {
+            Some(ps_name) => Some((
+                GlyphName::from(glyph_name.as_str()),
+                GlyphName::from(ps_name),
+            )),
+            None => {
+                log::warn!("public.postscriptNames: \"{glyph_name}\" has a non-string entry");
+                None
+            }
+        })
+        .collect();
     // Warn about duplicate public.postscriptNames values
     // Allocate space ahead of time for speed, and because in the happy path the set length will be
     // the same as the map len
@@ -538,7 +540,7 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, Ba
             warn!("public.postscriptNames: the following production names are used by multiple glyphs: {duplicate_values:?}");
         }
     }
-    Ok(postscript_names)
+    Ok(Some(postscript_names))
 }
 
 pub(crate) fn vertical_origin(
@@ -834,7 +836,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let postscript_names = (context.flags.contains(Flags::PRODUCTION_NAMES)
             && use_production_names)
             .then(|| postscript_names(&lib_plist))
-            .transpose()?;
+            .transpose()?
+            .flatten();
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L360
         let italic_angle = font_info_at_default.italic_angle.unwrap_or(0.0);
@@ -2342,11 +2345,11 @@ mod tests {
         // Then
         assert_eq!(
             postscript_names,
-            HashMap::from_iter([
+            Some(HashMap::from_iter([
                 (GlyphName::from("foo"), GlyphName::from("bar")),
                 (GlyphName::from("baz"), GlyphName::from("qux")),
                 (GlyphName::from("lorem"), GlyphName::from("ipsum")),
-            ]),
+            ])),
         );
     }
 
@@ -2394,10 +2397,10 @@ mod tests {
         // Then
         assert_eq!(
             postscript_names,
-            HashMap::from_iter([
+            Some(HashMap::from_iter([
                 (GlyphName::from("foo"), GlyphName::from("qux")),
                 (GlyphName::from("lorem"), GlyphName::from("ipsum")),
-            ]),
+            ])),
         );
     }
 
@@ -2423,7 +2426,10 @@ mod tests {
         // Then
         assert_eq!(
             postscript_names,
-            HashMap::from_iter([(GlyphName::from("foo"), GlyphName::from("bar"))]),
+            Some(HashMap::from_iter([(
+                GlyphName::from("foo"),
+                GlyphName::from("bar")
+            )])),
         );
     }
 
@@ -2449,12 +2455,19 @@ mod tests {
         // Then
         assert_eq!(
             postscript_names,
-            HashMap::from_iter([
+            Some(HashMap::from_iter([
                 (GlyphName::from("foo"), GlyphName::from("bar")),
                 (GlyphName::from("baz"), GlyphName::from("bar")),
                 (GlyphName::from("lorem"), GlyphName::from("bar")),
-            ]),
+            ])),
         );
+    }
+
+    #[test]
+    fn no_postscript_names() {
+        let lib_plist = plist::Dictionary::new();
+        assert!(postscript_names(&lib_plist).is_ok());
+        assert!(postscript_names(&lib_plist).unwrap().is_none());
     }
 
     #[test]
