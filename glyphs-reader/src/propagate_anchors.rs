@@ -22,6 +22,16 @@ impl Font {
     pub fn propagate_all_anchors(&mut self) {
         propagate_all_anchors_impl(&mut self.glyphs);
     }
+
+    /// returns a list of all glyphs, sorted by component depth.
+    ///
+    /// This is also used for bracket layers.
+    ///
+    /// That is: a glyph in the list will always occur before any other glyph that
+    /// references it as a component.
+    pub(crate) fn depth_sorted_composite_glyphs(&self) -> Vec<SmolStr> {
+        depth_sorted_composite_glyphs_impl(&self.glyphs)
+    }
 }
 
 // the actual implementation: it's easier to test a free fn
@@ -29,7 +39,7 @@ fn propagate_all_anchors_impl(glyphs: &mut BTreeMap<SmolStr, Glyph>) {
     // the reference implementation does this recursively, but we opt to
     // implement it by pre-sorting the work to ensure we always process components
     // first.
-    let todo = depth_sorted_composite_glyphs(glyphs);
+    let todo = depth_sorted_composite_glyphs_impl(glyphs);
     let mut num_base_glyphs = HashMap::new();
     // NOTE: there's an important detail here, which is that we need to call the
     // 'anchors_traversing_components' function on each glyph, and save the returned
@@ -365,7 +375,7 @@ fn get_component_layer_anchors(
 ///
 /// That is: a glyph in the list will always occur before any other glyph that
 /// references it as a component.
-fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolStr> {
+fn depth_sorted_composite_glyphs_impl(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolStr> {
     // map of the maximum component depth of a glyph.
     // - a glyph with no components has depth 0,
     // - a glyph with a component has depth 1,
@@ -598,7 +608,7 @@ mod tests {
             .map(|glyph| (glyph.name.clone(), glyph))
             .collect();
 
-        let result = depth_sorted_composite_glyphs(&glyphs);
+        let result = depth_sorted_composite_glyphs_impl(&glyphs);
         let expected = [
             "A",
             "E",
@@ -999,7 +1009,7 @@ mod tests {
             })
             .build();
         // all we actually care about is that this doesn't run forever
-        let sorted = depth_sorted_composite_glyphs(&glyphs);
+        let sorted = depth_sorted_composite_glyphs_impl(&glyphs);
         // cycles should be dropped
         assert!(sorted.is_empty())
     }
@@ -1020,7 +1030,7 @@ mod tests {
                 glyph.add_component("C", (0, -180));
             })
             .build();
-        let sorted = depth_sorted_composite_glyphs(&glyphs);
+        let sorted = depth_sorted_composite_glyphs_impl(&glyphs);
         assert_eq!(sorted, ["A", "C", "E", "D", "B"]);
     }
 
