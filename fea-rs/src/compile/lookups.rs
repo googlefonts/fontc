@@ -3,7 +3,7 @@
 mod contextual;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
     fmt::Debug,
 };
@@ -279,6 +279,18 @@ impl SubstitutionLookup {
             SubstitutionLookup::Contextual(lookup) => lookup.remap_ids(id_map),
             SubstitutionLookup::ChainedContextual(lookup) => lookup.remap_ids(id_map),
             _ => (),
+        }
+    }
+
+    fn kind(&self) -> Kind {
+        match self {
+            SubstitutionLookup::Single(_) => Kind::GsubType1,
+            SubstitutionLookup::Multiple(_) => Kind::GsubType2,
+            SubstitutionLookup::Alternate(_) => Kind::GsubType3,
+            SubstitutionLookup::Ligature(_) => Kind::GsubType4,
+            SubstitutionLookup::Contextual(_) => Kind::GsubType5,
+            SubstitutionLookup::ChainedContextual(_) => Kind::GsubType6,
+            SubstitutionLookup::Reverse(_) => Kind::GsubType8,
         }
     }
 
@@ -606,35 +618,42 @@ impl AllLookups {
     /// If lookup is GSUB type 1 or 3, return a single lookup.
     /// If contextual, returns any referenced single-sub lookups.
     pub(crate) fn aalt_lookups(&self, id: LookupId) -> Vec<&SubstitutionLookup> {
+        let mut collect = Vec::new();
+        let mut seen = HashSet::new();
+        self.aalt_lookups_impl(id, &mut collect, &mut seen);
+        collect
+    }
+
+    fn aalt_lookups_impl<'a>(
+        &'a self,
+        id: LookupId,
+        collect: &mut Vec<&'a SubstitutionLookup>,
+        seen: &mut HashSet<LookupId>,
+    ) {
         let Some(lookup) = self.get_gsub_lookup(&id) else {
-            return Vec::new();
+            return;
         };
+        if !seen.insert(id) {
+            return;
+        }
 
         match lookup {
             SubstitutionLookup::Single(_)
             | SubstitutionLookup::Alternate(_)
             | SubstitutionLookup::Multiple(_)
-            | SubstitutionLookup::Ligature(_) => vec![lookup],
+            | SubstitutionLookup::Ligature(_) => collect.push(lookup),
 
             SubstitutionLookup::Contextual(lookup) => lookup
                 .subtables
                 .iter()
                 .flat_map(|sub| sub.iter_lookups())
-                .filter_map(|id| match self.get_gsub_lookup(&id) {
-                    Some(sub @ SubstitutionLookup::Single(_)) => Some(sub),
-                    _ => None,
-                })
-                .collect(),
+                .for_each(|id| self.aalt_lookups_impl(id, collect, seen)),
             SubstitutionLookup::ChainedContextual(lookup) => lookup
                 .subtables
                 .iter()
                 .flat_map(|sub| sub.iter_lookups())
-                .filter_map(|id| match self.get_gsub_lookup(&id) {
-                    Some(sub @ SubstitutionLookup::Single(_)) => Some(sub),
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
+                .for_each(|id| self.aalt_lookups_impl(id, collect, seen)),
+            _ => (),
         }
     }
 
@@ -878,14 +897,7 @@ impl SomeLookup {
         match self {
             SomeLookup::GsubContextual(_) => Kind::GsubType6,
             SomeLookup::GposContextual(_) => Kind::GposType8,
-            SomeLookup::GsubLookup(gsub) => match gsub {
-                SubstitutionLookup::Single(_) => Kind::GsubType1,
-                SubstitutionLookup::Multiple(_) => Kind::GsubType2,
-                SubstitutionLookup::Alternate(_) => Kind::GsubType3,
-                SubstitutionLookup::Ligature(_) => Kind::GsubType4,
-                SubstitutionLookup::Reverse(_) => Kind::GsubType8,
-                _ => panic!("unhandled table kind"),
-            },
+            SomeLookup::GsubLookup(gsub) => gsub.kind(),
             SomeLookup::GposLookup(gpos) => gpos.kind(),
         }
     }
