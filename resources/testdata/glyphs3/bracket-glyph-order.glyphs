@@ -1,0 +1,136 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = "Libre Franklin";
+fontMaster = (
+{
+axesValues = (
+40
+);
+id = "91AB5BCA-6A50-42DA-B2F7-8181BF189245";
+name = Thin;
+},
+{
+axesValues = (
+200
+);
+iconName = Bold;
+id = "258ED206-D907-4350-8EBA-CBDDA1C16BF7";
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = peso;
+layers = (
+{
+layerId = "91AB5BCA-6A50-42DA-B2F7-8181BF189245";
+width = 750;
+},
+{
+layerId = "258ED206-D907-4350-8EBA-CBDDA1C16BF7";
+width = 786;
+},
+{
+associatedMasterId = "258ED206-D907-4350-8EBA-CBDDA1C16BF7";
+attr = {
+axisRules = (
+{
+min = 150;
+}
+);
+};
+layerId = "1D3EBF91-071A-467B-8029-6ADF751ECC6B";
+name = "Bold [150]";
+width = 746;
+},
+{
+associatedMasterId = "91AB5BCA-6A50-42DA-B2F7-8181BF189245";
+attr = {
+axisRules = (
+{
+min = 150;
+}
+);
+};
+layerId = "E1B5A3D9-B3FF-40F6-8D6C-CD5C7D48B817";
+name = "Light [150]";
+width = 780;
+}
+);
+metricRight = P;
+unicode = 8369;
+},
+{
+glyphname = peso.001;
+layers = (
+{
+layerId = "91AB5BCA-6A50-42DA-B2F7-8181BF189245";
+width = 750;
+},
+{
+layerId = "258ED206-D907-4350-8EBA-CBDDA1C16BF7";
+width = 786;
+},
+{
+associatedMasterId = "258ED206-D907-4350-8EBA-CBDDA1C16BF7";
+attr = {
+axisRules = (
+{
+min = 150;
+}
+);
+};
+layerId = "1D3EBF91-071A-467B-8029-6ADF751ECC6B";
+name = "Bold [150]";
+width = 746;
+},
+{
+associatedMasterId = "91AB5BCA-6A50-42DA-B2F7-8181BF189245";
+attr = {
+axisRules = (
+{
+min = 150;
+}
+);
+};
+layerId = "E1B5A3D9-B3FF-40F6-8D6C-CD5C7D48B817";
+name = "Light [150]";
+width = 780;
+}
+);
+metricRight = P;
+}
+);
+instances = (
+{
+axesValues = (
+40
+);
+instanceInterpolations = {
+"91AB5BCA-6A50-42DA-B2F7-8181BF189245" = 1;
+};
+name = Thin;
+weightClass = 100;
+},
+{
+axesValues = (
+200
+);
+instanceInterpolations = {
+"258ED206-D907-4350-8EBA-CBDDA1C16BF7" = 1;
+};
+name = Black;
+weightClass = 900;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 3;
+versionMinor = 0;
+}
