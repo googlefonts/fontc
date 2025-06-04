@@ -38,7 +38,7 @@ pub const DEFAULT_VENDOR_ID: &str = "NONE";
 /// The name of every glyph, in the order it will be emitted
 ///
 /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
-#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct GlyphOrder(IndexSet<GlyphName>);
 
 impl Extend<GlyphName> for GlyphOrder {
@@ -50,6 +50,16 @@ impl Extend<GlyphName> for GlyphOrder {
 impl FromIterator<GlyphName> for GlyphOrder {
     fn from_iter<T: IntoIterator<Item = GlyphName>>(iter: T) -> Self {
         GlyphOrder(iter.into_iter().collect::<IndexSet<_>>())
+    }
+}
+
+impl Eq for GlyphOrder {}
+
+// IndexSet does not consider order for the purposes of equality, but it is
+// important to us,
+impl PartialEq for GlyphOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().zip(other.iter()).all(|(a, b)| a == b)
     }
 }
 
@@ -2008,5 +2018,19 @@ mod tests {
 
         let default = metrics.get(GlobalMetric::StrikeoutPosition, &pos);
         assert_eq!(default.into_inner(), 220.);
+    }
+
+    fn make_glyph_order<'a>(raw: impl IntoIterator<Item = &'a str>) -> GlyphOrder {
+        raw.into_iter().map(GlyphName::from).collect()
+    }
+
+    #[test]
+    fn glyphorder_equality() {
+        assert_eq!(make_glyph_order(["a", "b"]), make_glyph_order(["a", "b"]));
+    }
+
+    #[test]
+    fn glyphorder_non_equality() {
+        assert_ne!(make_glyph_order(["a", "b"]), make_glyph_order(["b", "a"]));
     }
 }
