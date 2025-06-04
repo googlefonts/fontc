@@ -455,9 +455,17 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         let mut glyph_order: GlyphOrder =
             font.glyph_order.iter().cloned().map(Into::into).collect();
-        glyph_order.extend(font.glyphs.values().filter(|g| g.export).flat_map(|g| {
-            bracket_glyph_names(g, &static_metadata.axes).map(|(bracket_name, _)| bracket_name)
-        }));
+
+        let mut bracket_glyphs = font
+            .glyphs
+            .values()
+            .filter(|g| g.export)
+            .flat_map(|g| {
+                bracket_glyph_names(g, &static_metadata.axes).map(|(bracket_name, _)| bracket_name)
+            })
+            .collect::<Vec<_>>();
+        bracket_glyphs.sort();
+        glyph_order.extend(bracket_glyphs);
 
         context.static_metadata.set(static_metadata);
         context.preliminary_glyph_order.set(glyph_order);
@@ -2411,6 +2419,25 @@ mod tests {
                 "yen",
                 "peso.BRACKET.varAlt01",
                 "yen.BRACKET.varAlt01"
+            ])
+        );
+    }
+
+    // brackets in the glyph order should be sorted lexicographically
+    #[test]
+    fn bracket_layer_sort_order() {
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("bracket-glyph-order.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+        let prelim_order = context.preliminary_glyph_order.get();
+
+        assert_eq!(
+            prelim_order.as_ref(),
+            &make_glyph_order([
+                "peso",
+                "peso.001",
+                "peso.001.BRACKET.varAlt01",
+                "peso.BRACKET.varAlt01",
             ])
         );
     }
