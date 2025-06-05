@@ -905,27 +905,30 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
 
         let mut groups = KerningGroups::default();
 
-        // If glyph uses a group for either side it goes in that group
-        font.glyphs
+        // build up the kern groups; a glyph may belong to a group on either or
+        // both 'side'.
+        for (name, glyph) in font
+            .glyphs
             .iter()
             // ignore non-export glyphs
-            .filter(|(_, glyph)| glyph.export)
-            .flat_map(|(glyph_name, glyph)| {
-                glyph
-                    .right_kern
-                    .iter()
-                    .cloned()
-                    .map(KernGroup::Side1)
-                    .chain(glyph.left_kern.iter().cloned().map(KernGroup::Side2))
-                    .map(|group| (group, GlyphName::from(glyph_name.as_str())))
-            })
-            .for_each(|(group_name, glyph_name)| {
-                groups
-                    .groups
-                    .entry(group_name)
-                    .or_default()
-                    .insert(glyph_name);
-            });
+            .filter(|x| x.1.export)
+        {
+            // if there are bracket layers for this glyph, make sure the
+            // generated glyphs are assigned the same groups as the parent
+            let bracket_names = bracket_glyph_names(glyph, &font_info.axes)
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>();
+            let right = glyph.right_kern.clone().map(KernGroup::Side1);
+            let left = glyph.left_kern.clone().map(KernGroup::Side2);
+            for group in [right, left].into_iter().flatten() {
+                groups.groups.entry(group).or_default().extend(
+                    bracket_names
+                        .iter()
+                        .cloned()
+                        .chain(Some(name.clone().into())),
+                );
+            }
+        }
 
         groups.locations = font
             .kerning_ltr
@@ -973,6 +976,8 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
             ..Default::default()
         };
 
+        let bracket_glyph_map = make_bracket_glyph_map(glyph_order);
+
         font.kerning_ltr
             .iter()
             // Only the kerns at our location
@@ -995,13 +1000,74 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
                 };
                 Some(((side1, side2), pos_adjust))
             })
-            .for_each(|(participants, (_, value))| {
+            .flat_map(|(participants, (_, value))| {
+                expand_kerning_to_brackets(&bracket_glyph_map, participants, value)
+            })
+            .for_each(|(participants, value)| {
                 *kerning.kerns.entry(participants).or_default() = value;
             });
 
         context.kerning_at.set(kerning);
         Ok(())
     }
+}
+
+// map from base glyph to bracket glyphs
+fn make_bracket_glyph_map(glyphs: &GlyphOrder) -> HashMap<&str, Vec<&GlyphName>> {
+    let mut result = HashMap::new();
+    for name in glyphs.names() {
+        if let Some((base, _)) = name.as_str().split_once(".BRACKET") {
+            result.entry(base).or_insert(Vec::new()).push(name);
+        }
+    }
+    result
+}
+
+fn expand_kerning_to_brackets(
+    bracket_glyph_map: &HashMap<&str, Vec<&GlyphName>>,
+    participants: (KernSide, KernSide),
+    value: OrderedFloat<f64>,
+) -> impl Iterator<Item = ((KernSide, KernSide), OrderedFloat<f64>)> {
+    let first_match = participants
+        .0
+        .glyph_name()
+        .and_then(|name| bracket_glyph_map.get(name.as_str()));
+
+    let second_match = participants
+        .1
+        .glyph_name()
+        .and_then(|name| bracket_glyph_map.get(name.as_str()));
+
+    let bracket_kerns: Vec<_> = match (first_match, second_match) {
+        (Some(left), None) => left
+            .iter()
+            .copied()
+            .map(|gn| (KernSide::Glyph(gn.clone()), participants.1.clone()))
+            .collect(),
+        (None, Some(right)) => right
+            .iter()
+            .copied()
+            .map(|gn| (participants.0.clone(), gn.clone().into()))
+            .collect(),
+        (Some(left), Some(right)) => left
+            .iter()
+            .copied()
+            .chain(participants.0.glyph_name())
+            .flat_map(|left| {
+                right
+                    .iter()
+                    .copied()
+                    .chain(participants.1.glyph_name())
+                    .map(|right| (left.clone().into(), right.clone().into()))
+            })
+            .collect(),
+        (None, None) => Vec::new(),
+    };
+
+    bracket_kerns
+        .into_iter()
+        .chain(Some(participants))
+        .map(move |participants| (participants, value))
 }
 
 #[derive(Debug)]
@@ -2055,6 +2121,71 @@ mod tests {
             .filter(|pos| !pos.axis_tags().all(|tag| *tag == Tag::new(b"wght")))
             .collect();
         assert!(bad_kerns.is_empty(), "{bad_kerns:#?}");
+    }
+
+    //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/tests/builder/builder_test.py#L2360
+    #[test]
+    fn expand_kerning_to_brackets() {
+        // helpers:
+        fn parse_side(raw: &str) -> KernSide {
+            if let Some(name) = raw.strip_prefix("@side1.") {
+                KernSide::Group(KernGroup::Side1(name.into()))
+            } else if let Some(name) = raw.strip_prefix("@side2.") {
+                KernSide::Group(KernGroup::Side2(name.into()))
+            } else {
+                KernSide::Glyph(raw.into())
+            }
+        }
+        fn make_kerning(
+            items: &[(&str, &str, i32)],
+        ) -> BTreeMap<(KernSide, KernSide), OrderedFloat<f64>> {
+            items
+                .iter()
+                .map(|(side1, side2, val)| {
+                    ((parse_side(side1), parse_side(side2)), (*val as f64).into())
+                })
+                .collect()
+        }
+
+        // actual test:
+        let (_, context) = build_kerning(glyphs2_dir().join("BracketTestFontKerning.glyphs"));
+        let groups = context.kerning_groups.get();
+        assert_eq!(
+            groups
+                .groups
+                .iter()
+                .map(|(name, glyphs)| (
+                    name.to_string(),
+                    glyphs.iter().map(GlyphName::as_str).collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "side1.foo".to_string(),
+                    vec!["x", "x.BRACKET.varAlt01", "x.BRACKET.varAlt02"]
+                ),
+                ("side2.foo".to_string(), vec!["a", "a.BRACKET.varAlt01"]),
+            ]
+        );
+        let light_location = NormalizedLocation::for_pos(&[("wdth", 0.0), ("wght", 0.0)]);
+        let all_kerns = context.kerning_at.all();
+        let light_kerns = &all_kerns
+            .iter()
+            .find(|thingie| thingie.1.location == light_location)
+            .unwrap()
+            .1;
+        assert_eq!(
+            light_kerns.kerns,
+            make_kerning(&[
+                ("@side1.foo", "@side2.foo", -200),
+                ("a", "x", -100),
+                ("a.BRACKET.varAlt01", "x", -100),
+                ("a", "x.BRACKET.varAlt01", -100),
+                ("a.BRACKET.varAlt01", "x.BRACKET.varAlt01", -100),
+                ("a", "x.BRACKET.varAlt02", -100),
+                ("a.BRACKET.varAlt01", "x.BRACKET.varAlt02", -100),
+            ])
+        );
     }
 
     #[test]

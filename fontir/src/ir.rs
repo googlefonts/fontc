@@ -248,6 +248,14 @@ impl KernSide {
         matches!(self, KernSide::Glyph(_))
     }
 
+    /// If this is a glyph, return its name.
+    pub fn glyph_name(&self) -> Option<&GlyphName> {
+        match self {
+            KernSide::Glyph(glyph_name) => Some(glyph_name),
+            KernSide::Group(_) => None,
+        }
+    }
+
     #[inline]
     pub fn is_group(&self) -> bool {
         matches!(self, KernSide::Group(_))

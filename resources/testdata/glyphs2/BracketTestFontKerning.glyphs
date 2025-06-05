@@ -1,0 +1,377 @@
+{
+.appVersion = "1342";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+},
+{
+Name = Width;
+Tag = wdth;
+}
+);
+},
+);
+familyName = "New Font";
+fontMaster = (
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Width;
+Location = 100;
+},
+{
+Axis = Weight;
+Location = 100;
+}
+);
+}
+);
+id = "1034EC4A-9832-4D17-A75A-2B17BF7C4AA6";
+weight = Light;
+},
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Width;
+Location = 100;
+},
+{
+Axis = Weight;
+Location = 700;
+}
+);
+}
+);
+id = "ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1";
+weight = Bold;
+weightValue = 1000;
+},
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Width;
+Location = 75;
+},
+{
+Axis = Weight;
+Location = 100;
+}
+);
+}
+);
+id = "C402BD76-83A2-4350-9191-E5499E97AF5D";
+weight = Light;
+width = Condensed;
+widthValue = 50;
+},
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Width;
+Location = 75;
+},
+{
+Axis = Weight;
+Location = 700;
+}
+);
+}
+);
+id = "7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD";
+weight = Bold;
+weightValue = 1000;
+width = Condensed;
+widthValue = 50;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+layerId = "1034EC4A-9832-4D17-A75A-2B17BF7C4AA6";
+paths = (
+);
+width = 600;
+},
+{
+layerId = "ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1";
+paths = (
+);
+width = 600;
+},
+{
+layerId = "C402BD76-83A2-4350-9191-E5499E97AF5D";
+paths = (
+);
+width = 300;
+},
+{
+layerId = "7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD";
+paths = (
+);
+width = 300;
+},
+{
+associatedMasterId = "1034EC4A-9832-4D17-A75A-2B17BF7C4AA6";
+background = {
+paths = (
+);
+};
+layerId = "BDBF2B39-CDDB-4C9E-9248-F8F44D0ECEA9";
+name = "[300]";
+paths = (
+);
+width = 600;
+},
+{
+associatedMasterId = "ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1";
+layerId = "8A1264B5-266D-4B48-AC5B-B8AC6A4DECF5";
+name = "[300]";
+paths = (
+);
+width = 600;
+},
+{
+associatedMasterId = "C402BD76-83A2-4350-9191-E5499E97AF5D";
+layerId = "4B205149-CB6A-4429-B9D4-119B23ECA726";
+name = "[300]";
+paths = (
+);
+width = 300;
+},
+{
+associatedMasterId = "7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD";
+layerId = "61D8CD01-160F-4AAA-8B19-0511F2DE7962";
+name = "[300]";
+paths = (
+);
+width = 300;
+}
+);
+leftKerningGroup = foo;
+unicode = 0061;
+},
+{
+glyphname = x;
+layers = (
+{
+layerId = "1034EC4A-9832-4D17-A75A-2B17BF7C4AA6";
+paths = (
+);
+width = 600;
+},
+{
+layerId = "ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1";
+paths = (
+);
+width = 600;
+},
+{
+layerId = "C402BD76-83A2-4350-9191-E5499E97AF5D";
+paths = (
+);
+width = 300;
+},
+{
+layerId = "7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD";
+paths = (
+);
+width = 300;
+},
+{
+associatedMasterId = "1034EC4A-9832-4D17-A75A-2B17BF7C4AA6";
+layerId = "C07DA35D-EBCD-432A-96B9-692C3DD89044";
+name = "Something [300]";
+paths = (
+);
+width = 600;
+},
+{
+associatedMasterId = "1034EC4A-9832-4D17-A75A-2B17BF7C4AA6";
+layerId = "24328DA8-2CE1-4D0A-9C91-214ED36F6393";
+name = "[600]";
+paths = (
+);
+width = 600;
+},
+{
+associatedMasterId = "ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1";
+layerId = "55105F32-4D06-4E40-925C-45DE8F220AF9";
+name = "[300]";
+paths = (
+);
+width = 600;
+},
+{
+associatedMasterId = "ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1";
+layerId = "C5C3CA59-C2D0-46F6-B5D3-86541DE36ACB";
+name = "Other [600]";
+paths = (
+);
+width = 600;
+},
+{
+associatedMasterId = "C402BD76-83A2-4350-9191-E5499E97AF5D";
+layerId = "3B867C64-B59A-4117-AC57-87460CD28220";
+name = "[300]";
+paths = (
+);
+width = 300;
+},
+{
+associatedMasterId = "C402BD76-83A2-4350-9191-E5499E97AF5D";
+layerId = "F5778F4C-2B04-4030-9D7D-09E3C951C089";
+name = "[600]";
+paths = (
+);
+width = 300;
+},
+{
+associatedMasterId = "7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD";
+layerId = "E5A3E43B-92BC-4747-954F-5A8AFEC587AA";
+name = "[300]";
+paths = (
+);
+width = 300;
+},
+{
+associatedMasterId = "7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD";
+layerId = "E729A72D-C6FF-4DDD-ADA1-BB5B6FD7E3DD";
+name = "[600]";
+paths = (
+);
+width = 300;
+}
+);
+rightKerningGroup = foo;
+unicode = 0078;
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = "1034EC4A-9832-4D17-A75A-2B17BF7C4AA6";
+width = 600;
+},
+{
+layerId = "ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1";
+width = 600;
+},
+{
+layerId = "C402BD76-83A2-4350-9191-E5499E97AF5D";
+width = 600;
+},
+{
+layerId = "7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD";
+width = 600;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+instanceInterpolations = {
+"1034EC4A-9832-4D17-A75A-2B17BF7C4AA6" = 1;
+};
+name = Thin;
+weightClass = Thin;
+},
+{
+interpolationWeight = 500;
+instanceInterpolations = {
+"1034EC4A-9832-4D17-A75A-2B17BF7C4AA6" = 0.55556;
+"ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1" = 0.44444;
+};
+name = Regular;
+},
+{
+interpolationWeight = 1000;
+instanceInterpolations = {
+"ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1" = 1;
+};
+isBold = 1;
+linkStyle = Regular;
+name = Bold;
+weightClass = Bold;
+},
+{
+interpolationWeight = 500;
+interpolationWidth = 75;
+instanceInterpolations = {
+"1034EC4A-9832-4D17-A75A-2B17BF7C4AA6" = 0.27778;
+"7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD" = 0.22222;
+"C402BD76-83A2-4350-9191-E5499E97AF5D" = 0.27778;
+"ED9A0AB1-C69E-43FC-AC45-FCA9085EE0B1" = 0.22222;
+};
+name = "Semi Consensed";
+widthClass = SemiCondensed;
+},
+{
+interpolationWidth = 50;
+instanceInterpolations = {
+"C402BD76-83A2-4350-9191-E5499E97AF5D" = 1;
+};
+name = "Thin Condensed";
+weightClass = Thin;
+widthClass = Condensed;
+},
+{
+interpolationWeight = 500;
+interpolationWidth = 50;
+instanceInterpolations = {
+"7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD" = 0.44444;
+"C402BD76-83A2-4350-9191-E5499E97AF5D" = 0.55556;
+};
+name = Condensed;
+widthClass = Condensed;
+},
+{
+interpolationWeight = 1000;
+interpolationWidth = 50;
+instanceInterpolations = {
+"7C21D6D8-DE5C-402C-AEE1-1C41B2B695CD" = 1;
+};
+isBold = 1;
+linkStyle = Condensed;
+name = "Bold Condensed";
+weightClass = Bold;
+widthClass = Condensed;
+}
+);
+kerning = {
+"1034EC4A-9832-4D17-A75A-2B17BF7C4AA6" = {
+"@MMK_L_foo" = {
+"@MMK_R_foo" = -200;
+};
+a = {
+x = -100;
+};
+};
+"C402BD76-83A2-4350-9191-E5499E97AF5D" = {
+"@MMK_L_foo" = {
+"@MMK_R_foo" = -300;
+};
+};
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
