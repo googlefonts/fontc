@@ -537,20 +537,24 @@ fn nbox_to_condset(nbox: NBox, axes: &Axes) -> ConditionSet {
 fn condset_to_nbox(condset: ConditionSet, axes: &Axes) -> NBox {
     condset
         .iter()
-        .map(|cond| {
-            let axis = axes.get(&cond.axis).expect("checked already");
-
-            (
+        .filter_map(|cond| {
+            let axis = axes.get(&cond.axis)?;
+            // we can filter out conditions with no min/max; missing axes are
+            // treated as being fully included in the box.
+            if cond.min.is_none() && cond.max.is_none() {
+                return None;
+            }
+            Some((
                 cond.axis,
                 (
                     cond.min
                         .map(|ds| ds.to_normalized(&axis.converter))
-                        .unwrap_or(NormalizedCoord::MIN),
+                        .unwrap_or_else(|| axis.min.to_normalized(&axis.converter)),
                     cond.max
                         .map(|ds| ds.to_normalized(&axis.converter))
-                        .unwrap_or(NormalizedCoord::MAX),
+                        .unwrap_or_else(|| axis.max.to_normalized(&axis.converter)),
                 ),
-            )
+            ))
         })
         .collect()
 }
@@ -1415,11 +1419,11 @@ mod tests {
 
     use fontdrasil::{
         coords::{
-            CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
+            Coord, CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
             UserLocation,
         },
         orchestration::{Access, AccessBuilder},
-        types::GlyphName,
+        types::{Axis, GlyphName},
     };
     use fontir::{
         error::Error,
@@ -2689,5 +2693,51 @@ mod tests {
                 ),
             ]
         )
+    }
+
+    const WGHT: Tag = Tag::new(b"wght");
+    // when min==default then the normalized min value is 0, not -1.0
+    #[test]
+    fn condset_when_axis_min_is_also_default() {
+        let min = Coord::new(400.0);
+        let default = Coord::new(400.0);
+        let max = Coord::new(800.0);
+
+        let axis = Axis {
+            name: "weight".into(),
+            tag: WGHT,
+            min,
+            default,
+            max,
+            hidden: false,
+            converter: CoordConverter::unmapped(min, default, max),
+            localized_names: Default::default(),
+        };
+        let axes = Axes::new(vec![axis]);
+        let cond = Condition::new(WGHT, None, Some(Coord::new(500.)));
+
+        let condset = [cond].into_iter().collect();
+        let box_ = condset_to_nbox(condset, &axes);
+        let readable = box_
+            .iter()
+            .map(|x| (x.0, x.1 .0.to_f64(), x.1 .1.to_f64()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(readable, [(WGHT, 0.0, 0.25)])
+    }
+
+    #[test]
+    fn condset_skip_empty_axis() {
+        let axes = Axes::for_test(&["wght"]);
+        let wdth = Condition::new(Tag::new(b"wdth"), None, None);
+        let wght = Condition::new(WGHT, Some(Coord::new(400.)), None);
+        let condset = [wdth, wght].into_iter().collect();
+        let box_ = condset_to_nbox(condset, &axes);
+        let readable = box_
+            .iter()
+            .map(|x| (x.0, x.1 .0.to_f64(), x.1 .1.to_f64()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(readable, [(WGHT, 0.0, 1.0)])
     }
 }
