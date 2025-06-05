@@ -38,9 +38,8 @@ bump2version==1.0.1
     # via bumpfontversion
 bumpfontversion==0.4.1
     # via gftools
-cattrs==24.1.3
+cattrs==25.1.1
     # via
-    #   -r requirements.in
     #   statmake
     #   ufolib2
 cdifflib==1.2.9
@@ -87,7 +86,7 @@ fontmath==0.9.4
     #   mutatormath
     #   ufo2ft
     #   ufoprocessor
-fontparts==0.12.7
+fontparts==0.12.8
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
@@ -268,6 +267,7 @@ ttfautohint-py==0.5.1
 typing-extensions==4.14.0
     # via
     #   beautifulsoup4
+    #   cattrs
     #   pygithub
 ufo2ft[cffsubr,compreffor]==3.4.6
     # via
