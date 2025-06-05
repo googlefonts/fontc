@@ -11,9 +11,3 @@ glyphsLib
 # keep gftools pinned as well to ensure ttx_diff.py output is stable.
 # 0.9.74 is when experimental support for fontc was added to gftools.
 gftools==0.9.85
-# keep cattrs pinned to previous version until a fix is released for
-# https://github.com/python-attrs/cattrs/issues/654
-# This affects static font builds from gftools builder which uses the fontmake
-# option --ufo-structure=json (a ufoLib2 feature which relies on cattrs
-# for [de]serialization from/to json)
-cattrs==24.1.3
