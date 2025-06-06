@@ -124,6 +124,17 @@ flags.DEFINE_bool(
     "rename glyphs to AGL-compliant names (uniXXXX, etc.) suitable for production. Disable to see the original glyph names.",
 )
 
+# fontmake - and so gftools' - static builds perform overlaps removal, but fontc
+# can't do that yet, and so we default to disabling the filter to make the diff
+# less noisy.
+# TODO: Change the default if/when fontc gains the ability to remove overlaps.
+# https://github.com/googlefonts/fontc/issues/975
+flags.DEFINE_bool(
+    "keep_overlaps",
+    True,
+    "Keep overlaps when building static fonts. Disable to compare with simplified outlines.",
+)
+
 
 def to_xml_string(e) -> str:
     xml = etree.tostring(e)
@@ -268,11 +279,7 @@ def build_fontmake(source: Path, build_dir: Path):
     ]
     if not FLAGS.production_names:
         cmd.append("--no-production-names")
-    if not variable:
-        # fontmake static builds perform overlaps removal, but fontc can't do that yet.
-        # Disable the filter to make the diff less noisy.
-        # TODO(anthrotype): Remove if/when fontc gains the ability to remove overlaps.
-        # https://github.com/googlefonts/fontc/issues/975
+    if FLAGS.keep_overlaps and not variable:
         cmd.append("--keep-overlaps")
     cmd.append(str(source))
 
@@ -361,6 +368,9 @@ def run_gftools(
         cmd += ["--experimental-fontc", fontc_bin]
 
     extra_args = []
+    if FLAGS.keep_overlaps:
+        # (we only want this for the statics but it's a noop for variables)
+        extra_args.append("--keep-overlaps")
     if not FLAGS.production_names:
         extra_args.append("--no-production-names")
 
