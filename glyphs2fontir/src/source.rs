@@ -545,10 +545,10 @@ fn condset_to_nbox(condset: ConditionSet, axes: &Axes) -> NBox {
                 (
                     cond.min
                         .map(|ds| ds.to_normalized(&axis.converter))
-                        .unwrap_or_else(|| axis.min.to_normalized(&axis.converter)),
+                        .unwrap_or(NormalizedCoord::MIN),
                     cond.max
                         .map(|ds| ds.to_normalized(&axis.converter))
-                        .unwrap_or_else(|| axis.max.to_normalized(&axis.converter)),
+                        .unwrap_or(NormalizedCoord::MAX),
                 ),
             )
         })
@@ -1349,11 +1349,11 @@ mod tests {
 
     use fontdrasil::{
         coords::{
-            Coord, CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
+            CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
             UserLocation,
         },
         orchestration::{Access, AccessBuilder},
-        types::{Axis, GlyphName},
+        types::GlyphName,
     };
     use fontir::{
         error::Error,
@@ -2558,36 +2558,5 @@ mod tests {
                 ),
             ]
         )
-    }
-
-    // when min==default then the normalized min value is 0, not -1.0
-    #[test]
-    fn condset_when_axis_min_is_also_default() {
-        const WGHT: Tag = Tag::new(b"wght");
-        let min = Coord::new(400.0);
-        let default = Coord::new(400.0);
-        let max = Coord::new(800.0);
-
-        let axis = Axis {
-            name: "weight".into(),
-            tag: WGHT,
-            min,
-            default,
-            max,
-            hidden: false,
-            converter: CoordConverter::unmapped(min, default, max),
-            localized_names: Default::default(),
-        };
-        let axes = Axes::new(vec![axis]);
-        let cond = Condition::new(WGHT, None, None);
-
-        let condset = [cond].into_iter().collect();
-        let box_ = condset_to_nbox(condset, &axes);
-        let readable = box_
-            .iter()
-            .map(|x| (x.0, x.1 .0.to_f64(), x.1 .1.to_f64()))
-            .collect::<Vec<_>>();
-
-        assert_eq!(readable, [(WGHT, 0.0, 1.0)])
     }
 }
