@@ -321,8 +321,8 @@ def modified_gftools_config(
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
-        config["extraFontmakeArgs"] = config.get("extraFontmakeArgs", "") + " ".join(
-            extra_args
+        config["extraFontmakeArgs"] = " ".join(
+            config.get("extraFontmakeArgs", "").split(" ") + extra_args
         )
 
         with NamedTemporaryFile(
