@@ -1369,7 +1369,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         }
 
         trace!("{metrics:#?}");
-        context.global_metrics.set(metrics.build());
+        context
+            .global_metrics
+            .set(metrics.build(&static_metadata.axes)?);
         Ok(())
     }
 }
@@ -1789,6 +1791,7 @@ mod tests {
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
+        variations::Tent,
     };
     use norad::designspace;
 
@@ -2255,23 +2258,27 @@ mod tests {
         let (_, context) = build_global_metrics("wght_var.designspace");
         let static_metadata = &context.static_metadata.get();
         let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
-        let mut metric_locations = context
-            .global_metrics
-            .get()
+        let global_metrics = context.global_metrics.get();
+
+        let metric_locations = global_metrics
             .iter()
-            .flat_map(|(.., values)| values.keys())
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .map(|loc| (only_coord(loc).to_user(&wght.converter), only_coord(loc)))
-            .collect::<Vec<_>>();
-        metric_locations.sort();
+            .flat_map(|(.., values)| values)
+            .map(|(region, _deltas)| region)
+            .map(|region| region.get(&wght.tag).unwrap())
+            .collect::<HashSet<_>>();
 
         // Note there are *not* metrics at (600, 0.67)
         assert_eq!(
-            vec![
-                (UserCoord::new(400.0), NormalizedCoord::new(0.0)),
-                (UserCoord::new(700.0), NormalizedCoord::new(1.0)),
-            ],
+            [
+                &Tent::zeroes(),
+                &Tent::new(
+                    NormalizedCoord::default(),
+                    NormalizedCoord::MAX,
+                    NormalizedCoord::MAX
+                )
+            ]
+            .into_iter()
+            .collect::<HashSet<_>>(),
             metric_locations
         );
     }

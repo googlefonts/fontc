@@ -854,7 +854,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             );
         }
 
-        context.global_metrics.set(metrics.build());
+        context
+            .global_metrics
+            .set(metrics.build(&static_metadata.axes)?);
         Ok(())
     }
 }
@@ -2506,20 +2508,13 @@ mod tests {
     }
 
     fn unique_value(metrics: &GlobalMetrics, metric: GlobalMetric) -> f64 {
-        let values = metrics
-            .iter()
-            .filter_map(|(which_metric, values)| {
-                if metric == *which_metric {
-                    Some(values.values().collect::<HashSet<_>>())
-                } else {
-                    None
-                }
-            })
-            .flat_map(|v| v.into_iter())
-            .collect::<Vec<_>>();
-
+        let values = metrics.values(metric);
         assert_eq!(1, values.len(), "Too many {metric:?} values: {values:?}");
-        values[0].0
+        // TODO: Is default region?
+
+        metrics
+            .get(metric, &NormalizedLocation::default())
+            .into_inner()
     }
 
     #[test]

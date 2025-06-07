@@ -286,13 +286,10 @@ impl VariationModel {
     ///
     /// Rust version of <https://github.com/fonttools/fonttools/blob/4ad6b0db/Lib/fontTools/varLib/models.py#L514-L545>
     ///
-    /// Not `pub` yet as it's currently only used for self-tests.
-    ///
     /// TODO: document invariants and what we are returning. Perhaps allow a different
     /// type parameter for the return value so that e.g. absolute Points are returned
     /// when the deltas are Vec2?
-    #[allow(dead_code)]
-    fn interpolate_from_deltas<V>(
+    pub fn interpolate_from_deltas<V>(
         location: &NormalizedLocation,
         deltasets: &[(VariationRegion, Vec<V>)],
     ) -> Vec<V>
@@ -579,7 +576,7 @@ impl VariationRegion {
 ///
 /// Visualize as a tent of influence, starting at min, peaking at peak,
 /// and dropping off to zero at max.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Tent {
     pub min: NormalizedCoord,
     pub peak: NormalizedCoord,

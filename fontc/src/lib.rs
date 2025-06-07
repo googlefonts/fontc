@@ -261,8 +261,6 @@ mod tests {
         sync::Arc,
     };
 
-    use ordered_float::OrderedFloat;
-
     use chrono::{Duration, TimeZone, Utc};
     use fontbe::orchestration::{
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
@@ -276,6 +274,7 @@ mod tests {
     use fontir::{
         ir::{self, GlobalMetric, GlyphOrder, KernGroup, KernPair, KernSide},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
+        variations::{Tent, VariationRegion},
     };
     use kurbo::{Point, Rect};
     use log::info;
@@ -2734,24 +2733,32 @@ mod tests {
     fn strikeout_size_fallback() {
         let compile =
             TestCompile::compile_source("glyphs3/GlobalMetrics_font_customParameters.glyphs");
-        let strikeout_sizes = compile
+
+        let strikeout_variation = compile
             .fe_context
             .global_metrics
             .get()
-            .iter()
-            .filter_map(|(metric, values)| {
-                if *metric == GlobalMetric::StrikeoutSize {
-                    Some(values)
-                } else {
-                    None
-                }
-            })
-            .flat_map(|v| v.values().copied())
-            .collect::<HashSet<_>>();
-        // Light has an explicit 40, everything else uses 42
+            .values(GlobalMetric::StrikeoutSize)
+            .clone();
+
+        let mut light = VariationRegion::default();
+        light.insert(Tag::new(b"wght"), Tent::zeroes());
+
+        let mut elsewhere = VariationRegion::default();
+        elsewhere.insert(
+            Tag::new(b"wght"),
+            Tent::new(
+                NormalizedCoord::new(0),
+                NormalizedCoord::MAX,
+                NormalizedCoord::MAX,
+            ),
+        );
+
+        // Light has an explicit 40, everything else uses 42.
+        // TODO: Deterministic order?
         assert_eq!(
-            HashSet::from([OrderedFloat(40.0), OrderedFloat(42.0)]),
-            strikeout_sizes
+            vec![(light, vec![40.0]), (elsewhere, vec![2.0])],
+            strikeout_variation
         );
     }
 
