@@ -17,11 +17,15 @@ use write_fonts::{
     OtRound,
 };
 
-use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
+use fontdrasil::{
+    coords::NormalizedLocation,
+    types::{Axes, GlyphName},
+};
 
 use crate::{
     error::{BadAnchor, BadAnchorReason, BadGlyph, BadGlyphKind, Error},
     orchestration::{IdAware, Persistable, WorkId},
+    variations::{VariationModel, VariationRegion},
 };
 
 mod path_builder;
@@ -276,17 +280,15 @@ impl From<KernGroup> for KernSide {
 
 #[derive(Default, Debug)]
 pub struct GlobalMetricsBuilder(
-    pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f64>>>,
+    HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f64>>>,
 );
 
 /// Global metrics. Ascender/descender, cap height, etc.
 ///
 /// Represents the values of these metrics at a specific position in design space.
 /// At a minimum should be defined at the default location.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct GlobalMetrics(
-    pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f64>>>,
-);
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct GlobalMetrics(HashMap<GlobalMetric, GlobalMetricValues>);
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GlobalMetric {
@@ -383,7 +385,7 @@ fn adjust_offset(offset: f64, angle: f64) -> f64 {
 }
 
 /// Map of values associated with a given global metric at various locations.
-pub type GlobalMetricValues = HashMap<NormalizedLocation, OrderedFloat<f64>>;
+pub type GlobalMetricValues = Vec<(VariationRegion, Vec<f64>)>;
 
 impl GlobalMetricsBuilder {
     /// Creates a new, empty, [GlobalMetricsBuilder]
@@ -513,7 +515,10 @@ impl GlobalMetricsBuilder {
         set_if_absent(GlobalMetric::VheaLineGap, 0.0);
     }
 
-    fn values_mut(&mut self, metric: GlobalMetric) -> &mut GlobalMetricValues {
+    fn values_mut(
+        &mut self,
+        metric: GlobalMetric,
+    ) -> &mut HashMap<NormalizedLocation, OrderedFloat<f64>> {
         self.0.entry(metric).or_default()
     }
 
@@ -546,22 +551,46 @@ impl GlobalMetricsBuilder {
         }
     }
 
-    pub fn build(self) -> GlobalMetrics {
-        GlobalMetrics(self.0)
+    pub fn build(self, axes: &Axes) -> Result<GlobalMetrics, Error> {
+        let deltas = self
+            .0
+            .into_iter()
+            .map(|(tag, values)| -> Result<_, Error> {
+                let model = VariationModel::new(values.keys().cloned().collect(), axes.clone())
+                    .map_err(|e| Error::MetricVariationError(tag, e))?;
+
+                let sources = values
+                    .into_iter()
+                    // metrics must be rounded before the computing deltas to match fontmake
+                    // https://github.com/googlefonts/fontc/issues/1043
+                    .map(|(loc, value)| (loc, vec![OtRound::<f64>::ot_round(value.into_inner())]))
+                    .collect();
+
+                let deltas = model
+                    .deltas(&sources)
+                    .map_err(|e| Error::MetricDeltaError(tag, e))?;
+
+                Ok((tag, deltas))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        Ok(GlobalMetrics(deltas))
     }
 }
 
 impl GlobalMetrics {
-    fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
+    pub fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
         // We presume that ctor initializes for every GlobalMetric
         self.0.get(&metric).unwrap()
     }
 
     pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f64> {
-        let Some(value) = self.values(metric).get(pos) else {
-            panic!("interpolated metric values are not yet supported");
-        };
-        *value
+        let deltas = self.values(metric);
+
+        VariationModel::interpolate_from_deltas(pos, deltas)
+            .iter()
+            .map(|float| OrderedFloat::<f64>::from(*float))
+            .sum()
     }
 
     pub fn at(&self, pos: &NormalizedLocation) -> GlobalMetricsInstance {
@@ -1967,7 +1996,8 @@ mod tests {
         let mut metrics = GlobalMetricsBuilder::new();
         metrics.populate_defaults(&pos, 1290, None, None, None, None);
         let rounded: i16 = metrics
-            .build()
+            .build(&Axes::default())
+            .unwrap()
             .get(GlobalMetric::SuperscriptYOffset, &pos)
             .0
             .ot_round();
@@ -2021,7 +2051,10 @@ mod tests {
         let mut metrics = GlobalMetricsBuilder::new();
         metrics.populate_defaults(&pos, 1000, None, None, None, None);
 
-        let default = metrics.build().get(GlobalMetric::StrikeoutPosition, &pos);
+        let default = metrics
+            .build(&Axes::default())
+            .unwrap()
+            .get(GlobalMetric::StrikeoutPosition, &pos);
         assert_eq!(default.into_inner(), 300.);
     }
 
@@ -2036,7 +2069,10 @@ mod tests {
         let mut metrics = GlobalMetricsBuilder::new();
         metrics.populate_defaults(&pos, 1000, Some(0.), None, None, None);
 
-        let default = metrics.build().get(GlobalMetric::StrikeoutPosition, &pos);
+        let default = metrics
+            .build(&Axes::default())
+            .unwrap()
+            .get(GlobalMetric::StrikeoutPosition, &pos);
         assert_eq!(default.into_inner(), 220.);
     }
 
