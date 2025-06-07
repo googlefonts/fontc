@@ -18,9 +18,10 @@ use fontir::{
     feature_variations::{overlay_feature_variations, NBox},
     ir::{
         self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, GdefCategories,
-        GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups,
-        KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance, PostscriptNames,
-        Rule, StaticMetadata, Substitution, VariableFeature, DEFAULT_VENDOR_ID,
+        GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphInstance, GlyphOrder, KernGroup,
+        KernSide, KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey,
+        NamedInstance, PostscriptNames, Rule, StaticMetadata, Substitution, VariableFeature,
+        DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -728,7 +729,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
         );
 
         let static_metadata = context.static_metadata.get();
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
 
         for master in font.masters.iter() {
             let pos = font_info.locations.get(&master.axes_values).unwrap();
@@ -853,7 +854,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             );
         }
 
-        context.global_metrics.set(metrics);
+        context.global_metrics.set(metrics.build());
         Ok(())
     }
 }

@@ -603,7 +603,7 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
 #[cfg(test)]
 mod tests {
     use fontdrasil::coords::NormalizedLocation;
-    use fontir::ir::{GlobalMetric, GlobalMetrics};
+    use fontir::ir::{GlobalMetric, GlobalMetricsBuilder};
     use std::collections::HashSet;
     use write_fonts::tables::os2::Os2;
 
@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn build_basic_os2() {
         let default_location = NormalizedLocation::new();
-        let mut global_metrics = GlobalMetrics::new();
+        let mut global_metrics = GlobalMetricsBuilder::new();
 
         global_metrics.set(GlobalMetric::CapHeight, default_location.clone(), 37.5);
         global_metrics.set(GlobalMetric::XHeight, default_location.clone(), 112.2);
@@ -626,7 +626,7 @@ mod tests {
             x_avg_char_width: 42,
             ..Default::default()
         };
-        apply_metrics(&mut os2, &global_metrics.at(&default_location));
+        apply_metrics(&mut os2, &global_metrics.build().at(&default_location));
 
         assert_eq!(Tag::new(b"DUCK"), os2.ach_vend_id);
         assert_eq!(42, os2.x_avg_char_width);

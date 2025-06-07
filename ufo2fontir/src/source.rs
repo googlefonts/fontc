@@ -15,7 +15,7 @@ use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
         AnchorBuilder, Condition, ConditionSet, FeaturesSource, GdefCategories, GlobalMetric,
-        GlobalMetrics, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        GlobalMetricsBuilder, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
         MetaTableValues, NameBuilder, NameKey, NamedInstance, Panose, PostscriptNames, Rule,
         StaticMetadata, Substitution, VariableFeature, DEFAULT_VENDOR_ID,
     },
@@ -1047,7 +1047,7 @@ fn parse_meta_scriptlangtags(plist: &plist::Value) -> impl Iterator<Item = &str>
 }
 
 fn set_default_underline_pos(
-    metrics: &mut GlobalMetrics,
+    metrics: &mut GlobalMetricsBuilder,
     location: &NormalizedLocation,
     units_per_em: u16,
 ) {
@@ -1062,7 +1062,7 @@ fn set_default_underline_pos(
 }
 
 fn populate_default_metrics(
-    metrics: &mut GlobalMetrics,
+    metrics: &mut GlobalMetricsBuilder,
     location: &NormalizedLocation,
     units_per_em: u16,
     x_height: Option<f64>,
@@ -1189,7 +1189,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
 
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
 
         for source in self
             .designspace
@@ -1369,7 +1369,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         }
 
         trace!("{metrics:#?}");
-        context.global_metrics.set(metrics);
+        context.global_metrics.set(metrics.build());
         Ok(())
     }
 }

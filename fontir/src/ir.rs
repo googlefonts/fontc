@@ -284,11 +284,16 @@ impl From<KernGroup> for KernSide {
     }
 }
 
+#[derive(Default, Debug)]
+pub struct GlobalMetricsBuilder(
+    pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f64>>>,
+);
+
 /// Global metrics. Ascender/descender, cap height, etc.
 ///
 /// Represents the values of these metrics at a specific position in design space.
 /// At a minimum should be defined at the default location.
-#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GlobalMetrics(
     pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f64>>>,
 );
@@ -390,8 +395,8 @@ fn adjust_offset(offset: f64, angle: f64) -> f64 {
 /// Map of values associated with a given global metric at various locations.
 pub type GlobalMetricValues = HashMap<NormalizedLocation, OrderedFloat<f64>>;
 
-impl GlobalMetrics {
-    /// Creates a new, empty, [GlobalMetrics]
+impl GlobalMetricsBuilder {
+    /// Creates a new, empty, [GlobalMetricsBuilder]
     pub fn new() -> Self {
         Default::default()
     }
@@ -518,20 +523,8 @@ impl GlobalMetrics {
         set_if_absent(GlobalMetric::VheaLineGap, 0.0);
     }
 
-    fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
-        // We presume that ctor initializes for every GlobalMetric
-        self.0.get(&metric).unwrap()
-    }
-
     fn values_mut(&mut self, metric: GlobalMetric) -> &mut GlobalMetricValues {
         self.0.entry(metric).or_default()
-    }
-
-    pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f64> {
-        let Some(value) = self.values(metric).get(pos) else {
-            panic!("interpolated metric values are not yet supported");
-        };
-        *value
     }
 
     pub fn set(
@@ -561,6 +554,24 @@ impl GlobalMetrics {
         if let Some(value) = maybe_value {
             self.set(metric, pos, value.into().into_inner());
         }
+    }
+
+    pub fn build(self) -> GlobalMetrics {
+        GlobalMetrics(self.0)
+    }
+}
+
+impl GlobalMetrics {
+    fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
+        // We presume that ctor initializes for every GlobalMetric
+        self.0.get(&metric).unwrap()
+    }
+
+    pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f64> {
+        let Some(value) = self.values(metric).get(pos) else {
+            panic!("interpolated metric values are not yet supported");
+        };
+        *value
     }
 
     pub fn at(&self, pos: &NormalizedLocation) -> GlobalMetricsInstance {
@@ -1969,9 +1980,10 @@ mod tests {
     #[test]
     fn round_like_py() {
         let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
         metrics.populate_defaults(&pos, 1290, None, None, None, None);
         let rounded: i16 = metrics
+            .build()
             .get(GlobalMetric::SuperscriptYOffset, &pos)
             .0
             .ot_round();
@@ -2022,10 +2034,10 @@ mod tests {
     fn default_strikeout_when_xheight_none() {
         let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
 
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
         metrics.populate_defaults(&pos, 1000, None, None, None, None);
 
-        let default = metrics.get(GlobalMetric::StrikeoutPosition, &pos);
+        let default = metrics.build().get(GlobalMetric::StrikeoutPosition, &pos);
         assert_eq!(default.into_inner(), 300.);
     }
 
@@ -2037,10 +2049,10 @@ mod tests {
     fn default_strikeout_when_xheight_zero() {
         let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
 
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
         metrics.populate_defaults(&pos, 1000, Some(0.), None, None, None);
 
-        let default = metrics.get(GlobalMetric::StrikeoutPosition, &pos);
+        let default = metrics.build().get(GlobalMetric::StrikeoutPosition, &pos);
         assert_eq!(default.into_inner(), 220.);
     }
 
