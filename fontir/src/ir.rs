@@ -1781,6 +1781,7 @@ mod tests {
 
     use std::collections::HashMap;
 
+    use fontdrasil::types::Axis;
     use write_fonts::types::NameId;
 
     use pretty_assertions::assert_eq;
@@ -2090,6 +2091,30 @@ mod tests {
             .unwrap()
             .get(GlobalMetric::StrikeoutPosition, &pos);
         assert_eq!(default.into_inner(), 220.);
+    }
+
+    /// Test that we can interpolate metrics between source locations.
+    #[test]
+    fn interpolated_metrics() {
+        // Axis extremes, and somewhere in the middle.
+        let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let bold_ish = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+
+        // Vary the strikeout size based on weight.
+        let mut builder = GlobalMetricsBuilder::new();
+        builder.populate_defaults(&regular, 1000, None, None, None, None);
+
+        builder.set(GlobalMetric::StrikeoutSize, regular, 10.);
+        builder.set(GlobalMetric::StrikeoutSize, bold, 20.);
+
+        // Build, and confirm that there is an implicit, halved strikeout size
+        // at the mid-point.
+        let metrics = builder
+            .build(&Axes::new(vec![Axis::for_test("wght")]))
+            .unwrap();
+
+        assert_eq!(15., *metrics.get(GlobalMetric::StrikeoutSize, &bold_ish));
     }
 
     fn make_glyph_order<'a>(raw: impl IntoIterator<Item = &'a str>) -> GlyphOrder {
