@@ -2167,7 +2167,8 @@ mod tests {
             .get()
             .at(static_metadata.default_location());
         assert_eq!(
-            (755.25, -174.5),
+            // rounded from 755.25 and -174.5 at source location as fontmake does
+            (755.0, -174.0),
             (
                 default_metrics.ascender.into_inner(),
                 default_metrics.descender.into_inner()
@@ -2206,7 +2207,7 @@ mod tests {
                 superscript_x_size: 650.0.into(),
                 superscript_y_size: 600.0.into(),
                 superscript_y_offset: 350.0.into(),
-                strikeout_position: 300.6.into(),
+                strikeout_position: 301.0.into(), // rounded from 300.6 at source location as fontmake does
                 strikeout_size: 50.0.into(),
                 os2_typo_ascender: 1193.0.into(),
                 os2_typo_descender: (-289.0).into(),

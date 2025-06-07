@@ -2200,7 +2200,7 @@ mod tests {
                 superscript_x_size: 650.0.into(),
                 superscript_y_size: 600.0.into(),
                 superscript_y_offset: 350.0.into(),
-                strikeout_position: 300.6.into(),
+                strikeout_position: 301.0.into(), // rounded from 300.6 at source location as fontmake does
                 strikeout_size: 50.0.into(),
                 os2_typo_ascender: 737.0.into(),
                 os2_typo_descender: (-42.0).into(),
@@ -2448,8 +2448,8 @@ mod tests {
                     superscript_x_size: 650.0.into(),
                     superscript_y_size: 600.0.into(),
                     superscript_y_offset: 350.0.into(),
-                    strikeout_position: 286.8.into(),
-                    strikeout_size: 40.0.into(), // fallback to underline thickness
+                    strikeout_position: 287.0.into(), // rounded from 286.8 at source location as fontmake does
+                    strikeout_size: 40.0.into(),      // fallback to underline thickness
                     os2_typo_ascender: 950.0.into(),
                     os2_typo_descender: (-350.0).into(),
                     os2_typo_line_gap: 0.0.into(),
