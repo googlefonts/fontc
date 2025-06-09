@@ -2836,19 +2836,66 @@ mod tests {
     }
 
     #[test]
-    fn unique_names() {
-        // Axis name matches subfamily; they should share
+    fn mostly_unique_names() {
         let compile = TestCompile::compile_source("glyphs3/DuplicateNames.glyphs");
-        let axis_name_ids = compile
-            .font()
-            .fvar()
-            .unwrap()
-            .axes()
+        let font = compile.font();
+        let name = font.name().unwrap();
+        let fvar = font.fvar().unwrap();
+        let stat = font.stat().unwrap();
+
+        let axes = fvar.axes().unwrap().iter().collect::<Vec<_>>();
+        let default_location = axes.iter().map(|a| a.default_value()).collect::<Vec<_>>();
+        let named_instances = fvar
+            .instances()
             .unwrap()
             .iter()
-            .map(|a| a.axis_name_id())
+            .map(|ni| ni.unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(vec![NameId::SUBFAMILY_NAME], axis_name_ids);
+
+        // Default instance's subfamily name matches subfamily (nameID=2); it can/should share
+        let default_instance_name_id = named_instances
+            .iter()
+            .find_map(|ni| (ni.coordinates == default_location).then_some(ni.subfamily_name_id))
+            .unwrap();
+
+        assert_eq!(NameId::SUBFAMILY_NAME, default_instance_name_id);
+        assert_eq!(
+            "Regular".to_string(),
+            resolve_name(&name, default_instance_name_id).unwrap()
+        );
+
+        // Non-default instance's subfamily name is only allowed to reuse names from
+        // the font-specific nameID range >= 256
+        let min_font_specific_name_id = NameId::new(256);
+        let non_default_instance_name_id = named_instances
+            .iter()
+            .find_map(|ni| (ni.coordinates != default_location).then_some(ni.subfamily_name_id))
+            .unwrap();
+
+        assert!(non_default_instance_name_id >= min_font_specific_name_id);
+        assert_eq!(
+            "Bold".to_string(),
+            resolve_name(&name, non_default_instance_name_id).unwrap()
+        );
+
+        // Similarly fvar/STAT axis names aren't allowed to share spec-reserved nameIDs
+        // (despite this particular axis was artificially named "Regular" to show this)
+        let axis_name_id = axes.first().map(|a| a.axis_name_id()).unwrap();
+
+        assert!(axis_name_id >= min_font_specific_name_id);
+        assert_eq!(
+            "Regular".to_string(),
+            resolve_name(&name, axis_name_id).unwrap()
+        );
+
+        let design_axis_name_id = stat
+            .design_axes()
+            .unwrap()
+            .first()
+            .map(|a| a.axis_name_id())
+            .unwrap();
+
+        assert_eq!(design_axis_name_id, axis_name_id);
     }
 
     #[test]
