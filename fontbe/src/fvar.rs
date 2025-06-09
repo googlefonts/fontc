@@ -2,6 +2,7 @@
 
 use log::trace;
 
+use fontdrasil::coords::UserLocation;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::{ir::StaticMetadata, orchestration::WorkId as FeWorkId};
 use write_fonts::{
@@ -34,8 +35,18 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
         return None;
     }
 
-    // Reuse an existing name record if possible.
+    // Reuse an existing name record if possible (and allowed by the spec)
     let reverse_names = static_metadata.reverse_names();
+    let min_font_specific_name_id = NameId::new(256);
+    let reusable_name_id = |name: &str, allow_reserved: bool| {
+        reverse_names
+            .get(name)
+            .unwrap()
+            .iter()
+            .find(|&&name_id| allow_reserved || name_id >= min_font_specific_name_id)
+            .cloned()
+            .unwrap()
+    };
 
     // If a single postscript name is present, we must provide one or explicitly
     // indicate absence for every instance. fontations only expects None when NO
@@ -45,6 +56,12 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
         .named_instances
         .iter()
         .any(|instance| instance.postscript_name.is_some());
+
+    let default_instance_location: UserLocation = static_metadata
+        .axes
+        .iter()
+        .map(|a| (a.tag, a.default))
+        .collect();
 
     let axes_and_instances = AxisInstanceArrays::new(
         static_metadata
@@ -56,7 +73,10 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
                     min_value: ir_axis.min.into(),
                     default_value: ir_axis.default.into(),
                     max_value: ir_axis.max.into(),
-                    axis_name_id: *reverse_names.get(ir_axis.ui_label_name()).unwrap(),
+                    // fonttools sets minNameID=256 here, which disables
+                    // reusing spec-reserved nameIDs for axes names:
+                    // https://github.com/fonttools/fonttools/blob/0bc8c028/Lib/fontTools/varLib/__init__.py#L106-L108
+                    axis_name_id: reusable_name_id(ir_axis.ui_label_name(), false),
                     ..Default::default()
                 };
                 if ir_axis.hidden {
@@ -68,27 +88,42 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
         static_metadata
             .named_instances
             .iter()
-            .map(|ni| InstanceRecord {
-                subfamily_name_id: *reverse_names.get(ni.name.as_str()).unwrap(),
-                post_script_name_id: has_postscript_names.then(|| {
+            .map(|ni| {
+                // "The values 2 or 17 should only be used if the named instance corresponds
+                // to the font’s default instance."
+                // https://learn.microsoft.com/en-us/typography/opentype/spec/fvar#instancerecord
+                // https://github.com/fonttools/fonttools/blob/0bc8c028f/Lib/fontTools/varLib/__init__.py#L139-L150
+                let subfamily_name_id =
+                    reusable_name_id(ni.name.as_str(), ni.location == default_instance_location);
+
+                // fonttools implicitly sets minNameID=256 when adding instance postscript names
+                // (even though the default named instance could in theory reuse nameID 6... but the
+                // field is optional and unlikely to be explicitly set as == default PostScript name)
+                // https://github.com/fonttools/fonttools/blob/0bc8c028f/Lib/fontTools/varLib/__init__.py#L154
+                let post_script_name_id = has_postscript_names.then(|| {
                     ni.postscript_name
                         .as_deref()
-                        .map(|text| *reverse_names.get(text).unwrap())
+                        .map(|text| reusable_name_id(text, false))
                         .unwrap_or(NO_POSTSCRIPT_NAME)
-                }),
-                coordinates: static_metadata
-                    .axes
-                    .iter()
-                    .map(|axis| {
-                        let loc = ni
-                            .location
-                            .get(axis.tag)
-                            .unwrap_or(axis.default)
-                            .into_inner();
-                        Fixed::from_f64(loc.into_inner())
-                    })
-                    .collect(),
-                ..Default::default()
+                });
+
+                InstanceRecord {
+                    subfamily_name_id,
+                    post_script_name_id,
+                    coordinates: static_metadata
+                        .axes
+                        .iter()
+                        .map(|axis| {
+                            let loc = ni
+                                .location
+                                .get(axis.tag)
+                                .unwrap_or(axis.default)
+                                .into_inner();
+                            Fixed::from_f64(loc.into_inner())
+                        })
+                        .collect(),
+                    ..Default::default()
+                }
             })
             .collect(),
     );

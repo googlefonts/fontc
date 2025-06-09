@@ -1,5 +1,7 @@
 //! Generates a [stat](https://learn.microsoft.com/en-us/typography/opentype/spec/stat) table.
 
+use std::collections::HashMap;
+
 use log::trace;
 
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
@@ -62,8 +64,19 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
 }
 
 fn make_stat(static_metadata: &StaticMetadata) -> Stat {
-    // Reuse an existing name record if possible.
-    let reverse_names = static_metadata.reverse_names();
+    // Reuse an existing name record for the axis names if possible, but only in the
+    // font-specific range (nameID >= 256), to match the behavior of fonttools:
+    // https://github.com/fonttools/fonttools/blob/0bc8c028/Lib/fontTools/otlLib/builder.py#L3048-L3050
+    let min_font_specific_name_id = NameId::new(256);
+    let reusable_names: HashMap<&str, NameId> = static_metadata
+        .reverse_names()
+        .into_iter()
+        .filter_map(|(name, ids)| {
+            ids.into_iter()
+                .find(|&id| id >= min_font_specific_name_id)
+                .map(|id| (name, id))
+        })
+        .collect();
 
     Stat {
         design_axes: static_metadata
@@ -72,7 +85,7 @@ fn make_stat(static_metadata: &StaticMetadata) -> Stat {
             .enumerate()
             .map(|(idx, a)| AxisRecord {
                 axis_tag: a.tag,
-                axis_name_id: *reverse_names.get(a.ui_label_name()).unwrap(),
+                axis_name_id: *reusable_names.get(a.ui_label_name()).unwrap(),
                 axis_ordering: idx as u16,
             })
             .collect::<Vec<_>>()

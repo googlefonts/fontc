@@ -38,7 +38,31 @@ width = 600;
 }
 );
 unicode = 32;
+}
+);
+instances = (
+{
+axesValues = (
+400
+);
+instanceInterpolations = {
+m01 = 1;
+};
+name = Regular;
 },
+{
+axesValues = (
+700
+);
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 1;
+};
+isBold = 1;
+name = Bold;
+weightClass = 700;
+}
 );
 unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 1;
 }

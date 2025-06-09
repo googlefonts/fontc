@@ -1,7 +1,7 @@
 //! Global font metadata
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Debug,
     io::Read,
 };
@@ -91,7 +91,7 @@ pub struct NamedInstance {
 }
 
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NameKey {
     pub name_id: NameId,
     pub platform_id: u16,
@@ -375,25 +375,61 @@ impl StaticMetadata {
 
         // Claim names for axes and named instances
         let mut name_id_gen = 255;
-        let mut key_to_name = names;
-        let mut visited = key_to_name.values().cloned().collect::<HashSet<_>>();
-
-        variable_axes
+        // Spec-reserved names (<= 255) are not allowed in the set of unique reusable strings,
+        // with the exception of the default instance's subfamily name which can reuse the
+        // existing nameID 2 or 17:
+        // https://github.com/googlefonts/fontc/issues/1502
+        let mut reusable_names: HashMap<String, NameKey> = names
             .iter()
-            .map(|axis| axis.ui_label_name())
-            .chain(named_instances.iter().map(|ni| ni.name.as_ref()))
-            .chain(
-                named_instances
-                    .iter()
-                    .flat_map(|ni| ni.postscript_name.as_deref()),
-            )
-            .for_each(|name| {
-                if !visited.insert(name.to_string()) {
-                    return;
-                }
+            .filter(|&(k, _)| (k.name_id > 255.into()))
+            .map(|(k, v)| (v.clone(), *k))
+            .collect();
+
+        let default_instance_location: UserLocation =
+            variable_axes.iter().map(|a| (a.tag, a.default)).collect();
+
+        let mut register_if_new = |name: &str| {
+            reusable_names.entry(name.to_owned()).or_insert_with(|| {
                 name_id_gen += 1;
-                key_to_name.insert(NameKey::new(name_id_gen.into(), name), name.to_string());
+                NameKey::new(name_id_gen.into(), name)
             });
+        };
+
+        for axes in variable_axes.iter() {
+            register_if_new(axes.ui_label_name());
+        }
+
+        for ni in named_instances.iter() {
+            let instance_name = ni.name.as_str();
+            if ni.location == default_instance_location
+                && names
+                    .iter()
+                    .find_map(|(key, string)| (*string == instance_name).then_some(key.name_id))
+                    .is_some_and(|name_id| {
+                        name_id == NameId::SUBFAMILY_NAME
+                            || name_id == NameId::TYPOGRAPHIC_SUBFAMILY_NAME
+                    })
+            {
+                log::debug!(
+                    "Reuse existing subfamily name '{}' for default instance at {:?}",
+                    instance_name,
+                    default_instance_location
+                );
+            } else {
+                register_if_new(instance_name);
+            }
+
+            if let Some(ps_name) = ni.postscript_name.as_deref() {
+                register_if_new(ps_name);
+            }
+        }
+
+        let mut names = names;
+        names.extend(
+            reusable_names
+                .into_iter()
+                .map(|(string, key)| (key, string)),
+        );
 
         let variation_model = VariationModel::new(global_locations, variable_axes.clone())?;
 
@@ -404,7 +440,7 @@ impl StaticMetadata {
 
         Ok(StaticMetadata {
             units_per_em,
-            names: key_to_name,
+            names,
             all_source_axes: Axes::new(axes),
             axes: variable_axes,
             named_instances,
@@ -450,17 +486,13 @@ impl StaticMetadata {
         self.axes.iter().find(|a| &a.tag == tag)
     }
 
-    /// Calculate a deterministic mapping of existing name text to the smallest
-    /// name ID that provides it.
-    pub fn reverse_names(&self) -> HashMap<&str, NameId> {
+    /// Calculate a mapping of existing name text to the sorted set of name ID(s) that provide it.
+    pub fn reverse_names(&self) -> HashMap<&str, BTreeSet<NameId>> {
         // https://github.com/fonttools/fonttools/blob/d5aec1b9/Lib/fontTools/ttLib/tables/_n_a_m_e.py#L326-L329
         self.names
             .iter()
             .fold(HashMap::new(), |mut accum, (key, name)| {
-                accum
-                    .entry(name.as_str())
-                    .and_modify(|value| *value = key.name_id.min(*value))
-                    .or_insert(key.name_id);
+                accum.entry(name).or_default().insert(key.name_id);
                 accum
             })
     }
@@ -639,7 +671,11 @@ mod tests {
     fn static_metadata_smallest_id() {
         let static_metadata = test_static_metadata();
         let reverse_names = static_metadata.reverse_names();
-        assert_eq!(reverse_names.get("Fam").unwrap(), &NameId::FAMILY_NAME);
+        // in a sorted BTreeSet, the first is always the smallest
+        assert_eq!(
+            reverse_names.get("Fam").unwrap().iter().next().unwrap(),
+            &NameId::FAMILY_NAME
+        );
     }
 
     #[test]
