@@ -1,0 +1,250 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = Bitter;
+fontMaster = (
+{
+axesValues = (
+20
+);
+iconName = Light;
+id = "075BA79B-D813-4287-A9DD-CCAF2D535ED3";
+name = "Thin Italic";
+},
+{
+axesValues = (
+193
+);
+iconName = Bold;
+id = "927AED37-E9E6-4F96-A08E-421C3785EFC6";
+name = "Black Italic";
+}
+);
+glyphs = (
+{
+glyphname = hbar;
+layers = (
+{
+layerId = "075BA79B-D813-4287-A9DD-CCAF2D535ED3";
+shapes = (
+);
+width = 581;
+},
+{
+layerId = "927AED37-E9E6-4F96-A08E-421C3785EFC6";
+shapes = (
+);
+width = 610;
+},
+{
+associatedMasterId = "927AED37-E9E6-4F96-A08E-421C3785EFC6";
+attr = {
+axisRules = (
+{
+min = 155;
+}
+);
+};
+layerId = "BC010891-1862-4B68-AB61-353689AFFA8F";
+name = "19 Apr 24 at 12:58";
+shapes = (
+);
+width = 610;
+},
+{
+associatedMasterId = "075BA79B-D813-4287-A9DD-CCAF2D535ED3";
+attr = {
+axisRules = (
+{
+min = 155;
+}
+);
+};
+layerId = "717D6140-F58E-46A2-B016-7425ACE73BC8";
+name = "19 Apr 24 at 12:58";
+shapes = (
+);
+width = 576;
+}
+);
+unicode = 295;
+},
+{
+glyphname = c_t;
+layers = (
+{
+layerId = "075BA79B-D813-4287-A9DD-CCAF2D535ED3";
+shapes = (
+);
+width = 782;
+},
+{
+layerId = "927AED37-E9E6-4F96-A08E-421C3785EFC6";
+shapes = (
+);
+width = 893;
+},
+{
+associatedMasterId = "927AED37-E9E6-4F96-A08E-421C3785EFC6";
+attr = {
+axisRules = (
+{
+min = 165;
+}
+);
+};
+layerId = "FE29FC79-C729-41E7-894B-2A3EA7BDCBC9";
+name = "19 Apr 24 at 13:42";
+shapes = (
+);
+width = 892;
+},
+{
+associatedMasterId = "075BA79B-D813-4287-A9DD-CCAF2D535ED3";
+attr = {
+axisRules = (
+{
+min = 165;
+}
+);
+};
+layerId = "12272E48-E8ED-48F2-B2A5-651633880C0D";
+name = "19 Apr 24 at 13:42";
+shapes = (
+);
+width = 781;
+}
+);
+}
+);
+instances = (
+{
+name = Thin;
+type = variable;
+},
+{
+axesValues = (
+20
+);
+instanceInterpolations = {
+"075BA79B-D813-4287-A9DD-CCAF2D535ED3" = 1;
+};
+isItalic = 1;
+linkStyle = Thin;
+name = "Thin Italic";
+weightClass = 100;
+},
+{
+axesValues = (
+31
+);
+instanceInterpolations = {
+"075BA79B-D813-4287-A9DD-CCAF2D535ED3" = 0.93642;
+"927AED37-E9E6-4F96-A08E-421C3785EFC6" = 0.06358;
+};
+isItalic = 1;
+linkStyle = ExtraLight;
+name = "ExtraLight Italic";
+weightClass = 200;
+},
+{
+axesValues = (
+46
+);
+instanceInterpolations = {
+"075BA79B-D813-4287-A9DD-CCAF2D535ED3" = 0.84971;
+"927AED37-E9E6-4F96-A08E-421C3785EFC6" = 0.15029;
+};
+isItalic = 1;
+linkStyle = Light;
+name = "Light Italic";
+weightClass = 300;
+},
+{
+axesValues = (
+78
+);
+instanceInterpolations = {
+"075BA79B-D813-4287-A9DD-CCAF2D535ED3" = 0.66474;
+"927AED37-E9E6-4F96-A08E-421C3785EFC6" = 0.33526;
+};
+isItalic = 1;
+linkStyle = Regular;
+name = Italic;
+},
+{
+axesValues = (
+98
+);
+instanceInterpolations = {
+"075BA79B-D813-4287-A9DD-CCAF2D535ED3" = 0.54913;
+"927AED37-E9E6-4F96-A08E-421C3785EFC6" = 0.45087;
+};
+isItalic = 1;
+linkStyle = Medium;
+name = "Medium Italic";
+weightClass = 500;
+},
+{
+axesValues = (
+118
+);
+instanceInterpolations = {
+"075BA79B-D813-4287-A9DD-CCAF2D535ED3" = 0.43353;
+"927AED37-E9E6-4F96-A08E-421C3785EFC6" = 0.56647;
+};
+isItalic = 1;
+linkStyle = "SemiBold ";
+name = "SemiBold Italic";
+weightClass = 600;
+},
+{
+axesValues = (
+138
+);
+instanceInterpolations = {
+"075BA79B-D813-4287-A9DD-CCAF2D535ED3" = 0.31792;
+"927AED37-E9E6-4F96-A08E-421C3785EFC6" = 0.68208;
+};
+isBold = 1;
+isItalic = 1;
+linkStyle = Regular;
+name = "Bold Italic";
+weightClass = 700;
+},
+{
+axesValues = (
+165
+);
+instanceInterpolations = {
+"075BA79B-D813-4287-A9DD-CCAF2D535ED3" = 0.16185;
+"927AED37-E9E6-4F96-A08E-421C3785EFC6" = 0.83815;
+};
+isItalic = 1;
+linkStyle = ExtraBold;
+name = "ExtraBold Italic";
+weightClass = 800;
+},
+{
+axesValues = (
+193
+);
+instanceInterpolations = {
+"927AED37-E9E6-4F96-A08E-421C3785EFC6" = 1;
+};
+isItalic = 1;
+linkStyle = Black;
+name = "Black Italic";
+weightClass = 900;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 3;
+versionMinor = 21;
+}
