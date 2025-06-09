@@ -458,6 +458,9 @@ def normalize_name_ids(ttx: etree.ElementTree):
     for record in records:
         name.append(record)
 
+    # items keep their indentation when we reorder them, so reindent everything
+    etree.indent(name)
+
 
 def find_table(ttx, tag):
     return select_one(ttx, f"/ttFont/{tag}")
