@@ -1942,6 +1942,11 @@ impl RawFont {
                 };
                 let _ = opt.insert(value.to_string());
             }
+
+            instance.properties.extend(v2_to_v3_name(
+                instance.custom_parameters.string("postscriptFontName"),
+                "postscriptFontName",
+            ));
         }
 
         Ok(())

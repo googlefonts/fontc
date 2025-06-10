@@ -1,0 +1,92 @@
+{
+.appVersion = "3414";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+familyName = WghtVar;
+fontMaster = (
+{
+ascender = 800;
+capHeight = 9223372036854775808;
+descender = 0;
+id = m01;
+weightValue = 400;
+xHeight = 9223372036854775808;
+},
+{
+ascender = 800;
+capHeight = 9223372036854775808;
+descender = 0;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weight = Bold;
+weightValue = 700;
+xHeight = 9223372036854775808;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+interpolationWeight = 400;
+instanceInterpolations = {
+m01 = 1;
+};
+name = Regular;
+},
+{
+customParameters = (
+{
+name = postscriptFontName;
+value = PostMedium;
+}
+);
+interpolationWeight = 500;
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 0.33333;
+m01 = 0.66667;
+};
+name = Medium;
+weightClass = Medium;
+},
+{
+customParameters = (
+{
+name = postscriptFontName;
+value = PostBold;
+}
+);
+interpolationWeight = 700;
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 1;
+};
+isBold = 1;
+linkStyle = Regular;
+name = Bold;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}

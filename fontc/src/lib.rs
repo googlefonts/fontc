@@ -3353,9 +3353,11 @@ mod tests {
         assert_eq!(feature_list.feature_records()[0].feature_tag(), "test");
     }
 
-    #[test]
-    fn compile_instance_postscript_names() {
-        let result = TestCompile::compile_source("glyphs3/InstancePostscript.glyphs");
+    #[rstest]
+    #[case("glyphs3/InstancePostscript.glyphs")]
+    #[case("glyphs2/InstancePostscript.glyphs")]
+    fn compile_instance_postscript_names(#[case] source: &str) {
+        let result = TestCompile::compile_source(source);
         let font = result.font();
 
         let fvar = font.fvar().unwrap();
