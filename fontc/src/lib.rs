@@ -3373,7 +3373,14 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(actual, vec![None, Some("PostBold".to_string())]);
+        assert_eq!(
+            actual,
+            vec![
+                None,
+                Some("PostMedium".to_string()),
+                Some("PostBold".to_string())
+            ]
+        );
     }
 
     #[test]

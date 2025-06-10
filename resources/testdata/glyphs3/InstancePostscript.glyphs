@@ -53,6 +53,23 @@ name = Regular;
 },
 {
 axesValues = (
+500
+);
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 0.33333;
+m01 = 0.66667;
+};
+name = Medium;
+properties = (
+{
+key = postscriptFontName;
+value = PostMedium;
+}
+);
+weightClass = 500;
+},
+{
+axesValues = (
 700
 );
 instanceInterpolations = {
