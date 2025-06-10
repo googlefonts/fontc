@@ -215,6 +215,20 @@ struct ResolvedTargets {
     failures: BTreeMap<String, String>,
 }
 
+impl ResolvedTargets {
+    // it's possible for multiple config files to reference the same source.
+    //
+    // This might make sense for a gftools build, but for a default build it's
+    // going to just be duplicate work, so we can remove these.
+    fn remove_duplicate_default_targets(&mut self) {
+        let mut seen = HashSet::new();
+        let empty = Path::new("");
+        self.targets.retain(|targ| {
+            targ.build != BuildType::Default || seen.insert(targ.source_path(empty))
+        });
+    }
+}
+
 fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
     let mut result = ResolvedTargets::default();
     for repo in repos {
@@ -259,6 +273,8 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
                 .extend(targets_for_source(src_path, relative_config_path, &config))
         }
     }
+
+    result.remove_duplicate_default_targets();
     result
 }
 
