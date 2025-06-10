@@ -337,10 +337,12 @@ def modified_gftools_config(
 
         cmdline[config_idx] = temp_path
 
-    yield
-
-    if extra_args:
-        temp_path.unlink()
+    # if the build later fails for any reason, we still want to delete the temp file
+    try:
+        yield
+    finally:
+        if extra_args:
+            temp_path.unlink()
 
 
 def run_gftools(
@@ -653,6 +655,7 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
         eprint(
             f"INFO fixed {spent} off-by-ones in {container} (budget {off_by_one_budget})"
         )
+
 
 # In various cases we have a list of indices where the order doesn't matter;
 # often fontc sorts these and fontmake doesn't, so this lets us sort them there.
