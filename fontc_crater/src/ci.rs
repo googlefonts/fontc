@@ -14,6 +14,7 @@ use std::{
 
 use chrono::{DateTime, TimeZone, Utc};
 use google_fonts_sources::{Config, FontSource, SourceSet};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -230,6 +231,8 @@ impl ResolvedTargets {
 }
 
 fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
+    // first instantiate every repo in parallel:
+    preflight_all_repos(cache_dir, repos);
     let mut result = ResolvedTargets::default();
     for repo in repos {
         let config_path = match repo.config_path(cache_dir) {
@@ -276,6 +279,20 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
 
     result.remove_duplicate_default_targets();
     result
+}
+
+// make sure all repos are fetched and up to date; do this in parallel
+fn preflight_all_repos(cache_dir: &Path, sources: &[FontSource]) {
+    let mut seen = HashSet::new();
+    let has_unique_repo_and_sha = sources
+        .iter()
+        .filter(|src| seen.insert((src.repo_url.as_str(), src.git_rev())))
+        .collect::<Vec<_>>();
+
+    has_unique_repo_and_sha.par_iter().for_each(|src| {
+        // we will handle errors later
+        let _ignore = src.instantiate(cache_dir);
+    });
 }
 
 fn targets_for_source(
