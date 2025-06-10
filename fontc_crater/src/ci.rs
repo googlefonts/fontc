@@ -6,14 +6,15 @@
 //! generate a fuller report that includes comparison with past runs.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fmt::Write,
     path::{Path, PathBuf},
     process::Command,
 };
 
 use chrono::{DateTime, TimeZone, Utc};
-use google_fonts_sources::{Config, RepoInfo};
+use google_fonts_sources::{Config, FontSource, SourceSet};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -87,7 +88,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
 
     log_if_auth_or_not();
     // do this now so we error if the input file doesn't exist
-    let inputs: Vec<RepoInfo> = super::try_read_json(&args.to_run)?;
+    let inputs: SourceSet = super::try_read_json(&args.to_run)?;
 
     let summary_file = args.out_dir.join(SUMMARY_FILE);
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
@@ -129,7 +130,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         mut targets,
         source_repos,
         failures,
-    } = make_targets(&cache_dir, &inputs);
+    } = make_targets(&cache_dir, &inputs.sources);
 
     if !args.gftools {
         targets.retain(|t| t.build == BuildType::Default);
@@ -215,53 +216,83 @@ struct ResolvedTargets {
     failures: BTreeMap<String, String>,
 }
 
-fn make_targets(cache_dir: &Path, repos: &[RepoInfo]) -> ResolvedTargets {
+impl ResolvedTargets {
+    // it's possible for multiple config files to reference the same source.
+    //
+    // This might make sense for a gftools build, but for a default build it's
+    // going to just be duplicate work, so we can remove these.
+    fn remove_duplicate_default_targets(&mut self) {
+        let mut seen = HashSet::new();
+        let empty = Path::new("");
+        self.targets.retain(|targ| {
+            targ.build != BuildType::Default || seen.insert(targ.source_path(empty))
+        });
+    }
+}
+
+fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
+    // first instantiate every repo in parallel:
+    preflight_all_repos(cache_dir, repos);
     let mut result = ResolvedTargets::default();
-    'repo: for repo in repos {
-        let iter = match repo.iter_configs(cache_dir) {
-            Ok(iter) => iter,
+    for repo in repos {
+        let config_path = match repo.config_path(cache_dir) {
+            Ok(config) => config,
             Err(e) => {
                 result.failures.insert(repo.repo_url.clone(), e.to_string());
                 continue;
             }
         };
-        for config_path in iter {
-            let config = match Config::load(&config_path) {
-                Ok(x) => x,
-                Err(e) => {
-                    result.failures.insert(repo.repo_url.clone(), e.to_string());
-                    continue 'repo;
-                }
-            };
-            let relative_config_path = config_path
-                .strip_prefix(cache_dir)
-                .expect("config always in cache dir");
-            let sources_dir = config_path
-                .parent()
-                .expect("config path always in sources dir");
-            // config is always in sources, sources is always in org/repo
-            let repo_dir = relative_config_path.parent().unwrap().parent().unwrap();
-            result
-                .source_repos
-                .insert(repo_dir.to_owned(), repo.repo_url.clone());
-            for source in &config.sources {
-                let src_path = sources_dir.join(source);
-                if !src_path.exists() {
-                    result
-                        .failures
-                        .insert(repo.repo_url.clone(), format!("missing source '{source}'"));
-                    continue 'repo;
-                }
-                let src_path = src_path
-                    .strip_prefix(cache_dir)
-                    .expect("source is always in cache dir");
-                result
-                    .targets
-                    .extend(targets_for_source(src_path, relative_config_path, &config))
+        let config = match Config::load(&config_path) {
+            Ok(x) => x,
+            Err(e) => {
+                result.failures.insert(repo.repo_url.clone(), e.to_string());
+                continue;
             }
+        };
+        let relative_config_path = config_path
+            .strip_prefix(cache_dir)
+            .expect("config always in cache dir");
+        let sources_dir = config_path
+            .parent()
+            .expect("config path always in sources dir");
+        // config is always in sources, sources is always in org/repo
+        let repo_dir = relative_config_path.parent().unwrap().parent().unwrap();
+        result
+            .source_repos
+            .insert(repo_dir.to_owned(), repo.repo_url.clone());
+        for source in &config.sources {
+            let src_path = sources_dir.join(source);
+            if !src_path.exists() {
+                result
+                    .failures
+                    .insert(repo.repo_url.clone(), format!("missing source '{source}'"));
+                continue;
+            }
+            let src_path = src_path
+                .strip_prefix(cache_dir)
+                .expect("source is always in cache dir");
+            result
+                .targets
+                .extend(targets_for_source(src_path, relative_config_path, &config))
         }
     }
+
+    result.remove_duplicate_default_targets();
     result
+}
+
+// make sure all repos are fetched and up to date; do this in parallel
+fn preflight_all_repos(cache_dir: &Path, sources: &[FontSource]) {
+    let mut seen = HashSet::new();
+    let has_unique_repo_and_sha = sources
+        .iter()
+        .filter(|src| seen.insert((src.repo_url.as_str(), src.git_rev())))
+        .collect::<Vec<_>>();
+
+    has_unique_repo_and_sha.par_iter().for_each(|src| {
+        // we will handle errors later
+        let _ignore = src.instantiate(cache_dir);
+    });
 }
 
 fn targets_for_source(
