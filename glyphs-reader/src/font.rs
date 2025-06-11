@@ -3519,6 +3519,7 @@ mod tests {
                         (OrderedFloat(200.0), OrderedFloat(46.0)),
                         (OrderedFloat(300.0), OrderedFloat(51.0)),
                         (OrderedFloat(400.0), OrderedFloat(57.0)),
+                        (OrderedFloat(450.0), OrderedFloat(57.0)), // duplicate value is valid
                         (OrderedFloat(500.0), OrderedFloat(62.0)),
                         (OrderedFloat(600.0), OrderedFloat(68.0)),
                         (OrderedFloat(700.0), OrderedFloat(73.0)),
