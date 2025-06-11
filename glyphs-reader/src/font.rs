@@ -2708,7 +2708,7 @@ impl Instance {
     /// Get the optional postscript name to use for the `fvar` named instance.
     pub fn postscript_name(&self) -> Option<&str> {
         // https://handbook.glyphsapp.com/custom-parameter-descriptions/
-        // https://github.com/googlefonts/glyphsLib/blob/bd8276222afad582c030f839d90271bc0ee70d0b/Lib/glyphsLib/builder/instances.py#L118
+        // https://github.com/googlefonts/glyphsLib/blob/7a8f643a711ffb9d351d037425a7eb60759e6219/Lib/glyphsLib/builder/instances.py#L118-L121
         ["variablePostscriptFontName", "postscriptFontName"]
             .iter()
             .find_map(|key| {
