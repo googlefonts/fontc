@@ -1,0 +1,43 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+date = "2025-06-11 15:07:51 +0000";
+familyName = "New Font";
+featurePrefixes = (
+{
+code = "include(features/hello.fea);";
+name = include;
+}
+);
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+unicode = 97;
+},
+{
+glyphname = b;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+unicode = 98;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

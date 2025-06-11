@@ -3343,6 +3343,17 @@ mod tests {
     }
 
     #[test]
+    fn glyphs_fea_include_file() {
+        // ensure that we resolve inclue statements in glyphs sources
+        let _ = env_logger::builder().is_test(true).try_init();
+        let result = TestCompile::compile_source("glyphs_fea_include/glyphs_include.glyphs");
+        let gsub = result.font().gsub().unwrap();
+        let feature_list = gsub.feature_list().unwrap();
+        assert_eq!(feature_list.feature_records().len(), 1);
+        assert_eq!(feature_list.feature_records()[0].feature_tag(), "test");
+    }
+
+    #[test]
     fn compile_instance_postscript_names() {
         let result = TestCompile::compile_source("glyphs3/InstancePostscript.glyphs");
         let font = result.font();
