@@ -2153,10 +2153,19 @@ impl AxisUserToDesignMap {
     }
 
     fn add_if_new(&mut self, user: OrderedFloat<f64>, design: OrderedFloat<f64>) {
-        if self.0.iter().any(|(u, d)| *u == user || *d == design) {
+        // only keys (input/user-space) should be unique, values (output/design-space) can be duplicated
+        if self.0.iter().any(|(u, _)| *u == user) {
             return;
         }
         self.0.push((user, design));
+    }
+
+    fn add_identity_map(&mut self, value: OrderedFloat<f64>) {
+        // no duplicate keys nor values allowed
+        if self.0.iter().any(|(u, d)| *u == value || *d == value) {
+            return;
+        }
+        self.0.push((value, value));
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &(OrderedFloat<f64>, OrderedFloat<f64>)> {
@@ -2222,7 +2231,7 @@ impl UserToDesignMapping {
                 self.0
                     .entry(axis.name.clone())
                     .or_default()
-                    .add_if_new(*value, *value);
+                    .add_identity_map(*value);
             }
         }
     }
