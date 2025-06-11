@@ -315,7 +315,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             selection_flags |= SelectionFlags::REGULAR;
         }
 
-        let categories = make_glyph_categories(font_info);
+        let categories = make_glyph_categories(font);
 
         // Only build vertical metrics if at least one glyph defines a vertical
         // attribute.
@@ -615,25 +615,14 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
         .collect()
 }
 
-fn make_glyph_categories(font_info: &FontInfo) -> GdefCategories {
-    let categories = font_info
-        .font
+fn make_glyph_categories(font: &Font) -> GdefCategories {
+    let categories = font
         .glyphs
         .iter()
         .filter_map(|(name, glyph)| {
-            let category = category_for_glyph(glyph)?;
-
-            // Apply the same category for derived bracket glyphs.
-            let entries = [GlyphName::new(name)]
-                .into_iter()
-                .chain(bracket_glyph_names(glyph, &font_info.axes).map(|(name, _)| name))
-                .map(move |name| (name, category));
-
-            Some(entries)
+            category_for_glyph(glyph).map(|cat| (GlyphName::new(name), cat))
         })
-        .flatten()
         .collect();
-
     GdefCategories {
         categories,
         prefer_gdef_categories_in_fea: false,
@@ -2653,25 +2642,6 @@ mod tests {
             .anchors
             .iter()
             .all(|a| a.default_pos().x as u32 % 2 == 1));
-    }
-
-    #[test]
-    fn bracket_glyph_categories() {
-        let (source, context) =
-            build_global_metrics(glyphs3_dir().join("LibreFranklin-bracketlayer.glyphs"));
-        build_glyphs(&source, &context).unwrap();
-
-        let categories = &context.static_metadata.get().gdef_categories.categories;
-
-        // When a glyph has a category, its associated bracket glyphs should
-        // have the same one too.
-        assert_eq!(
-            [
-                categories.get("yen"),
-                categories.get("yen.BRACKET.varAlt01")
-            ],
-            [Some(&GlyphClassDef::Base), Some(&GlyphClassDef::Base)]
-        );
     }
 
     #[test]
