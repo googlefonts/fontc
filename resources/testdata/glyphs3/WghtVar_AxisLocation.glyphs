@@ -215,6 +215,41 @@ width = 600;
 unicode = 45;
 }
 );
+instances = (
+{
+axesValues = (
+4
+);
+instanceInterpolations = {
+m01 = 0.5;
+"medium-master" = 0.5;
+};
+name = SemiMedium;
+weightClass = 450;
+},
+{
+axesValues = (
+8.5
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 600;
+}
+);
+}
+);
+instanceInterpolations = {
+"bold-master" = 0.25;
+"medium-master" = 0.75;
+};
+name = SemiBold;
+weightClass = 600;
+}
+);
 unitsPerEm = 1000;
 versionMajor = 1;
 versionMinor = 0;

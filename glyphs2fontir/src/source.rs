@@ -1595,11 +1595,12 @@ mod tests {
                             (UserCoord::new(200.0), DesignCoord::new(46.0)),
                             (UserCoord::new(300.0), DesignCoord::new(51.0)),
                             (UserCoord::new(400.0), DesignCoord::new(57.0)),
+                            (UserCoord::new(450.0), DesignCoord::new(57.0)), // duplicate value
                             (UserCoord::new(500.0), DesignCoord::new(62.0)), // default
                             (UserCoord::new(600.0), DesignCoord::new(68.0)),
                             (UserCoord::new(700.0), DesignCoord::new(73.0)),
                         ],
-                        4
+                        5
                     ),
                     localized_names: Default::default(),
                 },
@@ -1769,7 +1770,7 @@ mod tests {
             (0.0, 400.0),
             (4.0, 450.0),
             (8.0, 500.0),
-            (9.0, 600.0),
+            (8.5, 600.0),
             (10.0, 700.0),
         ] {
             assert_eq!(

@@ -869,6 +869,10 @@ impl RawCustomParameters {
         (item.disabled != Some(true)).then_some(&item.value)
     }
 
+    fn contains(&self, name: &str) -> bool {
+        self.0.iter().any(|val| val.name == name)
+    }
+
     fn string(&self, name: &str) -> Option<&str> {
         self.get(name).and_then(Plist::as_str)
     }
@@ -2075,9 +2079,8 @@ fn whitespace_separated_tokens(s: &str) -> Vec<&str> {
     s.split_whitespace().collect()
 }
 
-fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
-    from.axes
-        .iter()
+fn axis_index(axes: &[Axis], pred: impl Fn(&Axis) -> bool) -> Option<usize> {
+    axes.iter()
         .enumerate()
         .find_map(|(i, a)| if pred(a) { Some(i) } else { None })
 }
@@ -2088,7 +2091,7 @@ fn user_to_design_from_axis_mapping(
     let mappings = from.custom_parameters.axis_mappings()?;
     let mut axis_mappings: BTreeMap<String, AxisUserToDesignMap> = BTreeMap::new();
     for mapping in mappings {
-        let Some(axis_index) = axis_index(from, |a| a.tag == mapping.tag) else {
+        let Some(axis_index) = axis_index(&from.axes, |a| a.tag == mapping.tag) else {
             log::warn!(
                 "axis mapping includes tag {:?} not included in font",
                 mapping.tag
@@ -2130,7 +2133,8 @@ fn user_to_design_from_axis_location(
     let mut axis_mappings: BTreeMap<String, AxisUserToDesignMap> = BTreeMap::new();
     for (master, axis_locations) in from.font_master.iter().zip(master_locations) {
         for axis_location in axis_locations {
-            let Some(axis_index) = axis_index(from, |a| a.name == axis_location.axis_name) else {
+            let Some(axis_index) = axis_index(&from.axes, |a| a.name == axis_location.axis_name)
+            else {
                 panic!("Axis has no index {axis_location:?}");
             };
             let user = axis_location.location;
@@ -2153,10 +2157,19 @@ impl AxisUserToDesignMap {
     }
 
     fn add_if_new(&mut self, user: OrderedFloat<f64>, design: OrderedFloat<f64>) {
-        if self.0.iter().any(|(u, d)| *u == user || *d == design) {
+        // only keys (input/user-space) should be unique, values (output/design-space) can be duplicated
+        if self.0.iter().any(|(u, _)| *u == user) {
             return;
         }
         self.0.push((user, design));
+    }
+
+    fn add_identity_map(&mut self, value: OrderedFloat<f64>) {
+        // no duplicate keys nor values allowed
+        if self.0.iter().any(|(u, d)| *u == value || *d == value) {
+            return;
+        }
+        self.0.push((value, value));
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &(OrderedFloat<f64>, OrderedFloat<f64>)> {
@@ -2222,7 +2235,7 @@ impl UserToDesignMapping {
                 self.0
                     .entry(axis.name.clone())
                     .or_default()
-                    .add_if_new(*value, *value);
+                    .add_identity_map(*value);
             }
         }
     }
@@ -2639,40 +2652,74 @@ impl Instance {
     ///
     /// Mappings based on
     /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L3451>
-    fn new(axes: &[Axis], value: &RawInstance) -> Result<Self, Error> {
+    fn new(
+        axes: &[Axis],
+        value: &RawInstance,
+        masters_have_axis_locations: bool,
+    ) -> Result<Self, Error> {
         let active = value.is_active();
-        let mut axis_mappings = BTreeMap::new();
+        let mut axis_mappings: BTreeMap<String, AxisUserToDesignMap> = BTreeMap::new();
 
-        add_mapping_if_new(
-            &mut axis_mappings,
-            axes,
-            "wght",
-            &value.axes_values,
-            value
-                .weight_class
-                .as_ref()
-                .map(|v| f64::from_str(v).unwrap())
-                .unwrap_or(400.0),
-        );
-        // OS/2 width_class gets mapped to 'wdth' percent scale, see:
-        // https://github.com/googlefonts/glyphsLib/blob/7041311e/Lib/glyphsLib/builder/constants.py#L222
-        add_mapping_if_new(
-            &mut axis_mappings,
-            axes,
-            "wdth",
-            value.axes_values.as_ref(),
-            value
-                .width_class
-                .as_ref()
-                .map(|v| match WidthClass::try_from(u16::from_str(v).unwrap()) {
-                    Ok(width_class) => width_class.to_percent(),
-                    Err(err) => {
-                        warn!("{}", err);
-                        100.0
-                    }
-                })
-                .unwrap_or(100.0),
-        );
+        // Instances can also have "Axis Location" custom parameters, complementing the ones
+        // from the masters: https://github.com/googlefonts/fontc/issues/918
+        let mut tags_done = BTreeSet::new();
+        for axis_location in value.custom_parameters.axis_locations().unwrap_or_default() {
+            let Some(axis_index) = axis_index(axes, |a| a.name == axis_location.axis_name) else {
+                log::warn!(
+                    "{} instance's 'Axis Location' includes axis {:?} not included in font",
+                    value.name,
+                    axis_location.axis_name
+                );
+                continue;
+            };
+            let user = axis_location.location;
+            let design = value.axes_values[axis_index];
+
+            axis_mappings
+                .entry(axis_location.axis_name.clone())
+                .or_default()
+                .add_if_new(user, design);
+
+            tags_done.insert(axes[axis_index].tag.as_str());
+        }
+
+        // only infer legacy mappings when Axis Locations aren't defined
+        if !masters_have_axis_locations && !tags_done.contains("wght") {
+            // OS/2 weight_class corresponds to 'wght' axis user-space value
+            add_mapping_if_new(
+                &mut axis_mappings,
+                axes,
+                "wght",
+                &value.axes_values,
+                value
+                    .weight_class
+                    .as_ref()
+                    .map(|v| f64::from_str(v).unwrap())
+                    .unwrap_or(400.0),
+            );
+        }
+
+        if !masters_have_axis_locations && !tags_done.contains("wdth") {
+            // OS/2 width_class gets mapped to 'wdth' percent scale, see:
+            // https://github.com/googlefonts/glyphsLib/blob/7041311e/Lib/glyphsLib/builder/constants.py#L222
+            add_mapping_if_new(
+                &mut axis_mappings,
+                axes,
+                "wdth",
+                value.axes_values.as_ref(),
+                value
+                    .width_class
+                    .as_ref()
+                    .map(|v| match WidthClass::try_from(u16::from_str(v).unwrap()) {
+                        Ok(width_class) => width_class.to_percent(),
+                        Err(err) => {
+                            warn!("{}", err);
+                            100.0
+                        }
+                    })
+                    .unwrap_or(100.0),
+            );
+        }
 
         Ok(Instance {
             name: value.name.clone(),
@@ -2779,11 +2826,24 @@ impl TryFrom<RawFont> for Font {
         let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
 
         let default_master_idx = default_master_idx(&from);
+
+        // originally glyphsLib would infer wght/wdth mappings from the instance weight/width classes;
+        // then, a new "Axis Location" custom parameter was defined for both masters and instances;
+        // when (all) masters use the latter, only explicit "Axis Location" parameters get used from
+        // instances, and the legacy heuristic for wght/wdth is disabled, so we need to keep track
+        // of this when building instance axis mappings:
+        // https://github.com/googlefonts/glyphsLib/blob/7a8f643a/Lib/glyphsLib/builder/axes.py#L225-L227
+        let masters_have_axis_locations = from
+            .font_master
+            .iter()
+            .all(|master| master.custom_parameters.contains("Axis Location"));
+
         let instances: Vec<_> = from
             .instances
             .iter()
-            .map(|ri| Instance::new(&from.axes, ri))
+            .map(|ri| Instance::new(&from.axes, ri, masters_have_axis_locations))
             .collect::<Result<Vec<_>, Error>>()?;
+
         let axis_mappings = UserToDesignMapping::new(&from, &instances);
 
         let mut glyphs = BTreeMap::new();
@@ -3519,6 +3579,7 @@ mod tests {
                         (OrderedFloat(200.0), OrderedFloat(46.0)),
                         (OrderedFloat(300.0), OrderedFloat(51.0)),
                         (OrderedFloat(400.0), OrderedFloat(57.0)),
+                        (OrderedFloat(450.0), OrderedFloat(57.0)), // duplicate value is valid
                         (OrderedFloat(500.0), OrderedFloat(62.0)),
                         (OrderedFloat(600.0), OrderedFloat(68.0)),
                         (OrderedFloat(700.0), OrderedFloat(73.0)),
@@ -3541,6 +3602,11 @@ mod tests {
                     (OrderedFloat(400.0), OrderedFloat(0.0)),
                     (OrderedFloat(500.0), OrderedFloat(8.0)),
                     (OrderedFloat(700.0), OrderedFloat(10.0)),
+                    // this comes from the 'SemiBold' instance's 'Axis Location'
+                    (OrderedFloat(600.0), OrderedFloat(8.5)),
+                    // the 'SemiMedium' instance contains no explict 'Axis Location' so
+                    // it doesn't show up (implicit mappings are ignored in this case)
+                    // (OrderedFloat(450.0), OrderedFloat(4.0)),
                 ])
             ),])),
             font.axis_mappings
