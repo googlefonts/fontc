@@ -480,7 +480,11 @@ fn make_feature_variations(fontinfo: &FontInfo) -> Option<VariableFeature> {
     // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/builder/bracket_layers.py#L63
     const DEFAULT_FEATURE: Tag = Tag::new(b"rvrn");
     let mut rules = Vec::new();
-    for glyph in fontinfo.font.glyphs.values().filter(|g| g.export) {
+    for glyph_name in &fontinfo.font.glyph_order {
+        let glyph = fontinfo.font.glyphs.get(glyph_name).unwrap();
+        if !glyph.export {
+            continue;
+        }
         for (condset, (sub_name, _layers)) in bracket_glyphs(glyph, &fontinfo.axes) {
             let nbox = condset_to_nbox(condset, &fontinfo.axes);
             rules.push((
@@ -2690,6 +2694,38 @@ mod tests {
                         ("naira", "naira.BRACKET.varAlt01"),
                         ("peso", "peso.BRACKET.varAlt01"),
                     ]
+                ),
+            ]
+        )
+    }
+
+    #[test]
+    fn bracket_rules_in_glyph_order() {
+        // when converting bracket glyphs into designspace rules, we want to
+        // process glyphs in the same order as the glyph order, or we get
+        // results that are different from fonttools.
+        //
+        // in this font, 'hbar' appears before 'c_t' in the glyph order, and
+        // should be handled first.
+
+        let (_, context) = build_static_metadata(
+            glyphs3_dir().join("bracket-rules-processed-in-glyph-order.glyphs"),
+        );
+        let feat_vars = context.static_metadata.get().variations.clone().unwrap();
+
+        assert_eq!(
+            feat_vars.rules,
+            vec![
+                Rule::for_test(
+                    &[&[("wght", (165., 193.))]],
+                    &[
+                        ("hbar", "hbar.BRACKET.varAlt01"),
+                        ("c_t", "c_t.BRACKET.varAlt01"),
+                    ]
+                ),
+                Rule::for_test(
+                    &[&[("wght", (155., 165.))]],
+                    &[("hbar", "hbar.BRACKET.varAlt01"),]
                 ),
             ]
         )
