@@ -1,23 +1,6 @@
 {
-.appVersion = "3148";
+.appVersion = "3414";
 customParameters = (
-{
-name = Axes;
-value = (
-{
-Name = Weight;
-Tag = wght;
-},
-{
-Name = "Optical Size";
-Tag = opsz;
-}
-);
-},
-{
-name = "Variable Font Origin";
-value = "medium-12pt";
-},
 {
 name = "Axis Mappings";
 value = {
@@ -35,6 +18,23 @@ wght = {
 700 = 73;
 };
 };
+},
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+},
+{
+Name = "Optical Size";
+Tag = opsz;
+}
+);
+},
+{
+name = "Variable Font Origin";
+value = "medium-12pt";
 }
 );
 familyName = WghtVar;
@@ -43,7 +43,7 @@ fontMaster = (
 ascender = 800;
 capHeight = 0;
 descender = -200;
-id = thin-12pt;
+id = "thin-12pt";
 weightValue = 40;
 widthValue = 12;
 xHeight = 0;
@@ -52,7 +52,7 @@ xHeight = 0;
 ascender = 800;
 capHeight = 0;
 descender = -200;
-id = thin-72pt;
+id = "thin-72pt";
 weightValue = 40;
 widthValue = 72;
 xHeight = 0;
@@ -61,7 +61,7 @@ xHeight = 0;
 ascender = 800;
 capHeight = 0;
 descender = -200;
-id = medium-12pt;
+id = "medium-12pt";
 weightValue = 62;
 widthValue = 12;
 xHeight = 0;
@@ -70,7 +70,7 @@ xHeight = 0;
 ascender = 800;
 capHeight = 0;
 descender = -200;
-id = medium-72pt;
+id = "medium-72pt";
 weightValue = 62;
 widthValue = 72;
 xHeight = 0;
@@ -101,11 +101,11 @@ glyphs = (
 glyphname = space;
 layers = (
 {
-layerId = thin-12pt;
+layerId = "thin-12pt";
 width = 200;
 },
 {
-layerId = medium-12pt;
+layerId = "medium-12pt";
 width = 250;
 },
 {
@@ -113,7 +113,7 @@ layerId = "bold-12pt";
 width = 550;
 },
 {
-layerId = thin-72pt;
+layerId = "thin-72pt";
 width = 250;
 },
 {
@@ -131,7 +131,7 @@ unicode = 0020;
 glyphname = hyphen;
 layers = (
 {
-layerId = thin-12pt;
+layerId = "thin-12pt";
 paths = (
 {
 closed = 1;
@@ -146,7 +146,7 @@ nodes = (
 width = 400;
 },
 {
-layerId = medium-12pt;
+layerId = "medium-12pt";
 paths = (
 {
 closed = 1;
@@ -176,7 +176,7 @@ nodes = (
 width = 600;
 },
 {
-layerId = thin-72pt;
+layerId = "thin-72pt";
 paths = (
 {
 closed = 1;
@@ -191,7 +191,7 @@ nodes = (
 width = 400;
 },
 {
-layerId = medium-72pt;
+layerId = "medium-72pt";
 paths = (
 {
 closed = 1;
