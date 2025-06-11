@@ -44,6 +44,7 @@ use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features
 #[derive(Debug, Clone)]
 pub struct GlyphsIrSource {
     font_info: Arc<FontInfo>,
+    source_path: Arc<Path>,
 }
 
 impl GlyphsIrSource {
@@ -72,6 +73,7 @@ impl Source for GlyphsIrSource {
 
         Ok(Self {
             font_info: Arc::new(font_info),
+            source_path: glyphs_file.into(),
         })
     }
 
@@ -102,7 +104,10 @@ impl Source for GlyphsIrSource {
     }
 
     fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        Ok(Box::new(FeatureWork(self.font_info.clone())))
+        Ok(Box::new(FeatureWork {
+            font_info: self.font_info.clone(),
+            font_file_path: self.source_path.clone(),
+        }))
     }
 
     fn create_kerning_group_ir_work(&self) -> Result<Box<IrWork>, Error> {
@@ -830,7 +835,10 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
 }
 
 #[derive(Debug)]
-struct FeatureWork(Arc<FontInfo>);
+struct FeatureWork {
+    font_info: Arc<FontInfo>,
+    font_file_path: Arc<Path>,
+}
 
 impl Work<Context, WorkId, Error> for FeatureWork {
     fn id(&self) -> WorkId {
@@ -839,10 +847,18 @@ impl Work<Context, WorkId, Error> for FeatureWork {
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate features");
-        let font_info = self.0.as_ref();
+        let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
-        context.features.set(to_ir_features(&font.features)?);
+        context.features.set(to_ir_features(
+            &font.features,
+            self.font_file_path
+                .canonicalize() // if we got this far, the path must exist
+                .unwrap()
+                .parent()
+                .unwrap() // the path must be in a directory
+                .to_path_buf(),
+        )?);
         Ok(())
     }
 }
