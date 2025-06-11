@@ -1946,6 +1946,11 @@ impl RawFont {
                 };
                 let _ = opt.insert(value.to_string());
             }
+
+            instance.properties.extend(v2_to_v3_name(
+                instance.custom_parameters.string("postscriptFontName"),
+                "postscriptFontName",
+            ));
         }
 
         Ok(())
@@ -2750,10 +2755,15 @@ impl Instance {
     /// Get the optional postscript name to use for the `fvar` named instance.
     pub fn postscript_name(&self) -> Option<&str> {
         // https://handbook.glyphsapp.com/custom-parameter-descriptions/
-        self.properties
+        // https://github.com/googlefonts/glyphsLib/blob/7a8f643a711ffb9d351d037425a7eb60759e6219/Lib/glyphsLib/builder/instances.py#L118-L121
+        ["variablePostscriptFontName", "postscriptFontName"]
             .iter()
-            .find(|raw| raw.key == "variablePostscriptFontName")
-            .and_then(RawName::get_value)
+            .find_map(|key| {
+                self.properties
+                    .iter()
+                    .find(|raw| raw.key == *key)
+                    .and_then(RawName::get_value)
+            })
     }
 }
 
