@@ -1149,6 +1149,7 @@ def resolve_source(source: str) -> Path:
         repo_path = source_url.fragment
         org_name = source_url.path.split("/")[-2]
         repo_name = source_url.path.split("/")[-1]
+        sha = source_url.query
         local_repo = (
             Path.home() / ".fontc_crater_cache" / org_name / repo_name
         ).resolve()
@@ -1160,6 +1161,9 @@ def resolve_source(source: str) -> Path:
             subprocess.run(cmd, cwd=local_repo.parent, check=True)
         else:
             print(f"Reusing existing {local_repo}")
+
+        if len(sha) > 0:
+            log_and_run(("git", "checkout", sha), cwd=local_repo, check=True)
         source = local_repo / repo_path
     else:
         source = Path(source)
