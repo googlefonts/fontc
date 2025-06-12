@@ -228,136 +228,10 @@ impl<T: Ord + Eq, U: Clone> BinarySearchExact<T, U> for &[(T, U)] {
 
 /// Iterate over unicode scripts for the given codepoint
 pub(crate) fn scripts_for_codepoint(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
-    let temp_fix = script_ext_for_cp_override(cp);
-    let normal_path = if temp_fix.is_none() {
-        Some(
-            icu_properties::script::ScriptWithExtensions::new()
-                .get_script_extensions_val32(cp)
-                .iter()
-                .flat_map(get_script_short_name),
-        )
-    } else {
-        None
-    };
-
-    temp_fix
-        .into_iter()
-        .flat_map(|items| items.iter().copied())
-        .chain(normal_path.into_iter().flatten())
-}
-
-// due to a bug in ICU4x, codepoints that were newly added to ScriptExtensions.txt
-// in unicode 16 do not currently have the correct extensions returned.
-// This is a temporary workaround, containing only those codepoints.
-//
-// This can all be deleted when icu4x resolves #6041.
-//
-// - https://github.com/unicode-org/icu4x/issues/6041
-// - https://unicode-org.atlassian.net/browse/ICU-21821
-// - https://unicode.org/Public/16.0.0/ucd/ScriptExtensions.txt
-fn script_ext_for_cp_override(cp: u32) -> Option<&'static [UnicodeShortName]> {
-    const AVST: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Avst", b' ');
-    const CARI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Cari", b' ');
-    const COPT: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Copt", b' ');
-    const DUPL: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Dupl", b' ');
-    const ELBA: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Elba", b' ');
-    const GEOR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Geor", b' ');
-    const GLAG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Glag", b' ');
-    const GONG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Gong", b' ');
-    const GOTH: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Goth", b' ');
-    const GREK: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Grek", b' ');
-    const HANI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Hani", b' ');
-    const LATN: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Latn", b' ');
-    const LYDI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Lydi", b' ');
-    const MAHJ: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Mahj", b' ');
-    const PERM: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Perm", b' ');
-    const SHAW: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Shaw", b' ');
-    const BENG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Beng", b' ');
-    const CYRL: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Cyrl", b' ');
-    const DEVA: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Deva", b' ');
-    const LISU: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Lisu", b' ');
-    const THAI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Thai", b' ');
-    const TOTO: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Toto", b' ');
-    const BOPO: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Bopo", b' ');
-    const CHER: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Cher", b' ');
-    const OSGE: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Osge", b' ');
-    const SUNU: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Sunu", b' ');
-    const TALE: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Tale", b' ');
-    const SYRC: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Syrc", b' ');
-    const TFNG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Tfng", b' ');
-    const TODR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Todr", b' ');
-    const AGHB: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Aghb", b' ');
-    const KANA: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Kana", b' ');
-    const HEBR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Hebr", b' ');
-    const ARMN: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Armn", b' ');
-    const ETHI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Ethi", b' ');
-    const RUNR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Runr", b' ');
-    const ADLM: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Adlm", b' ');
-    const ARAB: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Arab", b' ');
-    const HUNG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Hung", b' ');
-    const KTHI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Kthi", b' ');
-    const LYCI: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Lyci", b' ');
-    const ORKH: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Orkh", b' ');
-    const MERO: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Mero", b' ');
-    const SAMR: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Samr", b' ');
-    const TANG: UnicodeShortName = UnicodeShortName::from_utf8_lossy(b"Tang", b' ');
-
-    match cp {
-        0x0B7 => Some(&[
-            AVST, CARI, COPT, DUPL, ELBA, GEOR, GLAG, GONG, GOTH, GREK, HANI, LATN, LYDI, MAHJ,
-            PERM, SHAW,
-        ]),
-        0x2BC => Some(&[BENG, CYRL, DEVA, LATN, LISU, THAI, TOTO]),
-        0x2C7 | 0x2C9..0x2CB => Some(&[BOPO, LATN]),
-        0x2CD => Some(&[LATN, LISU]),
-        0x2D7 => Some(&[LATN, THAI]),
-        0x2D9 => Some(&[BOPO, LATN]),
-        0x300 => Some(&[CHER, COPT, CYRL, GREK, LATN, PERM, SUNU, TALE]),
-        0x301 => Some(&[CHER, CYRL, GREK, LATN, OSGE, SUNU, TALE, TODR]),
-        0x302 => Some(&[CHER, CYRL, LATN, TFNG]),
-        0x303 => Some(&[GLAG, LATN, SUNU, SYRC, THAI]),
-        0x304 => Some(&[
-            AGHB, CHER, COPT, CYRL, GOTH, GREK, LATN, OSGE, SYRC, TFNG, TODR,
-        ]),
-        0x305 => Some(&[COPT, ELBA, GLAG, GOTH, KANA, LATN]),
-        0x306 => Some(&[CYRL, GREK, LATN, PERM]),
-        0x307 => Some(&[COPT, DUPL, HEBR, LATN, PERM, SYRC, TALE, TFNG, TODR]),
-        0x308 => Some(&[ARMN, CYRL, DUPL, GOTH, GREK, HEBR, LATN, PERM, SYRC, TALE]),
-        0x309 => Some(&[LATN, TFNG]),
-        0x30a => Some(&[DUPL, LATN, SYRC]),
-        0x30b => Some(&[CHER, CYRL, LATN, OSGE]),
-        0x30c => Some(&[CHER, LATN, SYRC]),
-        0x30d => Some(&[LATN, SUNU]),
-        0x30e => Some(&[ETHI, LATN]),
-        0x310 => Some(&[LATN, SUNU]),
-        0x311 => Some(&[CYRL, LATN, TODR]),
-        0x313 => Some(&[GREK, LATN, PERM, TODR]),
-        0x320 => Some(&[LATN, SYRC]),
-        0x323 => Some(&[CHER, DUPL, KANA, LATN, SYRC]),
-        0x324 => Some(&[CHER, DUPL, LATN, SYRC]),
-        0x325 => Some(&[LATN, SYRC]),
-        0x32D => Some(&[LATN, SUNU, SYRC]),
-        0x32E => Some(&[LATN, SYRC]),
-        0x330 => Some(&[CHER, LATN, SYRC]),
-        0x331 => Some(&[AGHB, CHER, GOTH, LATN, SUNU, THAI]),
-        0x358 => Some(&[LATN, OSGE]),
-        0x35E => Some(&[AGHB, LATN, TODR]),
-        0x374 | 0x375 => Some(&[COPT, GREK]),
-        0x589 => Some(&[ARMN, GEOR, GLAG]),
-        0x16EB..=0x16ED => Some(&[RUNR]),
-        0x204F => Some(&[ADLM, ARAB]),
-        0x205A => Some(&[CARI, GEOR, GLAG, HUNG, LYCI, ORKH]),
-        0x205D => Some(&[CARI, GREK, HUNG, MERO]),
-        0x2E17 => Some(&[COPT, LATN]),
-        0x2E30 => Some(&[AVST, ORKH]),
-        0x2E31 => Some(&[AVST, CARI, GEOR, HUNG, KTHI, LYDI, SAMR]),
-        0x2E3C => Some(&[DUPL]),
-        0x2E41 => Some(&[ADLM, ARAB, HUNG]),
-        0x2FF0..=0x2FFF => Some(&[HANI, TANG]),
-        0x31E4..=0x31E5 => Some(&[HANI]),
-        0x31EF => Some(&[HANI, TANG]),
-        _ => None,
-    }
+    icu_properties::script::ScriptWithExtensions::new()
+        .get_script_extensions_val32(cp)
+        .iter()
+        .flat_map(get_script_short_name)
 }
 
 fn get_script_short_name(script: Script) -> Option<UnicodeShortName> {
@@ -468,9 +342,10 @@ mod tests {
     fn expected_unicode_script_overrides() {
         // this codepoint did not have scriptext property in unicode 15 but does
         // in unicode 16, so we need to manually override
-        let apostrophemod = scripts_for_codepoint(0x2bc);
+        let mut apostrophemod: Vec<_> = scripts_for_codepoint(0x2bc).collect();
+        apostrophemod.sort();
         assert_eq!(
-            apostrophemod.collect::<Vec<_>>(),
+            apostrophemod,
             ["Beng", "Cyrl", "Deva", "Latn", "Lisu", "Thai", "Toto",]
         );
 
