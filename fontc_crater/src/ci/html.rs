@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
+    ffi::OsStr,
     fmt::Display,
     ops::Sub,
     path::{Path, PathBuf},
@@ -10,7 +11,7 @@ use std::{
 use crate::{
     error::Error,
     ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput, DiffValue},
-    Target,
+    BuildType, Target,
 };
 use chrono::{DateTime, Utc};
 use maud::{html, Markup, PreEscaped};
@@ -457,7 +458,6 @@ fn make_diff_report(
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
         let changed_tag_list = list_different_tables(diff_details).unwrap_or_default();
         let diff_table = format_diff_report_detail_table(diff_details, prev_details);
-        let bare_source_path = target.source_path(Path::new(""));
 
         let details = html! {
             div.diff_info {
@@ -470,13 +470,13 @@ fn make_diff_report(
 
         // avoid .9995 printing as 100%
         let ratio_fmt = format!("{:.3}%", (ratio * 1000.0).floor() / 1000.0);
+        let target_description = make_target_description(target);
 
         items.push(html! {
             details {
                 summary {
                     span.font_path {
-                         (bare_source_path.display())
-                    " (" (target.build)")"
+                        (target_description)
                     }
                     span.diff_result { (ratio_fmt) " " (decoration) }
                     span.changed_tag_list { (changed_tag_list) }
@@ -495,6 +495,25 @@ fn make_diff_report(
                 (item)
             }
         }
+    }
+}
+
+fn make_target_description(target: &Target) -> Markup {
+    let bare_path = target.source_path(Path::new(""));
+    let source = bare_path.file_name().unwrap().to_str().unwrap();
+    let annotation = match target.build {
+        BuildType::Default => "default".to_string(),
+        BuildType::GfTools => match target.config.as_ref() {
+            Some(c) if c.file_stem() != Some(OsStr::new("config")) => {
+                format!("gftools, {}", c.display())
+            }
+            _ => "gftools".to_string(),
+        },
+    };
+    html! {
+        (source)
+            " "
+            em { "(" (annotation) ")" }
     }
 }
 

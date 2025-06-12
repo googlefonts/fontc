@@ -15,7 +15,7 @@ pub(crate) struct Target {
     /// path to the source dir for this target (relative to the git cache root)
     source_dir: PathBuf,
     /// Filename of config file, in the source directory.
-    config: Option<PathBuf>,
+    pub(crate) config: Option<PathBuf>,
     /// Path to source file, relative to the source_dir
     source: PathBuf,
     pub(crate) build: BuildType,
