@@ -271,9 +271,12 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
             let src_path = src_path
                 .strip_prefix(cache_dir)
                 .expect("source is always in cache dir");
-            result
-                .targets
-                .extend(targets_for_source(src_path, relative_config_path, &config))
+            result.targets.extend(targets_for_source(
+                repo,
+                src_path,
+                relative_config_path,
+                &config,
+            ))
         }
     }
 
@@ -296,13 +299,16 @@ fn preflight_all_repos(cache_dir: &Path, sources: &[FontSource]) {
 }
 
 fn targets_for_source(
+    source: &FontSource,
     src_path: &Path,
     config_path: &Path,
     config: &Config,
 ) -> impl Iterator<Item = Target> {
+    let sha = source.git_rev();
     let default = Some(Target::new(
         src_path.to_owned(),
         config_path.to_owned(),
+        sha.to_owned(),
         BuildType::Default,
     ));
 
@@ -310,6 +316,7 @@ fn targets_for_source(
         Target::new(
             src_path.to_owned(),
             config_path.to_owned(),
+            sha.to_owned(),
             BuildType::GfTools,
         )
     });
