@@ -431,7 +431,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             })
             .or(static_metadata.misc.created);
 
-        if let Some(meta_table) = &font.custom_parameters.meta_table {
+        if let Some(meta_table) = default_instance
+            .and_then(|di| di.custom_parameters.meta_table.as_ref())
+            .or(default_master.custom_parameters.meta_table.as_ref())
+            .or(font.custom_parameters.meta_table.as_ref())
+        {
             static_metadata.misc.meta_table = Some(MetaTableValues {
                 dlng: meta_table.dlng.clone(),
                 slng: meta_table.slng.clone(),
