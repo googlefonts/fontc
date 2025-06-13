@@ -687,9 +687,16 @@ def sort_gdef_mark_filter_sets(ttx: etree.ElementTree):
     for c in coverages:
         markglyphs.remove(c)
 
+    id_map = {c.attrib["index"]: str(i) for (i, c) in enumerate(coverages)}
     for i, c in enumerate(coverages):
         c.attrib["index"] = str(i)
         markglyphs.append(c)
+
+    # remap any MarkFilteringSet nodes that might not get normalized (in contextual
+    # pos lookups e.g., or in GSUB)
+
+    for mark_set in ttx.xpath("//MarkFilteringSet"):
+        mark_set.attrib["value"] = id_map.get(mark_set.attrib["value"])
 
     # items keep their indentation when we reorder them, so reindent everything
     etree.indent(markglyphs, level=3)
