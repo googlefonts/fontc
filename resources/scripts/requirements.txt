@@ -21,7 +21,7 @@ attrs==25.3.0
     #   ufolib2
 axisregistry==0.4.12
     # via gftools
-babelfont==3.1.2
+babelfont==3.1.3
     # via gftools
 beautifulsoup4==4.13.4
     # via gftools
@@ -57,7 +57,7 @@ charset-normalizer==3.4.2
     # via requests
 compreffor==0.5.6
     # via ufo2ft
-cryptography==45.0.3
+cryptography==45.0.4
     # via pyjwt
 defcon[lxml,pens]==0.12.1
     # via
@@ -86,11 +86,11 @@ fontmath==0.9.4
     #   mutatormath
     #   ufo2ft
     #   ufoprocessor
-fontparts==0.12.8
+fontparts==0.13.1
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.58.1
+fonttools[lxml,repacker,ufo,unicode,woff]==4.58.4
     # via
     #   -r requirements.in
     #   afdko
@@ -137,7 +137,7 @@ gitpython==3.1.44
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.10.2
+glyphslib==6.11.0
     # via
     #   -r requirements.in
     #   bumpfontversion
@@ -166,7 +166,7 @@ mdurl==0.1.2
     # via markdown-it-py
 mutatormath==3.0.1
     # via ufoprocessor
-nanoemoji==0.15.3
+nanoemoji==0.15.7
     # via gftools
 networkx==3.5
     # via gftools
@@ -224,7 +224,7 @@ pyyaml==6.0.2
     #   glyphsets
 regex==2024.11.6
     # via nanoemoji
-requests==2.32.3
+requests==2.32.4
     # via
     #   gftools
     #   glyphsets
@@ -234,7 +234,7 @@ resvg-cli==0.44.0
     # via nanoemoji
 rich==14.0.0
     # via gftools
-ruamel-yaml==0.18.12
+ruamel-yaml==0.18.14
     # via gftools
 ruamel-yaml-clib==0.2.12
     # via ruamel-yaml
@@ -269,7 +269,7 @@ typing-extensions==4.14.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.4.6
+ufo2ft[cffsubr,compreffor]==3.5.0
     # via
     #   fontmake
     #   nanoemoji
