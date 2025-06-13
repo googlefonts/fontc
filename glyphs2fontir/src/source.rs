@@ -17,9 +17,10 @@ use fontir::{
     feature_variations::{overlay_feature_variations, NBox},
     ir::{
         self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, GdefCategories,
-        GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups,
-        KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance, PostscriptNames,
-        Rule, StaticMetadata, Substitution, VariableFeature, DEFAULT_VENDOR_ID,
+        GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphInstance, GlyphOrder, KernGroup,
+        KernSide, KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey,
+        NamedInstance, PostscriptNames, Rule, StaticMetadata, Substitution, VariableFeature,
+        DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -697,7 +698,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
         );
 
         let static_metadata = context.static_metadata.get();
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
 
         for master in font.masters.iter() {
             let pos = font_info.locations.get(&master.axes_values).unwrap();
@@ -822,7 +823,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             );
         }
 
-        context.global_metrics.set(metrics);
+        context
+            .global_metrics
+            .set(metrics.build(&static_metadata.axes)?);
         Ok(())
     }
 }
@@ -2065,7 +2068,7 @@ mod tests {
                 superscript_x_size: 650.0.into(),
                 superscript_y_size: 600.0.into(),
                 superscript_y_offset: 350.0.into(),
-                strikeout_position: 300.6.into(),
+                strikeout_position: 301.0.into(), // rounded from 300.6 at source location as fontmake does
                 strikeout_size: 50.0.into(),
                 os2_typo_ascender: 737.0.into(),
                 os2_typo_descender: (-42.0).into(),
@@ -2289,8 +2292,8 @@ mod tests {
                     superscript_x_size: 650.0.into(),
                     superscript_y_size: 600.0.into(),
                     superscript_y_offset: 350.0.into(),
-                    strikeout_position: 286.8.into(),
-                    strikeout_size: 40.0.into(), // fallback to underline thickness
+                    strikeout_position: 287.0.into(), // rounded from 286.8 at source location as fontmake does
+                    strikeout_size: 40.0.into(),      // fallback to underline thickness
                     os2_typo_ascender: 950.0.into(),
                     os2_typo_descender: (-350.0).into(),
                     os2_typo_line_gap: 0.0.into(),
@@ -2349,20 +2352,13 @@ mod tests {
     }
 
     fn unique_value(metrics: &GlobalMetrics, metric: GlobalMetric) -> f64 {
-        let values = metrics
-            .iter()
-            .filter_map(|(which_metric, values)| {
-                if metric == *which_metric {
-                    Some(values.values().collect::<HashSet<_>>())
-                } else {
-                    None
-                }
-            })
-            .flat_map(|v| v.into_iter())
-            .collect::<Vec<_>>();
-
+        let values = metrics.values(metric);
         assert_eq!(1, values.len(), "Too many {metric:?} values: {values:?}");
-        values[0].0
+        // TODO: Is default region?
+
+        metrics
+            .get(metric, &NormalizedLocation::default())
+            .into_inner()
     }
 
     #[test]
