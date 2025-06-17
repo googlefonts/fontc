@@ -104,7 +104,7 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     write_font_file(&args, &be_root)
 }
 
-/// Run and return a binary
+/// Run and return an OpenType font
 ///
 /// This is the library entry point to fontc.
 pub fn generate_binary(args: Args) -> Result<Vec<u8>, Error> {
