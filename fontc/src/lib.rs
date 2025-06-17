@@ -1463,6 +1463,22 @@ mod tests {
     }
 
     #[test]
+    fn glyphs_app_bracket_glyph_categories() {
+        let result = TestCompile::compile_source("glyphs3/PropagateAnchorsTest.glyphs");
+        let staticmeta = result.fe_context.static_metadata.get();
+        let categories = &staticmeta.gdef_categories.categories;
+        assert_eq!(
+            categories.get("A.BRACKET.varAlt01"),
+            Some(&GlyphClassDef::Base)
+        );
+        assert_eq!(
+            categories.get("Aacute.BRACKET.varAlt01"),
+            Some(&GlyphClassDef::Base)
+        );
+        assert_eq!(categories.get(".notdef"), None);
+    }
+
+    #[test]
     fn ufo_app_ir_categories_matches_glyphs() {
         let glyphs = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
         let ufo = TestCompile::compile_source("Oswald-glyph-categories/Oswald-Regular.designspace");
