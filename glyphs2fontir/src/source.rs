@@ -330,7 +330,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             selection_flags |= SelectionFlags::REGULAR;
         }
 
-        let categories = make_glyph_categories(font);
+        let categories = make_glyph_categories(font, &axes);
 
         // Only build vertical metrics if at least one glyph defines a vertical
         // attribute.
@@ -634,18 +634,29 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
         .collect()
 }
 
-fn make_glyph_categories(font: &Font) -> GdefCategories {
+fn make_glyph_categories(font: &Font, axes: &Axes) -> GdefCategories {
     let categories = font
         .glyphs
-        .iter()
-        .filter_map(|(name, glyph)| {
-            category_for_glyph(glyph).map(|cat| (GlyphName::new(name), cat))
-        })
+        .values()
+        .flat_map(|glyph| categories_for_glyph_and_any_bracket_glyphs(glyph, axes))
         .collect();
     GdefCategories {
         categories,
         prefer_gdef_categories_in_fea: false,
     }
+}
+
+fn categories_for_glyph_and_any_bracket_glyphs<'a>(
+    glyph: &'a glyphs_reader::Glyph,
+    axes: &'a Axes,
+) -> impl Iterator<Item = (GlyphName, GlyphClassDef)> + use<'a> {
+    let main = category_for_glyph(&glyph.layers, glyph.category, glyph.sub_category)
+        .map(|cat| (glyph.name.clone().into(), cat));
+    main.into_iter().chain(
+        bracket_glyph_names(glyph, axes).filter_map(|(name, layers)| {
+            category_for_glyph(layers, glyph.category, glyph.sub_category).map(|cat| (name, cat))
+        }),
+    )
 }
 
 fn get_number_values(
@@ -669,15 +680,18 @@ fn get_number_values(
 /// determine the GDEF category for this glyph, if appropriate
 // see
 // <https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517/Lib/glyphsLib/builder/features.py#L205>
-fn category_for_glyph(glyph: &glyphs_reader::Glyph) -> Option<GlyphClassDef> {
-    let has_attaching_anchor = glyph
-        .layers
-        .iter()
+fn category_for_glyph<'a>(
+    layers: impl IntoIterator<Item = &'a Layer>,
+    category: Option<Category>,
+    sub_category: Option<Subcategory>,
+) -> Option<GlyphClassDef> {
+    let has_attaching_anchor = layers
+        .into_iter()
         .flat_map(|layer| layer.anchors.iter())
         // glyphsLib considers any anchor that does not start with '_' as an
         // 'attaching anchor'; see https://github.com/googlefonts/glyphsLib/issues/1024
         .any(|anchor| !anchor.name.starts_with('_'));
-    match (glyph.category, glyph.sub_category) {
+    match (category, sub_category) {
         (_, Some(Subcategory::Ligature)) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
         (
             Some(Category::Mark),
@@ -1843,7 +1857,10 @@ mod tests {
 
         // even though glyphs does not assign this a category, we still determine
         // it is a base based on the presence of base anchors.
-        assert_eq!(category_for_glyph(glyph), Some(GlyphClassDef::Base));
+        assert_eq!(
+            category_for_glyph(&glyph.layers, glyph.category, glyph.sub_category),
+            Some(GlyphClassDef::Base)
+        );
     }
 
     // It's so minimal it's a good test
