@@ -81,12 +81,7 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     )?;
     timer.add(time.complete());
 
-    let workload = Workload::new(
-        args.source(),
-        args.input_binary.as_ref(),
-        JobTimer::default(),
-        args.skip_features,
-    )?;
+    let workload = Workload::new(args.source(), None, JobTimer::default(), args.skip_features)?;
 
     let fe_root = FeContext::new_root(args.flags(), ir_paths);
     let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
@@ -334,13 +329,8 @@ mod tests {
                 raw_font: Vec::new(),
             };
 
-            let mut workload = Workload::new(
-                args.source(),
-                args.input_binary.as_ref(),
-                timer,
-                args.skip_features,
-            )
-            .unwrap();
+            let mut workload =
+                Workload::new(args.source(), None, timer, args.skip_features).unwrap();
             let completed = workload.run_for_test(&result.fe_context, &result.be_context);
 
             result.work_executed = completed;
