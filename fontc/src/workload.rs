@@ -566,13 +566,8 @@ impl Workload {
             AnyContext,
             Vec<Arc<AtomicUsize>>,
         )>::with_capacity(512)));
-        // use an explicit threadpool to avoid possible congestion if another
-        // library we use is using the global threadpool
-        let tp = rayon::ThreadPoolBuilder::new()
-            .build()
-            .expect("couldn't build threadpool");
 
-        tp.in_place_scope(|scope| {
+        let runner = |scope: &rayon::Scope| {
             // Whenever a task completes see if it was the last incomplete dependency of other task(s)
             // and spawn them if it was
             // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
@@ -599,7 +594,9 @@ impl Workload {
                 // Get launchables ready to run
                 if !launchable.is_empty() {
                     nth_wave += 1;
-                    let timing = self.timer.create_timer(AnyWorkId::InternalTiming("run_q"), nth_wave)
+                    let timing = self
+                        .timer
+                        .create_timer(AnyWorkId::InternalTiming("run_q"), nth_wave)
                         .run();
 
                     {
@@ -612,7 +609,8 @@ impl Workload {
                             log::trace!("Start {:?}", id);
                             job.running = true;
 
-                            let mut work = AnyWork::AlsoComplete(id.clone(), job.read_access.clone());
+                            let mut work =
+                                AnyWork::AlsoComplete(id.clone(), job.read_access.clone());
                             std::mem::swap(&mut job.work, &mut work);
                             let work_context = AnyContext::for_work(
                                 fe_root,
@@ -634,7 +632,9 @@ impl Workload {
                     self.timer.add(timing.complete());
 
                     // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
-                    let timing = self.timer.create_timer(AnyWorkId::InternalTiming("spawn"), nth_wave)
+                    let timing = self
+                        .timer
+                        .create_timer(AnyWorkId::InternalTiming("spawn"), nth_wave)
                         .run();
                     for _ in 0..launchable.len() {
                         let send = send.clone();
@@ -698,11 +698,15 @@ impl Workload {
 
                 // Complete everything that has reported since our last check
                 if successes.is_empty() {
-                    let timing = self.timer.create_timer(AnyWorkId::InternalTiming("rc"), nth_wave)
+                    let timing = self
+                        .timer
+                        .create_timer(AnyWorkId::InternalTiming("rc"), nth_wave)
                         .run();
                     self.read_completions(&mut successes, &recv, RecvType::Blocking)?;
                     self.timer.add(timing.complete());
-                    let timing = self.timer.create_timer(AnyWorkId::InternalTiming("hs"), nth_wave)
+                    let timing = self
+                        .timer
+                        .create_timer(AnyWorkId::InternalTiming("hs"), nth_wave)
                         .run();
                     for (success, timing) in successes.iter() {
                         self.handle_success(fe_root, be_root, success.clone(), timing.clone())?;
@@ -715,7 +719,20 @@ impl Workload {
                 }
             }
             Ok::<(), Error>(())
-        })?;
+        };
+
+        // use an explicit threadpool to avoid possible congestion if another
+        // library we use is using the global threadpool
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let tp = rayon::ThreadPoolBuilder::new()
+                .build()
+                .expect("couldn't build threadpool");
+            tp.in_place_scope(runner)?;
+        }
+        // WASM rayon uses a fall-back single threaded implementation
+        #[cfg(target_family = "wasm")]
+        rayon::in_place_scope(runner)?;
 
         // If ^ exited due to error the scope awaited any live tasks; capture their results
         self.read_completions(&mut Vec::new(), &recv, RecvType::NonBlocking)?;
