@@ -49,7 +49,7 @@ use fontir::{
 use log::{debug, trace, warn};
 
 use crate::{
-    create_source,
+    create_in_memory_source, create_source,
     timing::{JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
     Args, Error,
@@ -122,7 +122,11 @@ impl Workload {
             .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
             .run();
 
-        let source = create_source(args.source())?;
+        let source = if let Some(binary) = args.input_binary.as_ref() {
+            create_in_memory_source(binary)?
+        } else {
+            create_source(args.source())?
+        };
 
         timer.add(time.complete());
         let time = timer

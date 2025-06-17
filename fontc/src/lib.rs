@@ -53,6 +53,22 @@ fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
     }
 }
 
+/// Represents a source that is loaded in memory, e.g. for testing or
+/// when the source is not a file on disk (WASM or library use).
+///
+/// Currently only supports Glyphs sources, but could be extended to e.g. UFOZ or other formats.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InMemorySource {
+    Glyphs(String),
+}
+
+/// Creates a [`Source`] from a source file loaded in memory
+fn create_in_memory_source(source: &InMemorySource) -> Result<Box<dyn Source>, Error> {
+    match source {
+        InMemorySource::Glyphs(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+    }
+}
+
 /// Run the compiler with the provided arguments
 pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     let time = timer
