@@ -49,25 +49,40 @@ fn propagate_all_anchors_impl(glyphs: &mut BTreeMap<SmolStr, Glyph>) {
     let mut all_anchors = HashMap::new();
     for name in todo {
         let glyph = glyphs.get(&name).unwrap();
-        for layer in &glyph.layers {
+        for layer in glyph.layers.iter().chain(glyph.bracket_layers.iter()) {
             let anchors =
                 anchors_traversing_components(glyph, layer, &all_anchors, &mut num_base_glyphs);
             maybe_log_new_anchors(&anchors, glyph, layer);
+            // if this is a bracket layer we use the actual axis values as the key,
+            // since it's possible that layers with the same axis values do not share
+            // the same layer id.
+            let layer_id = layer
+                .axis_rules_key()
+                .unwrap_or_else(|| layer.layer_id.clone());
             all_anchors
                 .entry(name.clone())
                 .or_default()
-                .insert(layer.layer_id.clone(), anchors);
+                .insert(layer_id, anchors);
         }
     }
 
     // finally update our glyphs with the new anchors, where appropriate
-    for (name, mut layer_anchors) in all_anchors {
+    for (name, layer_anchors) in all_anchors {
         let glyph = glyphs.get_mut(&name).unwrap();
         if glyph.has_components() {
-            assert_eq!(layer_anchors.len(), glyph.layers.len());
             for layer in &mut glyph.layers {
-                if let Some(new_anchors) = layer_anchors.remove(&layer.layer_id) {
-                    layer.anchors = new_anchors;
+                if let Some(new_anchors) = layer_anchors.get(&layer.layer_id) {
+                    layer.anchors = new_anchors.clone();
+                }
+            }
+
+            for bracket in &mut glyph.bracket_layers {
+                if let Some(new_anchors) = bracket
+                    .axis_rules_key()
+                    .and_then(|id| layer_anchors.get(&id))
+                    .or_else(|| layer_anchors.get(&bracket.layer_id))
+                {
+                    bracket.anchors = new_anchors.clone();
                 }
             }
         }
@@ -356,10 +371,13 @@ fn get_component_layer_anchors(
     layer: &Layer,
     anchors: &HashMap<SmolStr, HashMap<String, Vec<Anchor>>>,
 ) -> Option<Vec<Anchor>> {
-    anchors
-        .get(&component.name)
-        .and_then(|layers| layers.get(&layer.layer_id))
-        .cloned()
+    let anchors = anchors.get(&component.name)?;
+    if let Some(id) = layer.axis_rules_key() {
+        anchors.get(&id).or_else(|| anchors.get(layer.master_id()))
+    } else {
+        anchors.get(&layer.layer_id)
+    }
+    .cloned()
 }
 
 /// returns a list of all glyphs, sorted by component depth.
@@ -451,7 +469,11 @@ mod tests {
 
     use kurbo::Point;
 
-    use crate::{glyphdata::GlyphData, Layer, Shape};
+    use crate::{
+        font::{AxisRule, LayerAttributes},
+        glyphdata::GlyphData,
+        Layer, Shape,
+    };
 
     use super::*;
 
@@ -470,21 +492,27 @@ mod tests {
         fn add_glyph(&mut self, name: &str, build_fn: impl FnOnce(&mut GlyphBuilder)) -> &mut Self {
             let mut glyph = GlyphBuilder::new(name);
             build_fn(&mut glyph);
-            self.0.insert(glyph.0.name.clone(), glyph.build());
+            self.0.insert(glyph.glyph.name.clone(), glyph.build());
             self
         }
     }
     // a little helper to make it easier to generate data for these tests
     #[derive(Debug, Default)]
-    struct GlyphBuilder(Glyph);
+    struct GlyphBuilder {
+        glyph: Glyph,
+        last_layer_is_bracket: bool,
+    }
 
     impl GlyphBuilder {
         fn new(name: &str) -> Self {
-            let mut this = GlyphBuilder(Glyph {
-                name: name.into(),
-                export: true,
-                ..Default::default()
-            });
+            let mut this = GlyphBuilder {
+                glyph: Glyph {
+                    name: name.into(),
+                    export: true,
+                    ..Default::default()
+                },
+                last_layer_is_bracket: false,
+            };
             if let Some(result) = GlyphData::default().query(name, None) {
                 this.set_category(result.category);
                 if let Some(subcategory) = result.subcategory {
@@ -499,34 +527,59 @@ mod tests {
         }
 
         fn build(&self) -> Glyph {
-            self.0.clone()
+            self.glyph.clone()
         }
 
         /// Add a new layer to a glyph; all other operations work on the last added layer
         fn add_layer(&mut self) -> &mut Self {
-            self.0.layers.push(Layer {
-                layer_id: format!("layer-{}", self.0.layers.len()),
+            self.glyph.layers.push(Layer {
+                layer_id: format!("master-{}", self.glyph.layers.len()),
                 ..Default::default()
             });
+            self.last_layer_is_bracket = false;
+            self
+        }
+
+        fn add_bracket_layer(&mut self, axis_rules: Vec<(Option<i64>, Option<i64>)>) -> &mut Self {
+            let assoc_master_id = self.glyph.layers.last().unwrap().layer_id.clone();
+            self.glyph.bracket_layers.push({
+                Layer {
+                    layer_id: format!("bracket-{}", self.glyph.bracket_layers.len()),
+                    associated_master_id: Some(assoc_master_id),
+                    attributes: LayerAttributes {
+                        axis_rules: axis_rules
+                            .into_iter()
+                            .map(|(min, max)| AxisRule { min, max })
+                            .collect(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            });
+            self.last_layer_is_bracket = true;
             self
         }
 
         fn last_layer_mut(&mut self) -> &mut Layer {
-            self.0.layers.last_mut().unwrap()
+            if self.last_layer_is_bracket {
+                self.glyph.bracket_layers.last_mut().unwrap()
+            } else {
+                self.glyph.layers.last_mut().unwrap()
+            }
         }
 
         fn set_unicode(&mut self, unicode: u32) -> &mut Self {
-            self.0.unicode = BTreeSet::from([unicode]);
+            self.glyph.unicode = BTreeSet::from([unicode]);
             self
         }
 
         fn set_category(&mut self, category: Category) -> &mut Self {
-            self.0.category = Some(category);
+            self.glyph.category = Some(category);
             self
         }
 
         fn set_subcategory(&mut self, sub_category: Subcategory) -> &mut Self {
-            self.0.sub_category = Some(sub_category);
+            self.glyph.sub_category = Some(sub_category);
             self
         }
 
@@ -805,6 +858,99 @@ mod tests {
                 ("ogonek", (540., 10.)),
                 ("top", (300., 965.))
             ]
+        );
+    }
+
+    // adapted from https://github.com/googlefonts/glyphsLib/blob/f81c00c74/tests/builder/transformations/propagate_anchors_test.py#L384
+    // which was itself adapted from our test, above, but more is better?
+    #[test]
+    fn propagate_across_layers_including_bracket_layers() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let mut glyphs = GlyphSetBuilder::new()
+            .add_glyph("A", |glyph| {
+                glyph
+                    .add_anchor("bottom", (206, 16))
+                    .add_anchor("ogonek", (360, 13))
+                    .add_anchor("top", (212, 724))
+                    .add_bracket_layer(vec![(Some(500), None)])
+                    .add_anchor("bottom", (206, 16))
+                    .add_anchor("top", (212, 724))
+                    .add_layer()
+                    .add_anchor("bottom", (278, 12))
+                    .add_anchor("ogonek", (464, 13))
+                    .add_anchor("top", (281, 758))
+                    .add_bracket_layer(vec![(Some(500), None)])
+                    .add_anchor("bottom", (278, 12))
+                    .add_anchor("top", (281, 758));
+                //.add_backup_layer()
+                //.add_anchor("top", (290, 690))
+            })
+            .add_glyph("acutecomb", |glyph| {
+                glyph
+                    .add_anchor("_top", (150, 580))
+                    .add_anchor("top", (170, 792))
+                    .add_layer()
+                    .add_anchor("_top", (167, 580))
+                    .add_anchor("top", (170, 792));
+                //.add_backup_layer()
+                //.add_anchor("_top", (335, 502));
+            })
+            .add_glyph("Aacute", |glyph| {
+                glyph
+                    .add_component("A", (0, 0))
+                    .add_component("acutecomb", (62, 144))
+                    .add_bracket_layer(vec![(Some(500), None)])
+                    .add_component("A", (20, 0))
+                    .add_component("acutecomb", (82, 144))
+                    .add_layer()
+                    .add_component("A", (0, 0))
+                    .add_component("acutecomb", (114, 178))
+                    .add_bracket_layer(vec![(Some(500), None)])
+                    .add_component("A", (30, 0))
+                    .add_component("acutecomb", (144, 178));
+                //.add_backup_layer()
+                //.add_component("A", (0, 0))
+                //.add_component("acutecomb", (-45, 188))
+            })
+            .build();
+
+        propagate_all_anchors_impl(&mut glyphs);
+
+        let new_glyph = glyphs.get("Aacute").unwrap();
+        assert_eq!(new_glyph.layers[0].layer_id, "master-0");
+        assert_eq!(
+            new_glyph.layers[0].anchors,
+            [
+                ("bottom", (206., 16.)),
+                ("ogonek", (360., 13.)),
+                ("top", (232., 936.))
+            ]
+        );
+
+        assert_eq!(new_glyph.layers[1].layer_id, "master-1");
+        assert_eq!(
+            new_glyph.layers[1].anchors,
+            [
+                ("bottom", (278., 12.)),
+                ("ogonek", (464., 13.)),
+                ("top", (284., 970.))
+            ]
+        );
+
+        // and bracket layers too??
+        assert_eq!(new_glyph.bracket_layers.len(), 2);
+        assert_eq!(
+            new_glyph.bracket_layers[0].anchors,
+            [
+                // from bracket layer on A, with xform from transform on bracket component
+                ("bottom", (226., 16.)),
+                // from default master on 'acute', shifted by xform
+                ("top", (252., 936.))
+            ]
+        );
+        assert_eq!(
+            new_glyph.bracket_layers[1].anchors,
+            [("bottom", (308., 12.)), ("top", (314., 970.))]
         );
     }
 
