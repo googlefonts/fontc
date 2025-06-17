@@ -312,6 +312,12 @@ impl Layer {
             .unwrap_or(&self.layer_id)
     }
 
+    /// A key used to identify a bracket layer during anchor propagation
+    pub(crate) fn axis_rules_key(&self) -> Option<String> {
+        (!self.attributes.axis_rules.is_empty())
+            .then(|| format!("{:?} {}", self.attributes.axis_rules, self.master_id()))
+    }
+
     pub fn is_intermediate(&self) -> bool {
         self.associated_master_id.is_some() && !self.attributes.coordinates.is_empty()
     }
