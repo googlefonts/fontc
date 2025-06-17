@@ -27,8 +27,6 @@ indexmap.workspace = true
 log.workspace = true
 env_logger.workspace = true
 
-parking_lot.workspace = true
-
 write-fonts.workspace = true
 
 kurbo.workspace = true
@@ -36,6 +34,11 @@ kurbo.workspace = true
 smol_str.workspace = true
 
 chrono.workspace = true
+
+[target.'cfg(not(platform_family = "wasm"))'.dependencies]
+parking_lot.workspace = true
+[target.'cfg(platform_family = "wasm")'.dependencies]
+parking_lot = { version = "0.12.3", features=["nightly"] }
 
 [dev-dependencies]
 diff.workspace = true

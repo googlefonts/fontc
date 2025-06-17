@@ -28,8 +28,7 @@ use fontir::{
     source::Source,
 };
 
-use fontbe::orchestration::Context as BeContext;
-use fontbe::paths::Paths as BePaths;
+use fontbe::{orchestration::Context as BeContext, paths::Paths as BePaths};
 use fontir::paths::Paths as IrPaths;
 
 use log::debug;
@@ -53,6 +52,22 @@ fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
     }
 }
 
+/// Represents a source that is loaded in memory, e.g. for testing or
+/// when the source is not a file on disk (WASM or library use).
+///
+/// Currently only supports Glyphs sources, but could be extended to e.g. UFOZ or other formats.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InMemorySource {
+    Glyphs(String),
+}
+
+/// Creates a [`Source`] from a source file loaded in memory
+fn create_in_memory_source(source: &InMemorySource) -> Result<Box<dyn Source>, Error> {
+    match source {
+        InMemorySource::Glyphs(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+    }
+}
+
 /// Run the compiler with the provided arguments
 pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     let time = timer
@@ -67,6 +82,7 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
     let mut timing = workload.exec(&fe_root, &be_root)?;
 
+    #[cfg(not(target_family = "wasm"))]
     if args.flags().contains(Flags::EMIT_TIMING) {
         let path = args.build_dir.join("threads.svg");
         let out_file = OpenOptions::new()
@@ -86,6 +102,18 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
 
     // At long last!
     write_font_file(&args, &be_root)
+}
+
+/// Run and return a binary
+///
+/// This is the library entry point to fontc.
+pub fn generate_binary(args: Args) -> Result<Vec<u8>, Error> {
+    let (ir_paths, be_paths) = init_paths(&args)?;
+    let workload = Workload::new(args.clone(), JobTimer::default())?;
+    let fe_root = FeContext::new_root(args.flags(), ir_paths);
+    let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
+    workload.exec(&fe_root, &be_root)?;
+    Ok(be_root.font.get().get().to_vec())
 }
 
 pub fn require_dir(dir: &Path) -> Result<(), Error> {

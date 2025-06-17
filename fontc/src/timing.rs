@@ -50,6 +50,7 @@ impl JobTimer {
             nth_wave,
             thread_id: std::thread::current().id(),
             queued: now,
+            #[cfg(not(target_family = "wasm"))]
             run: now,
             complete: now,
         };
@@ -70,6 +71,7 @@ impl JobTimer {
             .push(state);
     }
 
+    #[cfg(not(target_family = "wasm"))]
     pub fn write_svg(&mut self, out: &mut impl io::Write) -> Result<(), io::Error> {
         let names: HashMap<_, _> = self
             .job_times
@@ -225,6 +227,7 @@ pub struct JobTimeState {
     nth_wave: usize,
     thread_id: ThreadId,
     queued: Instant,
+    #[cfg(not(target_family = "wasm"))]
     run: Instant,
     complete: Instant,
 }
@@ -264,7 +267,10 @@ impl JobTime {
         match self {
             // you can call 'run' without queuing, if needed
             JobTime::Ready(mut state) | JobTime::Queued(mut state) => {
-                state.run = Instant::now();
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    state.run = Instant::now();
+                }
                 state.thread_id = std::thread::current().id();
                 JobTime::Running(state)
             }
