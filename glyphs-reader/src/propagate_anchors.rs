@@ -50,25 +50,25 @@ fn propagate_all_anchors_impl(glyphs: &mut BTreeMap<SmolStr, Glyph>) {
     for name in todo {
         let glyph = glyphs.get(&name).unwrap();
         for layer in &glyph.layers {
-            let anchors = anchors_traversing_components(
-                glyph,
-                layer,
-                glyphs,
-                &all_anchors,
-                &mut num_base_glyphs,
-            );
+            let anchors =
+                anchors_traversing_components(glyph, layer, &all_anchors, &mut num_base_glyphs);
             maybe_log_new_anchors(&anchors, glyph, layer);
-            all_anchors.entry(name.clone()).or_default().push(anchors);
+            all_anchors
+                .entry(name.clone())
+                .or_default()
+                .insert(layer.layer_id.clone(), anchors);
         }
     }
 
     // finally update our glyphs with the new anchors, where appropriate
-    for (name, layers) in all_anchors {
+    for (name, mut layer_anchors) in all_anchors {
         let glyph = glyphs.get_mut(&name).unwrap();
         if glyph.has_components() {
-            assert_eq!(layers.len(), glyph.layers.len());
-            for (i, layer_anchors) in layers.into_iter().enumerate() {
-                glyph.layers[i].anchors = layer_anchors;
+            assert_eq!(layer_anchors.len(), glyph.layers.len());
+            for layer in &mut glyph.layers {
+                if let Some(new_anchors) = layer_anchors.remove(&layer.layer_id) {
+                    layer.anchors = new_anchors;
+                }
             }
         }
     }
@@ -102,11 +102,10 @@ fn maybe_log_new_anchors(anchors: &[Anchor], glyph: &Glyph, layer: &Layer) {
 fn anchors_traversing_components<'a>(
     glyph: &'a Glyph,
     layer: &'a Layer,
-    glyphs: &BTreeMap<SmolStr, Glyph>,
     // map of glyph -> anchors, per-layer, updated as we do each glyph;
     // since we sort by component depth before doing work, we know that any components
     // of the current glyph have been done first.
-    done_anchors: &HashMap<SmolStr, Vec<Vec<Anchor>>>,
+    done_anchors: &HashMap<SmolStr, HashMap<String, Vec<Anchor>>>,
     // each (glyph, layer) writes its number of base glyphs into this map during traversal
     base_glyph_counts: &mut HashMap<(SmolStr, &'a str), usize>,
 ) -> Vec<Anchor> {
@@ -134,7 +133,7 @@ fn anchors_traversing_components<'a>(
         // referenced have already been propagated
         let Some(mut anchors) =
             // equivalent to the recursive call in the reference impl
-            get_component_layer_anchors(component, layer, glyphs, done_anchors)
+            get_component_layer_anchors(component, layer,  done_anchors)
         else {
             log::warn!(
                 "could not get layer '{}' for component '{}' of glyph '{}'",
@@ -355,19 +354,11 @@ fn rename_anchor_for_scale(name: &SmolStr, scale: Vec2) -> SmolStr {
 fn get_component_layer_anchors(
     component: &Component,
     layer: &Layer,
-    glyphs: &BTreeMap<SmolStr, Glyph>,
-    anchors: &HashMap<SmolStr, Vec<Vec<Anchor>>>,
+    anchors: &HashMap<SmolStr, HashMap<String, Vec<Anchor>>>,
 ) -> Option<Vec<Anchor>> {
-    let glyph = glyphs.get(&component.name)?;
-    glyph
-        .layers
-        .iter()
-        .position(|comp_layer| comp_layer.layer_id == layer.layer_id)
-        .and_then(|layer_idx| {
-            anchors
-                .get(&component.name)
-                .and_then(|layers| layers.get(layer_idx))
-        })
+    anchors
+        .get(&component.name)
+        .and_then(|layers| layers.get(&layer.layer_id))
         .cloned()
 }
 
