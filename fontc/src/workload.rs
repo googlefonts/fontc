@@ -3,6 +3,7 @@
 use std::{
     collections::{HashMap, HashSet},
     panic::AssertUnwindSafe,
+    path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
@@ -52,16 +53,16 @@ use crate::{
     create_in_memory_source, create_source,
     timing::{JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
-    Args, Error,
+    Error, InMemorySource,
 };
 
 /// A set of interdependent jobs to execute.
 pub struct Workload {
-    args: Args,
     source: Box<dyn Source>,
     job_count: usize,
     success: HashSet<AnyWorkId>,
     error: Option<Error>,
+    skip_features: bool,
     // we count the number of errors encountered but only store the first we see
     n_failures: usize,
 
@@ -117,15 +118,20 @@ fn priority(id: &AnyWorkId) -> u32 {
 
 impl Workload {
     // Pass in timer to enable t0 to be as early as possible
-    pub fn new(args: Args, mut timer: JobTimer) -> Result<Self, Error> {
+    pub fn new(
+        source: &Path,
+        input_binary: Option<&InMemorySource>,
+        mut timer: JobTimer,
+        skip_features: bool,
+    ) -> Result<Self, Error> {
         let time = timer
             .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
             .run();
 
-        let source = if let Some(binary) = args.input_binary.as_ref() {
+        let source = if let Some(binary) = input_binary.as_ref() {
             create_in_memory_source(binary)?
         } else {
-            create_source(args.source())?
+            create_source(source)?
         };
 
         timer.add(time.complete());
@@ -134,7 +140,6 @@ impl Workload {
             .run();
 
         let mut workload = Self {
-            args,
             source,
             job_count: 0,
             success: Default::default(),
@@ -143,6 +148,7 @@ impl Workload {
             also_completes: Default::default(),
             jobs_pending: Default::default(),
             count_pending: Default::default(),
+            skip_features,
             timer,
         };
 
@@ -209,7 +215,7 @@ impl Workload {
     }
 
     fn add_skippable_feature_work(&mut self, work: impl Into<AnyWork>) {
-        if !self.args.skip_features {
+        if !self.skip_features {
             self.add(work);
         } else {
             self.skip(work);
