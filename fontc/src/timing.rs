@@ -4,7 +4,44 @@
 
 use fontbe::orchestration::{AnyWorkId, WorkId as BeWorkIdentifier};
 use fontir::orchestration::WorkId as FeWorkIdentifier;
-use std::{collections::HashMap, io, thread::ThreadId, time::Instant};
+use std::{
+    collections::HashMap,
+    io,
+    thread::ThreadId,
+    time::{Duration, Instant},
+};
+
+/// A trait for clock implementations, allowing for different time sources
+/// such as real time or fake time for testing.
+pub trait Clock: std::fmt::Debug + Clone + 'static {
+    type OUTPUT: Copy
+        + Clone
+        + std::fmt::Debug
+        + std::ops::Sub<Self::OUTPUT, Output = Duration>
+        + Send;
+    fn now() -> Self::OUTPUT;
+}
+
+/// A clock which uses the system's real time clock.
+#[derive(Debug, Clone)]
+pub struct RealClock;
+impl Clock for RealClock {
+    type OUTPUT = Instant;
+
+    fn now() -> Self::OUTPUT {
+        Instant::now()
+    }
+}
+/// A clock which uses a fake time, useful for restricted environments.
+#[derive(Debug, Clone)]
+pub struct FakeClock;
+impl Clock for FakeClock {
+    type OUTPUT = Duration;
+
+    fn now() -> Self::OUTPUT {
+        Duration::from_secs(0)
+    }
+}
 
 /// Tracks time for jobs that run on many threads.
 ///
@@ -14,22 +51,22 @@ use std::{collections::HashMap, io, thread::ThreadId, time::Instant};
 /// Currently not threadsafe, meant to be used by a central orchestrator because
 /// that happens to be what fontc does.
 #[derive(Debug)]
-pub struct JobTimer {
+pub struct JobTimer<C: Clock> {
     /// The beginning of time
-    t0: Instant,
-    job_times: HashMap<ThreadId, Vec<JobTimeState>>,
+    t0: C::OUTPUT,
+    job_times: HashMap<ThreadId, Vec<JobTimeState<C>>>,
 }
 
-impl Default for JobTimer {
+impl<C: Clock> Default for JobTimer<C> {
     fn default() -> Self {
         Self {
-            t0: Instant::now(),
+            t0: C::now(),
             job_times: Default::default(),
         }
     }
 }
 
-impl JobTimer {
+impl<C: Clock> JobTimer<C> {
     /// Prepare to time things using the provided time zero.
     pub fn new() -> Self {
         Default::default()
@@ -43,21 +80,20 @@ impl JobTimer {
     /// nth_wave shows on mouseover in the final output. Each time we release
     /// a group of jobs - because their dependencies are complate - we increment
     /// it so one can see the graph progression in the timing svg output.
-    pub fn create_timer(&self, id: AnyWorkId, nth_wave: usize) -> JobTime {
-        let now = Instant::now();
+    pub fn create_timer(&self, id: AnyWorkId, nth_wave: usize) -> JobTime<C> {
+        let now = C::now();
         let state = JobTimeState {
             id,
             nth_wave,
             thread_id: std::thread::current().id(),
             queued: now,
-            #[cfg(not(target_family = "wasm"))]
             run: now,
             complete: now,
         };
         JobTime::Ready(state)
     }
 
-    pub fn add(&mut self, timing: JobTime) {
+    pub fn add(&mut self, timing: JobTime<C>) {
         let state = match timing {
             JobTime::Done(state) => state,
             other => {
@@ -71,7 +107,7 @@ impl JobTimer {
             .push(state);
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(feature = "cli")]
     pub fn write_svg(&mut self, out: &mut impl io::Write) -> Result<(), io::Error> {
         let names: HashMap<_, _> = self
             .job_times
@@ -222,35 +258,37 @@ fn color(id: &AnyWorkId) -> &'static str {
 
 /// Inner state for timing tasks.
 #[derive(Debug, Clone)]
-pub struct JobTimeState {
+pub struct JobTimeState<C>
+where
+    C: Clock,
+{
     id: AnyWorkId,
     nth_wave: usize,
     thread_id: ThreadId,
-    queued: Instant,
-    #[cfg(not(target_family = "wasm"))]
-    run: Instant,
-    complete: Instant,
+    queued: C::OUTPUT,
+    run: C::OUTPUT,
+    complete: C::OUTPUT,
 }
 
 /// A state machine tracking timer progress.
 #[derive(Debug, Clone)]
-pub enum JobTime {
+pub enum JobTime<C: Clock> {
     /// The job that is ready to run.
-    Ready(JobTimeState),
+    Ready(JobTimeState<C>),
     /// The job has been submitted to a work queue.
-    Queued(JobTimeState),
+    Queued(JobTimeState<C>),
     /// The job is running.
-    Running(JobTimeState),
+    Running(JobTimeState<C>),
     /// The job has completed.
-    Done(JobTimeState),
+    Done(JobTimeState<C>),
 }
 
-impl JobTime {
+impl<C: Clock> JobTime<C> {
     /// Record that the work has been queued (submitted to a threadpool)
     pub fn queued(self) -> Self {
         match self {
             JobTime::Ready(mut state) => {
-                state.queued = Instant::now();
+                state.queued = C::now();
                 JobTime::Queued(state)
             }
             other => {
@@ -267,10 +305,7 @@ impl JobTime {
         match self {
             // you can call 'run' without queuing, if needed
             JobTime::Ready(mut state) | JobTime::Queued(mut state) => {
-                #[cfg(not(target_family = "wasm"))]
-                {
-                    state.run = Instant::now();
-                }
+                state.run = C::now();
                 state.thread_id = std::thread::current().id();
                 JobTime::Running(state)
             }
@@ -285,7 +320,7 @@ impl JobTime {
     pub fn complete(self) -> Self {
         match self {
             JobTime::Running(mut s) => {
-                s.complete = Instant::now();
+                s.complete = C::now();
                 JobTime::Done(s)
             }
             other => {

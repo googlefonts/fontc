@@ -876,9 +876,9 @@ impl Work<Context, WorkId, Error> for FeatureWork {
             &font.features,
             self.font_file_path.as_ref().map(|path| {
                 path.canonicalize()
-                    .unwrap()
+                    .expect("path cannot be canonicalized")
                     .parent()
-                    .unwrap() // the path must be in a directory
+                    .expect("the path must be in a directory")
                     .to_path_buf()
             }),
         )?);

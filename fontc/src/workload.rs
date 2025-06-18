@@ -49,19 +49,18 @@ use fontir::{
 use log::{debug, trace, warn};
 
 use crate::{
-    create_in_memory_source, create_source,
-    timing::{JobTime, JobTimer},
+    timing::{Clock, JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
-    Args, Error,
+    Error, Input,
 };
 
 /// A set of interdependent jobs to execute.
-pub struct Workload {
-    args: Args,
+pub struct Workload<C: Clock> {
     source: Box<dyn Source>,
     job_count: usize,
     success: HashSet<AnyWorkId>,
     error: Option<Error>,
+    skip_features: bool,
     // we count the number of errors encountered but only store the first we see
     n_failures: usize,
 
@@ -70,7 +69,7 @@ pub struct Workload {
     pub(crate) jobs_pending: HashMap<AnyWorkId, Job>,
     pub(crate) count_pending: HashMap<IdentifierDiscriminant, Arc<AtomicUsize>>,
 
-    pub(crate) timer: JobTimer,
+    pub(crate) timer: JobTimer<C>,
 }
 
 /// A unit of executable work plus the identifiers of work that it depends on
@@ -115,18 +114,14 @@ fn priority(id: &AnyWorkId) -> u32 {
     }
 }
 
-impl Workload {
+impl<C: Clock> Workload<C> {
     // Pass in timer to enable t0 to be as early as possible
-    pub fn new(args: Args, mut timer: JobTimer) -> Result<Self, Error> {
+    pub fn new(input: &Input, mut timer: JobTimer<C>, skip_features: bool) -> Result<Self, Error> {
         let time = timer
             .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
             .run();
 
-        let source = if let Some(binary) = args.input_binary.as_ref() {
-            create_in_memory_source(binary)?
-        } else {
-            create_source(args.source())?
-        };
+        let source = input.create_source()?;
 
         timer.add(time.complete());
         let time = timer
@@ -134,7 +129,6 @@ impl Workload {
             .run();
 
         let mut workload = Self {
-            args,
             source,
             job_count: 0,
             success: Default::default(),
@@ -143,6 +137,7 @@ impl Workload {
             also_completes: Default::default(),
             jobs_pending: Default::default(),
             count_pending: Default::default(),
+            skip_features,
             timer,
         };
 
@@ -209,7 +204,7 @@ impl Workload {
     }
 
     fn add_skippable_feature_work(&mut self, work: impl Into<AnyWork>) {
-        if !self.args.skip_features {
+        if !self.skip_features {
             self.add(work);
         } else {
             self.skip(work);
@@ -374,7 +369,7 @@ impl Workload {
         fe_root: &FeContext,
         be_root: &BeContext,
         success: AnyWorkId,
-        timing: JobTime,
+        timing: JobTime<C>,
     ) -> Result<(), Error> {
         log::debug!("{success:?} successful");
 
@@ -552,17 +547,17 @@ impl Workload {
         counters
     }
 
-    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
+    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer<C>, Error> {
         // Async work will send us it's ID on completion
         let (send, recv) =
-            crossbeam_channel::unbounded::<(AnyWorkId, Result<(), Error>, JobTime)>();
+            crossbeam_channel::unbounded::<(AnyWorkId, Result<(), Error>, JobTime<C>)>();
 
         // a flag we set if we panic
         let abort_queued_jobs = Arc::new(AtomicBool::new(false));
 
         let run_queue = Arc::new(Mutex::new(Vec::<(
             AnyWork,
-            JobTime,
+            JobTime<C>,
             AnyContext,
             Vec<Arc<AtomicUsize>>,
         )>::with_capacity(512)));
@@ -574,7 +569,7 @@ impl Workload {
 
             // To avoid allocation every poll for work
             let mut launchable = Vec::with_capacity(512.min(self.job_count));
-            let mut successes = Vec::with_capacity(64);
+            let mut successes: Vec<(AnyWorkId, JobTime<_>)> = Vec::with_capacity(64);
             let mut nth_wave = 0;
 
             while self.success.len() < self.job_count {
@@ -762,8 +757,8 @@ impl Workload {
 
     fn read_completions(
         &mut self,
-        successes: &mut Vec<(AnyWorkId, JobTime)>,
-        recv: &Receiver<(AnyWorkId, Result<(), Error>, JobTime)>,
+        successes: &mut Vec<(AnyWorkId, JobTime<C>)>,
+        recv: &Receiver<(AnyWorkId, Result<(), Error>, JobTime<C>)>,
         initial_read: RecvType,
     ) -> Result<(), Error> {
         successes.clear();

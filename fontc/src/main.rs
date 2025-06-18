@@ -3,7 +3,7 @@ use std::io::Write;
 use clap::Parser;
 
 use fontbe::orchestration::AnyWorkId;
-use fontc::{Args, Error, JobTimer};
+use fontc::{Args, Error, JobTimer, RealClock};
 use log::{error, warn};
 
 fn main() {
@@ -38,7 +38,7 @@ fn run(args: Args) -> Result<(), Error> {
         print_verbose_version().map_err(Error::StdioWriteFail)?;
         std::process::exit(0);
     }
-    let mut timer = JobTimer::new();
+    let mut timer = JobTimer::<RealClock>::new();
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init logger"), 0)
         .queued()

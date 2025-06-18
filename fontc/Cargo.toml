@@ -10,6 +10,13 @@ readme = "README.md"
 categories = ["text-processing", "parsing", "graphics"]
 default-run = "fontc"
 
+[[bin]]
+name = "fontc"
+path = "src/main.rs"
+
+[features]
+default = ["cli"]
+cli = ["clap"]
 
 [dependencies]
 fontdrasil = { version = "0.2.0", path = "../fontdrasil" }
@@ -35,11 +42,12 @@ indexmap.workspace = true
 regex.workspace = true
 
 write-fonts.workspace = true
-clap.workspace = true
 rayon.workspace = true
 
 # just for fontc!
 crossbeam-channel = "0.5.6"
+
+clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 diff.workspace = true
