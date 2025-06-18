@@ -71,6 +71,9 @@ pub enum Subcategory {
     Emoji,
     Enclosing,
     Composition,
+    Lowercase,
+    Uppercase,
+    Smallcaps,
     Other,
 }
 
@@ -868,6 +871,10 @@ impl FromStr for Subcategory {
             "Enclosing" => Ok(Self::Enclosing),
             "Composition" => Ok(Self::Composition),
             "Other" => Ok(Self::Other),
+            "Lowercase" => Ok(Self::Lowercase),
+            "Uppercase" => Ok(Self::Uppercase),
+            "Smallcaps" => Ok(Self::Smallcaps),
+
             _ => Err(s.into()),
         }
     }
@@ -1008,6 +1015,9 @@ impl Display for Subcategory {
             Self::Emoji => write!(f, "Emoji"),
             Self::Enclosing => write!(f, "Enclosing"),
             Self::Composition => write!(f, "Composition"),
+            Self::Lowercase => write!(f, "Lowercase"),
+            Self::Uppercase => write!(f, "Uppercase"),
+            Self::Smallcaps => write!(f, "Smallcaps"),
             Self::Other => write!(f, "Other"),
         }
     }
