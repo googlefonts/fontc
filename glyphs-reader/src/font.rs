@@ -2993,20 +2993,26 @@ impl Font {
         if font.custom_parameters.propagate_anchors.unwrap_or(true) {
             font.propagate_all_anchors();
         }
+
+        // ensure that glyphs with components that have bracket layers
+        // also have bracket layers.
+        font.align_bracket_layers();
+
         Ok(font)
     }
 
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
         let mut font = Self::load_raw(glyphs_file)?;
 
-        // ensure that glyphs with components that have bracket layers
-        // also have bracket layers.
-        font.align_bracket_layers();
-
         // propagate anchors by default unless explicitly set to false
         if font.custom_parameters.propagate_anchors.unwrap_or(true) {
             font.propagate_all_anchors();
         }
+
+        // ensure that glyphs with components that have bracket layers
+        // also have bracket layers.
+        font.align_bracket_layers();
+
         Ok(font)
     }
 
