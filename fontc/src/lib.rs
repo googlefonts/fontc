@@ -1,14 +1,17 @@
 //! A font compiler with aspirations of being fast and safe.
 
+#[cfg(feature = "cli")]
 mod args;
 mod error;
 mod timing;
 pub mod work;
 mod workload;
 
+#[cfg(feature = "cli")]
 pub use args::Args;
 pub use error::Error;
 
+pub use fontir::orchestration::Flags; // Re-export for library users
 use fontra2fontir::source::FontraIrSource;
 use glyphs2fontir::source::GlyphsIrSource;
 pub use timing::JobTimer;
@@ -23,10 +26,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use fontir::{
-    orchestration::{Context as FeContext, Flags},
-    source::Source,
-};
+use fontir::{orchestration::Context as FeContext, source::Source};
 
 use fontbe::{orchestration::Context as BeContext, paths::Paths as BePaths};
 use fontir::paths::Paths as IrPaths;
@@ -68,13 +68,16 @@ fn create_in_memory_source(source: &InMemorySource) -> Result<Box<dyn Source>, E
     }
 }
 
+#[cfg(feature = "cli")]
 /// Run the compiler with the provided arguments
+///
+/// This is the main entry point for the fontc command line utility.
 pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
     let (ir_paths, be_paths) = init_paths(
-        &args.output_file,
+        args.output_file.as_ref(),
         &args.build_dir,
         args.emit_ir,
         args.emit_debug,
@@ -87,7 +90,6 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
     let mut timing = workload.exec(&fe_root, &be_root)?;
 
-    #[cfg(not(target_family = "wasm"))]
     if args.flags().contains(Flags::EMIT_TIMING) {
         let path = args.build_dir.join("threads.svg");
         let out_file = OpenOptions::new()
@@ -112,19 +114,18 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
 /// Run and return an OpenType font
 ///
 /// This is the library entry point to fontc.
-pub fn generate_font(args: Args, flags: Flags) -> Result<Vec<u8>, Error> {
-    let (ir_paths, be_paths) = init_paths(
-        &args.output_file,
-        &args.build_dir,
-        args.emit_ir,
-        args.emit_debug,
-    )?;
-    let workload = Workload::new(
-        args.source(),
-        args.input_binary.as_ref(),
-        JobTimer::default(),
-        args.skip_features,
-    )?;
+pub fn generate_font(
+    output_file: Option<&PathBuf>,
+    build_dir: &Path,
+    source: &Path,
+    input_binary: Option<&InMemorySource>, // This is horrible, we'll fix it later
+    flags: Flags,
+    emit_ir: bool,
+    emit_debug: bool,
+    skip_features: bool,
+) -> Result<Vec<u8>, Error> {
+    let (ir_paths, be_paths) = init_paths(output_file, build_dir, emit_ir, emit_debug)?;
+    let workload = Workload::new(source, input_binary, JobTimer::default(), skip_features)?;
     let fe_root = FeContext::new_root(flags, ir_paths);
     let be_root = BeContext::new_root(flags, be_paths, &fe_root);
     workload.exec(&fe_root, &be_root)?;
@@ -150,7 +151,7 @@ pub fn require_dir(dir: &Path) -> Result<(), Error> {
 }
 
 pub fn init_paths(
-    output_file: &Option<PathBuf>,
+    output_file: Option<&PathBuf>,
     build_dir: &Path,
     emit_ir: bool,
     emit_debug: bool,
@@ -191,6 +192,7 @@ pub fn init_paths(
     Ok((ir_paths, be_paths))
 }
 
+#[cfg(feature = "cli")]
 pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
     // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
     let font_file = be_context.font_file();
@@ -309,7 +311,7 @@ mod tests {
             info!("Compile {args:?}");
 
             let (ir_paths, be_paths) = init_paths(
-                &args.output_file,
+                args.output_file.as_ref(),
                 &args.build_dir,
                 args.emit_ir,
                 args.emit_debug,
