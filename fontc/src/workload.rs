@@ -51,13 +51,13 @@ use log::{debug, trace, warn};
 
 use crate::{
     create_in_memory_source, create_source,
-    timing::{JobTime, JobTimer},
+    timing::{Clock, JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
     Error, InMemorySource,
 };
 
 /// A set of interdependent jobs to execute.
-pub struct Workload {
+pub struct Workload<C: Clock> {
     source: Box<dyn Source>,
     job_count: usize,
     success: HashSet<AnyWorkId>,
@@ -71,7 +71,7 @@ pub struct Workload {
     pub(crate) jobs_pending: HashMap<AnyWorkId, Job>,
     pub(crate) count_pending: HashMap<IdentifierDiscriminant, Arc<AtomicUsize>>,
 
-    pub(crate) timer: JobTimer,
+    pub(crate) timer: JobTimer<C>,
 }
 
 /// A unit of executable work plus the identifiers of work that it depends on
@@ -116,12 +116,12 @@ fn priority(id: &AnyWorkId) -> u32 {
     }
 }
 
-impl Workload {
+impl<C: Clock> Workload<C> {
     // Pass in timer to enable t0 to be as early as possible
     pub fn new(
         source: &Path,
         input_binary: Option<&InMemorySource>,
-        mut timer: JobTimer,
+        mut timer: JobTimer<C>,
         skip_features: bool,
     ) -> Result<Self, Error> {
         let time = timer
@@ -380,7 +380,7 @@ impl Workload {
         fe_root: &FeContext,
         be_root: &BeContext,
         success: AnyWorkId,
-        timing: JobTime,
+        timing: JobTime<C>,
     ) -> Result<(), Error> {
         log::debug!("{success:?} successful");
 
@@ -558,17 +558,17 @@ impl Workload {
         counters
     }
 
-    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
+    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer<C>, Error> {
         // Async work will send us it's ID on completion
         let (send, recv) =
-            crossbeam_channel::unbounded::<(AnyWorkId, Result<(), Error>, JobTime)>();
+            crossbeam_channel::unbounded::<(AnyWorkId, Result<(), Error>, JobTime<C>)>();
 
         // a flag we set if we panic
         let abort_queued_jobs = Arc::new(AtomicBool::new(false));
 
         let run_queue = Arc::new(Mutex::new(Vec::<(
             AnyWork,
-            JobTime,
+            JobTime<C>,
             AnyContext,
             Vec<Arc<AtomicUsize>>,
         )>::with_capacity(512)));
@@ -580,7 +580,7 @@ impl Workload {
 
             // To avoid allocation every poll for work
             let mut launchable = Vec::with_capacity(512.min(self.job_count));
-            let mut successes = Vec::with_capacity(64);
+            let mut successes: Vec<(AnyWorkId, JobTime<_>)> = Vec::with_capacity(64);
             let mut nth_wave = 0;
 
             while self.success.len() < self.job_count {
@@ -768,8 +768,8 @@ impl Workload {
 
     fn read_completions(
         &mut self,
-        successes: &mut Vec<(AnyWorkId, JobTime)>,
-        recv: &Receiver<(AnyWorkId, Result<(), Error>, JobTime)>,
+        successes: &mut Vec<(AnyWorkId, JobTime<C>)>,
+        recv: &Receiver<(AnyWorkId, Result<(), Error>, JobTime<C>)>,
         initial_read: RecvType,
     ) -> Result<(), Error> {
         successes.clear();
