@@ -76,12 +76,8 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
-    let (ir_paths, be_paths) = init_paths(
-        args.output_file.as_ref(),
-        &args.build_dir,
-        args.emit_ir,
-        args.emit_debug,
-    )?;
+    let (ir_paths, be_paths) =
+        init_paths(args.output_file.as_ref(), &args.build_dir, args.flags())?;
     timer.add(time.complete());
 
     let workload = Workload::new(args.source(), None, JobTimer::default(), args.skip_features)?;
@@ -120,11 +116,9 @@ pub fn generate_font(
     source: &Path,
     input_binary: Option<&InMemorySource>, // This is horrible, we'll fix it later
     flags: Flags,
-    emit_ir: bool,
-    emit_debug: bool,
     skip_features: bool,
 ) -> Result<Vec<u8>, Error> {
-    let (ir_paths, be_paths) = init_paths(output_file, build_dir, emit_ir, emit_debug)?;
+    let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
     let workload = Workload::new(source, input_binary, JobTimer::default(), skip_features)?;
     let fe_root = FeContext::new_root(flags, ir_paths);
     let be_root = BeContext::new_root(flags, be_paths, &fe_root);
@@ -153,8 +147,7 @@ pub fn require_dir(dir: &Path) -> Result<(), Error> {
 pub fn init_paths(
     output_file: Option<&PathBuf>,
     build_dir: &Path,
-    emit_ir: bool,
-    emit_debug: bool,
+    flags: Flags,
 ) -> Result<(IrPaths, BePaths), Error> {
     let ir_paths = IrPaths::new(build_dir);
     let be_paths = if let Some(output_file) = output_file {
@@ -171,10 +164,10 @@ pub fn init_paths(
 
     // the build dir stores the IR (for incremental builds) and the default output
     // file ('font.ttf') so we don't need to create one unless we're writing to it
-    if output_file.is_none() || emit_ir {
+    if output_file.is_none() || flags.contains(Flags::EMIT_IR) {
         require_dir(build_dir)?;
     }
-    if emit_ir {
+    if flags.contains(Flags::EMIT_IR) {
         require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
         require_dir(be_paths.glyph_dir())?;
@@ -186,7 +179,7 @@ pub fn init_paths(
             source,
         })?;
     }
-    if emit_debug {
+    if flags.contains(Flags::EMIT_DEBUG) {
         require_dir(be_paths.debug_dir())?;
     }
     Ok((ir_paths, be_paths))
@@ -307,21 +300,17 @@ mod tests {
             let temp_dir = tempdir().unwrap();
             let build_dir = temp_dir.path();
             let args = adjust_args(Args::for_test(build_dir, source));
+            let flags = args.flags();
 
             info!("Compile {args:?}");
 
-            let (ir_paths, be_paths) = init_paths(
-                args.output_file.as_ref(),
-                &args.build_dir,
-                args.emit_ir,
-                args.emit_debug,
-            )
-            .unwrap();
+            let (ir_paths, be_paths) =
+                init_paths(args.output_file.as_ref(), &args.build_dir, flags).unwrap();
 
             let build_dir = be_paths.build_dir().to_path_buf();
 
-            let fe_context = FeContext::new_root(args.flags(), ir_paths);
-            let be_context = BeContext::new_root(args.flags(), be_paths, &fe_context.read_only());
+            let fe_context = FeContext::new_root(flags, ir_paths);
+            let be_context = BeContext::new_root(flags, be_paths, &fe_context.read_only());
             let mut result = TestCompile {
                 _temp_dir: temp_dir,
                 build_dir,
