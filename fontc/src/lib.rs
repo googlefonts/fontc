@@ -33,11 +33,6 @@ use fontir::paths::Paths as IrPaths;
 
 use log::debug;
 
-use crate::timing::FakeClock;
-
-#[cfg(feature = "cli")]
-pub use crate::timing::RealClock;
-
 pub enum Input {
     DesignSpacePath(PathBuf),
     GlyphsPath(PathBuf),
@@ -92,20 +87,16 @@ impl TryFrom<&Path> for Input {
 /// Run the compiler with the provided arguments
 ///
 /// This is the main entry point for the fontc command line utility.
-pub fn run(args: Args, mut timer: JobTimer<RealClock>) -> Result<(), Error> {
-    let time = timer
-        .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
-        .run();
-    let (ir_paths, be_paths) =
-        init_paths(args.output_file.as_ref(), &args.build_dir, args.flags())?;
-    timer.add(time.complete());
+pub fn run(args: Args, timer: JobTimer) -> Result<(), Error> {
     let source = args.source()?;
-
-    let workload = Workload::<RealClock>::new(&source, JobTimer::default(), args.skip_features)?;
-
-    let fe_root = FeContext::new_root(args.flags(), ir_paths);
-    let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
-    let mut timing: JobTimer<_> = workload.exec(&fe_root, &be_root)?;
+    let (be_root, mut timing) = _generate_font(
+        &source,
+        &args.build_dir,
+        args.output_file.as_ref(),
+        args.flags(),
+        args.skip_features,
+        timer,
+    )?;
 
     if args.flags().contains(Flags::EMIT_TIMING) {
         let path = args.build_dir.join("threads.svg");
@@ -132,18 +123,41 @@ pub fn run(args: Args, mut timer: JobTimer<RealClock>) -> Result<(), Error> {
 ///
 /// This is the library entry point to fontc.
 pub fn generate_font(
-    output_file: Option<&PathBuf>,
-    build_dir: &Path,
     source: &Input,
+    build_dir: &Path,
+    output_file: Option<&PathBuf>,
     flags: Flags,
     skip_features: bool,
 ) -> Result<Vec<u8>, Error> {
+    _generate_font(
+        source,
+        build_dir,
+        output_file,
+        flags,
+        skip_features,
+        JobTimer::default(),
+    )
+    .map(|(be_root, _timing)| be_root.font.get().get().to_vec())
+}
+
+fn _generate_font(
+    source: &Input,
+    build_dir: &Path,
+    output_file: Option<&PathBuf>,
+    flags: Flags,
+    skip_features: bool,
+    mut timer: JobTimer,
+) -> Result<(BeContext, JobTimer), Error> {
+    let time = timer
+        .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
+        .run();
     let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
-    let workload = Workload::<FakeClock>::new(source, JobTimer::default(), skip_features)?;
+    timer.add(time.complete());
+    let workload = Workload::new(source, timer, skip_features)?;
     let fe_root = FeContext::new_root(flags, ir_paths);
     let be_root = BeContext::new_root(flags, be_paths, &fe_root);
-    workload.exec(&fe_root, &be_root)?;
-    Ok(be_root.font.get().get().to_vec())
+    let timing = workload.exec(&fe_root, &be_root)?;
+    Ok((be_root, timing))
 }
 
 pub fn require_dir(dir: &Path) -> Result<(), Error> {
