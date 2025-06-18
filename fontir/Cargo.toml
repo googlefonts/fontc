@@ -34,8 +34,13 @@ smol_str.workspace = true
 
 [target.'cfg(not(platform_family = "wasm"))'.dependencies]
 parking_lot.workspace = true
+# From parking_lot README: "parking_lot will work mostly fine on stable...
+# Just make sure not to enable -C target-feature=+atomics on stable as that
+# will allow wasm to run with multiple threads." But we need multiple threads
+# for rayon, and we need atomics too. Also from the README: "The
+# wasm32-unknown-unknown target is only fully supported on nightly."
 [target.'cfg(platform_family = "wasm")'.dependencies]
-parking_lot = { version = "0.12.3", features=["nightly"] }
+parking_lot = { version = "0.12.3", features = ["nightly"] }
 
 [dev-dependencies]
 diff.workspace = true
