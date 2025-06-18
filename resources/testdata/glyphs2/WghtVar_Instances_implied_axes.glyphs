@@ -1,0 +1,39 @@
+{
+.appVersion = "3219";
+copyright = "Copy!";
+familyName = WghtVar;
+fontMaster = (
+{
+id = m01;
+weightValue = 400;
+},
+{
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weight = Bold;
+weightValue = 700;
+}
+);
+glyphs = (
+);
+instances = (
+{
+interpolationWeight = 400;
+instanceInterpolations = {
+m01 = 1;
+};
+name = Regular;
+},
+{
+interpolationWeight = 700;
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 1;
+};
+isBold = 1;
+linkStyle = Regular;
+name = Bold;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}
