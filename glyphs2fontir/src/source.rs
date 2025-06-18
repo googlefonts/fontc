@@ -2800,4 +2800,24 @@ mod tests {
 
         assert_eq!(readable, [(WGHT, 0.0, 1.0)])
     }
+
+    #[test]
+    fn glyphs2_delete_default_point_axes() {
+        // in old glyphs sources, if the Axes custom parameter is not used, we
+        // assume that there are three variable axes, 'wght', 'wdth', and 'XXXX'.
+        //
+        // If any of these axes are not actually used, we want to make sure that
+        // they are not passed through to fontir.
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("WghtVar_Instances_implied_axes.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(
+            static_metadata.named_instances[0]
+                .location
+                .axis_tags()
+                .copied()
+                .collect::<Vec<_>>(),
+            [Tag::new(b"wght")]
+        );
+    }
 }

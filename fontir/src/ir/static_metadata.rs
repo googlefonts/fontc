@@ -353,7 +353,7 @@ impl StaticMetadata {
         units_per_em: u16,
         names: HashMap<NameKey, String>,
         axes: Vec<Axis>,
-        named_instances: Vec<NamedInstance>,
+        mut named_instances: Vec<NamedInstance>,
         global_locations: HashSet<NormalizedLocation>,
         postscript_names: Option<PostscriptNames>,
         italic_angle: f64,
@@ -367,10 +367,12 @@ impl StaticMetadata {
         let variable_axes: Axes = axes.iter().filter(|a| !a.is_point()).cloned().collect();
 
         // Named instances of static fonts are unhelpful <https://github.com/googlefonts/fontc/issues/1008>
-        let named_instances = if !variable_axes.is_empty() {
-            named_instances
+        if !variable_axes.is_empty() {
+            for instance in &mut named_instances {
+                instance.location = instance.location.subset_axes(&variable_axes);
+            }
         } else {
-            Default::default()
+            named_instances.clear();
         };
 
         // Claim names for axes and named instances
