@@ -4,7 +4,49 @@
 
 use fontbe::orchestration::{AnyWorkId, WorkId as BeWorkIdentifier};
 use fontir::orchestration::WorkId as FeWorkIdentifier;
-use std::{collections::HashMap, io, thread::ThreadId, time::Instant};
+use std::{collections::HashMap, io, thread::ThreadId};
+
+#[cfg(target_family = "wasm")]
+use dummy_instant::Instant;
+#[cfg(not(target_family = "wasm"))]
+use std::time::Instant;
+
+#[cfg(target_family = "wasm")]
+mod dummy_instant {
+    use std::ops::Sub;
+
+    /// A noop Instant for wasm
+    #[derive(Clone, Default, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
+    pub struct Instant;
+
+    /// A noop Duration for wasm
+    #[derive(Clone, Default, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
+    pub struct Duration;
+
+    impl Instant {
+        pub fn now() -> Self {
+            Self
+        }
+    }
+
+    impl Duration {
+        pub fn as_secs_f64(self) -> f64 {
+            0.0
+        }
+
+        pub fn as_nanos(self) -> u128 {
+            0
+        }
+    }
+
+    impl Sub for Instant {
+        type Output = Duration;
+
+        fn sub(self, _rhs: Self) -> Self::Output {
+            Duration
+        }
+    }
+}
 
 /// Tracks time for jobs that run on many threads.
 ///
@@ -50,7 +92,6 @@ impl JobTimer {
             nth_wave,
             thread_id: std::thread::current().id(),
             queued: now,
-            #[cfg(not(target_family = "wasm"))]
             run: now,
             complete: now,
         };
@@ -71,7 +112,7 @@ impl JobTimer {
             .push(state);
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(feature = "cli")]
     pub fn write_svg(&mut self, out: &mut impl io::Write) -> Result<(), io::Error> {
         let names: HashMap<_, _> = self
             .job_times
@@ -227,7 +268,6 @@ pub struct JobTimeState {
     nth_wave: usize,
     thread_id: ThreadId,
     queued: Instant,
-    #[cfg(not(target_family = "wasm"))]
     run: Instant,
     complete: Instant,
 }
@@ -267,10 +307,7 @@ impl JobTime {
         match self {
             // you can call 'run' without queuing, if needed
             JobTime::Ready(mut state) | JobTime::Queued(mut state) => {
-                #[cfg(not(target_family = "wasm"))]
-                {
-                    state.run = Instant::now();
-                }
+                state.run = Instant::now();
                 state.thread_id = std::thread::current().id();
                 JobTime::Running(state)
             }

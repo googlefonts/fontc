@@ -51,7 +51,7 @@ use log::{debug, trace, warn};
 
 use crate::{
     create_in_memory_source, create_source,
-    timing::{JobTime, JobTimer},
+    timing::{Clock, JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
     Error, InMemorySource,
 };
@@ -121,7 +121,7 @@ impl Workload {
     pub fn new(
         source: &Path,
         input_binary: Option<&InMemorySource>,
-        mut timer: JobTimer,
+        mut timer: JobTimer<C>,
         skip_features: bool,
     ) -> Result<Self, Error> {
         let time = timer
@@ -580,7 +580,7 @@ impl Workload {
 
             // To avoid allocation every poll for work
             let mut launchable = Vec::with_capacity(512.min(self.job_count));
-            let mut successes = Vec::with_capacity(64);
+            let mut successes: Vec<(AnyWorkId, JobTime)> = Vec::with_capacity(64);
             let mut nth_wave = 0;
 
             while self.success.len() < self.job_count {

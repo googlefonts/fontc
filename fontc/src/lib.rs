@@ -33,6 +33,11 @@ use fontir::paths::Paths as IrPaths;
 
 use log::debug;
 
+use crate::timing::FakeClock;
+
+#[cfg(feature = "cli")]
+pub use crate::timing::RealClock;
+
 /// Creates the implementation of [`Source`] that should be used for the provided path
 fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
     if !source.exists() {
@@ -72,7 +77,7 @@ fn create_in_memory_source(source: &InMemorySource) -> Result<Box<dyn Source>, E
 /// Run the compiler with the provided arguments
 ///
 /// This is the main entry point for the fontc command line utility.
-pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
+pub fn run(args: Args, mut timer: JobTimer<RealClock>) -> Result<(), Error> {
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
@@ -80,11 +85,12 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
         init_paths(args.output_file.as_ref(), &args.build_dir, args.flags())?;
     timer.add(time.complete());
 
-    let workload = Workload::new(args.source(), None, JobTimer::default(), args.skip_features)?;
+    let workload =
+        Workload::<RealClock>::new(args.source(), None, JobTimer::default(), args.skip_features)?;
 
     let fe_root = FeContext::new_root(args.flags(), ir_paths);
     let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
-    let mut timing = workload.exec(&fe_root, &be_root)?;
+    let mut timing: JobTimer<_> = workload.exec(&fe_root, &be_root)?;
 
     if args.flags().contains(Flags::EMIT_TIMING) {
         let path = args.build_dir.join("threads.svg");
@@ -119,7 +125,8 @@ pub fn generate_font(
     skip_features: bool,
 ) -> Result<Vec<u8>, Error> {
     let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
-    let workload = Workload::new(source, input_binary, JobTimer::default(), skip_features)?;
+    let workload =
+        Workload::<FakeClock>::new(source, input_binary, JobTimer::default(), skip_features)?;
     let fe_root = FeContext::new_root(flags, ir_paths);
     let be_root = BeContext::new_root(flags, be_paths, &fe_root);
     workload.exec(&fe_root, &be_root)?;
@@ -321,7 +328,7 @@ mod tests {
             };
 
             let mut workload =
-                Workload::new(args.source(), None, timer, args.skip_features).unwrap();
+                Workload::<RealClock>::new(args.source(), None, timer, args.skip_features).unwrap();
             let completed = workload.run_for_test(&result.fe_context, &result.be_context);
 
             result.work_executed = completed;
