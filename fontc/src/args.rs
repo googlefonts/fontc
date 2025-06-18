@@ -1,13 +1,13 @@
 //! Command line arguments
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::{ArgAction, Parser};
 use fontir::orchestration::Flags;
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::InMemorySource;
+use crate::{Error, Input};
 
 /// What font can we build for you today?
 #[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
@@ -24,11 +24,6 @@ pub struct Args {
     /// DEPRECATED: old name for positional input file
     #[arg(short, long)]
     source: Option<PathBuf>,
-
-    /// Used by WASM and other library consumers to pass in a source directly.
-    #[clap(skip)]
-    #[serde(skip)]
-    pub input_binary: Option<InMemorySource>,
 
     /// Whether to write IR to disk.
     #[arg(short, long, default_value = "false")]
@@ -140,7 +135,6 @@ impl Args {
         Args {
             glyph_name_filter: None,
             input_source: Some(input_source),
-            input_binary: None,
             source: None,
             emit_ir: false,
             output_file: None,
@@ -172,12 +166,14 @@ impl Args {
     }
 
     /// The input source to compile.
-    pub fn source(&self) -> &Path {
+    pub fn source(&self) -> Result<Input, Error> {
         // safe to unwrap because clap ensures that the input_source is
         // required_unless_present("source")
-        self.source
+        let path = self
+            .source
             .as_ref()
-            .unwrap_or_else(|| self.input_source.as_ref().unwrap())
+            .unwrap_or_else(|| self.input_source.as_ref().unwrap());
+        Input::try_from(path.as_path())
     }
 }
 

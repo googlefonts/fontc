@@ -3,7 +3,6 @@
 use std::{
     collections::{HashMap, HashSet},
     panic::AssertUnwindSafe,
-    path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
@@ -50,10 +49,9 @@ use fontir::{
 use log::{debug, trace, warn};
 
 use crate::{
-    create_in_memory_source, create_source,
-    timing::{Clock, JobTime, JobTimer},
+    timing::{JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
-    Error, InMemorySource,
+    Error, Input,
 };
 
 /// A set of interdependent jobs to execute.
@@ -118,21 +116,12 @@ fn priority(id: &AnyWorkId) -> u32 {
 
 impl Workload {
     // Pass in timer to enable t0 to be as early as possible
-    pub fn new(
-        source: &Path,
-        input_binary: Option<&InMemorySource>,
-        mut timer: JobTimer<C>,
-        skip_features: bool,
-    ) -> Result<Self, Error> {
+    pub fn new(input: &Input, mut timer: JobTimer, skip_features: bool) -> Result<Self, Error> {
         let time = timer
             .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
             .run();
 
-        let source = if let Some(binary) = input_binary.as_ref() {
-            create_in_memory_source(binary)?
-        } else {
-            create_source(source)?
-        };
+        let source = input.create_source()?;
 
         timer.add(time.complete());
         let time = timer

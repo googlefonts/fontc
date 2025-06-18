@@ -38,38 +38,53 @@ use crate::timing::FakeClock;
 #[cfg(feature = "cli")]
 pub use crate::timing::RealClock;
 
-/// Creates the implementation of [`Source`] that should be used for the provided path
-fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
-    if !source.exists() {
-        return Err(Error::FileExpected(source.to_path_buf()));
+pub enum Input {
+    DesignSpacePath(PathBuf),
+    GlyphsPath(PathBuf),
+    FontraPath(PathBuf),
+    GlyphsMemory(String),
+}
+
+impl Input {
+    pub fn new(path: &Path) -> Result<Self, Error> {
+        if !path.exists() {
+            return Err(Error::FileExpected(path.to_path_buf()));
+        }
+        let ext = path
+            .extension()
+            .and_then(OsStr::to_str)
+            .ok_or_else(|| Error::UnrecognizedSource(path.to_path_buf()))?;
+        match ext {
+            "designspace" => Ok(Input::DesignSpacePath(path.to_path_buf())),
+            "ufo" => Ok(Input::DesignSpacePath(path.to_path_buf())),
+            "glyphs" => Ok(Input::GlyphsPath(path.to_path_buf())),
+            "glyphspackage" => Ok(Input::GlyphsPath(path.to_path_buf())),
+            "fontra" => Ok(Input::FontraPath(path.to_path_buf())),
+            _ => Err(Error::UnrecognizedSource(path.to_path_buf())),
+        }
     }
-    let ext = source
-        .extension()
-        .and_then(OsStr::to_str)
-        .ok_or_else(|| Error::UnrecognizedSource(source.to_path_buf()))?;
-    match ext {
-        "designspace" => Ok(Box::new(DesignSpaceIrSource::new(source)?)),
-        "ufo" => Ok(Box::new(DesignSpaceIrSource::new(source)?)),
-        "glyphs" => Ok(Box::new(GlyphsIrSource::new(source)?)),
-        "glyphspackage" => Ok(Box::new(GlyphsIrSource::new(source)?)),
-        "fontra" => Ok(Box::new(FontraIrSource::new(source)?)),
-        _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
+
+    /// Creates a new input from a Glyphs source in memory
+    pub fn from_glyphs(source: String) -> Self {
+        Input::GlyphsMemory(source)
+    }
+
+    /// Creates the implementation of [`Source`] to feed to fontir.
+    fn create_source(&self) -> Result<Box<dyn Source>, Error> {
+        match self {
+            Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path)?)),
+            Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(path)?)),
+            Input::FontraPath(path) => Ok(Box::new(FontraIrSource::new(path)?)),
+            Input::GlyphsMemory(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+        }
     }
 }
 
-/// Represents a source that is loaded in memory, e.g. for testing or
-/// when the source is not a file on disk (WASM or library use).
-///
-/// Currently only supports Glyphs sources, but could be extended to e.g. UFOZ or other formats.
-#[derive(Debug, Clone, PartialEq)]
-pub enum InMemorySource {
-    Glyphs(String),
-}
+impl TryFrom<&Path> for Input {
+    type Error = Error;
 
-/// Creates a [`Source`] from a source file loaded in memory
-fn create_in_memory_source(source: &InMemorySource) -> Result<Box<dyn Source>, Error> {
-    match source {
-        InMemorySource::Glyphs(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+    fn try_from(path: &Path) -> Result<Self, Self::Error> {
+        Input::new(path)
     }
 }
 
@@ -84,9 +99,9 @@ pub fn run(args: Args, mut timer: JobTimer<RealClock>) -> Result<(), Error> {
     let (ir_paths, be_paths) =
         init_paths(args.output_file.as_ref(), &args.build_dir, args.flags())?;
     timer.add(time.complete());
+    let source = args.source()?;
 
-    let workload =
-        Workload::<RealClock>::new(args.source(), None, JobTimer::default(), args.skip_features)?;
+    let workload = Workload::<RealClock>::new(&source, JobTimer::default(), args.skip_features)?;
 
     let fe_root = FeContext::new_root(args.flags(), ir_paths);
     let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
@@ -119,14 +134,12 @@ pub fn run(args: Args, mut timer: JobTimer<RealClock>) -> Result<(), Error> {
 pub fn generate_font(
     output_file: Option<&PathBuf>,
     build_dir: &Path,
-    source: &Path,
-    input_binary: Option<&InMemorySource>, // This is horrible, we'll fix it later
+    source: &Input,
     flags: Flags,
     skip_features: bool,
 ) -> Result<Vec<u8>, Error> {
     let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
-    let workload =
-        Workload::<FakeClock>::new(source, input_binary, JobTimer::default(), skip_features)?;
+    let workload = Workload::<FakeClock>::new(source, JobTimer::default(), skip_features)?;
     let fe_root = FeContext::new_root(flags, ir_paths);
     let be_root = BeContext::new_root(flags, be_paths, &fe_root);
     workload.exec(&fe_root, &be_root)?;
@@ -327,8 +340,8 @@ mod tests {
                 raw_font: Vec::new(),
             };
 
-            let mut workload =
-                Workload::<RealClock>::new(args.source(), None, timer, args.skip_features).unwrap();
+            let source = args.source().unwrap();
+            let mut workload = Workload::new(&source, timer, args.skip_features).unwrap();
             let completed = workload.run_for_test(&result.fe_context, &result.be_context);
 
             result.work_executed = completed;
