@@ -300,7 +300,7 @@ unicodedata2==16.0.0
     #   glyphsets
 unidecode==1.4.0
     # via gftools
-urllib3==2.4.0
+urllib3==2.5.0
     # via
     #   pygithub
     #   requests
