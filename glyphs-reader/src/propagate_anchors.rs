@@ -80,7 +80,7 @@ fn propagate_all_anchors_impl(glyphs: &mut BTreeMap<SmolStr, Glyph>) {
                 if let Some(new_anchors) = bracket
                     .axis_rules_key()
                     .and_then(|id| layer_anchors.get(&id))
-                    .or_else(|| layer_anchors.get(&bracket.layer_id))
+                    .or_else(|| layer_anchors.get(bracket.master_id()))
                 {
                     bracket.anchors = new_anchors.clone();
                 }
@@ -416,6 +416,7 @@ fn depth_sorted_composite_glyphs_impl(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<
             let max_component_depth = glyph
                 .layers
                 .iter()
+                .chain(glyph.bracket_layers.iter())
                 .flat_map(|layer| layer.shapes.iter())
                 .filter_map(|shape| match shape {
                     Shape::Path(..) => None,

@@ -1,0 +1,228 @@
+{
+.appVersion = "3343";
+customParameters = (
+{
+name = "Axis Mappings";
+value = {
+wght = {
+100 = 24;
+200 = 36;
+300 = 48;
+400 = 62;
+500 = 76;
+600 = 94;
+700 = 114;
+800 = 136;
+900 = 156;
+};
+};
+},
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+},
+{
+name = "Variable Font Origin";
+value = "5AAFD18E-AEF5-43C3-A12E-1BAE6B19067F";
+}
+);
+fontMaster = (
+{
+custom = Thin;
+id = "5AAFD18E-AEF5-43C3-A12E-1BAE6B19067F";
+weightValue = 24;
+},
+{
+custom = Black;
+id = "8A3706BD-364F-4FE3-9C2E-7E87DF0DB4CC";
+weightValue = 156;
+}
+);
+glyphs = (
+{
+glyphname = W;
+layers = (
+{
+anchors = (
+{
+name = bottom;
+position = "{319, 0}";
+},
+{
+name = top;
+position = "{319, 591}";
+}
+);
+layerId = "8A3706BD-364F-4FE3-9C2E-7E87DF0DB4CC";
+width = 637;
+},
+{
+anchors = (
+{
+name = bottom;
+position = "{257, 0}";
+},
+{
+name = top;
+position = "{257, 591}";
+}
+);
+layerId = "5AAFD18E-AEF5-43C3-A12E-1BAE6B19067F";
+paths = (
+);
+width = 513;
+}
+);
+unicode = 0057;
+},
+{
+glyphname = won;
+layers = (
+{
+anchors = (
+{
+name = bottom;
+position = "{267, 0}";
+},
+{
+name = top;
+position = "{267, 591}";
+}
+);
+layerId = "5AAFD18E-AEF5-43C3-A12E-1BAE6B19067F";
+paths = (
+);
+width = 531;
+},
+{
+anchors = (
+{
+name = bottom;
+position = "{329, 0}";
+},
+{
+name = top;
+position = "{329, 591}";
+}
+);
+layerId = "8A3706BD-364F-4FE3-9C2E-7E87DF0DB4CC";
+paths = (
+);
+width = 658;
+},
+{
+associatedMasterId = "5AAFD18E-AEF5-43C3-A12E-1BAE6B19067F";
+components = (
+{
+name = W;
+transform = "{1, 0, 0, 1, 10, 0}";
+}
+);
+layerId = "D5B1753F-61C7-4138-99B3-44DEF3DA65DA";
+name = "[90]";
+paths = (
+);
+width = 531;
+},
+{
+associatedMasterId = "8A3706BD-364F-4FE3-9C2E-7E87DF0DB4CC";
+background = {
+paths = (
+);
+};
+components = (
+{
+name = W;
+transform = "{1, 0, 0, 1, 2, 0}";
+}
+);
+layerId = "509E0BED-54EB-43C0-A70D-CD1978A94E09";
+name = "[90]";
+paths = (
+);
+width = 662;
+}
+);
+unicode = 20A9;
+},
+{
+glyphname = acutecomb;
+layers = (
+{
+anchors = (
+{
+name = _top;
+position = "{50, 495}";
+},
+{
+name = top;
+position = "{102, 652}";
+}
+);
+layerId = "8A3706BD-364F-4FE3-9C2E-7E87DF0DB4CC";
+width = 204;
+},
+{
+anchors = (
+{
+name = _top;
+position = "{29, 495}";
+},
+{
+name = top;
+position = "{44, 590}";
+}
+);
+layerId = "5AAFD18E-AEF5-43C3-A12E-1BAE6B19067F";
+width = 88;
+}
+);
+note = acutecomb;
+unicode = 0301;
+}
+);
+instances = (
+{
+interpolationWeight = 24;
+instanceInterpolations = {
+"5AAFD18E-AEF5-43C3-A12E-1BAE6B19067F" = 1;
+};
+name = Thin;
+weightClass = Thin;
+},
+{
+interpolationWeight = 62;
+instanceInterpolations = {
+"5AAFD18E-AEF5-43C3-A12E-1BAE6B19067F" = 0.71212;
+"8A3706BD-364F-4FE3-9C2E-7E87DF0DB4CC" = 0.28788;
+};
+name = Regular;
+},
+{
+interpolationWeight = 114;
+instanceInterpolations = {
+"5AAFD18E-AEF5-43C3-A12E-1BAE6B19067F" = 0.31818;
+"8A3706BD-364F-4FE3-9C2E-7E87DF0DB4CC" = 0.68182;
+};
+isBold = 1;
+name = Bold;
+weightClass = Bold;
+},
+{
+interpolationWeight = 156;
+instanceInterpolations = {
+"8A3706BD-364F-4FE3-9C2E-7E87DF0DB4CC" = 1;
+};
+name = Black;
+weightClass = Black;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 18;
+}
