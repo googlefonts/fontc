@@ -282,6 +282,7 @@ impl Glyph {
     pub(crate) fn has_components(&self) -> bool {
         self.layers
             .iter()
+            .chain(self.bracket_layers.iter())
             .flat_map(Layer::components)
             .next()
             .is_some()
@@ -4627,5 +4628,18 @@ mod tests {
             .bracket_layers
             .iter()
             .all(|l| !l.attributes.axis_rules.is_empty()));
+    }
+
+    #[test]
+    fn bracket_layers_where_only_brackets_have_a_component_and_it_has_anchors() {
+        let font = Font::load(&glyphs2_dir().join("AlumniSans-wononly.glyphs")).unwrap();
+        let glyph = font.glyphs.get("won").unwrap();
+
+        assert_eq!(glyph.layers.len(), 2);
+        assert_eq!(glyph.bracket_layers.len(), 2);
+
+        for layer in glyph.layers.iter().chain(glyph.bracket_layers.iter()) {
+            assert_eq!(layer.anchors.len(), 2, "{}", layer.layer_id);
+        }
     }
 }
