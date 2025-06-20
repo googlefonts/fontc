@@ -74,6 +74,7 @@ pub enum Subcategory {
     Lowercase,
     Uppercase,
     Smallcaps,
+    Conjunct,
     Other,
 }
 
@@ -874,6 +875,7 @@ impl FromStr for Subcategory {
             "Lowercase" => Ok(Self::Lowercase),
             "Uppercase" => Ok(Self::Uppercase),
             "Smallcaps" => Ok(Self::Smallcaps),
+            "Conjunct" => Ok(Self::Conjunct),
 
             _ => Err(s.into()),
         }
@@ -1018,6 +1020,7 @@ impl Display for Subcategory {
             Self::Lowercase => write!(f, "Lowercase"),
             Self::Uppercase => write!(f, "Uppercase"),
             Self::Smallcaps => write!(f, "Smallcaps"),
+            Self::Conjunct => write!(f, "Conjunct"),
             Self::Other => write!(f, "Other"),
         }
     }
