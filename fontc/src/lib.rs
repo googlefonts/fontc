@@ -33,6 +33,10 @@ use fontir::paths::Paths as IrPaths;
 
 use log::debug;
 
+/// The input source for the font compiler.
+///
+/// This allows us to load a font source in a variety of formats, and also
+/// from a variety of sources (on disk or in memory).
 pub enum Input {
     DesignSpacePath(PathBuf),
     GlyphsPath(PathBuf),
@@ -83,10 +87,10 @@ impl TryFrom<&Path> for Input {
     }
 }
 
-#[cfg(feature = "cli")]
 /// Run the compiler with the provided arguments
 ///
 /// This is the main entry point for the fontc command line utility.
+#[cfg(feature = "cli")]
 pub fn run(args: Args, timer: JobTimer) -> Result<(), Error> {
     let source = args.source()?;
     let (be_root, mut timing) = _generate_font(
