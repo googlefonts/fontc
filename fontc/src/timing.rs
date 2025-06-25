@@ -11,6 +11,8 @@ use dummy_instant::Instant;
 #[cfg(not(target_family = "wasm"))]
 use std::time::Instant;
 
+/// WASM does not have access to the system time, so we use a dummy
+/// implementation of `Instant` and `Duration` that does nothing.
 #[cfg(target_family = "wasm")]
 mod dummy_instant {
     use std::ops::Sub;
