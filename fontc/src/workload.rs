@@ -49,19 +49,18 @@ use fontir::{
 use log::{debug, trace, warn};
 
 use crate::{
-    create_in_memory_source, create_source,
     timing::{JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
-    Args, Error,
+    Error, Input,
 };
 
 /// A set of interdependent jobs to execute.
 pub struct Workload {
-    args: Args,
     source: Box<dyn Source>,
     job_count: usize,
     success: HashSet<AnyWorkId>,
     error: Option<Error>,
+    skip_features: bool,
     // we count the number of errors encountered but only store the first we see
     n_failures: usize,
 
@@ -117,16 +116,12 @@ fn priority(id: &AnyWorkId) -> u32 {
 
 impl Workload {
     // Pass in timer to enable t0 to be as early as possible
-    pub fn new(args: Args, mut timer: JobTimer) -> Result<Self, Error> {
+    pub fn new(input: &Input, mut timer: JobTimer, skip_features: bool) -> Result<Self, Error> {
         let time = timer
             .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
             .run();
 
-        let source = if let Some(binary) = args.input_binary.as_ref() {
-            create_in_memory_source(binary)?
-        } else {
-            create_source(args.source())?
-        };
+        let source = input.create_source()?;
 
         timer.add(time.complete());
         let time = timer
@@ -134,7 +129,6 @@ impl Workload {
             .run();
 
         let mut workload = Self {
-            args,
             source,
             job_count: 0,
             success: Default::default(),
@@ -143,6 +137,7 @@ impl Workload {
             also_completes: Default::default(),
             jobs_pending: Default::default(),
             count_pending: Default::default(),
+            skip_features,
             timer,
         };
 
@@ -209,7 +204,7 @@ impl Workload {
     }
 
     fn add_skippable_feature_work(&mut self, work: impl Into<AnyWork>) {
-        if !self.args.skip_features {
+        if !self.skip_features {
             self.add(work);
         } else {
             self.skip(work);
@@ -574,7 +569,7 @@ impl Workload {
 
             // To avoid allocation every poll for work
             let mut launchable = Vec::with_capacity(512.min(self.job_count));
-            let mut successes = Vec::with_capacity(64);
+            let mut successes: Vec<(AnyWorkId, JobTime)> = Vec::with_capacity(64);
             let mut nth_wave = 0;
 
             while self.success.len() < self.job_count {

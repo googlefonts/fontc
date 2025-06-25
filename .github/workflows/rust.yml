@@ -130,8 +130,8 @@ jobs:
       - name: cargo check fontbe
         run: cargo check --manifest-path=fontbe/Cargo.toml --no-default-features
 
-      - name: cargo check fontc
-        run: cargo check --manifest-path=fontc/Cargo.toml --no-default-features
+      - name: cargo check fontc --lib
+        run: cargo check --manifest-path=fontc/Cargo.toml --no-default-features --lib
 
   check-ots:
     name: resources/scripts/ots_test.sh

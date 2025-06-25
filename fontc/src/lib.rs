@@ -1,14 +1,17 @@
 //! A font compiler with aspirations of being fast and safe.
 
+#[cfg(feature = "cli")]
 mod args;
 mod error;
 mod timing;
 pub mod work;
 mod workload;
 
+#[cfg(feature = "cli")]
 pub use args::Args;
 pub use error::Error;
 
+pub use fontir::orchestration::Flags; // Re-export for library users
 use fontra2fontir::source::FontraIrSource;
 use glyphs2fontir::source::GlyphsIrSource;
 pub use timing::JobTimer;
@@ -20,69 +23,85 @@ use std::{
     ffi::OsStr,
     fs::{self, OpenOptions},
     io::BufWriter,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
-use fontir::{
-    orchestration::{Context as FeContext, Flags},
-    source::Source,
-};
+use fontir::{orchestration::Context as FeContext, source::Source};
 
 use fontbe::{orchestration::Context as BeContext, paths::Paths as BePaths};
 use fontir::paths::Paths as IrPaths;
 
 use log::debug;
 
-/// Creates the implementation of [`Source`] that should be used for the provided path
-fn create_source(source: &Path) -> Result<Box<dyn Source>, Error> {
-    if !source.exists() {
-        return Err(Error::FileExpected(source.to_path_buf()));
-    }
-    let ext = source
-        .extension()
-        .and_then(OsStr::to_str)
-        .ok_or_else(|| Error::UnrecognizedSource(source.to_path_buf()))?;
-    match ext {
-        "designspace" => Ok(Box::new(DesignSpaceIrSource::new(source)?)),
-        "ufo" => Ok(Box::new(DesignSpaceIrSource::new(source)?)),
-        "glyphs" => Ok(Box::new(GlyphsIrSource::new(source)?)),
-        "glyphspackage" => Ok(Box::new(GlyphsIrSource::new(source)?)),
-        "fontra" => Ok(Box::new(FontraIrSource::new(source)?)),
-        _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
-    }
-}
-
-/// Represents a source that is loaded in memory, e.g. for testing or
-/// when the source is not a file on disk (WASM or library use).
+/// The input source for the font compiler.
 ///
-/// Currently only supports Glyphs sources, but could be extended to e.g. UFOZ or other formats.
-#[derive(Debug, Clone, PartialEq)]
-pub enum InMemorySource {
-    Glyphs(String),
+/// This allows us to load a font source in a variety of formats, and also
+/// from a variety of sources (on disk or in memory).
+pub enum Input {
+    DesignSpacePath(PathBuf),
+    GlyphsPath(PathBuf),
+    FontraPath(PathBuf),
+    GlyphsMemory(String),
 }
 
-/// Creates a [`Source`] from a source file loaded in memory
-fn create_in_memory_source(source: &InMemorySource) -> Result<Box<dyn Source>, Error> {
-    match source {
-        InMemorySource::Glyphs(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+impl Input {
+    pub fn new(path: &Path) -> Result<Self, Error> {
+        if !path.exists() {
+            return Err(Error::FileExpected(path.to_path_buf()));
+        }
+        let ext = path
+            .extension()
+            .and_then(OsStr::to_str)
+            .ok_or_else(|| Error::UnrecognizedSource(path.to_path_buf()))?;
+        match ext {
+            "designspace" => Ok(Input::DesignSpacePath(path.to_path_buf())),
+            "ufo" => Ok(Input::DesignSpacePath(path.to_path_buf())),
+            "glyphs" => Ok(Input::GlyphsPath(path.to_path_buf())),
+            "glyphspackage" => Ok(Input::GlyphsPath(path.to_path_buf())),
+            "fontra" => Ok(Input::FontraPath(path.to_path_buf())),
+            _ => Err(Error::UnrecognizedSource(path.to_path_buf())),
+        }
+    }
+
+    /// Creates a new input from a Glyphs source in memory
+    pub fn from_glyphs(source: String) -> Self {
+        Input::GlyphsMemory(source)
+    }
+
+    /// Creates the implementation of [`Source`] to feed to fontir.
+    fn create_source(&self) -> Result<Box<dyn Source>, Error> {
+        match self {
+            Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path)?)),
+            Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(path)?)),
+            Input::FontraPath(path) => Ok(Box::new(FontraIrSource::new(path)?)),
+            Input::GlyphsMemory(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+        }
+    }
+}
+
+impl TryFrom<&Path> for Input {
+    type Error = Error;
+
+    fn try_from(path: &Path) -> Result<Self, Self::Error> {
+        Input::new(path)
     }
 }
 
 /// Run the compiler with the provided arguments
-pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
-    let time = timer
-        .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
-        .run();
-    let (ir_paths, be_paths) = init_paths(&args)?;
-    timer.add(time.complete());
+///
+/// This is the main entry point for the fontc command line utility.
+#[cfg(feature = "cli")]
+pub fn run(args: Args, timer: JobTimer) -> Result<(), Error> {
+    let source = args.source()?;
+    let (be_root, mut timing) = _generate_font(
+        &source,
+        &args.build_dir,
+        args.output_file.as_ref(),
+        args.flags(),
+        args.skip_features,
+        timer,
+    )?;
 
-    let workload = Workload::new(args.clone(), timer)?;
-
-    let fe_root = FeContext::new_root(args.flags(), ir_paths);
-    let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
-    let mut timing = workload.exec(&fe_root, &be_root)?;
-
-    #[cfg(not(target_family = "wasm"))]
     if args.flags().contains(Flags::EMIT_TIMING) {
         let path = args.build_dir.join("threads.svg");
         let out_file = OpenOptions::new()
@@ -104,16 +123,45 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     write_font_file(&args, &be_root)
 }
 
-/// Run and return a binary
+/// Run and return an OpenType font
 ///
 /// This is the library entry point to fontc.
-pub fn generate_binary(args: Args) -> Result<Vec<u8>, Error> {
-    let (ir_paths, be_paths) = init_paths(&args)?;
-    let workload = Workload::new(args.clone(), JobTimer::default())?;
-    let fe_root = FeContext::new_root(args.flags(), ir_paths);
-    let be_root = BeContext::new_root(args.flags(), be_paths, &fe_root);
-    workload.exec(&fe_root, &be_root)?;
-    Ok(be_root.font.get().get().to_vec())
+pub fn generate_font(
+    source: &Input,
+    build_dir: &Path,
+    output_file: Option<&PathBuf>,
+    flags: Flags,
+    skip_features: bool,
+) -> Result<Vec<u8>, Error> {
+    _generate_font(
+        source,
+        build_dir,
+        output_file,
+        flags,
+        skip_features,
+        JobTimer::default(),
+    )
+    .map(|(be_root, _timing)| be_root.font.get().get().to_vec())
+}
+
+fn _generate_font(
+    source: &Input,
+    build_dir: &Path,
+    output_file: Option<&PathBuf>,
+    flags: Flags,
+    skip_features: bool,
+    mut timer: JobTimer,
+) -> Result<(BeContext, JobTimer), Error> {
+    let time = timer
+        .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
+        .run();
+    let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
+    timer.add(time.complete());
+    let workload = Workload::new(source, timer, skip_features)?;
+    let fe_root = FeContext::new_root(flags, ir_paths);
+    let be_root = BeContext::new_root(flags, be_paths, &fe_root);
+    let timing = workload.exec(&fe_root, &be_root)?;
+    Ok((be_root, timing))
 }
 
 pub fn require_dir(dir: &Path) -> Result<(), Error> {
@@ -134,15 +182,19 @@ pub fn require_dir(dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
-    let ir_paths = IrPaths::new(&args.build_dir);
-    let be_paths = if let Some(output_file) = &args.output_file {
-        BePaths::with_output_file(&args.build_dir, output_file)
+pub fn init_paths(
+    output_file: Option<&PathBuf>,
+    build_dir: &Path,
+    flags: Flags,
+) -> Result<(IrPaths, BePaths), Error> {
+    let ir_paths = IrPaths::new(build_dir);
+    let be_paths = if let Some(output_file) = output_file {
+        BePaths::with_output_file(build_dir, output_file)
     } else {
-        BePaths::new(&args.build_dir)
+        BePaths::new(build_dir)
     };
     // create the output file's parent directory if it doesn't exist
-    if let Some(output_file) = &args.output_file {
+    if let Some(output_file) = output_file {
         if let Some(parent) = output_file.parent() {
             require_dir(parent)?;
         }
@@ -150,10 +202,10 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
 
     // the build dir stores the IR (for incremental builds) and the default output
     // file ('font.ttf') so we don't need to create one unless we're writing to it
-    if args.output_file.is_none() || args.emit_ir {
-        require_dir(&args.build_dir)?;
+    if output_file.is_none() || flags.contains(Flags::EMIT_IR) {
+        require_dir(build_dir)?;
     }
-    if args.emit_ir {
+    if flags.contains(Flags::EMIT_IR) {
         require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
         require_dir(be_paths.glyph_dir())?;
@@ -165,12 +217,13 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
             source,
         })?;
     }
-    if args.emit_debug {
+    if flags.contains(Flags::EMIT_DEBUG) {
         require_dir(be_paths.debug_dir())?;
     }
     Ok((ir_paths, be_paths))
 }
 
+#[cfg(feature = "cli")]
 pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
     // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
     let font_file = be_context.font_file();
@@ -285,15 +338,17 @@ mod tests {
             let temp_dir = tempdir().unwrap();
             let build_dir = temp_dir.path();
             let args = adjust_args(Args::for_test(build_dir, source));
+            let flags = args.flags();
 
             info!("Compile {args:?}");
 
-            let (ir_paths, be_paths) = init_paths(&args).unwrap();
+            let (ir_paths, be_paths) =
+                init_paths(args.output_file.as_ref(), &args.build_dir, flags).unwrap();
 
             let build_dir = be_paths.build_dir().to_path_buf();
 
-            let fe_context = FeContext::new_root(args.flags(), ir_paths);
-            let be_context = BeContext::new_root(args.flags(), be_paths, &fe_context.read_only());
+            let fe_context = FeContext::new_root(flags, ir_paths);
+            let be_context = BeContext::new_root(flags, be_paths, &fe_context.read_only());
             let mut result = TestCompile {
                 _temp_dir: temp_dir,
                 build_dir,
@@ -303,7 +358,8 @@ mod tests {
                 raw_font: Vec::new(),
             };
 
-            let mut workload = Workload::new(args.clone(), timer).unwrap();
+            let source = args.source().unwrap();
+            let mut workload = Workload::new(&source, timer, args.skip_features).unwrap();
             let completed = workload.run_for_test(&result.fe_context, &result.be_context);
 
             result.work_executed = completed;
