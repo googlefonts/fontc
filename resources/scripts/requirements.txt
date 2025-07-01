@@ -189,7 +189,7 @@ packaging==25.0
     # via gftools
 picosvg==0.22.3
     # via nanoemoji
-pillow==11.2.1
+pillow==11.3.0
     # via
     #   gftools
     #   nanoemoji
