@@ -1,0 +1,82 @@
+{
+.appVersion = "3260";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+fontMaster = (
+{
+custom = Thin;
+iconName = Light;
+id = UUID0;
+weightValue = 20;
+},
+{
+id = "708134FE-A11E-43C9-84F0-594DA15B6BD1";
+weight = SemiBold;
+weightValue = 110;
+},
+{
+id = "5DA6E103-6A94-47F2-987D-4952DB8EA68E";
+weight = Bold;
+weightValue = 226;
+}
+);
+instances = (
+{
+interpolationWeight = 20;
+instanceInterpolations = {
+UUID0 = 1;
+};
+name = Thin;
+weightClass = Thin;
+},
+{
+interpolationWeight = 50;
+instanceInterpolations = {
+"708134FE-A11E-43C9-84F0-594DA15B6BD1" = 0.33333;
+UUID0 = 0.66667;
+};
+name = Light;
+weightClass = Light;
+},
+{
+interpolationWeight = 71;
+instanceInterpolations = {
+"708134FE-A11E-43C9-84F0-594DA15B6BD1" = 0.56667;
+UUID0 = 0.43333;
+};
+name = Regular;
+},
+{
+interpolationWeight = 156;
+instanceInterpolations = {
+"5DA6E103-6A94-47F2-987D-4952DB8EA68E" = 0.39655;
+"708134FE-A11E-43C9-84F0-594DA15B6BD1" = 0.60345;
+};
+isBold = 1;
+name = Bold;
+weightClass = Bold;
+},
+{
+interpolationWeight = 226;
+instanceInterpolations = {
+"5DA6E103-6A94-47F2-987D-4952DB8EA68E" = 1;
+};
+name = Black;
+weightClass = Black;
+}
+);
+manufacturer = "Julieta Ulanovsky";
+manufacturerURL = "http://www.zkysky.com.ar/";
+unitsPerEm = 1000;
+versionMajor = 9;
+versionMinor = 0;
+}
