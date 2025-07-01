@@ -21,8 +21,7 @@ use workload::Workload;
 use fontbe::orchestration::AnyWorkId;
 use std::{
     ffi::OsStr,
-    fs::{self, OpenOptions},
-    io::BufWriter,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -104,7 +103,7 @@ pub fn run(args: Args, timer: JobTimer) -> Result<(), Error> {
 
     if args.flags().contains(Flags::EMIT_TIMING) {
         let path = args.build_dir.join("threads.svg");
-        let out_file = OpenOptions::new()
+        let out_file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
@@ -113,7 +112,7 @@ pub fn run(args: Args, timer: JobTimer) -> Result<(), Error> {
                 path: path.clone(),
                 source,
             })?;
-        let mut buf = BufWriter::new(out_file);
+        let mut buf = std::io::BufWriter::new(out_file);
         timing
             .write_svg(&mut buf)
             .map_err(|source| Error::FileIo { path, source })?;
