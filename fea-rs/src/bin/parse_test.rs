@@ -69,7 +69,7 @@ fn single_file_arg(path: &Path, print_tree: bool) {
 
     let micros = elapsed.as_micros();
     let millis = (micros as f64) / 1000.0;
-    println!("parsed in {:.2}ms", millis);
+    println!("parsed in {millis:.2}ms");
 }
 
 /// returns the tree and any errors

@@ -50,8 +50,8 @@ impl<T: Into<GlyphName>> From<T> for GlyphIdent {
 impl Display for GlyphIdent {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            GlyphIdent::Name(name) => write!(f, "{}", name),
-            GlyphIdent::Cid(cid) => write!(f, "Cid({})", cid),
+            GlyphIdent::Name(name) => write!(f, "{name}"),
+            GlyphIdent::Cid(cid) => write!(f, "Cid({cid})"),
         }
     }
 }

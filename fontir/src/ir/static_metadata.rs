@@ -413,9 +413,7 @@ impl StaticMetadata {
                     })
             {
                 log::debug!(
-                    "Reuse existing subfamily name '{}' for default instance at {:?}",
-                    instance_name,
-                    default_instance_location
+                    "Reuse existing subfamily name '{instance_name}' for default instance at {default_instance_location:?}",
                 );
             } else {
                 register_if_new(instance_name);

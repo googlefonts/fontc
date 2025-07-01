@@ -458,9 +458,9 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
 
     let debug_file = context.debug_dir().join("features.fea");
     match fs::write(&debug_file, fea_content) {
-        Ok(_) if is_error => warn!("{}; fea written to {:?}", why, debug_file),
-        Ok(_) => debug!("fea written to {:?}", debug_file),
-        Err(e) => error!("{}; failed to write fea to {:?}: {}", why, debug_file, e),
+        Ok(_) if is_error => warn!("{why}; fea written to {debug_file:?}"),
+        Ok(_) => debug!("fea written to {debug_file:?}"),
+        Err(e) => error!("{why}; failed to write fea to {debug_file:?}: {e}"),
     };
 }
 

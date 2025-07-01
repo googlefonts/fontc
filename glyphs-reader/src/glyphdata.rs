@@ -219,9 +219,9 @@ impl From<u32> for ProductionName {
 impl Display for ProductionName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProductionName::Bmp(cp) => write!(f, "uni{:04X}", cp),
-            ProductionName::NonBmp(cp) => write!(f, "u{:X}", cp),
-            ProductionName::Custom(s) => write!(f, "{}", s),
+            ProductionName::Bmp(cp) => write!(f, "uni{cp:04X}"),
+            ProductionName::NonBmp(cp) => write!(f, "u{cp:X}"),
+            ProductionName::Custom(s) => write!(f, "{s}"),
         }
     }
 }
@@ -229,8 +229,8 @@ impl Display for ProductionName {
 impl From<ProductionName> for SmolStr {
     fn from(v: ProductionName) -> SmolStr {
         match v {
-            ProductionName::Bmp(cp) => smol_str::format_smolstr!("uni{:04X}", cp),
-            ProductionName::NonBmp(cp) => smol_str::format_smolstr!("u{:X}", cp),
+            ProductionName::Bmp(cp) => smol_str::format_smolstr!("uni{cp:04X}"),
+            ProductionName::NonBmp(cp) => smol_str::format_smolstr!("u{cp:X}"),
             ProductionName::Custom(s) => s,
         }
     }

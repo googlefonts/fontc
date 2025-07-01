@@ -169,7 +169,7 @@ impl std::fmt::Display for TokenSet {
                 write!(f, ", ")?;
             }
             first = false;
-            write!(f, "{}", kind)?;
+            write!(f, "{kind}")?;
         }
         Ok(())
     }

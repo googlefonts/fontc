@@ -30,7 +30,7 @@ impl PrintNames for MarkAttachmentRule {
     fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
         let base_name = names.get(self.base);
         match &self.base_anchor {
-            BaseAnchors::Base(anchor) => writeln!(f, "{base_name} {}", anchor)?,
+            BaseAnchors::Base(anchor) => writeln!(f, "{base_name} {anchor}")?,
 
             BaseAnchors::Liga(anchors) => {
                 write!(f, "{base_name} (lig) [")?;

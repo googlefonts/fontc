@@ -1741,7 +1741,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 Kind::AscenderKw => hhea.ascender = value.into(),
                 Kind::DescenderKw => hhea.descender = value.into(),
                 Kind::LineGapKw => hhea.line_gap = value.into(),
-                other => panic!("bug in parser, unexpected token '{}'", other),
+                other => panic!("bug in parser, unexpected token '{other}'"),
             }
         }
         self.tables.hhea = Some(hhea);
@@ -1760,7 +1760,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 Kind::VertTypoAscenderKw => vhea.ascender = value.into(),
                 Kind::VertTypoDescenderKw => vhea.descender = value.into(),
                 Kind::VertTypoLineGapKw => vhea.line_gap = value.into(),
-                other => panic!("bug in parser, unexpected token '{}'", other),
+                other => panic!("bug in parser, unexpected token '{other}'"),
             }
         }
         self.tables.vhea = Some(vhea);
@@ -2184,7 +2184,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                             // this is techincally allowed, but we error for now
                             self.error(
                                 range.range(),
-                                format!("Range member '{}' does not exist in font", cid),
+                                format!("Range member '{cid}' does not exist in font"),
                             );
                         }
                     }
@@ -2200,7 +2200,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                             // this is techincally allowed, but we error for now
                             self.error(
                                 range.range(),
-                                format!("Range member '{}' does not exist in font", name),
+                                format!("Range member '{name}' does not exist in font"),
                             );
                         }
                     }

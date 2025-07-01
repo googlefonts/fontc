@@ -64,11 +64,11 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
                     // make duplicates unique by adding a .N number suffix to match ufo2ft:
                     if let Some(n) = seen.get(&name) {
                         let mut n = *n;
-                        while seen.contains_key(&format!("{}.{}", name, n)) {
+                        while seen.contains_key(&format!("{name}.{n}")) {
                             n += 1;
                         }
                         seen.insert(name.clone(), n + 1);
-                        name = format!("{}.{}", name, n);
+                        name = format!("{name}.{n}");
                     }
                     seen.insert(name.clone(), 1);
                     name

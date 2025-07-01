@@ -417,7 +417,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 }
                 typed::Os2TableItem::Vendor(item) => {
                     if let Err(e) = item.parse_tag() {
-                        self.error(item.value().range(), format!("invalid tag: '{}'", e));
+                        self.error(item.value().range(), format!("invalid tag: '{e}'"));
                     }
                 }
             }
@@ -447,7 +447,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                             match (prev_format, format) {
                                 (Some('a'), 'a') => (),
                                 (Some(_), 'a') => self.error(loc.range(), "multiple location statements, but previous statement was not format 'a'"),
-                                (Some(_), 'b' | 'c') => self.error(loc.range(),format!("location statement format '{}' must be only statement", format)),
+                                (Some(_), 'b' | 'c') => self.error(loc.range(),format!("location statement format '{format}' must be only statement")),
                                 _ => (),
                             }
                         }
@@ -1258,7 +1258,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                         // this is techincally allowed, but we error for now
                         self.warning(
                             range.range(),
-                            format!("Range member '{}' does not exist in font", cid),
+                            format!("Range member '{cid}' does not exist in font"),
                         );
                     }
                 }) {
@@ -1270,7 +1270,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                     if self.glyph_map.get(name).is_none() {
                         self.warning(
                             range.range(),
-                            format!("Range member '{}' does not exist in font", name),
+                            format!("Range member '{name}' does not exist in font"),
                         );
                     }
                 }) {
@@ -1470,7 +1470,7 @@ fn validate_name_string_encoding(
                     if let Err(e) = u8::from_str_radix(val, 16) {
                         return Err((
                             range_start..range_start + 3,
-                            format!("invalid escape sequence '{}'", e),
+                            format!("invalid escape sequence '{e}'"),
                         ));
                     }
                 } else {

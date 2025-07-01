@@ -68,7 +68,7 @@ fn glif_files(
         plist::from_file(&glyph_list_file).map_err(|e| BadSource::custom(&glyph_list_file, e))?;
 
     if result.is_empty() {
-        warn!("{:?} is empty", glyph_list_file);
+        warn!("{glyph_list_file:?} is empty");
     }
 
     Ok(result
@@ -717,7 +717,7 @@ fn try_parse_date(raw_date: Option<&String>) -> Option<DateTime<Utc>> {
     let parse_result =
         NaiveDateTime::parse_from_str(raw_date, "%Y/%m/%d %H:%M:%S").map(|nd| nd.and_utc());
     if let Err(e) = parse_result {
-        warn!("Invalid date string {}: {e}", raw_date);
+        warn!("Invalid date string {raw_date}: {e}");
     }
     parse_result.ok()
 }
@@ -1368,7 +1368,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
             );
         }
 
-        trace!("{:#?}", metrics);
+        trace!("{metrics:#?}");
         context.global_metrics.set(metrics);
         Ok(())
     }

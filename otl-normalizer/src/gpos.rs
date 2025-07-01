@@ -455,7 +455,7 @@ impl Display for ResolvedValueRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(xadv) = self.maybe_just_adv() {
             if !xadv.is_zero() {
-                write!(f, "{}", xadv)
+                write!(f, "{xadv}")
             } else {
                 Ok(())
             }

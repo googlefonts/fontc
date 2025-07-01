@@ -160,7 +160,7 @@ fn eat_and_validate_glyph_name(parser: &mut Parser) {
                 .ok()
                 .and_then(|t| t.chars().next())
             {
-                Some(chr) => format!("Invalid char '{}' in glyph name", chr),
+                Some(chr) => format!("Invalid char '{chr}' in glyph name"),
                 None => "Invalid char in glyph name".to_string(),
             };
             parser.err_and_bump(err);
@@ -240,7 +240,7 @@ mod tests {
             let mut sink = AstSink::new(raw, FileId::CURRENT_FILE, None);
             let mut parser = Parser::new(raw, &mut sink);
             eat_glyph_name_like(&mut parser);
-            assert_eq!(sink.errors().len(), 1, "'{}'", raw);
+            assert_eq!(sink.errors().len(), 1, "'{raw}'");
         }
     }
 
@@ -277,8 +277,7 @@ mod tests {
         assert_eq!(
             cursor.current().unwrap().kind(),
             AstKind::GlyphRange,
-            "{:?}",
-            node
+            "{node:?}",
         );
         let next = cursor.next_token().unwrap();
         assert_eq!(&next.text, "a");

@@ -601,7 +601,7 @@ impl Workload {
                             let timing = self.timer.create_timer(id.clone(), nth_wave);
 
                             let job = self.jobs_pending.get_mut(id).unwrap();
-                            log::trace!("Start {:?}", id);
+                            log::trace!("Start {id:?}");
                             job.running = true;
 
                             let mut work =
@@ -644,7 +644,7 @@ impl Workload {
                             let id = work.id();
                             let timing = timing.run();
                             if abort.load(Ordering::Relaxed) {
-                                log::trace!("Aborting {:?}", id);
+                                log::trace!("Aborting {id:?}");
                                 return;
                             }
                             // # Unwind Safety
@@ -892,7 +892,7 @@ impl Workload {
                 job.read_access.clone(),
                 job.write_access.clone(),
             );
-            log::debug!("Exec {:?}", id);
+            log::debug!("Exec {id:?}");
             let timing = timing.run();
             job.work
                 .exec(context)

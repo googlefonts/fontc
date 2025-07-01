@@ -170,7 +170,7 @@ struct StaticMetadataWork {
 }
 
 fn create_static_metadata(fontdata_file: &Path) -> Result<StaticMetadata, Error> {
-    debug!("Static metadata for {:#?}", fontdata_file);
+    debug!("Static metadata for {fontdata_file:#?}");
     let font_data = FontraFontData::from_file(fontdata_file)?;
     to_ir_static_metadata(&font_data)
 }

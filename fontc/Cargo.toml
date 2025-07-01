@@ -13,6 +13,7 @@ default-run = "fontc"
 [[bin]]
 name = "fontc"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [features]
 default = ["cli"]

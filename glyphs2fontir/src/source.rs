@@ -440,7 +440,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 let parsed =
                     DateTime::parse_from_str(raw_date, "%Y-%m-%d %H:%M:%S %z").map(|nd| nd.into());
                 if let Err(e) = parsed {
-                    warn!("Invalid creation date: {}: {e:?}", raw_date);
+                    warn!("Invalid creation date: {raw_date}: {e:?}");
                 }
                 parsed.ok()
             })
@@ -1193,9 +1193,11 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         let mut ir_glyph = ir::GlyphBuilder::new(self.glyph_name.clone());
         ir_glyph.emit_to_binary = glyph.export;
         // only non-bracket glyphs get codepoints
-        ir_glyph.codepoints = (!self.is_bracket_layer())
-            .then(|| glyph.unicode.iter().copied().collect())
-            .unwrap_or_default();
+        ir_glyph.codepoints = if !self.is_bracket_layer() {
+            glyph.unicode.iter().copied().collect()
+        } else {
+            Default::default()
+        };
 
         let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
         let layers = if self.is_bracket_layer() {

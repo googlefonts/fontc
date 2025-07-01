@@ -541,99 +541,100 @@ fn make_error_report(
     let current_other = get_other_failures(current);
     let prev_other = get_other_failures(prev);
 
-    let fontc = (current_fontc.len() - current_both.len() > 0)
-        .then(|| {
-            make_error_report_group(
-                "fontc",
+    let fontc = if current_fontc.len() - current_both.len() > 0 {
+        make_error_report_group(
+            "fontc",
+            current_fontc
+                .keys()
+                .copied()
+                .filter(|k| !current_both.contains(k))
+                .map(|k| (k, !prev_fontc.contains_key(k))),
+            |path| {
                 current_fontc
-                    .keys()
+                    .get(path)
                     .copied()
-                    .filter(|k| !current_both.contains(k))
-                    .map(|k| (k, !prev_fontc.contains_key(k))),
-                |path| {
-                    current_fontc
-                        .get(path)
-                        .copied()
-                        .map(format_compiler_error)
-                        .unwrap_or_default()
-                },
-                sources,
-            )
-        })
-        .unwrap_or_default();
+                    .map(format_compiler_error)
+                    .unwrap_or_default()
+            },
+            sources,
+        )
+    } else {
+        Default::default()
+    };
 
-    let fontmake = (current_fontmake.len() - current_both.len() > 0)
-        .then(|| {
-            make_error_report_group(
-                "fontmake",
+    let fontmake = if current_fontmake.len() - current_both.len() > 0 {
+        make_error_report_group(
+            "fontmake",
+            current_fontmake
+                .keys()
+                .copied()
+                .filter(|k| (!current_both.contains(k)))
+                .map(|k| (k, !prev_fontmake.contains_key(k))),
+            |path| {
                 current_fontmake
-                    .keys()
+                    .get(path)
                     .copied()
-                    .filter(|k| (!current_both.contains(k)))
-                    .map(|k| (k, !prev_fontmake.contains_key(k))),
-                |path| {
-                    current_fontmake
-                        .get(path)
-                        .copied()
-                        .map(format_compiler_error)
-                        .unwrap_or_default()
-                },
-                sources,
-            )
-        })
-        .unwrap_or_default();
-    let both = (!current_both.is_empty())
-        .then(|| {
-            make_error_report_group(
-                "both",
-                current_both
-                    .iter()
-                    .copied()
-                    .map(|k| (k, !prev_both.contains(k))),
-                |path| {
-                    let fontc_err = current_fontc
-                        .get(path)
-                        .copied()
-                        .map(format_compiler_error)
-                        .unwrap_or_default();
-                    let fontmake_err = current_fontmake
-                        .get(path)
-                        .copied()
-                        .map(format_compiler_error)
-                        .unwrap_or_default();
+                    .map(format_compiler_error)
+                    .unwrap_or_default()
+            },
+            sources,
+        )
+    } else {
+        Default::default()
+    };
 
-                    html! {
-                        .h5 { "fontc" }
-                        (fontc_err)
-                        .h5 { "fontmake" }
-                        (fontmake_err)
-                    }
-                },
-                sources,
-            )
-        })
-        .unwrap_or_default();
-
-    let other = (!current_other.is_empty())
-        .then(|| {
-            make_error_report_group(
-                "other",
-                current_other
-                    .keys()
+    let both = if !current_both.is_empty() {
+        make_error_report_group(
+            "both",
+            current_both
+                .iter()
+                .copied()
+                .map(|k| (k, !prev_both.contains(k))),
+            |path| {
+                let fontc_err = current_fontc
+                    .get(path)
                     .copied()
-                    .map(|k| (k, !prev_other.contains_key(k))),
-                |path| {
-                    let msg = current_other.get(path).copied().unwrap_or_default();
-                    html! {
-                        div.backtrace {
-                            (msg)
-                        }
+                    .map(format_compiler_error)
+                    .unwrap_or_default();
+                let fontmake_err = current_fontmake
+                    .get(path)
+                    .copied()
+                    .map(format_compiler_error)
+                    .unwrap_or_default();
+
+                html! {
+                    .h5 { "fontc" }
+                    (fontc_err)
+                    .h5 { "fontmake" }
+                    (fontmake_err)
+                }
+            },
+            sources,
+        )
+    } else {
+        Default::default()
+    };
+
+    let other = if !current_other.is_empty() {
+        make_error_report_group(
+            "other",
+            current_other
+                .keys()
+                .copied()
+                .map(|k| (k, !prev_other.contains_key(k))),
+            |path| {
+                let msg = current_other.get(path).copied().unwrap_or_default();
+                html! {
+                    div.backtrace {
+                        (msg)
                     }
-                },
-                sources,
-            )
-        })
-        .unwrap_or_default();
+                }
+            },
+            sources,
+        )
+    } else {
+        Default::default()
+    };
 
     html! {
         (fontc)

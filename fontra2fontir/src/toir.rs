@@ -264,8 +264,8 @@ mod tests {
         // compatible if all sources have the same drawing commands in the same order
         let unique_command_seqs = glyph
             .sources()
-            .iter()
-            .map(|(_, s)| {
+            .values()
+            .map(|s| {
                 s.contours
                     .iter()
                     .map(commands)
@@ -305,8 +305,8 @@ mod tests {
             vec![(2, 0), (2, 0)],
             glyph
                 .sources()
-                .iter()
-                .map(|(_, s)| (s.contours.len(), s.components.len()))
+                .values()
+                .map(|s| (s.contours.len(), s.components.len()))
                 .collect::<Vec<_>>()
         );
         assert_contour_compatibility(&glyph);

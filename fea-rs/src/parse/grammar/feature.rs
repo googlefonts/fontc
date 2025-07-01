@@ -150,7 +150,7 @@ pub(crate) fn pos_or_sub_rule(parser: &mut Parser, recovery: TokenSet) {
                 .err_and_bump("'ignore' keyword must be followed by position or substitution rule"),
         },
         Kind::SubKw | Kind::RsubKw => gsub::gsub_rule(parser, recovery),
-        other => panic!("'{}' is not a valid gpos or gsub token", other),
+        other => panic!("'{other}' is not a valid gpos or gsub token"),
     }
 }
 fn name_entry(parser: &mut Parser, recovery: TokenSet) {

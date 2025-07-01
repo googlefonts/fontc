@@ -85,7 +85,7 @@ fn num_range(
     let width = text_range.len();
     for val in sub_range {
         temp.clear();
-        write!(&mut temp, "{:0width$}", val, width = width).unwrap();
+        write!(&mut temp, "{val:0width$}").unwrap();
         template.replace_range(text_range.clone(), &temp);
         out(&template);
     }
@@ -231,7 +231,7 @@ mod tests {
         let range = make_range_node(Kind::GlyphName, "A.hi", Kind::GlyphName, "E.hi");
         let idents = glyph_range(&range).unwrap();
         let map: GlyphMap = idents.into_iter().collect();
-        assert_eq!(map.len(), 5, "{:?}", map);
+        assert_eq!(map.len(), 5, "{map:?}");
         for val in ["A.hi", "B.hi", "C.hi", "D.hi", "E.hi"] {
             assert!(map.contains(val));
         }

@@ -173,9 +173,11 @@ impl Target {
         let repo_url = repo_url.trim();
         let just_source_dir = self.source_dir.file_name().unwrap();
         let rel_source_path = Path::new(just_source_dir).join(&self.source);
-        let sha_part = (!self.sha.is_empty())
-            .then(|| format!("?{}", self.sha))
-            .unwrap_or_default();
+        let sha_part = if !self.sha.is_empty() {
+            format!("?{}", self.sha)
+        } else {
+            Default::default()
+        };
         let mut cmd = format!(
             "python resources/scripts/ttx_diff.py '{repo_url}{sha_part}#{}'",
             rel_source_path.display()

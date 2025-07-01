@@ -21,8 +21,7 @@ use workload::Workload;
 use fontbe::orchestration::AnyWorkId;
 use std::{
     ffi::OsStr,
-    fs::{self, OpenOptions},
-    io::BufWriter,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -104,7 +103,7 @@ pub fn run(args: Args, timer: JobTimer) -> Result<(), Error> {
 
     if args.flags().contains(Flags::EMIT_TIMING) {
         let path = args.build_dir.join("threads.svg");
-        let out_file = OpenOptions::new()
+        let out_file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
@@ -113,7 +112,7 @@ pub fn run(args: Args, timer: JobTimer) -> Result<(), Error> {
                 path: path.clone(),
                 source,
             })?;
-        let mut buf = BufWriter::new(out_file);
+        let mut buf = std::io::BufWriter::new(out_file);
         timing
             .write_svg(&mut buf)
             .map_err(|source| Error::FileIo { path, source })?;
@@ -178,7 +177,7 @@ pub fn require_dir(dir: &Path) -> Result<(), Error> {
             source,
         })?;
     }
-    debug!("require_dir {:?}", dir);
+    debug!("require_dir {dir:?}");
     Ok(())
 }
 
@@ -801,7 +800,7 @@ mod tests {
         // the glyph 'O' contains several quad splines
         let uppercase_o = &glyphs[result.get_glyph_index("O").unwrap() as usize];
         let Some(glyf::Glyph::Simple(glyph)) = uppercase_o else {
-            panic!("Expected 'O' to be a simple glyph, got {:?}", uppercase_o);
+            panic!("Expected 'O' to be a simple glyph, got {uppercase_o:?}");
         };
         assert_eq!(2, glyph.number_of_contours());
         assert_eq!(35, glyph.num_points());
@@ -951,7 +950,7 @@ mod tests {
         let glyph_data = result.glyphs();
         for (i, glyph) in glyph_data.read().iter().enumerate() {
             let Some(glyf::Glyph::Simple(_)) = glyph else {
-                panic!("Expected a simple glyph at index {}", i);
+                panic!("Expected a simple glyph at index {i}");
             };
         }
     }

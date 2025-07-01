@@ -454,7 +454,7 @@ impl<'a> LocationSortingHat<'a> {
             axis_value_signs,
             axis_value_abs,
         };
-        trace!("key for {:?} is {:?}", location, result);
+        trace!("key for {location:?} is {result:?}");
 
         result
     }
@@ -521,13 +521,7 @@ impl VariationRegion {
                 }
 
                 if v <= min || max <= v {
-                    trace!(
-                        "  {:?} => 0 due to {} {:?} at {:?}",
-                        self,
-                        tag,
-                        tent,
-                        location
-                    );
+                    trace!("  {self:?} => 0 due to {tag} {tent:?} at {location:?}",);
                     return ZERO;
                 }
 
@@ -800,9 +794,9 @@ fn delta_weights(
 ) -> Vec<Vec<(usize, OrderedFloat<f64>)>> {
     if log_enabled!(log::Level::Trace) {
         for (l, i) in locations.iter().zip(influencers) {
-            trace!("{:?}", l);
+            trace!("{l:?}");
             for (axis_name, tent) in i.iter() {
-                trace!("  {} {}", axis_name, tent);
+                trace!("  {axis_name} {tent}");
             }
         }
     }
@@ -816,12 +810,7 @@ fn delta_weights(
                 .filter_map(|(inf_idx, influence)| {
                     let scalar = influence.scalar_at(location);
                     if scalar == ZERO {
-                        trace!(
-                            "  no influence: {} {:?} at {:?}",
-                            inf_idx,
-                            influence,
-                            location
-                        );
+                        trace!("  no influence: {inf_idx} {influence:?} at {location:?}",);
                         return None;
                     }
                     Some((inf_idx, scalar))
@@ -1474,7 +1463,7 @@ mod tests {
             let actual: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_round);
 
             let err = (actual[0] - expected[0]).abs();
-            assert!(err <= 0.5, "i: {}, err: {}", i, err);
+            assert!(err <= 0.5, "i: {i}, err: {err}");
 
             // when the influence of many masters overlap a particular location
             // interpolating from late-rounded deltas may lead to an accummulation

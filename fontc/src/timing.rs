@@ -4,7 +4,7 @@
 
 use fontbe::orchestration::{AnyWorkId, WorkId as BeWorkIdentifier};
 use fontir::orchestration::WorkId as FeWorkIdentifier;
-use std::{collections::HashMap, io, thread::ThreadId};
+use std::{collections::HashMap, thread::ThreadId};
 
 #[cfg(target_family = "wasm")]
 use dummy_instant::Instant;
@@ -115,7 +115,7 @@ impl JobTimer {
     }
 
     #[cfg(feature = "cli")]
-    pub fn write_svg(&mut self, out: &mut impl io::Write) -> Result<(), io::Error> {
+    pub fn write_svg(&mut self, out: &mut impl std::io::Write) -> Result<(), std::io::Error> {
         let names: HashMap<_, _> = self
             .job_times
             .keys()
