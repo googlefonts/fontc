@@ -1214,7 +1214,7 @@ impl BaseTagList {
         match self.iter().next().map(|t| t.kind()) {
             Some(Kind::HorizAxisBaseTagListKw) => true,
             Some(Kind::VertAxisBaseTagListKw) => false,
-            other => panic!("unexpected token in BaseTagList {:?}", other),
+            other => panic!("unexpected token in BaseTagList {other:?}"),
         }
     }
 
@@ -1231,7 +1231,7 @@ impl BaseScriptList {
         match self.iter().next().map(|t| t.kind()) {
             Some(Kind::HorizAxisBaseScriptListKw) => true,
             Some(Kind::VertAxisBaseScriptListKw) => false,
-            other => panic!("unexpected token in BaseScriptList {:?}", other),
+            other => panic!("unexpected token in BaseScriptList {other:?}"),
         }
     }
 
@@ -1590,7 +1590,7 @@ impl GdefLigatureCaret {
         match self.iter().next().map(|t| t.kind()) {
             Some(Kind::LigatureCaretByPosKw) => true,
             Some(Kind::LigatureCaretByIndexKw) => false,
-            other => panic!("unexpected token in ligaturecaret {:?}", other),
+            other => panic!("unexpected token in ligaturecaret {other:?}"),
         }
     }
 
@@ -1691,7 +1691,7 @@ impl StatAxisFlag {
                 Kind::OlderSiblingFontAttributeKw => Some(0x01),
                 Kind::ElidableAxisValueNameKw => Some(0x02),
                 t if t.is_trivia() => None,
-                other => panic!("parser error '{}'", other),
+                other => panic!("parser error '{other}'"),
             })
     }
 }

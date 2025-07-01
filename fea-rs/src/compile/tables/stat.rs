@@ -61,7 +61,7 @@ impl StatBuilder {
         let elided_fallback_name_id = match &self.name {
             StatFallbackName::Id(id) if name_builder.contains_id(*id) => *id,
             StatFallbackName::Id(id) => {
-                panic!("ElidedFallbackNameID '{}' does not exist in font", id)
+                panic!("ElidedFallbackNameID '{id}' does not exist in font")
             }
             StatFallbackName::Record(names) => name_builder.add_anon_group(names),
         };

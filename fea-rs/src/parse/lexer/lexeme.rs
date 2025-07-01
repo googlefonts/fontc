@@ -300,7 +300,7 @@ impl Kind {
         match self {
             Self::Eof => AstKind::Eof,
             Self::StringUnterminated | Self::HexEmpty | Self::Tombstone => {
-                panic!("lexeme type '{}' should not be seen after parser", self)
+                panic!("lexeme type '{self}' should not be seen after parser")
             }
             Self::Ident => AstKind::Ident,
             Self::String => AstKind::String,

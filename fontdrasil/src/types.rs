@@ -274,7 +274,7 @@ impl TryFrom<u16> for WidthClass {
         WidthClass::all_values()
             .get((value - 1) as usize)
             .copied()
-            .ok_or_else(|| format!("Unsupported width class value: {}", value))
+            .ok_or_else(|| format!("Unsupported width class value: '{value}'"))
     }
 }
 

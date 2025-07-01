@@ -378,11 +378,11 @@ impl Node {
             match child {
                 NodeOrToken::Token(Token { kind, text, .. }) => {
                     let spaces = &SPACES[..depth * 2];
-                    write!(buf, "{}{}@{}", spaces, kind, pos)?;
+                    write!(buf, "{spaces}{kind}@{pos}")?;
                     if kind.is_trivia() {
                         writeln!(buf, " \"{}\"", text.escape_debug())?;
                     } else {
-                        writeln!(buf, " \"{}\"", text)?;
+                        writeln!(buf, " \"{text}\"")?;
                     }
                     pos += text.len() as u32;
                 }
@@ -585,12 +585,7 @@ fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
             builder.finish_node(false, None);
             builder.finish()
         })
-        .ok_or_else(|| {
-            format!(
-                "'{}' is neither a known glyph or a range of known glyphs",
-                text
-            )
-        })
+        .ok_or_else(|| format!("'{text}' is neither a known glyph or a range of known glyphs",))
 }
 
 impl Node {

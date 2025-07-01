@@ -356,10 +356,11 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestResult> {
 
     let result = rewrite_ttx(&result);
 
-    let expected = ttx_path
-        .exists()
-        .then(|| std::fs::read_to_string(&ttx_path).unwrap())
-        .unwrap_or_default();
+    let expected = if ttx_path.exists() {
+        std::fs::read_to_string(&ttx_path).unwrap()
+    } else {
+        Default::default()
+    };
     let expected = rewrite_ttx(&expected);
 
     if expected_diff_path.exists() {
@@ -451,9 +452,9 @@ fn rewrite_ttx(input: &str) -> String {
 }
 
 fn write_lines(f: &mut impl Write, lines: &[&str], line_num: usize, prefix: char) {
-    writeln!(f, "L{}", line_num).unwrap();
+    writeln!(f, "L{line_num}").unwrap();
     for line in lines {
-        writeln!(f, "{}  {}", prefix, line).unwrap();
+        writeln!(f, "{prefix}  {line}").unwrap();
     }
 }
 
@@ -809,14 +810,14 @@ impl Display for ReasonPrinter<'_> {
             TestResult::ParseFail(diagnostics) => {
                 write!(f, "{}", Color::Purple.paint("parse failure"))?;
                 if self.verbose {
-                    write!(f, "\n{}", diagnostics)?;
+                    write!(f, "\n{diagnostics}")?;
                 }
                 Ok(())
             }
             TestResult::CompileFail(diagnostics) => {
                 write!(f, "{}", Color::Yellow.paint("compile failure"))?;
                 if self.verbose {
-                    write!(f, "\n{}", diagnostics)?;
+                    write!(f, "\n{diagnostics}")?;
                 }
                 Ok(())
             }
@@ -824,7 +825,7 @@ impl Display for ReasonPrinter<'_> {
                 write!(f, "{}", Color::Yellow.paint("unexpected success"))
             }
             TestResult::TtxFail { code, std_err } => {
-                write!(f, "ttx failure ({:?}) stderr:\n{}", code, std_err)
+                write!(f, "ttx failure ({code:?}) stderr:\n{std_err}")
             }
             TestResult::ExpectedDiffFail { expected, result } => {
                 if self.verbose {

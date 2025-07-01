@@ -78,7 +78,7 @@ pub fn write_line_diff<TWrite: fmt::Write>(
             // If the text is unchanged, just print it plain
             (::diff::Result::Both(value, _), _) => {
                 previous_deletion.flush(f)?;
-                writeln!(f, " {}", value)?;
+                writeln!(f, " {value}")?;
             }
             // Defer any deletions to next loop
             (::diff::Result::Left(deleted), _) => {
@@ -183,13 +183,13 @@ where
     fn write_with_style(&mut self, c: &char, style: Style) -> fmt::Result {
         // If the style is the same as previously, just write character
         if style == self.style {
-            write!(self.f, "{}", c)?;
+            write!(self.f, "{c}")?;
         } else {
             // Close out previous style
             write!(self.f, "{}", self.style.suffix())?;
 
             // Store new style and start writing it
-            write!(self.f, "{}{}", style.prefix(), c)?;
+            write!(self.f, "{}{c}", style.prefix())?;
             self.style = style;
         }
         Ok(())

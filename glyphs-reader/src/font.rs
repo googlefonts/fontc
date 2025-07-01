@@ -2533,7 +2533,7 @@ impl RawFeature {
         if labels.is_empty() {
             Default::default()
         } else {
-            format!("featureNames {{\n{}\n}};\n", labels)
+            format!("featureNames {{\n{labels}\n}};\n")
         }
     }
 
@@ -2596,7 +2596,7 @@ impl RawNameValue {
             Ok(idx) => {
                 let language_id = GLYPHS_TO_OPENTYPE_LANGUAGE_ID[idx].1;
                 let name = self.value.replace("\\", "\\005c").replace("\"", "\\0022");
-                Some(format!("  name 3 1 0x{:04X} \"{}\";", language_id, name))
+                Some(format!("  name 3 1 0x{language_id:04X} \"{name}\";"))
             }
             Err(_) => {
                 warn!("Unknown feature label language: {}", self.language);
@@ -2729,7 +2729,7 @@ impl Instance {
                     .map(|v| match WidthClass::try_from(u16::from_str(v).unwrap()) {
                         Ok(width_class) => width_class.to_percent(),
                         Err(err) => {
-                            warn!("{}", err);
+                            warn!("{err}");
                             100.0
                         }
                     })

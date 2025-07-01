@@ -47,10 +47,7 @@ fn current_timestamp() -> i64 {
             src_date = Utc.timestamp_opt(timestamp, 0).single();
         };
         if src_date.is_none() {
-            warn!(
-                "Invalid SOURCE_DATE_EPOCH value: {:?}. Falling back to Utc::now().",
-                src_date_var
-            );
+            warn!("Invalid SOURCE_DATE_EPOCH value: {src_date_var:?}. Falling back to Utc::now().",);
         }
     }
     seconds_since_mac_epoch(src_date.unwrap_or_else(Utc::now))

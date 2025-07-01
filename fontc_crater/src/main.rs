@@ -79,10 +79,10 @@ fn run_all<T: Send, E: Send, Cx: Sync>(
             .map(|target| {
                 let i = counter.fetch_add(1, Ordering::Relaxed) + 1;
                 currently_running.fetch_add(1, Ordering::Relaxed);
-                log::debug!("starting {} ({i}/{total_targets})", target);
+                log::debug!("starting {target} ({i}/{total_targets})");
                 let r = runner(context, &target);
                 let n_running = currently_running.fetch_sub(1, Ordering::Relaxed);
-                log::debug!("finished {} ({n_running} active)", target);
+                log::debug!("finished {target} ({n_running} active)");
                 (target, r)
             })
             .collect()

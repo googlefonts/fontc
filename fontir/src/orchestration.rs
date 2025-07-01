@@ -224,7 +224,7 @@ where
 
         // if we still don't have an answer just give up
         self.try_get(id)
-            .unwrap_or_else(|| panic!("{:?} is not available", id))
+            .unwrap_or_else(|| panic!("{id:?} is not available"))
     }
 }
 

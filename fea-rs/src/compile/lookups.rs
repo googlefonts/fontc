@@ -873,7 +873,7 @@ impl SomeLookup {
                 Kind::GposType5 => PositionLookup::MarkToLig(LookupBuilder::new(flags, filter)),
                 Kind::GposType6 => PositionLookup::MarkToMark(LookupBuilder::new(flags, filter)),
                 Kind::GposNode => unimplemented!("other gpos type?"),
-                other => panic!("illegal kind for lookup: '{}'", other),
+                other => panic!("illegal kind for lookup: '{other}'"),
             };
             SomeLookup::GposLookup(lookup)
         } else {
@@ -887,7 +887,7 @@ impl SomeLookup {
                 }
                 Kind::GsubType7 => unimplemented!("extension"),
                 Kind::GsubType8 => SubstitutionLookup::Reverse(LookupBuilder::new(flags, filter)),
-                other => panic!("illegal kind for lookup: '{}'", other),
+                other => panic!("illegal kind for lookup: '{other}'"),
             };
             SomeLookup::GsubLookup(lookup)
         }

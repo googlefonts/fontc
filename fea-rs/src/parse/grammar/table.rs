@@ -66,7 +66,7 @@ fn table_impl(parser: &mut Parser, tag: Tag, table_fn: impl Fn(&mut Parser, Toke
     parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
     if let Some(close) = parser.expect_tag(TokenSet::TOP_SEMI) {
         if close.tag != tag {
-            parser.raw_error(close.range, format!("expected tag '{}'", tag));
+            parser.raw_error(close.range, format!("expected tag '{tag}'"));
         }
     }
 

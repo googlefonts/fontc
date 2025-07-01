@@ -84,9 +84,7 @@ fn op_for_node(node_range: Range<usize>, edit_range: Range<usize>) -> EditOp {
     } else {
         assert!(
             edit_range.end <= node_range.start || edit_range.start >= node_range.end,
-            "{:?} {:?}",
-            edit_range,
-            node_range
+            "{edit_range:?} {node_range:?}",
         );
         EditOp::Copy
     }
