@@ -9,6 +9,8 @@ use smol_str::SmolStr;
 use thiserror::Error;
 use write_fonts::types::{InvalidTag, Tag};
 
+use crate::{ir::GlobalMetric, variations::DeltaError};
+
 #[derive(Debug, Error)]
 pub enum Error {
     /// A source file was not understood
@@ -86,6 +88,10 @@ pub enum Error {
     UnknownEntry(&'static str, String),
     #[error("Invalid {0}: {1}")]
     InvalidEntry(&'static str, String),
+    #[error("Variation model error when variating {0:?}: {1}")]
+    MetricVariationError(GlobalMetric, #[source] VariationModelError),
+    #[error("Delta error when variating {0:?}: {1}")]
+    MetricDeltaError(GlobalMetric, #[source] DeltaError),
 }
 
 /// An error related to loading source input files
@@ -181,7 +187,7 @@ pub enum VariationModelError {
         axis_names: Vec<Tag>,
         location: NormalizedLocation,
     },
-    #[error("{0} is is an axis of variation defined only at a single point")]
+    #[error("{0} is an axis of variation defined only at a single point")]
     PointAxis(Tag),
 }
 
