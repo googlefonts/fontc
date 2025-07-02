@@ -1941,6 +1941,9 @@ impl RawFont {
 
     fn v2_to_v3_instances(&mut self) -> Result<(), Error> {
         for instance in self.instances.iter_mut() {
+            if let Some(custom_weight_class) = instance.custom_parameters.get("weightClass") {
+                instance.weight_class = custom_weight_class.to_string().into();
+            }
             // named clases become #s in v3
             for (tag, opt) in [
                 ("wght", &mut instance.weight_class),
@@ -4641,5 +4644,21 @@ mod tests {
         for layer in glyph.layers.iter().chain(glyph.bracket_layers.iter()) {
             assert_eq!(layer.anchors.len(), 2, "{}", layer.layer_id);
         }
+    }
+
+    #[test]
+    fn glyphs2_weight_class_custom_instance_parameter() {
+        // older glyphs sources can use a custom param in the instance
+        // in order to pass a custom value for the weight class.
+        let font = Font::load(&glyphs2_dir().join("WeightClassCustomParam.glyphs")).unwrap();
+        let mapping = &font.axis_mappings.0.get("Weight").unwrap().0;
+        assert_eq!(
+            mapping.as_slice(),
+            &[
+                (OrderedFloat(200f64), OrderedFloat(42f64)),
+                (OrderedFloat(700.), OrderedFloat(125.)),
+                (OrderedFloat(1000.), OrderedFloat(208.))
+            ]
+        )
     }
 }

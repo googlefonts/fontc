@@ -1,0 +1,80 @@
+{
+.appVersion = "1342";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+},
+{
+name = "Variable Font Origin";
+value = "2567DF27-EA2D-46C8-A1A0-FA57AF1B0F16";
+}
+);
+fontMaster = (
+{
+id = "2567DF27-EA2D-46C8-A1A0-FA57AF1B0F16";
+name = ExtraLight;
+weight = Light;
+weightValue = 42;
+widthValue = 0;
+},
+{
+id = "36495FFF-A792-4E19-9295-2592132C4E2F";
+weight = Bold;
+weightValue = 125;
+widthValue = 0;
+},
+{
+id = "FFBF88B9-CE65-4AF8-A771-12A489880E49";
+weightValue = 208;
+widthValue = 0;
+}
+);
+instances = (
+{
+interpolationCustom1 = 13;
+interpolationWeight = 42;
+interpolationWidth = 0;
+instanceInterpolations = {
+"2567DF27-EA2D-46C8-A1A0-FA57AF1B0F16" = 1;
+};
+name = ExtraLight;
+weightClass = ExtraLight;
+},
+{
+interpolationCustom1 = 13;
+interpolationWeight = 125;
+interpolationWidth = 0;
+instanceInterpolations = {
+"36495FFF-A792-4E19-9295-2592132C4E2F" = 1;
+};
+isBold = 1;
+name = Bold;
+weightClass = Bold;
+},
+{
+customParameters = (
+{
+name = weightClass;
+value = 1000;
+}
+);
+interpolationCustom1 = 13;
+interpolationWeight = 208;
+interpolationWidth = 0;
+instanceInterpolations = {
+"FFBF88B9-CE65-4AF8-A771-12A489880E49" = 1;
+};
+name = ExtraBlack;
+weightClass = Heavy;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 3;
+versionMinor = 603;
+}
