@@ -4,7 +4,7 @@
 #
 #    pip-compile requirements.in
 #
-absl-py==2.3.0
+absl-py==2.3.1
     # via
     #   -r requirements.in
     #   gftools
@@ -44,7 +44,7 @@ cattrs==25.1.1
     #   ufolib2
 cdifflib==1.2.9
     # via -r requirements.in
-certifi==2025.4.26
+certifi==2025.6.15
     # via requests
 cffi==1.17.1
     # via
@@ -57,7 +57,7 @@ charset-normalizer==3.4.2
     # via requests
 compreffor==0.5.6
     # via ufo2ft
-cryptography==45.0.4
+cryptography==45.0.5
     # via pyjwt
 defcon[lxml,pens]==0.12.1
     # via
@@ -72,7 +72,7 @@ filelock==3.18.0
     # via youseedee
 font-v==2.1.0
     # via gftools
-fontfeatures==1.8.0
+fontfeatures==1.9.0
     # via gftools
 fontmake[json,repacker]==3.10.1
     # via
@@ -90,7 +90,7 @@ fontparts==0.13.1
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.58.4
+fonttools[lxml,repacker,ufo,unicode,woff]==4.58.5
     # via
     #   -r requirements.in
     #   afdko
@@ -120,9 +120,7 @@ fonttools[lxml,repacker,ufo,unicode,woff]==4.58.4
     #   vharfbuzz
     #   vttlib
 fs==2.4.16
-    # via
-    #   fontfeatures
-    #   fonttools
+    # via fonttools
 gflanguages==0.7.5
     # via
     #   gftools
@@ -137,7 +135,7 @@ gitpython==3.1.44
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.11.0
+glyphslib==6.11.1
     # via
     #   -r requirements.in
     #   bumpfontversion
@@ -150,7 +148,7 @@ importlib-resources==6.5.2
     # via gfsubsets
 jinja2==3.1.6
     # via gftools
-lxml==5.4.0
+lxml==6.0.0
     # via
     #   -r requirements.in
     #   afdko
@@ -166,7 +164,7 @@ mdurl==0.1.2
     # via markdown-it-py
 mutatormath==3.0.1
     # via ufoprocessor
-nanoemoji==0.15.7
+nanoemoji==0.15.8
     # via gftools
 networkx==3.5
     # via gftools
@@ -208,7 +206,7 @@ pygit2==1.15.0
     # via gftools
 pygithub==2.6.1
     # via gftools
-pygments==2.19.1
+pygments==2.19.2
     # via rich
 pyjwt[crypto]==2.10.1
     # via pygithub
@@ -269,7 +267,7 @@ typing-extensions==4.14.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.5.0
+ufo2ft[cffsubr,compreffor]==3.5.1
     # via
     #   fontmake
     #   nanoemoji
@@ -282,7 +280,7 @@ ufolib2[json]==0.17.1
     #   nanoemoji
     #   ufomerge
     #   vttlib
-ufomerge==1.9.3
+ufomerge==1.9.5
     # via
     #   babelfont
     #   gftools
@@ -300,7 +298,7 @@ unicodedata2==16.0.0
     #   glyphsets
 unidecode==1.4.0
     # via gftools
-urllib3==2.4.0
+urllib3==2.5.0
     # via
     #   pygithub
     #   requests
