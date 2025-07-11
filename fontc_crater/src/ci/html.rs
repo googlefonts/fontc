@@ -511,12 +511,10 @@ fn make_target_description(target: &Target) -> Markup {
     let source = bare_path.file_name().unwrap().to_str().unwrap();
     let annotation = match target.build {
         BuildType::Default => "default".to_string(),
-        BuildType::GfTools => match target.config.as_ref() {
-            Some(c) if c.file_stem() != Some(OsStr::new("config")) => {
-                format!("gftools, {}", c.display())
-            }
-            _ => "gftools".to_string(),
-        },
+        BuildType::GfTools if target.config.file_stem() != Some(OsStr::new("config")) => {
+            format!("gftools, {}", target.config.display())
+        }
+        _ => "gftools".to_string(),
     };
     html! {
         (source)
