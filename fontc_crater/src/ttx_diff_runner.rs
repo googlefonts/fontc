@@ -32,9 +32,8 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
         .arg(&ctx.normalizer_path)
         .args(["--rebuild", "fontc"]);
     if target.build == BuildType::GfTools {
-        if let Some(config) = target.config_path(&ctx.source_cache) {
-            cmd.arg("--config").arg(config);
-        }
+        cmd.arg("--config")
+            .arg(target.config_path(&ctx.source_cache));
     }
     cmd.arg(source_path)
         // set this flag so we have a stable 'modified date'

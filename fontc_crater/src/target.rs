@@ -8,15 +8,20 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+
+static VIRTUAL_CONFIG_DIR: &str = "sources";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Target {
-    /// path to the source dir for this target (relative to the git cache root)
-    source_dir: PathBuf,
+    /// path to the source repo, relative to the cache dir root
+    repo_dir: PathBuf,
     sha: String,
-    /// Filename of config file, in the source directory.
-    pub(crate) config: Option<PathBuf>,
+    /// Path to the config file.
+    ///
+    /// - relative to the cache root if it is virtual;
+    /// - relative to the repo root otherwise
+    pub(crate) config: PathBuf,
+    is_virtual: bool,
     /// Path to source file, relative to the source_dir
     source: PathBuf,
     pub(crate) build: BuildType,
@@ -28,112 +33,77 @@ pub(crate) enum BuildType {
     GfTools,
 }
 
-fn get_source_dir(source_path: &Path) -> Result<PathBuf, InvalidTargetPath> {
-    let mut result = source_path.to_owned();
-    loop {
-        match result.file_name() {
-            Some(name) if name == "sources" || name == "Sources" => return Ok(result),
-            Some(_) | None => {
-                if !result.pop() {
-                    break;
-                }
-            }
-        }
-    }
-    Err(InvalidTargetPath {
-        path: source_path.to_owned(),
-        reason: BadPathReason::NoSourceDir,
-    })
-}
-
-/// A source path must always be a file in side a directory named 'sources' or 'Sources'
-#[derive(Clone, Debug, Error)]
-#[error("invalid path '{path}' for target: {reason}")]
-pub(crate) struct InvalidTargetPath {
-    path: PathBuf,
-    reason: BadPathReason,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum BadPathReason {
-    NoSourceDir,
-    BadConfigPath,
-}
-
-impl Display for BadPathReason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BadPathReason::NoSourceDir => f.write_str("missing sources/Sources directory"),
-            BadPathReason::BadConfigPath => f.write_str("config is not relative to source"),
-        }
-    }
-}
-
 impl Target {
     pub(crate) fn new(
-        source: PathBuf,
-        config: impl Into<Option<PathBuf>>,
-        mut sha: String,
-        build: BuildType,
-    ) -> Result<Self, InvalidTargetPath> {
-        let source_dir = get_source_dir(&source)?;
+        repo_dir: impl Into<PathBuf>,
+        sha: impl Into<String>,
+        config: impl Into<PathBuf>,
+        is_virtual: bool,
+        source: impl Into<PathBuf>,
+    ) -> Self {
+        let mut sha = sha.into();
+        let config = config.into();
+        let source = source.into();
         sha.truncate(10);
+        let config_dir = config.parent().unwrap();
+        // if source is a sibling of config we can trim that bit.
         let source = source
-            .strip_prefix(&source_dir)
-            .expect("must be a base")
-            .to_owned();
-        let config = match config.into() {
-            // if we're just a filename, that's fine; assume relative to source
-            Some(config)
-                if config.file_name().is_some() && config.parent() == Some(Path::new("")) =>
-            {
-                Some(config)
-            }
-            // else we have to be in the same source directory as our source
-            Some(config) => Some(
-                config
-                    .strip_prefix(&source_dir)
-                    .map(PathBuf::from)
-                    .map_err(|_| InvalidTargetPath {
-                        path: config,
-                        reason: BadPathReason::BadConfigPath,
-                    })?,
-            ),
-            None => None,
-        };
-
-        Ok(Self {
-            source_dir,
-            config,
-            source,
-            build,
+            .strip_prefix(config_dir)
+            .map(PathBuf::from)
+            .unwrap_or(source);
+        Self {
+            repo_dir: repo_dir.into(),
             sha,
-        })
+            config,
+            is_virtual,
+            source,
+            build: BuildType::Default,
+        }
+    }
+
+    pub(crate) fn to_gftools_target(&self) -> Self {
+        Self {
+            build: BuildType::GfTools,
+            ..self.clone()
+        }
+    }
+
+    /// Invariant: the source path is always in a directory
+    ///
+    /// If the config is virtual, then the source dir is '$REPO/sources'
+    /// Otherwise, it is the parent directory of the config file.
+    fn source_dir(&self) -> PathBuf {
+        if self.is_virtual {
+            self.repo_dir.join(VIRTUAL_CONFIG_DIR)
+        } else {
+            self.repo_dir.join(self.config.parent().unwrap())
+        }
     }
 
     /// The org/repo part of the path, used for looking up repo urls
     pub(crate) fn repo_path(&self) -> &Path {
-        self.source_dir.parent().unwrap()
+        &self.repo_dir
     }
 
     pub(crate) fn source_path(&self, git_cache: &Path) -> PathBuf {
-        let mut out = git_cache.join(&self.source_dir);
+        let mut out = git_cache.join(self.source_dir());
         out.push(&self.source);
         out
     }
 
-    pub(crate) fn config_path(&self, git_cache: &Path) -> Option<PathBuf> {
-        let config = self.config.as_ref()?;
-        let mut out = git_cache.join(&self.source_dir);
-        out.push(config);
-        Some(out)
+    pub(crate) fn config_path(&self, git_cache: &Path) -> PathBuf {
+        if self.is_virtual {
+            git_cache.join(&self.config)
+        } else {
+            git_cache.join(&self.repo_dir).join(&self.config)
+        }
     }
 
     // if a target was built in a directory with a sha, the repro command
     // does not need to include that part of the directory, so remove it.
-    fn config_path_stripping_disambiguating_sha_if_necessary(&self) -> Option<String> {
+    fn config_path_stripping_disambiguating_sha_if_necessary(&self) -> String {
         let mut path = self
-            .config_path(Path::new("~/.fontc_crater_cache"))?
+            .config_path(Path::new("~/.fontc_crater_cache"))
             .display()
             .to_string();
         // NOTE: this relies on the fact that we always trim the sha to 10 chars,
@@ -145,7 +115,7 @@ impl Target {
         {
             path.replace_range(ix - 1..ix + self.sha.len(), "");
         }
-        Some(path)
+        path
     }
 
     /// Return the path where we should cache the results of running this target.
@@ -157,12 +127,8 @@ impl Target {
     /// where {source_dir} is the path to the sources/Sources directory of this
     /// target, relative to the root git cache.
     pub(crate) fn cache_dir(&self, in_dir: &Path) -> PathBuf {
-        let config = self
-            .config
-            .as_ref()
-            .and_then(|p| p.file_stem())
-            .unwrap_or(OsStr::new("config"));
-        let mut result = in_dir.join(&self.source_dir);
+        let config = self.config.file_stem().unwrap_or(OsStr::new("config"));
+        let mut result = in_dir.join(self.source_dir());
         result.push(config);
         result.push(self.source.file_stem().unwrap());
         result.push(self.build.name());
@@ -171,8 +137,10 @@ impl Target {
 
     pub(crate) fn repro_command(&self, repo_url: &str) -> String {
         let repo_url = repo_url.trim();
-        let just_source_dir = self.source_dir.file_name().unwrap();
-        let rel_source_path = Path::new(just_source_dir).join(&self.source);
+        let source_path = self.source_path(Path::new(""));
+        let rel_source_path = source_path
+            .strip_prefix(&self.repo_dir)
+            .expect("source always in repo");
         let sha_part = if !self.sha.is_empty() {
             format!("?{}", self.sha)
         } else {
@@ -186,9 +154,12 @@ impl Target {
             cmd.push_str(" --compare gftools");
             // we hard code this; repro will only work if they're using default
             // cache location
-            if let Some(config) = self.config_path_stripping_disambiguating_sha_if_necessary() {
-                write!(&mut cmd, " --config {config}").unwrap();
-            }
+            write!(
+                &mut cmd,
+                " --config {}",
+                self.config_path_stripping_disambiguating_sha_if_necessary()
+            )
+            .unwrap();
         }
         cmd
     }
@@ -211,15 +182,20 @@ impl Display for BuildType {
 
 impl Display for Target {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let source = self.source_dir.join(&self.source);
-        write!(f, "{}", source.display())?;
-        if !self.sha.is_empty() {
-            write!(f, "?{}", self.sha)?;
-        }
-        if let Some(config) = self.config.as_ref() {
-            write!(f, " ({})", config.display())?
-        }
-        write!(f, " ({})", self.build)
+        let config_path = if self.is_virtual {
+            self.repo_dir.join("$VIRTUAL").join(&self.config)
+        } else {
+            self.repo_dir.join(&self.config)
+        };
+
+        write!(
+            f,
+            "{} {}?{} ({})",
+            config_path.display(),
+            self.source.display(),
+            self.sha,
+            self.build
+        )
     }
 }
 
@@ -239,48 +215,88 @@ impl<'de> Deserialize<'de> for Target {
     }
 }
 
+/// in the format,
+///
+/// $ORG/$REPO/$CONFIG_PATH?$SHA $SRC_PATH ($BUILD_TYPE)
+///
+/// where a virtual config's $CONFIG_PATH starts with the literal path element
+/// '$VIRTUAL'.
 impl FromStr for Target {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
-        // before gftools we just identified targets as paths, so let's keep that working
-        if !s.ends_with(')') {
-            return Self::new(s.into(), None, Default::default(), BuildType::Default)
-                .map_err(|e| format!("failed to parse target '{s}': {e}"));
+        // old version contain '($CONFIG.y[a]ml)'
+        if s.contains("ml)") {
+            return legacy_from_str_impl(s);
         }
-        // else expect the format,
-        // PATH [(config)] (default|gftools)
+
         let (head, type_) = s
             .rsplit_once('(')
             .ok_or_else(|| "missing opening paren".to_string())?;
 
         let head = head.trim();
+        let (config_part, source_part) = head
+            .split_once(' ')
+            .ok_or_else(|| "missing a space?".to_string())?;
+        let (source, sha) = source_part
+            .trim()
+            .split_once('?')
+            .ok_or_else(|| "missing '?'".to_string())?;
+        let (split_at, _) = config_part
+            .match_indices('/')
+            .nth(1)
+            .ok_or("missing second '/'")?;
 
-        // now we may or may not have a config:
-        let (source_part, config_part) = if head.ends_with(')') {
-            let (source, config) = head
-                .rsplit_once('(')
-                .ok_or_else(|| format!("expected '(' in '{head}'"))?;
-            (source.trim(), config.trim_end_matches(')'))
+        let (org_repo, config_part) = config_part.split_at(split_at);
+        let config_part = config_part.trim_start_matches('/').trim();
+
+        let (is_virtual, config_path) = if let Some(path) = config_part.strip_prefix("$VIRTUAL/") {
+            (true, path)
         } else {
-            (head, "")
+            (false, config_part)
         };
 
-        let (source_part, sha_part) = source_part.rsplit_once('?').unwrap_or((source_part, ""));
-        let source = PathBuf::from(source_part.trim());
-        let config = Some(config_part)
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from);
+        let result = Self::new(org_repo, sha, config_path, is_virtual, source);
+        match type_.trim_end_matches(')') {
+            "default" => Ok(result),
+            "gftools" => Ok(result.to_gftools_target()),
+            other => Err(format!("unknown build type '{other}'")),
+        }
+    }
+}
 
-        let type_ = match type_.trim_end_matches(')') {
-            "default" => BuildType::Default,
-            "gftools" => BuildType::GfTools,
-            other => return Err(format!("unknown build type '{other}'")),
-        };
+// this can be deleted after the new format has been used twice.
+fn legacy_from_str_impl(s: &str) -> Result<Target, String> {
+    // expect the format, PATH [(config)] (default|gftools)
+    let (head, type_) = s
+        .rsplit_once('(')
+        .ok_or_else(|| "missing opening paren".to_string())?;
 
-        Self::new(source, config, sha_part.to_owned(), type_)
-            .map_err(|e| format!("failed to parse target '{s}': {e}"))
+    let head = head.trim();
+
+    // now we may or may not have a config:
+    let (source_part, config_part) = if head.ends_with(')') {
+        let (source, config) = head
+            .rsplit_once('(')
+            .ok_or_else(|| format!("expected '(' in '{head}'"))?;
+        (source.trim(), config.trim_end_matches(')'))
+    } else {
+        (head, "")
+    };
+
+    let (source_part, sha_part) = source_part.rsplit_once('?').unwrap_or((source_part, ""));
+    let source = PathBuf::from(source_part.trim());
+    let repo: PathBuf = source.iter().take(2).collect();
+    let source = source.strip_prefix(&repo).unwrap();
+    let config = source.with_file_name(config_part);
+    let source = source.file_name().unwrap();
+
+    let result = Target::new(repo, sha_part, config, false, source);
+    match type_.trim_end_matches(')') {
+        "default" => Ok(result),
+        "gftools" => Ok(result.to_gftools_target()),
+        other => Err(format!("unknown build type '{other}'")),
     }
 }
 
@@ -289,124 +305,75 @@ mod tests {
     use super::*;
 
     #[test]
-    fn construct_target_with_source() {
-        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
-        let target = Target::new(source, None, "".to_owned(), BuildType::Default).unwrap();
-        assert_eq!(target.source_dir.as_os_str(), "org/repo/sources");
-        assert_eq!(target.source.as_os_str(), "Mysource.glyphs");
-    }
-
-    #[test]
-    fn invalid_source_path() {
-        let source = PathBuf::from("org/repo/not_sources/Mysource.glyphs");
-        let target = Target::new(source, None, "".to_owned(), BuildType::Default);
-        assert!(matches!(target, Err(e) if e.reason == BadPathReason::NoSourceDir));
-    }
-
-    #[test]
-    fn relative_source_path() {
-        let relpath = PathBuf::from("org/repo/sources/../source/dir/Mysource.designspace");
-
-        let target = Target::new(relpath, None, "".to_owned(), BuildType::Default).unwrap();
-        assert_eq!(target.source_dir.as_os_str(), "org/repo/sources",);
-        assert_eq!(
-            target.source.as_os_str(),
-            "../source/dir/Mysource.designspace"
+    fn string_repr_simple() {
+        let target = Target::new(
+            "googlefonts/derp",
+            "deadbeef",
+            "sources/config.yaml",
+            false,
+            "sources/derp.glyphs",
         );
+
+        let asstr = target.to_string();
+
+        assert_eq!(
+            asstr,
+            "googlefonts/derp/sources/config.yaml derp.glyphs?deadbeef (default)"
+        );
+
+        let der = Target::from_str(&asstr).unwrap();
+        assert_eq!(target, der)
     }
 
     #[test]
-    fn good_config_path() {
-        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
-        let config = PathBuf::from("org/repo/sources/my-config.yaml");
-        let target = Target::new(source, Some(config), "".into(), BuildType::Default).unwrap();
-        assert_eq!(target.source_dir.as_os_str(), "org/repo/sources");
-        assert_eq!(target.source.as_os_str(), "Mysource.glyphs");
-        assert_eq!(target.config.as_deref(), Some(Path::new("my-config.yaml")));
-    }
+    fn string_repr_virtual() {
+        let target = Target::new(
+            "googlefonts/derp",
+            "deadbeef",
+            "ofl/derp/config.yaml",
+            true,
+            "derp.glyphs",
+        );
 
-    #[test]
-    fn bare_config_path() {
-        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
-        let config = PathBuf::from("my-config.yaml");
-        let target = Target::new(source, Some(config), "".into(), BuildType::Default).unwrap();
-        assert_eq!(target.source_dir.as_os_str(), "org/repo/sources");
-        assert_eq!(target.source.as_os_str(), "Mysource.glyphs");
-        assert_eq!(target.config.as_deref(), Some(Path::new("my-config.yaml")));
-    }
+        let asstr = target.to_string();
 
-    #[test]
-    fn bad_config_path() {
-        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
-        let config = PathBuf::from("somewhere_else/my-config.yaml");
-        let target = Target::new(source, Some(config), "".into(), BuildType::Default);
-        assert!(matches!(target, Err(e) if e.reason == BadPathReason::BadConfigPath));
+        assert_eq!(
+            asstr,
+            "googlefonts/derp/$VIRTUAL/ofl/derp/config.yaml derp.glyphs?deadbeef (default)"
+        );
+
+        let der = Target::from_str(&asstr).unwrap();
+        assert_eq!(target, der)
     }
 
     #[test]
     fn target_for_disambiguated_source() {
         let target = Target::new(
-            "org/repo_123456789a/sources/hi.glyphs".into(),
-            Some("config.yaml".into()),
-            "123456789a".into(),
-            BuildType::Default,
-        )
-        .unwrap();
+            "org/repo_123456789a",
+            "123456789a",
+            "Sources/hmm.yaml",
+            false,
+            "hello.glyphs",
+        );
 
-        let hmm = target
-            .config_path_stripping_disambiguating_sha_if_necessary()
-            .unwrap();
-        assert_eq!(hmm, "~/.fontc_crater_cache/org/repo/sources/config.yaml")
+        let hmm = target.config_path_stripping_disambiguating_sha_if_necessary();
+        assert_eq!(hmm, "~/.fontc_crater_cache/org/repo/Sources/hmm.yaml")
     }
 
     #[test]
     fn repro_command_with_sha() {
         let target = Target::new(
-            "org/repo/sources/hi.glyphs".into(),
-            Some("config.yaml".into()),
-            "123456789a".into(),
-            BuildType::Default,
-        )
-        .unwrap();
+            "org/repo",
+            "123456789a",
+            "sources/config.yaml",
+            false,
+            "sources/hi.glyphs",
+        );
 
         let hmm = target.repro_command("example.com");
         assert_eq!(
             hmm,
             "python3 resources/scripts/ttx_diff.py 'example.com?123456789a#sources/hi.glyphs'"
         );
-    }
-
-    #[test]
-    fn serde_target_full() {
-        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
-        let config = PathBuf::from("config.yaml");
-        let target = Target::new(
-            source,
-            Some(config),
-            "abc123def456".into(),
-            BuildType::Default,
-        )
-        .unwrap();
-
-        let to_json = serde_json::to_string(&target).unwrap();
-        let from_json: Target = serde_json::from_str(&to_json).unwrap();
-        assert_eq!(target, from_json)
-    }
-
-    #[test]
-    fn serde_no_config() {
-        let json = "\"org/repo/sources/myfile.is_here (gftools)\"";
-        let from_json: Target = serde_json::from_str(json).unwrap();
-        assert_eq!(from_json.source.as_os_str(), "myfile.is_here");
-        assert!(from_json.config.is_none());
-        assert!(from_json.build == BuildType::GfTools);
-    }
-
-    #[test]
-    fn serde_path_only() {
-        let json = "\"repo/Sources/mypath.hello\"";
-        let from_json: Target = serde_json::from_str(json).unwrap();
-        assert_eq!(from_json.source.as_os_str(), "mypath.hello");
-        assert_eq!(from_json.build, BuildType::Default);
     }
 }
