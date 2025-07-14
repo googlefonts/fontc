@@ -9,7 +9,7 @@ readme = "README.md"
 
 
 [dependencies]
-fontdrasil = { version = "0.2.0", path = "../fontdrasil" }
+fontdrasil = { version = "0.2.1", path = "../fontdrasil" }
 clap.workspace = true
 thiserror.workspace = true
 smol_str.workspace = true
@@ -17,5 +17,5 @@ write-fonts.workspace = true
 indexmap.workspace = true
 
 [dev-dependencies]
-fea-rs = { version = "0.20.0", path = "../fea-rs" }
+fea-rs = { version = "0.20.1", path = "../fea-rs" }
 
