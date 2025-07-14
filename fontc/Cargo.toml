@@ -1,6 +1,6 @@
 [package]
 name = "fontc"
-version = "0.2.0"
+version = "0.3.0"
 build = "build.rs"
 edition = "2021"
 license = "MIT/Apache-2.0"
@@ -20,12 +20,12 @@ default = ["cli"]
 cli = ["clap"]
 
 [dependencies]
-fontdrasil = { version = "0.2.0", path = "../fontdrasil" }
-fontbe = { version = "0.2.0", path = "../fontbe" }
-fontir = { version = "0.2.0", path = "../fontir" }
-glyphs2fontir = { version = "0.2.0", path = "../glyphs2fontir" }
-fontra2fontir = { version = "0.2.0", path = "../fontra2fontir" }
-ufo2fontir = { version = "0.2.0", path = "../ufo2fontir" }
+fontdrasil = { version = "0.2.1", path = "../fontdrasil" }
+fontbe = { version = "0.2.1", path = "../fontbe" }
+fontir = { version = "0.2.1", path = "../fontir" }
+glyphs2fontir = { version = "0.2.1", path = "../glyphs2fontir" }
+fontra2fontir = { version = "0.2.1", path = "../fontra2fontir" }
+ufo2fontir = { version = "0.2.1", path = "../ufo2fontir" }
 
 bitflags.workspace = true
 bincode.workspace = true

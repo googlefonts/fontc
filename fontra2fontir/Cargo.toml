@@ -1,6 +1,6 @@
 [package]
 name = "fontra2fontir"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Converts fontra.xyz/ files to font ir for compilation."
@@ -11,8 +11,8 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-fontdrasil = { version = "0.2.0", path = "../fontdrasil" }
-fontir = { version = "0.2.0", path = "../fontir" }
+fontdrasil = { version = "0.2.1", path = "../fontdrasil" }
+fontir = { version = "0.2.1", path = "../fontir" }
 
 write-fonts.workspace = true
 
