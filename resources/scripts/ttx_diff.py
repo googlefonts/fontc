@@ -1163,7 +1163,7 @@ def resolve_source(source: str) -> Path:
         if not local_repo.parent.is_dir():
             local_repo.parent.mkdir(parents=True)
         if not local_repo.is_dir():
-            cmd = ("git", "clone", source_url._replace(fragment="").geturl())
+            cmd = ("git", "clone", source_url._replace(fragment="", query="").geturl())
             print("Running", " ".join(cmd), "in", local_repo.parent)
             subprocess.run(cmd, cwd=local_repo.parent, check=True)
         else:
