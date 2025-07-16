@@ -23,7 +23,7 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
     let build_dir = outdir.join(compare);
     ctx.results_cache
         .copy_cached_files_to_build_dir(target, &build_dir);
-    let mut cmd = Command::new("python");
+    let mut cmd = Command::new("python3");
     cmd.args([SCRIPT_PATH, "--json", "--compare", compare, "--outdir"])
         .arg(outdir)
         .arg("--fontc_path")
@@ -209,7 +209,7 @@ pub(super) fn assert_can_run_script() {
         );
         std::process::exit(1);
     }
-    match Command::new("python")
+    match Command::new("python3")
         .arg(SCRIPT_PATH)
         .arg("--only_check_args")
         .output()
