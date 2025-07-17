@@ -52,12 +52,15 @@ struct RunSummary {
 }
 
 impl RunSummary {
-    fn try_load_results(&self, target_dir: &Path) -> Option<Result<DiffResults, Error>> {
+    fn try_load_results(&self, target_dir: &Path) -> Result<DiffResults, Error> {
         let report_path = target_dir.join(&self.results_file);
         if !report_path.exists() {
-            return None;
+            return Err(Error::ReadFile {
+                path: report_path,
+                error: std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"),
+            });
         }
-        Some(super::try_read_json(&report_path))
+        super::try_read_json(&report_path)
     }
 }
 
