@@ -84,6 +84,9 @@ fn make_html(
     };
 
     let weird_failures = format_repo_failures(repo_failures);
+    let added_and_removed = prev
+        .map(|prev| format_added_and_removed(prev, current))
+        .unwrap_or_default();
 
     let script = PreEscaped(
         "
@@ -138,6 +141,7 @@ fn make_html(
                     {a href = "#both-failures" { "both compilers" } }
                 }
                 (weird_failures)
+                (added_and_removed)
                 (detailed_report)
             }
         }
@@ -846,6 +850,53 @@ fn format_repo_failures(failures: &BTreeMap<String, String>) -> Markup {
                 }
             }
         }
+    }
+}
+
+fn format_added_and_removed(prev: &DiffResults, current: &DiffResults) -> Markup {
+    let all_prev = prev.targets().collect::<BTreeSet<_>>();
+    let all_current = current.targets().collect::<BTreeSet<_>>();
+
+    let added = all_current.difference(&all_prev).collect::<BTreeSet<_>>();
+    let removed = all_prev.difference(&all_current).collect::<BTreeSet<_>>();
+
+    let added_list = if !added.is_empty() {
+        html! {
+            h4 {"Added "(added.len()) " new targets"}
+            ul {
+                @for target in added {
+                    li {
+                        (target)
+
+                    }
+
+                }
+            }
+        }
+    } else {
+        Default::default()
+    };
+
+    let removed_list = if !removed.is_empty() {
+        html! {
+            h4 {"Lost "(removed.len()) " old targets"}
+            ul {
+                @for target in removed {
+                    li {
+                        (target)
+
+                    }
+
+                }
+            }
+        }
+    } else {
+        Default::default()
+    };
+
+    html! {
+        (added_list)
+        (removed_list)
     }
 }
 
