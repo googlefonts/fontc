@@ -2994,24 +2994,25 @@ impl Font {
     pub fn load_from_string(data: &str) -> Result<Font, Error> {
         let raw_font = RawFont::load_from_string(data)?;
         let mut font = Font::try_from(raw_font)?;
-        if font.custom_parameters.propagate_anchors.unwrap_or(true) {
-            font.propagate_all_anchors();
-        }
+        font.preprocess();
         Ok(font)
     }
 
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
         let mut font = Self::load_raw(glyphs_file)?;
+        font.preprocess();
+        Ok(font)
+    }
 
+    fn preprocess(&mut self) {
         // ensure that glyphs with components that have bracket layers
         // also have bracket layers.
-        font.align_bracket_layers();
+        self.align_bracket_layers();
 
         // propagate anchors by default unless explicitly set to false
-        if font.custom_parameters.propagate_anchors.unwrap_or(true) {
-            font.propagate_all_anchors();
+        if self.custom_parameters.propagate_anchors.unwrap_or(true) {
+            self.propagate_all_anchors();
         }
-        Ok(font)
     }
 
     /// if a glyph has components that have alternate layers, copy the layer
