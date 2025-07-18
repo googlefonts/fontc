@@ -141,6 +141,12 @@ fn get_input_sha(path: &Path) -> String {
         .to_owned()
 }
 
+impl<T, E> Results<T, E> {
+    fn targets(&self) -> impl Iterator<Item = &Target> {
+        self.success.keys().chain(self.failure.keys())
+    }
+}
+
 impl<T, E> FromIterator<(Target, RunResult<T, E>)> for Results<T, E> {
     fn from_iter<I: IntoIterator<Item = (Target, RunResult<T, E>)>>(iter: I) -> Self {
         let mut out = Results::default();
