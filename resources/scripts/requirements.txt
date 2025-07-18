@@ -57,7 +57,7 @@ compreffor==0.5.6
     # via ufo2ft
 cryptography==45.0.5
     # via pyjwt
-defcon[lxml,pens]==0.12.1
+defcon[lxml,pens]==0.12.2
     # via
     #   afdko
     #   fontparts
@@ -131,7 +131,7 @@ gitpython==3.1.44
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.11.1
+glyphslib==6.11.2
     # via
     #   -r resources/scripts/requirements.in
     #   bumpfontversion
