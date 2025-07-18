@@ -1050,7 +1050,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 fn get_kerning_at_location<'a>(
     font_info: &'a FontInfo,
     location: &NormalizedLocation,
-) -> Option<&'a BTreeMap<(String, String), OrderedFloat<f64>>> {
+) -> Option<&'a BTreeMap<(SmolStr, SmolStr), OrderedFloat<f64>>> {
     let our_id = font_info
         .master_positions
         .iter()
