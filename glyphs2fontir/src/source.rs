@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::Path,
     sync::Arc,
@@ -29,7 +30,7 @@ use glyphs_reader::{
     Font, InstanceType, Layer,
 };
 use ordered_float::OrderedFloat;
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 use write_fonts::{
     tables::{
         gasp::{GaspRange, GaspRangeBehavior},
@@ -1024,7 +1025,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 
         let bracket_glyph_map = make_bracket_glyph_map(glyph_order);
 
-        let Some(kern_pairs) = get_kerning_at_location(font_info, &self.location) else {
+        let Some(kern_pairs) = kerning_at_location(font_info, &self.location) else {
             return Ok(());
         };
 
@@ -1047,16 +1048,50 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
     }
 }
 
-fn get_kerning_at_location<'a>(
+type Kerns = BTreeMap<(SmolStr, SmolStr), OrderedFloat<f64>>;
+
+/// get the combined LTR & RTL kerns at the given location.
+///
+/// If only LTR exists, it can be borrowed directly. If RTL exists, it has to
+/// be converted into LTR.
+///
+/// see <https://github.com/googlefonts/glyphsLib/blob/682ff4b17711/Lib/glyphsLib/builder/kerning.py#L41>
+fn kerning_at_location<'a>(
     font_info: &'a FontInfo,
     location: &NormalizedLocation,
-) -> Option<&'a BTreeMap<(SmolStr, SmolStr), OrderedFloat<f64>>> {
+) -> Option<Cow<'a, Kerns>> {
     let our_id = font_info
         .master_positions
         .iter()
         .find_map(|(id, pos)| (pos == location).then_some(id))?;
+    let ltr = font_info.font.kerning_ltr.get(our_id);
+    let rtl = font_info.font.kerning_rtl.get(our_id);
+    // if there's no RTL, just return LTR, unchanged.
+    let Some(rtl) = rtl else {
+        // if there's no rtl we can just return ltr,
+        return ltr.map(Cow::Borrowed);
+    };
 
-    font_info.font.kerning_ltr.get(our_id)
+    // else we need to convert rtl to ltr.
+    // https://github.com/googlefonts/glyphsLib/blob/1d1b0be2a/Lib/glyphsLib/builder/kerning.py#L46-L54
+    let mut combined_kerns = ltr.cloned().unwrap_or_default();
+    for ((kern1, kern2), value) in rtl {
+        let kern1 = flip_class_side(kern1);
+        let kern2 = flip_class_side(kern2);
+        combined_kerns.insert((kern1, kern2), *value);
+    }
+
+    Some(Cow::Owned(combined_kerns))
+}
+
+fn flip_class_side(s: &str) -> SmolStr {
+    if let Some(ident) = s.strip_prefix(SIDE1_PREFIX) {
+        format_smolstr!("{SIDE2_PREFIX}{ident}")
+    } else if let Some(ident) = s.strip_prefix(SIDE2_PREFIX) {
+        format_smolstr!("{SIDE2_PREFIX}{ident}")
+    } else {
+        s.into()
+    }
 }
 
 // map from base glyph to bracket glyphs
@@ -2176,30 +2211,31 @@ mod tests {
         assert!(bad_kerns.is_empty(), "{bad_kerns:#?}");
     }
 
+    // helpers:
+    fn parse_side(raw: &str) -> KernSide {
+        if let Some(name) = raw.strip_prefix("@side1.") {
+            KernSide::Group(KernGroup::Side1(name.into()))
+        } else if let Some(name) = raw.strip_prefix("@side2.") {
+            KernSide::Group(KernGroup::Side2(name.into()))
+        } else {
+            KernSide::Glyph(raw.into())
+        }
+    }
+
+    fn make_kerning(
+        items: &[(&str, &str, i32)],
+    ) -> BTreeMap<(KernSide, KernSide), OrderedFloat<f64>> {
+        items
+            .iter()
+            .map(|(side1, side2, val)| {
+                ((parse_side(side1), parse_side(side2)), (*val as f64).into())
+            })
+            .collect()
+    }
+
     //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/tests/builder/builder_test.py#L2360
     #[test]
     fn expand_kerning_to_brackets() {
-        // helpers:
-        fn parse_side(raw: &str) -> KernSide {
-            if let Some(name) = raw.strip_prefix("@side1.") {
-                KernSide::Group(KernGroup::Side1(name.into()))
-            } else if let Some(name) = raw.strip_prefix("@side2.") {
-                KernSide::Group(KernGroup::Side2(name.into()))
-            } else {
-                KernSide::Glyph(raw.into())
-            }
-        }
-        fn make_kerning(
-            items: &[(&str, &str, i32)],
-        ) -> BTreeMap<(KernSide, KernSide), OrderedFloat<f64>> {
-            items
-                .iter()
-                .map(|(side1, side2, val)| {
-                    ((parse_side(side1), parse_side(side2)), (*val as f64).into())
-                })
-                .collect()
-        }
-
         // actual test:
         let (_, context) = build_kerning(glyphs2_dir().join("BracketTestFontKerning.glyphs"));
         let groups = context.kerning_groups.get();
@@ -2239,6 +2275,28 @@ mod tests {
                 ("a.BRACKET.varAlt01", "x.BRACKET.varAlt02", -100),
             ])
         );
+    }
+
+    #[test]
+    fn flip_side() {
+        assert_eq!(flip_class_side("@MMK_L_hi"), "@MMK_R_hi");
+        assert_eq!(flip_class_side("@MMK_R_hi"), "@MMK_L_hi");
+        assert_eq!(flip_class_side("not a class"), "not a class");
+    }
+
+    #[test]
+    fn combine_ltr_and_rtl_kerning() {
+        let (_, context) = build_kerning(glyphs3_dir().join("kerning_ltr_and_rtl.glyphs"));
+        let kerns = context.kerning_at.all()[0].1.clone();
+
+        assert_eq!(
+            kerns.kerns,
+            make_kerning(&[
+                ("@side1.A", "@side2.A", 40),
+                ("alef-hb", "alef-hb", 33),
+                ("alef-hb", "@side2.bet-hb", 22)
+            ])
+        )
     }
 
     #[test]

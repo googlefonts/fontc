@@ -1,0 +1,70 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+fontMaster = (
+{
+axesValues = (
+100
+);
+id = "FF2DC345-5101-49B6-97F3-57A040F7C387";
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A;
+kernLeft = A;
+kernRight = A;
+unicode = 65;
+},
+{
+glyphname = "alef-hb";
+unicode = 1488;
+},
+{
+glyphname = "bet-hb";
+kernLeft = "bet-hb";
+kernRight = "bet-hb";
+unicode = 1489;
+},
+);
+instances = (
+{
+axesValues = (
+100
+);
+instanceInterpolations = {
+"FF2DC345-5101-49B6-97F3-57A040F7C387" = 1;
+};
+name = Regular;
+}
+);
+kerningLTR = {
+"FF2DC345-5101-49B6-97F3-57A040F7C387" = {
+"@MMK_L_A" = {
+"@MMK_R_A" = 40;
+};
+"alef-hb" = {
+"alef-hb" = 33;
+};
+};
+};
+kerningRTL = {
+"FF2DC345-5101-49B6-97F3-57A040F7C387" = {
+"alef-hb" = {
+"@MMK_L_bet-hb" = 22;
+};
+};
+};
+properties = (
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 100;
+}
