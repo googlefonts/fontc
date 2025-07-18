@@ -61,6 +61,7 @@ pub struct Font {
 
     // master id => { (name or class, name or class) => adjustment }
     pub kerning_ltr: Kerning,
+    pub kerning_rtl: Kerning,
 
     pub custom_parameters: CustomParameters,
 }
@@ -529,6 +530,7 @@ struct RawFont {
     properties: Vec<RawName>,
     #[fromplist(alt_name = "kerning")]
     kerning_LTR: Kerning,
+    kerning_RTL: Kerning,
     custom_parameters: RawCustomParameters,
     numbers: Vec<NumberName>,
 }
@@ -2970,6 +2972,7 @@ impl TryFrom<RawFont> for Font {
             version_minor: from.versionMinor.unwrap_or_default() as u32,
             date: from.date,
             kerning_ltr: from.kerning_LTR,
+            kerning_rtl: from.kerning_RTL,
             custom_parameters,
         })
     }
