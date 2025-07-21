@@ -3733,7 +3733,7 @@ mod tests {
         assert_eq!(
             glyf_loca_job.read_access,
             AnyAccess::Be(Access::Unknown),
-            "GlyfLocaWorka.read_access should start with Access::Unknown"
+            "GlyfLocaWork.read_access should start with Access::Unknown"
         );
 
         // Run the whole workload hopefully without panics to prove that the dependencies

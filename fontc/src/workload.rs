@@ -401,7 +401,7 @@ impl Workload {
             let glyf_loca_job = self
                 .jobs_pending
                 .get_mut(&BeWorkIdentifier::Glyf.into())
-                .unwrap();
+                .expect("Glyf has to be pending");
             glyf_loca_job.read_access = glyf_loca_deps.build().into();
         }
 
