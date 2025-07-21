@@ -77,7 +77,7 @@ impl AnyWork {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AnyAccess {
     Be(Access<AnyWorkId>),
     Fe(Access<WorkId>),
