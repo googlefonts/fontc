@@ -85,7 +85,7 @@ impl<I: Identifier> AccessBuilder<I> {
 }
 
 /// A rule that represents whether access to something is permitted.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Access<I: Identifier> {
     /// Nothing is accessed
     None,

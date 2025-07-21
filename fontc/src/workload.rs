@@ -381,17 +381,28 @@ impl Workload {
         // When glyph order finalizes, add BE work for any new glyphs
         if let AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) = success {
             let preliminary_glyph_order = fe_root.preliminary_glyph_order.get();
-            for glyph_name in fe_root
-                .glyph_order
-                .get()
-                .difference(&preliminary_glyph_order)
-            {
+            let final_glyph_order = fe_root.glyph_order.get();
+            for glyph_name in final_glyph_order.difference(&preliminary_glyph_order) {
                 debug!("Generating a BE job for {glyph_name}");
                 self.add(create_glyf_work(glyph_name.clone()));
 
                 // Glyph order is done so all IR must be done. Copy dependencies from the IR for the same name.
                 self.update_be_glyph_work(fe_root, glyph_name.clone());
             }
+
+            // Now that we have a final glyph order we can resolve the Access::Unknown for glyf/loca
+            let mut glyf_loca_deps = AccessBuilder::<AnyWorkId>::new()
+                .variant(FeWorkIdentifier::StaticMetadata)
+                .variant(FeWorkIdentifier::GlyphOrder);
+            for glyph_name in final_glyph_order.names() {
+                glyf_loca_deps = glyf_loca_deps
+                    .specific_instance(BeWorkIdentifier::GlyfFragment(glyph_name.clone()));
+            }
+            let glyf_loca_job = self
+                .jobs_pending
+                .get_mut(&BeWorkIdentifier::Glyf.into())
+                .expect("Glyf has to be pending");
+            glyf_loca_job.read_access = glyf_loca_deps.build().into();
         }
 
         if let AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) = success {

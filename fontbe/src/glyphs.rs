@@ -806,12 +806,27 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
         WorkId::Glyf.into()
     }
 
+    /// We need to block on all `GlyfFragment`s to build glyf and loca, but the final glyph
+    /// order may not be known yet as it may be extended with e.g. a generated '.notdef'.
+    ///
+    /// A generic `variant(WorkId::ALL_GLYF_FRAGMENTS)` dependency can occasionally be racy
+    /// and lead to a panic if the `GlyfLocaWork` is started too early.
+    /// For a `variant` access type, the dependency is deemed "fullfilled" if the pending work
+    /// count drops to 0, which may occur when all the "static" glyph fragments have been
+    /// generated before the dynamic ones have yet to be scheduled.
+    ///
+    /// So here instead we use `Access::Unknown` to start in a hard block and update our
+    /// `read_access` with `specific_instance` GlyfFragments once the final `GlyphOrder`
+    /// work completes (see `fontc::workload::Workload::handle_success`).
+    ///
+    /// Also see <https://github.com/googlefonts/fontc/issues/1436>
     fn read_access(&self) -> Access<AnyWorkId> {
-        AccessBuilder::new()
-            .variant(FeWorkId::StaticMetadata)
-            .variant(FeWorkId::GlyphOrder)
-            .variant(WorkId::ALL_GLYF_FRAGMENTS)
-            .build()
+        // AccessBuilder::new()
+        //     .variant(FeWorkId::StaticMetadata)
+        //     .variant(FeWorkId::GlyphOrder)
+        //     .variant(WorkId::ALL_GLYF_FRAGMENTS)
+        //     .build()
+        Access::Unknown
     }
 
     fn write_access(&self) -> Access<AnyWorkId> {

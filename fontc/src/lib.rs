@@ -269,6 +269,7 @@ mod tests {
     };
     use fontdrasil::{
         coords::{NormalizedCoord, NormalizedLocation},
+        orchestration::Access,
         paths::string_to_filename,
         types::{GlyphName, WidthClass},
     };
@@ -313,6 +314,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::work::AnyAccess;
 
     struct TestCompile {
         /// we need to hold onto this because when it goes out of scope,
@@ -323,14 +325,12 @@ mod tests {
         fe_context: FeContext,
         be_context: BeContext,
         raw_font: Vec<u8>,
+        args: Args,
+        workload: Workload,
     }
 
     impl TestCompile {
-        fn compile_source(source: &str) -> TestCompile {
-            TestCompile::compile(source, |args| args)
-        }
-
-        fn compile(source: &str, adjust_args: impl Fn(Args) -> Args) -> TestCompile {
+        fn new(source: &str, adjust_args: impl Fn(Args) -> Args) -> TestCompile {
             let timer = JobTimer::new();
             let _ = env_logger::builder().is_test(true).try_init();
 
@@ -348,25 +348,40 @@ mod tests {
 
             let fe_context = FeContext::new_root(flags, ir_paths);
             let be_context = BeContext::new_root(flags, be_paths, &fe_context.read_only());
-            let mut result = TestCompile {
+            let source = args.source().unwrap();
+            let workload = Workload::new(&source, timer, args.skip_features).unwrap();
+
+            TestCompile {
                 _temp_dir: temp_dir,
                 build_dir,
                 work_executed: HashSet::new(),
                 fe_context,
                 be_context,
                 raw_font: Vec::new(),
-            };
+                args,
+                workload,
+            }
+        }
 
-            let source = args.source().unwrap();
-            let mut workload = Workload::new(&source, timer, args.skip_features).unwrap();
-            let completed = workload.run_for_test(&result.fe_context, &result.be_context);
+        fn run(&mut self) {
+            let completed = self
+                .workload
+                .run_for_test(&self.fe_context, &self.be_context);
 
-            result.work_executed = completed;
+            self.work_executed = completed;
 
-            write_font_file(&args, &result.be_context).unwrap();
+            write_font_file(&self.args, &self.be_context).unwrap();
 
-            result.raw_font = fs::read(result.build_dir.join("font.ttf")).unwrap();
+            self.raw_font = fs::read(self.build_dir.join("font.ttf")).unwrap();
+        }
 
+        fn compile_source(source: &str) -> TestCompile {
+            TestCompile::compile(source, |args| args)
+        }
+
+        fn compile(source: &str, adjust_args: impl Fn(Args) -> Args) -> TestCompile {
+            let mut result = Self::new(source, adjust_args);
+            result.run();
             result
         }
 
@@ -3702,5 +3717,32 @@ mod tests {
         let yen_bracket = glyphs[yen_bracket_gid.to_u32() as usize].as_ref().unwrap();
         assert_eq!(get_component_gids(yen), [peso_gid]);
         assert_eq!(get_component_gids(yen_bracket), [peso_bracket_gid]);
+    }
+
+    #[test]
+    fn glyf_loca_work_waits_for_dynamic_notdef() {
+        // https://github.com/googlefonts/fontc/issues/1436
+        let mut test = TestCompile::new("static.designspace", |args| args);
+
+        // Check that GlyfLocaWork starts with an unknown dependency, blocking it from running.
+        let glyf_loca_job = test
+            .workload
+            .jobs_pending
+            .get(&AnyWorkId::Be(BeWorkIdentifier::Glyf))
+            .expect("GlyfLocaWork should exist");
+        assert_eq!(
+            glyf_loca_job.read_access,
+            AnyAccess::Be(Access::Unknown),
+            "GlyfLocaWork.read_access should start with Access::Unknown"
+        );
+
+        // Run the whole workload hopefully without panics to prove that the dependencies
+        // for GlyfLocaWork were correctly updated.
+        test.run();
+
+        let completed = test.work_executed.iter().cloned().collect::<HashSet<_>>();
+
+        assert!(completed.contains(&AnyWorkId::Be(BeWorkIdentifier::Glyf)));
+        assert!(completed.contains(&AnyWorkId::Be(BeWorkIdentifier::Loca)));
     }
 }
