@@ -1016,7 +1016,6 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
         let arc_glyph_order = context.glyph_order.get();
         let glyph_order = arc_glyph_order.as_ref();
         let font_info = self.font_info.as_ref();
-        let font = &font_info.font;
 
         let mut kerning = KerningInstance {
             location: self.location.clone(),
@@ -1025,29 +1024,18 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 
         let bracket_glyph_map = make_bracket_glyph_map(glyph_order);
 
-        font.kerning_ltr
+        let Some(kern_pairs) = get_kerning_at_location(font_info, &self.location) else {
+            return Ok(());
+        };
+
+        kern_pairs
             .iter()
-            // Only the kerns at our location
-            .filter_map(|(master_id, kerns)| {
-                font_info
-                    .master_positions
-                    .get(master_id)
-                    .and_then(|pos| (*pos == self.location).then_some((pos, kerns)))
-            })
-            .flat_map(|(master_pos, kerns)| {
-                kerns.iter().map(|((side1, side2), adjustment)| {
-                    ((side1, side2), ((*master_pos).clone(), *adjustment))
-                })
-            })
             .filter_map(|((side1, side2), pos_adjust)| {
                 let side1 = kern_participant(glyph_order, groups, SIDE1_PREFIX, side1);
                 let side2 = kern_participant(glyph_order, groups, SIDE2_PREFIX, side2);
-                let (Some(side1), Some(side2)) = (side1, side2) else {
-                    return None;
-                };
-                Some(((side1, side2), pos_adjust))
+                side1.zip(side2).map(|side| (side, *pos_adjust))
             })
-            .flat_map(|(participants, (_, value))| {
+            .flat_map(|(participants, value)| {
                 expand_kerning_to_brackets(&bracket_glyph_map, participants, value)
             })
             .for_each(|(participants, value)| {
@@ -1057,6 +1045,18 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
         context.kerning_at.set(kerning);
         Ok(())
     }
+}
+
+fn get_kerning_at_location<'a>(
+    font_info: &'a FontInfo,
+    location: &NormalizedLocation,
+) -> Option<&'a BTreeMap<(SmolStr, SmolStr), OrderedFloat<f64>>> {
+    let our_id = font_info
+        .master_positions
+        .iter()
+        .find_map(|(id, pos)| (pos == location).then_some(id))?;
+
+    font_info.font.kerning_ltr.get(our_id)
 }
 
 // map from base glyph to bracket glyphs
