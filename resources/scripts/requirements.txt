@@ -84,7 +84,7 @@ fontmath==0.9.4
     #   mutatormath
     #   ufo2ft
     #   ufoprocessor
-fontparts==0.13.1
+fontparts==0.13.2
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
@@ -117,7 +117,7 @@ fonttools[lxml,repacker,ufo,unicode,woff]==4.59.0
     #   ufoprocessor
     #   vharfbuzz
     #   vttlib
-gflanguages==0.7.5
+gflanguages==0.7.6
     # via
     #   gftools
     #   glyphsets
@@ -131,7 +131,7 @@ gitpython==3.1.44
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.11.2
+glyphslib==6.11.3
     # via
     #   -r resources/scripts/requirements.in
     #   bumpfontversion
@@ -282,7 +282,7 @@ ufonormalizer==0.6.2
     # via afdko
 ufoprocessor==1.13.3
     # via afdko
-uharfbuzz==0.50.2
+uharfbuzz==0.51.0
     # via
     #   fonttools
     #   vharfbuzz
