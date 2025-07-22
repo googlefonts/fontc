@@ -262,6 +262,16 @@ impl KernSide {
     }
 }
 
+impl KernGroup {
+    /// Convert to the other side. Used when processing RTL kerns in glyphs.
+    pub fn flip(self) -> Self {
+        match self {
+            KernGroup::Side1(name) => KernGroup::Side2(name),
+            KernGroup::Side2(name) => KernGroup::Side1(name),
+        }
+    }
+}
+
 impl From<GlyphName> for KernSide {
     fn from(src: GlyphName) -> KernSide {
         KernSide::Glyph(src)

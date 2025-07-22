@@ -953,6 +953,8 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
 
         let mut groups = KerningGroups::default();
 
+        //https://github.com/googlefonts/glyphsLib/blob/682ff4b177/Lib/glyphsLib/builder/groups.py#L114
+        let rtl_glyphs = get_glyphs_with_rtl_kerning(font);
         // build up the kern groups; a glyph may belong to a group on either or
         // both 'side'.
         for (name, glyph) in font
@@ -961,6 +963,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             // ignore non-export glyphs
             .filter(|x| x.1.export)
         {
+            let is_rtl = rtl_glyphs.contains(name.as_str());
             // if there are bracket layers for this glyph, make sure the
             // generated glyphs are assigned the same groups as the parent
             let bracket_names = bracket_glyph_names(glyph, &font_info.axes)
@@ -968,7 +971,12 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
                 .collect::<Vec<_>>();
             let right = glyph.right_kern.clone().map(KernGroup::Side1);
             let left = glyph.left_kern.clone().map(KernGroup::Side2);
-            for group in [right, left].into_iter().flatten() {
+            let (side1, side2) = if is_rtl {
+                (right.map(KernGroup::flip), left.map(KernGroup::flip))
+            } else {
+                (right, left)
+            };
+            for group in [side1, side2].into_iter().flatten() {
                 groups.groups.entry(group).or_default().extend(
                     bracket_names
                         .iter()
@@ -996,6 +1004,59 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         context.kerning_groups.set(groups);
         Ok(())
     }
+}
+
+// https://github.com/googlefonts/glyphsLib/blob/682ff4b177115a/Lib/glyphsLib/builder/groups.py#L28
+fn get_glyphs_with_rtl_kerning(font: &Font) -> HashSet<GlyphName> {
+    let mut rtl_glyphs = HashSet::new();
+    let mut rtl_groups = HashSet::new();
+
+    let groups = just_ltr_groups(font);
+
+    for participant in font
+        .kerning_rtl
+        .iter()
+        .flat_map(|x| x.1.keys().flat_map(|k| [&k.0, &k.1]))
+    {
+        match parse_kern_group(participant) {
+            Some(group) => rtl_groups.insert(group),
+            None => rtl_glyphs.insert(GlyphName::from(participant.clone())),
+        };
+    }
+
+    for group in rtl_groups {
+        rtl_glyphs.extend(
+            groups
+                .groups
+                .get(&group)
+                .into_iter()
+                .flat_map(|x| x.iter().cloned()),
+        )
+    }
+
+    rtl_glyphs
+}
+
+// we need to know the ltr groups in order to figure out the rtl glyphs
+fn just_ltr_groups(font: &Font) -> KerningGroups {
+    let mut groups = KerningGroups::default();
+    for (name, glyph) in font
+        .glyphs
+        .iter()
+        // ignore non-export glyphs
+        .filter(|x| x.1.export)
+    {
+        let right = glyph.right_kern.clone().map(KernGroup::Side1);
+        let left = glyph.left_kern.clone().map(KernGroup::Side2);
+        for group in [right, left].into_iter().flatten() {
+            groups
+                .groups
+                .entry(group)
+                .or_default()
+                .insert(name.clone().into());
+        }
+    }
+    groups
 }
 
 impl Work<Context, WorkId, Error> for KerningInstanceWork {
@@ -1088,7 +1149,7 @@ fn flip_class_side(s: &str) -> SmolStr {
     if let Some(ident) = s.strip_prefix(SIDE1_PREFIX) {
         format_smolstr!("{SIDE2_PREFIX}{ident}")
     } else if let Some(ident) = s.strip_prefix(SIDE2_PREFIX) {
-        format_smolstr!("{SIDE2_PREFIX}{ident}")
+        format_smolstr!("{SIDE1_PREFIX}{ident}")
     } else {
         s.into()
     }
@@ -2292,9 +2353,10 @@ mod tests {
         assert_eq!(
             kerns.kerns,
             make_kerning(&[
-                ("@side1.A", "@side2.A", 40),
-                ("alef-hb", "alef-hb", 33),
-                ("alef-hb", "@side2.bet-hb", 22)
+                ("@side1.A", "@side2.B", 13),
+                ("B", "A", 19),
+                ("alef-hb", "bet-hb", 3),
+                ("@side1.bet", "@side2.alef", 29)
             ])
         )
     }
