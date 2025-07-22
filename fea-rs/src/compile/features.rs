@@ -32,7 +32,7 @@ pub(crate) struct AllFeatures {
     pub(crate) size: Option<SizeFeature>,
     pub(crate) aalt: Option<AaltFeature>,
     pub(crate) stylistic_sets: BTreeMap<Tag, Vec<NameSpec>>,
-    pub(crate) character_variants: HashMap<Tag, CvParams>,
+    pub(crate) character_variants: BTreeMap<Tag, CvParams>,
 }
 
 /// Tracking state within a feature block
