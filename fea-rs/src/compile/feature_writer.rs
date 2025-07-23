@@ -515,11 +515,21 @@ impl MergeCtx<'_> {
         // the lookups for these two features are grouped together,
         // and are inserted before whichever of them occurs first.
 
-        let marker = self
-            .insert_markers
-            .get(&DIST)
-            .or_else(|| self.insert_markers.get(&KERN))
-            .copied()
+        // if the font only actually writes `dist`, but there is a kern insertion
+        // mark, we want to ignore it.
+        let features_we_are_writing =
+            self.ext_features
+                .keys()
+                .map(|k| k.feature)
+                .fold([None, None], |[dist, kern], key| match key {
+                    KERN => [dist, Some(KERN)],
+                    DIST => [Some(DIST), kern],
+                    _ => [kern, dist],
+                });
+        let marker = features_we_are_writing
+            .into_iter()
+            .flatten()
+            .find_map(|k| self.insert_markers.get(&k).copied())
             .unwrap_or_else(|| self.insertion_point_for_append());
 
         let lookups = self.take_lookups_for_features(&[KERN, DIST]);
@@ -915,5 +925,15 @@ mod tests {
             // abvm/blwm/mark all have to go before mkmk
             [ABVM, BLWM, MARK, MKMK, KERN, DIST]
         );
+    }
+
+    #[test]
+    fn dist_feature_ignores_kern_marker() {
+        let mut external = mock_external_features(&[MARK, DIST]);
+        let markers = make_markers_with_order([KERN, MARK]);
+        let mut all = AllLookups::default();
+        let mut all_feats = AllFeatures::default();
+        external.merge_into(&mut all, &mut all_feats, &markers);
+        assert_eq!(all_feats.feature_order_for_test(), [MARK, DIST]);
     }
 }
