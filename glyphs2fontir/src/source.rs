@@ -29,6 +29,7 @@ use glyphs_reader::{
     glyphdata::{Category, Subcategory},
     Font, InstanceType, Layer,
 };
+use indexmap::IndexMap;
 use ordered_float::OrderedFloat;
 use smol_str::{format_smolstr, SmolStr};
 use write_fonts::{
@@ -599,7 +600,7 @@ fn bracket_glyphs<'a>(
     glyph: &'a glyphs_reader::Glyph,
     axes: &Axes,
 ) -> impl Iterator<Item = (ConditionSet, (GlyphName, Vec<&'a Layer>))> {
-    let mut seen_sets = HashMap::new();
+    let mut seen_sets = IndexMap::new();
     for layer in &glyph.bracket_layers {
         let condition_set = get_bracket_info(layer, axes);
         let next_alt = seen_sets.len() + 1;

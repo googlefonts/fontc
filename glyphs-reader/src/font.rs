@@ -14,6 +14,7 @@ use std::{fs, path};
 use crate::glyphdata::{Category, GlyphData, Subcategory};
 use ascii_plist_derive::FromPlist;
 use fontdrasil::types::WidthClass;
+use indexmap::{IndexMap, IndexSet};
 use kurbo::{Affine, Point, Vec2};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
@@ -3028,13 +3029,13 @@ impl Font {
         let todo = self.depth_sorted_composite_glyphs();
 
         for name in &todo {
-            let mut needed = HashMap::new();
+            let mut needed = IndexMap::new();
             let glyph = self.glyphs.get(name).unwrap();
             let my_bracket_layers = glyph
                 .bracket_layers
                 .iter()
                 .map(|l| l.bracket_info(&self.axes))
-                .collect::<HashSet<_>>();
+                .collect::<IndexSet<_>>();
             for layer in &glyph.layers {
                 for comp in layer.components() {
                     let comp_glyph = self.glyphs.get(&comp.name).unwrap();
@@ -3043,12 +3044,12 @@ impl Font {
                         .bracket_layers
                         .iter()
                         .map(|l| l.bracket_info(&self.axes))
-                        .collect::<HashSet<_>>();
+                        .collect::<IndexSet<_>>();
                     if comp_bracket_layers != my_bracket_layers {
                         let missing = comp_bracket_layers.difference(&my_bracket_layers);
                         needed
                             .entry(layer.layer_id.clone())
-                            .or_insert(HashSet::new())
+                            .or_insert(IndexSet::new())
                             .extend(missing.cloned());
                     }
                 }
@@ -3074,8 +3075,8 @@ impl Font {
                     );
                 }
 
+                let base_layer = glyph.layers.iter().find(|l| l.layer_id == master).unwrap();
                 for box_ in needed_brackets {
-                    let base_layer = glyph.layers.iter().find(|l| l.layer_id == master).unwrap();
                     log::debug!("synthesized layer {box_:?} in master {master_name} for '{name}'",);
                     let new_layer = synthesize_bracket_layer(base_layer, box_, &self.axes);
                     new_layers.push(new_layer);
