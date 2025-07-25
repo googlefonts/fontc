@@ -127,11 +127,11 @@ gftools==0.9.85
     # via -r resources/scripts/requirements.in
 gitdb==4.0.12
     # via gitpython
-gitpython==3.1.44
+gitpython==3.1.45
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.11.3
+glyphslib==6.11.4
     # via
     #   -r resources/scripts/requirements.in
     #   bumpfontversion
@@ -175,7 +175,7 @@ openstep-plist==0.5.0
     #   glyphslib
 opentype-sanitizer==9.2.0
     # via gftools
-orjson==3.11.0
+orjson==3.11.1
     # via
     #   babelfont
     #   ufolib2
@@ -187,6 +187,8 @@ pillow==11.3.0
     # via
     #   gftools
     #   nanoemoji
+platformdirs==4.3.8
+    # via youseedee
 pngquant-cli==3.0.3
     # via nanoemoji
 protobuf==3.20.3
@@ -226,7 +228,7 @@ requests==2.32.4
     #   youseedee
 resvg-cli==0.44.0
     # via nanoemoji
-rich==14.0.0
+rich==14.1.0
     # via gftools
 ruamel-yaml==0.18.14
     # via gftools
@@ -300,7 +302,7 @@ vttlib==0.12.0
     # via gftools
 wrapt==1.17.2
     # via deprecated
-youseedee==0.6.0
+youseedee==0.7.0
     # via glyphsets
 zopfli==0.2.3.post1
     # via
