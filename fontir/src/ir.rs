@@ -1529,6 +1529,12 @@ impl GlyphBuilder {
         Ok(())
     }
 
+    pub fn clear_components(&mut self) {
+        for src in self.sources.values_mut() {
+            src.components.clear();
+        }
+    }
+
     /// * see <https://github.com/googlefonts/ufo2ft/blob/b3895a96ca910c1764df016bfee4719448cfec4a/Lib/ufo2ft/outlineCompiler.py#L1666-L1694>
     pub fn new_notdef(
         default_location: NormalizedLocation,
