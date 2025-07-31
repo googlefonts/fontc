@@ -17,6 +17,27 @@ use crate::{
     Component, Font, Glyph, Layer, Shape,
 };
 
+impl fontdrasil::util::CompositeLike for Glyph {
+    fn name(&self) -> SmolStr {
+        self.name.clone()
+    }
+
+    fn has_components(&self) -> bool {
+        Glyph::has_components(self)
+    }
+
+    fn component_names(&self) -> impl Iterator<Item = SmolStr> {
+        self.layers
+            .iter()
+            .chain(self.bracket_layers.iter())
+            .flat_map(|layer| layer.shapes.iter())
+            .filter_map(|shape| match shape {
+                Shape::Path(..) => None,
+                Shape::Component(c) => Some(c.name.clone()),
+            })
+    }
+}
+
 impl Font {
     /// Copy anchors from component glyphs into their including composites
     pub fn propagate_all_anchors(&mut self) {
@@ -30,7 +51,7 @@ impl Font {
     /// That is: a glyph in the list will always occur before any other glyph that
     /// references it as a component.
     pub(crate) fn depth_sorted_composite_glyphs(&self) -> Vec<SmolStr> {
-        depth_sorted_composite_glyphs_impl(&self.glyphs)
+        fontdrasil::util::depth_sorted_composite_glyphs(&self.glyphs)
     }
 }
 
@@ -39,7 +60,7 @@ fn propagate_all_anchors_impl(glyphs: &mut BTreeMap<SmolStr, Glyph>) {
     // the reference implementation does this recursively, but we opt to
     // implement it by pre-sorting the work to ensure we always process components
     // first.
-    let todo = depth_sorted_composite_glyphs_impl(glyphs);
+    let todo = fontdrasil::util::depth_sorted_composite_glyphs(glyphs);
     let mut num_base_glyphs = HashMap::new();
     // NOTE: there's an important detail here, which is that we need to call the
     // 'anchors_traversing_components' function on each glyph, and save the returned
@@ -380,89 +401,6 @@ fn get_component_layer_anchors(
     .cloned()
 }
 
-/// returns a list of all glyphs, sorted by component depth.
-///
-/// That is: a glyph in the list will always occur before any other glyph that
-/// references it as a component.
-fn depth_sorted_composite_glyphs_impl(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolStr> {
-    // map of the maximum component depth of a glyph.
-    // - a glyph with no components has depth 0,
-    // - a glyph with a component has depth 1,
-    // - a glyph with a component that itself has a component has depth 2, etc
-
-    // For context, in a typical font most glyphs are not composites and composites are not terribly deep
-    // indeterminate_depth is initially all components then empties as we find depths for them
-    let mut indeterminate_depth = Vec::new();
-    let mut depths: HashMap<_, _> = glyphs
-        .iter()
-        .filter_map(|(name, glyph)| {
-            if glyph.has_components() {
-                indeterminate_depth.push(glyph); // maybe some of our components are components
-                None
-            } else {
-                Some((name, 0))
-            }
-        })
-        .collect();
-
-    // Progress is the number of glyphs we processed in a cycle, initially the number of simple glyphs.
-    // If we fail to make progress all that's left is glyphs with cycles or bad references
-    let mut progress = glyphs.len() - indeterminate_depth.len();
-    while progress > 0 {
-        progress = indeterminate_depth.len();
-
-        // We know the depth once every component we rely on has a depth
-        indeterminate_depth.retain(|glyph| {
-            let max_component_depth = glyph
-                .layers
-                .iter()
-                .chain(glyph.bracket_layers.iter())
-                .flat_map(|layer| layer.shapes.iter())
-                .filter_map(|shape| match shape {
-                    Shape::Path(..) => None,
-                    Shape::Component(c) => Some(&c.name),
-                })
-                .map(|name| depths.get(name).copied())
-                .try_fold(0, |acc, e| e.map(|e| acc.max(e)));
-            if let Some(max_component_depth) = max_component_depth {
-                depths.insert(&glyph.name, max_component_depth + 1);
-            }
-            max_component_depth.is_none() // retain if we don't yet have an answer
-        });
-
-        progress -= indeterminate_depth.len();
-    }
-
-    // We may have failed some of you
-    if !indeterminate_depth.is_empty() {
-        // Shouldn't we return an error instead of just dropping results?
-        for g in indeterminate_depth.iter() {
-            depths.remove(&g.name);
-        }
-
-        if log::log_enabled!(log::Level::Warn) {
-            let mut names = indeterminate_depth
-                .into_iter()
-                .map(|g| g.name.as_str())
-                .collect::<Vec<_>>();
-            names.sort();
-            log::warn!(
-                "Invalid component graph (cycles or bad refs) for {} glyphs: {:?}",
-                names.len(),
-                names
-            );
-        }
-    }
-
-    let mut by_depth = depths
-        .into_iter()
-        .map(|(glyph, depth)| (depth, glyph))
-        .collect::<Vec<_>>();
-
-    by_depth.sort();
-    by_depth.into_iter().map(|(_, name)| name.clone()).collect()
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -624,52 +562,6 @@ mod tests {
         fn eq(&self, other: &(&str, (f64, f64))) -> bool {
             self.name == other.0 && self.pos == other.1.into()
         }
-    }
-
-    #[test]
-    fn components_by_depth() {
-        fn make_glyph(name: &str, components: &[&str]) -> Glyph {
-            let mut builder = GlyphBuilder::new(name);
-            for comp in components {
-                builder.add_component(comp, (0, 0)); // pos doesn't matter for this test
-            }
-            builder.build()
-        }
-
-        let glyphs: &[(&str, &[&str])] = &[
-            ("A", &[]),
-            ("E", &[]),
-            ("acutecomb", &[]),
-            ("brevecomb", &[]),
-            ("brevecomb_acutecomb", &["acutecomb", "brevecomb"]),
-            ("AE", &["A", "E"]),
-            ("Aacute", &["A", "acutecomb"]),
-            ("Aacutebreve", &["A", "brevecomb_acutecomb"]),
-            ("AEacutebreve", &["AE", "brevecomb_acutecomb"]),
-        ];
-        let glyphs = glyphs
-            .iter()
-            .map(|(name, components)| make_glyph(name, components))
-            .map(|glyph| (glyph.name.clone(), glyph))
-            .collect();
-
-        let result = depth_sorted_composite_glyphs_impl(&glyphs);
-        let expected = [
-            "A",
-            "E",
-            "acutecomb",
-            "brevecomb",
-            "AE",
-            "Aacute",
-            "brevecomb_acutecomb",
-            "AEacutebreve",
-            "Aacutebreve",
-        ]
-        .into_iter()
-        .map(SmolStr::new)
-        .collect::<Vec<_>>();
-
-        assert_eq!(result, expected)
     }
 
     #[test]
@@ -1133,43 +1025,6 @@ mod tests {
                 assert_eq!(a1, a2, "{}", g1.name);
             }
         }
-    }
-
-    #[test]
-    fn composite_cycle() {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let glyphs = GlyphSetBuilder::new()
-            .add_glyph("A", |glyph| {
-                glyph.add_component("B", (0, 0));
-            })
-            .add_glyph("B", |glyph| {
-                glyph.add_component("A", (0, 0));
-            })
-            .build();
-        // all we actually care about is that this doesn't run forever
-        let sorted = depth_sorted_composite_glyphs_impl(&glyphs);
-        // cycles should be dropped
-        assert!(sorted.is_empty())
-    }
-
-    #[test]
-    fn composite_not_a_cycle() {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let glyphs = GlyphSetBuilder::new()
-            .add_glyph("A", |_glyph| {})
-            .add_glyph("B", |glyph| {
-                glyph.add_component("A", (0, 0)).add_component("D", (0, 0));
-            })
-            .add_glyph("C", |_glyph| {})
-            .add_glyph("D", |glyph| {
-                glyph.add_component("E", (0, 0));
-            })
-            .add_glyph("E", |glyph| {
-                glyph.add_component("C", (0, -180));
-            })
-            .build();
-        let sorted = depth_sorted_composite_glyphs_impl(&glyphs);
-        assert_eq!(sorted, ["A", "C", "E", "D", "B"]);
     }
 
     #[test]
