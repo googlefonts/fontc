@@ -4,7 +4,7 @@
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -16,6 +16,7 @@ use fontdrasil::{
 use kurbo::Affine;
 use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
+use smol_str::SmolStr;
 use write_fonts::types::GlyphId16;
 
 use crate::{
@@ -62,9 +63,7 @@ fn name_for_derivative(base_name: &GlyphName, names_in_use: &GlyphOrder) -> Glyp
 fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Glyph), BadGlyph> {
     // Make a simple glyph by erasing the components from it
     let mut simple_glyph = GlyphBuilder::from(original.clone());
-    simple_glyph.sources.iter_mut().for_each(|(_, inst)| {
-        inst.components.clear();
-    });
+    simple_glyph.clear_components();
     simple_glyph.codepoints.clear();
 
     // Find a free name for the contour glyph
@@ -219,17 +218,108 @@ fn resolve_inconsistencies(
     Ok(())
 }
 
+impl fontdrasil::util::CompositeLike for &Glyph {
+    fn name(&self) -> smol_str::SmolStr {
+        self.name.clone().into_inner()
+    }
+
+    fn has_components(&self) -> bool {
+        Glyph::component_names(self).next().is_some()
+    }
+
+    fn component_names(&self) -> impl Iterator<Item = smol_str::SmolStr> {
+        Glyph::component_names(self).map(|name| name.clone().into_inner())
+    }
+}
+
+/// Equivalent to 'SkipExportGlyphsFilter' in pythonland:
+///
+// See <https://github.com/googlefonts/ufo2ft/blob/98e8916a/Lib/ufo2ft/filters/skipExportGlyphs.py#L29>
+///
+/// in python this is handled via the decomposeCompositeGlyph filter, which takes
+/// a bunch of options.
+///
+/// It seemed simpler to me to just have this be a little standalone fn with
+/// limited scope.
+fn flatten_all_non_export_components(context: &Context) {
+    let glyphs = context.glyphs.all();
+    let glyphs = glyphs
+        .iter()
+        .map(|g| (g.1.name.clone().into_inner(), g.1.as_ref()))
+        .collect();
+
+    // instead of tracking a chain of affines, we will just process the glyphs
+    // in composite order.
+    let depth_first = fontdrasil::util::depth_sorted_composite_glyphs(&glyphs);
+
+    for glyph_name in depth_first {
+        let glyph = glyphs.get(&glyph_name).unwrap();
+        if glyph_has_non_export_components(glyph, &glyphs) {
+            let new_glyph = flatten_non_export_components_for_glyph(context, glyph);
+            context.glyphs.set(new_glyph);
+        }
+    }
+}
+
+/// Return a new glyph with any non-export components inlined.
+fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> Glyph {
+    let mut builder = GlyphBuilder::from(glyph.clone());
+    builder.clear_components();
+    for (loc, instance) in glyph.sources() {
+        let mut new_instance = instance.clone();
+        new_instance.components.clear();
+
+        for component in &instance.components {
+            let id = WorkId::Glyph(component.base.clone());
+            let referenced_glyph = context.glyphs.get(&id);
+            //let referenced_glyph = glyphs.get(comp.base.as_str()).unwrap();
+            if referenced_glyph.emit_to_binary {
+                new_instance.components.push(component.clone());
+                continue;
+            }
+
+            // okay so now we have a component that is not going to be exported,
+            // and we need to flatten.
+            let xform = component.transform;
+            let Some(referenced_instance) = referenced_glyph.sources().get(loc) else {
+                continue;
+            };
+
+            for mut referenced_component in referenced_instance.components.iter().cloned() {
+                referenced_component.transform = xform * referenced_component.transform;
+                new_instance.components.push(referenced_component);
+            }
+
+            for mut contour in referenced_instance.contours.iter().cloned() {
+                contour.apply_affine(xform);
+
+                // See https://github.com/googlefonts/ufo2ft/blob/dd738cdc/Lib/ufo2ft/util.py#L205
+                if xform.determinant() < 0.0 {
+                    contour = contour.reverse_subpaths();
+                }
+                new_instance.contours.push(contour);
+            }
+        }
+        builder.sources.insert(loc.clone(), new_instance);
+    }
+    // unwrap is okay because all used locations are from previously validated glyph
+    builder.build().unwrap()
+}
+
+fn glyph_has_non_export_components(glyph: &Glyph, glyphs: &BTreeMap<SmolStr, &Glyph>) -> bool {
+    glyph
+        .component_names()
+        .any(|name| !glyphs.get(name.as_str()).unwrap().emit_to_binary)
+}
+
 /// Convert a glyph with contours and components to a contour-only, aka simple, glyph
 ///
 /// At time of writing we only support this if every instance uses the same set of components.
 ///
-/// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L165>
+/// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcd/Lib/ufo2ft/util.py#L165>
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), BadGlyph> {
     let mut simple = GlyphBuilder::from(original.clone());
-    simple
-        .sources
-        .iter_mut()
-        .for_each(|(_, inst)| inst.components.clear());
+    simple.clear_components();
 
     // Component until you can't component no more
     let mut frontier: VecDeque<_> = components(original, Affine::IDENTITY);
@@ -469,6 +559,14 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // We should now have access to *all* the glyph IR
         // Some of it may need to be massaged to produce BE glyphs
         // In particular, glyphs with both paths and components need to push the path into a component
+        // preflght: lets remove component references to non-export glyphs.
+        // In python this happens during preprocessing
+        // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/preProcessor.py#L92)
+        // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/util.py#L112)
+
+        flatten_all_non_export_components(context);
+
+        // then generate the final glyph order and do final glyph processing
         let arc_current = context.preliminary_glyph_order.get();
         let current_glyph_order = &*arc_current;
         let original_glyphs: HashMap<_, _> = current_glyph_order
@@ -568,7 +666,7 @@ mod tests {
     use std::{collections::HashSet, path::Path};
 
     use fontdrasil::{orchestration::Access, types::GlyphName};
-    use kurbo::{Affine, BezPath};
+    use kurbo::{Affine, BezPath, Rect, Shape};
 
     use crate::{
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
@@ -1056,8 +1154,52 @@ mod tests {
         assert_is_flattened_component(&context, test_data.deep_component.name);
     }
 
+    trait AffineLike {
+        fn to_affine(self) -> Affine;
+    }
+
+    impl AffineLike for Affine {
+        fn to_affine(self) -> Affine {
+            self
+        }
+    }
+
+    impl AffineLike for (i16, i16) {
+        fn to_affine(self) -> Affine {
+            Affine::translate((self.0 as f64, self.1 as f64))
+        }
+    }
+
     #[derive(Default)]
-    struct GlyphOrderBuilder(Vec<Arc<Glyph>>);
+    struct GlyphOrderBuilder(Vec<Glyph>);
+
+    #[derive(Debug)]
+    struct TestGlyph(Glyph);
+
+    impl TestGlyph {
+        fn emit_to_binary(&mut self, emit: bool) -> &mut Self {
+            self.0.emit_to_binary = emit;
+            self
+        }
+
+        fn default_instance_mut(&mut self) -> &mut GlyphInstance {
+            self.0.sources_mut().next().unwrap().1
+        }
+
+        fn add_contour(&mut self, path: BezPath) -> &mut Self {
+            self.default_instance_mut().contours.push(path);
+            self
+        }
+
+        fn add_component(&mut self, name: &str, xform: impl AffineLike) -> &mut Self {
+            let component = Component {
+                base: name.into(),
+                transform: xform.to_affine(),
+            };
+            self.default_instance_mut().components.push(component);
+            self
+        }
+    }
 
     impl GlyphOrderBuilder {
         fn add_glyph<const N: usize>(&mut self, name: &str, components: [&str; N]) {
@@ -1079,7 +1221,34 @@ mod tests {
                 HashMap::from([(loc, instance)]),
             )
             .unwrap();
-            self.0.push(Arc::new(glyph))
+            self.0.push(glyph)
+        }
+
+        // gives more control over things like component transforms
+        fn add_glyph_fancy(&mut self, name: &str, mut build_fn: impl FnMut(&mut TestGlyph)) {
+            let pos = NormalizedLocation::for_pos(&[("axis", 0.0)]);
+            let instance = GlyphInstance::default();
+            let glyph = Glyph::new(
+                name.into(),
+                true,
+                Default::default(),
+                [(pos, instance)].into(),
+            )
+            .unwrap();
+            let mut gbuilder = TestGlyph(glyph);
+            build_fn(&mut gbuilder);
+            self.0.push(gbuilder.0);
+        }
+
+        /// Make a `Context` containing these glyphs.
+        ///
+        /// This assumes that all referenced glyphs exist etc.
+        fn into_context(self) -> Context {
+            let context = test_context();
+            for glyph in self.0 {
+                context.glyphs.set(glyph);
+            }
+            context
         }
     }
 
@@ -1095,7 +1264,7 @@ mod tests {
         let mut order: GlyphOrder = builder.0.iter().map(|g| g.name.clone()).collect();
         let context = test_context();
         for glyph in builder.0.iter() {
-            context.glyphs.set((**glyph).clone());
+            context.glyphs.set(glyph.clone());
             for component_name in glyph.component_names() {
                 if order.contains(component_name) {
                     continue;
@@ -1107,7 +1276,7 @@ mod tests {
         let todo = builder
             .0
             .into_iter()
-            .map(|g| (GlyphOp::ConvertToContour, g))
+            .map(|g| (GlyphOp::ConvertToContour, g.into()))
             .collect();
 
         let mut fix_order = Vec::new();
@@ -1119,5 +1288,95 @@ mod tests {
         .unwrap();
 
         assert_eq!(fix_order, ["b", "d", "e", "c", "a"]);
+    }
+
+    fn simple_square_path() -> BezPath {
+        let mut path = BezPath::new();
+        path.move_to((-5., -5.));
+        path.line_to((-5., 5.));
+        path.line_to((5., 5.));
+        path.line_to((5., -5.));
+        path.line_to((-5., -5.));
+        path
+    }
+
+    #[test]
+    fn non_export_component_simple() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.emit_to_binary(false);
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.add_component("a", (20, 20));
+        });
+
+        let context = builder.into_context();
+        flatten_all_non_export_components(&context);
+
+        let b = context.get_glyph("b");
+
+        let instance = b.default_instance();
+        assert!(instance.components.is_empty());
+
+        assert_eq!(instance.contours.len(), 1);
+        let contour = &instance.contours[0];
+        // simple square path, transformed by (20x, 20y)
+        assert_eq!(contour.bounding_box(), Rect::new(15., 15., 25., 25.));
+    }
+
+    #[test]
+    fn non_export_component_nested() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.add_component("a", (20, 20));
+            b.emit_to_binary(false);
+        });
+        builder.add_glyph_fancy("c", |b| {
+            b.add_component("b", (9, -7));
+        });
+
+        let context = builder.into_context();
+        flatten_all_non_export_components(&context);
+        let c = context.get_glyph("c");
+
+        let instance = c.default_instance();
+        assert!(instance.contours.is_empty());
+        assert_eq!(instance.components.len(), 1);
+
+        let comp = &instance.components[0];
+
+        assert_eq!(comp.base, "a");
+        assert_eq!(comp.transform, Affine::translate((29., 13.)));
+    }
+
+    #[test]
+    fn non_export_needs_reverse_contour() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.emit_to_binary(false);
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.add_component("a", Affine::scale_non_uniform(-1.0, 1.0));
+        });
+
+        let context = builder.into_context();
+        flatten_all_non_export_components(&context);
+
+        let b = context.get_glyph("b");
+
+        let instance = b.default_instance();
+        assert!(instance.components.is_empty());
+
+        assert_eq!(instance.contours.len(), 1);
+        let contour = &instance.contours[0];
+        let expected =
+            (Affine::scale_non_uniform(-1., 1.) * simple_square_path()).reverse_subpaths();
+
+        assert_eq!(contour, &expected);
     }
 }
