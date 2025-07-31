@@ -2221,8 +2221,11 @@ impl UserToDesignMapping {
         };
         let mut result = Self(result);
         if incomplete_mapping {
+            //https://github.com/googlefonts/glyphsLib/blob/682ff4b17/Lib/glyphsLib/builder/axes.py#L251
             result.add_instance_mappings_if_new(instances);
-            result.add_master_mappings_if_new(from);
+            if result.0.is_empty() || result.0.values().all(|v| v.is_identity()) {
+                result.add_master_mappings_if_new(from);
+            }
         }
         result
     }
@@ -4658,6 +4661,27 @@ mod tests {
                 (OrderedFloat(200f64), OrderedFloat(42f64)),
                 (OrderedFloat(700.), OrderedFloat(125.)),
                 (OrderedFloat(1000.), OrderedFloat(208.))
+            ]
+        )
+    }
+
+    #[test]
+    fn glyphs2_avoid_adding_mapping_from_master() {
+        // this source has a master which does not correspond to an instance,
+        // but the instances provide a valid non-identity mapping; we should
+        // avoid adding the mapping from the master.
+
+        let font = Font::load(&glyphs2_dir().join("master_missing_from_instances.glyphs")).unwrap();
+
+        let mapping = &font.axis_mappings.0.get("Weight").unwrap().0;
+        assert_eq!(
+            mapping.as_slice(),
+            &[
+                (OrderedFloat(100f64), OrderedFloat(20f64)),
+                (OrderedFloat(300.), OrderedFloat(50.)),
+                (OrderedFloat(400.), OrderedFloat(71.)),
+                (OrderedFloat(700.), OrderedFloat(156.)),
+                (OrderedFloat(900.), OrderedFloat(226.)),
             ]
         )
     }
