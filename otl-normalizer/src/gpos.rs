@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::{Debug, Display},
     io,
 };
@@ -21,9 +21,11 @@ use crate::{
     common::{self, DeviceOrDeltas, GlyphSet, Lookup, PrintNames, SingleRule},
     error::Error,
     glyph_names::NameMap,
+    gpos::cursive::CursivePosRule,
     variations::DeltaComputer,
 };
 
+mod cursive;
 mod marks;
 mod pairpos;
 
@@ -66,11 +68,13 @@ pub fn print(
         let markmark = lookup_rules.markmark_rules(&sys.lookups);
         let markbase = lookup_rules.markbase_rules(&sys.lookups);
         let markliga = lookup_rules.markliga_rules(&sys.lookups);
+        let cursive = lookup_rules.cursive_rules(&sys.lookups);
 
         print_rules(f, "PairPos", &pairpos, names, mark_glyph_sets.as_ref())?;
         print_rules(f, "MarkToBase", &markbase, names, mark_glyph_sets.as_ref())?;
         print_rules(f, "MarkToMark", &markmark, names, mark_glyph_sets.as_ref())?;
         print_rules(f, "MarkToLig", &markliga, names, mark_glyph_sets.as_ref())?;
+        print_rules(f, "CursivePos", &cursive, names, mark_glyph_sets.as_ref())?;
     }
 
     Ok(())
@@ -251,6 +255,7 @@ struct LookupRules {
     markbase: Vec<Lookup<MarkAttachmentRule>>,
     markmark: Vec<Lookup<MarkAttachmentRule>>,
     markliga: Vec<Lookup<MarkAttachmentRule>>,
+    cursive: Vec<Lookup<CursivePosRule>>,
     // decomposed rules for each lookup, in lookup order
 }
 
@@ -333,6 +338,20 @@ impl LookupRules {
             .filter(|lookup| lookups.contains(&lookup.lookup_id))
             .collect::<Vec<_>>();
         normalize_mark_lookups(&lookups)
+    }
+
+    fn cursive_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, CursivePosRule>> {
+        // this seems to just be a "last writer wins" situation (via behdad, in chat)?
+        let mut rules = BTreeMap::new();
+        for rule in self
+            .cursive
+            .iter()
+            .filter(|lookup| lookups.contains(&lookup.lookup_id))
+            .flat_map(Lookup::iter)
+        {
+            rules.insert((rule.rule().glyph, rule.lookup_flags()), rule);
+        }
+        rules.into_values().collect()
     }
 }
 
@@ -434,6 +453,13 @@ fn get_lookup_rules(
                 let rules = marks::get_mark_liga_rules(&subs, delta_computer).unwrap();
                 result
                     .markliga
+                    .push(Lookup::new(id, rules, flag, mark_filter_id));
+            }
+            PositionSubtables::Cursive(subs) => {
+                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
+                let rules = cursive::get_cursive_rules(&subs, delta_computer).unwrap();
+                result
+                    .cursive
                     .push(Lookup::new(id, rules, flag, mark_filter_id));
             }
             _ => (),
