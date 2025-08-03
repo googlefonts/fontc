@@ -2508,7 +2508,7 @@ mod tests {
     }
 
     fn unique_value(metrics: &GlobalMetrics, metric: GlobalMetric) -> f64 {
-        let values = metrics.values(metric);
+        let values = metrics.deltas(metric);
         assert_eq!(1, values.len(), "Too many {metric:?} values: {values:?}");
         // TODO: Is default region?
 

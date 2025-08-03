@@ -2738,7 +2738,7 @@ mod tests {
             .fe_context
             .global_metrics
             .get()
-            .values(GlobalMetric::StrikeoutSize)
+            .deltas(GlobalMetric::StrikeoutSize)
             .clone();
 
         let mut light = VariationRegion::default();

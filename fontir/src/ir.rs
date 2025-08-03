@@ -288,17 +288,21 @@ impl From<KernGroup> for KernSide {
     }
 }
 
+/// Used to construct a global metrics variation space [GlobalMetrics], from
+/// known metrics values at individual locations.
+///
+/// At a minimum, metric values must be defined at the default location.
 #[derive(Default, Debug)]
 pub struct GlobalMetricsBuilder(
     HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f64>>>,
 );
 
-/// Global metrics. Ascender/descender, cap height, etc.
+/// Interpolatable global metrics variation space, including ascender/descender,
+/// cap height, etc.
 ///
-/// Represents the values of these metrics at a specific position in design space.
-/// At a minimum should be defined at the default location.
+/// This type is constructed by [GlobalMetricsBuilder].
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct GlobalMetrics(HashMap<GlobalMetric, GlobalMetricValues>);
+pub struct GlobalMetrics(HashMap<GlobalMetric, GlobalMetricDeltas>);
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GlobalMetric {
@@ -394,11 +398,12 @@ fn adjust_offset(offset: f64, angle: f64) -> f64 {
     }
 }
 
-/// Map of values associated with a given global metric at various locations.
-pub type GlobalMetricValues = Vec<(VariationRegion, Vec<f64>)>;
+/// Map of deltas associated with a given global metric across regions.
+pub type GlobalMetricDeltas = Vec<(VariationRegion, Vec<f64>)>;
 
 impl GlobalMetricsBuilder {
-    /// Creates a new, empty, [GlobalMetricsBuilder]
+    /// Creates an empty [GlobalMetricsBuilder], to furnish with metrics data
+    /// and build.
     pub fn new() -> Self {
         Default::default()
     }
@@ -532,6 +537,8 @@ impl GlobalMetricsBuilder {
         self.0.entry(metric).or_default()
     }
 
+    /// Specify the value of a metric at a specific location. If there is an
+    /// existing value, it will be overwritten.
     pub fn set(
         &mut self,
         metric: GlobalMetric,
@@ -541,6 +548,8 @@ impl GlobalMetricsBuilder {
         self.values_mut(metric).insert(pos, value.into());
     }
 
+    /// Specify the value of a metric at a specific location, but only if there
+    /// is not one already provided. Returns the winning value.
     pub fn set_if_absent(
         &mut self,
         metric: GlobalMetric,
@@ -550,6 +559,9 @@ impl GlobalMetricsBuilder {
         *self.values_mut(metric).entry(pos).or_insert(value.into())
     }
 
+    /// Specify the value of a metric at a specific location, if we have one;
+    /// this is a helper build method to reduce boilerplate. If there is an
+    /// existing value, it will be overwritten.
     pub fn set_if_some(
         &mut self,
         metric: GlobalMetric,
@@ -561,6 +573,11 @@ impl GlobalMetricsBuilder {
         }
     }
 
+    /// Finalise and build [GlobalMetrics].
+    ///
+    /// This function will error if the ingredients provided were insufficient
+    /// or inconsistent to cook up a variation space (e.g. missing value at the
+    /// default location, axis unsuitable for variation).
     pub fn build(self, axes: &Axes) -> Result<GlobalMetrics, Error> {
         let deltas = self
             .0
@@ -589,13 +606,18 @@ impl GlobalMetricsBuilder {
 }
 
 impl GlobalMetrics {
-    pub fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
+    /// Access the raw deltas for a particular metric. This lower level of
+    /// access is useful for interpolating the value at an invididual positition
+    /// manually, and testing.
+    pub fn deltas(&self, metric: GlobalMetric) -> &GlobalMetricDeltas {
         // We presume that ctor initializes for every GlobalMetric
         self.0.get(&metric).unwrap()
     }
 
+    /// Get the explicit or interpolated value for a particular metric at a
+    /// given location.
     pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f64> {
-        let deltas = self.values(metric);
+        let deltas = self.deltas(metric);
 
         VariationModel::interpolate_from_deltas(pos, deltas)
             .iter()
@@ -603,6 +625,8 @@ impl GlobalMetrics {
             .sum()
     }
 
+    /// Get the explicit or interpolated value of every metric at a given
+    /// location.
     pub fn at(&self, pos: &NormalizedLocation) -> GlobalMetricsInstance {
         GlobalMetricsInstance {
             pos: pos.clone(),
@@ -642,7 +666,9 @@ impl GlobalMetrics {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&GlobalMetric, &GlobalMetricValues)> + '_ {
+    /// Access the raw deltas for every metric. This lower level of access is
+    /// most useful for serialising the variation spaces.
+    pub fn iter(&self) -> impl Iterator<Item = (&GlobalMetric, &GlobalMetricDeltas)> + '_ {
         self.0.iter()
     }
 }

@@ -9,7 +9,7 @@ use fontdrasil::{
     types::Axes,
 };
 use fontir::{
-    ir::GlobalMetricValues, orchestration::WorkId as FeWorkId, variations::VariationModel,
+    ir::GlobalMetricDeltas, orchestration::WorkId as FeWorkId, variations::VariationModel,
 };
 use write_fonts::types::MajorMinor;
 use write_fonts::{
@@ -50,14 +50,14 @@ impl MvarBuilder {
         }
     }
 
-    fn add_sources(&mut self, mvar_tag: Tag, sources: &GlobalMetricValues) {
-        if sources.len() == 1 {
-            let (region, _) = sources.first().unwrap();
+    fn add_deltas(&mut self, mvar_tag: Tag, deltas: &GlobalMetricDeltas) {
+        if deltas.len() == 1 {
+            let (region, _) = deltas.first().unwrap();
             assert!(region.is_default());
             // spare the model the work of encoding no-op deltas
             return;
         }
-        let deltas: Vec<_> = sources
+        let deltas: Vec<_> = deltas
             .iter()
             .filter_map(|(region, values)| {
                 if region.is_default() {
@@ -125,11 +125,11 @@ impl Work<Context, AnyWorkId, Error> for MvarWork {
         let var_model = &static_metadata.variation_model;
 
         let mut mvar_builder = MvarBuilder::new(var_model.clone());
-        for (metric, values) in metrics.iter() {
+        for (metric, deltas) in metrics.iter() {
             // some of the GlobalMetric variants are not MVAR-relevant, e.g.
             // hhea ascender/descender/lineGap so we just skip those
             if let Some(mvar_tag) = metric.mvar_tag() {
-                mvar_builder.add_sources(mvar_tag, values);
+                mvar_builder.add_deltas(mvar_tag, deltas);
             }
         }
         if let Some(mvar) = mvar_builder.build() {
@@ -182,9 +182,9 @@ mod tests {
             .unwrap()
     }
 
-    fn add_sources(builder: &mut MvarBuilder, metrics: GlobalMetrics) {
+    fn add_deltas(builder: &mut MvarBuilder, metrics: GlobalMetrics) {
         metrics.iter().for_each(|(metric, values)| {
-            builder.add_sources(metric.mvar_tag().unwrap(), values);
+            builder.add_deltas(metric.mvar_tag().unwrap(), values);
         });
     }
 
@@ -205,7 +205,7 @@ mod tests {
             &[(GlobalMetric::XHeight, &[(&regular, 500.0), (&bold, 550.0)])],
             &axes.into(),
         );
-        add_sources(&mut builder, metrics);
+        add_deltas(&mut builder, metrics);
 
         let Some(mvar) = builder.build() else {
             panic!("no MVAR?!");
@@ -251,7 +251,7 @@ mod tests {
             ],
             &axes.into(),
         );
-        add_sources(&mut builder, metrics);
+        add_deltas(&mut builder, metrics);
 
         // hence no MVAR needed
         assert!(builder.build().is_none());
@@ -299,7 +299,7 @@ mod tests {
             ],
             &axes.into(),
         );
-        add_sources(&mut builder, metrics);
+        add_deltas(&mut builder, metrics);
 
         let Some(mvar) = builder.build() else {
             panic!("no MVAR?!");
