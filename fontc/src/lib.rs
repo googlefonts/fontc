@@ -2755,10 +2755,18 @@ mod tests {
         );
 
         // Light has an explicit 40, everything else uses 42.
-        // TODO: Deterministic order?
+        assert_eq!(strikeout_variation.len(), 2);
         assert_eq!(
-            vec![(light, vec![40.0]), (elsewhere, vec![2.0])],
             strikeout_variation
+                .iter()
+                .find_map(|(region, deltas)| (*region == light).then_some(deltas)),
+            Some(&vec![40.0])
+        );
+        assert_eq!(
+            strikeout_variation
+                .iter()
+                .find_map(|(region, deltas)| (*region == elsewhere).then_some(deltas)),
+            Some(&vec![2.0])
         );
     }
 
