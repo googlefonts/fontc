@@ -65,13 +65,36 @@ xHeight = 500;
 );
 instances = (
 {
+interpolationWeight = 300;
+instanceInterpolations = {
+"A7771C0D-4005-44AE-9B1F-ED6CCEC719DA" = 1;
+};
+name = Light;
+weightClass = Light;
+},
+{
+interpolationWeight = 400;
+instanceInterpolations = {
+m01 = 1;
+};
+name = Regular;
+weightClass = Regular;
+},
+{
 interpolationWeight = 600;
 instanceInterpolations = {
-"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 0.66667;
-m01 = 0.33333;
+"A7771C0D-4005-44AE-9B1F-ED6CCEC719DA" = 1;
 };
 name = Medium;
 weightClass = Medium;
+},
+{
+interpolationWeight = 700;
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 1;
+};
+name = Bold;
+weightClass = Bold;
 }
 );
 unitsPerEm = 1000;

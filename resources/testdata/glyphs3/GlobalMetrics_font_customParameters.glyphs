@@ -156,6 +156,16 @@ unicode = 32;
 instances = (
 {
 axesValues = (
+0
+);
+instanceInterpolations = {
+"0CAB57D4-4FC4-49C3-B456-FB7666EAA712" = 1;
+};
+name = ExtraLight;
+weightClass = 0;
+},
+{
+axesValues = (
 368
 );
 customParameters = (
@@ -174,6 +184,16 @@ instanceInterpolations = {
 "42B3044F-4D5A-45CA-9EB7-C1889731596B" = 0.368;
 };
 name = Regular;
+},
+{
+axesValues = (
+1000
+);
+instanceInterpolations = {
+"42B3044F-4D5A-45CA-9EB7-C1889731596B" = 1;
+};
+name = Black;
+weightClass = 1000;
 }
 );
 metrics = (
