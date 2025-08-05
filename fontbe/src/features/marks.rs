@@ -28,6 +28,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
+    features::properties::ScriptDirection,
     orchestration::{
         AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsMarks, MarkLookups, WorkId,
     },
@@ -569,47 +570,61 @@ impl<'a> MarkLookupBuilder<'a> {
         groups
     }
 
+    //https://github.com/googlefonts/ufo2ft/blob/98e8916a86/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L40
     fn make_cursive_lookups(&self) -> Result<Vec<PendingLookup<CursivePosBuilder>>, Error> {
-        let mut builder = CursivePosBuilder::default();
-        let flags = LookupFlag::IGNORE_MARKS | LookupFlag::RIGHT_TO_LEFT;
-        let mut entries = BTreeMap::new();
-        let mut affected_glyphs = BTreeSet::new();
-        let mut exits = BTreeMap::new();
+        let dir_glyphs = super::properties::glyphs_by_script_direction(
+            &self.char_map,
+            self.fea_first_pass.gsub().as_ref(),
+        )?;
 
+        let mut ltr_builder = CursivePosBuilder::default();
+        let mut rtl_builder = CursivePosBuilder::default();
+
+        let ltr_glyphs = dir_glyphs.get(&ScriptDirection::LeftToRight);
         for (gid, anchors) in &self.anchor_lists {
-            for anchor in anchors {
-                match anchor.kind {
-                    AnchorKind::CursiveEntry => {
-                        entries.insert(*gid, anchor);
-                        affected_glyphs.insert(*gid);
-                    }
-                    AnchorKind::CursiveExit => {
-                        exits.insert(*gid, anchor);
-                        affected_glyphs.insert(*gid);
-                    }
-                    _ => {}
-                }
+            //TODO: support non-standard entry anchor names, see
+            // https://github.com/googlefonts/ufo2ft/blob/98e8916a86/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L22
+            let Some((entry, exit)) = get_entry_and_exit(anchors) else {
+                continue;
+            };
+            let entry = entry
+                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
+                .transpose()
+                .map_err(|e| self.convert_delta_error(e, *gid))?;
+            let exit = exit
+                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
+                .transpose()
+                .map_err(|e| self.convert_delta_error(e, *gid))?;
+
+            // LTR only if explicit member of group, else RTL:
+            // https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L76
+            if ltr_glyphs
+                .map(|glyphs| glyphs.contains(*gid))
+                .unwrap_or(false)
+            {
+                ltr_builder.insert(*gid, entry, exit);
+            } else {
+                rtl_builder.insert(*gid, entry, exit);
             }
         }
-        if affected_glyphs.is_empty() {
-            return Ok(vec![]);
+
+        let mut result = Vec::new();
+        if !ltr_builder.is_empty() {
+            result.push(PendingLookup::new(
+                vec![ltr_builder],
+                LookupFlag::IGNORE_MARKS,
+                None,
+            ));
         }
-        for gid in affected_glyphs {
-            let entry_anchor = entries
-                .get(&gid)
-                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
-                .transpose()
-                .map_err(|e| self.convert_delta_error(e, gid))?;
-            let exit_anchor = exits
-                .get(&gid)
-                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
-                .transpose()
-                .map_err(|e| self.convert_delta_error(e, gid))?;
-            builder.insert(gid, entry_anchor, exit_anchor);
+        if !rtl_builder.is_empty() {
+            result.push(PendingLookup::new(
+                vec![rtl_builder],
+                LookupFlag::IGNORE_MARKS | LookupFlag::RIGHT_TO_LEFT,
+                None,
+            ));
         }
-        // In the future we might to do an LTR/RTL split, but for now return a
-        // vector with one element.
-        Ok(vec![PendingLookup::new(vec![builder], flags, None)])
+
+        Ok(result)
     }
 
     fn convert_delta_error(&self, err: DeltaError, gid: GlyphId16) -> Error {
@@ -787,6 +802,24 @@ fn find_mark_glyphs(
         })
         .map(|(name, _)| name.to_owned())
         .collect()
+}
+
+// if either 'entry' or 'exit' is present, will return `Some`
+fn get_entry_and_exit<'a>(
+    anchors: &'a [&'a Anchor],
+) -> Option<(Option<&'a ir::Anchor>, Option<&'a ir::Anchor>)> {
+    let mut entry = None;
+    let mut exit = None;
+
+    for anchor in anchors {
+        match anchor.kind {
+            AnchorKind::CursiveEntry => entry = Some(*anchor),
+            AnchorKind::CursiveExit => exit = Some(*anchor),
+            _ => (),
+        }
+    }
+
+    (entry.is_some() || exit.is_some()).then_some((entry, exit))
 }
 
 fn resolve_anchor(
@@ -1032,6 +1065,7 @@ mod tests {
             ("f_i", '\u{FB01}'),
             ("f_l", '\u{FB02}'),
             ("f_i_i", '\u{FB03}'),
+            ("hamza", '\u{0621}'),
             ("dottedCircle", '\u{25CC}'),
             ("nukta-kannada", '\u{0CBC}'),
             ("candrabindu-kannada", '\u{0C81}'),
@@ -1976,6 +2010,36 @@ mod tests {
                 @(x: 218 {265,282}, y: 704 {707,708}) acutecomb
                 ordfeminine @(x: 283 {290,292}, y: 691 {690,690})
                 @(x: 218 {265,282}, y: 704 {707,708}) acutecomb
+            "#
+        );
+    }
+
+    #[test]
+    fn cursive_rtl_and_ltr() {
+        let out = MarksInput::default()
+            .add_glyph("a", None, |anchors| {
+                anchors.add("entry", [(10., 10.)]).add("exit", [(10., 60.)]);
+            })
+            .add_glyph("hamza", None, |anchors| {
+                anchors
+                    .add("entry", [(-11., 33.)])
+                    .add("exit", [(-11., 44.)]);
+            })
+            .get_normalized_output();
+
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+            # curs: DFLT/dflt
+            # 2 CursivePos rules
+            # lookupflag LookupFlag(8)
+            a
+              entry: @(x: 10, y: 10)
+              exit: @(x: 10, y: 60)
+            # lookupflag LookupFlag(9)
+            hamza
+              entry: @(x: -11, y: 33)
+              exit: @(x: -11, y: 44)
             "#
         );
     }
