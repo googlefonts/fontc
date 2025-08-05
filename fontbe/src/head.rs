@@ -8,7 +8,7 @@ use fontir::orchestration::WorkId as FeWorkId;
 use log::warn;
 use write_fonts::{
     tables::{
-        head::{Head, MacStyle},
+        head::{Flags, Head, MacStyle},
         loca::LocaFormat,
         os2::SelectionFlags,
     },
@@ -53,7 +53,12 @@ fn current_timestamp() -> i64 {
     seconds_since_mac_epoch(src_date.unwrap_or_else(Utc::now))
 }
 
-fn init_head(units_per_em: u16, loca_format: LocaFormat, flags: u16, lowest_rec_ppem: u16) -> Head {
+fn init_head(
+    units_per_em: u16,
+    loca_format: LocaFormat,
+    flags: Flags,
+    lowest_rec_ppem: u16,
+) -> Head {
     Head {
         units_per_em,
         lowest_rec_ppem,
@@ -143,7 +148,11 @@ mod tests {
     use more_asserts::assert_ge;
     use temp_env;
     use write_fonts::{
-        tables::{head::MacStyle, loca::LocaFormat, os2::SelectionFlags},
+        tables::{
+            head::{Flags, MacStyle},
+            loca::LocaFormat,
+            os2::SelectionFlags,
+        },
         types::Fixed,
     };
 
@@ -151,12 +160,14 @@ mod tests {
 
     use super::{apply_font_revision, init_head, seconds_since_mac_epoch};
 
+    const DEFAULT_HEAD_FLAGS: Flags = Flags::BASELINE_AT_Y_0.union(Flags::LSB_AT_X_0);
+
     #[test]
     fn init_head_simple() {
         // if SOURCE_DATE_EPOCH is not set, use the current time for created/modified
         temp_env::with_var_unset("SOURCE_DATE_EPOCH", || {
             let now = seconds_since_mac_epoch(Utc::now());
-            let mut head = init_head(1000, LocaFormat::Long, 3, 42);
+            let mut head = init_head(1000, LocaFormat::Long, DEFAULT_HEAD_FLAGS, 42);
             apply_created_modified(&mut head, None);
             assert_eq!(head.units_per_em, 1000);
             assert_eq!(head.index_to_loc_format, 1);
@@ -174,7 +185,7 @@ mod tests {
             .unwrap()
             .timestamp();
         temp_env::with_var("SOURCE_DATE_EPOCH", Some(source_date.to_string()), || {
-            let mut head = init_head(1000, LocaFormat::Short, 3, 42);
+            let mut head = init_head(1000, LocaFormat::Short, DEFAULT_HEAD_FLAGS, 42);
             apply_created_modified(&mut head, None);
             assert_eq!(head.created.as_secs(), 0);
             assert_eq!(head.modified.as_secs(), 0);
@@ -189,7 +200,7 @@ mod tests {
             "SOURCE_DATE_EPOCH",
             Some("I am not a Unix timestamp!"),
             || {
-                let mut head = init_head(1000, LocaFormat::Short, 3, 42);
+                let mut head = init_head(1000, LocaFormat::Short, DEFAULT_HEAD_FLAGS, 42);
                 apply_created_modified(&mut head, None);
                 assert_ge!(head.created.as_secs(), now);
                 assert_ge!(head.modified.as_secs(), now);
@@ -199,7 +210,7 @@ mod tests {
 
     #[test]
     fn apply_head_macstyle() {
-        let mut head = init_head(1000, LocaFormat::Long, 3, 42);
+        let mut head = init_head(1000, LocaFormat::Long, DEFAULT_HEAD_FLAGS, 42);
         apply_macstyle(&mut head, SelectionFlags::ITALIC);
         assert_eq!(head.mac_style, MacStyle::ITALIC);
 
@@ -213,7 +224,7 @@ mod tests {
     // <https://github.com/googlefonts/fontc/issues/925>
     #[test]
     fn minor_version_thousandths() {
-        let mut head = init_head(1000, LocaFormat::Long, 3, 42);
+        let mut head = init_head(1000, LocaFormat::Long, DEFAULT_HEAD_FLAGS, 42);
         apply_font_revision(&mut head, 42, 42);
         assert_eq!(Fixed::from_f64(42.042), head.font_revision);
     }

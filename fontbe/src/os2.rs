@@ -218,12 +218,8 @@ fn x_avg_char_width(context: &Context) -> Result<i16, Error> {
     let hhea = context.hhea.get();
     let raw_hmtx = context.hmtx.get();
     let num_glyphs = glyph_order.len() as u64;
-    let hmtx = Hmtx::read(
-        FontData::new(raw_hmtx.get()),
-        hhea.number_of_h_metrics,
-        num_glyphs as u16,
-    )
-    .map_err(|_| Error::InvalidTableBytes(Hmtx::TAG))?;
+    let hmtx = Hmtx::read(FontData::new(raw_hmtx.get()), hhea.number_of_h_metrics)
+        .map_err(|_| Error::InvalidTableBytes(Hmtx::TAG))?;
 
     // count width > 0 only, including adding tail only if > 0
     let (count, total) = hmtx

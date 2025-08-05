@@ -11,7 +11,7 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::{gasp::GaspRange, gdef::GlyphClassDef, os2::SelectionFlags},
+    tables::{gasp::GaspRange, gdef::GlyphClassDef, head, os2::SelectionFlags},
     types::{NameId, Tag},
 };
 
@@ -169,7 +169,7 @@ pub struct MiscMetadata {
     pub version_major: i32,
     pub version_minor: u32,
 
-    pub head_flags: u16,
+    pub head_flags: head::Flags,
     pub lowest_rec_ppm: u16,
 
     pub created: Option<DateTime<Utc>>,
@@ -462,7 +462,7 @@ impl StaticMetadata {
                 // <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L364>
                 lowest_rec_ppm: 6,
                 // <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L365>
-                head_flags: 3,
+                head_flags: head::Flags::FORCE_INTEGER_PPEM,
                 created: None,
                 family_class: None,
                 panose: None,
@@ -611,7 +611,7 @@ mod tests {
                 vendor_id: Tag::from_be_bytes(*b"DUCK"),
                 version_major: 42,
                 version_minor: 24,
-                head_flags: 42,
+                head_flags: head::Flags::empty(),
                 lowest_rec_ppm: 42,
                 created: None,
                 family_class: None,
