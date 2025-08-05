@@ -461,8 +461,8 @@ impl StaticMetadata {
                 version_minor: 0,
                 // <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L364>
                 lowest_rec_ppm: 6,
-                // <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L365>
-                head_flags: head::Flags::FORCE_INTEGER_PPEM,
+                // <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847/Lib/ufo2ft/fontInfoData.py#L365>
+                head_flags: head::Flags::LSB_AT_X_0 | head::Flags::BASELINE_AT_Y_0,
                 created: None,
                 family_class: None,
                 panose: None,
