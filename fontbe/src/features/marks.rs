@@ -14,7 +14,7 @@ use fontdrasil::{
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
-    read::collections::IntSet,
+    read::{collections::IntSet, tables::aat::Lookup},
     tables::{
         gdef::GlyphClassDef,
         gpos::builders::{
@@ -570,6 +570,17 @@ impl<'a> MarkLookupBuilder<'a> {
         groups
     }
 
+    fn make_anchor_builder(
+        &self,
+        gid: GlyphId16,
+        anchor: Option<&Anchor>,
+    ) -> Result<Option<AnchorBuilder>, Error> {
+        anchor
+            .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
+            .transpose()
+            .map_err(|e| self.convert_delta_error(e, gid))
+    }
+
     //https://github.com/googlefonts/ufo2ft/blob/98e8916a86/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L40
     fn make_cursive_lookups(&self) -> Result<Vec<PendingLookup<CursivePosBuilder>>, Error> {
         let dir_glyphs = super::properties::glyphs_by_script_direction(
@@ -587,42 +598,28 @@ impl<'a> MarkLookupBuilder<'a> {
             let Some((entry, exit)) = get_entry_and_exit(anchors) else {
                 continue;
             };
-            let entry = entry
-                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
-                .transpose()
-                .map_err(|e| self.convert_delta_error(e, *gid))?;
-            let exit = exit
-                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
-                .transpose()
-                .map_err(|e| self.convert_delta_error(e, *gid))?;
+            let entry = self.make_anchor_builder(*gid, entry)?;
+            let exit = self.make_anchor_builder(*gid, exit)?;
 
             // LTR only if explicit member of group, else RTL:
             // https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L76
-            if ltr_glyphs
-                .map(|glyphs| glyphs.contains(*gid))
-                .unwrap_or(false)
-            {
-                ltr_builder.insert(*gid, entry, exit);
-            } else {
-                rtl_builder.insert(*gid, entry, exit);
-            }
+            ltr_glyphs
+                .filter(|glyphs| glyphs.contains(*gid))
+                .map_or(&mut rtl_builder, |_present| &mut ltr_builder)
+                .insert(*gid, entry, exit);
         }
 
         let mut result = Vec::new();
-        if !ltr_builder.is_empty() {
-            result.push(PendingLookup::new(
-                vec![ltr_builder],
-                LookupFlag::IGNORE_MARKS,
-                None,
-            ));
-        }
-        if !rtl_builder.is_empty() {
-            result.push(PendingLookup::new(
-                vec![rtl_builder],
-                LookupFlag::IGNORE_MARKS | LookupFlag::RIGHT_TO_LEFT,
-                None,
-            ));
-        }
+        let mut capture_if_populated = |builder: CursivePosBuilder, flags: LookupFlag| {
+            if !builder.is_empty() {
+                result.push(PendingLookup::new(vec![builder], flags, None));
+            }
+        };
+        capture_if_populated(ltr_builder, LookupFlag::IGNORE_MARKS);
+        capture_if_populated(
+            rtl_builder,
+            LookupFlag::IGNORE_MARKS | LookupFlag::RIGHT_TO_LEFT,
+        );
 
         Ok(result)
     }
