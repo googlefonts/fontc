@@ -307,6 +307,7 @@ mod tests {
         tables::{
             gdef::GlyphClassDef,
             glyf::{Bbox, Glyph as RawGlyph},
+            head,
             loca::LocaFormat,
             meta::{DataMapRecord, Metadata, ScriptLangTag},
         },
@@ -723,7 +724,7 @@ mod tests {
     fn compile_sets_xmin_eq_lsb_flag() {
         let result = TestCompile::compile_source("fontinfo.designspace");
         let head = result.font().head().unwrap();
-        assert_eq!(0b10, head.flags() & 0b10);
+        assert!(head.flags().contains(head::Flags::LSB_AT_X_0));
     }
 
     #[test]
@@ -1026,7 +1027,7 @@ mod tests {
         let result = TestCompile::compile_source("glyphs2/NotDef.glyphs");
 
         let raw_hmtx = result.be_context.hmtx.get();
-        let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &(1, 1)).unwrap();
+        let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &1).unwrap();
         assert_eq!(
             vec![(600, 250)],
             hmtx.h_metrics()
@@ -1054,11 +1055,8 @@ mod tests {
         assert_eq!(Some(1), maxp.max_contours);
 
         let raw_hmtx = result.be_context.hmtx.get();
-        let hmtx = Hmtx::read_with_args(
-            FontData::new(raw_hmtx.get()),
-            &(hhea.number_of_h_metrics, maxp.num_glyphs),
-        )
-        .unwrap();
+        let hmtx =
+            Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &hhea.number_of_h_metrics).unwrap();
         assert_eq!(
             vec![(425, 175)],
             hmtx.h_metrics()

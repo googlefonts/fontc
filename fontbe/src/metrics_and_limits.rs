@@ -14,6 +14,7 @@ use write_fonts::{
     dump_table,
     tables::{
         glyf::{Bbox, Contour, Glyph as RawGlyph},
+        head,
         hhea::Hhea,
         hmtx::Hmtx,
         maxp::Maxp,
@@ -422,7 +423,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
         // Since we never set lsb to anything other than x_min it would appear we can *always* set this
         // It's set by default so the only way it gets unset is when source explicitly sets head flags
         // Ref <https://github.com/fonttools/fonttools/blob/7e374c53da9a7443d32b31138a0e5be478bcbab9/Lib/fontTools/ttLib/tables/_m_a_x_p.py#L81C9-L122>
-        head.flags |= 0b10;
+        head.flags |= head::Flags::LSB_AT_X_0;
 
         context.head.set(head);
 

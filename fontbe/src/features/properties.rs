@@ -11,7 +11,7 @@ use icu_properties::{
 use tinystr::tinystr;
 use write_fonts::{
     read::{collections::IntSet, tables::gsub::Gsub, ReadError},
-    types::{GlyphId16, Tag},
+    types::{GlyphId, GlyphId16, Tag},
 };
 
 use crate::features::ot_tags::{NEW_SCRIPTS, SCRIPT_ALIASES, SCRIPT_EXCEPTIONS_REVERSED};
@@ -128,17 +128,22 @@ where
             has_props = true;
         }
         if !has_props {
-            neutral_glyphs.insert(gid);
+            neutral_glyphs.insert(gid.into());
         }
     }
 
     if let Some(gsub) = gsub.as_ref() {
-        neutral_glyphs = gsub.closure_glyphs(neutral_glyphs)?;
+        let initial_lookups = gsub.collect_lookups(&IntSet::all())?;
+        gsub.closure_glyphs(&initial_lookups, &mut neutral_glyphs)?;
         for glyphs in sets.values_mut() {
-            let mut temp = glyphs.clone();
+            let mut temp: IntSet<GlyphId> = glyphs.iter().map(|g| g.into()).collect();
             temp.union(&neutral_glyphs);
-            let temp = gsub.closure_glyphs(temp)?;
-            glyphs.extend(temp.iter().filter(|gid| !neutral_glyphs.contains(*gid)));
+            gsub.closure_glyphs(&initial_lookups, &mut temp)?;
+            glyphs.extend(
+                temp.iter()
+                    .filter(|gid| !neutral_glyphs.contains(*gid))
+                    .map(|g| g.try_into().unwrap()),
+            );
         }
     }
     Ok(sets)

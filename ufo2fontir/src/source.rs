@@ -30,7 +30,7 @@ use norad::{
 use plist::{Dictionary, Value};
 use write_fonts::{
     read::tables::gasp::GaspRangeBehavior,
-    tables::{gasp::GaspRange, gdef::GlyphClassDef, os2::SelectionFlags},
+    tables::{gasp::GaspRange, gdef::GlyphClassDef, head, os2::SelectionFlags},
     types::{NameId, Tag},
     OtRound,
 };
@@ -935,7 +935,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         static_metadata.misc.head_flags = font_info_at_default
             .open_type_head_flags
             .as_ref()
-            .map(|bit_indices| bit_indices.iter().map(|i| 1 << i).fold(0, |acc, e| acc | e))
+            .map(|bit_indices| {
+                head::Flags::from_bits_truncate(
+                    bit_indices.iter().map(|i| 1 << i).fold(0, |acc, e| acc | e),
+                )
+            })
             .unwrap_or(static_metadata.misc.head_flags);
 
         static_metadata.misc.family_class = font_info_at_default
