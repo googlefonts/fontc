@@ -8,9 +8,8 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::Axes,
 };
-use fontir::{
-    ir::GlobalMetricDeltas, orchestration::WorkId as FeWorkId, variations::VariationModel,
-};
+use fontir::variations::ModelDeltas;
+use fontir::{orchestration::WorkId as FeWorkId, variations::VariationModel};
 use write_fonts::types::MajorMinor;
 use write_fonts::{
     tables::{
@@ -50,7 +49,7 @@ impl MvarBuilder {
         }
     }
 
-    fn add_deltas(&mut self, mvar_tag: Tag, deltas: &GlobalMetricDeltas) {
+    fn add_deltas(&mut self, mvar_tag: Tag, deltas: &ModelDeltas<f64>) {
         if deltas.len() == 1 {
             let (region, _) = deltas.first().unwrap();
             assert!(region.is_default());

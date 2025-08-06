@@ -60,6 +60,20 @@ impl RoundTiesEven for kurbo::Vec2 {
 const ZERO: OrderedFloat<f64> = OrderedFloat(0.0);
 const ONE: OrderedFloat<f64> = OrderedFloat(1.0);
 
+/// Deltas covering various regions to form a variation space.
+///
+/// The deltas sum to calculate the value at a given location, with magnitude
+/// derived from the relative position to the region. The default region is a
+/// special-case; it is applied everywhere.
+///
+/// Usually:
+/// - Constructed with [VariationModel::deltas]
+/// - Interpolated with [VariationModel::interpolate_from_deltas]
+///
+/// For more information, see:
+/// <https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview#variation-data>
+pub type ModelDeltas<V> = Vec<(VariationRegion, Vec<V>)>;
+
 /// A model of how variation space is subdivided into regions to create deltas.
 ///
 /// Given a set of master locations, figures out a set of regions and the weights each
@@ -199,7 +213,7 @@ impl VariationModel {
     pub fn deltas<P, V>(
         &self,
         point_seqs: &HashMap<NormalizedLocation, Vec<P>>,
-    ) -> Result<Vec<(VariationRegion, Vec<V>)>, DeltaError>
+    ) -> Result<ModelDeltas<V>, DeltaError>
     where
         P: Copy + Default + Sub<P, Output = V>,
         V: Copy + Mul<f64, Output = V> + Sub<V, Output = V> + RoundTiesEven,
@@ -229,7 +243,7 @@ impl VariationModel {
             return Err(DeltaError::InconsistentNumbersOfPoints);
         }
 
-        let mut result: Vec<(VariationRegion, Vec<V>)> = Vec::new();
+        let mut result: ModelDeltas<V> = Vec::new();
         let mut model_idx_to_result_idx = HashMap::new();
 
         // The fields of self are sorted such that[i] is only influenced by[i+1..N]

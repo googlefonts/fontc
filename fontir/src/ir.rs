@@ -25,7 +25,7 @@ use fontdrasil::{
 use crate::{
     error::{BadAnchor, BadAnchorReason, BadGlyph, BadGlyphKind, Error},
     orchestration::{IdAware, Persistable, WorkId},
-    variations::{VariationModel, VariationRegion},
+    variations::{ModelDeltas, VariationModel},
 };
 
 mod path_builder;
@@ -302,7 +302,7 @@ pub struct GlobalMetricsBuilder(
 ///
 /// This type is constructed by [GlobalMetricsBuilder].
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct GlobalMetrics(HashMap<GlobalMetric, GlobalMetricDeltas>);
+pub struct GlobalMetrics(HashMap<GlobalMetric, ModelDeltas<f64>>);
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GlobalMetric {
@@ -397,9 +397,6 @@ fn adjust_offset(offset: f64, angle: f64) -> f64 {
         0.0
     }
 }
-
-/// Map of deltas associated with a given global metric across regions.
-pub type GlobalMetricDeltas = Vec<(VariationRegion, Vec<f64>)>;
 
 impl GlobalMetricsBuilder {
     /// Creates an empty [GlobalMetricsBuilder], to furnish with metrics data
@@ -615,7 +612,7 @@ impl GlobalMetrics {
     ///
     /// This lower level of access is useful for interpolating the value at an
     /// invididual positition manually, and testing.
-    pub fn deltas(&self, metric: GlobalMetric) -> &GlobalMetricDeltas {
+    pub fn deltas(&self, metric: GlobalMetric) -> &ModelDeltas<f64> {
         // We presume that ctor initializes for every GlobalMetric
         self.0.get(&metric).unwrap()
     }
@@ -676,7 +673,7 @@ impl GlobalMetrics {
     ///
     /// This lower level of access is most useful for serialising the variation
     /// spaces.
-    pub fn iter(&self) -> impl Iterator<Item = (&GlobalMetric, &GlobalMetricDeltas)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (&GlobalMetric, &ModelDeltas<f64>)> + '_ {
         self.0.iter()
     }
 }
