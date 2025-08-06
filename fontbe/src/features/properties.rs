@@ -25,7 +25,7 @@ pub const INHERITED_SCRIPT: UnicodeShortName = tinystr!(4, "Zinh");
 pub type UnicodeShortName = tinystr::TinyAsciiStr<4>;
 
 /// The writing direction of a script
-#[derive(Clone, Debug, Copy, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ScriptDirection {
     /// any direction, for the 'common' script
     Auto,
@@ -207,6 +207,34 @@ pub(crate) fn glyphs_by_bidi_class(
     )
 }
 
+/// Returns a map of script directions to glyphs with that property.
+pub(crate) fn glyphs_by_script_direction(
+    glyphs: &impl CharMap,
+    gsub: Option<&Gsub>,
+) -> Result<BTreeMap<ScriptDirection, IntSet<GlyphId16>>, ReadError> {
+    classify(
+        glyphs,
+        |cp, buf| buf.extend(unicode_script_direction(cp)),
+        gsub,
+    )
+}
+
+// trying to match the logic in:
+// - https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/util.py#L373
+// which calls,
+// - https://github.com/fonttools/fonttools/blob/f15001e7f1/Lib/fontTools/unicodedata/__init__.py#L219
+fn unicode_script_direction(cp: u32) -> Option<ScriptDirection> {
+    let sc = script_for_codepoint(cp)?;
+    if [COMMON_SCRIPT, INHERITED_SCRIPT].contains(&sc) {
+        return None;
+    }
+    if ScriptDirection::for_script(&sc) == ScriptDirection::RightToLeft {
+        Some(ScriptDirection::RightToLeft)
+    } else {
+        Some(ScriptDirection::LeftToRight)
+    }
+}
+
 pub(crate) fn dist_feature_enabled_scripts() -> HashSet<UnicodeShortName> {
     INDIC_SCRIPTS
         .iter()
@@ -231,7 +259,12 @@ impl<T: Ord + Eq, U: Clone> BinarySearchExact<T, U> for &[(T, U)] {
     }
 }
 
-/// Iterate over unicode scripts for the given codepoint
+/// Get the unicode script property for this code point
+fn script_for_codepoint(cp: u32) -> Option<UnicodeShortName> {
+    get_script_short_name(icu_properties::script::ScriptWithExtensions::new().get_script_val32(cp))
+}
+
+/// Iterate over unicode scripts for the given codepoint (including script extensions)
 pub(crate) fn scripts_for_codepoint(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
     icu_properties::script::ScriptWithExtensions::new()
         .get_script_extensions_val32(cp)
@@ -402,5 +435,18 @@ mod tests {
         // 'b' should not be reachable because 'neutral_glyph' doesn't match our
         // predicate
         assert!(reachable_from_a.contains(a_gid) && reachable_from_a.len() == 1);
+    }
+
+    #[test]
+    fn script_direction_smoke_test() {
+        assert_eq!(
+            unicode_script_direction('a' as u32),
+            Some(ScriptDirection::LeftToRight)
+        );
+        assert_eq!(
+            unicode_script_direction('ء' as u32), // hamza
+            Some(ScriptDirection::RightToLeft)
+        );
+        assert_eq!(unicode_script_direction(' ' as u32), None)
     }
 }
