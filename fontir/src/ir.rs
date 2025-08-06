@@ -288,8 +288,8 @@ impl From<KernGroup> for KernSide {
     }
 }
 
-/// Used to construct a global metrics variation space [GlobalMetrics], from
-/// known metrics values at individual locations.
+/// Used to construct a [GlobalMetrics] variation space, from known metrics
+/// values at individual locations.
 ///
 /// At a minimum, metric values must be defined at the default location.
 #[derive(Default, Debug)]
@@ -537,8 +537,9 @@ impl GlobalMetricsBuilder {
         self.0.entry(metric).or_default()
     }
 
-    /// Specify the value of a metric at a specific location. If there is an
-    /// existing value, it will be overwritten.
+    /// Set the value of a metric at a specific location.
+    ///
+    /// If there is an existing value, it will be overwritten.
     pub fn set(
         &mut self,
         metric: GlobalMetric,
@@ -548,8 +549,11 @@ impl GlobalMetricsBuilder {
         self.values_mut(metric).insert(pos, value.into());
     }
 
-    /// Specify the value of a metric at a specific location, but only if there
-    /// is not one already provided. Returns the winning value.
+    /// Set the value of a metric at a specific location, if none exists.
+    ///
+    /// If a value already exists at this location, it is not changed.
+    ///
+    /// Returns the (potentially new, potentially pre-existing) value.
     pub fn set_if_absent(
         &mut self,
         metric: GlobalMetric,
@@ -559,8 +563,9 @@ impl GlobalMetricsBuilder {
         *self.values_mut(metric).entry(pos).or_insert(value.into())
     }
 
-    /// Specify the value of a metric at a specific location, if we have one;
-    /// this is a helper build method to reduce boilerplate. If there is an
+    /// A helper method for setting possibly missing values.
+    ///
+    /// This is a helper build method to reduce boilerplate. If there is an
     /// existing value, it will be overwritten.
     pub fn set_if_some(
         &mut self,
@@ -606,9 +611,10 @@ impl GlobalMetricsBuilder {
 }
 
 impl GlobalMetrics {
-    /// Access the raw deltas for a particular metric. This lower level of
-    /// access is useful for interpolating the value at an invididual positition
-    /// manually, and testing.
+    /// Access the raw deltas for a particular metric.
+    ///
+    /// This lower level of access is useful for interpolating the value at an
+    /// invididual positition manually, and testing.
     pub fn deltas(&self, metric: GlobalMetric) -> &GlobalMetricDeltas {
         // We presume that ctor initializes for every GlobalMetric
         self.0.get(&metric).unwrap()
@@ -666,8 +672,10 @@ impl GlobalMetrics {
         }
     }
 
-    /// Access the raw deltas for every metric. This lower level of access is
-    /// most useful for serialising the variation spaces.
+    /// Access the raw deltas for every metric.
+    ///
+    /// This lower level of access is most useful for serialising the variation
+    /// spaces.
     pub fn iter(&self) -> impl Iterator<Item = (&GlobalMetric, &GlobalMetricDeltas)> + '_ {
         self.0.iter()
     }
