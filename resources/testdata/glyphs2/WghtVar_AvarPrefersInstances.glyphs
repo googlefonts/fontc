@@ -1,0 +1,69 @@
+{
+.appVersion = "3219";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+familyName = WghtVar;
+fontMaster = (
+{
+id = "A7771C0D-4005-44AE-9B1F-ED6CCEC719DA";
+weight = Light;
+weightValue = 300;
+xHeight = 500;
+},
+{
+id = m01;
+weightValue = 400;
+xHeight = 501;
+},
+{
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 250;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+interpolationWeight = 30;
+instanceInterpolations = {
+"A7771C0D-4005-44AE-9B1F-ED6CCEC719DA" = 1;
+};
+name = Light;
+weightClass = Light;
+},
+{
+interpolationWeight = 70;
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 1;
+};
+name = Bold;
+weightClass = Bold;
+}
+);
+unitsPerEm = 1000;
+}

@@ -2172,18 +2172,23 @@ fn user_to_design_from_axis_location(
 }
 
 impl AxisUserToDesignMap {
-    fn add_any_new(&mut self, incoming: &AxisUserToDesignMap) {
+    fn add_any_new(&mut self, incoming: &AxisUserToDesignMap) -> usize {
+        let mut added = 0;
         for (user, design) in incoming.0.iter() {
-            self.add_if_new(*user, *design);
+            if self.add_if_new(*user, *design) {
+                added += 1;
+            }
         }
+        added
     }
 
-    fn add_if_new(&mut self, user: OrderedFloat<f64>, design: OrderedFloat<f64>) {
+    fn add_if_new(&mut self, user: OrderedFloat<f64>, design: OrderedFloat<f64>) -> bool {
         // only keys (input/user-space) should be unique, values (output/design-space) can be duplicated
         if self.0.iter().any(|(u, _)| *u == user) {
-            return;
+            return false;
         }
         self.0.push((user, design));
+        true
     }
 
     fn add_identity_map(&mut self, value: OrderedFloat<f64>) {
@@ -2220,9 +2225,13 @@ impl UserToDesignMapping {
             (None, None) => (BTreeMap::new(), true),
         };
         let mut result = Self(result);
+        eprintln!("incomplete_mapping? {incomplete_mapping}");
         if incomplete_mapping {
-            result.add_instance_mappings_if_new(instances);
-            result.add_master_mappings_if_new(from);
+            // Only use master mapping if instance mapping isn't available
+            // <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L225-L249>
+            if result.add_instance_mappings_if_new(instances) == 0 {
+                result.add_master_mappings_if_new(from);
+            }
         }
         result
     }
@@ -2237,18 +2246,20 @@ impl UserToDesignMapping {
 
     /// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L128>
     /// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L353>
-    fn add_instance_mappings_if_new(&mut self, instances: &[Instance]) {
+    fn add_instance_mappings_if_new(&mut self, instances: &[Instance]) -> usize {
+        let mut added = 0;
         for instance in instances
             .iter()
             .filter(|i| i.active && i.type_ == InstanceType::Single)
         {
             for (axis_name, inst_mapping) in instance.axis_mappings.iter() {
-                self.0
+                added += self.0
                     .entry(axis_name.clone())
                     .or_default()
                     .add_any_new(inst_mapping);
             }
         }
+        added
     }
 
     fn add_master_mappings_if_new(&mut self, from: &RawFont) {
@@ -4658,6 +4669,21 @@ mod tests {
                 (OrderedFloat(200f64), OrderedFloat(42f64)),
                 (OrderedFloat(700.), OrderedFloat(125.)),
                 (OrderedFloat(1000.), OrderedFloat(208.))
+            ]
+        )
+    }
+
+    #[test]
+    fn avar_prefers_instances() {
+        // we used to combine instance and master to create avar
+        // confirm we now correctly prefer to use instances
+        let font = Font::load(&glyphs2_dir().join("WghtVar_AvarPrefersInstances.glyphs")).unwrap();
+        let mapping = &font.axis_mappings.0.get("Weight").unwrap().0;
+        assert_eq!(
+            mapping.as_slice(),
+            &[
+                (OrderedFloat(300f64), OrderedFloat(30f64)),
+                (OrderedFloat(700.), OrderedFloat(70.))
             ]
         )
     }
