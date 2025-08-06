@@ -584,17 +584,10 @@ impl<'a> MarkLookupBuilder<'a> {
         for (gid, anchors) in &self.anchor_lists {
             //TODO: support non-standard entry anchor names, see
             // https://github.com/googlefonts/ufo2ft/blob/98e8916a86/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L22
-            let Some((entry, exit)) = get_entry_and_exit(anchors) else {
+            let (entry, exit) = self.get_entry_and_exit(*gid, anchors)?;
+            if entry.is_none() && exit.is_none() {
                 continue;
-            };
-            let entry = entry
-                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
-                .transpose()
-                .map_err(|e| self.convert_delta_error(e, *gid))?;
-            let exit = exit
-                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata))
-                .transpose()
-                .map_err(|e| self.convert_delta_error(e, *gid))?;
+            }
 
             // LTR only if explicit member of group, else RTL:
             // https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L76
@@ -608,23 +601,45 @@ impl<'a> MarkLookupBuilder<'a> {
             }
         }
 
-        let mut result = Vec::new();
-        if !ltr_builder.is_empty() {
-            result.push(PendingLookup::new(
-                vec![ltr_builder],
-                LookupFlag::IGNORE_MARKS,
-                None,
-            ));
-        }
-        if !rtl_builder.is_empty() {
-            result.push(PendingLookup::new(
-                vec![rtl_builder],
-                LookupFlag::IGNORE_MARKS | LookupFlag::RIGHT_TO_LEFT,
-                None,
-            ));
-        }
+        Ok([
+            (ltr_builder, LookupFlag::empty()),
+            (rtl_builder, LookupFlag::RIGHT_TO_LEFT),
+        ]
+        .into_iter()
+        .filter_map(|(builder, flags)| {
+            (!builder.is_empty())
+                .then(|| PendingLookup::new(vec![builder], LookupFlag::IGNORE_MARKS | flags, None))
+        })
+        .collect())
+    }
 
-        Ok(result)
+    // if either 'entry' or 'exit' is present, will return `Some`
+    fn get_entry_and_exit(
+        &self,
+        gid: GlyphId16,
+        anchors: &[&Anchor],
+    ) -> Result<(Option<AnchorBuilder>, Option<AnchorBuilder>), Error> {
+        let mut entry = None;
+        let mut exit = None;
+
+        for anchor in anchors {
+            match anchor.kind {
+                AnchorKind::CursiveEntry => {
+                    entry = Some(
+                        resolve_anchor_once(anchor, self.static_metadata)
+                            .map_err(|e| self.convert_delta_error(e, gid))?,
+                    );
+                }
+                AnchorKind::CursiveExit => {
+                    exit = Some(
+                        resolve_anchor_once(anchor, self.static_metadata)
+                            .map_err(|e| self.convert_delta_error(e, gid))?,
+                    );
+                }
+                _ => (),
+            }
+        }
+        Ok((entry, exit))
     }
 
     fn convert_delta_error(&self, err: DeltaError, gid: GlyphId16) -> Error {
@@ -802,24 +817,6 @@ fn find_mark_glyphs(
         })
         .map(|(name, _)| name.to_owned())
         .collect()
-}
-
-// if either 'entry' or 'exit' is present, will return `Some`
-fn get_entry_and_exit<'a>(
-    anchors: &'a [&'a Anchor],
-) -> Option<(Option<&'a ir::Anchor>, Option<&'a ir::Anchor>)> {
-    let mut entry = None;
-    let mut exit = None;
-
-    for anchor in anchors {
-        match anchor.kind {
-            AnchorKind::CursiveEntry => entry = Some(*anchor),
-            AnchorKind::CursiveExit => exit = Some(*anchor),
-            _ => (),
-        }
-    }
-
-    (entry.is_some() || exit.is_some()).then_some((entry, exit))
 }
 
 fn resolve_anchor(

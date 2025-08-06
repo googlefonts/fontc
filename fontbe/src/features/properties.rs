@@ -436,4 +436,17 @@ mod tests {
         // predicate
         assert!(reachable_from_a.contains(a_gid) && reachable_from_a.len() == 1);
     }
+
+    #[test]
+    fn script_direction_smoke_test() {
+        assert_eq!(
+            unicode_script_direction('a' as u32),
+            Some(ScriptDirection::LeftToRight)
+        );
+        assert_eq!(
+            unicode_script_direction('ء' as u32), // hamza
+            Some(ScriptDirection::RightToLeft)
+        );
+        assert_eq!(unicode_script_direction(' ' as u32), None)
+    }
 }
