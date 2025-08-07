@@ -1,17 +1,15 @@
 //! Generates an [MVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/MVAR) table.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::BTreeMap;
 
 use fontdrasil::orchestration::AccessBuilder;
 
 use fontdrasil::{
-    coords::NormalizedLocation,
     orchestration::{Access, Work},
     types::Axes,
 };
-use fontir::{
-    ir::GlobalMetricValues, orchestration::WorkId as FeWorkId, variations::VariationModel,
-};
+use fontir::variations::ModelDeltas;
+use fontir::{orchestration::WorkId as FeWorkId, variations::VariationModel};
 use write_fonts::types::MajorMinor;
 use write_fonts::{
     tables::{
@@ -38,8 +36,6 @@ pub fn create_mvar_work() -> Box<BeWork> {
 struct MvarBuilder {
     /// Variation axes
     axes: Axes,
-    /// Sparse variation models, keyed by the set of locations they define
-    models: HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
     /// Metrics deltas keyed by MVAR tag
     deltas: BTreeMap<Tag, Vec<(VariationRegion, i16)>>,
 }
@@ -47,37 +43,21 @@ struct MvarBuilder {
 impl MvarBuilder {
     fn new(global_model: VariationModel) -> Self {
         let axes = global_model.axes().cloned().collect();
-        let global_locations = global_model.locations().cloned().collect::<BTreeSet<_>>();
-        let mut models = HashMap::new();
-        models.insert(global_locations, global_model);
         MvarBuilder {
             axes,
-            models,
             deltas: BTreeMap::new(),
         }
     }
 
-    fn add_sources(&mut self, mvar_tag: Tag, sources: &GlobalMetricValues) -> Result<(), Error> {
-        let sources: HashMap<_, Vec<f64>> = sources
-            .iter()
-            // metrics must be rounded before the computing deltas to match fontmake
-            // https://github.com/googlefonts/fontc/issues/1043
-            .map(|(loc, src)| (loc.clone(), vec![src.into_inner().ot_round()]))
-            .collect();
-        if sources.len() == 1 {
-            assert!(sources.keys().next().unwrap().is_default());
-            // spare the model the work of computing no-op deltas
-            return Ok(());
+    fn add_deltas(&mut self, mvar_tag: Tag, deltas: &ModelDeltas<f64>) {
+        if deltas.len() == 1 {
+            let (region, _) = deltas.first().unwrap();
+            assert!(region.is_default());
+            // spare the model the work of encoding no-op deltas
+            return;
         }
-        let locations = sources.keys().cloned().collect::<BTreeSet<_>>();
-        let model = self.models.entry(locations).or_insert_with(|| {
-            // this glyph defines its own set of locations, a new sparse model is needed
-            VariationModel::new(sources.keys().cloned().collect(), self.axes.clone()).unwrap()
-        });
-        let deltas: Vec<_> = model
-            .deltas(&sources)
-            .map_err(|e| Error::MvarDeltaError(mvar_tag, e))?
-            .into_iter()
+        let deltas: Vec<_> = deltas
+            .iter()
             .filter_map(|(region, values)| {
                 if region.is_default() {
                     return None;
@@ -92,10 +72,9 @@ impl MvarBuilder {
             .collect();
         // don't encode no-op deltas
         if deltas.iter().all(|(_, delta)| *delta == 0) {
-            return Ok(());
+            return;
         }
         self.deltas.insert(mvar_tag, deltas);
-        Ok(())
     }
 
     fn build(self) -> Option<Mvar> {
@@ -145,11 +124,11 @@ impl Work<Context, AnyWorkId, Error> for MvarWork {
         let var_model = &static_metadata.variation_model;
 
         let mut mvar_builder = MvarBuilder::new(var_model.clone());
-        for (metric, values) in metrics.iter() {
+        for (metric, deltas) in metrics.iter() {
             // some of the GlobalMetric variants are not MVAR-relevant, e.g.
             // hhea ascender/descender/lineGap so we just skip those
             if let Some(mvar_tag) = metric.mvar_tag() {
-                mvar_builder.add_sources(mvar_tag, values)?;
+                mvar_builder.add_deltas(mvar_tag, deltas);
             }
         }
         if let Some(mvar) = mvar_builder.build() {
@@ -164,7 +143,8 @@ impl Work<Context, AnyWorkId, Error> for MvarWork {
 mod tests {
     use std::str::FromStr;
 
-    use fontdrasil::types::Axis;
+    use fontdrasil::{coords::NormalizedLocation, types::Axis};
+    use fontir::ir::{GlobalMetric, GlobalMetrics, GlobalMetricsBuilder};
     use write_fonts::{
         dump_table,
         read::{
@@ -183,18 +163,28 @@ mod tests {
         MvarBuilder::new(model)
     }
 
-    fn add_sources(
-        builder: &mut MvarBuilder,
-        mvar_tag: &str,
-        sources: &[(&NormalizedLocation, f64)],
-    ) {
-        let sources = sources
+    fn build_metrics(
+        metrics: &[(GlobalMetric, &[(&NormalizedLocation, f64)])],
+        axes: &Axes,
+    ) -> GlobalMetrics {
+        metrics
             .iter()
-            .map(|(loc, value)| ((*loc).clone(), { *value }.into()))
-            .collect::<HashMap<_, _>>();
-        builder
-            .add_sources(Tag::from_str(mvar_tag).unwrap(), &sources)
-            .unwrap();
+            .flat_map(|(metric, values)| values.iter().map(move |value| (metric, value)))
+            .fold(
+                GlobalMetricsBuilder::new(),
+                |mut builder, (&metric, (pos, value))| {
+                    builder.set(metric, (*pos).clone(), *value);
+                    builder
+                },
+            )
+            .build(axes)
+            .unwrap()
+    }
+
+    fn add_deltas(builder: &mut MvarBuilder, metrics: GlobalMetrics) {
+        metrics.iter().for_each(|(metric, values)| {
+            builder.add_deltas(metric.mvar_tag().unwrap(), values);
+        });
     }
 
     fn delta_sets(var_data: &ItemVariationData) -> Vec<Vec<i32>> {
@@ -207,12 +197,14 @@ mod tests {
     fn smoke_test() {
         let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
         let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
-        let mut builder = new_mvar_builder(
-            vec![&regular, &bold],
-            vec![test_util::axis("wght", 400.0, 400.0, 700.0)],
-        );
+        let axes = vec![test_util::axis("wght", 400.0, 400.0, 700.0)];
+        let mut builder = new_mvar_builder(vec![&regular, &bold], axes.clone());
 
-        add_sources(&mut builder, "xhgt", &[(&regular, 500.0), (&bold, 550.0)]);
+        let metrics = build_metrics(
+            &[(GlobalMetric::XHeight, &[(&regular, 500.0), (&bold, 550.0)])],
+            &axes.into(),
+        );
+        add_deltas(&mut builder, metrics);
 
         let Some(mvar) = builder.build() else {
             panic!("no MVAR?!");
@@ -245,13 +237,20 @@ mod tests {
     fn no_variations_no_mvar() {
         let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
         let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
-        let mut builder = new_mvar_builder(
-            vec![&regular, &bold],
-            vec![test_util::axis("wght", 400.0, 400.0, 700.0)],
-        );
+        let axes = vec![test_util::axis("wght", 400.0, 400.0, 700.0)];
+        let mut builder = new_mvar_builder(vec![&regular, &bold], axes.clone());
 
-        add_sources(&mut builder, "xhgt", &[(&regular, 500.0), (&bold, 500.0)]);
-        add_sources(&mut builder, "cpht", &[(&regular, 800.0), (&bold, 800.0)]);
+        let metrics = build_metrics(
+            &[
+                (GlobalMetric::XHeight, &[(&regular, 500.0), (&bold, 500.0)]),
+                (
+                    GlobalMetric::CapHeight,
+                    &[(&regular, 800.0), (&bold, 800.0)],
+                ),
+            ],
+            &axes.into(),
+        );
+        add_deltas(&mut builder, metrics);
 
         // hence no MVAR needed
         assert!(builder.build().is_none());
@@ -281,18 +280,25 @@ mod tests {
         let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
         let medium = NormalizedLocation::for_pos(&[("wght", 0.5)]);
         let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
-        let mut builder = new_mvar_builder(
-            vec![&regular, &medium, &bold],
-            vec![test_util::axis("wght", 400.0, 400.0, 700.0)],
+        let axes = vec![test_util::axis("wght", 400.0, 400.0, 700.0)];
+        let mut builder = new_mvar_builder(vec![&regular, &medium, &bold], axes.clone());
+
+        let metrics = build_metrics(
+            &[
+                (
+                    // 'xhgt' defines a value for all three locations
+                    GlobalMetric::XHeight,
+                    &[(&regular, 500.0), (&medium, 530.0), (&bold, 550.0)],
+                ),
+                (
+                    // 'strs' is sparse: defines a value for regular and bold, not medium
+                    GlobalMetric::StrikeoutSize,
+                    &[(&regular, 50.0), (&bold, 100.0)],
+                ),
+            ],
+            &axes.into(),
         );
-        // 'xhgt' defines a value for all three locations
-        add_sources(
-            &mut builder,
-            "xhgt",
-            &[(&regular, 500.0), (&medium, 530.0), (&bold, 550.0)],
-        );
-        // 'strs' is sparse: defines a value for regular and bold, not medium
-        add_sources(&mut builder, "strs", &[(&regular, 50.0), (&bold, 100.0)]);
+        add_deltas(&mut builder, metrics);
 
         let Some(mvar) = builder.build() else {
             panic!("no MVAR?!");

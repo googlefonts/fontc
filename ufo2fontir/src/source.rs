@@ -15,7 +15,7 @@ use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
         AnchorBuilder, Condition, ConditionSet, FeaturesSource, GdefCategories, GlobalMetric,
-        GlobalMetrics, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        GlobalMetricsBuilder, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
         MetaTableValues, NameBuilder, NameKey, NamedInstance, Panose, PostscriptNames, Rule,
         StaticMetadata, Substitution, VariableFeature, DEFAULT_VENDOR_ID,
     },
@@ -1051,7 +1051,7 @@ fn parse_meta_scriptlangtags(plist: &plist::Value) -> impl Iterator<Item = &str>
 }
 
 fn set_default_underline_pos(
-    metrics: &mut GlobalMetrics,
+    metrics: &mut GlobalMetricsBuilder,
     location: &NormalizedLocation,
     units_per_em: u16,
 ) {
@@ -1066,7 +1066,7 @@ fn set_default_underline_pos(
 }
 
 fn populate_default_metrics(
-    metrics: &mut GlobalMetrics,
+    metrics: &mut GlobalMetricsBuilder,
     location: &NormalizedLocation,
     units_per_em: u16,
     x_height: Option<f64>,
@@ -1193,7 +1193,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
 
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
 
         for source in self
             .designspace
@@ -1373,7 +1373,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         }
 
         trace!("{metrics:#?}");
-        context.global_metrics.set(metrics);
+        context
+            .global_metrics
+            .set(metrics.build(&static_metadata.axes)?);
         Ok(())
     }
 }
@@ -1793,6 +1795,7 @@ mod tests {
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
+        variations::Tent,
     };
     use norad::designspace;
 
@@ -2168,7 +2171,8 @@ mod tests {
             .get()
             .at(static_metadata.default_location());
         assert_eq!(
-            (755.25, -174.5),
+            // rounded from 755.25 and -174.5 at source location as fontmake does
+            (755.0, -174.0),
             (
                 default_metrics.ascender.into_inner(),
                 default_metrics.descender.into_inner()
@@ -2207,7 +2211,7 @@ mod tests {
                 superscript_x_size: 650.0.into(),
                 superscript_y_size: 600.0.into(),
                 superscript_y_offset: 350.0.into(),
-                strikeout_position: 300.6.into(),
+                strikeout_position: 301.0.into(), // rounded from 300.6 at source location as fontmake does
                 strikeout_size: 50.0.into(),
                 os2_typo_ascender: 1193.0.into(),
                 os2_typo_descender: (-289.0).into(),
@@ -2259,23 +2263,27 @@ mod tests {
         let (_, context) = build_global_metrics("wght_var.designspace");
         let static_metadata = &context.static_metadata.get();
         let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
-        let mut metric_locations = context
-            .global_metrics
-            .get()
+        let global_metrics = context.global_metrics.get();
+
+        let metric_locations = global_metrics
             .iter()
-            .flat_map(|(.., values)| values.keys())
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .map(|loc| (only_coord(loc).to_user(&wght.converter), only_coord(loc)))
-            .collect::<Vec<_>>();
-        metric_locations.sort();
+            .flat_map(|(.., values)| values)
+            .map(|(region, _deltas)| region)
+            .map(|region| region.get(&wght.tag).unwrap())
+            .collect::<HashSet<_>>();
 
         // Note there are *not* metrics at (600, 0.67)
         assert_eq!(
-            vec![
-                (UserCoord::new(400.0), NormalizedCoord::new(0.0)),
-                (UserCoord::new(700.0), NormalizedCoord::new(1.0)),
-            ],
+            [
+                &Tent::zeroes(),
+                &Tent::new(
+                    NormalizedCoord::default(),
+                    NormalizedCoord::MAX,
+                    NormalizedCoord::MAX
+                )
+            ]
+            .into_iter()
+            .collect::<HashSet<_>>(),
             metric_locations
         );
     }

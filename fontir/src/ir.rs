@@ -17,11 +17,15 @@ use write_fonts::{
     OtRound,
 };
 
-use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
+use fontdrasil::{
+    coords::NormalizedLocation,
+    types::{Axes, GlyphName},
+};
 
 use crate::{
     error::{BadAnchor, BadAnchorReason, BadGlyph, BadGlyphKind, Error},
     orchestration::{IdAware, Persistable, WorkId},
+    variations::{ModelDeltas, VariationModel},
 };
 
 mod path_builder;
@@ -284,14 +288,21 @@ impl From<KernGroup> for KernSide {
     }
 }
 
-/// Global metrics. Ascender/descender, cap height, etc.
+/// Used to construct a [GlobalMetrics] variation space, from known metrics
+/// values at individual locations.
 ///
-/// Represents the values of these metrics at a specific position in design space.
-/// At a minimum should be defined at the default location.
-#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
-pub struct GlobalMetrics(
-    pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f64>>>,
+/// At a minimum, metric values must be defined at the default location.
+#[derive(Default, Debug)]
+pub struct GlobalMetricsBuilder(
+    HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f64>>>,
 );
+
+/// Interpolatable global metrics variation space, including ascender/descender,
+/// cap height, etc.
+///
+/// This type is constructed by [GlobalMetricsBuilder].
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct GlobalMetrics(HashMap<GlobalMetric, ModelDeltas<f64>>);
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GlobalMetric {
@@ -387,11 +398,9 @@ fn adjust_offset(offset: f64, angle: f64) -> f64 {
     }
 }
 
-/// Map of values associated with a given global metric at various locations.
-pub type GlobalMetricValues = HashMap<NormalizedLocation, OrderedFloat<f64>>;
-
-impl GlobalMetrics {
-    /// Creates a new, empty, [GlobalMetrics]
+impl GlobalMetricsBuilder {
+    /// Creates an empty [GlobalMetricsBuilder], to furnish with metrics data
+    /// and build.
     pub fn new() -> Self {
         Default::default()
     }
@@ -518,22 +527,16 @@ impl GlobalMetrics {
         set_if_absent(GlobalMetric::VheaLineGap, 0.0);
     }
 
-    fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
-        // We presume that ctor initializes for every GlobalMetric
-        self.0.get(&metric).unwrap()
-    }
-
-    fn values_mut(&mut self, metric: GlobalMetric) -> &mut GlobalMetricValues {
+    fn values_mut(
+        &mut self,
+        metric: GlobalMetric,
+    ) -> &mut HashMap<NormalizedLocation, OrderedFloat<f64>> {
         self.0.entry(metric).or_default()
     }
 
-    pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f64> {
-        let Some(value) = self.values(metric).get(pos) else {
-            panic!("interpolated metric values are not yet supported");
-        };
-        *value
-    }
-
+    /// Set the value of a metric at a specific location.
+    ///
+    /// If there is an existing value, it will be overwritten.
     pub fn set(
         &mut self,
         metric: GlobalMetric,
@@ -543,6 +546,11 @@ impl GlobalMetrics {
         self.values_mut(metric).insert(pos, value.into());
     }
 
+    /// Set the value of a metric at a specific location, if none exists.
+    ///
+    /// If a value already exists at this location, it is not changed.
+    ///
+    /// Returns the (potentially new, potentially pre-existing) value.
     pub fn set_if_absent(
         &mut self,
         metric: GlobalMetric,
@@ -552,6 +560,10 @@ impl GlobalMetrics {
         *self.values_mut(metric).entry(pos).or_insert(value.into())
     }
 
+    /// A helper method for setting possibly missing values.
+    ///
+    /// This is a helper build method to reduce boilerplate. If there is an
+    /// existing value, it will be overwritten.
     pub fn set_if_some(
         &mut self,
         metric: GlobalMetric,
@@ -563,6 +575,61 @@ impl GlobalMetrics {
         }
     }
 
+    /// Finalise and build [GlobalMetrics].
+    ///
+    /// This function will error if the ingredients provided were insufficient
+    /// or inconsistent to cook up a variation space (e.g. missing value at the
+    /// default location, axis unsuitable for variation).
+    pub fn build(self, axes: &Axes) -> Result<GlobalMetrics, Error> {
+        let deltas = self
+            .0
+            .into_iter()
+            .map(|(tag, values)| -> Result<_, Error> {
+                let model = VariationModel::new(values.keys().cloned().collect(), axes.clone())
+                    .map_err(|e| Error::MetricVariationError(tag, e))?;
+
+                let sources = values
+                    .into_iter()
+                    // metrics must be rounded before the computing deltas to match fontmake
+                    // https://github.com/googlefonts/fontc/issues/1043
+                    .map(|(loc, value)| (loc, vec![OtRound::<f64>::ot_round(value.into_inner())]))
+                    .collect();
+
+                let deltas = model
+                    .deltas(&sources)
+                    .map_err(|e| Error::MetricDeltaError(tag, e))?;
+
+                Ok((tag, deltas))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        Ok(GlobalMetrics(deltas))
+    }
+}
+
+impl GlobalMetrics {
+    /// Access the raw deltas for a particular metric.
+    ///
+    /// This lower level of access is useful for interpolating the value at an
+    /// invididual positition manually, and testing.
+    pub fn deltas(&self, metric: GlobalMetric) -> &ModelDeltas<f64> {
+        // We presume that ctor initializes for every GlobalMetric
+        self.0.get(&metric).unwrap()
+    }
+
+    /// Get the explicit or interpolated value for a particular metric at a
+    /// given location.
+    pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f64> {
+        let deltas = self.deltas(metric);
+
+        VariationModel::interpolate_from_deltas(pos, deltas)
+            .iter()
+            .map(|float| OrderedFloat::<f64>::from(*float))
+            .sum()
+    }
+
+    /// Get the explicit or interpolated value of every metric at a given
+    /// location.
     pub fn at(&self, pos: &NormalizedLocation) -> GlobalMetricsInstance {
         GlobalMetricsInstance {
             pos: pos.clone(),
@@ -602,7 +669,11 @@ impl GlobalMetrics {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&GlobalMetric, &GlobalMetricValues)> + '_ {
+    /// Access the raw deltas for every metric.
+    ///
+    /// This lower level of access is most useful for serialising the variation
+    /// spaces.
+    pub fn iter(&self) -> impl Iterator<Item = (&GlobalMetric, &ModelDeltas<f64>)> + '_ {
         self.0.iter()
     }
 }
@@ -1741,6 +1812,7 @@ mod tests {
 
     use std::collections::HashMap;
 
+    use fontdrasil::types::Axis;
     use write_fonts::types::NameId;
 
     use pretty_assertions::assert_eq;
@@ -1969,9 +2041,11 @@ mod tests {
     #[test]
     fn round_like_py() {
         let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
         metrics.populate_defaults(&pos, 1290, None, None, None, None);
         let rounded: i16 = metrics
+            .build(&Axes::default())
+            .unwrap()
             .get(GlobalMetric::SuperscriptYOffset, &pos)
             .0
             .ot_round();
@@ -2022,10 +2096,13 @@ mod tests {
     fn default_strikeout_when_xheight_none() {
         let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
 
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
         metrics.populate_defaults(&pos, 1000, None, None, None, None);
 
-        let default = metrics.get(GlobalMetric::StrikeoutPosition, &pos);
+        let default = metrics
+            .build(&Axes::default())
+            .unwrap()
+            .get(GlobalMetric::StrikeoutPosition, &pos);
         assert_eq!(default.into_inner(), 300.);
     }
 
@@ -2037,11 +2114,38 @@ mod tests {
     fn default_strikeout_when_xheight_zero() {
         let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
 
-        let mut metrics = GlobalMetrics::new();
+        let mut metrics = GlobalMetricsBuilder::new();
         metrics.populate_defaults(&pos, 1000, Some(0.), None, None, None);
 
-        let default = metrics.get(GlobalMetric::StrikeoutPosition, &pos);
+        let default = metrics
+            .build(&Axes::default())
+            .unwrap()
+            .get(GlobalMetric::StrikeoutPosition, &pos);
         assert_eq!(default.into_inner(), 220.);
+    }
+
+    /// Test that we can interpolate metrics between source locations.
+    #[test]
+    fn interpolated_metrics() {
+        // Axis extremes, and somewhere in the middle.
+        let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let bold_ish = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+
+        // Vary the strikeout size based on weight.
+        let mut builder = GlobalMetricsBuilder::new();
+        builder.populate_defaults(&regular, 1000, None, None, None, None);
+
+        builder.set(GlobalMetric::StrikeoutSize, regular, 10.);
+        builder.set(GlobalMetric::StrikeoutSize, bold, 20.);
+
+        // Build, and confirm that there is an implicit, halved strikeout size
+        // at the mid-point.
+        let metrics = builder
+            .build(&Axes::new(vec![Axis::for_test("wght")]))
+            .unwrap();
+
+        assert_eq!(15., *metrics.get(GlobalMetric::StrikeoutSize, &bold_ish));
     }
 
     fn make_glyph_order<'a>(raw: impl IntoIterator<Item = &'a str>) -> GlyphOrder {
