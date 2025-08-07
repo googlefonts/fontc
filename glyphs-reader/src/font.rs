@@ -631,9 +631,11 @@ impl PlistParamsExt for Plist {
         let plist = self.as_dict()?;
         let name = plist.get("Axis").and_then(Plist::as_str)?;
         let location = plist.get("Location").and_then(Plist::as_f64)?;
+        // trunc to match the int() call in Python
+        // <https://github.com/googlefonts/glyphsLib/blob/8caf679cfe4ea774d0d27088c89d382c5b6e0185/Lib/glyphsLib/builder/axes.py#L433-L443>
         Some(AxisLocation {
             axis_name: name.into(),
-            location: location.into(),
+            location: location.trunc().into(),
         })
     }
 
@@ -4683,6 +4685,18 @@ mod tests {
                 (OrderedFloat(700.), OrderedFloat(156.)),
                 (OrderedFloat(900.), OrderedFloat(226.)),
             ]
+        )
+    }
+
+    #[test]
+    fn truncates_axis_location() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_AxisLocationFloat.glyphs")).unwrap();
+        let mapping = &font.axis_mappings.0.get("Weight").unwrap().0;
+
+        // The user location 400.75 was truncated
+        assert_eq!(
+            mapping.as_slice(),
+            &[(OrderedFloat(400f64), OrderedFloat(0f64)),]
         )
     }
 }
