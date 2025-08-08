@@ -2984,7 +2984,7 @@ impl TryFrom<RawFont> for Font {
     }
 }
 
-fn preprocess_unparsed_plist(s: &str) -> Cow<str> {
+fn preprocess_unparsed_plist(s: &str) -> Cow<'_, str> {
     // Glyphs has a wide variety of unicode definitions, not all of them parser friendly
     // Make unicode always a string, without any wrapping () so we can parse as csv, radix based on format version
     let unicode_re =
@@ -3760,14 +3760,15 @@ mod tests {
         let font = Font::load(&glyphs2_dir().join("Fea_Prefix.glyphs")).unwrap();
         assert_eq!(
             vec![
-                concat!(
-                    "# Prefix: Languagesystems\n",
-                    "# automatic\n",
-                    "languagesystem DFLT dflt;\n\n",
-                    "languagesystem latn dflt;\n",
-                    "and more;\n",
-                ),
-                concat!("# Prefix: \n# automatic\nthanks for all the fish;",),
+                "\
+# Prefix: Languagesystems
+# automatic
+languagesystem DFLT dflt;
+
+languagesystem latn dflt;
+and more;
+",
+                "# Prefix: \n# automatic\nthanks for all the fish;",
             ],
             font.features
                 .iter()
@@ -3781,22 +3782,21 @@ mod tests {
         let font = Font::load(&glyphs2_dir().join("Fea_Feature.glyphs")).unwrap();
         assert_eq!(
             vec![
-                concat!(
-                    "feature aalt {\n",
-                    "feature locl;\n",
-                    "feature tnum;\n",
-                    "} aalt;",
-                ),
-                concat!(
-                    "feature ccmp {\n",
-                    "# automatic\n",
-                    "lookup ccmp_Other_2 {\n",
-                    "  sub @Markscomb' @MarkscombCase by @MarkscombCase;\n",
-                    "  sub @MarkscombCase @Markscomb' by @MarkscombCase;\n",
-                    "} ccmp_Other_2;\n\n",
-                    "etc;\n",
-                    "} ccmp;",
-                ),
+                "\
+feature aalt {
+feature locl;
+feature tnum;
+} aalt;",
+                "\
+feature ccmp {
+# automatic
+lookup ccmp_Other_2 {
+  sub @Markscomb' @MarkscombCase by @MarkscombCase;
+  sub @MarkscombCase @Markscomb' by @MarkscombCase;
+} ccmp_Other_2;
+
+etc;
+} ccmp;",
             ],
             font.features
                 .iter()

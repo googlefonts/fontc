@@ -32,7 +32,7 @@ pub trait AstNode {
     fn range(&self) -> Range<usize>;
 
     /// If this is a node, iterate over its children
-    fn iter(&self) -> ChildIter {
+    fn iter(&self) -> ChildIter<'_> {
         Default::default()
     }
 }
@@ -134,7 +134,7 @@ macro_rules! ast_node {
                 self.inner.range()
             }
 
-            fn iter(&self) -> ChildIter {
+            fn iter(&self) -> ChildIter<'_> {
                 self.inner.iter_children()
             }
         }
@@ -1598,7 +1598,7 @@ impl GdefLigatureCaret {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub(crate) fn values(&self) -> LigatureCaretValue {
+    pub(crate) fn values(&self) -> LigatureCaretValue<'_> {
         if self.by_pos() {
             LigatureCaretValue::Pos(LigatureCaretIter(self))
         } else {

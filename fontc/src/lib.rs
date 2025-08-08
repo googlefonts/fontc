@@ -407,7 +407,7 @@ mod tests {
             Glyphs::new(&self.build_dir)
         }
 
-        fn font(&self) -> FontRef {
+        fn font(&self) -> FontRef<'_> {
             FontRef::new(&self.raw_font).unwrap()
         }
     }
@@ -430,7 +430,7 @@ mod tests {
             }
         }
 
-        fn read(&self) -> Vec<Option<glyf::Glyph>> {
+        fn read(&self) -> Vec<Option<glyf::Glyph<'_>>> {
             let glyf = Glyf::read(FontData::new(&self.raw_glyf)).unwrap();
             let loca = Loca::read(
                 FontData::new(&self.raw_loca),

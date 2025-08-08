@@ -111,7 +111,7 @@ impl MarkGroup<'_> {
         })
     }
 
-    fn only_using_glyphs(&self, include: &IntSet<GlyphId16>) -> Option<MarkGroup> {
+    fn only_using_glyphs(&self, include: &IntSet<GlyphId16>) -> Option<MarkGroup<'_>> {
         let bases = self
             .bases
             .iter()

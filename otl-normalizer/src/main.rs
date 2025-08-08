@@ -62,7 +62,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn get_font(bytes: &[u8], idx: Option<u32>) -> Result<FontRef, Error> {
+fn get_font(bytes: &[u8], idx: Option<u32>) -> Result<FontRef<'_>, Error> {
     let font = FileRef::new(bytes).map_err(Error::FontRead)?;
     match (font, idx.unwrap_or(0)) {
         (FileRef::Font(font), 0) => Ok(font),

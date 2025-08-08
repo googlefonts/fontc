@@ -944,6 +944,7 @@ impl FromPlist for Affine {
 
 #[cfg(test)]
 mod tests {
+    use ascii_plist_derive::FromPlist;
     use std::collections::BTreeMap;
 
     use super::*;
