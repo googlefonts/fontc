@@ -6,22 +6,6 @@ use write_fonts::read::{
 
 type MasterLocations = Vec<Vec<F2Dot14>>;
 
-#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Value {
-    pub default: i16,
-    /// Values for each master
-    pub variations: Option<Vec<i32>>,
-}
-
-impl From<i16> for Value {
-    fn from(value: i16) -> Self {
-        Value {
-            default: value,
-            variations: None,
-        }
-    }
-}
-
 pub(crate) struct DeltaComputer<'a> {
     ivs: ItemVariationStore<'a>,
     locations: MasterLocations,
@@ -55,22 +39,5 @@ impl<'a> DeltaComputer<'a> {
             .iter()
             .map(|loc| self.ivs.compute_delta(delta_ix, loc).map(|d| d + coord))
             .collect()
-    }
-}
-
-impl std::fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.default)?;
-        if let Some(vars) = &self.variations {
-            write!(f, " {{")?;
-            for (i, var) in vars.iter().enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{var}")?;
-            }
-            write!(f, "}}")?;
-        }
-        Ok(())
     }
 }

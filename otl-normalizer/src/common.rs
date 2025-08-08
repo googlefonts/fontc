@@ -350,7 +350,7 @@ impl<Rule> Lookup<Rule> {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = SingleRule<Rule>> + '_
+    pub fn iter(&self) -> impl Iterator<Item = SingleRule<'_, Rule>> + '_
     where
         Rule: Clone,
     {

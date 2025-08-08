@@ -88,6 +88,7 @@ impl VariationInfo for NopVariationInfo {
 
 /// A type that implements [`VariationInfo`], for testing and debugging.
 #[derive(Clone, Debug, Default)]
+#[cfg(any(test, feature = "test", feature = "cli"))]
 pub struct MockVariationInfo {
     // Note: This is not considered public API for the purposes of semvar
     #[doc(hidden)]
@@ -132,6 +133,7 @@ fn simple_axis(tag: Tag, min: i16, default: i16, max: i16) -> Axis {
     }
 }
 
+#[cfg(any(test, feature = "test", feature = "cli"))]
 impl MockVariationInfo {
     /// input is a tuple of (tag, min, default, max)
     #[cfg(any(test, feature = "test"))]
@@ -205,6 +207,7 @@ impl MockVariationInfo {
     }
 }
 
+#[cfg(any(test, feature = "test", feature = "cli"))]
 impl VariationInfo for MockVariationInfo {
     type Error = NopError;
 

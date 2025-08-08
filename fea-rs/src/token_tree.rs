@@ -272,7 +272,7 @@ impl Node {
     }
 
     /// Construct a new cursor for navigating the node's children
-    pub(crate) fn cursor(&self) -> Cursor {
+    pub(crate) fn cursor(&self) -> Cursor<'_> {
         Cursor::new(self)
     }
 
@@ -283,7 +283,7 @@ impl Node {
     }
 
     /// Iterate over this node's direct children, without descending.
-    pub fn iter_children(&self) -> ChildIter {
+    pub fn iter_children(&self) -> ChildIter<'_> {
         ChildIter(Some(self.cursor()))
     }
 

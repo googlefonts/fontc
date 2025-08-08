@@ -148,7 +148,7 @@ impl Compilation {
     /// and manipulate the raw tables directly.
     ///
     /// [`to_binary`]: Compilation::to_binary
-    pub fn to_font_builder(&self) -> Result<FontBuilder, BuilderError> {
+    pub fn to_font_builder(&self) -> Result<FontBuilder<'_>, BuilderError> {
         let mut builder = FontBuilder::default();
         macro_rules! add_if_some {
             ($table:expr) => {

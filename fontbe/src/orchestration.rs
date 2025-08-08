@@ -518,7 +518,7 @@ impl FeaFirstPassOutput {
     }
 
     /// Return a read-fonts GSUB table (for computing glyph closure for mark/kern)
-    pub fn gsub(&self) -> Option<ReadGsub> {
+    pub fn gsub(&self) -> Option<ReadGsub<'_>> {
         self.gsub_bytes
             .as_ref()
             .and_then(|bytes| ReadGsub::read(bytes.as_slice().into()).ok())

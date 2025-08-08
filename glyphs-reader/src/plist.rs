@@ -4,7 +4,6 @@ use std::{borrow::Cow, fmt::Debug};
 use kurbo::{Affine, Point};
 use ordered_float::OrderedFloat;
 
-use ascii_plist_derive::FromPlist;
 use smol_str::SmolStr;
 
 /// A plist dictionary
@@ -834,19 +833,6 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-#[derive(Debug, Default, PartialEq, FromPlist)]
-struct Features {
-    features: Vec<Feature>,
-}
-
-#[derive(Debug, Default, PartialEq, FromPlist)]
-struct Feature {
-    automatic: i64,
-    disabled: Option<i64>,
-    code: String,
-    name: Option<String>,
-}
-
 pub(crate) struct VecDelimiters {
     start: u8,
     end: u8,
@@ -958,6 +944,7 @@ impl FromPlist for Affine {
 
 #[cfg(test)]
 mod tests {
+    use ascii_plist_derive::FromPlist;
     use std::collections::BTreeMap;
 
     use super::*;
