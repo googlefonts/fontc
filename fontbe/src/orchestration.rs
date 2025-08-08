@@ -64,6 +64,7 @@ use write_fonts::{
         post::Post,
         stat::Stat,
         vhea::Vhea,
+        vvar::Vvar,
     },
     types::{GlyphId16, Tag},
     validate::Validate,
@@ -103,6 +104,7 @@ pub enum WorkId {
     Meta,
     Vhea,
     Vmtx,
+    Vvar,
     GatherIrKerning,
     KernFragment(KernBlock),
     GatherBeKerning,
@@ -164,6 +166,7 @@ impl Identifier for WorkId {
             WorkId::Stat => "BeStat",
             WorkId::Vhea => "BeVhea",
             WorkId::Vmtx => "BeVmtx",
+            WorkId::Vvar => "BeVvar",
             WorkId::ExtraFeaTables => "ExtraFeaTables",
         }
     }
@@ -895,6 +898,7 @@ pub struct Context {
     pub mvar: BeContextItem<Mvar>,
     pub vhea: BeContextItem<Vhea>,
     pub vmtx: BeContextItem<Bytes>,
+    pub vvar: BeContextItem<Vvar>,
     pub all_kerning_pairs: BeContextItem<AllKerningPairs>,
     pub kern_fragments: BeContextMap<KernFragment>,
     pub fea_ast: BeContextItem<FeaFirstPassOutput>,
@@ -939,6 +943,7 @@ impl Context {
             meta: self.meta.clone_with_acl(acl.clone()),
             vhea: self.vhea.clone_with_acl(acl.clone()),
             vmtx: self.vmtx.clone_with_acl(acl.clone()),
+            vvar: self.vvar.clone_with_acl(acl.clone()),
             all_kerning_pairs: self.all_kerning_pairs.clone_with_acl(acl.clone()),
             kern_fragments: self.kern_fragments.clone_with_acl(acl.clone()),
             fea_rs_kerns: self.fea_rs_kerns.clone_with_acl(acl.clone()),
@@ -991,6 +996,7 @@ impl Context {
             meta: ContextItem::new(WorkId::Meta.into(), acl.clone(), persistent_storage.clone()),
             vhea: ContextItem::new(WorkId::Vhea.into(), acl.clone(), persistent_storage.clone()),
             vmtx: ContextItem::new(WorkId::Vmtx.into(), acl.clone(), persistent_storage.clone()),
+            vvar: ContextItem::new(WorkId::Vvar.into(), acl.clone(), persistent_storage.clone()),
             all_kerning_pairs: ContextItem::new(
                 WorkId::GatherIrKerning.into(),
                 acl.clone(),

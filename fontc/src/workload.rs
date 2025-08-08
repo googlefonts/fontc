@@ -35,6 +35,7 @@ use fontbe::{
     post::create_post_work,
     stat::create_stat_work,
     vertical_metrics::create_vertical_metrics_work,
+    vvar::create_vvar_work,
 };
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -194,6 +195,7 @@ impl Workload {
         workload.add(create_name_work());
         workload.add(create_os2_work());
         workload.add(create_post_work());
+        workload.add(create_vvar_work());
 
         // Make a damn font
         workload.add(create_font_work());
@@ -341,7 +343,9 @@ impl Workload {
             return;
         }
 
-        let mut deps = AccessBuilder::<AnyWorkId>::new().variant(FeWorkIdentifier::StaticMetadata);
+        let mut deps = AccessBuilder::<AnyWorkId>::new()
+            .variant(FeWorkIdentifier::StaticMetadata)
+            .variant(FeWorkIdentifier::GlobalMetrics);
 
         let mut has_components = false;
         for inst in glyph.sources().values() {
