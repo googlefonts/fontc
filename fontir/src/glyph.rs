@@ -265,6 +265,8 @@ fn flatten_all_non_export_components(context: &Context) {
 fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> Glyph {
     let mut builder = GlyphBuilder::from(glyph.clone());
     builder.clear_components();
+
+    log::debug!("flattening non-export components of '{}'", glyph.name);
     for (loc, instance) in glyph.sources() {
         let mut new_instance = instance.clone();
         new_instance.components.clear();
@@ -272,7 +274,6 @@ fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> 
         for component in &instance.components {
             let id = WorkId::Glyph(component.base.clone());
             let referenced_glyph = context.glyphs.get(&id);
-            //let referenced_glyph = glyphs.get(comp.base.as_str()).unwrap();
             if referenced_glyph.emit_to_binary {
                 new_instance.components.push(component.clone());
                 continue;
@@ -416,8 +417,8 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
     if glyph.default_instance().components.is_empty() {
         return Ok(());
     }
-    trace!(
-        "Flatten {} {:?}",
+    log::trace!(
+        "Flattening {} (components: {:?})",
         glyph.name,
         glyph.default_instance().components
     );
@@ -447,11 +448,6 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
         }
         inst.components = simple;
     }
-    trace!(
-        "Flattened {} to {:?}",
-        glyph.name,
-        glyph.default_instance().components
-    );
     context.glyphs.set(glyph);
     Ok(())
 }
@@ -606,19 +602,19 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         for glyph_name in new_glyph_order.names() {
             let glyph = original_glyphs.get(glyph_name).unwrap();
             if !glyph.has_consistent_components() {
-                debug!(
-                    "Coalescing '{glyph_name}' into a simple glyph because \
+                log::debug!(
+                    "Coalescing '{glyph_name}' into a simple glyph: \
                         component 2x2s vary across the designspace"
                 );
                 todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
             } else if has_components_and_contours(glyph) {
                 if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
                     todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
-                    debug!(
-                        "Coalescing '{glyph_name} into a simple glyph; it has \
-                            contours and components and prefer simple glyphs is set",
+                    log::debug!(
+                        "Coalescing '{glyph_name}' into a simple glyph: 'prefer simple glyphs' is set."
                     );
                 } else {
+                    log::debug!("Moving contours of {glyph_name} to components");
                     todo.push_back((GlyphOp::MoveContoursToComponent, glyph.clone()));
                 }
             }
