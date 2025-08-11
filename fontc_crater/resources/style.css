@@ -98,3 +98,40 @@ td.rev {
 .hidden_row {
   display: none;
 }
+
+/* Modal overlay - covers entire screen */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+/* Modal content box */
+.modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  max-width: 800px;
+  width: 90%;
+  /*text-align: center;*/
+}
+
+.modal pre {
+  background: #ddd;
+}
+
+/* Show modal when active */
+.modal-overlay.show {
+  display: block;
+}
+

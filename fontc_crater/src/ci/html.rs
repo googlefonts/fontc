@@ -18,16 +18,27 @@ use maud::{html, Markup, PreEscaped};
 use super::{DiffResults, RunSummary};
 
 static HTML_FILE: &str = "index.html";
+static ANNOTATIONS_FILE: &str = "annotations.json";
+
+/// An annotation describing a known issue for a target
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct Annotation {
+    text: String,
+    link: Option<String>,
+}
 
 pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
     let summary_path = target_dir.join(super::SUMMARY_FILE);
     let summary: Vec<RunSummary> = crate::try_read_json(&summary_path)?;
     let sources_path = target_dir.join(super::SOURCES_FILE);
     let failures_path = target_dir.join(super::FAILED_REPOS_FILE);
+    let annotations_path = target_dir.join(ANNOTATIONS_FILE);
     let sources: BTreeMap<PathBuf, String> =
         super::load_json_if_exists_else_default(&sources_path)?;
     let failures: BTreeMap<String, String> =
         super::load_json_if_exists_else_default(&failures_path)?;
+    let annotations: BTreeMap<Target, Vec<Annotation>> =
+        super::load_json_if_exists_else_default(&annotations_path)?;
 
     let (current, prev) = match summary.as_slice() {
         [.., prev, current] => {
@@ -45,7 +56,14 @@ pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
         [] => panic!("can't make html with no data"),
     };
 
-    let html_text = make_html(&summary, &sources, &current, prev.as_ref(), &failures)?;
+    let html_text = make_html(
+        &summary,
+        &sources,
+        &current,
+        prev.as_ref(),
+        &failures,
+        &annotations,
+    )?;
     let outpath = target_dir.join(HTML_FILE);
     crate::try_write_str(&html_text, &outpath)
 }
@@ -56,6 +74,7 @@ fn make_html(
     current: &DiffResults,
     prev: Option<&DiffResults>,
     repo_failures: &BTreeMap<String, String>,
+    annotations: &BTreeMap<Target, Vec<Annotation>>,
 ) -> Result<String, Error> {
     let table_body = make_table_body(summary);
     let css = include_str!("../../resources/style.css");
@@ -78,7 +97,7 @@ fn make_html(
         }
     };
     let detailed_report = match prev {
-        Some(prev) => make_detailed_report(current, prev, sources),
+        Some(prev) => make_detailed_report(current, prev, sources, annotations),
 
         _ => html!(),
     };
@@ -105,8 +124,57 @@ fn make_html(
             document.querySelectorAll(\".hidden_row\").forEach(e => e.classList.remove(\"hidden_row\"));
             document.querySelector(\"#show_all_row\").classList.add(\"hidden_row\");
         }
+
+        // used to show info on adding annotations
+        function openModal(target) {
+            const content = createAnnotationPreBlock(target)
+            document.getElementById('modalContent').innerHTML = content || 'No content provided.';
+            document.getElementById('modalOverlay').classList.add('show');
+        }
+
+        function closeModal(event) {
+            // Only close if clicking the overlay (not the modal content) or the close button
+            if (!event || event.target.id === 'modalOverlay' || event.target.classList.contains('close-btn')) {
+                document.getElementById('modalOverlay').classList.remove('show');
+            }
+        }
+
+        function createAnnotationPreBlock(target) {
+            const jsonObj = {
+                [target]: [
+                {
+                    \"text\": \"your text here\",
+                    \"link\": \"http://www.example.com/your_link_here\"
+                }
+                ]
+            };
+
+            return `<pre>${JSON.stringify(jsonObj, null, 2)}</pre>`;
+        }
+
+        // Close modal when pressing Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeModal();
+            }
+        });
         </script>
     ",
+    );
+
+    // used to show popup for adding an annotation
+    let raw_modal = PreEscaped(
+        r#"
+<div id="modalOverlay" class="modal-overlay" onclick="closeModal(event)">
+        <div class="modal">
+            To add an annotation for this target, paste the following text into
+            an 'annotations.json' file in the output directory, and PR the new
+                annotation to the host repository.)
+            <div id="modalContent">Default content</div>
+            <a href = "" onclick="event.preventDefault(); closeModal()">close [x]</a>
+        </div>
+    </div>
+    "#,
     );
 
     let raw_html = html! {
@@ -144,6 +212,7 @@ fn make_html(
                 (added_and_removed)
                 (detailed_report)
             }
+            (raw_modal)
         }
     }
     .into_string();
@@ -302,9 +371,10 @@ fn make_detailed_report(
     current: &DiffResults,
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
+    annotations: &BTreeMap<Target, Vec<Annotation>>,
 ) -> Markup {
-    let reports = vec![
-        make_diff_report(current, prev, sources),
+    let reports = [
+        make_diff_report(current, prev, sources, annotations),
         make_summary_report(current),
         make_error_report(current, prev, sources),
     ];
@@ -416,6 +486,7 @@ fn make_diff_report(
     current: &DiffResults,
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
+    annotations: &BTreeMap<Target, Vec<Annotation>>,
 ) -> Markup {
     fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&Target, f32> {
         results
@@ -467,12 +538,16 @@ fn make_diff_report(
         let changed_tag_list = list_different_tables(diff_details).unwrap_or_default();
         let diff_table = format_diff_report_detail_table(diff_details, prev_details);
 
+        let annotations = format_annotations(target, annotations);
+
         let details = html! {
             div.diff_info {
                 (diff_table)
                 a href = (repo_url) { "view source repository" }
                 " "
                 a href = "" onclick = (onclick) { "copy reproduction command" }
+                " "
+                (annotations)
             }
         };
 
@@ -501,6 +576,39 @@ fn make_diff_report(
             div.matching_families { (matching_familes) }
             @for item in items {
                 (item)
+            }
+        }
+    }
+}
+
+fn format_annotations(target: &Target, annotations: &BTreeMap<Target, Vec<Annotation>>) -> Markup {
+    let Some(annotations) = annotations.get(target) else {
+        let target = target.to_string();
+        let onclick = format!("event.preventDefault(); openModal(\"{target}\");",);
+        return html! {
+            a href = ("#") onclick = (onclick) { "new annotation" }
+
+        };
+    };
+    let make_link_part = |annotation: &Annotation| {
+        if let Some(link) = annotation.link.as_ref() {
+            html! {
+               ": " a href = (link) { (link) }
+            }
+        } else {
+            Default::default()
+        }
+    };
+    html! {
+        div.annotations {
+            h5 { "annotations" }
+            ul {
+                @for annotation in annotations {
+                    li {
+                        (annotation.text) (make_link_part(annotation))
+                    }
+                }
+                li { em {"(to add or change, manually edit annotations.json)"  } }
             }
         }
     }
