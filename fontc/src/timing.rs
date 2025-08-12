@@ -247,6 +247,7 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::Stat) => "STAT",
         AnyWorkId::Be(BeWorkIdentifier::Vhea) => "vhea",
         AnyWorkId::Be(BeWorkIdentifier::Vmtx) => "vmtx",
+        AnyWorkId::Be(BeWorkIdentifier::Vvar) => "VVAR",
         AnyWorkId::Be(BeWorkIdentifier::ExtraFeaTables) => "ExtraFeaTables",
         AnyWorkId::InternalTiming(name) => name,
     }
