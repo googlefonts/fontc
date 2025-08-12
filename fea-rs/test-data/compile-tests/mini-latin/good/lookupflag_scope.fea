@@ -1,0 +1,34 @@
+languagesystem DFLT dflt;
+languagesystem latn ENG;
+languagesystem latn NLD;
+
+feature test {
+    script latn;
+    language ENG;
+
+    lookupflag IgnoreMarks;
+    sub a by b;
+
+    # we need to clear the lookupflags when we encounter this statement.
+    script latn;
+    language NLD;
+    sub x by z;
+} test;
+
+
+feature derp {
+    lookup W {
+        lookupflag IgnoreMarks;
+        # this script statement clears the preceding IgnoreMarks flag.
+        script latn;
+        sub one by two;
+    } W;
+
+    lookup X {
+        lookupflag IgnoreMarks;
+        # but both fonttools and afdko ignore _this_ script statement,
+        # and this lookup ends up with IgnoreMarks set.
+        script latn;
+        sub three by four;
+    } X;
+} derp;
