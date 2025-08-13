@@ -446,7 +446,17 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
     fn set_script(&mut self, stmt: typed::Script) {
         let script = stmt.tag().to_raw();
-        if Some(script) == self.script {
+
+        // fonttools logic here is kind of particular, so let's match it literally
+        //https://github.com/fonttools/fonttools/blob/5ae2943a43/Lib/fontTools/feaLib/builder.py#L1239
+        if self
+            .active_feature
+            .as_ref()
+            .unwrap()
+            .current_system()
+            .map(|langsys| (langsys.script, langsys.language))
+            == Some((script, tags::LANG_DFLT))
+        {
             return;
         }
 

@@ -347,6 +347,10 @@ impl ActiveFeature {
         }
     }
 
+    pub(crate) fn current_system(&self) -> Option<LanguageSystem> {
+        self.current_lang_sys
+    }
+
     /// Change the active language system.
     ///
     /// This method is called when encountering 'script' and 'language' statements
