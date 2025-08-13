@@ -213,7 +213,7 @@ fn add_phantom_points(advance: u16, points: &mut Vec<Point>) {
     points.push(Point::new(0.0, 0.0));
 }
 
-/// See <https://github.com/fonttools/fonttools/blob/86291b6ef62ad4bdb48495a4b915a597a9652dcf/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
+/// See <https://github.com/fonttools/fonttools/blob/86291b6ef6/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
 fn point_seqs_for_simple_glyph(
     ir_glyph: &ir::Glyph,
     instances: HashMap<NormalizedLocation, SimpleGlyph>,
@@ -235,18 +235,21 @@ fn point_seqs_for_simple_glyph(
         .collect()
 }
 
-/// See <https://github.com/fonttools/fonttools/blob/86291b6ef62ad4bdb48495a4b915a597a9652dcf/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
+/// <https://github.com/fonttools/fonttools/blob/86291b6ef6/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
 fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLocation, Vec<Point>> {
     ir_glyph
         .sources()
         .iter()
         .map(|(loc, inst)| {
             // We need 1 point per component for it's X/Y, plus phantoms
-            // See https://github.com/fonttools/fonttools/blob/1c283756a5e39d69459eea80ed12792adc4922dd/Lib/fontTools/ttLib/tables/_g_v_a_r.py#L243
+            // See https://github.com/fonttools/fonttools/blob/1c283756a5/Lib/fontTools/ttLib/tables/_g_v_a_r.py#L243
             let mut points = Vec::new();
             for component in inst.components.iter() {
                 let [.., dx, dy] = component.transform.as_coeffs();
-                points.push((dx, dy).into());
+                // ensure we round now, before iup or gvar generation:
+                // https://github.com/fonttools/fonttools/blob/5ae2943a43/Lib/fontTools/pens/ttGlyphPen.py#L110
+                let point = Point::new(dx.ot_round(), dy.ot_round());
+                points.push(point);
             }
             add_phantom_points(inst.width.ot_round(), &mut points);
 
@@ -264,7 +267,7 @@ fn compute_deltas(
     contour_ends: &Vec<usize>,
 ) -> Result<Deltas, Error> {
     // FontTools hard-codes 0.5
-    //https://github.com/fonttools/fonttools/blob/65bc6105f7aec3478427525d23ddf2e3c8c4b21e/Lib/fontTools/varLib/__init__.py#L239
+    //https://github.com/fonttools/fonttools/blob/65bc6105f7/Lib/fontTools/varLib/__init__.py#L239
     let tolerance = 0.5;
 
     // Contour (aka Simple) and Composite both need gvar

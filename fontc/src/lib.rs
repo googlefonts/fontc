@@ -3758,4 +3758,36 @@ mod tests {
         assert!(completed.contains(&AnyWorkId::Be(BeWorkIdentifier::Glyf)));
         assert!(completed.contains(&AnyWorkId::Be(BeWorkIdentifier::Loca)));
     }
+
+    #[test]
+    fn component_point_rounding() {
+        // if a component of a composite glyph has a non-integer offset,
+        // rounding needs to occur before deltas are computed.
+
+        let result = TestCompile::compile_source("glyphs3/ComponentPointRounding.glyphs");
+        let deltas =
+            result
+                .be_context
+                .gvar_fragments
+                .get(&AnyWorkId::Be(BeWorkIdentifier::GvarFragment(
+                    "Reversedzecyr".into(),
+                )));
+
+        assert_eq!(deltas.deltas.len(), 2);
+        let defaults = deltas.deltas[0].1.as_slice();
+        let deltas = deltas.deltas[1].1.as_slice();
+
+        assert_eq!(
+            defaults.iter().map(|d| d.x).collect::<Vec<_>>(),
+            // 573: xpos of component at default pos
+            // 578: advance width of component at default pos
+            [573, 0, 578, 0, 0]
+        );
+        assert_eq!(
+            deltas.iter().map(|d| d.x).collect::<Vec<_>>(),
+            // important bit: the raw delta pos is 3.5, and we need it rounded
+            // down to 3, not up to 4.
+            [3, 0, 0, 0, 0]
+        )
+    }
 }

@@ -1,0 +1,129 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = TestFont;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = "C7381861-8087-459F-9A66-D6EC096294DF";
+name = Regular;
+},
+{
+axesValues = (
+800
+);
+iconName = Bold;
+id = "80F95D5A-7464-498F-9BB9-FC89FE1B12C4";
+name = ExtraBold;
+}
+);
+glyphs = (
+{
+glyphname = Zecyr;
+layers = (
+{
+layerId = "80F95D5A-7464-498F-9BB9-FC89FE1B12C4";
+shapes = (
+{
+closed = 1;
+nodes = (
+(10,10,l),
+(70,10,l),
+(70,70,l),
+(10,70,l)
+);
+}
+);
+width = 578;
+},
+{
+layerId = "C7381861-8087-459F-9A66-D6EC096294DF";
+shapes = (
+{
+closed = 1;
+nodes = (
+(10,10,l),
+(50,10,l),
+(50,50,l),
+(10,50,l)
+);
+}
+);
+width = 578;
+}
+);
+unicode = 1047;
+},
+{
+glyphname = Reversedzecyr;
+layers = (
+{
+layerId = "80F95D5A-7464-498F-9BB9-FC89FE1B12C4";
+shapes = (
+{
+alignment = -1;
+pos = (576,0);
+ref = Zecyr;
+}
+);
+width = 578;
+},
+{
+layerId = "C7381861-8087-459F-9A66-D6EC096294DF";
+shapes = (
+{
+alignment = -1;
+pos = (572.5,0);
+ref = Zecyr;
+}
+);
+width = 578;
+}
+);
+unicode = 1296;
+}
+);
+instances = (
+{
+axesValues = (
+400
+);
+instanceInterpolations = {
+"C7381861-8087-459F-9A66-D6EC096294DF" = 1;
+};
+name = Regular;
+},
+{
+axesValues = (
+600
+);
+instanceInterpolations = {
+"80F95D5A-7464-498F-9BB9-FC89FE1B12C4" = 0.5;
+"C7381861-8087-459F-9A66-D6EC096294DF" = 0.5;
+};
+name = SemiBold;
+weightClass = 600;
+},
+{
+axesValues = (
+800
+);
+instanceInterpolations = {
+"80F95D5A-7464-498F-9BB9-FC89FE1B12C4" = 1;
+};
+name = ExtraBold;
+weightClass = 800;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 2;
+versionMinor = 120;
+}
