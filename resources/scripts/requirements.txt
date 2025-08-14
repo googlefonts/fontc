@@ -17,7 +17,7 @@ attrs==25.3.0
     #   cattrs
     #   statmake
     #   ufolib2
-axisregistry==0.4.12
+axisregistry==0.4.16
     # via gftools
 babelfont==3.1.3
     # via gftools
@@ -42,7 +42,7 @@ cattrs==25.1.1
     #   ufolib2
 cdifflib==1.2.9
     # via -r resources/scripts/requirements.in
-certifi==2025.7.14
+certifi==2025.8.3
     # via requests
 cffi==1.17.1
     # via
@@ -51,11 +51,11 @@ cffi==1.17.1
     #   pynacl
 cffsubr==0.3.0
     # via ufo2ft
-charset-normalizer==3.4.2
+charset-normalizer==3.4.3
     # via requests
 compreffor==0.5.6
     # via ufo2ft
-cryptography==45.0.5
+cryptography==45.0.6
     # via pyjwt
 defcon[lxml,pens]==0.12.2
     # via
@@ -64,8 +64,6 @@ defcon[lxml,pens]==0.12.2
     #   glyphsets
     #   mutatormath
     #   ufoprocessor
-deprecated==1.2.18
-    # via pygithub
 filelock==3.18.0
     # via youseedee
 font-v==2.1.0
@@ -131,7 +129,7 @@ gitpython==3.1.45
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.11.4
+glyphslib==6.11.5
     # via
     #   -r resources/scripts/requirements.in
     #   bumpfontversion
@@ -152,7 +150,7 @@ lxml==6.0.0
     #   fonttools
     #   nanoemoji
     #   picosvg
-markdown-it-py==3.0.0
+markdown-it-py==4.0.0
     # via rich
 markupsafe==3.0.2
     # via jinja2
@@ -164,7 +162,7 @@ nanoemoji==0.15.8
     # via gftools
 networkx==3.5
     # via gftools
-ninja==1.11.1.4
+ninja==1.13.0
     # via
     #   gftools
     #   nanoemoji
@@ -175,7 +173,7 @@ openstep-plist==0.5.0
     #   glyphslib
 opentype-sanitizer==9.2.0
     # via gftools
-orjson==3.11.1
+orjson==3.11.2
     # via
     #   babelfont
     #   ufolib2
@@ -202,7 +200,7 @@ pycparser==2.22
     # via cffi
 pygit2==1.16.0
     # via gftools
-pygithub==2.6.1
+pygithub==2.7.0
     # via gftools
 pygments==2.19.2
     # via rich
@@ -218,7 +216,7 @@ pyyaml==6.0.2
     # via
     #   gftools
     #   glyphsets
-regex==2024.11.6
+regex==2025.7.34
     # via nanoemoji
 requests==2.32.4
     # via
@@ -256,7 +254,7 @@ toml==0.10.2
     # via nanoemoji
 tqdm==4.67.1
     # via afdko
-ttfautohint-py==0.5.1
+ttfautohint-py==0.6.0
     # via gftools
 typing-extensions==4.14.1
     # via
@@ -265,6 +263,7 @@ typing-extensions==4.14.1
     #   pygithub
 ufo2ft[cffsubr,compreffor]==3.5.1
     # via
+    #   -r resources/scripts/requirements.in
     #   fontmake
     #   nanoemoji
 ufolib2[json]==0.18.1
@@ -276,7 +275,7 @@ ufolib2[json]==0.18.1
     #   nanoemoji
     #   ufomerge
     #   vttlib
-ufomerge==1.9.5
+ufomerge==1.9.6
     # via
     #   babelfont
     #   gftools
@@ -284,7 +283,7 @@ ufonormalizer==0.6.2
     # via afdko
 ufoprocessor==1.13.3
     # via afdko
-uharfbuzz==0.51.0
+uharfbuzz==0.51.1
     # via
     #   fonttools
     #   vharfbuzz
@@ -300,8 +299,6 @@ vharfbuzz==0.3.1
     # via gftools
 vttlib==0.12.0
     # via gftools
-wrapt==1.17.2
-    # via deprecated
 youseedee==0.7.0
     # via glyphsets
 zopfli==0.2.3.post1
