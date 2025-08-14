@@ -128,11 +128,18 @@ impl<'a> CornerErasureCtx<'a> {
         {
             log::debug!("found an open corner");
             // this looks like an open corner, so now do the deletion
-            let new_prev = maybe_corner.one.subsegment(0.0..intersection.t0);
+            let new_prev = maybe_corner
+                .one
+                .subsegment(0.0..intersection.t0)
+                // python does this math with floats, so match that
+                .truncate_f32();
             let first_ix = maybe_corner.first_el_idx;
             self.overwrite_el(first_ix, new_prev);
 
-            let new_next = maybe_corner.two.subsegment(intersection.t1..1.0);
+            let new_next = maybe_corner
+                .two
+                .subsegment(intersection.t1..1.0)
+                .truncate_f32();
 
             let next_seg_el_ix = self.wrapping_el_idx(first_ix + 2);
             // for the 'next' segment, the start point is the end point of 'prev', so we're good
@@ -244,6 +251,39 @@ impl<'a> CornerErasureCtx<'a> {
             i % (self.els.len() - 1) + 1
         } else {
             i
+        }
+    }
+}
+
+/// A trait for truncating f64 to f32.
+///
+/// We want to match python, which does some operations with floats.
+trait TruncateToF32 {
+    fn truncate_f32(self) -> Self;
+}
+
+impl TruncateToF32 for Point {
+    fn truncate_f32(self) -> Self {
+        Point::new(self.x as f32 as _, self.y as f32 as _)
+    }
+}
+
+impl TruncateToF32 for PathSeg {
+    fn truncate_f32(self) -> Self {
+        match self {
+            PathSeg::Line(Line { p0, p1 }) => {
+                Line::new(p0.truncate_f32(), p1.truncate_f32()).into()
+            }
+            PathSeg::Quad(QuadBez { p0, p1, p2 }) => {
+                QuadBez::new(p0.truncate_f32(), p1.truncate_f32(), p2.truncate_f32()).into()
+            }
+            PathSeg::Cubic(CubicBez { p0, p1, p2, p3 }) => CubicBez::new(
+                p0.truncate_f32(),
+                p1.truncate_f32(),
+                p2.truncate_f32(),
+                p3.truncate_f32(),
+            )
+            .into(),
         }
     }
 }
@@ -941,5 +981,31 @@ mod tests {
             .points_are_on_same_side(origin + Vec2::new(0.0, -1.0), origin + Vec2::new(0.0, 1.0)));
         assert!(!origin
             .points_are_on_same_side(origin + Vec2::new(-1.0, 0.0), origin + Vec2::new(1.0, 0.0)));
+    }
+
+    #[test]
+    fn truncate_segment_splits() {
+        // based on a test case reduced from NotoSerifTangut
+        let mut path = BezPath::new();
+        path.move_to((339.0, 141.0));
+        path.line_to((354.0, 0.));
+        path.line_to((328.0, 0.));
+        path.line_to((328.0, 208.));
+        path.line_to((384.0, 208.));
+        path.curve_to((364.91, 186.86), (346.24, 168.53), (328.0, 153.0));
+        path.line_to((339.0, 141.0));
+        path.close_path();
+
+        let mut expected = BezPath::new();
+        expected.move_to((339., 141.));
+        expected.line_to((354.0, 0.));
+        expected.line_to((328.0, 0.));
+        expected.line_to((328.0, 153.));
+        expected.curve_to((328.0, 153.), (328.0, 153.), (328.0, 153.));
+        expected.line_to((339., 141.));
+        expected.close_path();
+
+        let erased = erase_open_corners(&path).unwrap();
+        assert_eq!(erased, expected);
     }
 }
