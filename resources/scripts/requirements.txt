@@ -64,7 +64,7 @@ defcon[lxml,pens]==0.12.2
     #   glyphsets
     #   mutatormath
     #   ufoprocessor
-filelock==3.18.0
+filelock==3.19.1
     # via youseedee
 font-v==2.1.0
     # via gftools
@@ -82,11 +82,11 @@ fontmath==0.9.4
     #   mutatormath
     #   ufo2ft
     #   ufoprocessor
-fontparts==0.13.2
+fontparts==0.13.3
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.59.0
+fonttools[lxml,repacker,ufo,unicode,woff]==4.59.1
     # via
     #   -r resources/scripts/requirements.in
     #   afdko
