@@ -610,7 +610,7 @@ def erase_type_from_stranded_points(ttx):
 
 # only fontc emits name 25 currently, don't treat that as an error
 def allow_fontc_only_variations_postscript_prefix(fontc, fontmake):
-    xpath_to_name_25 = "//namerecord[@nameID='25']"
+    xpath_to_name_25 = "/ttFont/name/namerecord[@nameID='25']"
     fontc_name25 = fontc.xpath(xpath_to_name_25)
     fontmake_name25 = fontmake.xpath(xpath_to_name_25)
     if fontc_name25 and not fontmake_name25:
