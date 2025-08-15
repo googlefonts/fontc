@@ -122,9 +122,8 @@ impl<'a> CornerErasureCtx<'a> {
         // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da5/Lib/glyphsLib/filters/eraseOpenCorners.py#L105>
         let t0_inv = 1.0 - t0;
         log::trace!("found intersections at {t0_inv} and {t1}");
-        if ((t0_inv < 0.5 && t1 < 0.5) || t0_inv < 0.3 || t1 < 0.3)
-            && t1 > 0.0001
-            && t0_inv > 0.0001
+        // from glyphsapp: https://github.com/googlefonts/fontc/issues/1600#issuecomment-3190896627
+        if (t0_inv < 0.5 && t1 < 0.5) || (t0_inv < 0.3 && t1 < 0.99) || (t0_inv < 0.99 && t1 < 0.3)
         {
             log::debug!("found an open corner");
             // this looks like an open corner, so now do the deletion
@@ -897,18 +896,18 @@ mod tests {
     }
 
     #[test]
-    fn corner_with_t_2() {
-        let _ = env_logger::builder().is_test(true).try_init();
+    fn corner_exactly_on_line() {
+        // based on a test case reduced from NotoSerifTangut
         let mut path = BezPath::new();
-        path.move_to((3.0, 155.0));
-        path.line_to((14.0, 155.0));
-        path.line_to((14.0, 0.0));
-        path.line_to((80.0, 111.0));
-        path.line_to((14.0, 111.0));
-        path.line_to((3.0, 155.0));
+        path.move_to((339.0, 141.0));
+        path.line_to((354.0, 0.));
+        path.line_to((328.0, 0.));
+        path.line_to((328.0, 208.));
+        path.line_to((384.0, 208.));
+        path.curve_to((364.91, 186.86), (346.24, 168.53), (328.0, 153.0));
+        path.line_to((339.0, 141.0));
         path.close_path();
-
-        assert!(erase_open_corners(&path).is_some());
+        assert!(erase_open_corners(&path).is_none());
     }
 
     #[test]
