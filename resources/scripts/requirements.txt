@@ -129,7 +129,7 @@ gitpython==3.1.45
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.11.5
+glyphslib==6.11.6
     # via
     #   -r resources/scripts/requirements.in
     #   bumpfontversion
@@ -218,7 +218,7 @@ pyyaml==6.0.2
     #   glyphsets
 regex==2025.7.34
     # via nanoemoji
-requests==2.32.4
+requests==2.32.5
     # via
     #   gftools
     #   glyphsets
@@ -228,7 +228,7 @@ resvg-cli==0.44.0
     # via nanoemoji
 rich==14.1.0
     # via gftools
-ruamel-yaml==0.18.14
+ruamel-yaml==0.18.15
     # via gftools
 ruamel-yaml-clib==0.2.12
     # via ruamel-yaml
