@@ -12,7 +12,7 @@ categories = ["text-processing", "parsing", "graphics"]
 
 [dependencies]
 fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
-fontir = { version = "0.2.1", path = "../fontir" }
+fontir = { version = "0.3.0", path = "../fontir" }
 
 write-fonts.workspace = true
 

@@ -1,6 +1,6 @@
 [package]
 name = "fontir"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Intermediate Representation used by fontc, a font compiler."
