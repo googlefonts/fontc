@@ -357,6 +357,17 @@ struct Intersection {
     t1: f64,
 }
 
+impl Intersection {
+    // used to avoid duplicate equivalent intersections:
+    // https://github.com/fonttools/fonttools/blob/7b50bde2ee/Lib/fontTools/misc/bezierTools.py#L1366
+    fn unique_key(&self) -> (u64, u64) {
+        (
+            (self.t0 / PY_ACCURACY) as u64,
+            (self.t1 / PY_ACCURACY) as u64,
+        )
+    }
+}
+
 /// Find an intersection of two segments, if any exist
 ///
 /// It is possible for segments to intersect multiple times; in this case we
@@ -436,8 +447,6 @@ const PY_ACCURACY: f64 = 1e-3;
 fn curve_curve_intersection_py(seg1: PathSeg, seg2: PathSeg) -> Option<Intersection> {
     let mut result = Vec::new();
     curve_curve_py_impl(seg1, seg2, &(0.0..1.0), &(0.0..1.0), &mut result);
-    result.sort_by_key(|hit| (OrderedFloat(hit.t0), OrderedFloat(hit.t1)));
-    result.dedup_by_key(|hit| ((hit.t0 / PY_ACCURACY) as i64, (hit.t1 / PY_ACCURACY) as i64));
     result.first().copied()
 }
 
@@ -459,10 +468,16 @@ fn curve_curve_py_impl(
     }
     // if bounds intersect but they're tiny, approximate
     if bounds1.area() < PY_ACCURACY && bounds2.area() < PY_ACCURACY {
-        buf.push(Intersection {
+        let hit = Intersection {
             t0: midpoint(range1),
             t1: midpoint(range2),
-        });
+        };
+        let key = hit.unique_key();
+        // python dedupes after, using a set; the number of hits is bounded
+        // and it's probably just cheaper to be quadratic
+        if !buf.iter().any(|x| x.unique_key() == key) {
+            buf.push(hit);
+        }
         return;
     }
 
@@ -883,6 +898,32 @@ mod tests {
                 .unwrap()
                 .line_t
         )
+    }
+
+    // ensure that we match fonttools when intersection produces more than one
+    // hit (in which case fonttools uses the first hit, which is based on the
+    // operation order of the divide/conquer calls in curve_curve_intersection_py
+    #[test]
+    fn curve_curve_intersect_order() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let seg1 = CubicBez::new(
+            (336.0, 150.0),
+            (340.0, 151.0),
+            (341.0, 151.0),
+            (339.0, 152.0),
+        )
+        .into();
+        let seg2 = CubicBez::new(
+            (340.0, 152.0),
+            (340.0, 151.0),
+            (338.0, 149.0),
+            (335.0, 148.0),
+        )
+        .into();
+
+        let hit = curve_curve_intersection_py(seg1, seg2).unwrap();
+        // matches bezierTools as of 7b50bde2e
+        assert_eq!(hit.t1, 0.29296875);
     }
 
     #[test]
