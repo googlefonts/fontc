@@ -1,0 +1,4 @@
+# U32Set uses interior mutability to cache the last page lookup, the fields value
+# does not affect external behaviour of the type, and is not referenced in hash/equality
+# implementations.
+ignore-interior-mutability = ["read_fonts::collections::int_set::bitset::U32Set"]
