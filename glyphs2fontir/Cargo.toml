@@ -13,7 +13,7 @@ categories = ["text-processing", "parsing", "graphics"]
 [dependencies]
 fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
 fontir = { version = "0.2.1", path = "../fontir" }
-glyphs-reader = { version = "0.2.1", path = "../glyphs-reader" }
+glyphs-reader = { version = "0.2.2", path = "../glyphs-reader" }
 
 smol_str.workspace = true
 log.workspace = true
