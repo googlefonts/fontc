@@ -299,7 +299,12 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             td.other_err {  (run.stats.other_failure) " " (other_err_diff)  }
             }
         };
-        let elapsed = super::format_elapsed_time(&run.began, &run.finished);
+        let elapsed = run
+            .finished
+            .signed_duration_since(run.began)
+            .to_std()
+            .unwrap_or_default();
+        let elapsed = crate::human_readable_duration(elapsed);
         let class = (!default_visible).then_some("hidden_row");
         html! {
             tr class=[class] {
