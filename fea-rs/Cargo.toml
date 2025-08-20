@@ -1,6 +1,6 @@
 [package]
 name = "fea-rs"
-version = "0.20.1"
+version = "0.20.2"
 license = "MIT/Apache-2.0"
 authors = ["Colin Rofls <colin@cmyr.net>"]
 description = "Tools for working with Adobe OpenType Feature files."
@@ -12,7 +12,7 @@ edition = "2021"
 exclude = ["test-data"]
 
 [dependencies]
-fontdrasil = { version = "0.2.1", path = "../fontdrasil" }
+fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
 ansi_term = "0.12.1"
 serde_json = {version = "1.0.87", optional = true }
 

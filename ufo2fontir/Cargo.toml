@@ -1,6 +1,6 @@
 [package]
 name = "ufo2fontir"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Converts UFO or UFO+designspace to font ir for compilation."
@@ -11,8 +11,8 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-fontdrasil = { version = "0.2.1", path = "../fontdrasil" }
-fontir = { version = "0.2.1", path = "../fontir" }
+fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
+fontir = { version = "0.3.0", path = "../fontir" }
 
 kurbo.workspace = true
 serde.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "fontbe"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "the backend for fontc, a font compiler."
@@ -11,9 +11,9 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-fontdrasil = { version = "0.2.1", path = "../fontdrasil" }
-fontir = { version = "0.2.1", path = "../fontir" }
-fea-rs = { version = "0.20.1", path = "../fea-rs", features = ["serde"] }
+fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
+fontir = { version = "0.3.0", path = "../fontir" }
+fea-rs = { version = "0.20.2", path = "../fea-rs", features = ["serde"] }
 tinystr = {version = "0.8.0", features = ["serde"] }
 
 icu_properties.workspace = true
