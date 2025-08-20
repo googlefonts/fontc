@@ -21,7 +21,7 @@ cli = ["clap"]
 
 [dependencies]
 fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
-fontbe = { version = "0.2.1", path = "../fontbe" }
+fontbe = { version = "0.2.2", path = "../fontbe" }
 fontir = { version = "0.3.0", path = "../fontir" }
 glyphs2fontir = { version = "0.3.0", path = "../glyphs2fontir" }
 fontra2fontir = { version = "0.2.2", path = "../fontra2fontir" }
