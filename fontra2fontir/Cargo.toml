@@ -1,6 +1,6 @@
 [package]
 name = "fontra2fontir"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Converts fontra.xyz/ files to font ir for compilation."
