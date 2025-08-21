@@ -538,7 +538,7 @@ fn make_diff_report(
         let changed_tag_list = list_different_tables(diff_details).unwrap_or_default();
         let diff_table = format_diff_report_detail_table(diff_details, prev_details);
 
-        let annotations = format_annotations(target, annotations);
+        let annotation_list = format_annotations(target, annotations);
 
         let details = html! {
             div.diff_info {
@@ -547,19 +547,24 @@ fn make_diff_report(
                 " "
                 a href = "" onclick = (onclick) { "copy reproduction command" }
                 " "
-                (annotations)
+                (annotation_list)
             }
         };
 
         // avoid .9995 printing as 100%
         let ratio_fmt = format!("{:.3}%", (ratio * 1000.0).floor() / 1000.0);
+        let maybe_annotation_icon = if annotations.contains_key(target) {
+            " ✎"
+        } else {
+            ""
+        };
         let target_description = make_target_description(target);
 
         items.push(html! {
             details {
                 summary {
                     span.font_path {
-                        (target_description)
+                        (target_description) (maybe_annotation_icon)
                     }
                     span.diff_result { (ratio_fmt) " " (decoration) }
                     span.changed_tag_list { (changed_tag_list) }
