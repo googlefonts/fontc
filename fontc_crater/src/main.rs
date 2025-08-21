@@ -2,9 +2,11 @@
 
 use std::{
     collections::BTreeMap,
+    fmt::Display,
     path::Path,
     process::{Command, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
+    time::{Duration, Instant},
 };
 
 use clap::Parser;
@@ -80,9 +82,14 @@ fn run_all<T: Send, E: Send, Cx: Sync>(
                 let i = counter.fetch_add(1, Ordering::Relaxed) + 1;
                 currently_running.fetch_add(1, Ordering::Relaxed);
                 log::debug!("starting {target} ({i}/{total_targets})");
+                let start_t = Instant::now();
                 let r = runner(context, &target);
+                let total_t = start_t.elapsed();
                 let n_running = currently_running.fetch_sub(1, Ordering::Relaxed);
-                log::debug!("finished {target} ({n_running} active)");
+                log::debug!(
+                    "finished {target} in {} ({n_running} active)",
+                    human_readable_duration(total_t)
+                );
                 (target, r)
             })
             .collect()
@@ -234,4 +241,47 @@ fn try_create_dir(path: &Path) -> Result<(), Error> {
         path: path.to_owned(),
         error,
     })
+}
+
+const SEC_PER_MIN: u64 = 60;
+const MIN_PER_HOUR: u64 = 60;
+const SEC_PER_HOUR: u64 = SEC_PER_MIN * MIN_PER_HOUR;
+
+fn human_readable_duration(duration: Duration) -> impl Display {
+    struct TimePrinter(Duration);
+    impl Display for TimePrinter {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let hours = self.0.as_secs() / SEC_PER_HOUR;
+            let minutes = (self.0.as_secs() % SEC_PER_HOUR) / SEC_PER_MIN;
+            let seconds =
+                self.0.as_secs_f64() - ((hours * MIN_PER_HOUR + minutes) * SEC_PER_MIN) as f64;
+            if hours > 0 {
+                write!(f, "{hours}h")?;
+            }
+            write!(f, "{minutes}m")?;
+            write!(f, "{seconds:.2}s")
+        }
+    }
+
+    TimePrinter(duration)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn time_print_smoke_test() {
+        let some_hours = Duration::from_secs(SEC_PER_HOUR * 2 + SEC_PER_MIN * 42 + 11);
+        assert_eq!(
+            human_readable_duration(some_hours).to_string(),
+            "2h42m11.00s"
+        );
+
+        let mins2secs11point3355 = Duration::from_secs_f32(131.3355);
+        assert_eq!(
+            human_readable_duration(mins2secs11point3355).to_string(),
+            "2m11.34s"
+        );
+    }
 }
