@@ -554,8 +554,15 @@ impl MergeCtx<'_> {
 
         const ORDER: [Tag; 4] = [ABVM, BLWM, MARK, MKMK];
         let mut inserts = [None; 4];
+        let features_we_write = self
+            .ext_features
+            .keys()
+            .map(|ft| ft.feature)
+            .collect::<HashSet<_>>();
         for (i, tag) in ORDER.iter().enumerate() {
-            inserts[i] = self.insert_markers.get(tag).copied();
+            if features_we_write.contains(tag) {
+                inserts[i] = self.insert_markers.get(tag).copied();
+            }
         }
 
         for i in 0..ORDER.len() {
@@ -935,5 +942,15 @@ mod tests {
         let mut all_feats = AllFeatures::default();
         external.merge_into(&mut all, &mut all_feats, &markers);
         assert_eq!(all_feats.feature_order_for_test(), [MARK, DIST]);
+    }
+
+    #[test]
+    fn abvm_feature_ignores_blwm_marker() {
+        let mut external = mock_external_features(&[CURS, ABVM]);
+        let markers = make_markers_with_order([BLWM, CURS]);
+        let mut all = AllLookups::default();
+        let mut all_feats = AllFeatures::default();
+        external.merge_into(&mut all, &mut all_feats, &markers);
+        assert_eq!(all_feats.feature_order_for_test(), [CURS, ABVM]);
     }
 }
