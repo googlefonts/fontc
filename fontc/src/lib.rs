@@ -3791,37 +3791,39 @@ mod tests {
         )
     }
 
-    #[rstest]
-    #[case::static_font("glyphs3/StaticComposite.glyphs")]
-    #[case::variable_font("glyphs3/WghtVarComposite.glyphs")]
-    fn use_my_metrics_behavior_by_font_type(#[case] font_file: &str) {
+    fn has_use_my_metrics_flag(font_file: &str, composite_glyph_name: &str) -> bool {
         let result = TestCompile::compile_source(font_file);
-        let static_metadata = result.fe_context.static_metadata.get();
-        let is_variable = !static_metadata.axes.is_empty();
-
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
 
-        let gid = result.get_glyph_index("equal").unwrap();
+        let gid = result.get_glyph_index(composite_glyph_name).unwrap();
         let Some(glyf::Glyph::Composite(glyph)) = &glyphs[gid as usize] else {
-            panic!("Expected 'equal' to be a composite glyph");
+            panic!(
+                "Expected '{}' to be a composite glyph",
+                composite_glyph_name
+            );
         };
 
-        let has_use_my_metrics = glyph.components().any(|comp| {
+        let has_flag = glyph.components().any(|comp| {
             comp.flags
                 .contains(write_fonts::read::tables::glyf::CompositeGlyphFlags::USE_MY_METRICS)
         });
+        has_flag
+    }
 
-        if is_variable {
-            assert!(
-                !has_use_my_metrics,
-                "Variable composite glyph should NOT have USE_MY_METRICS set on any component"
-            );
-        } else {
-            assert!(
-                has_use_my_metrics,
-                "Static composite glyph should have USE_MY_METRICS set on at least one component"
-            );
-        }
+    #[test]
+    fn static_font_sets_use_my_metrics() {
+        assert!(
+            has_use_my_metrics_flag("glyphs3/StaticComposite.glyphs", "equal"),
+            "Static composite glyph should have USE_MY_METRICS set on at least one component"
+        );
+    }
+
+    #[test]
+    fn variable_font_does_not_set_use_my_metrics() {
+        assert!(
+            !has_use_my_metrics_flag("glyphs3/WghtVarComposite.glyphs", "equal"),
+            "Variable composite glyph should NOT have USE_MY_METRICS set on any component"
+        );
     }
 }
