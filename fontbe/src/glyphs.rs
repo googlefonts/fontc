@@ -133,6 +133,7 @@ fn create_composite(
     glyph: &ir::Glyph,
     default_location: &NormalizedLocation,
     components: &[(GlyphName, NormalizedLocation, Affine)],
+    is_variable: bool,
 ) -> Result<CompositeGlyph, Error> {
     let mut errors = vec![];
     let mut set_use_my_metrics = false;
@@ -166,12 +167,26 @@ fn create_composite(
                             .ir
                             .glyphs
                             .get(&FeWorkId::Glyph(ref_glyph_name.clone()));
-                        if let Some(default_component) =
-                            component_glyph.sources().get(default_location)
-                        {
-                            if can_reuse_metrics(default_glyph, default_component, transform) {
-                                set_use_my_metrics = true;
-                                component.flags.use_my_metrics = true;
+
+                        // Only set USE_MY_METRICS for static fonts (no variable axes). The flag
+                        // is only useful for hinted fonts where one wants to reuse the hinted metrics
+                        // for composites, and as such should be set by the hinting editor rather than
+                        // fontc. We keep setting the flag on statics to match the old behavior of
+                        // fontmake. For variable fonts, the presence of this flag can be dangerous
+                        // when the composite and component glyph metrics aren't equal in all the
+                        // masters. It could cause the wrong metrics to be used depending on whether
+                        // the advance width is computed from HVAR (for which the flag is normally
+                        // ignored) or from the glyf+gvar phantom points of the flagged component.
+                        // While we could detect this inconsistency and only set the flag when it is
+                        // safe (basically no-op), it's not worth the extra complexity.
+                        if !is_variable {
+                            if let Some(default_component) =
+                                component_glyph.sources().get(default_location)
+                            {
+                                if can_reuse_metrics(default_glyph, default_component, transform) {
+                                    set_use_my_metrics = true;
+                                    component.flags.use_my_metrics = true;
+                                }
                             }
                         }
                     }
@@ -357,7 +372,14 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
 
         let (name, point_seqs, contour_ends) = match glyph {
             CheckedGlyph::Composite { name, components } => {
-                let composite = create_composite(context, ir_glyph, default_location, &components)?;
+                let is_variable = !static_metadata.axes.is_empty();
+                let composite = create_composite(
+                    context,
+                    ir_glyph,
+                    default_location,
+                    &components,
+                    is_variable,
+                )?;
                 context
                     .glyphs
                     .set_unconditionally(Glyph::new(name.clone(), composite));
