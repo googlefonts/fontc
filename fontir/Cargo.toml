@@ -1,6 +1,6 @@
 [package]
 name = "fontir"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Intermediate Representation used by fontc, a font compiler."
@@ -11,7 +11,7 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
+fontdrasil = { version = "0.2.3", path = "../fontdrasil" }
 
 bitflags.workspace = true
 serde.workspace = true

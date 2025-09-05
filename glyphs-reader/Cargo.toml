@@ -1,6 +1,6 @@
 [package]
 name = "glyphs-reader"
-version = "0.2.2"
+version = "0.2.3"
 license = "MIT/Apache-2.0"
 authors = ["Raph Levien <raph.levien@gmail.com>"]
 repository = "https://github.com/googlefonts/fontc"
@@ -13,7 +13,7 @@ readme = "README.md"
 
 [dependencies]
 ascii_plist_derive = { version = "0.1.0", path = "ascii_plist_derive" }
-fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
+fontdrasil = { version = "0.2.3", path = "../fontdrasil" }
 quick-xml = "0.37"
 ordered-float.workspace = true
 kurbo.workspace = true
