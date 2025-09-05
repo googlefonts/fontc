@@ -11,8 +11,8 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
-fontir = { version = "0.3.0", path = "../fontir" }
+fontdrasil = { version = "0.2.3", path = "../fontdrasil" }
+fontir = { version = "0.3.1", path = "../fontir" }
 fea-rs = { version = "0.20.3", path = "../fea-rs", features = ["serde"] }
 tinystr = {version = "0.8.0", features = ["serde"] }
 

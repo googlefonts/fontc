@@ -9,7 +9,7 @@ readme = "README.md"
 
 
 [dependencies]
-fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
+fontdrasil = { version = "0.2.3", path = "../fontdrasil" }
 clap.workspace = true
 thiserror.workspace = true
 smol_str.workspace = true
