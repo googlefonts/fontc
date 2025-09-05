@@ -1,6 +1,6 @@
 [package]
 name = "fontc"
-version = "0.3.1"
+version = "0.3.2"
 build = "build.rs"
 edition = "2021"
 license = "MIT/Apache-2.0"
@@ -21,7 +21,7 @@ cli = ["clap"]
 
 [dependencies]
 fontdrasil = { version = "0.2.2", path = "../fontdrasil" }
-fontbe = { version = "0.2.2", path = "../fontbe" }
+fontbe = { version = "0.2.3", path = "../fontbe" }
 fontir = { version = "0.3.0", path = "../fontir" }
 glyphs2fontir = { version = "0.3.0", path = "../glyphs2fontir" }
 fontra2fontir = { version = "0.2.2", path = "../fontra2fontir" }
