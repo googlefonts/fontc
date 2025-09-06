@@ -25,7 +25,6 @@ ordered-float.workspace = true
 indexmap.workspace = true
 
 log.workspace = true
-env_logger.workspace = true
 
 write-fonts.workspace = true
 
@@ -47,4 +46,5 @@ more-asserts.workspace = true
 temp-env.workspace = true
 rstest.workspace = true
 pretty_assertions.workspace = true
+env_logger.workspace = true
 otl-normalizer = { version = "0.0.1", path = "../otl-normalizer" }

@@ -30,7 +30,6 @@ regex.workspace = true
 chrono.workspace = true
 smol_str.workspace = true
 serde.workspace = true
-bincode.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

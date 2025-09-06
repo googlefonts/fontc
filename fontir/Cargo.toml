@@ -16,8 +16,6 @@ fontdrasil = { version = "0.2.3", path = "../fontdrasil" }
 bitflags.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
-bincode.workspace = true
-filetime.workspace = true
 thiserror.workspace = true
 
 kurbo.workspace = true
@@ -46,3 +44,4 @@ parking_lot = { version = "0.12.3", features = ["nightly"] }
 diff.workspace = true
 tempfile.workspace = true
 pretty_assertions.workspace = true
+bincode.workspace = true
