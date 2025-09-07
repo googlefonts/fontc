@@ -9,7 +9,7 @@ mod plist;
 mod propagate_anchors;
 
 pub use font::{
-    Axis, Component, CustomParameters, FeatureSnippet, Font, FontMaster, Glyph, InstanceType,
-    Layer, Node, NodeType, Path, Shape,
+    Anchor, Axis, Component, CustomParameters, FeatureSnippet, Font, FontMaster, Glyph,
+    InstanceType, Layer, Node, NodeType, Path, Shape,
 };
 pub use plist::Plist;
