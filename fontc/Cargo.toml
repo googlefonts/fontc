@@ -28,12 +28,9 @@ fontra2fontir = { version = "0.2.3", path = "../fontra2fontir" }
 ufo2fontir = { version = "0.2.3", path = "../ufo2fontir" }
 
 bitflags.workspace = true
-bincode.workspace = true
 
 serde.workspace = true
 serde_yaml.workspace = true
-
-filetime.workspace = true
 
 log.workspace = true
 env_logger.workspace = true

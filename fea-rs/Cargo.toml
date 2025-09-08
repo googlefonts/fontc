@@ -23,7 +23,6 @@ rayon = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 write-fonts.workspace = true
 smol_str.workspace = true
-chrono.workspace = true
 indexmap.workspace = true
 thiserror.workspace = true
 ordered-float.workspace = true
