@@ -36,7 +36,7 @@ bump2version==1.0.1
     # via bumpfontversion
 bumpfontversion==0.4.1
     # via gftools
-cattrs==25.1.1
+cattrs==25.2.0
     # via
     #   statmake
     #   ufolib2
@@ -44,7 +44,7 @@ cdifflib==1.2.9
     # via -r resources/scripts/requirements.in
 certifi==2025.8.3
     # via requests
-cffi==1.17.1
+cffi==2.0.0
     # via
     #   cryptography
     #   pygit2
@@ -55,7 +55,7 @@ charset-normalizer==3.4.3
     # via requests
 compreffor==0.5.6
     # via ufo2ft
-cryptography==45.0.6
+cryptography==45.0.7
     # via pyjwt
 defcon[lxml,pens]==0.12.2
     # via
@@ -200,7 +200,7 @@ pycparser==2.22
     # via cffi
 pygit2==1.16.0
     # via gftools
-pygithub==2.7.0
+pygithub==2.8.1
     # via gftools
 pygments==2.19.2
     # via rich
@@ -216,7 +216,7 @@ pyyaml==6.0.2
     # via
     #   gftools
     #   glyphsets
-regex==2025.7.34
+regex==2025.9.1
     # via nanoemoji
 requests==2.32.5
     # via
@@ -261,7 +261,7 @@ typing-extensions==4.15.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.6.2
+ufo2ft[cffsubr,compreffor]==3.6.3
     # via
     #   fontmake
     #   nanoemoji
@@ -282,7 +282,7 @@ ufonormalizer==0.6.2
     # via afdko
 ufoprocessor==1.14.0
     # via afdko
-uharfbuzz==0.51.3
+uharfbuzz==0.51.4
     # via
     #   fonttools
     #   vharfbuzz
