@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    ffi::OsStr,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -26,6 +27,7 @@ use log::{debug, log_enabled, trace, warn, Level};
 use norad::{
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
+    DataRequest,
 };
 use plist::{Dictionary, Value};
 use write_fonts::{
@@ -136,16 +138,14 @@ impl DesignSpaceIrSource {
 fn load_designspace(
     designspace_or_ufo: &Path,
 ) -> Result<(PathBuf, DesignSpaceDocument), BadSourceKind> {
-    let Some(designspace_dir) = designspace_or_ufo.parent().map(|d| d.to_path_buf()) else {
-        return Err(BadSourceKind::ExpectedParent);
-    };
+    let designspace_dir = designspace_or_ufo
+        .parent()
+        .ok_or(BadSourceKind::ExpectedParent)?;
 
-    let Some(ext) = designspace_or_ufo
+    let ext = designspace_or_ufo
         .extension()
         .map(|s| s.to_ascii_lowercase())
-    else {
-        return Err(BadSourceKind::UnrecognizedExtension);
-    };
+        .ok_or(BadSourceKind::UnrecognizedExtension)?;
     let designspace = match ext.to_str() {
         Some("designspace") => {
             DesignSpaceDocument::load(designspace_or_ufo).map_err(|e| match e {
@@ -154,22 +154,33 @@ fn load_designspace(
             })?
         }
         Some("ufo") => {
-            let Some(filename) = designspace_or_ufo.file_name().and_then(|s| s.to_str()) else {
-                return Err(BadSourceKind::ExpectedDirectory);
-            };
+            // if we're loading from a UFO, copy the ufo lib into the designspace.
+            let font =
+                norad::Font::load_requested_data(designspace_or_ufo, DataRequest::none().lib(true))
+                    .map_err(|e| {
+                        BadSourceKind::Custom(format!(
+                            "failed to load ufo at {}: '{e}'",
+                            designspace_or_ufo.display()
+                        ))
+                    })?;
+            let filename = designspace_or_ufo
+                .file_name()
+                .and_then(OsStr::to_str)
+                .unwrap(); // if we could load the font, this must be fine
             DesignSpaceDocument {
                 format: 4.1,
                 sources: vec![norad::designspace::Source {
                     filename: filename.to_owned(),
                     ..Default::default()
                 }],
+                lib: font.lib,
                 ..Default::default()
             }
         }
         _ => return Err(BadSourceKind::UnrecognizedExtension),
     };
     debug!("Loaded {ext:?} from {designspace_or_ufo:?}");
-    Ok((designspace_dir, designspace))
+    Ok((designspace_dir.into(), designspace))
 }
 
 impl Source for DesignSpaceIrSource {
