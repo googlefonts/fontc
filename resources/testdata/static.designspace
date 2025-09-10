@@ -22,4 +22,13 @@
       </location>
     </instance>
   </instances>
+  <lib>
+    <dict>
+      <key>public.skipExportGlyphs</key>
+      <array>
+        <string>skip_me</string>
+      </array>
+    </dict>
+  </lib>
+
 </designspace>

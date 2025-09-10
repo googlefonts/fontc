@@ -720,6 +720,12 @@ mod tests {
     }
 
     #[test]
+    fn respect_lib_when_compiling_direct_from_ufo() {
+        let result = TestCompile::compile_source("Static-Regular.ufo");
+        assert!(!result.contains_glyph("skip_me"))
+    }
+
+    #[test]
     fn compile_sets_xmin_eq_lsb_flag() {
         let result = TestCompile::compile_source("fontinfo.designspace");
         let head = result.font().head().unwrap();

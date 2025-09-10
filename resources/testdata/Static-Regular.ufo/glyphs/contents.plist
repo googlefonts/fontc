@@ -10,5 +10,7 @@
     <string>space.glif</string>
     <key>element_of</key>
     <string>element_of.glif</string>
+    <key>skip_me</key>
+    <string>skip_me.glif</string>
   </dict>
 </plist>
