@@ -8,5 +8,9 @@
       <string>bar</string>
       <string>plus</string>
     </array>
+    <key>public.skipExportGlyphs</key>
+    <array>
+        <string>skip_me</string>
+    </array>
   </dict>
 </plist>
