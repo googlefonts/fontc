@@ -270,9 +270,15 @@ impl Source for DesignSpaceIrSource {
             })
             .collect();
 
+        // if source was a designspace we don't want to copy over keys like
+        // public.skipExportGlyphs, but we do if it was a UFO. (we assume that
+        // these keys are correct, if we were passed a designspace directly)
+        let skip_public_keys =
+            designspace_or_ufo_file.extension().and_then(OsStr::to_str) == Some("designspace");
         merge_default_master_lib_into_designspace_lib(
             &mut designspace.lib,
             default_master_lib.unwrap_or_default(),
+            skip_public_keys,
         );
 
         Ok(DesignSpaceIrSource {
@@ -372,21 +378,27 @@ impl Source for DesignSpaceIrSource {
 /// Update a plist Dictionary, merging in any values from the child that are not present.
 ///
 /// Will recurse for dictionaries only. Base values are preserved on conflict.
-fn merge_default_master_lib_into_designspace_lib(base: &mut Dictionary, child: Dictionary) {
+fn merge_default_master_lib_into_designspace_lib(
+    base: &mut Dictionary,
+    child: Dictionary,
+    // if we were passed a designspace directly, we don't want to copy over
+    // the public. keys, and trust that the designer has set or not set them
+    // as required.
+    skip_public_keys: bool,
+) {
     if base == &child {
         return;
     }
-    if base.is_empty() {
-        *base = child;
-        return;
-    }
     for (key, value) in child {
+        if skip_public_keys && key.starts_with("public.") {
+            continue;
+        }
         match (base.get_mut(&key), value) {
             (None, value) => {
+                log::debug!(
+                    "moving value for '{key}' from ufo lib to designspace lib: '{value:?}'"
+                );
                 base.insert(key, value);
-            }
-            (Some(Value::Dictionary(dict)), Value::Dictionary(child)) => {
-                merge_default_master_lib_into_designspace_lib(dict, child);
             }
             (Some(a), b) if a != &b => {
                 log::warn!("conflicting lib key '{key}' will not be merged. Designspace is '{a:?}', ufo is '{b:?}'");
@@ -2694,12 +2706,7 @@ mod tests {
   <dict>
     <key>conflict</key>
     <integer>20</integer>
-    <key>nested_dict</key>
-      <dict>
-        <key>conflict</key>
-        <string>chooseme</string>
-      </dict>
-    </dict>
+  </dict>
 </plist>"#;
 
         let child = r#"
@@ -2711,14 +2718,7 @@ mod tests {
     <integer>404</integer>
     <key>newkey</key>
     <integer>1</integer>
-    <key>nested_dict</key>
-      <dict>
-        <key>conflict</key>
-        <string>ignoreme</string>
-        <key>newkey</key>
-        <true/>
-      </dict>
-    </dict>
+  </dict>
 </plist>"#;
 
         let mut base = plist::from_bytes::<Value>(base.as_bytes())
@@ -2730,18 +2730,12 @@ mod tests {
             .into_dictionary()
             .unwrap();
 
-        merge_default_master_lib_into_designspace_lib(&mut base, child);
+        merge_default_master_lib_into_designspace_lib(&mut base, child, false);
         assert_eq!(
             base.get("conflict").unwrap().as_unsigned_integer().unwrap(),
             20
         );
         assert_eq!(base.get("newkey").unwrap().as_signed_integer(), Some(1));
-        let nested = base.get("nested_dict").unwrap().as_dictionary().unwrap();
-        assert_eq!(
-            nested.get("conflict").unwrap().as_string(),
-            Some("chooseme")
-        );
-        assert_eq!(nested.get("newkey").unwrap().as_boolean(), Some(true));
     }
 
     #[rstest]
