@@ -113,19 +113,15 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, PathCon
         add_to_path(&mut path_builder, src_path.nodes.iter())?;
     };
 
+    if path_builder.erase_open_corners()? {
+        log::debug!("erased open contours for {glyph_name}");
+    }
+
     let path = path_builder.build()?;
 
-    let path = match crate::erase_open_corners::erase_open_corners(&path) {
-        Some(changes) => {
-            log::debug!("erased open contours for {glyph_name}");
-            changes
-        }
-        None => path,
-    };
     trace!(
-        "Built a {} entry path for {}",
+        "Built a {} entry path for {glyph_name}",
         path.elements().len(),
-        glyph_name
     );
     Ok(path)
 }

@@ -28,9 +28,12 @@ use crate::{
     variations::{ModelDeltas, VariationModel},
 };
 
+// just public so we publish the docs
+mod erase_open_corners;
 mod path_builder;
 mod static_metadata;
 
+pub use erase_open_corners::erase_open_corners;
 pub use path_builder::GlyphPathBuilder;
 pub use static_metadata::{
     Condition, ConditionSet, GdefCategories, MetaTableValues, MiscMetadata, NameKey, NamedInstance,

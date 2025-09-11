@@ -130,8 +130,26 @@ impl DesignSpaceIrSource {
         Ok(GlyphIrWork {
             glyph_name: glyph_name.clone(),
             export,
+            erase_open_corners: self.should_erase_open_corners(),
             glif_files: glif_files.clone(),
         })
+    }
+
+    fn should_erase_open_corners(&self) -> bool {
+        const FILTERS_LIB_KEY: &str = "com.github.googlei18n.ufo2ft.filters";
+        self.designspace
+            .lib
+            .get(FILTERS_LIB_KEY)
+            .and_then(Value::as_array)
+            .map(|filters| {
+                filters
+                    .iter()
+                    .filter_map(Value::as_dictionary)
+                    .any(|filter| {
+                        filter.get("name").and_then(Value::as_string) == Some("eraseOpenCorners")
+                    })
+            })
+            .unwrap_or(false)
     }
 }
 
@@ -1735,6 +1753,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 struct GlyphIrWork {
     glyph_name: GlyphName,
     export: bool,
+    erase_open_corners: bool,
     glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
 }
 
@@ -1780,6 +1799,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         let glyph_ir = to_ir_glyph(
             self.glyph_name.clone(),
             self.export,
+            self.erase_open_corners,
             &glif_files,
             &mut ir_anchors,
         )?;

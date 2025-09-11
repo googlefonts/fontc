@@ -30,7 +30,11 @@ pub(crate) fn to_design_location(
         .collect()
 }
 
-fn to_ir_contour(glyph_name: GlyphName, contour: &norad::Contour) -> Result<BezPath, BadGlyph> {
+fn to_ir_contour(
+    glyph_name: GlyphName,
+    contour: &norad::Contour,
+    erase_open_corners: bool,
+) -> Result<BezPath, BadGlyph> {
     if contour.points.is_empty() {
         return Ok(BezPath::new());
     }
@@ -49,13 +53,20 @@ fn to_ir_contour(glyph_name: GlyphName, contour: &norad::Contour) -> Result<BezP
         .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
     }
 
+    if erase_open_corners
+        && path_builder
+            .erase_open_corners()
+            .map_err(|e| BadGlyph::new(&glyph_name, e))?
+    {
+        log::debug!("erased open corners on {glyph_name}");
+    }
+
     let path = path_builder
         .build()
         .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
     trace!(
-        "Built a {} entry path for {}",
+        "Built a {} entry path for {glyph_name}",
         path.elements().len(),
-        glyph_name,
     );
     Ok(path)
 }
@@ -80,10 +91,18 @@ fn to_ir_component(component: &norad::Component) -> ir::Component {
     }
 }
 
-fn to_ir_glyph_instance(glyph: &norad::Glyph, path: &PathBuf) -> Result<ir::GlyphInstance, Error> {
+fn to_ir_glyph_instance(
+    glyph: &norad::Glyph,
+    path: &PathBuf,
+    erase_open_corners: bool,
+) -> Result<ir::GlyphInstance, Error> {
     let mut contours = Vec::new();
     for contour in glyph.contours.iter() {
-        contours.push(to_ir_contour(glyph.name().as_str().into(), contour)?);
+        contours.push(to_ir_contour(
+            glyph.name().as_str().into(),
+            contour,
+            erase_open_corners,
+        )?);
     }
 
     let vertical_origin = vertical_origin(glyph, path)?;
@@ -177,6 +196,7 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
 pub fn to_ir_glyph(
     glyph_name: GlyphName,
     emit_to_binary: bool,
+    erase_open_corners: bool,
     glif_files: &HashMap<&PathBuf, Vec<NormalizedLocation>>,
     anchors: &mut AnchorBuilder,
 ) -> Result<ir::Glyph, Error> {
@@ -190,7 +210,10 @@ pub fn to_ir_glyph(
             glyph.codepoints.insert(cp as u32);
         });
         for location in locations {
-            glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph, glif_file)?)?;
+            glyph.try_add_source(
+                location,
+                to_ir_glyph_instance(&norad_glyph, glif_file, erase_open_corners)?,
+            )?;
 
             // we only care about anchors from exportable glyphs
             // https://github.com/googlefonts/fontc/issues/1397
@@ -244,7 +267,7 @@ mod tests {
             contour_point(1.0, 2.0, norad::PointType::Line),
         ];
         let contour = norad::Contour::new(points, None);
-        let bez = to_ir_contour("test".into(), &contour).unwrap();
+        let bez = to_ir_contour("test".into(), &contour, false).unwrap();
         assert_eq!("M1,1 L9,1 L9,2 L1,2 L1,1 Z", bez.to_svg());
     }
 
@@ -261,7 +284,7 @@ mod tests {
             contour_point(64.0, 0.0, norad::PointType::OffCurve),
         ];
         let contour = norad::Contour::new(points, None);
-        let bez = to_ir_contour("test".into(), &contour).unwrap();
+        let bez = to_ir_contour("test".into(), &contour, false).unwrap();
         assert_eq!("M32,32 C64,64 64,0 32,32 Z", bez.to_svg());
     }
 
@@ -273,6 +296,7 @@ mod tests {
         let glyph = to_ir_glyph(
             "bar".into(),
             true,
+            false,
             &HashMap::from([(
                 &testdata_dir().join("WghtVar-Regular.ufo/glyphs/bar.glif"),
                 vec![norm_loc],
