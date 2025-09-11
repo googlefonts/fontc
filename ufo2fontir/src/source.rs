@@ -154,15 +154,6 @@ fn load_designspace(
             })?
         }
         Some("ufo") => {
-            // if we're loading from a UFO, copy the ufo lib into the designspace.
-            let font =
-                norad::Font::load_requested_data(designspace_or_ufo, DataRequest::none().lib(true))
-                    .map_err(|e| {
-                        BadSourceKind::Custom(format!(
-                            "failed to load ufo at {}: '{e}'",
-                            designspace_or_ufo.display()
-                        ))
-                    })?;
             let filename = designspace_or_ufo
                 .file_name()
                 .and_then(OsStr::to_str)
@@ -173,7 +164,6 @@ fn load_designspace(
                     filename: filename.to_owned(),
                     ..Default::default()
                 }],
-                lib: font.lib,
                 ..Default::default()
             }
         }
@@ -186,9 +176,7 @@ fn load_designspace(
 impl Source for DesignSpaceIrSource {
     fn new(designspace_or_ufo_file: &Path) -> Result<Self, Error> {
         let (designspace_dir, mut designspace) = load_designspace(designspace_or_ufo_file)
-            .map_err(|kind| {
-                Error::BadSource(BadSource::new(designspace_or_ufo_file.to_path_buf(), kind))
-            })?;
+            .map_err(|kind| Error::BadSource(BadSource::new(designspace_or_ufo_file, kind)))?;
 
         for (i, source) in designspace.sources.iter_mut().enumerate() {
             if source.name.is_none() {
@@ -229,12 +217,22 @@ impl Source for DesignSpaceIrSource {
         };
         let mut sources_indices_default_first = (0..designspace.sources.len()).collect::<Vec<_>>();
         sources_indices_default_first.swap(0, default_master_idx);
+        let mut default_master_lib = None;
 
         for source_idx in sources_indices_default_first {
             let source = &designspace.sources[source_idx];
             // Track files within each UFO
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
             let ufo_dir = designspace_dir.join(&source.filename);
+            // some important stuff can live in the lib of the individual ufos,
+            // particularly when a glyphs.app file is converted to ufo/designspace.
+            // In this case the individual source libs should be consistent, so
+            // we will just look at the lib for the default master.
+            if default_master_lib.is_none() {
+                let ufo = norad::Font::load_requested_data(&ufo_dir, DataRequest::none().lib(true))
+                    .map_err(|e| BadSource::custom(&ufo_dir, e))?;
+                default_master_lib = Some(ufo.lib);
+            }
 
             let location = to_design_location(&axis_tags_by_name, &source.location);
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
@@ -271,6 +269,11 @@ impl Source for DesignSpaceIrSource {
                 fea_file.is_file().then_some(fea_file)
             })
             .collect();
+
+        merge_default_master_lib_into_designspace_lib(
+            &mut designspace.lib,
+            default_master_lib.unwrap_or_default(),
+        );
 
         Ok(DesignSpaceIrSource {
             designspace_or_ufo: Arc::new(designspace_or_ufo_file.to_path_buf()),
@@ -363,6 +366,33 @@ impl Source for DesignSpaceIrSource {
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         Ok(Box::new(PaintGraphWork {}))
+    }
+}
+
+/// Update a plist Dictionary, merging in any values from the child that are not present.
+///
+/// Will recurse for dictionaries only. Base values are preserved on conflict.
+fn merge_default_master_lib_into_designspace_lib(base: &mut Dictionary, child: Dictionary) {
+    if base == &child {
+        return;
+    }
+    if base.is_empty() {
+        *base = child;
+        return;
+    }
+    for (key, value) in child {
+        match (base.get_mut(&key), value) {
+            (None, value) => {
+                base.insert(key, value);
+            }
+            (Some(Value::Dictionary(dict)), Value::Dictionary(child)) => {
+                merge_default_master_lib_into_designspace_lib(dict, child);
+            }
+            (Some(a), b) if a != &b => {
+                log::warn!("conflicting lib key '{key}' will not be merged. Designspace is '{a:?}', ufo is '{b:?}'");
+            }
+            _ => (),
+        }
     }
 }
 
@@ -2653,6 +2683,65 @@ mod tests {
             variations.features,
             [Tag::new(b"derp"), Tag::new(b"merp"), Tag::new(b"burp")]
         );
+    }
+
+    #[test]
+    fn merge_plist_smoke_test() {
+        let base = r#"
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>conflict</key>
+    <integer>20</integer>
+    <key>nested_dict</key>
+      <dict>
+        <key>conflict</key>
+        <string>chooseme</string>
+      </dict>
+    </dict>
+</plist>"#;
+
+        let child = r#"
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>conflict</key>
+    <integer>404</integer>
+    <key>newkey</key>
+    <integer>1</integer>
+    <key>nested_dict</key>
+      <dict>
+        <key>conflict</key>
+        <string>ignoreme</string>
+        <key>newkey</key>
+        <true/>
+      </dict>
+    </dict>
+</plist>"#;
+
+        let mut base = plist::from_bytes::<Value>(base.as_bytes())
+            .unwrap()
+            .into_dictionary()
+            .unwrap();
+        let child = plist::from_bytes::<Value>(child.as_bytes())
+            .unwrap()
+            .into_dictionary()
+            .unwrap();
+
+        merge_default_master_lib_into_designspace_lib(&mut base, child);
+        assert_eq!(
+            base.get("conflict").unwrap().as_unsigned_integer().unwrap(),
+            20
+        );
+        assert_eq!(base.get("newkey").unwrap().as_signed_integer(), Some(1));
+        let nested = base.get("nested_dict").unwrap().as_dictionary().unwrap();
+        assert_eq!(
+            nested.get("conflict").unwrap().as_string(),
+            Some("chooseme")
+        );
+        assert_eq!(nested.get("newkey").unwrap().as_boolean(), Some(true));
     }
 
     #[rstest]
