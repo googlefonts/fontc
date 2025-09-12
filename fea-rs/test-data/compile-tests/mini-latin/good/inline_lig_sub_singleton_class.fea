@@ -1,0 +1,8 @@
+# reduction of an actual issue in Monomakh
+
+feature yep {
+    @one = [a];
+    @two = [b c];
+    # for ligature sub, accept a singleton glyph class as a single glyph
+    sub @one' @two' by [z] ;
+} yep;

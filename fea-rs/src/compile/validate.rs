@@ -1025,7 +1025,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 if let Some(inline) = rule.inline_rule() {
                     has_inline_rule = true;
                     if let Some(class) = inline.replacement_class() {
-                        debug_assert!(inline.replacement_glyphs().next().is_none());
+                        assert!(inline.replacement_glyphs().next().is_none());
                         self.validate_glyph_class(&class, true);
                         inline_class_sub = true;
                     }

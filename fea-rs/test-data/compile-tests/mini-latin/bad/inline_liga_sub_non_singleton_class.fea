@@ -1,0 +1,11 @@
+
+feature yep {
+    # for ligature sub, error if replacement is a (non-singleton) class
+    sub [a]' [b c]' by [x y];
+    # or there are multiple replacements
+    sub [d]' [e f]' by v w;
+    # or a replacement is null
+    sub [g]' [h i]' by NULL;
+    # or is an empty class
+    sub [j]' [k l]' by [];
+} yep;

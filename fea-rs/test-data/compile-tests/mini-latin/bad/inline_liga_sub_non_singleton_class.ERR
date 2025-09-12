@@ -1,0 +1,23 @@
+error: ligature sub accepts only single glyph as replacement
+in ./test-data/compile-tests/mini-latin/bad/inline_liga_sub_non_singleton_class.fea at 4:23
+  | 
+4 |     sub [a]' [b c]' by [x y];
+  |                        ^^^^^
+
+error: ligature sub accepts only single replacement glyph
+in ./test-data/compile-tests/mini-latin/bad/inline_liga_sub_non_singleton_class.fea at 6:25
+  | 
+6 |     sub [d]' [e f]' by v w;
+  |                          ^
+
+error: ligature sub accepts only single glyph as replacement
+in ./test-data/compile-tests/mini-latin/bad/inline_liga_sub_non_singleton_class.fea at 8:23
+  | 
+8 |     sub [g]' [h i]' by NULL;
+  |                        ^^^^
+
+error: ligature sub accepts only single glyph as replacement
+in ./test-data/compile-tests/mini-latin/bad/inline_liga_sub_non_singleton_class.fea at 10:23
+   | 
+10 |     sub [j]' [k l]' by [];
+   |                        ^^
