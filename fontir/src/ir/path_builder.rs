@@ -230,6 +230,28 @@ impl GlyphPathBuilder {
         Ok(())
     }
 
+    /// Erase any open corners on this path.
+    ///
+    /// Returns `true` if any open corners were erased.
+    ///
+    /// It is expected that this is called after the path has been added to the
+    /// builder, and before calling [`build`].
+    ///
+    /// For more information on open corner erasure, see [`erase_open_corners`].
+    ///
+    /// [`erase_open_corners`]: super::erase_open_corners()
+    /// [`build`]: Self::build
+    pub fn erase_open_corners(&mut self) -> Result<bool, PathConversionError> {
+        self.end_path()?;
+        let temp = BezPath::from_vec(std::mem::take(&mut self.path));
+        let erased = super::erase_open_corners::erase_open_corners(&temp);
+        let result = erased.is_some();
+
+        //TODO: into_elements() when https://github.com/linebender/kurbo/pull/504 lands
+        self.path = erased.unwrap_or(temp).into_iter().collect();
+        Ok(result)
+    }
+
     /// Builds the kurbo::BezPath from the accumulated points.
     pub fn build(mut self) -> Result<BezPath, PathConversionError> {
         self.end_path()?;

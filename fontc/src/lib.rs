@@ -3812,7 +3812,7 @@ mod tests {
 
         let has_flag = glyph.components().any(|comp| {
             comp.flags
-                .contains(write_fonts::read::tables::glyf::CompositeGlyphFlags::USE_MY_METRICS)
+                .contains(glyf::CompositeGlyphFlags::USE_MY_METRICS)
         });
         has_flag
     }
@@ -3831,5 +3831,20 @@ mod tests {
             !has_use_my_metrics_flag("glyphs3/WghtVarComposite.glyphs", "equal"),
             "Variable composite glyph should NOT have USE_MY_METRICS set on any component"
         );
+    }
+
+    /// in a ufo font that has the 'eraseOpenCorners' filter in its lib,
+    /// we should... erase open corners.
+    #[test]
+    fn ufo_with_open_corners() {
+        let result = TestCompile::compile_source("OpenCorners.ufo");
+        let glyphs = result.glyphs();
+        let idx = result.get_glyph_index("ordfeminine").unwrap();
+        let glyph_array = glyphs.read();
+        let Some(glyf::Glyph::Simple(glyph)) = glyph_array[idx as usize].as_ref() else {
+            panic!("not a simple glyph");
+        };
+
+        assert_eq!(glyph.num_points(), 3); // instead of the 4 points in the source.
     }
 }
