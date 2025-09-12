@@ -753,7 +753,27 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                     .items()
                     .map(|inp| self.resolve_glyph_or_class(&inp.target()))
                     .collect::<Vec<_>>();
-                let replacement = self.resolve_glyph(&rule.replacement_glyphs().next().unwrap());
+                let mut iter = rule.replacements();
+                let replacement_node = iter.next().unwrap();
+                let unexpected_extra_item = iter.next();
+                let replacement = match self.resolve_glyph_or_class(&replacement_node) {
+                    _ if unexpected_extra_item.is_some() => {
+                        self.error(
+                            unexpected_extra_item.unwrap().range(),
+                            "ligature sub accepts only single replacement glyph",
+                        );
+                        return None;
+                    }
+                    GlyphOrClass::Glyph(gid) => gid,
+                    GlyphOrClass::Class(cls) if cls.len() == 1 => cls.iter().next().unwrap(),
+                    _ => {
+                        self.error(
+                            replacement_node.range(),
+                            "ligature sub accepts only single glyph as replacement",
+                        );
+                        return None;
+                    }
+                };
                 let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
                 let mut to_return = None;
                 for target in sequence_enumerator(&target) {
