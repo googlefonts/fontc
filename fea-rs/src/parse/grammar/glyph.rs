@@ -204,7 +204,9 @@ fn validate_glyph_name(name: &[u8]) -> NameType {
     let (first, rest) = name.split_first().expect("glyph names are not empty");
     match first {
         b'_' | b'a'..=b'z' | b'A'..=b'Z' => validate_glyph_body(rest),
-        b'.' if name == b".notdef" => NameType::Valid,
+        // .null is technically not allowed per the spec but exists in many
+        // existing sources.
+        b'.' if name == b".notdef" || name == b".null" => NameType::Valid,
         _ => NameType::Invalid(0),
     }
 }

@@ -1,0 +1,14 @@
+FILE@[0; 28)
+    GlyphClassDefNode@[0; 27)
+      @GlyphClass@0 "@parseme"
+      WS@8 " "
+      =@9 "="
+      WS@10 " "
+        GlyphClass@[11; 26)
+          [@11 "["
+          GlyphName@12 ".notdef"
+          WS@19 " "
+          GlyphName@20 ".null"
+          ]@25 "]"
+      ;@26 ";"
+  WS@27 "\n"

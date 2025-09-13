@@ -1224,6 +1224,14 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         if self.glyph_map.get(name.text()).is_none() {
             self.error(name.range(), "glyph not in font");
         }
+        if name.text() == ".null" {
+            self.warning(
+                name.range(),
+                ".null is not a valid glyph name, and may \
+                not be supported on all compilers. You should use the name 'null', and \
+                escape it with a backslash ('\\null') in FEA.",
+            );
+        }
     }
 
     fn validate_cid(&mut self, cid: &typed::Cid) {
