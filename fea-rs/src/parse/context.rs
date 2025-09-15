@@ -14,7 +14,7 @@ use crate::{
         typed::{self, AstNode as _},
         AstSink,
     },
-    Diagnostic, DiagnosticSet, GlyphMap, Node,
+    Diagnostic, DiagnosticSet, GlyphMap, Kind, Node,
 };
 
 const MAX_INCLUDE_DEPTH: usize = 50;
@@ -72,7 +72,11 @@ struct IncludeGraph {
 }
 
 /// An include statement in a source file.
-pub struct IncludeStatement(pub(crate) typed::Include);
+pub struct IncludeStatement {
+    pub(crate) stmt: typed::Include,
+    /// the type of the parent node, dictates how this should be parsed.
+    pub(crate) scope: Kind,
+}
 
 struct IncludeError {
     file: FileId,
@@ -92,17 +96,17 @@ impl IncludeStatement {
     ///
     /// For the statement `include(file.fea)`, this is `file.fea`.
     fn path(&self) -> &str {
-        &self.0.path().text
+        &self.stmt.path().text
     }
 
     /// The range of the entire include statement.
     fn stmt_range(&self) -> Range<usize> {
-        self.0.range()
+        self.stmt.range()
     }
 
     /// The range of just the path text.
     fn path_range(&self) -> Range<usize> {
-        self.0.path().range()
+        self.stmt.path().range()
     }
 }
 
@@ -123,17 +127,17 @@ impl ParseContext {
     ) -> Result<Self, SourceLoadError> {
         let mut sources = SourceLoader::new(resolver);
         let root_id = sources.source_for_path(&path, None)?;
-        let mut queue = vec![root_id];
+        let mut queue = vec![(root_id, Kind::SourceFile)];
         let mut parsed_files = HashMap::new();
         let mut includes = IncludeGraph::default();
 
-        while let Some(id) = queue.pop() {
+        while let Some((id, scope)) = queue.pop() {
             // skip things we've already parsed.
             if parsed_files.contains_key(&id) {
                 continue;
             }
             let source = sources.get(&id).unwrap();
-            let (node, mut errors, include_stmts) = parse_src(source, glyph_map);
+            let (node, mut errors, include_stmts) = parse_src(source, glyph_map, scope);
             errors.iter_mut().for_each(|e| e.message.file = id);
 
             parsed_files.insert(source.id(), (node, errors));
@@ -148,7 +152,7 @@ impl ParseContext {
                 match sources.source_for_path(Path::new(include.path()), Some(source_id)) {
                     Ok(included_id) => {
                         includes.add_edge(id, (included_id, include.stmt_range()));
-                        queue.push(included_id);
+                        queue.push((included_id, include.scope));
                     }
                     Err(e) => {
                         let range = include.path_range();
@@ -225,6 +229,10 @@ impl ParseContext {
     }
 
     /// recursively construct the output tree.
+    ///
+    /// The final result will be a Vec of len 1, but intermediate results
+    /// can be longer. This is because an include statement can cause us to parse
+    /// from within another node, instead of always parsing a root node.
     fn generate_recurse(
         &self,
         id: FileId,
@@ -328,14 +336,28 @@ impl IncludeGraph {
 }
 
 /// Parse a single source file.
-pub(crate) fn parse_src(
+fn parse_src(
     src: &Source,
     glyph_map: Option<&GlyphMap>,
+    scope: Kind,
 ) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {
     let mut sink = AstSink::new(src.text(), src.id(), glyph_map);
     {
         let mut parser = Parser::new(src.text(), &mut sink);
-        super::grammar::root(&mut parser);
+        match scope {
+            Kind::FeatureNode => {
+                parser.start_node(Kind::SourceFile);
+                super::grammar::eat_feature_block_items(&mut parser);
+                parser.eat_trivia();
+                parser.finish_node();
+            }
+            Kind::SourceFile => super::grammar::root(&mut parser),
+            other => {
+                log::warn!("encountered include statement in unhandled scope '{other}'");
+                // just parse as root, like we would have originally
+                super::grammar::root(&mut parser);
+            }
+        }
     }
     sink.finish()
 }

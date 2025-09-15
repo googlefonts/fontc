@@ -320,7 +320,10 @@ impl Node {
         for item in self.iter_children() {
             if let Some(node) = item.as_node() {
                 if let Some(include) = typed::Include::cast(item) {
-                    collect.push(IncludeStatement(include));
+                    collect.push(IncludeStatement {
+                        stmt: include,
+                        scope: self.kind,
+                    });
                     if collect.len() == num {
                         return;
                     }
