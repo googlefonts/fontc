@@ -1227,9 +1227,9 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         if name.text() == ".null" {
             self.warning(
                 name.range(),
-                ".null is not a valid glyph name, and may \
-                not be supported on all compilers. You should use the name 'null', and \
-                escape it with a backslash ('\\null') in FEA.",
+                "'.null' is not a valid glyph name, and may \
+                not be supported on all compilers. You should prefer the name 'NULL', and \
+                escape it with a backslash ('\\NULL') in FEA.",
             );
         }
     }
