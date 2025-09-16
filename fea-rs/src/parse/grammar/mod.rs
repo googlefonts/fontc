@@ -14,6 +14,9 @@ mod variations;
 #[cfg(test)]
 pub(crate) use self::{gsub::gsub_rule, metrics::expect_glyphs_number_value};
 
+// for parsing include statements that occur inside feature blocks.
+pub(crate) use feature::eat_feature_block_items;
+
 /// Entry point for parsing a FEA file.
 pub fn root(parser: &mut Parser) {
     parser.start_node(AstKind::SourceFile);

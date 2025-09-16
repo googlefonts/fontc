@@ -13,15 +13,12 @@ pub(crate) fn feature(parser: &mut Parser) {
 
         parser.eat(Kind::UseExtensionKw);
         parser.expect(Kind::LBrace);
-        while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
-            if !statement(parser, TokenSet::FEATURE_STATEMENT, false) {
-                if let Some(tag) = open_tag.as_ref() {
-                    parser.raw_error(tag.range.clone(), "Feature block is unclosed");
-                }
-                break;
+        eat_feature_block_items(parser);
+        if !parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI) {
+            if let Some(tag) = open_tag.as_ref() {
+                parser.raw_error(tag.range.clone(), "Feature block is unclosed");
             }
-        }
-        parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
+        };
         let close_tag = parser.expect_tag(TokenSet::TOP_LEVEL);
         if let (Some(open), Some(close)) = (open_tag, close_tag) {
             if open.tag != close.tag {
@@ -32,6 +29,19 @@ pub(crate) fn feature(parser: &mut Parser) {
     }
 
     parser.in_node(Kind::FeatureNode, feature_body);
+}
+
+/// Parse items inside a feature block.
+///
+/// This is split into a seprate function so that it can be called directly in
+/// the case where we are parsing a file that was `include`'d from within
+/// a feature block.
+pub(crate) fn eat_feature_block_items(parser: &mut Parser) {
+    while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
+        if !statement(parser, TokenSet::FEATURE_STATEMENT, false) {
+            break;
+        }
+    }
 }
 
 pub(crate) fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
