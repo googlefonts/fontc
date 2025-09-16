@@ -333,7 +333,14 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
             continue;
         }
 
-        let referenced_glyph = context.get_glyph(component_base.clone());
+        let Some(referenced_glyph) = context.try_get_glyph(component_base.clone()) else {
+            log::warn!(
+                "skipping missing component '{component_base}' of glyph '{}'",
+                original.name
+            );
+            //https://github.com/fonttools/fonttools/blob/03a3c8ed9e/Lib/fontTools/pens/ttGlyphPen.py#L101
+            continue;
+        };
         frontier.extend(
             components(&referenced_glyph, component_affine)
                 .iter()
@@ -1294,6 +1301,17 @@ mod tests {
         path.line_to((5., -5.));
         path.line_to((-5., -5.));
         path
+    }
+
+    #[test]
+    fn missing_component_no_crashy() {
+        // make sure we don't crash in this fn if a component is missing
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph("a", ["b", "missing"]);
+        builder.add_glyph("b", []);
+        let context = builder.into_context();
+        let glyph = context.get_glyph("a");
+        convert_components_to_contours(&context, &glyph).unwrap();
     }
 
     #[test]
