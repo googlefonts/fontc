@@ -2152,6 +2152,11 @@ fn user_to_design_from_axis_location(
         return None;
     }
 
+    if !master_locations.is_empty() && from.axes.is_empty() {
+        log::warn!("masters define locations but font has no axes");
+        return None;
+    }
+
     let mut axis_mappings: BTreeMap<String, AxisUserToDesignMap> = BTreeMap::new();
     for (master, axis_locations) in from.font_master.iter().zip(master_locations) {
         for axis_location in axis_locations {
@@ -4696,5 +4701,26 @@ etc;
             mapping.as_slice(),
             &[(OrderedFloat(400.75), OrderedFloat(0f64)),]
         )
+    }
+
+    #[test]
+    fn user_to_design_with_no_axes() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let myfont = RawFont {
+            font_master: vec![RawFontMaster {
+                custom_parameters: RawCustomParameters(vec![RawCustomParameterValue {
+                    name: "Axis Location".into(),
+                    value: Plist::Array(vec![Plist::Dictionary(BTreeMap::from([
+                        ("Axis".into(), Plist::String("Weight".into())),
+                        ("Location".into(), Plist::Integer(400)),
+                    ]))]),
+                    disabled: None,
+                }]),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let _just_dont_crash_plz = user_to_design_from_axis_location(&myfont);
     }
 }
