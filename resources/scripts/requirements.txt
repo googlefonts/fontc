@@ -55,7 +55,7 @@ charset-normalizer==3.4.3
     # via requests
 compreffor==0.5.6
     # via ufo2ft
-cryptography==45.0.7
+cryptography==46.0.1
     # via pyjwt
 defcon[lxml,pens]==0.12.2
     # via
@@ -86,7 +86,7 @@ fontparts==0.13.3
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.59.2
+fonttools[lxml,repacker,ufo,unicode,woff]==4.60.0
     # via
     #   -r resources/scripts/requirements.in
     #   afdko
@@ -115,7 +115,7 @@ fonttools[lxml,repacker,ufo,unicode,woff]==4.59.2
     #   ufoprocessor
     #   vharfbuzz
     #   vttlib
-gflanguages==0.7.6
+gflanguages==0.7.7
     # via
     #   gftools
     #   glyphsets
@@ -196,7 +196,7 @@ protobuf==3.20.3
     #   gftools
 pyclipper==1.3.0.post6
     # via booleanoperations
-pycparser==2.22
+pycparser==2.23
     # via cffi
 pygit2==1.16.0
     # via gftools
@@ -206,9 +206,9 @@ pygments==2.19.2
     # via rich
 pyjwt[crypto]==2.10.1
     # via pygithub
-pynacl==1.5.0
+pynacl==1.6.0
     # via pygithub
-pyparsing==3.2.3
+pyparsing==3.2.4
     # via vttlib
 python-dateutil==2.9.0.post0
     # via strictyaml
@@ -261,7 +261,7 @@ typing-extensions==4.15.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.6.3
+ufo2ft[cffsubr,compreffor]==3.6.4
     # via
     #   fontmake
     #   nanoemoji
@@ -282,7 +282,7 @@ ufonormalizer==0.6.2
     # via afdko
 ufoprocessor==1.14.0
     # via afdko
-uharfbuzz==0.51.4
+uharfbuzz==0.51.5
     # via
     #   fonttools
     #   vharfbuzz
