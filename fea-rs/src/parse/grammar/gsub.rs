@@ -27,7 +27,7 @@ pub(crate) fn gsub_rule(parser: &mut Parser, recovery: TokenSet) {
 
         assert!(parser.eat(Kind::SubKw));
 
-        let is_class = matches!(parser.nth(0).kind, Kind::LSquare | Kind::NamedGlyphClass);
+        let target_is_class = matches!(parser.nth(0).kind, Kind::LSquare | Kind::NamedGlyphClass);
         if !glyph::eat_glyph_or_glyph_class(parser, recovery.union(RECOVERY)) {
             parser.err_and_bump("Expected glyph or glyph class");
             parser.eat_until(recovery.union(Kind::Semi.into()));
@@ -44,26 +44,22 @@ pub(crate) fn gsub_rule(parser: &mut Parser, recovery: TokenSet) {
                 return AstKind::GsubType1;
             }
 
-            if is_class && glyph::eat_named_or_unnamed_glyph_class(parser, recovery.union(RECOVERY))
-            {
-                // type 1, format C
+            if !glyph::expect_glyph_or_glyph_class(parser, recovery) {
+                parser.eat_until(recovery.union(Kind::Semi.into()));
                 parser.expect_semi();
-                return AstKind::GsubType1;
+                return AstKind::GsubNode;
             }
-
-            glyph::expect_glyph_name_like(parser, recovery.union(RECOVERY));
-            let is_seq = glyph::eat_glyph_name_like(parser);
-            while glyph::eat_glyph_name_like(parser) {
-                continue;
-            }
+            let multiple_targets =
+                super::greedy(glyph::eat_glyph_or_glyph_class)(parser, recovery.union(RECOVERY));
             parser.expect_semi();
-            if is_seq {
+
+            if multiple_targets {
                 return AstKind::GsubType2;
             } else {
                 return AstKind::GsubType1;
             }
         // sub glyph from (type 3)
-        } else if !is_class && parser.eat(Kind::FromKw) {
+        } else if !target_is_class && parser.eat(Kind::FromKw) {
             glyph::eat_named_or_unnamed_glyph_class(parser, recovery.union(RECOVERY));
             parser.expect_semi();
             return AstKind::GsubType3;
@@ -120,9 +116,7 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     }
 
     // eat the lookahead glyphs
-    while glyph::eat_glyph_or_glyph_class(parser, recovery) {
-        continue;
-    }
+    super::greedy(glyph::eat_glyph_or_glyph_class)(parser, recovery);
 
     // now we may be done, or we may have a single inline rule
     if parser.eat(Kind::ByKw) {
@@ -207,11 +201,9 @@ mod tests {
     #[test]
     fn gsub_smoke_test() {
         let not_allowed = [
-            "substitute a by [A.sc - Z.sc];", // glyph by glyph class is disallowed
-            "sub a by b [c-d];",              // by sequence can't include classes
-            "sub a by b @c;",                 // by sequence can't include classes
-            "rsub a b' c' d;",                // only one mark glyph in rsub
-            "sub a b' c d' by g;",            // only one run of marked glyphs
+            "sub a [b c]' by [b c] d;", // inline multi sub doesn't support classes
+            "rsub a b' c' d;",          // only one mark glyph in rsub
+            "sub a b' c d' by g;",      // only one run of marked glyphs
         ];
 
         for bad in not_allowed {
