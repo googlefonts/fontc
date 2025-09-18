@@ -1,0 +1,7 @@
+@myclass = [a b c];
+
+# this is not supported per the spec, but is a by glyphsLib and now by feaLib:
+# https://github.com/fonttools/fonttools/issues/3932
+feature okay {
+    sub @myclass by @myclass z;
+} okay;

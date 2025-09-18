@@ -1,0 +1,7 @@
+@class3 = [a b c];
+@class2 = [a b];
+
+# if replacement is class, it must have same length as target
+feature okay {
+    sub @class3 by @class2 z;
+} okay;

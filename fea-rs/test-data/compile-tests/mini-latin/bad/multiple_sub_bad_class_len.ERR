@@ -1,0 +1,5 @@
+error: replacement class must have same length as target
+in ./test-data/compile-tests/mini-latin/bad/multiple_sub_bad_class_len.fea at 6:19
+  | 
+6 |     sub @class3 by @class2 z;
+  |                    ^^^^^^^

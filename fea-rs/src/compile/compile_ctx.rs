@@ -701,9 +701,25 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn add_multiple_sub(&mut self, node: &typed::Gsub2) {
-        let target = node.target();
-        let target_id = self.resolve_glyph(&target);
-        let replacement = node.replacement().map(|g| self.resolve_glyph(&g)).collect();
+        let target = self.resolve_glyph_or_class(&node.target());
+        let replacements = node
+            .replacement()
+            .map(|g| self.resolve_glyph_or_class(&g))
+            .collect::<Vec<_>>();
+
+        // ensure that if replacement contains any classes, they have equal length
+        // to the target
+        for (i, item) in replacements.iter().enumerate() {
+            if item.is_class() && item.len() != target.len() {
+                let raw = node.replacement().nth(i).unwrap();
+                self.error(
+                    raw.range(),
+                    "replacement class must have same length as target",
+                );
+                return;
+            }
+        }
+
         // we combine mixed single/multi-sub rules into a multi-sub lookup.
         // if this is the first multi-sub rule after a sequence of single-sub rules,
         // we need to promote the current single-sub lookup before continuing.
@@ -711,7 +727,18 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             self.lookups.promote_single_sub_to_multi_if_necessary();
         }
         let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
-        lookup.add_gsub_type_2(target_id, replacement);
+        for (i, target) in target.iter().enumerate() {
+            let replacement = replacements
+                .iter()
+                .filter_map(|r| match r {
+                    GlyphOrClass::Glyph(gid) => Some(*gid),
+                    GlyphOrClass::Class(cls) => Some(cls.items()[i]),
+                    GlyphOrClass::Null => None,
+                })
+                .collect();
+
+            lookup.add_gsub_type_2(target, replacement);
+        }
     }
 
     fn add_alternate_sub(&mut self, node: &typed::Gsub3) {

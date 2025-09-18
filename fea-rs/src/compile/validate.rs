@@ -981,10 +981,10 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 }
             }
             typed::GsubStatement::Type2(rule) => {
-                self.validate_glyph(&rule.target());
+                self.validate_glyph_or_class(&rule.target());
                 let mut count = 0;
                 for item in rule.replacement() {
-                    self.validate_glyph(&item);
+                    self.validate_glyph_or_class(&item);
                     count += 1;
                 }
                 if count < 2 {

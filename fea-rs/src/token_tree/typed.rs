@@ -834,15 +834,15 @@ impl Gsub1 {
 }
 
 impl Gsub2 {
-    pub(crate) fn target(&self) -> Glyph {
-        self.iter().find_map(Glyph::cast).unwrap()
+    pub(crate) fn target(&self) -> GlyphOrClass {
+        self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub(crate) fn replacement(&self) -> impl Iterator<Item = Glyph> + '_ {
+    pub(crate) fn replacement(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
         self.iter()
             .skip_while(|t| t.kind() != Kind::ByKw)
             .skip(1)
-            .filter_map(Glyph::cast)
+            .filter_map(GlyphOrClass::cast)
     }
 }
 
