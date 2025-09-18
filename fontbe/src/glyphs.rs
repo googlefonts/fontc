@@ -1051,10 +1051,6 @@ mod tests {
         assert_eq!((0, 1), (x, y));
     }
 
-    /// Minimum and maximum values that can fit in an F2Dot14: [-2.0, 1.99993896484375]
-    const MAX_F2DOT14: f32 = (0x7FFF as f32) / ((1 << 14) as f32);
-    const MIN_F2DOT14: f32 = -2.0;
-
     #[test]
     fn test_component_transform_saturation() {
         // Test that component 2x2 transforms with values exceeding F2Dot14's range
@@ -1068,10 +1064,10 @@ mod tests {
         let (c, _) = create_component_ref_gid(GlyphId16::new(42), &transform).unwrap();
 
         // Both xx and yy are > MAX_F2DOT14 thus get clamped to MAX_F2DOT14
-        assert_eq!(c.transform.xx.to_f32(), MAX_F2DOT14);
-        assert_eq!(c.transform.yy.to_f32(), MAX_F2DOT14);
+        assert_eq!(c.transform.xx, F2Dot14::MAX);
+        assert_eq!(c.transform.yy, F2Dot14::MAX);
         // yx < MIN_F2DOT14 and gets clamped to MIN_F2DOT14
-        assert_eq!(c.transform.yx.to_f32(), MIN_F2DOT14);
+        assert_eq!(c.transform.yx, F2Dot14::MIN);
         // xy is within the valid range
         assert_eq!(c.transform.xy.to_f32(), 1.0);
         // translation offsets are encoded as Fixed16.16 so stay the same
