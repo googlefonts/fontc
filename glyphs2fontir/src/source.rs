@@ -1510,7 +1510,7 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
                 g.layers
                     .iter()
                     .flat_map(|l| l.shapes.iter())
-                    .flat_map(|s| (s.attributes().gradient.colors.iter()))
+                    .flat_map(|s| s.attributes().gradient.colors.iter())
             })
             .map(|c| Color {
                 r: c.r as u8,
@@ -2794,7 +2794,7 @@ mod tests {
         assert!(peso_anchors
             .anchors
             .iter()
-            .all(|a| a.default_pos().x as u32 % 2 == 0));
+            .all(|a| (a.default_pos().x as u32).is_multiple_of(2)));
 
         // bracket anchor x positions are odd numbers
         let peso_bracket_anchors = context.get_anchor("peso.BRACKET.varAlt01");

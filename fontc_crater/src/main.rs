@@ -56,6 +56,7 @@ enum RunResult<T, E> {
 
 /// Reason why we did not run a font
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[allow(dead_code)]
 enum SkipReason {
     /// Checkout failed
     GitFail,

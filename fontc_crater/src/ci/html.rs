@@ -692,7 +692,7 @@ fn make_error_report(
             current_fontmake
                 .keys()
                 .copied()
-                .filter(|k| (!current_both.contains(k)))
+                .filter(|k| !current_both.contains(k))
                 .map(|k| (k, !prev_fontmake.contains_key(k))),
             |path| {
                 current_fontmake
