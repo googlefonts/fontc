@@ -1251,8 +1251,11 @@ def main(argv):
     source = resolve_source(argv[1]).resolve()
 
     root = Path(".").resolve()
-    if root.name != "fontc":
-        sys.exit("Expected to be at the root of fontc")
+    if not (root / "fontc" / "Cargo.toml").is_file():
+        sys.exit(
+            "This script must be run from the root of the fontc repository; "
+            "could not find 'fontc/Cargo.toml'."
+        )
 
     fontc_bin_path = get_crate_path(FLAGS.fontc_path, root, "fontc")
     otl_bin_path = get_crate_path(FLAGS.normalizer_path, root, "otl-normalizer")
