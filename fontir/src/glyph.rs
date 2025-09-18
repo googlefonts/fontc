@@ -614,6 +614,12 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
                         component 2x2s vary across the designspace"
                 );
                 todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
+            } else if glyph.has_overflowing_component_transforms() {
+                log::debug!(
+                    "Decomposing '{glyph_name}' into a simple glyph: \
+                        component transforms overflow F2Dot14 [-2.0, 2.0] range"
+                );
+                todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
             } else if has_components_and_contours(glyph) {
                 if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
                     todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
@@ -670,6 +676,7 @@ mod tests {
 
     use fontdrasil::{orchestration::Access, types::GlyphName};
     use kurbo::{Affine, BezPath, Rect, Shape};
+    use rstest::rstest;
 
     use crate::{
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
@@ -1392,5 +1399,32 @@ mod tests {
             (Affine::scale_non_uniform(-1., 1.) * simple_square_path()).reverse_subpaths();
 
         assert_eq!(contour, &expected);
+    }
+
+    #[rstest]
+    #[case::normal_scale(1.5, false)]
+    #[case::near_positive_edge(1.999999, false)]
+    #[case::near_negative_edge(-1.999999, false)]
+    #[case::exactly_minus_2(-2.0, false)]
+    #[case::exactly_2(2.0, false)]
+    #[case::positive_just_over_2(2.000001, true)]
+    #[case::negative_just_under_minus_2(-2.000001, true)]
+    #[case::positive_over_2(2.5, true)]
+    #[case::negative_under_minus_2(-2.5, true)]
+    fn glyph_has_overflowing_transforms(#[case] scale: f64, #[case] expected_overflow: bool) {
+        let mut instance = GlyphInstance::default();
+        instance.components.push(Component {
+            base: "base".into(),
+            transform: Affine::scale(scale),
+        });
+        let mut sources = HashMap::new();
+        sources.insert(NormalizedLocation::default(), instance);
+
+        let glyph = Glyph::new("test".into(), true, Default::default(), sources).unwrap();
+
+        assert_eq!(
+            glyph.has_overflowing_component_transforms(),
+            expected_overflow
+        );
     }
 }

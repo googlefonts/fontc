@@ -93,6 +93,12 @@ fn create_component_ref_gid(
         round_xy_to_grid: true, // ufo2ft defaults to this, match it
         ..Default::default()
     };
+
+    // By this point, fontir should have decomposed any components with transforms
+    // outside the -2.0 to +2.0 range. For values between MAX_F2DOT14 and 2.0,
+    // F2Dot14::from_f32() will saturate to MAX_F2DOT14, matching fonttools behavior:
+    // https://github.com/googlefonts/fontc/issues/1638
+
     let component = Component::new(
         gid,
         Anchor::Offset {
@@ -1043,5 +1049,28 @@ mod tests {
             panic!("Must be an offset");
         };
         assert_eq!((0, 1), (x, y));
+    }
+
+    #[test]
+    fn test_component_transform_saturation() {
+        // Test that component 2x2 transforms with values exceeding F2Dot14's range
+        // get saturated to min/max by font-types' F2Dot14::from_f32.
+        // We are interested in particular to values > MAX_F2DOT14 but <= 2.0 (e.g.
+        // 'xx' below), which fonttools TTGlyphPen clamps to MAX_F2DOT14.
+        // Components with transform values < -2.0 or > 2.0 are always decomposed
+        // in fontir so they should never reach here. I include them here to
+        // show what would happen if they did.
+        let transform = Affine::new([1.99995, -2.0001, 1.0, 2.5, 100.0, -200.0]);
+        let (c, _) = create_component_ref_gid(GlyphId16::new(42), &transform).unwrap();
+
+        // Both xx and yy are > MAX_F2DOT14 thus get clamped to MAX_F2DOT14
+        assert_eq!(c.transform.xx, F2Dot14::MAX);
+        assert_eq!(c.transform.yy, F2Dot14::MAX);
+        // yx < MIN_F2DOT14 and gets clamped to MIN_F2DOT14
+        assert_eq!(c.transform.yx, F2Dot14::MIN);
+        // xy is within the valid range
+        assert_eq!(c.transform.xy.to_f32(), 1.0);
+        // translation offsets are encoded as Fixed16.16 so stay the same
+        assert_eq!(c.anchor, Anchor::Offset { x: 100, y: -200 });
     }
 }

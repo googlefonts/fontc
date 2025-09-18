@@ -1345,6 +1345,7 @@ pub struct Glyph {
     default_location: NormalizedLocation,
     sources: HashMap<NormalizedLocation, GlyphInstance>,
     has_consistent_2x2_transforms: bool,
+    has_overflowing_2x2_transforms: bool,
 }
 
 /// Compute this during glyph processing and without allocation
@@ -1377,6 +1378,38 @@ fn has_consistent_2x2_transforms(
     consistent
 }
 
+fn has_overflowing_2x2_transforms(
+    name: &GlyphName,
+    sources: &HashMap<NormalizedLocation, GlyphInstance>,
+) -> bool {
+    // MAX_F2DOT14 is 1.99993896484375 but we still allow up to 2.0 to match fonttools
+    // https://github.com/fonttools/fonttools/blob/c4e96980/Lib/fontTools/pens/ttGlyphPen.py#L89-L128
+    // fontbe uses F2Dot14::from_f32() which saturates at MAX_F2DOT14
+    let overflow_info = sources.iter().find_map(|(location, instance)| {
+        instance.components.iter().find_map(|component| {
+            component.transform.as_coeffs()[..4]
+                .iter()
+                .find(|&value| !(-2.0..=2.0).contains(value))
+                .map(|&value| (location.clone(), component.base.as_str(), value))
+        })
+    });
+
+    if log_enabled!(log::Level::Trace) {
+        if let Some((location, component_name, value)) = overflow_info.as_ref() {
+            trace!(
+                "{} at location {:?} has component '{}' \
+                with a transform value ({}) overflowing [-2.0, 2.0] range",
+                name,
+                location,
+                component_name,
+                value
+            );
+        }
+    }
+
+    overflow_info.is_some()
+}
+
 impl Glyph {
     pub fn new(
         name: GlyphName,
@@ -1399,6 +1432,8 @@ impl Glyph {
         };
 
         let has_consistent_2x2_transforms = has_consistent_2x2_transforms(&name, &instances);
+        let has_overflowing_2x2_transforms = has_overflowing_2x2_transforms(&name, &instances);
+
         Ok(Glyph {
             name,
             emit_to_binary,
@@ -1406,6 +1441,7 @@ impl Glyph {
             default_location,
             sources: instances,
             has_consistent_2x2_transforms,
+            has_overflowing_2x2_transforms,
         })
     }
 
@@ -1455,6 +1491,22 @@ impl Glyph {
             .values()
             .flat_map(|inst| inst.components.iter())
             .any(|c| c.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0])
+    }
+
+    /// Does the glyph have any component with 2x2 transform values that overflow F2Dot14?
+    ///
+    /// F2Dot14, used in the TrueType glyf table to encode components' 2x2 transform matrix,
+    /// can only represent values from -2.0 to just under +2.0 (1.99993896484375).
+    /// Components with transform values outside this range need to be decomposed to maintain
+    /// their shape.
+    ///
+    /// Note: Values between 1.99993896484375 and 2.0 won't trigger decomposition here
+    /// but will be saturated to the maximum F2Dot14 value in fontbe. This is due to the
+    /// relative frequency of exact 2.0 scale, and is meant to match fonttools behavior.
+    ///
+    /// See <https://github.com/googlefonts/fontc/issues/1638>
+    pub(crate) fn has_overflowing_component_transforms(&self) -> bool {
+        self.has_overflowing_2x2_transforms
     }
 }
 
