@@ -698,7 +698,7 @@ impl PlistParamsExt for Plist {
         self.as_array()?
             .iter()
             .map(Plist::as_axis_location)
-            .map(|loc| (loc.map(|loc| (loc.axis_name, loc.location))))
+            .map(|loc| loc.map(|loc| (loc.axis_name, loc.location)))
             .collect()
     }
 
@@ -875,7 +875,7 @@ impl RawCustomParameters {
 
     /// Get the first parameter with the given name, or `None` if not found.
     fn get(&self, name: &str) -> Option<&Plist> {
-        let item = self.0.iter().find(|val| (val.name == name))?;
+        let item = self.0.iter().find(|val| val.name == name)?;
         (item.disabled != Some(true)).then_some(&item.value)
     }
 
@@ -4460,11 +4460,14 @@ etc;
             ],
             font.glyphs
                 .values()
-                .flat_map(|g| g
-                    .layers
-                    .iter()
-                    .flat_map(|l| l.shapes.iter())
-                    .flat_map(|s| (s.attributes().gradient.colors.iter().cloned())))
+                .flat_map(
+                    |g| g.layers.iter().flat_map(|l| l.shapes.iter()).flat_map(|s| s
+                        .attributes()
+                        .gradient
+                        .colors
+                        .iter()
+                        .cloned())
+                )
                 .collect::<Vec<_>>()
         );
     }

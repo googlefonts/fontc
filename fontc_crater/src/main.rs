@@ -10,7 +10,6 @@ use std::{
 };
 
 use clap::Parser;
-use google_fonts_sources::LoadRepoError;
 use rayon::{prelude::*, ThreadPoolBuilder};
 
 mod args;
@@ -52,16 +51,6 @@ struct Results<T, E> {
 enum RunResult<T, E> {
     Success(T),
     Fail(E),
-}
-
-/// Reason why we did not run a font
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-enum SkipReason {
-    /// Checkout failed
-    GitFail,
-    /// There was no config.yaml file
-    NoConfig,
-    BadConfig(String),
 }
 
 #[allow(clippy::type_complexity)] // come on, it's not _that_ bad
@@ -176,29 +165,6 @@ impl<T, E> Default for Results<T, E> {
         Self {
             success: Default::default(),
             failure: Default::default(),
-        }
-    }
-}
-
-impl From<LoadRepoError> for SkipReason {
-    fn from(value: LoadRepoError) -> Self {
-        match value {
-            LoadRepoError::Io(_)
-            | LoadRepoError::GitFail(_)
-            | LoadRepoError::NoCommit { .. }
-            | LoadRepoError::MissingAuth => SkipReason::GitFail,
-            LoadRepoError::NoConfig => SkipReason::NoConfig,
-            LoadRepoError::BadConfig(e) => SkipReason::BadConfig(e.to_string()),
-        }
-    }
-}
-
-impl std::fmt::Display for SkipReason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SkipReason::GitFail => f.write_str("Git checkout failed"),
-            SkipReason::NoConfig => f.write_str("No config.yaml file found"),
-            SkipReason::BadConfig(e) => write!(f, "Failed to read config file: '{e}'"),
         }
     }
 }

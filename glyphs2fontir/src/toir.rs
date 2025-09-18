@@ -306,7 +306,7 @@ impl TryFrom<Font> for FontInfo {
 
         let variable_axes: HashSet<_> = axes
             .iter()
-            .filter(|&a| (!a.is_point()))
+            .filter(|&a| !a.is_point())
             .map(|a| a.tag)
             .collect();
         let master_positions: HashMap<_, _> = font

@@ -383,7 +383,7 @@ impl StaticMetadata {
         // https://github.com/googlefonts/fontc/issues/1502
         let mut reusable_names: HashMap<String, NameKey> = names
             .iter()
-            .filter(|&(k, _)| (k.name_id > 255.into()))
+            .filter(|&(k, _)| k.name_id > 255.into())
             .map(|(k, v)| (v.clone(), *k))
             .collect();
 
