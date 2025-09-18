@@ -4463,11 +4463,14 @@ etc;
             ],
             font.glyphs
                 .values()
-                .flat_map(|g| g
-                    .layers
-                    .iter()
-                    .flat_map(|l| l.shapes.iter())
-                    .flat_map(|s| s.attributes().gradient.colors.iter().cloned()))
+                .flat_map(
+                    |g| g.layers.iter().flat_map(|l| l.shapes.iter()).flat_map(|s| s
+                        .attributes()
+                        .gradient
+                        .colors
+                        .iter()
+                        .cloned())
+                )
                 .collect::<Vec<_>>()
         );
     }
