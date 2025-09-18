@@ -614,6 +614,12 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
                         component 2x2s vary across the designspace"
                 );
                 todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
+            } else if glyph.has_overflowing_component_transforms() {
+                log::debug!(
+                    "Decomposing '{glyph_name}' into a simple glyph: \
+                        component transforms overflow F2Dot14 [-2.0, 2.0] range"
+                );
+                todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
             } else if has_components_and_contours(glyph) {
                 if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
                     todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
