@@ -1449,14 +1449,18 @@ impl Glyph {
         self.sources.get(&self.default_location).unwrap()
     }
 
+    #[cfg(test)]
+    pub fn default_instance_mut(&mut self) -> &mut GlyphInstance {
+        self.sources.get_mut(&self.default_location).unwrap()
+    }
+
     pub fn sources(&self) -> &HashMap<NormalizedLocation, GlyphInstance> {
         &self.sources
     }
 
-    pub fn sources_mut(
-        &mut self,
-    ) -> impl Iterator<Item = (&NormalizedLocation, &mut GlyphInstance)> {
-        self.sources.iter_mut()
+    /// Caller is responsible for not doing anything silly like clearing the map.
+    pub fn sources_mut(&mut self) -> &mut HashMap<NormalizedLocation, GlyphInstance> {
+        &mut self.sources
     }
 
     pub fn source_mut(&mut self, loc: &NormalizedLocation) -> Option<&mut GlyphInstance> {

@@ -141,6 +141,7 @@ pub enum BadGlyphKind {
     NoAxisPosition(Tag),
     PathConversion(PathConversionError),
     Anchor(BadAnchor),
+    BadDeltas(DeltaError),
 }
 
 /// An error that occurs while parsing glyph anchors
@@ -257,6 +258,12 @@ impl From<BadAnchor> for BadGlyphKind {
     }
 }
 
+impl From<DeltaError> for BadGlyphKind {
+    fn from(src: DeltaError) -> BadGlyphKind {
+        BadGlyphKind::BadDeltas(src)
+    }
+}
+
 impl std::fmt::Display for BadSourceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -288,6 +295,7 @@ impl std::fmt::Display for BadGlyphKind {
             BadGlyphKind::MissingMaster(name) => write!(f, "missing master '{name}'"),
             BadGlyphKind::NoAxisPosition(axis) => write!(f, "no position on '{axis}' axis"),
             BadGlyphKind::Anchor(e) => write!(f, "bad anchor: '{e}'"),
+            BadGlyphKind::BadDeltas(e) => write!(f, "delta error: '{e}'"),
         }
     }
 }
