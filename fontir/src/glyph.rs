@@ -350,19 +350,15 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
                 .cloned(),
         );
 
-        // Any contours of the referenced glyph at this location should be kept
-        // For now just fail if the component source locations don't match ours, don't try to interpolate
         trace!(
             "'{}' retains {} {component_affine:?} at {loc:?}",
             original.name,
             referenced_glyph.name
         );
-        let Some(inst) = simple.sources.get_mut(&loc) else {
-            return Err(BadGlyph::new(
-                simple.name.clone(),
-                BadGlyphKind::UndefinedAtNormalizedLocation(loc.clone()),
-            ));
-        };
+        let inst = simple
+            .sources
+            .get_mut(&loc)
+            .expect("only instances at known locations are added to queue above");
         let ref_inst = get_or_instantiate_instance(&referenced_glyph, &loc, context)?;
 
         for contour in ref_inst.contours.iter() {
@@ -379,12 +375,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
     }
 
     let simple: Glyph = simple.build()?;
-    debug_assert!(
-        simple.name == original.name,
-        "{} != {}",
-        simple.name,
-        original.name
-    );
+    assert_eq!(simple.name, original.name,);
     context.glyphs.set(simple);
     Ok(())
 }
@@ -769,14 +760,20 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, path::Path};
+    use std::{
+        collections::{BTreeSet, HashSet},
+        path::Path,
+    };
 
-    use fontdrasil::{orchestration::Access, types::GlyphName};
+    use fontdrasil::{
+        orchestration::Access,
+        types::{Axis, GlyphName},
+    };
     use kurbo::{Affine, BezPath, Rect, Shape};
     use rstest::rstest;
 
     use crate::{
-        ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
+        ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
     };
@@ -818,10 +815,40 @@ mod tests {
     }
 
     fn test_context() -> Context {
+        let loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        test_context_with_locations(vec![loc])
+    }
+
+    // make a new `Context` that includes a variation model based on the
+    // provided locations
+    fn test_context_with_locations(locations: Vec<NormalizedLocation>) -> Context {
+        let axes = locations
+            .iter()
+            .flat_map(|loc| loc.axis_tags())
+            .collect::<BTreeSet<_>>();
+        let axes = axes
+            .into_iter()
+            .map(|tag| Axis::for_test(&tag.to_string()))
+            .collect::<Vec<_>>();
+        let meta = StaticMetadata::new(
+            1000,
+            Default::default(),
+            axes,
+            Vec::new(),
+            locations.into_iter().collect(),
+            None,
+            1.0,
+            Default::default(),
+            None,
+            false,
+        )
+        .unwrap();
         let mut flags = Flags::default();
         flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
-        Context::new_root(flags, Paths::new(Path::new("/fake/path")))
-            .copy_for_work(Access::All, Access::All)
+        let ctx = Context::new_root(flags, Paths::new(Path::new("/fake/path")))
+            .copy_for_work(Access::All, Access::All);
+        ctx.static_metadata.set(meta);
+        ctx
     }
 
     struct DeepComponent {
@@ -1284,26 +1311,75 @@ mod tests {
     struct TestGlyph(Glyph);
 
     impl TestGlyph {
+        fn new(name: &str) -> TestGlyph {
+            let glyph = Glyph::new(
+                name.into(),
+                true,
+                Default::default(),
+                [(
+                    NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                    GlyphInstance::default(),
+                )]
+                .into(),
+            )
+            .unwrap();
+            TestGlyph(glyph)
+        }
+
         fn emit_to_binary(&mut self, emit: bool) -> &mut Self {
             self.0.emit_to_binary = emit;
             self
         }
 
         fn default_instance_mut(&mut self) -> &mut GlyphInstance {
-            self.0.sources_mut().next().unwrap().1
+            self.0.default_instance_mut()
         }
 
         fn add_contour(&mut self, path: BezPath) -> &mut Self {
+            assert_eq!(self.0.sources().len(), 1, "expects non-variable glyph");
             self.default_instance_mut().contours.push(path);
             self
         }
 
         fn add_component(&mut self, name: &str, xform: impl AffineLike) -> &mut Self {
+            assert_eq!(self.0.sources().len(), 1, "expects non-variable glyph");
             let component = Component {
                 base: name.into(),
                 transform: xform.to_affine(),
             };
             self.default_instance_mut().components.push(component);
+            self
+        }
+
+        fn add_var_contour(&mut self, instances: &[(&NormalizedLocation, BezPath)]) -> &mut Self {
+            for (loc, contour) in instances {
+                self.0
+                    .sources_mut()
+                    .entry((*loc).clone())
+                    .or_default()
+                    .contours
+                    .push(contour.clone());
+            }
+            self
+        }
+
+        /// Add a component at multiple locations
+        fn add_var_component(
+            &mut self,
+            name: &str,
+            instances: &[(&NormalizedLocation, Affine)],
+        ) -> &mut Self {
+            for (loc, xform) in instances {
+                self.0
+                    .sources_mut()
+                    .entry((*loc).clone())
+                    .or_default()
+                    .components
+                    .push(Component {
+                        base: name.into(),
+                        transform: *xform,
+                    });
+            }
             self
         }
     }
@@ -1496,6 +1572,89 @@ mod tests {
             (Affine::scale_non_uniform(-1., 1.) * simple_square_path()).reverse_subpaths();
 
         assert_eq!(contour, &expected);
+    }
+
+    fn make_wght_locations<const N: usize>(positions: [f64; N]) -> [NormalizedLocation; N] {
+        positions
+            .iter()
+            .map(|pos| NormalizedLocation::for_pos(&[("wght", *pos)]))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap()
+    }
+
+    // in this case we need to interpolate an instance for the component
+    // at the missing location.
+    #[test]
+    fn composite_with_intermediate_layer_not_present_in_component() {
+        let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+
+        let mut composite = TestGlyph::new("a");
+        composite.add_var_component(
+            "b",
+            &[
+                (&loc1, Affine::translate((0., 0.))),
+                (&intermediate, Affine::translate((10., 0.))),
+                (&loc2, Affine::translate((30., 0.))),
+            ],
+        );
+        let mut component = TestGlyph::new("b");
+        component.add_var_contour(&[
+            (&loc1, simple_square_path()),
+            (&loc2, Affine::translate((0.0, 10.0)) * simple_square_path()),
+        ]);
+
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(composite.0.clone());
+        context.glyphs.set(component.0);
+
+        convert_components_to_contours(&context, &composite.0).unwrap();
+        let after = context.get_glyph("a");
+        assert_eq!(after.sources().len(), 3);
+
+        let interm = after.sources().get(&intermediate).unwrap();
+        // 10.0 is the component xform at the intermediate location,
+        // 5.0 is interpolated from the contour itself
+        let expected_contour = Affine::translate((10.0, 5.0)) * simple_square_path();
+        assert_eq!(&expected_contour, &interm.contours[0]);
+    }
+
+    #[test]
+    fn component_with_intermediate_layer_missing_in_composite() {
+        // NOTE: currently we ignore these layers, but in the future we should
+        // be interpolating a matching instance in the composite:
+        // https://github.com/googlefonts/fontc/issues/1592
+        let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+
+        let mut composite = TestGlyph::new("a");
+        composite.add_var_component(
+            "b",
+            &[
+                (&loc1, Affine::translate((0., 0.))),
+                (&loc2, Affine::translate((10., 0.))),
+            ],
+        );
+        let mut component = TestGlyph::new("b");
+        component.add_var_contour(&[
+            (&loc1, simple_square_path()),
+            (
+                &intermediate,
+                Affine::translate((0.0, 10.0)) * simple_square_path(),
+            ),
+            (
+                &loc2,
+                Affine::translate((0.0, 100.0)) * simple_square_path(),
+            ),
+        ]);
+
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(composite.0.clone());
+        context.glyphs.set(component.0);
+
+        convert_components_to_contours(&context, &composite.0).unwrap();
+        let after = context.get_glyph("a");
+        assert_eq!(after.sources().len(), 2);
+        assert!(!after.sources().contains_key(&intermediate));
     }
 
     #[rstest]

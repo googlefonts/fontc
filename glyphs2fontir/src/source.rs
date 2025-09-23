@@ -1473,7 +1473,8 @@ fn update_bracket_glyph_components(glyph: &mut ir::Glyph, font: &Font, axes: &Ax
 
     glyph
         .sources_mut()
-        .flat_map(|(_, src)| src.components.iter_mut())
+        .values_mut()
+        .flat_map(|src| src.components.iter_mut())
         .for_each(|comp| {
             if let Some(new_name) = comp_map.get(&comp.base) {
                 comp.base = new_name.clone();
