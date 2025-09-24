@@ -33,19 +33,6 @@ pub fn create_glyph_order_work() -> Box<IrWork> {
 #[derive(Debug)]
 struct GlyphOrderWork {}
 
-/// Glyph should split if it has components *and* contours.
-///
-/// Such a glyph turns into a simple glyf with the contours and a
-/// composite glyph that references the simple glyph as a component.
-///
-/// <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
-fn has_components_and_contours(glyph: &Glyph) -> bool {
-    glyph
-        .sources()
-        .values()
-        .any(|inst| !inst.components.is_empty() && !inst.contours.is_empty())
-}
-
 fn name_for_derivative(base_name: &GlyphName, names_in_use: &GlyphOrder) -> GlyphName {
     let mut i = 0;
     let base_name = base_name.as_str();
@@ -808,7 +795,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
                         component transforms overflow F2Dot14 [-2.0, 2.0] range"
                 );
                 todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
-            } else if has_components_and_contours(glyph) {
+            } else if glyph.has_mixed_contours_and_components() {
                 if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
                     todo.push_back((GlyphOp::ConvertToContour, glyph.clone()));
                     log::debug!(
@@ -1044,7 +1031,7 @@ mod tests {
             )
             .unwrap();
         let glyph = glyph.build().unwrap();
-        assert!(!has_components_and_contours(&glyph));
+        assert!(!glyph.has_mixed_contours_and_components());
     }
 
     #[test]
@@ -1057,7 +1044,7 @@ mod tests {
             )
             .unwrap();
         let glyph = glyph.build().unwrap();
-        assert!(has_components_and_contours(&glyph));
+        assert!(glyph.has_mixed_contours_and_components());
     }
 
     #[test]
