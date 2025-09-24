@@ -1477,6 +1477,18 @@ impl Glyph {
             .flat_map(|inst| inst.components.iter().map(|comp| &comp.base))
     }
 
+    /// `true` if any instance has both components and contours.
+    ///
+    /// Such a glyph turns into a simple glyf with the contours and a
+    /// composite glyph that references the simple glyph as a component.
+    ///
+    /// <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
+    pub(crate) fn has_mixed_contours_and_components(&self) -> bool {
+        self.sources()
+            .values()
+            .any(|inst| !inst.components.is_empty() && !inst.contours.is_empty())
+    }
+
     /// Does the Glyph use the same components, (name, 2x2 transform), for all instances?
     ///
     /// The (glyphname, 2x2 transform) pair is considered for uniqueness. Note that
