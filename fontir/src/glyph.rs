@@ -284,9 +284,26 @@ fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> 
             // okay so now we have a component that is not going to be exported,
             // and we need to flatten.
             let xform = component.transform;
-            let Some(referenced_instance) = referenced_glyph.sources().get(loc) else {
+            let Ok(referenced_instance) =
+                get_or_instantiate_instance(&referenced_glyph, loc, context)
+            else {
+                log::debug!(
+                    "component {} of glyph {} not defined at {loc:?}",
+                    component.base,
+                    glyph.name
+                );
                 continue;
             };
+            if matches!(referenced_instance, Cow::Owned(_))
+                && referenced_glyph.has_nonidentity_2x2()
+            {
+                // this is a real edge case; we can't just interpolate in this case
+                // because we can't interpolate complex transforms. We should convert
+                // the component to a simple glyph before now, so we can interpolate
+                // the outlines instead, but when should that happen?
+                log::warn!("non-export component '{}' of glyph '{}' has non-identity 2x2 AND requires interpolation, we don't handle this yet.", component.base, glyph.name);
+                continue;
+            }
 
             for mut referenced_component in referenced_instance.components.iter().cloned() {
                 referenced_component.transform = xform * referenced_component.transform;
@@ -394,8 +411,11 @@ fn get_or_instantiate_instance<'a>(
     let model = variation_model_for_glyph(glyph, &meta);
     let contours =
         interpolate_contours(glyph, loc, &model).map_err(|e| BadGlyph::new(&glyph.name, e))?;
+    let components =
+        interpolate_components(glyph, loc, &model).map_err(|e| BadGlyph::new(&glyph.name, e))?;
     let new_instance = GlyphInstance {
         contours,
+        components,
         ..glyph.default_instance().clone()
     };
 
@@ -474,6 +494,43 @@ fn contours_from_deltas(originals: &[BezPath], mut new_points: &[Vec2]) -> Vec<B
     new_contours
 }
 
+fn interpolate_components(
+    glyph: &Glyph,
+    loc: &NormalizedLocation,
+    model: &VariationModel,
+) -> Result<Vec<Component>, DeltaError> {
+    let point_seqs = glyph
+        .sources()
+        .iter()
+        .map(|(loc, instance)| {
+            (
+                loc.clone(),
+                instance
+                    .components
+                    .iter()
+                    .map(|comp| comp.transform.translation())
+                    .collect(),
+            )
+        })
+        .collect();
+    let deltas = model.deltas(&point_seqs)?;
+    let points = VariationModel::interpolate_from_deltas(loc, &deltas);
+    Ok(components_from_deltas(
+        &glyph.default_instance().components,
+        &points,
+    ))
+}
+
+fn components_from_deltas(components: &[Component], deltas: &[Vec2]) -> Vec<Component> {
+    components
+        .iter()
+        .zip(deltas.iter())
+        .map(|(comp, translate)| Component {
+            base: comp.base.clone(),
+            transform: Affine::translate(*translate),
+        })
+        .collect()
+}
 /// Create a new contour from raw points.
 ///
 /// Returns tuple of (new contour, unused points). The new contour has the same
