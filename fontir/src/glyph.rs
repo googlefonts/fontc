@@ -22,9 +22,9 @@ use write_fonts::types::GlyphId16;
 
 use crate::{
     error::{BadGlyph, BadGlyphKind, Error},
-    ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
+    ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
-    variations::VariationModel,
+    variations::{DeltaError, VariationModel},
 };
 
 pub fn create_glyph_order_work() -> Box<IrWork> {
@@ -391,7 +391,21 @@ fn get_or_instantiate_instance<'a>(
     }
     log::debug!("instantiating instance of '{}' at {loc:?}", glyph.name);
     let meta = context.static_metadata.get();
+    let contours =
+        interpolate_contours(glyph, loc, &meta).map_err(|e| BadGlyph::new(&glyph.name, e))?;
+    let new_instance = GlyphInstance {
+        contours,
+        ..glyph.default_instance().clone()
+    };
 
+    Ok(Cow::Owned(new_instance))
+}
+
+fn interpolate_contours(
+    glyph: &Glyph,
+    loc: &NormalizedLocation,
+    meta: &StaticMetadata,
+) -> Result<Vec<BezPath>, DeltaError> {
     fn iter_pathel_points(seg: PathEl) -> impl Iterator<Item = Point> {
         match seg {
             PathEl::MoveTo(p0) | PathEl::LineTo(p0) => [Some(p0), None, None],
@@ -418,27 +432,22 @@ fn get_or_instantiate_instance<'a>(
             )
         })
         .collect();
-    let deltas = meta
-        .variation_model
-        .deltas(&point_seqs)
-        .map_err(|e| BadGlyph::new(&glyph.name, e))?;
+    let deltas = meta.variation_model.deltas(&point_seqs)?;
     let points = VariationModel::interpolate_from_deltas(loc, &deltas);
-    let new_instance = make_instance(glyph.default_instance(), &points);
-    Ok(Cow::Owned(new_instance))
+
+    let new_contours = contours_from_deltas(&glyph.default_instance().contours, &points);
+    Ok(new_contours)
 }
 
-fn make_instance(base_instance: &GlyphInstance, mut new_points: &[Vec2]) -> GlyphInstance {
-    let mut new_contours = Vec::with_capacity(base_instance.contours.len());
-    for contour in &base_instance.contours {
+fn contours_from_deltas(originals: &[BezPath], mut new_points: &[Vec2]) -> Vec<BezPath> {
+    let mut new_contours = Vec::with_capacity(originals.len());
+    for contour in originals {
         let (contour, remaining) = copy_points_to_contour(contour, new_points);
         new_contours.push(contour);
         new_points = remaining;
     }
     assert!(new_points.is_empty());
-    GlyphInstance {
-        contours: new_contours,
-        ..base_instance.clone()
-    }
+    new_contours
 }
 
 /// Create a new contour from raw points.
@@ -1699,23 +1708,15 @@ mod tests {
         path2.line_to(z);
         path2.close_path();
 
-        let instance = GlyphInstance {
-            width: 404.,
-            vertical_origin: Some(101.),
-            contours: vec![path1, path2],
-            ..Default::default()
-        };
+        let contours = vec![path1, path2];
 
         let deltas = (0..9)
             .map(|i| Vec2::new(i as _, i as _))
             .collect::<Vec<_>>();
 
-        let new_instance = make_instance(&instance, &deltas);
-        assert_eq!(new_instance.contours.len(), 2);
-        assert_eq!(new_instance.width, instance.width);
-        assert_eq!(new_instance.components, instance.components);
-        assert_eq!(new_instance.vertical_origin, instance.vertical_origin);
-        for (old, new) in instance.contours.iter().zip(new_instance.contours.iter()) {
+        let new_contours = contours_from_deltas(&contours, &deltas);
+        assert_eq!(new_contours.len(), 2);
+        for (old, new) in contours.iter().zip(new_contours.iter()) {
             assert_eq!(old.elements().len(), new.elements().len());
             for (a, b) in old.elements().iter().zip(new.elements()) {
                 match (a, b) {
