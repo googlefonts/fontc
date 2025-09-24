@@ -21,7 +21,7 @@ use smol_str::SmolStr;
 use write_fonts::types::GlyphId16;
 
 use crate::{
-    error::{BadGlyph, BadGlyphKind, Error},
+    error::{BadGlyph, Error},
     ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
     variations::{DeltaError, VariationModel},
@@ -360,6 +360,9 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
             //https://github.com/fonttools/fonttools/blob/03a3c8ed9e/Lib/fontTools/pens/ttGlyphPen.py#L101
             continue;
         };
+        // ensure referenced glyph has any required intermediate locations
+        let referenced_glyph =
+            ensure_component_has_consistent_layers(original, &referenced_glyph, context)?;
         frontier.extend(
             components(&referenced_glyph, component_affine)
                 .iter()
@@ -395,6 +398,35 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
     assert_eq!(simple.name, original.name,);
     context.glyphs.set(simple);
     Ok(())
+}
+
+// if any locations in base are missing in component, instantiate them.
+fn ensure_component_has_consistent_layers<'a>(
+    base: &Glyph,
+    component: &'a Glyph,
+    context: &Context,
+) -> Result<Cow<'a, Glyph>, BadGlyph> {
+    // same sources: great!
+    if base.sources().len() == component.sources().len()
+        && component
+            .sources()
+            .keys()
+            .all(|k| base.sources().contains_key(k))
+    {
+        return Ok(Cow::Borrowed(component));
+    }
+
+    let mut component = component.to_owned();
+    for loc in base.sources().keys() {
+        if component.sources().contains_key(loc) {
+            continue;
+        }
+
+        let new_instance = get_or_instantiate_instance(&component, loc, context)?.into_owned();
+        component.sources_mut().insert(loc.to_owned(), new_instance);
+    }
+
+    Ok(Cow::Owned(component))
 }
 
 /// Return the instance at this location, or instantiate one via interpolation.
@@ -614,12 +646,7 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
         frontier.extend(inst.components.split_off(0));
         while let Some(component) = frontier.pop_front() {
             let ref_glyph = context.get_glyph(component.base.clone());
-            let ref_inst = ref_glyph.sources().get(loc).ok_or_else(|| {
-                BadGlyph::new(
-                    ref_glyph.name.clone(),
-                    BadGlyphKind::UndefinedAtNormalizedLocation(loc.clone()),
-                )
-            })?;
+            let ref_inst = get_or_instantiate_instance(&ref_glyph, loc, context)?;
             if ref_inst.components.is_empty() {
                 simple.push(component.clone());
             } else {
@@ -1706,6 +1733,58 @@ mod tests {
         // 10.0 is the component xform at the intermediate location,
         // 5.0 is interpolated from the contour itself
         let expected_contour = Affine::translate((10.0, 5.0)) * simple_square_path();
+        assert_eq!(&expected_contour, &interm.contours[0]);
+    }
+
+    // this tests that we also interpolate the component transform.
+    #[test]
+    fn nested_composite_with_intermediate_layer_not_present_in_component() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+
+        let mut composite = TestGlyph::new("a");
+        composite.add_var_component(
+            "b",
+            &[
+                (&loc1, Affine::translate((0., 0.))),
+                (&intermediate, Affine::translate((10., 0.))),
+                (&loc2, Affine::translate((30., 0.))),
+            ],
+        );
+        let mut component1 = TestGlyph::new("b");
+        component1.add_var_component(
+            "z",
+            &[
+                (&loc1, Affine::translate((0.0, 0.0))),
+                (&loc2, Affine::translate((0.0, 10.0))),
+            ],
+        );
+        let mut component2 = TestGlyph::new("z");
+        component2.add_var_contour(&[
+            (
+                &loc1,
+                Affine::translate((100., 100.)) * simple_square_path(),
+            ),
+            (
+                &loc2,
+                Affine::translate((100., 100.)) * simple_square_path(),
+            ),
+        ]);
+
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(composite.0.clone());
+        context.glyphs.set(component1.0);
+        context.glyphs.set(component2.0);
+
+        convert_components_to_contours(&context, &composite.0).unwrap();
+        let after = context.get_glyph("a");
+        assert_eq!(after.sources().len(), 3);
+
+        let interm = after.sources().get(&intermediate).unwrap();
+        // 100, 100 is the translation of component 2
+        // 10.0, 0. is the component xform at the intermediate location,
+        // 5.0, 0. is interpolated from the contour itself
+        let expected_contour = Affine::translate((110.0, 105.0)) * simple_square_path();
         assert_eq!(&expected_contour, &interm.contours[0]);
     }
 
