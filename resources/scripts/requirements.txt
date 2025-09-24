@@ -142,7 +142,7 @@ importlib-resources==6.5.2
     # via gfsubsets
 jinja2==3.1.6
     # via gftools
-lxml==6.0.1
+lxml==6.0.2
     # via
     #   -r resources/scripts/requirements.in
     #   afdko
@@ -208,7 +208,7 @@ pyjwt[crypto]==2.10.1
     # via pygithub
 pynacl==1.6.0
     # via pygithub
-pyparsing==3.2.4
+pyparsing==3.2.5
     # via vttlib
 python-dateutil==2.9.0.post0
     # via strictyaml
@@ -230,7 +230,7 @@ rich==14.1.0
     # via gftools
 ruamel-yaml==0.18.15
     # via gftools
-ruamel-yaml-clib==0.2.12
+ruamel-yaml-clib==0.2.14
     # via ruamel-yaml
 six==1.17.0
     # via python-dateutil
@@ -261,7 +261,7 @@ typing-extensions==4.15.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.6.5
+ufo2ft[cffsubr,compreffor]==3.6.6
     # via
     #   fontmake
     #   nanoemoji
