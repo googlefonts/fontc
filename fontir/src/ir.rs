@@ -1494,7 +1494,7 @@ impl Glyph {
         self.sources
             .values()
             .flat_map(|inst| inst.components.iter())
-            .any(|c| c.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0])
+            .any(Component::has_nonidentity_2x2)
     }
 
     /// Does the glyph have any component with 2x2 transform values that overflow F2Dot14?
@@ -1814,6 +1814,12 @@ pub struct Component {
     pub base: GlyphName,
     /// Affine transformation to apply to the referenced glyph.
     pub transform: Affine,
+}
+
+impl Component {
+    pub(crate) fn has_nonidentity_2x2(&self) -> bool {
+        self.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0]
+    }
 }
 
 /// Data to inform construction of [CPAL](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal#palette-table-header)

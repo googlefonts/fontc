@@ -290,17 +290,6 @@ fn flatten_non_export_components_for_glyph(
             let xform = component.transform;
             let referenced_instance = get_or_instantiate_instance(&referenced_glyph, loc, context)?;
 
-            if matches!(referenced_instance, Cow::Owned(_))
-                && referenced_glyph.has_nonidentity_2x2()
-            {
-                // this is a real edge case; we can't just interpolate in this case
-                // because we can't interpolate complex transforms. We should convert
-                // the component to a simple glyph before now, so we can interpolate
-                // the outlines instead, but when should that happen?
-                log::warn!("non-export component '{}' of glyph '{}' has non-identity 2x2 AND requires interpolation, we don't handle this yet.", component.base, glyph.name);
-                continue;
-            }
-
             for mut referenced_component in referenced_instance.components.iter().cloned() {
                 referenced_component.transform = xform * referenced_component.transform;
                 new_instance.components.push(referenced_component);
@@ -522,6 +511,14 @@ fn contours_from_deltas(originals: &[BezPath], mut new_points: &[Vec2]) -> Vec<B
     new_contours
 }
 
+/// Interpolate components (specifically their transforms)
+///
+/// Matching ufo2ft, we will just blindly interpolate the scalar values, which
+/// is fine for translation/scaling but not really great for more complex
+/// transforms. If we encounter those we will at least log a warning.
+///
+/// <https://github.com/googlefonts/fontc/pull/1652#issuecomment-3333623587>
+/// <https://github.com/googlefonts/ufo2ft/issues/949>
 fn interpolate_components(
     glyph: &Glyph,
     loc: &NormalizedLocation,
@@ -536,7 +533,10 @@ fn interpolate_components(
                 instance
                     .components
                     .iter()
-                    .map(|comp| comp.transform.translation())
+                    .inspect(|comp| if comp.has_nonidentity_2x2() {
+                        log::warn!("glyph '{}' has component '{}' with complex transform, interpolation may produce undesired results", glyph.name, comp.base);
+                    })
+                    .flat_map(|comp| comp.transform.as_coeffs())
                     .collect(),
             )
         })
@@ -549,13 +549,14 @@ fn interpolate_components(
     ))
 }
 
-fn components_from_deltas(components: &[Component], deltas: &[Vec2]) -> Vec<Component> {
+fn components_from_deltas(components: &[Component], deltas: &[f64]) -> Vec<Component> {
+    assert_eq!(deltas.len(), components.len() * 6); // 6 values per transform
     components
         .iter()
-        .zip(deltas.iter())
-        .map(|(comp, translate)| Component {
+        .zip(deltas.chunks_exact(6))
+        .map(|(comp, coeffs)| Component {
             base: comp.base.clone(),
-            transform: Affine::translate(*translate),
+            transform: Affine::new(coeffs.try_into().unwrap()),
         })
         .collect()
 }
