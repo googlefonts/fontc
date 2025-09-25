@@ -134,6 +134,9 @@ flags.DEFINE_bool(
     True,
     "Keep overlaps when building static fonts. Disable to compare with simplified outlines.",
 )
+flags.DEFINE_bool(
+    "keep_direction", False, "Preserve contour winding direction from source."
+)
 
 
 def to_xml_string(e) -> str:
@@ -242,8 +245,6 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         return
     cmd = [
         fontc_bin,
-        # uncomment this to compare output w/ fontmake --keep-direction
-        # "--keep-direction",
         "--build-dir",
         ".",
         "-o",
@@ -251,6 +252,8 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         source,
         "--emit-debug",
     ]
+    if FLAGS.keep_direction:
+        cmd.append("--keep-direction")
     if not FLAGS.production_names:
         cmd.append("--no-production-names")
     build(cmd, build_dir)
@@ -272,11 +275,12 @@ def build_fontmake(source: Path, build_dir: Path):
         "--output-path",
         out_file.name,
         "--drop-implied-oncurves",
-        # "--keep-direction",
         # helpful for troubleshooting
         "--debug-feature-file",
         "debug.fea",
     ]
+    if FLAGS.keep_direction:
+        cmd.append("--keep-direction")
     if not FLAGS.production_names:
         cmd.append("--no-production-names")
     if FLAGS.keep_overlaps and not variable:
