@@ -21,7 +21,7 @@ use smol_str::SmolStr;
 use write_fonts::types::GlyphId16;
 
 use crate::{
-    error::{BadGlyph, BadGlyphKind, Error},
+    error::{BadGlyph, Error},
     ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
     variations::{DeltaError, VariationModel},
@@ -243,7 +243,7 @@ impl fontdrasil::util::CompositeLike for &Glyph {
 ///
 /// It seemed simpler to me to just have this be a little standalone fn with
 /// limited scope.
-fn flatten_all_non_export_components(context: &Context) {
+fn flatten_all_non_export_components(context: &Context) -> Result<(), BadGlyph> {
     let glyphs = context.glyphs.all();
     let glyphs = glyphs
         .iter()
@@ -257,14 +257,18 @@ fn flatten_all_non_export_components(context: &Context) {
     for glyph_name in depth_first {
         let glyph = glyphs.get(&glyph_name).unwrap();
         if glyph_has_non_export_components(glyph, &glyphs) {
-            let new_glyph = flatten_non_export_components_for_glyph(context, glyph);
+            let new_glyph = flatten_non_export_components_for_glyph(context, glyph)?;
             context.glyphs.set(new_glyph);
         }
     }
+    Ok(())
 }
 
 /// Return a new glyph with any non-export components inlined.
-fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> Glyph {
+fn flatten_non_export_components_for_glyph(
+    context: &Context,
+    glyph: &Glyph,
+) -> Result<Glyph, BadGlyph> {
     let mut builder = GlyphBuilder::from(glyph.clone());
     builder.clear_components();
 
@@ -284,9 +288,7 @@ fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> 
             // okay so now we have a component that is not going to be exported,
             // and we need to flatten.
             let xform = component.transform;
-            let Some(referenced_instance) = referenced_glyph.sources().get(loc) else {
-                continue;
-            };
+            let referenced_instance = get_or_instantiate_instance(&referenced_glyph, loc, context)?;
 
             for mut referenced_component in referenced_instance.components.iter().cloned() {
                 referenced_component.transform = xform * referenced_component.transform;
@@ -306,7 +308,7 @@ fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> 
         builder.sources.insert(loc.clone(), new_instance);
     }
     // unwrap is okay because all used locations are from previously validated glyph
-    builder.build().unwrap()
+    builder.build()
 }
 
 fn glyph_has_non_export_components(glyph: &Glyph, glyphs: &BTreeMap<SmolStr, &Glyph>) -> bool {
@@ -343,6 +345,9 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
             //https://github.com/fonttools/fonttools/blob/03a3c8ed9e/Lib/fontTools/pens/ttGlyphPen.py#L101
             continue;
         };
+        // ensure referenced glyph has any required intermediate locations
+        let referenced_glyph =
+            ensure_component_has_consistent_layers(original, &referenced_glyph, context)?;
         frontier.extend(
             components(&referenced_glyph, component_affine)
                 .iter()
@@ -380,6 +385,35 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
     Ok(())
 }
 
+// if any locations in base are missing in component, instantiate them.
+fn ensure_component_has_consistent_layers<'a>(
+    base: &Glyph,
+    component: &'a Glyph,
+    context: &Context,
+) -> Result<Cow<'a, Glyph>, BadGlyph> {
+    // same sources: great!
+    if base.sources().len() == component.sources().len()
+        && component
+            .sources()
+            .keys()
+            .all(|k| base.sources().contains_key(k))
+    {
+        return Ok(Cow::Borrowed(component));
+    }
+
+    let mut component = component.to_owned();
+    for loc in base.sources().keys() {
+        if component.sources().contains_key(loc) {
+            continue;
+        }
+
+        let new_instance = get_or_instantiate_instance(&component, loc, context)?.into_owned();
+        component.sources_mut().insert(loc.to_owned(), new_instance);
+    }
+
+    Ok(Cow::Owned(component))
+}
+
 /// Return the instance at this location, or instantiate one via interpolation.
 fn get_or_instantiate_instance<'a>(
     glyph: &'a Glyph,
@@ -394,8 +428,11 @@ fn get_or_instantiate_instance<'a>(
     let model = variation_model_for_glyph(glyph, &meta);
     let contours =
         interpolate_contours(glyph, loc, &model).map_err(|e| BadGlyph::new(&glyph.name, e))?;
+    let components =
+        interpolate_components(glyph, loc, &model).map_err(|e| BadGlyph::new(&glyph.name, e))?;
     let new_instance = GlyphInstance {
         contours,
+        components,
         ..glyph.default_instance().clone()
     };
 
@@ -474,6 +511,55 @@ fn contours_from_deltas(originals: &[BezPath], mut new_points: &[Vec2]) -> Vec<B
     new_contours
 }
 
+/// Interpolate components (specifically their transforms)
+///
+/// Matching ufo2ft, we will just blindly interpolate the scalar values, which
+/// is fine for translation/scaling but not really great for more complex
+/// transforms. If we encounter those we will at least log a warning.
+///
+/// <https://github.com/googlefonts/fontc/pull/1652#issuecomment-3333623587>
+/// <https://github.com/googlefonts/ufo2ft/issues/949>
+fn interpolate_components(
+    glyph: &Glyph,
+    loc: &NormalizedLocation,
+    model: &VariationModel,
+) -> Result<Vec<Component>, DeltaError> {
+    let point_seqs = glyph
+        .sources()
+        .iter()
+        .map(|(loc, instance)| {
+            (
+                loc.clone(),
+                instance
+                    .components
+                    .iter()
+                    .inspect(|comp| if comp.has_nonidentity_2x2() {
+                        log::warn!("glyph '{}' has component '{}' with complex transform, interpolation may produce undesired results", glyph.name, comp.base);
+                    })
+                    .flat_map(|comp| comp.transform.as_coeffs())
+                    .collect(),
+            )
+        })
+        .collect();
+    let deltas = model.deltas(&point_seqs)?;
+    let points = VariationModel::interpolate_from_deltas(loc, &deltas);
+    Ok(components_from_deltas(
+        &glyph.default_instance().components,
+        &points,
+    ))
+}
+
+fn components_from_deltas(components: &[Component], deltas: &[f64]) -> Vec<Component> {
+    assert_eq!(deltas.len(), components.len() * 6); // 6 values per transform
+    components
+        .iter()
+        .zip(deltas.chunks_exact(6))
+        .map(|(comp, coeffs)| Component {
+            base: comp.base.clone(),
+            transform: Affine::new(coeffs.try_into().unwrap()),
+        })
+        .collect()
+}
 /// Create a new contour from raw points.
 ///
 /// Returns tuple of (new contour, unused points). The new contour has the same
@@ -557,12 +643,7 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
         frontier.extend(inst.components.split_off(0));
         while let Some(component) = frontier.pop_front() {
             let ref_glyph = context.get_glyph(component.base.clone());
-            let ref_inst = ref_glyph.sources().get(loc).ok_or_else(|| {
-                BadGlyph::new(
-                    ref_glyph.name.clone(),
-                    BadGlyphKind::UndefinedAtNormalizedLocation(loc.clone()),
-                )
-            })?;
+            let ref_inst = get_or_instantiate_instance(&ref_glyph, loc, context)?;
             if ref_inst.components.is_empty() {
                 simple.push(component.clone());
             } else {
@@ -688,7 +769,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/preProcessor.py#L92)
         // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/util.py#L112)
 
-        flatten_all_non_export_components(context);
+        flatten_all_non_export_components(context)?;
 
         // then generate the final glyph order and do final glyph processing
         let arc_current = context.preliminary_glyph_order.get();
@@ -1539,7 +1620,7 @@ mod tests {
         });
 
         let context = builder.into_context();
-        flatten_all_non_export_components(&context);
+        flatten_all_non_export_components(&context).unwrap();
 
         let b = context.get_glyph("b");
 
@@ -1567,7 +1648,7 @@ mod tests {
         });
 
         let context = builder.into_context();
-        flatten_all_non_export_components(&context);
+        flatten_all_non_export_components(&context).unwrap();
         let c = context.get_glyph("c");
 
         let instance = c.default_instance();
@@ -1592,7 +1673,7 @@ mod tests {
         });
 
         let context = builder.into_context();
-        flatten_all_non_export_components(&context);
+        flatten_all_non_export_components(&context).unwrap();
 
         let b = context.get_glyph("b");
 
@@ -1649,6 +1730,58 @@ mod tests {
         // 10.0 is the component xform at the intermediate location,
         // 5.0 is interpolated from the contour itself
         let expected_contour = Affine::translate((10.0, 5.0)) * simple_square_path();
+        assert_eq!(&expected_contour, &interm.contours[0]);
+    }
+
+    // this tests that we also interpolate the component transform.
+    #[test]
+    fn nested_composite_with_intermediate_layer_not_present_in_component() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+
+        let mut composite = TestGlyph::new("a");
+        composite.add_var_component(
+            "b",
+            &[
+                (&loc1, Affine::translate((0., 0.))),
+                (&intermediate, Affine::translate((10., 0.))),
+                (&loc2, Affine::translate((30., 0.))),
+            ],
+        );
+        let mut component1 = TestGlyph::new("b");
+        component1.add_var_component(
+            "z",
+            &[
+                (&loc1, Affine::translate((0.0, 0.0))),
+                (&loc2, Affine::translate((0.0, 10.0))),
+            ],
+        );
+        let mut component2 = TestGlyph::new("z");
+        component2.add_var_contour(&[
+            (
+                &loc1,
+                Affine::translate((100., 100.)) * simple_square_path(),
+            ),
+            (
+                &loc2,
+                Affine::translate((100., 100.)) * simple_square_path(),
+            ),
+        ]);
+
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(composite.0.clone());
+        context.glyphs.set(component1.0);
+        context.glyphs.set(component2.0);
+
+        convert_components_to_contours(&context, &composite.0).unwrap();
+        let after = context.get_glyph("a");
+        assert_eq!(after.sources().len(), 3);
+
+        let interm = after.sources().get(&intermediate).unwrap();
+        // 100, 100 is the translation of component 2
+        // 10.0, 0. is the component xform at the intermediate location,
+        // 5.0, 0. is interpolated from the contour itself
+        let expected_contour = Affine::translate((110.0, 105.0)) * simple_square_path();
         assert_eq!(&expected_contour, &interm.contours[0]);
     }
 
