@@ -134,6 +134,9 @@ flags.DEFINE_bool(
     True,
     "Keep overlaps when building static fonts. Disable to compare with simplified outlines.",
 )
+flags.DEFINE_bool(
+    "keep_direction", False, "Preserve contour winding direction from source."
+)
 
 
 def to_xml_string(e) -> str:
@@ -242,8 +245,6 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         return
     cmd = [
         fontc_bin,
-        # uncomment this to compare output w/ fontmake --keep-direction
-        # "--keep-direction",
         "--build-dir",
         ".",
         "-o",
@@ -251,6 +252,8 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         source,
         "--emit-debug",
     ]
+    if FLAGS.keep_direction:
+        cmd.append("--keep-direction")
     if not FLAGS.production_names:
         cmd.append("--no-production-names")
     build(cmd, build_dir)
@@ -272,11 +275,12 @@ def build_fontmake(source: Path, build_dir: Path):
         "--output-path",
         out_file.name,
         "--drop-implied-oncurves",
-        # "--keep-direction",
         # helpful for troubleshooting
         "--debug-feature-file",
         "debug.fea",
     ]
+    if FLAGS.keep_direction:
+        cmd.append("--keep-direction")
     if not FLAGS.production_names:
         cmd.append("--no-production-names")
     if FLAGS.keep_overlaps and not variable:
@@ -517,42 +521,92 @@ def stat_like_fontmake(ttx):
 
 
 # https://github.com/googlefonts/fontc/issues/1107
-def normalize_glyf_contours(ttx: etree.ElementTree) -> dict[str, list[int]]:
-    # store new order of prior point indices for each glyph
-    point_orders: dict[str, list[int]] = {}
+def normalize_glyf_contours(
+    fontc_ttx: etree.ElementTree, fontmake_ttx: etree.ElementTree
+) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
+    """Reorders contours when they are identical between fontc and fontmake.
 
-    for glyph in ttx.xpath("//glyf/TTGlyph"):
-        contours = glyph.xpath("./contour")
-        if len(contours) < 2:
+    If contours differ (e.g., different starting points), leaves
+    them in their original order to avoid misleading diffs.
+
+    Returns a tuple of two dicts, one for fontc and one for fontmake, containing
+    the new order of prior point indices for each glyph, later used for sorting
+    gvar contours.
+    """
+    fontc_point_orders: dict[str, list[int]] = {}
+    fontmake_point_orders: dict[str, list[int]] = {}
+
+    # Get glyphs from both TTX trees
+    fontc_glyphs = {g.attrib["name"]: g for g in fontc_ttx.xpath("//glyf/TTGlyph")}
+    fontmake_glyphs = {
+        g.attrib["name"]: g for g in fontmake_ttx.xpath("//glyf/TTGlyph")
+    }
+
+    # Only process glyphs that exist in both outputs
+    for glyph_name in fontc_glyphs.keys() & fontmake_glyphs.keys():
+        fontc_glyph = fontc_glyphs[glyph_name]
+        fontmake_glyph = fontmake_glyphs[glyph_name]
+
+        fontc_contours = fontc_glyph.xpath("./contour")
+        fontmake_contours = fontmake_glyph.xpath("./contour")
+
+        # Skip glyphs with mismatched contour counts
+        if len(fontc_contours) != len(fontmake_contours):
             continue
 
-        # annotate each contour with the range of point indices it covers
-        with_range: list[tuple[range, etree.ElementTree]] = []
-        points_seen = 0
-        for contour in contours:
-            points_here = len(contour.xpath("./pt"))
-            with_range.append((range(points_seen, points_seen + points_here), contour))
-            points_seen += points_here
-        annotated = sorted(with_range, key=lambda a: to_xml_string(a[1]))
+        # Compare contours as sets to see if they're identical (ignoring order)
+        fontc_strings = {to_xml_string(c) for c in fontc_contours}
+        fontmake_strings = {to_xml_string(c) for c in fontmake_contours}
 
-        # sort by string representation, and skip if nothing has changed
-        normalized = [contour for _, contour in annotated]
-        if normalized == contours:
-            continue
-        # normalized contours should be inserted before any other TTGlyph's
-        # subelements (e.g. instructions)
-        for contour in contours:
-            glyph.remove(contour)
-        non_contours = list(glyph)
-        for el in non_contours:
-            glyph.remove(el)
-        glyph.extend(normalized + non_contours)
+        if fontc_strings == fontmake_strings:
+            # Contours are identical, just in different order - normalize both
+            _normalize_single_glyph(fontc_glyph, fontc_contours, fontc_point_orders)
+            _normalize_single_glyph(
+                fontmake_glyph, fontmake_contours, fontmake_point_orders
+            )
+        # If sets don't match, skip normalization - leave original order
 
-        # store new indices order
-        name = glyph.attrib["name"]
-        point_orders[name] = [idx for indices, _ in annotated for idx in indices]
+    return fontc_point_orders, fontmake_point_orders
 
-    return point_orders
+
+def _normalize_single_glyph(
+    glyph: etree.Element,
+    contours: list[etree.Element],
+    point_orders: dict[str, list[int]],
+):
+    """Helper function to normalize contour order within a single glyph.
+
+    Contours are sorted alphabetically by xml string representation.
+
+    The `point_orders` dict is used to store the new order of prior point
+    indices for this glyph.
+    """
+    # annotate each contour with the range of point indices it covers
+    with_range: list[tuple[range, etree.Element]] = []
+    points_seen = 0
+    for contour in contours:
+        points_here = len(contour.xpath("./pt"))
+        with_range.append((range(points_seen, points_seen + points_here), contour))
+        points_seen += points_here
+    annotated = sorted(with_range, key=lambda a: to_xml_string(a[1]))
+
+    # sort by string representation, and skip if nothing has changed
+    normalized = [contour for _, contour in annotated]
+    if normalized == contours:
+        return
+
+    # normalized contours should be inserted before any other TTGlyph's
+    # subelements (e.g. instructions)
+    for contour in contours:
+        glyph.remove(contour)
+    non_contours = list(glyph)
+    for el in non_contours:
+        glyph.remove(el)
+    glyph.extend(normalized + non_contours)
+
+    # store new indices order
+    name = glyph.attrib["name"]
+    point_orders[name] = [idx for indices, _ in annotated for idx in indices]
 
 
 def normalize_gvar_contours(ttx: etree.ElementTree, point_orders: dict[str, list[int]]):
@@ -952,9 +1006,6 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         stat_like_fontmake(ttx)
         remove_mark_and_kern_and_curs_lookups(ttx)
 
-        point_orders = normalize_glyf_contours(ttx)
-        normalize_gvar_contours(ttx, point_orders)
-
         erase_type_from_stranded_points(ttx)
         remove_gdef_lig_caret_and_var_store(ttx)
         sort_gdef_mark_filter_sets(ttx)
@@ -962,6 +1013,11 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         # sort names within the name table (do this at the end, so ids are correct
         # for earlier steps)
         normalize_name_ids(ttx)
+
+    # Normalize glyf contour order but only when contours are identical
+    fontc_point_orders, fontmake_point_orders = normalize_glyf_contours(fontc, fontmake)
+    normalize_gvar_contours(fontc, fontc_point_orders)
+    normalize_gvar_contours(fontmake, fontmake_point_orders)
 
     allow_fontc_only_variations_postscript_prefix(fontc, fontmake)
 
