@@ -391,8 +391,9 @@ fn get_or_instantiate_instance<'a>(
     }
     log::debug!("instantiating instance of '{}' at {loc:?}", glyph.name);
     let meta = context.static_metadata.get();
+    let model = variation_model_for_glyph(glyph, &meta);
     let contours =
-        interpolate_contours(glyph, loc, &meta).map_err(|e| BadGlyph::new(&glyph.name, e))?;
+        interpolate_contours(glyph, loc, &model).map_err(|e| BadGlyph::new(&glyph.name, e))?;
     let new_instance = GlyphInstance {
         contours,
         ..glyph.default_instance().clone()
@@ -401,10 +402,33 @@ fn get_or_instantiate_instance<'a>(
     Ok(Cow::Owned(new_instance))
 }
 
+fn variation_model_for_glyph<'a>(
+    glyph: &Glyph,
+    meta: &'a StaticMetadata,
+) -> Cow<'a, VariationModel> {
+    if meta
+        .variation_model
+        .locations()
+        .all(|loc| glyph.sources().contains_key(loc))
+        && meta.variation_model.num_locations() == glyph.sources().len()
+    {
+        // great, we have the same model
+        return Cow::Borrowed(&meta.variation_model);
+    }
+
+    // otherwise we need a special model for this glyph.
+    // This code is duplicated in various places (hvar, e.g.)
+    // and maybe we can share it? or cache these models more globally?
+    Cow::Owned(
+        VariationModel::new(glyph.sources().keys().cloned().collect(), meta.axes.clone())
+            .expect("point axes not present in meta.axes"),
+    )
+}
+
 fn interpolate_contours(
     glyph: &Glyph,
     loc: &NormalizedLocation,
-    meta: &StaticMetadata,
+    model: &VariationModel,
 ) -> Result<Vec<BezPath>, DeltaError> {
     fn iter_pathel_points(seg: PathEl) -> impl Iterator<Item = Point> {
         match seg {
@@ -432,7 +456,7 @@ fn interpolate_contours(
             )
         })
         .collect();
-    let deltas = meta.variation_model.deltas(&point_seqs)?;
+    let deltas = model.deltas(&point_seqs)?;
     let points = VariationModel::interpolate_from_deltas(loc, &deltas);
 
     let new_contours = contours_from_deltas(&glyph.default_instance().contours, &points);
@@ -1626,6 +1650,97 @@ mod tests {
         // 5.0 is interpolated from the contour itself
         let expected_contour = Affine::translate((10.0, 5.0)) * simple_square_path();
         assert_eq!(&expected_contour, &interm.contours[0]);
+    }
+
+    #[test]
+    fn one_component_with_intermediates_but_not_the_other() {
+        let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+        let mut composite = TestGlyph::new("a");
+        composite
+            .add_var_component(
+                "b",
+                &[
+                    (&loc1, Affine::translate((0., 0.))),
+                    (&intermediate, Affine::translate((6.0, 0.))),
+                    (&loc2, Affine::translate((10., 0.))),
+                ],
+            )
+            .add_var_component(
+                "c",
+                &[
+                    (&loc1, Affine::translate((100., 0.))),
+                    (&intermediate, Affine::translate((120., 0.))),
+                    (&loc2, Affine::translate((200., 0.))),
+                ],
+            );
+
+        let mut component1 = TestGlyph::new("b");
+        component1.add_var_contour(&[
+            (&loc1, simple_square_path()),
+            (
+                &intermediate,
+                Affine::translate((0.0, 10.0)) * simple_square_path(),
+            ),
+            (
+                &loc2,
+                Affine::translate((0.0, 100.0)) * simple_square_path(),
+            ),
+        ]);
+        let mut component2 = TestGlyph::new("c");
+        component2.add_var_contour(&[
+            (&loc1, simple_square_path()),
+            (
+                &loc2,
+                Affine::translate((0.0, 100.0)) * simple_square_path(),
+            ),
+        ]);
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(composite.0.clone());
+        context.glyphs.set(component1.0);
+        context.glyphs.set(component2.0);
+
+        convert_components_to_contours(&context, &composite.0).unwrap();
+        let after = context.get_glyph("a");
+        assert_eq!(after.sources().len(), 3);
+        let inst = after.sources().get(&intermediate).unwrap();
+
+        // 6, 10 are explicit intermediate positions
+        let expected1 = Affine::translate((6.0, 10.0)) * simple_square_path();
+        // 120 is explicit (componnet pos) and 50 is interpolated (half the xform we applied)
+        let expected2 = Affine::translate((120.0, 50.0)) * simple_square_path();
+        assert_eq!([expected1, expected2], inst.contours.as_slice());
+    }
+
+    // we had a crash here because when updating instances on the component
+    // we would end up in a state where the component had one intermediate layer,
+    // and then trying to interpolate the second would crash the master var model
+    // because it wasn't expecting the first intermediate.
+    #[test]
+    fn multiple_intermediates() {
+        let [loc1, interm1, interm2, loc2] = make_wght_locations([0.0, 0.2, 0.5, 1.0]);
+
+        let mut composite = TestGlyph::new("a");
+        composite.add_var_component(
+            "b",
+            &[
+                (&loc1, Affine::translate((0., 0.))),
+                (&interm1, Affine::translate((10., 0.))),
+                (&interm2, Affine::translate((30., 0.))),
+                (&loc2, Affine::translate((100., 0.))),
+            ],
+        );
+        let mut component = TestGlyph::new("b");
+        component.add_var_contour(&[
+            (&loc1, simple_square_path()),
+            (&loc2, Affine::translate((0.0, 10.0)) * simple_square_path()),
+        ]);
+
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(composite.0.clone());
+        context.glyphs.set(component.0);
+
+        // just don't crash
+        convert_components_to_contours(&context, &composite.0).unwrap();
     }
 
     #[test]
