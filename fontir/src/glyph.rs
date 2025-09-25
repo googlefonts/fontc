@@ -14,7 +14,7 @@ use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
 };
-use kurbo::{Affine, BezPath, PathEl, Point, Vec2};
+use kurbo::Affine;
 use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
 use write_fonts::types::GlyphId16;
@@ -23,7 +23,7 @@ use crate::{
     error::{BadGlyph, Error},
     ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
-    variations::{DeltaError, VariationModel},
+    variations::VariationModel,
 };
 
 pub fn create_glyph_order_work() -> Box<IrWork> {
@@ -457,7 +457,6 @@ fn get_or_instantiate_instance<'a>(
     if let Some(instance) = glyph.sources().get(loc) {
         return Ok(Cow::Borrowed(instance));
     }
-    log::debug!("instantiating instance of '{}' at {loc:?}", glyph.name);
     instantiate_instance(glyph, loc, context).map(Cow::Owned)
 }
 
@@ -466,19 +465,21 @@ fn instantiate_instance(
     loc: &NormalizedLocation,
     context: &Context,
 ) -> Result<GlyphInstance, BadGlyph> {
+    log::debug!("instantiating '{}' at {loc:?}", glyph.name);
     let meta = context.static_metadata.get();
     let model = variation_model_for_glyph(glyph, &meta);
-    let contours =
-        interpolate_contours(glyph, loc, &model).map_err(|e| BadGlyph::new(&glyph.name, e))?;
-    let components =
-        interpolate_components(glyph, loc, &model).map_err(|e| BadGlyph::new(&glyph.name, e))?;
-    let new_instance = GlyphInstance {
-        contours,
-        components,
-        ..glyph.default_instance().clone()
-    };
-
-    Ok(new_instance)
+    let point_seqs = glyph
+        .sources()
+        .iter()
+        .map(|(loc, instance)| (loc.clone(), instance.values_for_interpolation()))
+        .collect();
+    let deltas = model
+        .deltas(&point_seqs)
+        .map_err(|e| BadGlyph::new(&glyph.name, e))?;
+    let points = VariationModel::interpolate_from_deltas(loc, &deltas);
+    Ok(glyph
+        .default_instance()
+        .new_with_interpolated_values(&points))
 }
 
 fn variation_model_for_glyph<'a>(
@@ -502,143 +503,6 @@ fn variation_model_for_glyph<'a>(
         VariationModel::new(glyph.sources().keys().cloned().collect(), meta.axes.clone())
             .expect("point axes not present in meta.axes"),
     )
-}
-
-fn interpolate_contours(
-    glyph: &Glyph,
-    loc: &NormalizedLocation,
-    model: &VariationModel,
-) -> Result<Vec<BezPath>, DeltaError> {
-    fn iter_pathel_points(seg: PathEl) -> impl Iterator<Item = Point> {
-        match seg {
-            PathEl::MoveTo(p0) | PathEl::LineTo(p0) => [Some(p0), None, None],
-            PathEl::QuadTo(p0, p1) => [Some(p0), Some(p1), None],
-            PathEl::CurveTo(p0, p1, p2) => [Some(p0), Some(p1), Some(p2)],
-            PathEl::ClosePath => [None, None, None],
-        }
-        .into_iter()
-        .flatten()
-    }
-
-    let point_seqs = glyph
-        .sources()
-        .iter()
-        .map(|(loc, instance)| {
-            (
-                loc.clone(),
-                instance
-                    .contours
-                    .iter()
-                    .flat_map(|path| path.iter())
-                    .flat_map(iter_pathel_points)
-                    .collect(),
-            )
-        })
-        .collect();
-    let deltas = model.deltas(&point_seqs)?;
-    let points = VariationModel::interpolate_from_deltas(loc, &deltas);
-
-    let new_contours = contours_from_deltas(&glyph.default_instance().contours, &points);
-    Ok(new_contours)
-}
-
-fn contours_from_deltas(originals: &[BezPath], mut new_points: &[Vec2]) -> Vec<BezPath> {
-    let mut new_contours = Vec::with_capacity(originals.len());
-    for contour in originals {
-        let (contour, remaining) = copy_points_to_contour(contour, new_points);
-        new_contours.push(contour);
-        new_points = remaining;
-    }
-    assert!(new_points.is_empty());
-    new_contours
-}
-
-/// Interpolate components (specifically their transforms)
-///
-/// Matching ufo2ft, we will just blindly interpolate the scalar values, which
-/// is fine for translation/scaling but not really great for more complex
-/// transforms. If we encounter those we will at least log a warning.
-///
-/// <https://github.com/googlefonts/fontc/pull/1652#issuecomment-3333623587>
-/// <https://github.com/googlefonts/ufo2ft/issues/949>
-fn interpolate_components(
-    glyph: &Glyph,
-    loc: &NormalizedLocation,
-    model: &VariationModel,
-) -> Result<Vec<Component>, DeltaError> {
-    let point_seqs = glyph
-        .sources()
-        .iter()
-        .map(|(loc, instance)| {
-            (
-                loc.clone(),
-                instance
-                    .components
-                    .iter()
-                    .inspect(|comp| if comp.has_nonidentity_2x2() {
-                        log::warn!("glyph '{}' has component '{}' with complex transform, interpolation may produce undesired results", glyph.name, comp.base);
-                    })
-                    .flat_map(|comp| comp.transform.as_coeffs())
-                    .collect(),
-            )
-        })
-        .collect();
-    let deltas = model.deltas(&point_seqs)?;
-    let points = VariationModel::interpolate_from_deltas(loc, &deltas);
-    Ok(components_from_deltas(
-        &glyph.default_instance().components,
-        &points,
-    ))
-}
-
-fn components_from_deltas(components: &[Component], deltas: &[f64]) -> Vec<Component> {
-    assert_eq!(deltas.len(), components.len() * 6); // 6 values per transform
-    components
-        .iter()
-        .zip(deltas.chunks_exact(6))
-        .map(|(comp, coeffs)| Component {
-            base: comp.base.clone(),
-            transform: Affine::new(coeffs.try_into().unwrap()),
-        })
-        .collect()
-}
-/// Create a new contour from raw points.
-///
-/// Returns tuple of (new contour, unused points). The new contour has the same
-/// number and type of `PathEl`s as the input contour, with points taken from the
-/// front of the provided slice. The returned slice contains the points that were
-/// not used in this  contour.
-fn copy_points_to_contour<'a>(contour: &BezPath, mut points: &'a [Vec2]) -> (BezPath, &'a [Vec2]) {
-    let mut new_els = Vec::with_capacity(contour.elements().len());
-    for el in contour.elements() {
-        let (new_el, remaining) = copy_ponts_to_el(el, points);
-        points = remaining;
-        new_els.push(new_el);
-    }
-
-    (BezPath::from_vec(new_els), points)
-}
-
-fn copy_ponts_to_el<'a>(el: &PathEl, points: &'a [Vec2]) -> (PathEl, &'a [Vec2]) {
-    let (el, n) = match el {
-        PathEl::MoveTo(_) => (PathEl::MoveTo(points[0].to_point()), 1),
-        PathEl::LineTo(_) => (PathEl::LineTo(points[0].to_point()), 1),
-        PathEl::QuadTo(_, _) => (
-            PathEl::QuadTo(points[0].to_point(), points[1].to_point()),
-            2,
-        ),
-        PathEl::CurveTo(_, _, _) => (
-            PathEl::CurveTo(
-                points[0].to_point(),
-                points[1].to_point(),
-                points[2].to_point(),
-            ),
-            3,
-        ),
-        PathEl::ClosePath => (PathEl::ClosePath, 0),
-    };
-
-    (el, &points[n..])
 }
 
 fn move_contours_to_new_component(
@@ -1487,6 +1351,20 @@ mod tests {
             self
         }
 
+        fn variable_width(&mut self, width: &[f64]) -> &mut Self {
+            for (inst, val) in self.0.sources_mut().values_mut().zip(width) {
+                inst.width = *val;
+            }
+            self
+        }
+
+        fn variable_vertical_origin(&mut self, vals: &[f64]) -> &mut Self {
+            for (inst, val) in self.0.sources_mut().values_mut().zip(vals) {
+                inst.vertical_origin = Some(*val);
+            }
+            self
+        }
+
         fn default_instance_mut(&mut self) -> &mut GlyphInstance {
             self.0.default_instance_mut()
         }
@@ -1730,6 +1608,42 @@ mod tests {
         assert_eq!(contour, &expected);
     }
 
+    #[test]
+    fn instantiation_smoke_test() {
+        let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+        let mut glyph = TestGlyph::new("glyphie");
+        glyph
+            .add_var_contour(&[
+                (&loc1, simple_square_path()),
+                (&loc2, Affine::translate((10., 0.)) * simple_square_path()),
+            ])
+            .add_var_component(
+                "derp",
+                &[
+                    (&loc1, Affine::translate((14.0, 14.0))),
+                    (&loc2, Affine::translate((20.0, 20.0))),
+                ],
+            )
+            .variable_width(&[400., 600.])
+            .variable_vertical_origin(&[100., 200.]);
+
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(glyph.0.clone());
+
+        let inst = instantiate_instance(&glyph.0, &intermediate, &context).unwrap();
+
+        assert_eq!(
+            inst.contours[0],
+            Affine::translate((5.0, 0.)) * simple_square_path()
+        );
+        assert_eq!(
+            inst.components[0].transform,
+            Affine::translate((17.0, 17.0))
+        );
+        assert_eq!(inst.width, 500.);
+        assert!(inst.height.is_none());
+        assert_eq!(inst.vertical_origin, Some(150.));
+    }
     #[test]
     fn non_export_component_has_intermediate_layer() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -2036,43 +1950,5 @@ mod tests {
             glyph.has_overflowing_component_transforms(),
             expected_overflow
         );
-    }
-
-    #[test]
-    fn instance_from_deltas() {
-        let z = Point::ZERO;
-        let mut path1 = BezPath::new();
-        // only the shape of these paths matters, not the actual points
-        path1.move_to(z);
-        path1.line_to(z);
-        path1.quad_to(z, z);
-        path1.curve_to(z, z, z);
-
-        let mut path2 = BezPath::new();
-        path2.move_to(z);
-        path2.line_to(z);
-        path2.close_path();
-
-        let contours = vec![path1, path2];
-
-        let deltas = (0..9)
-            .map(|i| Vec2::new(i as _, i as _))
-            .collect::<Vec<_>>();
-
-        let new_contours = contours_from_deltas(&contours, &deltas);
-        assert_eq!(new_contours.len(), 2);
-        for (old, new) in contours.iter().zip(new_contours.iter()) {
-            assert_eq!(old.elements().len(), new.elements().len());
-            for (a, b) in old.elements().iter().zip(new.elements()) {
-                match (a, b) {
-                    (PathEl::MoveTo(_), PathEl::MoveTo(_))
-                    | (PathEl::LineTo(_), PathEl::LineTo(_))
-                    | (PathEl::QuadTo(_, _), PathEl::QuadTo(_, _))
-                    | (PathEl::CurveTo(_, _, _), PathEl::CurveTo(_, _, _))
-                    | (PathEl::ClosePath, PathEl::ClosePath) => (),
-                    (no, good) => panic!("element mismatch: {no:?} != {good:?}"),
-                }
-            }
-        }
     }
 }

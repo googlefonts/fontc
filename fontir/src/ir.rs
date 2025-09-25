@@ -1805,6 +1805,136 @@ impl GlyphInstance {
             .unwrap_or(metrics.os2_typo_ascender.into_inner())
             .ot_round()
     }
+
+    /// Return the values in this instance used for interpolation.
+    ///
+    /// This is used for instantiating interpolated instances.
+    ///
+    /// The returned values must be provided in the following order:
+    ///
+    /// - the (x,y) values of points in any contours, in order
+    /// - the decomposed transform of any components, in order
+    /// - the width, height, and vertical origin (if present).
+    ///
+    /// These values are used to generate a `VariationModel`; after interpolation
+    /// a new instance can be constructed with [`Self::new_with_interpolated_values`].
+    pub(crate) fn values_for_interpolation(&self) -> Vec<f64> {
+        fn iter_pathel_points(seg: PathEl) -> impl Iterator<Item = f64> {
+            match seg {
+                PathEl::MoveTo(p0) | PathEl::LineTo(p0) => [Some(p0), None, None],
+                PathEl::QuadTo(p0, p1) => [Some(p0), Some(p1), None],
+                PathEl::CurveTo(p0, p1, p2) => [Some(p0), Some(p1), Some(p2)],
+                PathEl::ClosePath => [None, None, None],
+            }
+            .into_iter()
+            .flatten()
+            .flat_map(|pt| [pt.x, pt.y])
+        }
+
+        self.contours
+            .iter()
+            .flat_map(BezPath::iter)
+            .flat_map(iter_pathel_points)
+            .chain(
+                // Matching ufo2ft, we will just blindly interpolate the scalar values, which
+                // is fine for translation/scaling but not really great for more complex
+                // transforms. If we encounter those we will at least log a warning.
+                //
+                // <https://github.com/googlefonts/fontc/pull/1652#issuecomment-3333623587>
+                // <https://github.com/googlefonts/ufo2ft/issues/949>
+                self.components
+                    .iter()
+                    .flat_map(|comp| comp.transform.as_coeffs()),
+            )
+            .chain(Some(self.width))
+            .chain(self.height)
+            .chain(self.vertical_origin)
+            .collect()
+    }
+
+    pub(crate) fn new_with_interpolated_values(&self, mut values: &[f64]) -> Self {
+        let mut contours = Vec::with_capacity(self.contours.len());
+        for contour in &self.contours {
+            let (contour, remaining) = copy_points_to_contour(contour, values);
+            contours.push(contour);
+            values = remaining;
+        }
+        let components = self
+            .components
+            .iter()
+            .zip(values.chunks_exact(6))
+            .map(|(comp, coeffs)| Component {
+                base: comp.base.clone(),
+                transform: Affine::new(coeffs.try_into().unwrap()),
+            })
+            .collect();
+
+        // kind of silly but here i'm just manually truncating values as we
+        // consume them, just to simplify bookkeeping
+        values = &values[self.components.len() * 6..];
+        let width = values[0];
+        values = &values[1..];
+        let height = self.height.and_then(|_| values.first().copied());
+        if height.is_some() {
+            values = &values[1..];
+        }
+        let vertical_origin = self.vertical_origin.and_then(|_| values.first().copied());
+        if vertical_origin.is_some() {
+            values = &values[1..];
+        }
+
+        assert!(
+            values.is_empty(),
+            "this fn can only be passed exactly the number of values required"
+        );
+
+        GlyphInstance {
+            width,
+            height,
+            vertical_origin,
+            contours,
+            components,
+        }
+    }
+}
+
+/// Create a new contour from raw points.
+///
+/// Returns tuple of (new contour, unused points). The new contour has the same
+/// number and type of `PathEl`s as the input contour, with points taken from the
+/// front of the provided slice. The returned slice contains the points that were
+/// not used in this  contour.
+fn copy_points_to_contour<'a>(contour: &BezPath, mut points: &'a [f64]) -> (BezPath, &'a [f64]) {
+    let mut new_els = Vec::with_capacity(contour.elements().len());
+    for el in contour.elements() {
+        let (new_el, remaining) = copy_ponts_to_el(el, points);
+        points = remaining;
+        new_els.push(new_el);
+    }
+
+    (BezPath::from_vec(new_els), points)
+}
+
+fn copy_ponts_to_el<'a>(el: &PathEl, vals: &'a [f64]) -> (PathEl, &'a [f64]) {
+    let (el, n) = match el {
+        PathEl::MoveTo(_) => (PathEl::MoveTo((vals[0], vals[1]).into()), 2),
+        PathEl::LineTo(_) => (PathEl::LineTo((vals[0], vals[1]).into()), 2),
+        PathEl::QuadTo(_, _) => (
+            PathEl::QuadTo((vals[0], vals[1]).into(), (vals[2], vals[3]).into()),
+            4,
+        ),
+        PathEl::CurveTo(_, _, _) => (
+            PathEl::CurveTo(
+                (vals[0], vals[1]).into(),
+                (vals[2], vals[3]).into(),
+                (vals[4], vals[5]).into(),
+            ),
+            6,
+        ),
+        PathEl::ClosePath => (PathEl::ClosePath, 0),
+    };
+
+    (el, &vals[n..])
 }
 
 /// A single glyph component, reference to another glyph.
@@ -2225,5 +2355,67 @@ mod tests {
     #[test]
     fn glyphorder_non_equality() {
         assert_ne!(make_glyph_order(["a", "b"]), make_glyph_order(["b", "a"]));
+    }
+
+    #[test]
+    fn instance_from_deltas() {
+        let z = Point::ZERO;
+        let mut path1 = BezPath::new();
+        // only the shape of these paths matters, not the actual points
+        path1.move_to(z);
+        path1.line_to(z);
+        path1.quad_to(z, z);
+        path1.curve_to(z, z, z);
+
+        let mut path2 = BezPath::new();
+        path2.move_to(z);
+        path2.line_to(z);
+        path2.close_path();
+
+        let contours = vec![path1, path2];
+        let components = vec![Component {
+            base: "derp".into(),
+            transform: Affine::IDENTITY,
+        }];
+
+        let instance = GlyphInstance {
+            width: 600.,
+            height: None,
+            vertical_origin: Some(42.),
+            contours,
+            components,
+        };
+
+        let deltas = (0..9)
+            // nine points in contours
+            .flat_map(|i| [i as f64, i as f64])
+            // the component's affine
+            .chain([-1f64; 6])
+            .chain([600., 420.]) // width and vertical origin
+            .collect::<Vec<_>>();
+
+        let new_instance = instance.new_with_interpolated_values(&deltas);
+
+        assert_eq!(new_instance.contours.len(), 2);
+        assert_eq!(new_instance.components.len(), 1);
+        assert_eq!(new_instance.width, 600.);
+        assert_eq!(new_instance.height, None);
+        assert_eq!(new_instance.vertical_origin, Some(420.));
+
+        for (old, new) in instance.contours.iter().zip(new_instance.contours.iter()) {
+            assert_eq!(old.elements().len(), new.elements().len());
+            for (a, b) in old.elements().iter().zip(new.elements()) {
+                match (a, b) {
+                    (PathEl::MoveTo(_), PathEl::MoveTo(_))
+                    | (PathEl::LineTo(_), PathEl::LineTo(_))
+                    | (PathEl::QuadTo(_, _), PathEl::QuadTo(_, _))
+                    | (PathEl::CurveTo(_, _, _), PathEl::CurveTo(_, _, _))
+                    | (PathEl::ClosePath, PathEl::ClosePath) => (),
+                    (no, good) => panic!("element mismatch: {no:?} != {good:?}"),
+                }
+            }
+        }
+
+        assert_eq!(new_instance.components[0].transform.as_coeffs(), [-1.; 6]);
     }
 }
