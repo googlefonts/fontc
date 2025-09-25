@@ -243,7 +243,7 @@ impl fontdrasil::util::CompositeLike for &Glyph {
 ///
 /// It seemed simpler to me to just have this be a little standalone fn with
 /// limited scope.
-fn flatten_all_non_export_components(context: &Context) {
+fn flatten_all_non_export_components(context: &Context) -> Result<(), BadGlyph> {
     let glyphs = context.glyphs.all();
     let glyphs = glyphs
         .iter()
@@ -257,14 +257,18 @@ fn flatten_all_non_export_components(context: &Context) {
     for glyph_name in depth_first {
         let glyph = glyphs.get(&glyph_name).unwrap();
         if glyph_has_non_export_components(glyph, &glyphs) {
-            let new_glyph = flatten_non_export_components_for_glyph(context, glyph);
+            let new_glyph = flatten_non_export_components_for_glyph(context, glyph)?;
             context.glyphs.set(new_glyph);
         }
     }
+    Ok(())
 }
 
 /// Return a new glyph with any non-export components inlined.
-fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> Glyph {
+fn flatten_non_export_components_for_glyph(
+    context: &Context,
+    glyph: &Glyph,
+) -> Result<Glyph, BadGlyph> {
     let mut builder = GlyphBuilder::from(glyph.clone());
     builder.clear_components();
 
@@ -284,16 +288,8 @@ fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> 
             // okay so now we have a component that is not going to be exported,
             // and we need to flatten.
             let xform = component.transform;
-            let Ok(referenced_instance) =
-                get_or_instantiate_instance(&referenced_glyph, loc, context)
-            else {
-                log::debug!(
-                    "component {} of glyph {} not defined at {loc:?}",
-                    component.base,
-                    glyph.name
-                );
-                continue;
-            };
+            let referenced_instance = get_or_instantiate_instance(&referenced_glyph, loc, context)?;
+
             if matches!(referenced_instance, Cow::Owned(_))
                 && referenced_glyph.has_nonidentity_2x2()
             {
@@ -323,7 +319,7 @@ fn flatten_non_export_components_for_glyph(context: &Context, glyph: &Glyph) -> 
         builder.sources.insert(loc.clone(), new_instance);
     }
     // unwrap is okay because all used locations are from previously validated glyph
-    builder.build().unwrap()
+    builder.build()
 }
 
 fn glyph_has_non_export_components(glyph: &Glyph, glyphs: &BTreeMap<SmolStr, &Glyph>) -> bool {
@@ -772,7 +768,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/preProcessor.py#L92)
         // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/util.py#L112)
 
-        flatten_all_non_export_components(context);
+        flatten_all_non_export_components(context)?;
 
         // then generate the final glyph order and do final glyph processing
         let arc_current = context.preliminary_glyph_order.get();
@@ -1623,7 +1619,7 @@ mod tests {
         });
 
         let context = builder.into_context();
-        flatten_all_non_export_components(&context);
+        flatten_all_non_export_components(&context).unwrap();
 
         let b = context.get_glyph("b");
 
@@ -1651,7 +1647,7 @@ mod tests {
         });
 
         let context = builder.into_context();
-        flatten_all_non_export_components(&context);
+        flatten_all_non_export_components(&context).unwrap();
         let c = context.get_glyph("c");
 
         let instance = c.default_instance();
@@ -1676,7 +1672,7 @@ mod tests {
         });
 
         let context = builder.into_context();
-        flatten_all_non_export_components(&context);
+        flatten_all_non_export_components(&context).unwrap();
 
         let b = context.get_glyph("b");
 
