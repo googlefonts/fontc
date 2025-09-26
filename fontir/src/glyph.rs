@@ -1036,15 +1036,15 @@ mod tests {
         let shallow_component_name = "c1";
         DeepComponent {
             // base shape
-            simple_glyph: contour_glyph(simple_glyph_name),
+            simple_glyph: static_contour_glyph(simple_glyph_name),
             // add c1, reusing shape w/90 degrees ccw rotation: x-basis 0,1 y-basis -1,0
-            shallow_component: component_glyph(
+            shallow_component: static_component_glyph(
                 shallow_component_name,
                 simple_glyph_name.into(),
                 Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]),
             ),
             // add c2, reusing c1 w/translation
-            deep_component: component_glyph(
+            deep_component: static_component_glyph(
                 "c2",
                 shallow_component_name.into(),
                 Affine::translate((5.0, 0.0)),
@@ -1101,39 +1101,23 @@ mod tests {
         );
     }
 
-    fn contour_glyph(name: &str) -> Glyph {
-        let mut glyph = GlyphBuilder::new(name.into());
-        glyph
-            .try_add_source(
-                &NormalizedLocation::for_pos(&[("wght", 0.0)]),
-                contour_instance(),
-            )
-            .unwrap();
-        glyph
-            .try_add_source(
-                &NormalizedLocation::for_pos(&[("wght", 1.0)]),
-                contour_instance(),
-            )
-            .unwrap();
-        glyph.build().unwrap()
+    fn static_contour_glyph(name: &str) -> Glyph {
+        let mut glyph = TestGlyph::new(name);
+        glyph.add_contour(contour());
+        glyph.0
     }
 
-    fn component_glyph(name: &str, base: GlyphName, transform: Affine) -> Glyph {
-        let component = GlyphInstance {
-            components: vec![Component { base, transform }],
-            ..Default::default()
-        };
-        let mut glyph = GlyphBuilder::new(name.into());
-        glyph
-            .try_add_source(
-                &NormalizedLocation::for_pos(&[("wght", 0.0)]),
-                component.clone(),
-            )
-            .unwrap();
-        glyph
-            .try_add_source(&NormalizedLocation::for_pos(&[("wght", 1.0)]), component)
-            .unwrap();
-        glyph.build().unwrap()
+    fn variable_contour_glyph(name: &str) -> Glyph {
+        let [loc1, loc2] = make_wght_locations([0.0, 1.0]);
+        let mut glyph = TestGlyph::new(name);
+        glyph.add_var_contour(&[(&loc1, contour()), (&loc2, contour())]);
+        glyph.0
+    }
+
+    fn static_component_glyph(name: &str, base: GlyphName, transform: Affine) -> Glyph {
+        let mut glyph = TestGlyph::new(name);
+        glyph.add_component(base.as_str(), transform);
+        glyph.0
     }
 
     fn contour_and_component_weight_glyph(name: &str) -> Glyph {
@@ -1189,7 +1173,7 @@ mod tests {
         let coalesce_me = contour_and_component_weight_glyph("coalesce_me");
 
         let context = test_context();
-        context.glyphs.set(contour_glyph("component"));
+        context.glyphs.set(variable_contour_glyph("component"));
 
         convert_components_to_contours(&context, &coalesce_me).unwrap();
         let simple = context.get_glyph(coalesce_me.name.clone());
@@ -1215,34 +1199,21 @@ mod tests {
         let context = test_context();
         test_data.write_to(&context);
 
-        let mut nested_components = GlyphBuilder::new("g".into());
+        let mut nested_components = TestGlyph::new("g");
         nested_components
-            .try_add_source(
-                &NormalizedLocation::for_pos(&[("wght", 0.0)]),
-                GlyphInstance {
-                    components: vec![
-                        Component {
-                            base: test_data.shallow_component.name.clone(),
-                            transform: Affine::IDENTITY,
-                        },
-                        Component {
-                            base: test_data.shallow_component.name,
-                            transform: Affine::translate((0.0, 2.0)),
-                        },
-                        Component {
-                            base: test_data.deep_component.name,
-                            transform: Affine::translate((0.0, 5.0)),
-                        },
-                    ],
-                    contours: vec![contour()],
-                    ..Default::default()
-                },
+            .add_contour(contour())
+            .add_component(test_data.shallow_component.name.as_str(), Affine::IDENTITY)
+            .add_component(
+                test_data.shallow_component.name.as_str(),
+                Affine::translate((0.0, 2.0)),
             )
-            .unwrap();
-        let nested_components = nested_components.build().unwrap();
+            .add_component(
+                test_data.deep_component.name.as_str(),
+                Affine::translate((0.0, 5.0)),
+            );
 
-        convert_components_to_contours(&context, &nested_components).unwrap();
-        let simple = context.get_glyph(nested_components.name.clone());
+        convert_components_to_contours(&context, &nested_components.0).unwrap();
+        let simple = context.get_glyph("g");
         assert_simple(&simple);
         assert_eq!(1, simple.sources().len());
         let inst = simple.default_instance();
@@ -1273,36 +1244,23 @@ mod tests {
         assert!(the_neg.determinant() < 0.0);
 
         // base shape
-        let reuse_me = contour_glyph("shape");
-
-        let mut glyph = GlyphBuilder::new("g".into());
-        glyph
-            .try_add_source(
-                &NormalizedLocation::for_pos(&[("wght", 0.0)]),
-                GlyphInstance {
-                    components: vec![Component {
-                        base: reuse_me.name.clone(),
-                        transform: the_neg,
-                    }],
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        let mut reuse_me = TestGlyph::new("shape");
+        reuse_me.add_contour(contour());
+        let mut glyph = TestGlyph::new("g");
+        glyph.add_component("shape", the_neg);
 
         let context = test_context();
-        context.glyphs.set(reuse_me);
+        context.glyphs.set(reuse_me.0);
 
-        let glyph = glyph.build().unwrap();
-        convert_components_to_contours(&context, &glyph).unwrap();
-        let simple = context.get_glyph(glyph.name.clone());
+        convert_components_to_contours(&context, &glyph.0).unwrap();
+        let simple = context.get_glyph("g");
         assert_simple(&simple);
         assert_eq!(1, simple.sources().len());
         let inst = simple.sources().values().next().unwrap();
 
         // what we should get back is the contour with the_neg applied, reversed because
         // the_neg is notoriously negative in determinant
-        let mut expected = contour();
-        expected.apply_affine(the_neg);
+        let expected = the_neg * contour();
         let expected = expected.reverse_subpaths().to_svg();
 
         assert_eq!(
@@ -1348,7 +1306,7 @@ mod tests {
         });
 
         let context = test_context();
-        context.glyphs.set(contour_glyph("component"));
+        context.glyphs.set(variable_contour_glyph("component"));
 
         convert_components_to_contours(&context, &glyph).unwrap();
         let simple = context.get_glyph(glyph.name.clone());
@@ -1361,7 +1319,7 @@ mod tests {
         let glyph = adjust_transform_for_each_instance(&glyph, |i| Affine::scale(i as f64));
 
         let context = test_context();
-        context.glyphs.set(contour_glyph("component"));
+        context.glyphs.set(variable_contour_glyph("component"));
 
         convert_components_to_contours(&context, &glyph).unwrap();
         let simple = context.get_glyph(glyph.name.clone());
@@ -1608,7 +1566,9 @@ mod tests {
                 if order.contains(component_name) {
                     continue;
                 }
-                context.glyphs.set(contour_glyph(component_name.as_str()));
+                context
+                    .glyphs
+                    .set(variable_contour_glyph(component_name.as_str()));
                 order.insert(component_name.clone());
             }
         }
