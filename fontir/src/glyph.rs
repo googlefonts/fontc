@@ -343,7 +343,10 @@ fn collect_component_locations_nested(
 
     while let Some(next) = todo.pop() {
         if seen.insert(next.clone()) {
-            let nextg = context.get_glyph(next);
+            let Some(nextg) = context.try_get_glyph(next) else {
+                // component is missing, we log this elsewhere
+                continue;
+            };
             out.extend(nextg.sources().keys().cloned());
             todo.extend(nextg.component_names().cloned());
         }
@@ -357,11 +360,13 @@ fn collect_component_locations_nested(
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcd/Lib/ufo2ft/util.py#L165>
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), BadGlyph> {
-    let mut simple = GlyphBuilder::from(original.clone());
+    let glyph = ensure_composite_defined_at_component_locations(context, original);
+    // Component until you can't component no more
+    let mut frontier: VecDeque<_> = components(&glyph, Affine::IDENTITY);
+
+    let mut simple = GlyphBuilder::from(glyph);
     simple.clear_components();
 
-    // Component until you can't component no more
-    let mut frontier: VecDeque<_> = components(original, Affine::IDENTITY);
     // Note that here we care about the entire component transform
     let mut visited: HashSet<(NormalizedLocation, HashableComponent)> = HashSet::new();
     while let Some((loc, component)) = frontier.pop_front() {
@@ -1844,22 +1849,23 @@ mod tests {
     }
 
     #[test]
-    fn component_with_intermediate_layer_missing_in_composite() {
-        // NOTE: currently we ignore these layers when converting components
-        // to contours, although we handle them during flattening.
-        // Naive attempts to interpolate these during conversion was causing
-        // a bunch of crashes, so lets revisit when we have an actual diff
-        // that can be tracked down to this logic.
+    fn decompose_component_has_intermediate_layer() {
+        // https://github.com/googlefonts/fontc/issues/552
         let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
 
-        let mut composite = TestGlyph::new("a");
-        composite.add_var_component(
-            "b",
-            &[
-                (&loc1, Affine::translate((0., 0.))),
-                (&loc2, Affine::translate((10., 0.))),
-            ],
-        );
+        let mut mixed_glyph = TestGlyph::new("a");
+        mixed_glyph
+            .add_var_component(
+                "b",
+                &[
+                    (&loc1, Affine::translate((0., 0.))),
+                    (&loc2, Affine::translate((10., 0.))),
+                ],
+            )
+            .add_var_contour(&[
+                (&loc1, simple_square_path()),
+                (&loc2, Affine::translate((100., 0.)) * simple_square_path()),
+            ]);
         let mut component = TestGlyph::new("b");
         component.add_var_contour(&[
             (&loc1, simple_square_path()),
@@ -1874,15 +1880,21 @@ mod tests {
         ]);
 
         let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
-        context.glyphs.set(composite.0.clone());
+        context.glyphs.set(mixed_glyph.0.clone());
         context.glyphs.set(component.0);
 
-        convert_components_to_contours(&context, &composite.0).unwrap();
+        convert_components_to_contours(&context, &mixed_glyph.0).unwrap();
         let after = context.get_glyph("a");
-        // these asserts are just for the current behaviour, which we may
-        // want to change.
-        assert_eq!(after.sources().len(), 2);
-        assert!(!after.sources().contains_key(&intermediate));
+        assert_eq!(after.sources().len(), 3);
+        assert!(after.sources().contains_key(&intermediate));
+        let interm = after.sources().get(&intermediate).unwrap();
+        assert_eq!(
+            interm.contours,
+            vec![
+                Affine::translate((50., 0.)) * simple_square_path(),
+                Affine::translate((5., 10.)) * simple_square_path()
+            ]
+        );
     }
 
     #[rstest]
