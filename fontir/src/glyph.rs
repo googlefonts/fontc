@@ -322,10 +322,6 @@ fn ensure_composite_defined_at_component_locations(context: &Context, composite:
     let child_locations = collect_component_locations_nested(context, &glyph);
     for loc in child_locations {
         if !glyph.sources().contains_key(&loc) {
-            log::debug!(
-                "instantiating instance of composite '{}' at {loc:?}",
-                glyph.name
-            );
             let new_layer = instantiate_instance(&glyph, &loc, context).unwrap();
             glyph.sources_mut().insert(loc, new_layer);
         }
@@ -360,11 +356,11 @@ fn collect_component_locations_nested(
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcd/Lib/ufo2ft/util.py#L165>
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), BadGlyph> {
-    let glyph = ensure_composite_defined_at_component_locations(context, original);
+    let original = ensure_composite_defined_at_component_locations(context, original);
     // Component until you can't component no more
-    let mut frontier: VecDeque<_> = components(&glyph, Affine::IDENTITY);
+    let mut frontier: VecDeque<_> = components(&original, Affine::IDENTITY);
 
-    let mut simple = GlyphBuilder::from(glyph);
+    let mut simple = GlyphBuilder::from(original.clone());
     simple.clear_components();
 
     // Note that here we care about the entire component transform
@@ -386,7 +382,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
         };
         // ensure referenced glyph has any required intermediate locations
         let referenced_glyph =
-            ensure_component_has_consistent_layers(original, &referenced_glyph, context)?;
+            ensure_component_has_consistent_layers(&original, &referenced_glyph, context)?;
         frontier.extend(
             components(&referenced_glyph, component_affine)
                 .iter()
@@ -403,7 +399,8 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
             .sources
             .get_mut(&loc)
             .expect("only instances at known locations are added to queue above");
-        let ref_inst = get_or_instantiate_instance(&referenced_glyph, &loc, context)?;
+        // unwrap fine because of 'ensure_component_has_consistent_layers' above
+        let ref_inst = referenced_glyph.sources().get(&loc).unwrap();
 
         for contour in ref_inst.contours.iter() {
             let mut contour = contour.clone();
@@ -1755,6 +1752,63 @@ mod tests {
         // 5.0, 0. is interpolated from the contour itself
         let expected_contour = Affine::translate((110.0, 105.0)) * simple_square_path();
         assert_eq!(&expected_contour, &interm.contours[0]);
+    }
+
+    #[test]
+    fn composite_with_intermediate_component_layer_and_another_nested_compoonent_without_intermediates(
+    ) {
+        // based on ecaron in Savate.glyphs
+        let _ = env_logger::builder().is_test(true).try_init();
+
+        let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+        let mut ecaron = TestGlyph::new("ecaron");
+        ecaron
+            .add_var_component("e", &[(&loc1, Affine::IDENTITY), (&loc2, Affine::IDENTITY)])
+            .add_var_component(
+                "caroncomb",
+                &[
+                    (&loc1, Affine::IDENTITY),
+                    (&loc2, Affine::translate((36., 0.))),
+                ],
+            );
+
+        // has intermediate layer
+        let mut e = TestGlyph::new("e");
+        e.add_var_contour(&[
+            (&loc1, simple_square_path()),
+            (
+                &intermediate,
+                Affine::translate((0.0, 10.0)) * simple_square_path(),
+            ),
+            (
+                &loc2,
+                Affine::translate((0.0, 100.0)) * simple_square_path(),
+            ),
+        ]);
+
+        // has no intermediate
+        let mut caroncomb = TestGlyph::new("caroncomb");
+        // NOTE: in the real font this has a complex transform, which will likely
+        // also cause problems; but for now let's just test that we end up with
+        // all the right locations defined
+        caroncomb.add_var_component(
+            "circumflexcomb",
+            &[(&loc1, Affine::IDENTITY), (&loc2, Affine::IDENTITY)],
+        );
+        let mut circumflexcomb = TestGlyph::new("circumflexcomb");
+        circumflexcomb.add_var_contour(&[
+            (&loc1, contour()),
+            (&loc2, Affine::translate((3., 3.)) * contour()),
+        ]);
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(ecaron.0.clone());
+        context.glyphs.set(e.0);
+        context.glyphs.set(caroncomb.0);
+        context.glyphs.set(circumflexcomb.0);
+
+        convert_components_to_contours(&context, &ecaron.0).unwrap();
+        let after = context.get_glyph("ecaron");
+        assert_eq!(after.sources().len(), 3);
     }
 
     #[test]
