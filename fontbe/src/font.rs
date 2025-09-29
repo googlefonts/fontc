@@ -9,7 +9,7 @@ use write_fonts::{
         avar::Avar, cmap::Cmap, colr::Colr, cpal::Cpal, fvar::Fvar, gasp::Gasp, gdef::Gdef,
         glyf::Glyf, gpos::Gpos, gsub::Gsub, gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx,
         hvar::Hvar, loca::Loca, maxp::Maxp, meta::Meta, mvar::Mvar, name::Name, os2::Os2,
-        post::Post, stat::Stat, vhea::Vhea, vmtx::Vmtx,
+        post::Post, stat::Stat, vhea::Vhea, vmtx::Vmtx, vvar::Vvar,
     },
     types::Tag,
     FontBuilder,
@@ -60,6 +60,7 @@ const TABLES_TO_MERGE: &[(WorkId, Tag)] = &[
     (WorkId::Meta, Meta::TAG),
     (WorkId::Vhea, Vhea::TAG),
     (WorkId::Vmtx, Vmtx::TAG),
+    (WorkId::Vvar, Vvar::TAG),
 ];
 
 fn has(context: &Context, id: WorkId) -> bool {
@@ -89,6 +90,7 @@ fn has(context: &Context, id: WorkId) -> bool {
         WorkId::Meta => context.meta.try_get().is_some(),
         WorkId::Vhea => context.vhea.try_get().is_some(),
         WorkId::Vmtx => context.vmtx.try_get().is_some(),
+        WorkId::Vvar => context.vvar.try_get().is_some(),
         _ => false,
     }
 }
@@ -121,6 +123,7 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
         WorkId::Meta => to_bytes(context.meta.get().as_ref()),
         WorkId::Vhea => to_bytes(context.vhea.get().as_ref()),
         WorkId::Vmtx => Some(context.vmtx.get().as_ref().get().to_vec()),
+        WorkId::Vvar => to_bytes(context.vvar.get().as_ref()),
         _ => panic!("Missing a match for {id:?}"),
     };
     Ok(bytes)
@@ -159,6 +162,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
             .variant(WorkId::LocaFormat)
             .variant(WorkId::Vhea)
             .variant(WorkId::Vmtx)
+            .variant(WorkId::Vvar)
             .variant(FeWorkId::StaticMetadata)
             .variant(WorkId::ExtraFeaTables)
             .build()

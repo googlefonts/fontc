@@ -1,4 +1,4 @@
-//! Generates an [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR) table.
+//! Generates an [VVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/VVAR) table.
 
 use fontdrasil::orchestration::AccessBuilder;
 
@@ -8,8 +8,8 @@ use fontdrasil::{
 };
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::tables::{
-    hvar::Hvar,
     variations::{ivs_builder::VariationStoreBuilder, DeltaSetIndexMap},
+    vvar::Vvar,
 };
 
 use crate::metric_variations::{table_size, AdvanceDeltas, DeltaDirection};
@@ -19,15 +19,15 @@ use crate::{
 };
 
 #[derive(Debug)]
-struct HvarWork {}
+struct VvarWork {}
 
-pub fn create_hvar_work() -> Box<BeWork> {
-    Box::new(HvarWork {})
+pub fn create_vvar_work() -> Box<BeWork> {
+    Box::new(VvarWork {})
 }
 
-impl Work<Context, AnyWorkId, Error> for HvarWork {
+impl Work<Context, AnyWorkId, Error> for VvarWork {
     fn id(&self) -> AnyWorkId {
-        WorkId::Hvar.into()
+        WorkId::Vvar.into()
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
@@ -39,11 +39,17 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             .build()
     }
 
-    /// Generate [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR)
+    /// Generate [VVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/VVAR)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         if static_metadata.axes.is_empty() {
-            log::debug!("skipping HVAR, font has no axes");
+            log::debug!("skipping VVAR, font has no axes");
+            return Ok(());
+        }
+        // In Python we add VVAR only if we have a vmtx. If we are building vertical then we have a vmtx.
+        // <https://github.com/googlefonts/fonttools/blob/03a3c8ed9e7ab35b5f219a6d25ee8081107ff2bb/Lib/fontTools/varLib/__init__.py#L1312>
+        if !static_metadata.build_vertical {
+            log::debug!("skipping VVAR, we aren't building vertical tables");
             return Ok(());
         }
         let var_model = &static_metadata.variation_model;
@@ -56,22 +62,22 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let glyph_locations = glyphs.iter().flat_map(|glyph| glyph.sources().keys());
         let metrics = context.ir.global_metrics.get();
 
-        let mut glyph_width_deltas = AdvanceDeltas::new(
+        let mut glyph_deltas = AdvanceDeltas::new(
             var_model.clone(),
             glyph_locations,
             &metrics,
-            DeltaDirection::Horizontal,
+            DeltaDirection::Vertical,
         );
         for glyph in glyphs.into_iter() {
-            glyph_width_deltas.add(glyph.as_ref())?;
+            glyph_deltas.add(glyph.as_ref())?;
         }
 
         // if we have a single model, we can try to build a VariationStore with implicit variation
         // indices (a single ItemVariationData, outer index 0, inner index => gid).
         let mut var_idxes = Vec::new();
-        let direct_store = if glyph_width_deltas.is_single_model() {
+        let direct_store = if glyph_deltas.is_single_model() {
             let mut direct_builder = VariationStoreBuilder::new_with_implicit_indices(axis_count);
-            for deltas in glyph_width_deltas.iter() {
+            for deltas in glyph_deltas.iter() {
                 var_idxes.push(direct_builder.add_deltas(deltas.clone()));
             }
             // sanity checks
@@ -88,7 +94,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
 
         // also build an indirect VariationStore with a DeltaSetIndexMap to map gid => varidx
         let mut indirect_builder = VariationStoreBuilder::new(axis_count);
-        for deltas in glyph_width_deltas.iter() {
+        for deltas in glyph_deltas.iter() {
             var_idxes.push(indirect_builder.add_deltas(deltas.clone()));
         }
         let (indirect_store, varidx_map) = indirect_builder.build();
@@ -113,8 +119,8 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             }
         }
 
-        let hvar = Hvar::new(varstore, varidx_map, None, None);
-        context.hvar.set(hvar);
+        let vvar = Vvar::new(varstore, varidx_map, None, None, None);
+        context.vvar.set(vvar);
 
         Ok(())
     }

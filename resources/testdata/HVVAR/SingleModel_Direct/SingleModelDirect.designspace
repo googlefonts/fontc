@@ -4,29 +4,29 @@
     <axis tag="wght" name="Weight" minimum="400" maximum="700" default="400"/>
   </axes>
   <sources>
-    <source filename="HVARSingleModelIndirect-Regular.ufo" name="HVAR SingleModel Indirect Regular">
+    <source filename="SingleModelDirect-Regular.ufo" name="SingleModel Direct Regular">
       <location>
         <dimension name="Weight" xvalue="400"/>
       </location>
     </source>
-    <source filename="HVARSingleModelIndirect-Bold.ufo" name="HVAR SingleModel Indirect Bold">
+    <source filename="SingleModelDirect-Bold.ufo" name="SingleModel Direct Bold">
       <location>
         <dimension name="Weight" xvalue="700"/>
       </location>
     </source>
   </sources>
   <instances>
-    <instance name="HVAR SingleModel Indirect Regular" stylename="Regular">
+    <instance name="SingleModel Direct Regular" stylename="Regular">
       <location>
         <dimension name="Weight" xvalue="400"/>
       </location>
     </instance>
-    <instance name="HVAR SingleModel Indirect Medium" stylename="Medium">
+    <instance name="SingleModel Direct Medium" stylename="Medium">
       <location>
         <dimension name="Weight" xvalue="500"/>
       </location>
     </instance>
-    <instance name="HVAR SingleModel Indirect Bold" stylename="Bold">
+    <instance name="SingleModel Direct Bold" stylename="Bold">
       <location>
         <dimension name="Weight" xvalue="700"/>
       </location>

@@ -19,7 +19,7 @@ pub struct Args {
         required_unless_present("source"),
         required_unless_present("verbose_version")
     )]
-    input_source: Option<PathBuf>,
+    pub input_source: Option<PathBuf>,
 
     /// DEPRECATED: old name for positional input file
     #[arg(short, long)]
