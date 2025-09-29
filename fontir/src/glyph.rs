@@ -547,7 +547,7 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
         glyph.name,
         glyph.default_instance().components
     );
-    let mut glyph = ensure_composite_defined_at_component_locations(context, glyph);
+    let mut glyph = glyph.clone();
     for (loc, inst) in glyph.sources_mut() {
         let mut simple = Vec::new();
         let mut frontier = VecDeque::new();
@@ -1571,6 +1571,39 @@ mod tests {
             (Affine::scale_non_uniform(-1., 1.) * simple_square_path()).reverse_subpaths();
 
         assert_eq!(contour, &expected);
+    }
+
+    #[test]
+    fn flatten_when_leaf_component_has_extra_layer() {
+        // in this case we don't need to have a matching layer in the component
+        let [loc1, loc2] = make_wght_locations([0.0, 1.0]);
+
+        let mut composite = TestGlyph::new("a");
+        composite.add_var_component("b", &[(&loc1, Affine::IDENTITY)]);
+        let mut comp1 = TestGlyph::new("b");
+        comp1.add_var_component("c", &[(&loc1, Affine::IDENTITY)]);
+        let mut comp2 = TestGlyph::new("c");
+
+        comp2.add_var_contour(&[
+            (&loc1, simple_square_path()),
+            (&loc2, Affine::translate((0.0, 10.0)) * simple_square_path()),
+        ]);
+
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(composite.0.clone());
+        context.glyphs.set(comp1.0);
+        context.glyphs.set(comp2.0);
+
+        flatten_glyph(&context, &composite.0).unwrap();
+        let after = context.get_glyph("a");
+        assert_eq!(after.sources().len(), 1);
+        assert_eq!(
+            after
+                .component_names()
+                .map(|g| g.to_string())
+                .collect::<Vec<_>>(),
+            ["c"]
+        );
     }
 
     #[test]
