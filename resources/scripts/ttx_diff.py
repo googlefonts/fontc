@@ -523,6 +523,9 @@ def stat_like_fontmake(ttx):
 def normalize_all_offcurve_starting_point(contour):
     """Rotate an all-offcurve contour to start at point closest to origin.
 
+    When multiple points are equidistant from the origin, the first one encountered
+    (lowest index) is selected as the starting point.
+
     This is to address differences in starting points of all-offcurve TrueType
     quadratic contours between fontc and fontmake.
 
