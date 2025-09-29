@@ -520,6 +520,40 @@ def stat_like_fontmake(ttx):
     ver.attrib["value"] = "0x00010001"
 
 
+def normalize_all_offcurve_starting_point(contour):
+    """Rotate an all-offcurve contour to start at point closest to origin.
+
+    When multiple points are equidistant from the origin, the first one encountered
+    (lowest index) is selected as the starting point.
+
+    This is to address differences in starting points of all-offcurve TrueType
+    quadratic contours between fontc and fontmake.
+
+    fontmake preserves the original off-curve starting point from the UFO source,
+    while fontc creates a synthetic on-curve point at the midpoint between first
+    and last off-curve points due to kurbo::BezPath needing some on-curve point
+    to move_to. When contours are reversed (default behavior without --keep-direction
+    flag), this results in different starting points in the final TrueType output.
+
+    See: <https://github.com/googlefonts/fontc/issues/1653>
+    """
+    pts = contour.xpath("./pt")
+    if not pts or not all(pt.get("on") == "0" for pt in pts):
+        return  # Not an all-offcurve contour
+
+    # Find point closest to origin
+    min_idx = min(
+        range(len(pts)),
+        key=lambda i: int(pts[i].get("x", 0)) ** 2 + int(pts[i].get("y", 0)) ** 2,
+    )
+
+    # Rotate if needed
+    if min_idx != 0:
+        contour[:] = pts[min_idx:] + pts[:min_idx]
+        # Fix indentation after rotation
+        etree.indent(contour, level=3)
+
+
 # https://github.com/googlefonts/fontc/issues/1107
 def normalize_glyf_contours(
     fontc_ttx: etree.ElementTree, fontmake_ttx: etree.ElementTree
@@ -528,6 +562,9 @@ def normalize_glyf_contours(
 
     If contours differ (e.g., different starting points), leaves
     them in their original order to avoid misleading diffs.
+
+    For all-offcurve contours, normalizes the starting point to be the point
+    closest to the origin before comparison.
 
     Returns a tuple of two dicts, one for fontc and one for fontmake, containing
     the new order of prior point indices for each glyph, later used for sorting
@@ -553,6 +590,10 @@ def normalize_glyf_contours(
         # Skip glyphs with mismatched contour counts
         if len(fontc_contours) != len(fontmake_contours):
             continue
+
+        # Normalize all-offcurve contours to start at point closest to origin
+        for contour in fontc_contours + fontmake_contours:
+            normalize_all_offcurve_starting_point(contour)
 
         # Compare contours as sets to see if they're identical (ignoring order)
         fontc_strings = {to_xml_string(c) for c in fontc_contours}
