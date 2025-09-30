@@ -235,17 +235,17 @@ fn add_phantom_points(
     points.push(Point::new(0.0, 0.0)); // leftSideX, 0
     points.push(Point::new(advance_width as f64, 0.0)); // rightSideX, 0
 
-    let (top, bottom) = build_vertical
-        .then(|| {
-            // FontTools says
-            //      topSideY = topSideBearing + glyph.yMax
-            //      bottomSideY = topSideY - verticalAdvanceWidth
-            // We currently always set tsb to vertical_origin - yMax so topSideY = verticalOrigin.
-            let top = instance.vertical_origin(metrics) as f64;
-            let bottom = top - instance.height(metrics) as f64;
-            (top, bottom)
-        })
-        .unwrap_or_default();
+    let (top, bottom) = if build_vertical {
+        // FontTools says
+        //      topSideY = topSideBearing + glyph.yMax
+        //      bottomSideY = topSideY - verticalAdvanceWidth
+        // We currently always set tsb to vertical_origin - yMax so topSideY = verticalOrigin.
+        let top = instance.vertical_origin(metrics) as f64;
+        let bottom = top - instance.height(metrics) as f64;
+        (top, bottom)
+    } else {
+        Default::default()
+    };
 
     points.push(Point::new(0.0, top));
     points.push(Point::new(0.0, bottom));
