@@ -97,6 +97,8 @@ pub enum Error {
     CompositesStalled(Vec<GlyphName>),
     #[error("Inconsistent palette lengths observed: {0:?}")]
     InconsistentPaletteLength(Vec<usize>),
+    #[error("No metrics instance for '{0:?}'")]
+    NoGlobalMetricsInstance(NormalizedLocation),
 }
 
 #[derive(Debug)]

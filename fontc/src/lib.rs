@@ -299,7 +299,7 @@ mod tests {
                 name::Name,
                 os2::SelectionFlags,
                 post::Post,
-                variations::{DeltaSetIndexMap, ItemVariationData},
+                variations::{DeltaSetIndexMap, ItemVariationData, ItemVariationStore},
             },
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider, TableRef,
         },
@@ -493,6 +493,7 @@ mod tests {
             BeWorkIdentifier::Stat.into(),
             BeWorkIdentifier::Vhea.into(),
             BeWorkIdentifier::Vmtx.into(),
+            BeWorkIdentifier::Vvar.into(),
         ];
 
         expected.extend(
@@ -2073,42 +2074,133 @@ mod tests {
             .collect()
     }
 
+    fn assert_var_regions<'a>(
+        varstore: &ItemVariationStore<'a>,
+        expected_regions: &Vec<Vec<[f32; 3]>>,
+    ) {
+        let regions = varstore
+            .variation_region_list()
+            .unwrap()
+            .variation_regions();
+        let actual_regions = regions
+            .iter()
+            .map(|region| {
+                region
+                    .expect("To access regions")
+                    .region_axes()
+                    .iter()
+                    .map(|coords| {
+                        [
+                            coords.start_coord().to_f32(),
+                            coords.peak_coord().to_f32(),
+                            coords.end_coord().to_f32(),
+                        ]
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(*expected_regions, actual_regions);
+    }
+
+    /// Copy source dir to temp dir, typically so you can modify it
+    fn copy_source(raw_src_dir: &str) -> TempDir {
+        let mut src_dir = testdata_dir();
+        src_dir.push(raw_src_dir);
+        assert!(src_dir.is_dir(), "No {src_dir:?}");
+
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut frontier = vec![(src_dir, temp_dir.path().to_path_buf())];
+        while let Some((src, dst)) = frontier.pop() {
+            if src.is_dir() {
+                for e in fs::read_dir(&src).unwrap() {
+                    let e = e.unwrap();
+                    let src = e.path();
+                    let mut dst = dst.clone();
+                    dst.push(src.file_name().unwrap());
+                    if src.is_dir() {
+                        fs::create_dir(&dst).unwrap();
+                    }
+                    frontier.push((src, dst));
+                }
+            }
+            if src.is_file() {
+                fs::copy(src, dst).unwrap();
+            }
+        }
+        temp_dir
+    }
+
+    #[test]
+    fn no_vvar_without_build_vertical() {
+        let temp_dir = copy_source("HVVAR/SingleModel_Direct");
+        let mut src = temp_dir.path().to_path_buf();
+
+        // Destory the fields that trigger vertical
+        let mut fontinfo_file = src.clone();
+        fontinfo_file.push("SingleModelDirect-Regular.ufo/fontinfo.plist");
+        let mut fontinfo = fs::read_to_string(&fontinfo_file).unwrap();
+        // Why name things symmetrically, that would be too easy
+        fontinfo = fontinfo.replace("openTypeVheaVertTypo", "openTypeHhea");
+        fs::write(&fontinfo_file, &fontinfo).unwrap();
+
+        // Compile and observe we are not vertical
+        src.push("SingleModelDirect.designspace");
+        let mut result = TestCompile::new(src.to_str().unwrap(), |args| {
+            let mut new_args = args.clone();
+            new_args.input_source = Some(src.clone());
+            new_args
+        });
+        result.run();
+
+        assert!(
+            !result.fe_context.static_metadata.get().build_vertical,
+            "build_vertical is set?!"
+        );
+    }
+
+    #[test]
+    fn compile_vvar_single_model_direct_varstore() {
+        // All glyphs define the same locations (single model is ok) so a direct
+        // VarStore (without a mapping) can be built. In this particular case, this
+        // turns out to be more compact than the equivalent indirect VarStore
+        // so we check it gets preferred over the latter.
+        let result =
+            TestCompile::compile_source("HVVAR/SingleModel_Direct/SingleModelDirect.designspace");
+
+        // It's frightfully confusing if build_vertical wound up off
+        assert!(
+            result.fe_context.static_metadata.get().build_vertical,
+            "build_vertical is false?!"
+        );
+
+        let font = result.font();
+        let num_glyphs = font.maxp().unwrap().num_glyphs();
+        assert_eq!(num_glyphs, 14);
+        let vvar = font.vvar().unwrap();
+        assert!(vvar.advance_height_mapping().is_none());
+    }
+
     #[test]
     fn compile_hvar_single_model_direct_varstore() {
         // All glyphs define the same locations (single model is ok) so a direct
         // VarStore (without a mapping) can be built. In this particular case, this
         // turns out to be more compact than the equivalent indirect VarStore
         // so we check it gets preferred over the latter.
-        let result = TestCompile::compile_source(
-            "HVAR/SingleModel_Direct/HVARSingleModelDirect.designspace",
-        );
+        let result =
+            TestCompile::compile_source("HVVAR/SingleModel_Direct/SingleModelDirect.designspace");
         let font = result.font();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
         assert_eq!(num_glyphs, 14);
         let hvar = font.hvar().unwrap();
         assert!(hvar.advance_width_mapping().is_none());
+
         let varstore = hvar.item_variation_store().unwrap();
-        let regions = varstore
-            .variation_region_list()
-            .unwrap()
-            .variation_regions();
+
         // this simple test font only has two masters (Regular [default] and Bold)
-        // so we expect a single region with a single wght axis
-        assert_eq!(regions.len(), 1);
-        let region_coords = regions
-            .get(0)
-            .unwrap()
-            .region_axes()
-            .iter()
-            .map(|coords| {
-                [
-                    coords.start_coord().to_f32(),
-                    coords.peak_coord().to_f32(),
-                    coords.end_coord().to_f32(),
-                ]
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(region_coords, vec![[0.0, 1.0, 1.0]]);
+        // so we expect a single region with a single wght axis for both hvar and vvar
+        assert_var_regions(&varstore, &vec![vec![[0.0, 1.0, 1.0]]]);
+
         // we expect one ItemVariationData and one delta set per glyph
         assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:#?}");
         let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
@@ -2152,27 +2244,7 @@ mod tests {
         // we expect a 'direct' VarStore with implicit variation indices and no mapping
         assert!(hvar.advance_width_mapping().is_none());
         let varstore = hvar.item_variation_store().unwrap();
-        let regions = varstore
-            .variation_region_list()
-            .unwrap()
-            .variation_regions();
-        // this simple test font only has two masters (Regular [default] and Bold)
-        // so we expect a single region with a single wght axis
-        assert_eq!(regions.len(), 1);
-        let region_coords = regions
-            .get(0)
-            .unwrap()
-            .region_axes()
-            .iter()
-            .map(|coords| {
-                [
-                    coords.start_coord().to_f32(),
-                    coords.peak_coord().to_f32(),
-                    coords.end_coord().to_f32(),
-                ]
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(region_coords, vec![[0.0, 1.0, 1.0]]);
+        assert_var_regions(&varstore, &vec![vec![[0.0, 1.0, 1.0]]]);
         // we expect one ItemVariationData and 4 delta sets, one per glyph
         assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:#?}");
         let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
@@ -2190,7 +2262,7 @@ mod tests {
         // the balance and make an indirect store more compact despite the overhead
         // of the additional DeltaSetIndexMap.
         let result = TestCompile::compile_source(
-            "HVAR/SingleModel_Indirect/HVARSingleModelIndirect.designspace",
+            "HVVAR/SingleModel_Indirect/SingleModelIndirect.designspace",
         );
         let font = result.font();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
@@ -2252,44 +2324,23 @@ mod tests {
         // Some glyphs are 'sparse' and define different sets of locations, so multiple
         // sub-models are required to compute the advance width deltas.
         // FontTools always builds an indirect VarStore in this case and we do the same.
-        let result = TestCompile::compile_source(
-            "HVAR/MultiModel_Indirect/HVARMultiModelIndirect.designspace",
-        );
+        let result =
+            TestCompile::compile_source("HVVAR/MultiModel_Indirect/MultiModelIndirect.designspace");
         let font = result.font();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
         assert_eq!(num_glyphs, 5);
         let hvar = font.hvar().unwrap();
         let varstore = hvar.item_variation_store().unwrap();
-        let region_coords = varstore
-            .variation_region_list()
-            .unwrap()
-            .variation_regions()
-            .iter()
-            .map(|region| {
-                region
-                    .unwrap()
-                    .region_axes()
-                    .iter()
-                    .map(|coords| {
-                        [
-                            coords.start_coord().to_f32(),
-                            coords.peak_coord().to_f32(),
-                            coords.end_coord().to_f32(),
-                        ]
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
         // Glyph "A" defines three masters (Regular, Medium and Bold) so uses two
         // regions (the first two in the list); the rest of the glyphs only have
         // two masters so use only one region (the last one).
-        assert_eq!(
-            region_coords,
-            vec![
+        assert_var_regions(
+            &varstore,
+            &vec![
                 vec![[0.0, 0.333313, 1.0]],
                 vec![[0.333313, 1.0, 1.0]],
                 vec![[0.0, 1.0, 1.0]],
-            ]
+            ],
         );
         // in this particular test font, despite being multi-model, we still end up with
         // a single VarData subtable, filled with zeros for regions that don't apply
