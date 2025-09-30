@@ -2663,6 +2663,14 @@ mod tests {
     }
 
     #[test]
+    fn fixed_pitch_on_name2() {
+        assert_eq!(
+            Some(true),
+            fixed_pitch_of(glyphs3_dir().join("FixedPitch2.glyphs"))
+        );
+    }
+
+    #[test]
     fn fixed_pitch_off() {
         assert_eq!(None, fixed_pitch_of(glyphs3_dir().join("WghtVar.glyphs")));
     }
