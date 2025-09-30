@@ -3,7 +3,7 @@
 
 customParameters = (
 {
-name = isFixedPitch;
+name = postscriptIsFixedPitch;
 value = 1;
 }
 );
