@@ -475,8 +475,12 @@ fn instantiate_instance(
         .iter()
         .map(|(loc, instance)| (loc.clone(), instance.values_for_interpolation()))
         .collect();
+    // when instantiating intermediates we don't want to do rounding (this is
+    // a significant problem if we round some component transformations, where
+    // the fractional bits can be very important).
+    // This matches fonttools, see https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/_compilers/baseCompiler.py#L266
     let deltas = model
-        .deltas(&point_seqs)
+        .deltas_with_rounding(&point_seqs, crate::variations::RoundingBehaviour::None)
         .map_err(|e| BadGlyph::new(&glyph.name, e))?;
     let points = VariationModel::interpolate_from_deltas(loc, &deltas);
     Ok(glyph
@@ -1639,6 +1643,39 @@ mod tests {
         assert!(inst.height.is_none());
         assert_eq!(inst.vertical_origin, Some(150.));
     }
+
+    fn interpolate_transform_at_midpoint(one: Affine, two: Affine) -> Affine {
+        let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+        let mut glyph = TestGlyph::new("glyphie");
+        glyph.add_var_component("derp", &[(&loc1, one), (&loc2, two)]);
+
+        let context = test_context_with_locations(vec![loc1.clone(), loc2.clone()]);
+        context.glyphs.set(glyph.0.clone());
+
+        let inst = instantiate_instance(&glyph.0, &intermediate, &context).unwrap();
+        inst.components[0].transform
+    }
+
+    #[test]
+    fn interpolate_transform_with_rotation() {
+        const ROT_180: Affine = Affine::new([-1.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
+        let one = Affine::translate((100.0, 100.0)) * ROT_180;
+        let two = Affine::translate((200.0, 200.0)) * ROT_180;
+        assert_eq!(
+            interpolate_transform_at_midpoint(one, two),
+            Affine::new([-1., 0., 0., -1., 150., 150.])
+        );
+    }
+
+    #[test]
+    fn interpolate_transform_with_scale() {
+        assert_eq!(
+            interpolate_transform_at_midpoint(Affine::IDENTITY, Affine::scale(1.6)),
+            // this was failing before we stopped rounding deltas.
+            Affine::scale(1.3)
+        );
+    }
+
     #[test]
     fn non_export_component_has_intermediate_layer() {
         let _ = env_logger::builder().is_test(true).try_init();

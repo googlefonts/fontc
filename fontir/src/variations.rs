@@ -21,6 +21,24 @@ use write_fonts::{
 
 use crate::error::VariationModelError;
 
+/// Different ways of rounding values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoundingBehaviour {
+    /// Don't round values
+    None,
+    /// Round half-way values to the nearest even number. See [`RoundTiesEven`].
+    RoundTiesEven,
+}
+
+impl RoundingBehaviour {
+    fn apply<T: RoundTiesEven>(self, value: T) -> T {
+        match self {
+            RoundingBehaviour::None => value,
+            RoundingBehaviour::RoundTiesEven => value.round_ties_even(),
+        }
+    }
+}
+
 /// Trait for rounding half-way values to the nearest even number.
 ///
 /// For example, 2.5 rounds to 2.0, 3.5 rounds to 4.0, and -2.5 rounds to -2.0.
@@ -209,10 +227,30 @@ impl VariationModel {
     /// Returns a delta, as the vector type, for every input point. Intended use is to support
     /// construction of a variation store.
     ///
-    /// Rust version of <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Lib/fontTools/varLib/models.py#L449-L461>
+    /// Rust version of <https://github.com/fonttools/fonttools/blob/3b9a73ff837/Lib/fontTools/varLib/models.py#L449-L461>
     pub fn deltas<P, V>(
         &self,
         point_seqs: &HashMap<NormalizedLocation, Vec<P>>,
+    ) -> Result<ModelDeltas<V>, DeltaError>
+    where
+        P: Copy + Default + Sub<P, Output = V>,
+        V: Copy + Mul<f64, Output = V> + Sub<V, Output = V> + RoundTiesEven,
+    {
+        self.deltas_with_rounding(point_seqs, RoundingBehaviour::RoundTiesEven)
+    }
+
+    /// Like [`deltas`] but with control over rounding behaviour.
+    ///
+    /// Sometimes (the motivating example being interpolation of intermediate
+    /// glyph instances) you want to disable rounding. This more closely matches
+    /// the signature in fonttools
+    /// (<https://github.com/fonttools/fonttools/blob/3b9a73ff83/Lib/fontTools/varLib/models.py#L449-L461>).
+    ///
+    /// [`deltas`]: Self::deltas
+    pub fn deltas_with_rounding<P, V>(
+        &self,
+        point_seqs: &HashMap<NormalizedLocation, Vec<P>>,
+        rounding: RoundingBehaviour,
     ) -> Result<ModelDeltas<V>, DeltaError>
     where
         P: Copy + Default + Sub<P, Output = V>,
@@ -262,32 +300,31 @@ impl VariationModel {
 
             for (idx, point) in points.iter().enumerate() {
                 let initial_vector: V = *point - Default::default();
-                deltas.push(
-                    // Find other masters that are active (have influence)
-                    // Any master with influence on us was processed already so we can get that masters
-                    // deltas from the results so far. If we subtract away all such influences what's
-                    // left is the delta to take us to point.
-                    master_influences
-                        .iter()
-                        .filter_map(|(master_idx, master_weight)| {
-                            let result_idx = model_idx_to_result_idx.get(master_idx)?;
-                            let master_deltas: &Vec<V> = result
-                                .get(*result_idx)
-                                .map(|(_, master_deltas)| master_deltas)?;
-                            let delta = master_deltas.get(idx)?;
-                            Some((delta, master_weight.into_inner()))
-                        })
-                        .fold(initial_vector, |acc, (other, other_weight)| {
-                            acc - *other * other_weight
-                        })
-                        // deltas will be stored as integers in the VarStore hence must be rounded at
-                        // some point; this is the correct place to round them, instead of at the end,
-                        // otherwise rounding errors can compound especially where master influences
-                        // overlap. This also matches FontTools behavior, see:
-                        // https://github.com/fonttools/fonttools/issues/2213
-                        // https://github.com/fonttools/fonttools/pull/2214
-                        .round_ties_even(),
-                );
+                // Find other masters that are active (have influence)
+                // Any master with influence on us was processed already so we can get that masters
+                // deltas from the results so far. If we subtract away all such influences what's
+                // left is the delta to take us to point.
+                let delta = master_influences
+                    .iter()
+                    .filter_map(|(master_idx, master_weight)| {
+                        let result_idx = model_idx_to_result_idx.get(master_idx)?;
+                        let master_deltas: &Vec<V> = result
+                            .get(*result_idx)
+                            .map(|(_, master_deltas)| master_deltas)?;
+                        let delta = master_deltas.get(idx)?;
+                        Some((delta, master_weight.into_inner()))
+                    })
+                    .fold(initial_vector, |acc, (other, other_weight)| {
+                        acc - *other * other_weight
+                    });
+
+                // deltas will be stored as integers in the VarStore hence must be rounded at
+                // some point; this is the correct place to round them, instead of at the end,
+                // otherwise rounding errors can compound especially where master influences
+                // overlap. This also matches FontTools behavior, see:
+                // https://github.com/fonttools/fonttools/issues/2213
+                // https://github.com/fonttools/fonttools/pull/2214
+                deltas.push(rounding.apply(delta));
             }
             model_idx_to_result_idx.insert(model_idx, result.len());
             result.push((region.clone(), deltas));
