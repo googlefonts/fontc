@@ -1,0 +1,32 @@
+{
+.formatVersion = 3;
+
+properties = (
+{
+key = designers;
+values = (
+{
+language = dflt;
+value = "First Definition";
+},
+{
+language = dflt;
+value = "Second Definition";
+},
+{
+language = dflt;
+value = "Third Definition";
+}
+);
+}
+);
+
+familyName = FP;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+unitsPerEm = 1000;
+}
