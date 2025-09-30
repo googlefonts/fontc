@@ -14,7 +14,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, GlyphOrder},
+    ir::{self, GlobalMetrics, GlobalMetricsInstance, GlyphInstance, GlyphOrder},
     orchestration::{Flags, WorkId as FeWorkId},
     variations::{VariationModel, VariationRegion},
 };
@@ -221,23 +221,42 @@ fn create_composite(
 
 /// * <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L335-L367>
 /// * <https://docs.microsoft.com/en-us/typography/opentype/spec/tt_instructing_glyphs#phantoms>
-fn add_phantom_points(advance: u16, points: &mut Vec<Point>) {
+fn add_phantom_points(
+    instance: &GlyphInstance,
+    metrics: &GlobalMetricsInstance,
+    build_vertical: bool,
+    points: &mut Vec<Point>,
+) {
     // FontTools says
     //      leftSideX = glyph.xMin - leftSideBearing
     //      rightSideX = leftSideX + horizontalAdvanceWidth
     // We currently always set lsb to xMin so leftSideX = 0, rightSideX = advance.
+    let advance_width: u16 = instance.width.ot_round();
     points.push(Point::new(0.0, 0.0)); // leftSideX, 0
-    points.push(Point::new(advance as f64, 0.0)); // rightSideX, 0
+    points.push(Point::new(advance_width as f64, 0.0)); // rightSideX, 0
 
-    // TODO: vertical phantom points
-    points.push(Point::new(0.0, 0.0));
-    points.push(Point::new(0.0, 0.0));
+    let (top, bottom) = build_vertical
+        .then(|| {
+            // FontTools says
+            //      topSideY = topSideBearing + glyph.yMax
+            //      bottomSideY = topSideY - verticalAdvanceWidth
+            // We currently always set tsb to vertical_origin - yMax so topSideY = verticalOrigin.
+            let top = instance.vertical_origin(metrics) as f64;
+            let bottom = top - instance.height(metrics) as f64;
+            (top, bottom)
+        })
+        .unwrap_or_default();
+
+    points.push(Point::new(0.0, top));
+    points.push(Point::new(0.0, bottom));
 }
 
 /// See <https://github.com/fonttools/fonttools/blob/86291b6ef6/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
 fn point_seqs_for_simple_glyph(
     ir_glyph: &ir::Glyph,
     instances: HashMap<NormalizedLocation, SimpleGlyph>,
+    global_metrics: &GlobalMetrics,
+    build_vertical: bool,
 ) -> HashMap<NormalizedLocation, Vec<Point>> {
     instances
         .into_iter()
@@ -249,7 +268,10 @@ fn point_seqs_for_simple_glyph(
                 .map(|cp| Point::new(cp.x as f64, cp.y as f64))
                 .collect();
 
-            add_phantom_points(ir_glyph.sources()[&loc].width.ot_round(), &mut points);
+            let instance = &ir_glyph.sources()[&loc];
+            let metrics = global_metrics.at(&loc);
+
+            add_phantom_points(instance, &metrics, build_vertical, &mut points);
 
             (loc, points)
         })
@@ -257,7 +279,11 @@ fn point_seqs_for_simple_glyph(
 }
 
 /// <https://github.com/fonttools/fonttools/blob/86291b6ef6/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
-fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLocation, Vec<Point>> {
+fn point_seqs_for_composite_glyph(
+    ir_glyph: &ir::Glyph,
+    global_metrics: &GlobalMetrics,
+    build_vertical: bool,
+) -> HashMap<NormalizedLocation, Vec<Point>> {
     ir_glyph
         .sources()
         .iter()
@@ -272,7 +298,8 @@ fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLoc
                 let point = Point::new(dx.ot_round(), dy.ot_round());
                 points.push(point);
             }
-            add_phantom_points(inst.width.ot_round(), &mut points);
+            let metrics = global_metrics.at(loc);
+            add_phantom_points(inst, &metrics, build_vertical, &mut points);
 
             (loc.clone(), points)
         })
@@ -360,6 +387,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
         trace!("BE glyph work for '{}'", self.glyph_name);
 
         let static_metadata = context.ir.static_metadata.get();
+        let global_metrics = context.ir.global_metrics.get();
         let default_location = static_metadata.default_location();
         let ir_glyph = &*context
             .ir
@@ -389,7 +417,11 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                 context
                     .glyphs
                     .set_unconditionally(Glyph::new(name.clone(), composite));
-                let point_seqs = point_seqs_for_composite_glyph(ir_glyph);
+                let point_seqs = point_seqs_for_composite_glyph(
+                    ir_glyph,
+                    &global_metrics,
+                    static_metadata.build_vertical,
+                );
                 (name, point_seqs, Vec::new())
             }
             CheckedGlyph::Contour { name, paths } => {
@@ -430,7 +462,12 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                 }
                 (
                     name,
-                    point_seqs_for_simple_glyph(ir_glyph, instances),
+                    point_seqs_for_simple_glyph(
+                        ir_glyph,
+                        instances,
+                        &global_metrics,
+                        static_metadata.build_vertical,
+                    ),
                     contour_ends,
                 )
             }
