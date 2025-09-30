@@ -194,6 +194,7 @@ fn try_name_id(name: &str) -> Option<NameId> {
 fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     let mut builder = NameBuilder::default();
     builder.set_version(font.version_major, font.version_minor);
+
     for (name, value) in font.names.iter() {
         if let Some(name_id) = try_name_id(name) {
             builder.add(name_id, value.clone());
@@ -2629,6 +2630,23 @@ mod tests {
                 SelectionFlags::ITALIC
             )
         );
+    }
+
+    #[test]
+    fn prefers_last_if_defined_repeatedly() {
+        let (_, context) =
+            build_static_metadata(glyphs3_dir().join("CustomParamRedefinition.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let name = |id: NameId| {
+            static_metadata
+                .names
+                .get(&NameKey::new_bmp_only(id))
+                .map(|s| s.as_str())
+                .unwrap_or_default()
+        };
+
+        // Correct value taken from fontmake side of ttx_diff
+        assert_eq!((name(NameId::DESIGNER),), ("Third Definition",));
     }
 
     #[test]
