@@ -2219,6 +2219,47 @@ mod tests {
     }
 
     #[test]
+    fn compile_vvar_single_model_indirect_varstore() {
+        // This is the same as SingleModel_Direct but with additional 10 glyphs that
+        // share the same deltas (a number we found empirically), enough to tip
+        // the balance and make an indirect store more compact despite the overhead
+        // of the additional DeltaSetIndexMap.
+        let result = TestCompile::compile_source(
+            "HVVAR/SingleModel_Indirect/SingleModelIndirect.designspace",
+        );
+        let font = result.font();
+        let num_glyphs = font.maxp().unwrap().num_glyphs();
+        assert_eq!(num_glyphs, 24);
+
+        let vvar = font.vvar().unwrap();
+        let varstore = vvar.item_variation_store().unwrap();
+
+        assert_eq!(
+            varstore
+                .variation_region_list()
+                .unwrap()
+                .variation_regions()
+                .len(),
+            1
+        );
+        assert_eq!(varstore.item_variation_data_count(), 1);
+        let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
+        assert_eq!(vardata.region_indexes(), &[0]);
+
+        // Only 2 unique delta sets for vertical metrics:
+        // - delta 0 for glyphs with no vertical variation
+        // - delta 50 for glyphs with height 1000->1050
+        assert_eq!(vec![vec![0], vec![50],], delta_sets(&vardata));
+
+        let Some(Ok(DeltaSetIndexMap::Format0(varidx_map))) = vvar.advance_height_mapping() else {
+            panic!("Expected advance height mapping with DeltaSetIndexMap::Format0");
+        };
+        // since the last 10 glyphs have the same advance height deltas and share the same varidx,
+        // the mapping omits the trailing duplicate entries
+        assert_eq!(varidx_map.map_count(), num_glyphs - 10 + 1);
+    }
+
+    #[test]
     fn compile_hvar_single_model_direct_varstore() {
         // All glyphs define the same locations (single model is ok) so a direct
         // VarStore (without a mapping) can be built. In this particular case, this

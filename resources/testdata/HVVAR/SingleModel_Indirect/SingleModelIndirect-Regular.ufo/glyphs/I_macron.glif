@@ -1,9 +1,15 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <glyph name="Imacron" format="2">
-  <advance width="190"/>
+  <advance width="190" height="1000"/>
   <unicode hex="012A"/>
   <outline>
     <component base="I"/>
     <component base="macroncomb" xOffset="36" yOffset="106"/>
   </outline>
+  <lib>
+    <dict>
+      <key>public.verticalOrigin</key>
+      <integer>880</integer>
+    </dict>
+  </lib>
 </glyph>
