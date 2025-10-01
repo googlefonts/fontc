@@ -4765,4 +4765,19 @@ etc;
 
         let _just_dont_crash_plz = user_to_design_from_axis_location(&myfont);
     }
+
+    #[test]
+    fn axis_location_string_value() {
+        let raw = Plist::Dictionary(BTreeMap::from([
+            ("Axis".into(), Plist::String("Weight".into())),
+            ("Location".into(), Plist::String("42".into())),
+        ]));
+        assert_eq!(
+            Some(AxisLocation {
+                axis_name: "Weight".into(),
+                location: 42.0.into(),
+            }),
+            raw.as_axis_location()
+        );
+    }
 }

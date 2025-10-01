@@ -223,6 +223,7 @@ impl Plist {
     pub fn as_i64(&self) -> Option<i64> {
         match self {
             Plist::Integer(i) => Some(*i),
+            Plist::String(raw) => raw.parse().ok(),
             _ => None,
         }
     }
@@ -231,6 +232,7 @@ impl Plist {
         match self {
             Plist::Integer(i) => Some(*i as f64),
             Plist::Float(f) => Some((*f).into_inner()),
+            Plist::String(raw) => raw.parse().ok(),
             _ => None,
         }
     }
@@ -1161,9 +1163,18 @@ mod tests {
     }
 
     #[test]
-    fn parse_quoted_and_unquoted_ints_and_bools() {
+    fn parse_quoted_and_unquoted() {
         assert_eq!(
-            (Ok(1), Ok(1), Ok(true), Ok(true), Ok(false), Ok(false)),
+            (
+                Ok(1),
+                Ok(1),
+                Ok(true),
+                Ok(true),
+                Ok(false),
+                Ok(false),
+                Ok(1.0),
+                Ok(1.0)
+            ),
             (
                 Tokenizer::new("1").parse::<i64>(),
                 Tokenizer::new("\"1\"").parse::<i64>(),
@@ -1171,6 +1182,8 @@ mod tests {
                 Tokenizer::new("\"1\"").parse::<bool>(),
                 Tokenizer::new("0").parse::<bool>(),
                 Tokenizer::new("\"0\"").parse::<bool>(),
+                Tokenizer::new("1").parse::<f64>(),
+                Tokenizer::new("\"1\"").parse::<f64>(),
             )
         );
     }
