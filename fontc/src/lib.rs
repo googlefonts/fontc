@@ -2177,8 +2177,45 @@ mod tests {
         let font = result.font();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
         assert_eq!(num_glyphs, 14);
+
         let vvar = font.vvar().unwrap();
-        assert!(vvar.advance_height_mapping().is_none());
+        let varstore = vvar.item_variation_store().unwrap();
+
+        assert_eq!(
+            varstore.variation_region_list().unwrap().region_count(),
+            1,
+            "Should have 1 variation region for the wght axis"
+        );
+
+        // We expect one ItemVariationData and one delta set per glyph
+        assert_eq!(varstore.item_variation_data_count(), 1);
+        let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
+        assert_eq!(vardata.region_indexes(), &[0]);
+        assert_eq!(vardata.item_count(), num_glyphs);
+        assert_eq!(
+            vec![
+                vec![0],
+                vec![50],
+                vec![50],
+                vec![50],
+                vec![50],
+                vec![50],
+                vec![50],
+                vec![50],
+                vec![50],
+                vec![50],
+                vec![50],
+                vec![0],
+                vec![0],
+                vec![0],
+            ],
+            delta_sets(&vardata)
+        );
+
+        assert!(
+            vvar.advance_height_mapping().is_none(),
+            "Should have NO advance height mapping for direct VarStore"
+        );
     }
 
     #[test]

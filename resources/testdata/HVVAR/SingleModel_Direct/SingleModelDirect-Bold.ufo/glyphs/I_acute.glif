@@ -1,9 +1,15 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <glyph name="Iacute" format="2">
-  <advance width="260"/>
+  <advance width="260" height="1000"/>
   <unicode hex="00CD"/>
   <outline>
     <component base="I"/>
     <component base="acutecomb" xOffset="-35" yOffset="159"/>
   </outline>
+  <lib>
+    <dict>
+      <key>public.verticalOrigin</key>
+      <integer>870</integer>
+    </dict>
+  </lib>
 </glyph>
