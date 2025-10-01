@@ -2370,30 +2370,54 @@ mod tests {
         assert_eq!(varidx_map.map_count(), num_glyphs - 10 + 1);
     }
 
-    struct HvarReader<'a> {
-        hvar: write_fonts::read::tables::hvar::Hvar<'a>,
+    enum MetricVariationTable<'a> {
+        Hvar(write_fonts::read::tables::hvar::Hvar<'a>),
+        Vvar(write_fonts::read::tables::vvar::Vvar<'a>),
+    }
+
+    struct AdvanceDeltaReader<'a> {
+        table: MetricVariationTable<'a>,
         glyph_order: Arc<GlyphOrder>,
     }
 
-    impl<'a> HvarReader<'a> {
-        fn new(
+    impl<'a> AdvanceDeltaReader<'a> {
+        fn from_hvar(
             hvar: write_fonts::read::tables::hvar::Hvar<'a>,
             glyph_order: Arc<GlyphOrder>,
         ) -> Self {
-            Self { hvar, glyph_order }
+            Self {
+                table: MetricVariationTable::Hvar(hvar),
+                glyph_order,
+            }
         }
 
-        fn width_delta(&self, name: &str, coords: &[NormalizedCoord]) -> f64 {
+        fn from_vvar(
+            vvar: write_fonts::read::tables::vvar::Vvar<'a>,
+            glyph_order: Arc<GlyphOrder>,
+        ) -> Self {
+            Self {
+                table: MetricVariationTable::Vvar(vvar),
+                glyph_order,
+            }
+        }
+
+        fn advance_delta(&self, name: &str, coords: &[NormalizedCoord]) -> f64 {
             let name = GlyphName::from(name);
             let gid = self.glyph_order.glyph_id(&name).unwrap();
             let coords: Vec<F2Dot14> = coords
                 .iter()
                 .map(|coord| F2Dot14::from_f32(coord.to_f64() as _))
                 .collect();
-            self.hvar
-                .advance_width_delta(gid.into(), &coords)
-                .unwrap()
-                .to_f64()
+            match &self.table {
+                MetricVariationTable::Hvar(hvar) => hvar
+                    .advance_width_delta(gid.into(), &coords)
+                    .unwrap()
+                    .to_f64(),
+                MetricVariationTable::Vvar(vvar) => vvar
+                    .advance_height_delta(gid.into(), &coords)
+                    .unwrap()
+                    .to_f64(),
+            }
         }
     }
 
@@ -2440,27 +2464,100 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0, 2, 3, 1, 2],
         );
-        let hvar = HvarReader::new(hvar, result.fe_context.glyph_order.get());
+        let hvar = AdvanceDeltaReader::from_hvar(hvar, result.fe_context.glyph_order.get());
         // .notdef is not variable
         assert_eq!(
-            hvar.width_delta(".notdef", &[NormalizedCoord::new(0.0)]),
+            hvar.advance_delta(".notdef", &[NormalizedCoord::new(0.0)]),
             0.0
         );
         // 'space' has two masters, with Bold 100 units wider than Regular
         assert_eq!(
-            hvar.width_delta("space", &[NormalizedCoord::new(1.0)]),
+            hvar.advance_delta("space", &[NormalizedCoord::new(1.0)]),
             100.0
         );
         // ... so it will be exactly 50 units wider half-way in between
         assert_eq!(
-            hvar.width_delta("space", &[NormalizedCoord::new(0.5)]),
+            hvar.advance_delta("space", &[NormalizedCoord::new(0.5)]),
             50.0
         );
         // 'A' is 120 units wider than Regular in the Bold master
-        assert_eq!(hvar.width_delta("A", &[NormalizedCoord::new(1.0)]), 120.0);
+        assert_eq!(hvar.advance_delta("A", &[NormalizedCoord::new(1.0)]), 120.0);
         // ... but also has an additional Medium (wght=500, normalized 0.3333) master with
         // a delta of 70; so at normalized 0.5 (wght=550), its delta will *not* be 60
-        assert_eq!(hvar.width_delta("A", &[NormalizedCoord::new(0.5)]), 83.0);
+        assert_eq!(hvar.advance_delta("A", &[NormalizedCoord::new(0.5)]), 83.0);
+    }
+
+    #[test]
+    fn compile_vvar_multi_model_indirect_varstore() {
+        // Some glyphs are 'sparse' and define different sets of locations, so multiple
+        // sub-models are required to compute the advance height deltas.
+        // FontTools always builds an indirect VarStore in this case and we do the same.
+        let result =
+            TestCompile::compile_source("HVVAR/MultiModel_Indirect/MultiModelIndirect.designspace");
+        let font = result.font();
+        let num_glyphs = font.maxp().unwrap().num_glyphs();
+        assert_eq!(num_glyphs, 5);
+        let vvar = font.vvar().unwrap();
+        let varstore = vvar.item_variation_store().unwrap();
+        // Glyph "A" defines three masters (Regular, Medium and Bold) so uses two
+        // regions (the first two in the list); the rest of the glyphs only have
+        // two masters so use only one region (the last one).
+        assert_var_regions(
+            &varstore,
+            &vec![
+                vec![[0.0, 0.333313, 1.0]],
+                vec![[0.333313, 1.0, 1.0]],
+                vec![[0.0, 1.0, 1.0]],
+            ],
+        );
+        // in this particular test font, despite being multi-model, we still end up with
+        // a single VarData subtable, filled with zeros for regions that don't apply
+        assert_eq!(varstore.item_variation_data_count(), 1);
+        let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
+        assert_eq!(vardata.region_indexes(), &[0, 1, 2]);
+        // 3 rows instead of 5 because gid1, gid3, and gid4 happen to share the same varidx
+        assert_eq!(vardata.item_count(), 3);
+        // .notdef has no vertical metrics variation: [0, 0, 0]
+        // space, I, T have 2-master variation (Regular to Bold): [0, 0, 100]
+        // A has 3-master variation (Regular to Medium to Bold): [70, 120, 0]
+        assert_eq!(
+            vec![vec![0, 0, 0], vec![0, 0, 100], vec![70, 120, 0],],
+            delta_sets(&vardata)
+        );
+        let Some(Ok(varidx_map)) = vvar.advance_height_mapping() else {
+            panic!("Expected advance height mapping");
+        };
+        assert_eq!(
+            (0..num_glyphs)
+                .map(|gid| {
+                    let varidx = varidx_map.get(gid as u32).unwrap();
+                    assert_eq!(varidx.outer, 0);
+                    varidx.inner
+                })
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2, 1, 1],
+        );
+        let vvar = AdvanceDeltaReader::from_vvar(vvar, result.fe_context.glyph_order.get());
+        // .notdef is not variable
+        assert_eq!(
+            vvar.advance_delta(".notdef", &[NormalizedCoord::new(0.0)]),
+            0.0
+        );
+        // 'space' has two masters, with Bold 100 units taller than Regular
+        assert_eq!(
+            vvar.advance_delta("space", &[NormalizedCoord::new(1.0)]),
+            100.0
+        );
+        // ... so it will be exactly 50 units taller half-way in between
+        assert_eq!(
+            vvar.advance_delta("space", &[NormalizedCoord::new(0.5)]),
+            50.0
+        );
+        // 'A' is 120 units taller than Regular in the Bold master
+        assert_eq!(vvar.advance_delta("A", &[NormalizedCoord::new(1.0)]), 120.0);
+        // ... but also has an additional Medium (wght=500, normalized 0.3333) master with
+        // a delta of 70; so at normalized 0.5 (wght=550), its delta will *not* be 60
+        assert_eq!(vvar.advance_delta("A", &[NormalizedCoord::new(0.5)]), 83.0);
     }
 
     fn anchor_coords(at: AnchorTable) -> (i32, i32) {
