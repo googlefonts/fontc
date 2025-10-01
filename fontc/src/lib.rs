@@ -2560,6 +2560,133 @@ mod tests {
         assert_eq!(vvar.advance_delta("A", &[NormalizedCoord::new(0.5)]), 83.0);
     }
 
+    #[test]
+    fn gvar_simple_glyph_has_vertical_phantom_point_deltas() {
+        // Verify that gvar includes non-zero deltas for vertical phantom points.
+        // Glyphs "A" and "I" are simple glyphs with varying vertical metrics (advance height
+        // and vertical origin) between Regular and Bold masters, which should produce
+        // non-zero Y deltas for the vertical "top" and "bottom" phantom points.
+        let result =
+            TestCompile::compile_source("HVVAR/SingleModel_Direct/SingleModelDirect.designspace");
+
+        assert!(
+            result.fe_context.static_metadata.get().build_vertical,
+            "build_vertical should be true for this test font"
+        );
+
+        let font = result.font();
+        let gvar = font.gvar().unwrap();
+
+        // Test with glyph "I" which has varying vertical metrics
+        let glyph_order = result.fe_context.glyph_order.get();
+        let glyph_name = GlyphName::from("I");
+        let gid = glyph_order.glyph_id(&glyph_name).unwrap();
+
+        let glyph_var_data = gvar
+            .glyph_variation_data(gid.into())
+            .unwrap()
+            .expect("Glyph 'I' should have gvar variation data");
+
+        let mut tuples = glyph_var_data.tuples();
+        let first_tuple = tuples
+            .next()
+            .expect("Should have at least one tuple variation");
+        let deltas: Vec<_> = first_tuple.deltas().collect();
+
+        // Glyph "I" has 4 outline points, so phantom points follow after them:
+        //   [4]=left horizontal, [5]=right horizontal,
+        //   [6]=top vertical, [7]=bottom vertical
+        assert_eq!(
+            deltas.len(),
+            8,
+            "Should have 8 deltas (4 outline + 4 phantom points)"
+        );
+
+        // Verify that vertical phantom points have non-zero Y deltas.
+        // The exact values are based on:
+        // Regular: height=950, vertOrigin=850 -> Bold: height=1000, vertOrigin=870
+        let top_phantom = deltas[6];
+        assert_eq!(
+            (top_phantom.x_delta, top_phantom.y_delta),
+            (0, 20),
+            "Top vertical phantom should have Y delta of 20 (vertOrigin: 850 -> 870)"
+        );
+        let bottom_phantom = deltas[7];
+        assert_eq!(
+            (bottom_phantom.x_delta, bottom_phantom.y_delta),
+            (0, -30),
+            "Bottom vertical phantom should have Y delta of -30 (bottom: -100 -> -130)"
+        );
+    }
+
+    #[test]
+    fn gvar_composite_has_vertical_phantom_point_deltas() {
+        // Verify that composite glyphs include non-zero vertical phantom point deltas
+        // when build_vertical=true.
+        let result =
+            TestCompile::compile_source("HVVAR/SingleModel_Direct/SingleModelDirect.designspace");
+
+        assert!(
+            result.fe_context.static_metadata.get().build_vertical,
+            "build_vertical should be true for this test font"
+        );
+
+        let font = result.font();
+        let gvar = font.gvar().unwrap();
+        let glyf = font.glyf().unwrap();
+        let head = font.head().unwrap();
+
+        // Test with glyph "Aacute" which is a composite (A + acutecomb)
+        let glyph_order = result.fe_context.glyph_order.get();
+        let glyph_name = GlyphName::from("Aacute");
+        let gid = glyph_order.glyph_id(&glyph_name).unwrap();
+
+        let is_long = head.index_to_loc_format() == 1;
+        let loca = font.loca(is_long).unwrap();
+        let glyph_data = loca.get_glyf(gid.into(), &glyf).unwrap().unwrap();
+        assert!(
+            matches!(glyph_data, glyf::Glyph::Composite(_)),
+            "Aacute should be a composite glyph"
+        );
+
+        let glyph_var_data = gvar
+            .glyph_variation_data(gid.into())
+            .unwrap()
+            .expect("Composite glyph 'Aacute' should have gvar variation data");
+
+        let mut tuples = glyph_var_data.tuples();
+        let first_tuple = tuples
+            .next()
+            .expect("Should have at least one tuple variation");
+        let deltas: Vec<_> = first_tuple.deltas().collect();
+
+        // Composite glyphs have one point per component (for X/Y offset) and then the 4
+        // phantom points. So for glyph "Aacute" (A + acutecomb) we have:
+        //   [0]=A offset, [1]=acutecomb offset,
+        //   [2]=left horiz, [3]=right horiz, [4]=top vert, [5]=bottom vert
+        assert!(
+            deltas.len() >= 6,
+            "Should have at least 6 deltas (2 component offsets + 4 phantom points)"
+        );
+
+        // Verify that vertical phantom points have non-zero Y deltas
+        // Aacute has:
+        //   Regular (height=1000, vertOrigin=880) -> Bold (height=1050, vertOrigin=900)
+        // thus producing the same deltas as simple glyph "I" in the previous test
+        let top_phantom = deltas[4];
+        assert_eq!(
+            (top_phantom.x_delta, top_phantom.y_delta),
+            (0, 20),
+            "Top vertical phantom should have Y delta of 20 (vertOrigin: 880 -> 900)"
+        );
+        let bottom_phantom = deltas[5];
+        assert_eq!(
+            (bottom_phantom.x_delta, bottom_phantom.y_delta),
+            (0, -30),
+            "Bottom vertical phantom should have Y delta of -30 (bottom: -120 -> -150)"
+        );
+    }
+
     fn anchor_coords(at: AnchorTable) -> (i32, i32) {
         match at {
             AnchorTable::Format1(at) => (at.x_coordinate() as i32, at.y_coordinate() as i32),
