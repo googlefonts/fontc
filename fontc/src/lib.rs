@@ -2687,6 +2687,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn no_gvar_vertical_phantom_deltas_without_build_vertical() {
+        // Verify that when build_vertical=false, vertical phantom points have zero deltas
+        let result = TestCompile::compile_source("wght_var.designspace");
+
+        assert!(
+            !result.fe_context.static_metadata.get().build_vertical,
+            "build_vertical should be false for this test font"
+        );
+
+        let font = result.font();
+        let gvar = font.gvar().unwrap();
+
+        let glyph_order = result.fe_context.glyph_order.get();
+        let glyph_name = GlyphName::from("bar");
+        let gid = glyph_order.glyph_id(&glyph_name).unwrap();
+
+        let glyph_var_data = gvar
+            .glyph_variation_data(gid.into())
+            .unwrap()
+            .expect("Glyph 'bar' should have gvar variation data");
+
+        let mut tuples = glyph_var_data.tuples();
+        let first_tuple = tuples.next().unwrap();
+        let deltas: Vec<_> = first_tuple.deltas().collect();
+
+        // The "bar" glyph has 4 outline points + 4 phantom points = 8 total points.
+        // When build_vertical=false, the vertical phantom points (indices 6, 7) are set to
+        // (0.0, 0.0) in add_phantom_points, so they produce zero deltas which IUP optimization
+        // omits from the final gvar output.
+        assert!(
+            deltas.len() <= 6,
+            "Should have at most 6 deltas if vertical phantom points are omitted"
+        );
+    }
+
     fn anchor_coords(at: AnchorTable) -> (i32, i32) {
         match at {
             AnchorTable::Format1(at) => (at.x_coordinate() as i32, at.y_coordinate() as i32),
