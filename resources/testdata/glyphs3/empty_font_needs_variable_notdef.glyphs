@@ -1,0 +1,56 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = "New Font";
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = -200;
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+600
+);
+id = "6C2558FA-FBC6-4335-8885-FD272BFC463F";
+metricValues = (
+{
+pos = 880;
+},
+{
+pos = -220;
+}
+);
+name = Bold;
+}
+);
+glyphs = (
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = descender;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

@@ -3898,4 +3898,19 @@ mod tests {
 
         assert_eq!(glyph.num_points(), 3); // instead of the 4 points in the source.
     }
+
+    #[test]
+    fn generate_variable_notdef() {
+        let result = TestCompile::compile_source("glyphs3/empty_font_needs_variable_notdef.glyphs");
+        let ir_notdef = result.fe_context.get_glyph(".notdef");
+        assert_eq!(ir_notdef.sources().len(), 2);
+        assert_eq!(
+            ir_notdef
+                .sources()
+                .values()
+                .map(|inst| inst.height.unwrap_or(0.) as u32)
+                .collect::<HashSet<_>>(),
+            HashSet::from([1000, 1100])
+        );
+    }
 }
