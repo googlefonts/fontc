@@ -33,7 +33,7 @@ td {
   font-size: 0.8em;
 }
 
-.elapsed {
+.deemphasized {
   color: #888;
   font-size: 0.8em;
 }
@@ -42,19 +42,17 @@ td.rev {
   font-family: monospace;
 }
 
+/*the timestamp is big, give it room*/
 #results_head th:nth-child(1) {
-  width: 17%
+  width: 19%
 }
 
-#results_head th:nth-child(4) {
-  width: 8%
-}
-
-#results_head th:nth-child(5) {
+/*and some columns dont need as much space, so make them smaller */
+#results_head th:nth-child(6) {
   width: 9%
 }
 
-#results_head th:nth-child(7) {
+#results_head th:nth-child(8) {
   width: 9%
 }
 
