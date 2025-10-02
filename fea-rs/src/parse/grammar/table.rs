@@ -132,6 +132,7 @@ mod base {
             })
         } else if parser.matches(0, MINMAX) {
             parser.in_node(AstKind::BaseMinMaxNode, |parser| {
+                assert!(parser.eat(MINMAX));
                 parser.eat_until(EAT_UNTIL);
             });
         } else {
