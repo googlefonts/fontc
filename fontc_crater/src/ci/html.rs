@@ -84,8 +84,8 @@ fn make_html(
                 tr #results_head {
                     th.date scope="col" { "date" }
                     th.rev scope="col" { "rev" }
-                    th.total scope="col" { "targets" }
-                    th.identical scope="col" { "identical" }
+                    th.total scope="col" { "identical / total targets" }
+                    th.pct scope="col" { "identical %" }
                     th.fontc_err scope="col" { "fontc 💥" }
                     th.fontmake_err scope="col" { "fontmake 💥" }
                     th.both_err scope="col" { "both 💥" }
@@ -306,12 +306,29 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             .unwrap_or_default();
         let elapsed = crate::human_readable_duration(elapsed);
         let class = (!default_visible).then_some("hidden_row");
+        let mut total = html! { (run.stats.identical) };
+        if !identical_diff.0.is_empty() {
+            total.0.push(' ');
+            total.0.push_str(&identical_diff.0);
+        }
+        total.0.push_str(" / ");
+        total.0.push_str(&format!("{}", run.stats.total_targets));
+        if !total_diff.0.is_empty() {
+            total.0.push(' ');
+            total.0.push_str(&total_diff.0);
+        }
+
+        let pct = format!(
+            "{:.1}",
+            100.0 * run.stats.identical as f32 / run.stats.total_targets as f32
+        );
+
         html! {
             tr class=[class] {
                 td.date { (run.began.format("%Y-%m-%d %H%M")) span.elapsed { " (" (elapsed) ")"} }
                 td.rev { a href=(diff_url) { (short_rev) } }
-                td.total {  ( run.stats.total_targets) " " (total_diff) }
-                td.identical {  (run.stats.identical) " " (identical_diff)  }
+                td.total { (total)}
+                td.pct { (pct) }
                 (err_cells)
 
                 td.diff_perc {  (diff_fmt) " " (diff_perc_diff) }

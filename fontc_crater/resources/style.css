@@ -51,11 +51,19 @@ td.rev {
 }
 
 #results_head th:nth-child(5) {
-  width: 9%
+  width: 8%
+}
+
+#results_head th:nth-child(6) {
+  width: 8%
 }
 
 #results_head th:nth-child(7) {
-  width: 9%
+  width: 8%
+}
+
+#results_head th:nth-child(8) {
+  width: 8%
 }
 
 #explain {
