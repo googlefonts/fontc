@@ -37,6 +37,7 @@ JSON:
 from collections import defaultdict
 from absl import app
 from absl import flags
+from functools import cache
 from lxml import etree
 from pathlib import Path
 import json
@@ -146,14 +147,33 @@ def to_xml_string(e) -> str:
     return xml
 
 
+@cache
+def home_str() -> str:
+    return str(Path("~").expanduser())
+
+
+def rel_user(fragment: Any) -> str:
+    """If an absolute path is in the home directory convert to ~ form for display.
+
+    Makes cli output closer to what you'd actually type, e.g. ~/something
+    Instead of /usr/blah/blah/blah/something"""
+    fragment = str(fragment)
+    home = home_str()
+    if fragment.startswith(home):
+        fragment = "~" + fragment[len(home):]
+    return fragment
+
+
 # execute a command after logging it to stderr.
 # All additional kwargs are passed to subprocess.run
 def log_and_run(cmd: Sequence, cwd=None, **kwargs):
+    # Convert to ~ format because it's annoying to see really long usr paths
     cmd_string = " ".join(str(c) for c in cmd)
+    log_cmd = " ".join(rel_user(c) for c in cmd)
     if cwd is not None:
-        eprint(f"  (cd {cwd} && {cmd_string})")
+        eprint(f"  (cd {rel_user(cwd)} && {log_cmd})")
     else:
-        eprint(f"  ({cmd_string})")
+        eprint(f"  ({log_cmd})")
     return subprocess.run(
         cmd,
         text=True,
@@ -167,7 +187,7 @@ def run_ttx(font_file: Path):
     ttx_file = font_file.with_suffix(".ttx")
     # if this exists we're allowed to reuse it
     if ttx_file.is_file():
-        eprint(f"reusing {ttx_file}")
+        eprint(f"reusing {rel_user(ttx_file)}")
         return ttx_file
 
     cmd = [
@@ -190,7 +210,7 @@ def run_normalizer(normalizer_bin: Path, font_file: Path, table: str):
         raise ValueError(f"unknown table for normalizer: '{table}'")
 
     if out_path.exists():
-        eprint(f"reusing {out_path}")
+        eprint(f"reusing {rel_user(out_path)}")
     NUM_RETRIES = 5
     for i in range(NUM_RETRIES + 1):
         try:
@@ -241,7 +261,7 @@ def build(cmd: Sequence, build_dir: Optional[Path], **kwargs):
 def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
     out_file = build_dir / "fontc.ttf"
     if out_file.exists():
-        eprint(f"reusing {out_file}")
+        eprint(f"reusing {rel_user(out_file)}")
         return
     cmd = [
         fontc_bin,
@@ -262,7 +282,7 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
 def build_fontmake(source: Path, build_dir: Path):
     out_file = build_dir / "fontmake.ttf"
     if out_file.exists():
-        eprint(f"reusing {out_file}")
+        eprint(f"reusing {rel_user(out_file)}")
         return
     variable = source_is_variable(source)
     buildtype = "variable"
@@ -356,7 +376,7 @@ def run_gftools(
     filename = tool + ".ttf"
     out_file = build_dir / filename
     if out_file.exists():
-        eprint(f"reusing {out_file}")
+        eprint(f"reusing {rel_user(out_file)}")
         return
     out_dir = build_dir / "gftools_temp_dir"
     if out_dir.exists():
@@ -1160,7 +1180,7 @@ def print_output(build_dir: Path, output: dict[str, dict[str, Any]]):
             difference = diff_ratio(t1s, t2s)
             p1 = build_dir / path_for_output_item(tag, "fontc")
             p2 = build_dir / path_for_output_item(tag, "fontmake")
-            print(f"  DIFF '{tag}', {p1} {p2} ({difference:.3%})")
+            print(f"  DIFF '{tag}', {rel_user(p1)} {rel_user(p2)} ({difference:.3%})")
     if output.get("sizes"):
         print("SIZE DIFFERENCES")
     for tag, diff in output.get("sizes", {}).items():
@@ -1276,7 +1296,7 @@ def resolve_source(source: str) -> Path:
             print("Running", " ".join(cmd), "in", local_repo.parent)
             subprocess.run(cmd, cwd=local_repo.parent, check=True)
         else:
-            print(f"Reusing existing {local_repo}")
+            print(f"Reusing existing {rel_user(local_repo)}")
 
         if len(sha) > 0:
             log_and_run(("git", "checkout", sha), cwd=local_repo, check=True)
@@ -1375,7 +1395,7 @@ def main(argv):
     compare = FLAGS.compare
     build_dir = out_dir / compare
     build_dir.mkdir(parents=True, exist_ok=True)
-    eprint(f"Compare {compare} in {build_dir}")
+    eprint(f"Compare {compare} in {rel_user(build_dir)}")
 
     failures = dict()
 
