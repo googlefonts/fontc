@@ -1,0 +1,18 @@
+{
+customParameters = (
+{
+name = openTypeOS2UnicodeRanges;
+value = (
+8
+);
+}
+);
+familyName = "New Font";
+fontMaster = (
+    {
+        id = m01;
+    }
+);
+glyphs = ();
+unitsPerEm = 1000;
+}

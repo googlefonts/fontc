@@ -811,7 +811,7 @@ impl RawCustomParameters {
                 "superscriptYOffset" => add_and_report_issues!(superscript_y_offset, Plist::as_i64),
                 "superscriptYSize" => add_and_report_issues!(superscript_y_size, Plist::as_i64),
                 "fsType" => add_and_report_issues!(fs_type, Plist::as_fs_type),
-                "unicodeRanges" => {
+                "unicodeRanges" | "openTypeOS2UnicodeRanges" => {
                     add_and_report_issues!(unicode_range_bits, Plist::as_unicode_code_ranges)
                 }
                 "codePageRanges" => {
@@ -4778,6 +4778,15 @@ etc;
                 location: 42.0.into(),
             }),
             raw.as_axis_location()
+        );
+    }
+
+    #[test]
+    fn glyphs2_unicode_ranges() {
+        let font = Font::load(&glyphs2_dir().join("UnicodeRanges.glyphs")).unwrap();
+        assert_eq!(
+            Some(BTreeSet::from([8])),
+            font.custom_parameters.unicode_range_bits
         );
     }
 }
