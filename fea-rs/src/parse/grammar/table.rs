@@ -132,6 +132,7 @@ mod base {
             })
         } else if parser.matches(0, MINMAX) {
             parser.in_node(AstKind::BaseMinMaxNode, |parser| {
+                assert!(parser.eat(MINMAX));
                 parser.eat_until(EAT_UNTIL);
             });
         } else {
@@ -215,6 +216,7 @@ mod gdef {
             // unimplemented (in spec)
         } else if parser.matches(0, Kind::LigatureCaretByDevKw) {
             parser.in_node(AstKind::TableEntryNode, |parser| {
+                assert!(parser.eat(Kind::LigatureCaretByDevKw));
                 parser.eat_until(eat_until)
             })
         } else if parser.matches(0, CARET_POS_OR_IDX) {
