@@ -1,0 +1,5 @@
+table BASE {
+    HorizAxis.BaseTagList romn;
+    HorizAxis.BaseScriptList latn romn 0;
+    HorizAxis.MinMax latn dflt -500, 1200;
+} BASE;
