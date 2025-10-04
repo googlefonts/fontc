@@ -14,7 +14,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, GlobalMetrics, GlobalMetricsInstance, GlyphInstance, GlyphOrder},
+    ir::{self, GlobalMetrics, GlyphOrder},
     orchestration::{Flags, WorkId as FeWorkId},
     variations::{VariationModel, VariationRegion},
 };
@@ -219,38 +219,6 @@ fn create_composite(
     Ok(composite.unwrap())
 }
 
-/// * <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L335-L367>
-/// * <https://docs.microsoft.com/en-us/typography/opentype/spec/tt_instructing_glyphs#phantoms>
-fn add_phantom_points(
-    instance: &GlyphInstance,
-    metrics: &GlobalMetricsInstance,
-    build_vertical: bool,
-    points: &mut Vec<Point>,
-) {
-    // FontTools says
-    //      leftSideX = glyph.xMin - leftSideBearing
-    //      rightSideX = leftSideX + horizontalAdvanceWidth
-    // We currently always set lsb to xMin so leftSideX = 0, rightSideX = advance.
-    let advance_width: u16 = instance.width.ot_round();
-    points.push(Point::new(0.0, 0.0)); // leftSideX, 0
-    points.push(Point::new(advance_width as f64, 0.0)); // rightSideX, 0
-
-    let (top, bottom) = if build_vertical {
-        // FontTools says
-        //      topSideY = topSideBearing + glyph.yMax
-        //      bottomSideY = topSideY - verticalAdvanceWidth
-        // We currently always set tsb to vertical_origin - yMax so topSideY = verticalOrigin.
-        let top = instance.vertical_origin(metrics) as f64;
-        let bottom = top - instance.height(metrics) as f64;
-        (top, bottom)
-    } else {
-        Default::default()
-    };
-
-    points.push(Point::new(0.0, top));
-    points.push(Point::new(0.0, bottom));
-}
-
 /// See <https://github.com/fonttools/fonttools/blob/86291b6ef6/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
 fn point_seqs_for_simple_glyph(
     ir_glyph: &ir::Glyph,
@@ -271,7 +239,7 @@ fn point_seqs_for_simple_glyph(
             let instance = &ir_glyph.sources()[&loc];
             let metrics = global_metrics.at(&loc);
 
-            add_phantom_points(instance, &metrics, build_vertical, &mut points);
+            instance.add_phantom_points(&metrics, build_vertical, &mut points);
 
             (loc, points)
         })
@@ -299,7 +267,7 @@ fn point_seqs_for_composite_glyph(
                 points.push(point);
             }
             let metrics = global_metrics.at(loc);
-            add_phantom_points(inst, &metrics, build_vertical, &mut points);
+            inst.add_phantom_points(&metrics, build_vertical, &mut points);
 
             (loc.clone(), points)
         })

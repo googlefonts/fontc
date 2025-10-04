@@ -1747,6 +1747,40 @@ impl GlyphInstance {
             .ot_round()
     }
 
+    /// Add phantom points for this glyph instance.
+    ///
+    /// * <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L335-L367>
+    /// * <https://docs.microsoft.com/en-us/typography/opentype/spec/tt_instructing_glyphs#phantoms>
+    pub fn add_phantom_points(
+        &self,
+        metrics: &GlobalMetricsInstance,
+        build_vertical: bool,
+        points: &mut Vec<Point>,
+    ) {
+        // FontTools says
+        //      leftSideX = glyph.xMin - leftSideBearing
+        //      rightSideX = leftSideX + horizontalAdvanceWidth
+        // We currently always set lsb to xMin so leftSideX = 0, rightSideX = advance.
+        let advance_width: u16 = self.width.ot_round();
+        points.push(Point::new(0.0, 0.0)); // leftSideX, 0
+        points.push(Point::new(advance_width as f64, 0.0)); // rightSideX, 0
+
+        let (top, bottom) = if build_vertical {
+            // FontTools says
+            //      topSideY = topSideBearing + glyph.yMax
+            //      bottomSideY = topSideY - verticalAdvanceWidth
+            // We currently always set tsb to vertical_origin - yMax so topSideY = verticalOrigin.
+            let top = self.vertical_origin(metrics) as f64;
+            let bottom = top - self.height(metrics) as f64;
+            (top, bottom)
+        } else {
+            Default::default()
+        };
+
+        points.push(Point::new(0.0, top));
+        points.push(Point::new(0.0, bottom));
+    }
+
     /// Return the values in this instance used for interpolation.
     ///
     /// This is used for instantiating interpolated instances.
