@@ -14,7 +14,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, GlyphOrder},
+    ir::{self, GlobalMetrics, GlyphOrder},
     orchestration::{Flags, WorkId as FeWorkId},
     variations::{VariationModel, VariationRegion},
 };
@@ -219,25 +219,12 @@ fn create_composite(
     Ok(composite.unwrap())
 }
 
-/// * <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L335-L367>
-/// * <https://docs.microsoft.com/en-us/typography/opentype/spec/tt_instructing_glyphs#phantoms>
-fn add_phantom_points(advance: u16, points: &mut Vec<Point>) {
-    // FontTools says
-    //      leftSideX = glyph.xMin - leftSideBearing
-    //      rightSideX = leftSideX + horizontalAdvanceWidth
-    // We currently always set lsb to xMin so leftSideX = 0, rightSideX = advance.
-    points.push(Point::new(0.0, 0.0)); // leftSideX, 0
-    points.push(Point::new(advance as f64, 0.0)); // rightSideX, 0
-
-    // TODO: vertical phantom points
-    points.push(Point::new(0.0, 0.0));
-    points.push(Point::new(0.0, 0.0));
-}
-
 /// See <https://github.com/fonttools/fonttools/blob/86291b6ef6/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
 fn point_seqs_for_simple_glyph(
     ir_glyph: &ir::Glyph,
     instances: HashMap<NormalizedLocation, SimpleGlyph>,
+    global_metrics: &GlobalMetrics,
+    build_vertical: bool,
 ) -> HashMap<NormalizedLocation, Vec<Point>> {
     instances
         .into_iter()
@@ -249,7 +236,10 @@ fn point_seqs_for_simple_glyph(
                 .map(|cp| Point::new(cp.x as f64, cp.y as f64))
                 .collect();
 
-            add_phantom_points(ir_glyph.sources()[&loc].width.ot_round(), &mut points);
+            let instance = &ir_glyph.sources()[&loc];
+            let metrics = global_metrics.at(&loc);
+
+            instance.add_phantom_points(&metrics, build_vertical, &mut points);
 
             (loc, points)
         })
@@ -257,7 +247,11 @@ fn point_seqs_for_simple_glyph(
 }
 
 /// <https://github.com/fonttools/fonttools/blob/86291b6ef6/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L369>
-fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLocation, Vec<Point>> {
+fn point_seqs_for_composite_glyph(
+    ir_glyph: &ir::Glyph,
+    global_metrics: &GlobalMetrics,
+    build_vertical: bool,
+) -> HashMap<NormalizedLocation, Vec<Point>> {
     ir_glyph
         .sources()
         .iter()
@@ -272,7 +266,8 @@ fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLoc
                 let point = Point::new(dx.ot_round(), dy.ot_round());
                 points.push(point);
             }
-            add_phantom_points(inst.width.ot_round(), &mut points);
+            let metrics = global_metrics.at(loc);
+            inst.add_phantom_points(&metrics, build_vertical, &mut points);
 
             (loc.clone(), points)
         })
@@ -360,6 +355,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
         trace!("BE glyph work for '{}'", self.glyph_name);
 
         let static_metadata = context.ir.static_metadata.get();
+        let global_metrics = context.ir.global_metrics.get();
         let default_location = static_metadata.default_location();
         let ir_glyph = &*context
             .ir
@@ -389,7 +385,11 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                 context
                     .glyphs
                     .set_unconditionally(Glyph::new(name.clone(), composite));
-                let point_seqs = point_seqs_for_composite_glyph(ir_glyph);
+                let point_seqs = point_seqs_for_composite_glyph(
+                    ir_glyph,
+                    &global_metrics,
+                    static_metadata.build_vertical,
+                );
                 (name, point_seqs, Vec::new())
             }
             CheckedGlyph::Contour { name, paths } => {
@@ -430,7 +430,12 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                 }
                 (
                     name,
-                    point_seqs_for_simple_glyph(ir_glyph, instances),
+                    point_seqs_for_simple_glyph(
+                        ir_glyph,
+                        instances,
+                        &global_metrics,
+                        static_metadata.build_vertical,
+                    ),
                     contour_ends,
                 )
             }
@@ -914,6 +919,12 @@ mod tests {
     use rstest::rstest;
     use write_fonts::types::Tag;
 
+    #[derive(Debug, Clone, Copy)]
+    enum GlyphType {
+        Simple,
+        Composite,
+    }
+
     /// Returns a glyph instance and another one that can be its component
     fn create_reusable_component() -> (ir::GlyphInstance, ir::GlyphInstance) {
         let parent = ir::GlyphInstance {
@@ -1072,5 +1083,146 @@ mod tests {
         assert_eq!(c.transform.xy.to_f32(), 1.0);
         // translation offsets are encoded as Fixed16.16 so stay the same
         assert_eq!(c.anchor, Anchor::Offset { x: 100, y: -200 });
+    }
+
+    #[rstest]
+    #[case::empty(GlyphType::Simple, 0)]
+    #[case::simple(GlyphType::Simple, 4)]
+    #[case::composite(GlyphType::Composite, 2)]
+    fn point_seqs_interpolates_global_metrics_for_vertical_phantoms(
+        #[case] glyph_type: GlyphType,
+        #[case] num_points_or_components: usize,
+    ) {
+        // Test point_seqs_for_{simple,composite}_glyph with "sparse" GlobalMetrics sources.
+        //
+        // When computing vertical phantom points of glyph instances that exist at
+        // locations not explicitly defined in GlobalMetrics (e.g. medium master between
+        // regular and bold), and the glyphs don't themselves define explicit height and
+        // vertical_origin, the ascender/descender that are used as fallback should be
+        // interpolated via GlobalMetrics::at().
+
+        use write_fonts::tables::glyf::SimpleGlyph;
+
+        let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let medium = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+
+        // Build GlobalMetrics with SPARSE locations (only regular and bold, NOT medium)
+        let mut metrics_builder = ir::GlobalMetricsBuilder::new();
+
+        // Populate defaults with varying ascender/descender metrics to create variation
+        metrics_builder.populate_defaults(&regular, 1000, None, Some(800.0), Some(-200.0), None);
+        metrics_builder.populate_defaults(&bold, 1000, None, Some(820.0), Some(-220.0), None);
+
+        let axes = fontdrasil::types::Axes::new(vec![fontdrasil::types::Axis::for_test("wght")]);
+        let global_metrics = metrics_builder.build(&axes).unwrap();
+
+        // Create an ir::Glyph with instances at all 3 locations (including medium)
+        let mut glyph_builder = ir::GlyphBuilder::new("test".into());
+
+        for loc in [&regular, &bold, &medium] {
+            let (contours, components) = match glyph_type {
+                GlyphType::Simple => {
+                    let contours = if num_points_or_components > 0 {
+                        // Create a simple path with the specified number of points
+                        // Coordinates don't matter - we only care about phantom points
+                        let mut path = BezPath::new();
+                        path.move_to((0.0, 0.0));
+                        for i in 1..num_points_or_components {
+                            path.line_to((i as f64, i as f64));
+                        }
+                        path.close_path();
+                        vec![path]
+                    } else {
+                        vec![]
+                    };
+                    (contours, vec![])
+                }
+                GlyphType::Composite => (
+                    vec![],
+                    vec![
+                        ir::Component {
+                            base: "base".into(),
+                            transform: kurbo::Affine::translate((100.0, 0.0)),
+                        },
+                        ir::Component {
+                            base: "accent".into(),
+                            transform: kurbo::Affine::translate((100.0, 600.0)),
+                        },
+                    ],
+                ),
+            };
+            // All instances have height: None, vertical_origin: None to trigger fallback
+            let instance = ir::GlyphInstance {
+                width: 200.0,
+                height: None,
+                vertical_origin: None,
+                contours,
+                components,
+            };
+            glyph_builder.try_add_source(loc, instance).unwrap();
+        }
+        let ir_glyph = glyph_builder.build().unwrap();
+
+        // Call the appropriate `point_seqs_for_*_glyph` function based on glyph type
+        let point_seqs = match glyph_type {
+            GlyphType::Simple => {
+                let mut simple_glyphs = HashMap::new();
+                for loc in [regular.clone(), bold.clone(), medium.clone()] {
+                    let simple_glyph = if num_points_or_components > 0 {
+                        let instance = &ir_glyph.sources()[&loc];
+                        SimpleGlyph::from_bezpath(&instance.contours[0]).unwrap()
+                    } else {
+                        SimpleGlyph::default()
+                    };
+                    simple_glyphs.insert(loc, simple_glyph);
+                }
+                point_seqs_for_simple_glyph(&ir_glyph, simple_glyphs, &global_metrics, true)
+            }
+            GlyphType::Composite => {
+                point_seqs_for_composite_glyph(&ir_glyph, &global_metrics, true)
+            }
+        };
+
+        assert_eq!(point_seqs.len(), 3);
+
+        let expected_total_points = num_points_or_components + 4;
+        let top_phantom_idx = num_points_or_components + 2;
+        let bottom_phantom_idx = num_points_or_components + 3;
+
+        let regular_points = &point_seqs[&regular];
+        let bold_points = &point_seqs[&bold];
+        let medium_points = &point_seqs[&medium];
+
+        assert_eq!(regular_points.len(), expected_total_points);
+        assert_eq!(bold_points.len(), expected_total_points);
+        assert_eq!(medium_points.len(), expected_total_points);
+
+        let regular_top = regular_points[top_phantom_idx].y;
+        let regular_bottom = regular_points[bottom_phantom_idx].y;
+        let bold_top = bold_points[top_phantom_idx].y;
+        let bold_bottom = bold_points[bottom_phantom_idx].y;
+        let medium_top = medium_points[top_phantom_idx].y;
+        let medium_bottom = medium_points[bottom_phantom_idx].y;
+
+        // Verify existing metrics at master locations:
+        // Regular: top=vertical_origin=800, bottom=800-1000=-200
+        assert_eq!(regular_top, 800.0);
+        assert_eq!(regular_bottom, -200.0);
+
+        // Bold: top=vertical_origin=820, bottom=820-1040=-220
+        assert_eq!(bold_top, 820.0);
+        assert_eq!(bold_bottom, -220.0);
+
+        // Verify that INTERPOLATED metrics at medium location (wght=0.5)
+        // are halfway between regular and bold
+        assert_eq!(
+            medium_top, 810.0,
+            "Medium top should be interpolated: (800+820)/2 = 810"
+        );
+        assert_eq!(
+            medium_bottom, -210.0,
+            "Medium bottom should be interpolated: (-200+(-220))/2 = -210"
+        );
     }
 }

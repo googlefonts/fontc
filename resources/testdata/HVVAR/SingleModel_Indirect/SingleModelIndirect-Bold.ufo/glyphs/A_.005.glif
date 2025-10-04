@@ -1,6 +1,12 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <glyph name="A.005" format="2">
-  <advance width="500"/>
+  <advance width="500" height="1050"/>
   <outline>
   </outline>
+  <lib>
+    <dict>
+      <key>public.verticalOrigin</key>
+      <integer>900</integer>
+    </dict>
+  </lib>
 </glyph>

@@ -52,5 +52,12 @@
     <integer>0</integer>
     <key>xHeight</key>
     <integer>500</integer>
+    <!-- cause vertical to be built -->
+    <key>openTypeVheaVertTypoAscender</key>
+    <integer>500</integer>
+    <key>openTypeVheaVertTypoDescender</key>
+    <integer>200</integer>
+    <key>openTypeVheaVertTypoLineGap</key>
+    <integer>100</integer>
   </dict>
 </plist>

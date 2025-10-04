@@ -30,7 +30,13 @@ pub fn create_font_work() -> Box<BeWork> {
 fn is_variable_only(workid: &WorkId) -> bool {
     matches!(
         workid,
-        WorkId::Avar | WorkId::Fvar | WorkId::Gvar | WorkId::Stat | WorkId::Hvar | WorkId::Mvar
+        WorkId::Avar
+            | WorkId::Fvar
+            | WorkId::Gvar
+            | WorkId::Stat
+            | WorkId::Hvar
+            | WorkId::Vvar
+            | WorkId::Mvar
     )
 }
 
