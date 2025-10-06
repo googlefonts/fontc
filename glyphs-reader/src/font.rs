@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 use std::sync::{LazyLock, Mutex};
 use std::{fs, path};
@@ -290,6 +291,9 @@ pub struct Glyph {
     pub category: Option<Category>,
     pub sub_category: Option<Subcategory>,
     pub production_name: Option<SmolStr>,
+    /// If this is a smart component, these are the variable values.
+    // should this just be an 'axis'?
+    pub smart_component_axes: BTreeMap<SmolStr, RangeInclusive<i64>>,
 }
 
 impl Glyph {
@@ -310,6 +314,14 @@ impl Glyph {
     }
 }
 
+#[derive(Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SmartComponentValue {
+    /// this layer is at the minimum value for this property
+    Min,
+    /// this layer is at the maximum value for this property
+    Max,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Hash)]
 pub struct Layer {
     pub layer_id: String,
@@ -320,6 +332,7 @@ pub struct Layer {
     pub shapes: Vec<Shape>,
     pub anchors: Vec<Anchor>,
     pub attributes: LayerAttributes,
+    pub smart_component_positions: BTreeMap<SmolStr, SmartComponentValue>,
 }
 
 impl Layer {
@@ -1044,8 +1057,18 @@ struct RawGlyph {
     sub_category: Option<SmolStr>,
     #[fromplist(alt_name = "production")]
     production_name: Option<SmolStr>,
+    parts_settings: Vec<RawPartSetting>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
+}
+
+#[derive(Default, Clone, Debug, PartialEq, FromPlist)]
+struct RawPartSetting {
+    name: SmolStr,
+    bottom_name: Option<SmolStr>,
+    bottom_value: i64,
+    top_name: Option<SmolStr>,
+    top_value: i64,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
@@ -1062,6 +1085,8 @@ struct RawLayer {
     anchors: Vec<RawAnchor>,
     #[fromplist(alt_name = "attr")]
     attributes: LayerAttributes,
+    // if this layer is part of a smart component
+    part_selection: BTreeMap<SmolStr, i64>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
 }
@@ -1128,6 +1153,8 @@ struct RawShape {
     // ref is reserved so take advantage of alt names
     #[fromplist(alt_name = "ref", alt_name = "name")]
     glyph_name: Option<SmolStr>,
+    // if this is a reference to a smart component, these are the values for interpolation
+    piece: BTreeMap<SmolStr, f64>,
 
     // for components, an optional name to rename an anchor
     // on the target glyph during anchor propagation
@@ -1161,6 +1188,8 @@ pub struct Component {
     /// For instance, if an acute accent is a component of a ligature glyph,
     /// we might rename its 'top' anchor to 'top_2'
     pub anchor: Option<SmolStr>,
+    /// If this references a smart component, these are the values for interpolation.
+    pub smart_component_values: BTreeMap<SmolStr, f64>,
     pub attributes: ShapeAttributes,
 }
 
@@ -2363,6 +2392,7 @@ impl TryFrom<RawShape> for Shape {
                 transform,
                 anchor: from.anchor,
                 attributes: from.attributes,
+                smart_component_values: from.piece,
             })
         } else {
             // no ref; presume it's a path
@@ -2450,6 +2480,17 @@ impl RawLayer {
             );
             attributes.axis_rules.push(axis_rule);
         }
+        let smart_component_positions = self
+            .part_selection
+            .into_iter()
+            .map(|(k, v)| match v {
+                1 => Ok((k, SmartComponentValue::Min)),
+                2 => Ok((k, SmartComponentValue::Max)),
+                other => Err(Error::BadValue(format!(
+                    "expected only 1 or 2 in partSelection, found '{other}'"
+                ))),
+            })
+            .collect::<Result<_, _>>()?;
         Ok(Layer {
             layer_id: self.layer_id,
             associated_master_id: self.associated_master_id,
@@ -2459,6 +2500,7 @@ impl RawLayer {
             shapes,
             anchors,
             attributes,
+            smart_component_positions,
         })
     }
 }
@@ -2511,6 +2553,12 @@ impl RawGlyph {
             production_name = production_name.or(result.production_name.map(Into::into));
         }
 
+        let part_settings = self
+            .parts_settings
+            .iter()
+            .map(|raw| (raw.name.clone(), raw.bottom_value..=raw.top_value))
+            .collect();
+
         Ok(Glyph {
             name: self.glyphname,
             export: self.export.unwrap_or(true),
@@ -2522,6 +2570,7 @@ impl RawGlyph {
             category,
             sub_category,
             production_name,
+            smart_component_axes: part_settings,
         })
     }
 }
@@ -4852,6 +4901,49 @@ etc;
         assert_eq!(
             Some(BTreeSet::from([8])),
             font.custom_parameters.unicode_range_bits
+        );
+    }
+
+    #[test]
+    fn parse_smart_components_v3() {
+        let font = Font::load(&glyphs3_dir().join("SmartComponents.glyphs")).unwrap();
+        let shoulder = font.glyphs.get("_part.shoulder").unwrap();
+        assert_eq!(
+            shoulder.smart_component_axes,
+            BTreeMap::from([
+                ("shoulderWidth".into(), 0..=100),
+                ("crotchDepth".into(), -100..=0)
+            ])
+        );
+
+        let m = font.glyphs.get("m").unwrap();
+        let expected = [
+            Component {
+                name: "_part.stem".into(),
+                ..Default::default()
+            },
+            Component {
+                name: "_part.shoulder".into(),
+                transform: Affine::translate((17., 0.)),
+                smart_component_values: BTreeMap::from([
+                    ("crotchDepth".into(), -44.28304),
+                    ("shoulderWidth".into(), 28.78011),
+                ]),
+                ..Default::default()
+            },
+            Component {
+                name: "_part.shoulder".into(),
+                transform: Affine::translate((180., 1.)),
+                smart_component_values: BTreeMap::from([
+                    ("crotchDepth".into(), -81.24796),
+                    ("shoulderWidth".into(), 0.0),
+                ]),
+                ..Default::default()
+            },
+        ];
+        assert_eq!(
+            m.layers[0].components().cloned().collect::<Vec<_>>(),
+            expected
         );
     }
 }
