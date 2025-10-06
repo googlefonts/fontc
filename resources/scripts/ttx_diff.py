@@ -160,7 +160,7 @@ def rel_user(fragment: Any) -> str:
     fragment = str(fragment)
     home = home_str()
     if fragment.startswith(home):
-        fragment = "~" + fragment[len(home):]
+        fragment = "~" + fragment[len(home) :]
     return fragment
 
 
