@@ -570,6 +570,16 @@ struct RawCustomParameterValue {
     disabled: Option<bool>,
 }
 
+impl RawCustomParameterValue {
+    /// Returns true if this parameter has been taken
+    ///
+    /// We use a special sentinel value to indicate that a parameter has been handled
+    /// specially and shouldn't be parsed as/stored in CustomParameters.
+    fn taken(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
 impl FromPlist for FormatVersion {
     fn parse(tokenizer: &mut Tokenizer) -> Result<Self, crate::plist::Error> {
         let raw: i64 = FromPlist::parse(tokenizer)?;
@@ -758,12 +768,16 @@ impl RawCustomParameters {
         let mut panose = None;
         let mut panose_old = None;
 
-        for RawCustomParameterValue {
-            name,
-            value,
-            disabled,
-        } in &self.0
-        {
+        for param in &self.0 {
+            // Silently skip special parameters that were handled elsewhere
+            if param.taken() {
+                continue;
+            }
+
+            let name = &param.name;
+            let value = &param.value;
+            let disabled = &param.disabled;
+
             // we need to use a macro here because you can't pass the name of a field to a
             // function.
             macro_rules! add_and_report_issues {
@@ -894,34 +908,39 @@ impl RawCustomParameters {
         self.0.iter().any(|val| val.name == name)
     }
 
-    /// Remove and return the first (non-disabled) parameter with the given name, if any.
+    /// Consume and return the first (non-disabled) parameter with the given name, if any.
     ///
     /// This is for parameters that are handled elsewhere before `to_custom_params` and
     /// shouldn't be stored in CustomParameters.
-    fn consume(&mut self, name: &str) -> Option<Plist> {
+    fn take(&mut self, name: &str) -> Option<Plist> {
         let pos = self
             .0
             .iter()
             .position(|val| val.name == name && val.disabled != Some(true))?;
-        Some(self.0.remove(pos).value)
+
+        // Replace with a sentinel value rather than removing it from the Vec to avoid
+        // the overhead of shifting elements. This is skipped during `to_custom_params`
+        let taken = std::mem::take(&mut self.0[pos]);
+
+        Some(taken.value)
     }
 
-    fn consume_string(&mut self, name: &str) -> Option<String> {
-        self.consume(name)
+    fn take_string(&mut self, name: &str) -> Option<String> {
+        self.take(name)
             .and_then(|p| p.as_str().map(|s| s.to_owned()))
     }
 
-    fn consume_axes(&mut self) -> Option<Vec<Axis>> {
-        self.consume("Axes").and_then(|p| p.as_axes())
+    fn take_axes(&mut self) -> Option<Vec<Axis>> {
+        self.take("Axes").and_then(|p| p.as_axes())
     }
 
-    fn consume_axis_mappings(&mut self) -> Option<Vec<AxisMapping>> {
-        self.consume("Axis Mappings")
+    fn take_axis_mappings(&mut self) -> Option<Vec<AxisMapping>> {
+        self.take("Axis Mappings")
             .and_then(|p| p.as_axis_mappings())
     }
 
-    fn consume_axis_locations(&mut self) -> Option<Vec<AxisLocation>> {
-        self.consume("Axis Location")
+    fn take_axis_locations(&mut self) -> Option<Vec<AxisLocation>> {
+        self.take("Axis Location")
             .and_then(|p| p.as_axis_locations())
     }
 }
@@ -1690,7 +1709,7 @@ impl RawFont {
 
     fn v2_to_v3_axes(&mut self) -> Result<Vec<String>, Error> {
         let mut tags = Vec::new();
-        if let Some(v2_axes) = self.custom_parameters.consume_axes() {
+        if let Some(v2_axes) = self.custom_parameters.take_axes() {
             for v2_axis in v2_axes {
                 tags.push(v2_axis.tag.clone());
                 self.axes.push(v2_axis.clone());
@@ -1943,7 +1962,7 @@ impl RawFont {
             }
             for v2_name in v2_names {
                 if let Some(value) = v2_to_v3_name(
-                    self.custom_parameters.consume_string(v2_name).as_deref(),
+                    self.custom_parameters.take_string(v2_name).as_deref(),
                     v3_name,
                 ) {
                     properties.push(value);
@@ -1975,7 +1994,7 @@ impl RawFont {
 
     fn v2_to_v3_instances(&mut self) -> Result<(), Error> {
         for instance in self.instances.iter_mut() {
-            if let Some(custom_weight_class) = instance.custom_parameters.consume("weightClass") {
+            if let Some(custom_weight_class) = instance.custom_parameters.take("weightClass") {
                 instance.weight_class = custom_weight_class.to_string().into();
             }
             // named clases become #s in v3
@@ -1998,7 +2017,7 @@ impl RawFont {
             instance.properties.extend(v2_to_v3_name(
                 instance
                     .custom_parameters
-                    .consume_string("postscriptFontName")
+                    .take_string("postscriptFontName")
                     .as_deref(),
                 "postscriptFontName",
             ));
@@ -2071,7 +2090,7 @@ fn default_master_idx(raw_font: &mut RawFont) -> usize {
     // https://github.com/googlefonts/fontmake-rs/issues/44
     if let Some(master_idx) = raw_font
         .custom_parameters
-        .consume_string("Variable Font Origin")
+        .take_string("Variable Font Origin")
         .and_then(|origin| {
             raw_font
                 .font_master
@@ -2144,7 +2163,7 @@ fn axis_index(axes: &[Axis], pred: impl Fn(&Axis) -> bool) -> Option<usize> {
 fn user_to_design_from_axis_mapping(
     from: &mut RawFont,
 ) -> Option<BTreeMap<String, AxisUserToDesignMap>> {
-    let mappings = from.custom_parameters.consume_axis_mappings()?;
+    let mappings = from.custom_parameters.take_axis_mappings()?;
     let mut axis_mappings: BTreeMap<String, AxisUserToDesignMap> = BTreeMap::new();
     for mapping in mappings {
         let Some(axis_index) = axis_index(&from.axes, |a| a.tag == mapping.tag) else {
@@ -2173,7 +2192,7 @@ fn user_to_design_from_axis_location(
     let master_locations: Vec<_> = from
         .font_master
         .iter_mut()
-        .filter_map(|m| m.custom_parameters.consume_axis_locations())
+        .filter_map(|m| m.custom_parameters.take_axis_locations())
         .collect();
     if master_locations.len() != from.font_master.len() {
         if !master_locations.is_empty() {
@@ -2726,7 +2745,7 @@ impl Instance {
         let mut tags_done = BTreeSet::new();
         for axis_location in value
             .custom_parameters
-            .consume_axis_locations()
+            .take_axis_locations()
             .unwrap_or_default()
         {
             let Some(axis_index) = axis_index(axes, |a| a.name == axis_location.axis_name) else {
@@ -2910,7 +2929,7 @@ impl TryFrom<RawFont> for Font {
             .collect::<Result<Vec<_>, Error>>()?;
 
         // parameters like "Axis Location", "Axis Mappings" and "Variable Font Origin" are
-        // handled separately from to_custom_params() and need to be consumed before the latter
+        // handled separately from to_custom_params() and need to be taken before the latter
         // is called, to avoid spurious "unknown custom parameter" warnings
         // https://github.com/googlefonts/fontc/issues/1682
         let axis_mappings = UserToDesignMapping::new(&mut from, &instances);
