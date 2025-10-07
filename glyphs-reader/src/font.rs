@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
 use std::str::FromStr;
+use std::sync::{LazyLock, Mutex};
 use std::{fs, path};
 
 use crate::glyphdata::{Category, GlyphData, Subcategory};
@@ -23,6 +24,22 @@ use smol_str::SmolStr;
 
 use crate::error::Error;
 use crate::plist::{FromPlist, Plist, Token, Tokenizer, VecDelimiters};
+
+// Static set to track warnings we've already logged, to avoid repetition
+static LOGGED_WARNINGS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Log a warning message only once per process lifetime
+macro_rules! log_once_warn {
+    ($($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        let mut logged = LOGGED_WARNINGS.lock().unwrap();
+        if !logged.contains(&msg) {
+            log::warn!("{}", msg);
+            logged.insert(msg);
+        }
+    }};
+}
 
 const V3_METRIC_NAMES: [&str; 6] = [
     "ascender",
@@ -138,7 +155,7 @@ impl MetaTableValues {
             match tag {
                 "dlng" => ret.dlng = data,
                 "slng" => ret.slng = data,
-                _ => log::warn!("Unknown meta table tag '{tag}'"),
+                _ => log_once_warn!("Unknown meta table tag '{tag}'"),
             }
         }
 
@@ -854,7 +871,7 @@ impl RawCustomParameters {
                 | "openTypeNameVersion"
                 | "openTypeOS2FamilyClass"
                 | "openTypeHeadFlags" => {
-                    log::warn!("unhandled custom param '{name}'")
+                    log_once_warn!("unhandled custom param '{name}'")
                 }
 
                 "Virtual Master" => match value.as_virtual_master() {
@@ -868,7 +885,7 @@ impl RawCustomParameters {
                 "Feature for Feature Variations" => {
                     add_and_report_issues!(feature_for_feature_variations, Plist::as_str, into)
                 }
-                _ => log::warn!("unknown custom parameter '{name}'"),
+                _ => log_once_warn!("unknown custom parameter '{name}'"),
             }
         }
         params.panose = panose.or(panose_old);
@@ -2698,7 +2715,7 @@ impl Instance {
         let mut tags_done = BTreeSet::new();
         for axis_location in value.custom_parameters.axis_locations().unwrap_or_default() {
             let Some(axis_index) = axis_index(axes, |a| a.name == axis_location.axis_name) else {
-                log::warn!(
+                log_once_warn!(
                     "{} instance's 'Axis Location' includes axis {:?} not included in font",
                     value.name,
                     axis_location.axis_name
