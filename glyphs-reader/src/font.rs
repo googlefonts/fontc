@@ -867,10 +867,7 @@ impl RawCustomParameters {
                 // these might need to be handled? they're in the same list as
                 // the items above:
                 // https://github.com/googlefonts/glyphsLib/blob/74c63244fdb/Lib/glyphsLib/builder/custom_params.py#L429
-                "openTypeNameUniqueID"
-                | "openTypeNameVersion"
-                | "openTypeOS2FamilyClass"
-                | "openTypeHeadFlags" => {
+                "openTypeOS2FamilyClass" | "openTypeHeadFlags" => {
                     log_once_warn!("unhandled custom param '{name}'")
                 }
 
@@ -893,30 +890,39 @@ impl RawCustomParameters {
         Ok(params)
     }
 
-    /// Get the first parameter with the given name, or `None` if not found.
-    fn get(&self, name: &str) -> Option<&Plist> {
-        let item = self.0.iter().find(|val| val.name == name)?;
-        (item.disabled != Some(true)).then_some(&item.value)
-    }
-
     fn contains(&self, name: &str) -> bool {
         self.0.iter().any(|val| val.name == name)
     }
 
-    fn string(&self, name: &str) -> Option<&str> {
-        self.get(name).and_then(Plist::as_str)
+    /// Remove and return the first (non-disabled) parameter with the given name, if any.
+    ///
+    /// This is for parameters that are handled elsewhere before `to_custom_params` and
+    /// shouldn't be stored in CustomParameters.
+    fn consume(&mut self, name: &str) -> Option<Plist> {
+        let pos = self
+            .0
+            .iter()
+            .position(|val| val.name == name && val.disabled != Some(true))?;
+        Some(self.0.remove(pos).value)
     }
 
-    fn axes(&self) -> Option<Vec<Axis>> {
-        self.get("Axes").and_then(Plist::as_axes)
+    fn consume_string(&mut self, name: &str) -> Option<String> {
+        self.consume(name)
+            .and_then(|p| p.as_str().map(|s| s.to_owned()))
     }
 
-    fn axis_mappings(&self) -> Option<Vec<AxisMapping>> {
-        self.get("Axis Mappings").and_then(Plist::as_axis_mappings)
+    fn consume_axes(&mut self) -> Option<Vec<Axis>> {
+        self.consume("Axes").and_then(|p| p.as_axes())
     }
 
-    fn axis_locations(&self) -> Option<Vec<AxisLocation>> {
-        self.get("Axis Location").and_then(Plist::as_axis_locations)
+    fn consume_axis_mappings(&mut self) -> Option<Vec<AxisMapping>> {
+        self.consume("Axis Mappings")
+            .and_then(|p| p.as_axis_mappings())
+    }
+
+    fn consume_axis_locations(&mut self) -> Option<Vec<AxisLocation>> {
+        self.consume("Axis Location")
+            .and_then(|p| p.as_axis_locations())
     }
 }
 
@@ -1684,7 +1690,7 @@ impl RawFont {
 
     fn v2_to_v3_axes(&mut self) -> Result<Vec<String>, Error> {
         let mut tags = Vec::new();
-        if let Some(v2_axes) = self.custom_parameters.axes() {
+        if let Some(v2_axes) = self.custom_parameters.consume_axes() {
             for v2_axis in v2_axes {
                 tags.push(v2_axis.tag.clone());
                 self.axes.push(v2_axis.clone());
@@ -1936,8 +1942,10 @@ impl RawFont {
                 return;
             }
             for v2_name in v2_names {
-                if let Some(value) = v2_to_v3_name(self.custom_parameters.string(v2_name), v3_name)
-                {
+                if let Some(value) = v2_to_v3_name(
+                    self.custom_parameters.consume_string(v2_name).as_deref(),
+                    v3_name,
+                ) {
                     properties.push(value);
                     return;
                 }
@@ -1967,7 +1975,7 @@ impl RawFont {
 
     fn v2_to_v3_instances(&mut self) -> Result<(), Error> {
         for instance in self.instances.iter_mut() {
-            if let Some(custom_weight_class) = instance.custom_parameters.get("weightClass") {
+            if let Some(custom_weight_class) = instance.custom_parameters.consume("weightClass") {
                 instance.weight_class = custom_weight_class.to_string().into();
             }
             // named clases become #s in v3
@@ -1988,7 +1996,10 @@ impl RawFont {
             }
 
             instance.properties.extend(v2_to_v3_name(
-                instance.custom_parameters.string("postscriptFontName"),
+                instance
+                    .custom_parameters
+                    .consume_string("postscriptFontName")
+                    .as_deref(),
                 "postscriptFontName",
             ));
         }
@@ -2055,12 +2066,12 @@ fn parse_codepoint_str(s: &str, radix: u32) -> BTreeSet<u32> {
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L578>
-fn default_master_idx(raw_font: &RawFont) -> usize {
+fn default_master_idx(raw_font: &mut RawFont) -> usize {
     // Prefer an explicit origin
     // https://github.com/googlefonts/fontmake-rs/issues/44
     if let Some(master_idx) = raw_font
         .custom_parameters
-        .string("Variable Font Origin")
+        .consume_string("Variable Font Origin")
         .and_then(|origin| {
             raw_font
                 .font_master
@@ -2131,9 +2142,9 @@ fn axis_index(axes: &[Axis], pred: impl Fn(&Axis) -> bool) -> Option<usize> {
 }
 
 fn user_to_design_from_axis_mapping(
-    from: &RawFont,
+    from: &mut RawFont,
 ) -> Option<BTreeMap<String, AxisUserToDesignMap>> {
-    let mappings = from.custom_parameters.axis_mappings()?;
+    let mappings = from.custom_parameters.consume_axis_mappings()?;
     let mut axis_mappings: BTreeMap<String, AxisUserToDesignMap> = BTreeMap::new();
     for mapping in mappings {
         let Some(axis_index) = axis_index(&from.axes, |a| a.tag == mapping.tag) else {
@@ -2155,14 +2166,14 @@ fn user_to_design_from_axis_mapping(
 }
 
 fn user_to_design_from_axis_location(
-    from: &RawFont,
+    from: &mut RawFont,
 ) -> Option<BTreeMap<String, AxisUserToDesignMap>> {
     // glyphsLib only trusts Axis Location when all masters have it, match that
     // https://github.com/googlefonts/fontmake-rs/pull/83#discussion_r1065814670
     let master_locations: Vec<_> = from
         .font_master
-        .iter()
-        .filter_map(|m| m.custom_parameters.axis_locations())
+        .iter_mut()
+        .filter_map(|m| m.custom_parameters.consume_axis_locations())
         .collect();
     if master_locations.len() != from.font_master.len() {
         if !master_locations.is_empty() {
@@ -2232,7 +2243,7 @@ impl UserToDesignMapping {
     /// From most to least preferred: Axis Mappings, Axis Location, mappings from instances, assume user == design
     ///
     /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L155>
-    fn new(from: &RawFont, instances: &[Instance]) -> Self {
+    fn new(from: &mut RawFont, instances: &[Instance]) -> Self {
         let from_axis_mapping = user_to_design_from_axis_mapping(from);
         let from_axis_location = user_to_design_from_axis_location(from);
         let (result, incomplete_mapping) = match (from_axis_mapping, from_axis_location) {
@@ -2704,7 +2715,7 @@ impl Instance {
     /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L3451>
     fn new(
         axes: &[Axis],
-        value: &RawInstance,
+        value: &mut RawInstance,
         masters_have_axis_locations: bool,
     ) -> Result<Self, Error> {
         let active = value.is_active();
@@ -2713,7 +2724,11 @@ impl Instance {
         // Instances can also have "Axis Location" custom parameters, complementing the ones
         // from the masters: https://github.com/googlefonts/fontc/issues/918
         let mut tags_done = BTreeSet::new();
-        for axis_location in value.custom_parameters.axis_locations().unwrap_or_default() {
+        for axis_location in value
+            .custom_parameters
+            .consume_axis_locations()
+            .unwrap_or_default()
+        {
             let Some(axis_index) = axis_index(axes, |a| a.name == axis_location.axis_name) else {
                 log_once_warn!(
                     "{} instance's 'Axis Location' includes axis {:?} not included in font",
@@ -2877,11 +2892,6 @@ impl TryFrom<RawFont> for Font {
         // TODO: this should be provided in a manner that allows for overrides
         let glyph_data = GlyphData::default();
 
-        let mut custom_parameters = from.custom_parameters.to_custom_params()?;
-        let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
-
-        let default_master_idx = default_master_idx(&from);
-
         // originally glyphsLib would infer wght/wdth mappings from the instance weight/width classes;
         // then, a new "Axis Location" custom parameter was defined for both masters and instances;
         // when (all) masters use the latter, only explicit "Axis Location" parameters get used from
@@ -2895,11 +2905,20 @@ impl TryFrom<RawFont> for Font {
 
         let instances: Vec<_> = from
             .instances
-            .iter()
+            .iter_mut()
             .map(|ri| Instance::new(&from.axes, ri, masters_have_axis_locations))
             .collect::<Result<Vec<_>, Error>>()?;
 
-        let axis_mappings = UserToDesignMapping::new(&from, &instances);
+        // parameters like "Axis Location", "Axis Mappings" and "Variable Font Origin" are
+        // handled separately from to_custom_params() and need to be consumed before the latter
+        // is called, to avoid spurious "unknown custom parameter" warnings
+        // https://github.com/googlefonts/fontc/issues/1682
+        let axis_mappings = UserToDesignMapping::new(&mut from, &instances);
+        let default_master_idx = default_master_idx(&mut from);
+
+        let mut custom_parameters = from.custom_parameters.to_custom_params()?;
+
+        let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
@@ -3597,7 +3616,7 @@ mod tests {
             font.font_master.push(master);
         }
 
-        let idx = default_master_idx(&font);
+        let idx = default_master_idx(&mut font);
 
         assert_eq!(expected, font.font_master[idx].name.as_deref().unwrap());
     }
@@ -4747,7 +4766,7 @@ etc;
     #[test]
     fn user_to_design_with_no_axes() {
         let _ = env_logger::builder().is_test(true).try_init();
-        let myfont = RawFont {
+        let mut myfont = RawFont {
             font_master: vec![RawFontMaster {
                 custom_parameters: RawCustomParameters(vec![make_axis_location_params(&[(
                     "Weight", 400,
@@ -4757,13 +4776,13 @@ etc;
             ..Default::default()
         };
 
-        let _just_dont_crash_plz = user_to_design_from_axis_location(&myfont);
+        let _just_dont_crash_plz = user_to_design_from_axis_location(&mut myfont);
     }
 
     #[test]
     fn user_to_design_with_unknown_axis_location() {
         let _ = env_logger::builder().is_test(true).try_init();
-        let myfont = RawFont {
+        let mut myfont = RawFont {
             axes: vec![Axis {
                 name: "Weight".into(),
                 tag: "wght".into(),
@@ -4780,7 +4799,7 @@ etc;
             ..Default::default()
         };
 
-        let _just_dont_crash_plz = user_to_design_from_axis_location(&myfont);
+        let _just_dont_crash_plz = user_to_design_from_axis_location(&mut myfont);
     }
 
     #[test]
