@@ -17,6 +17,7 @@ use fontdrasil::{
     coords::NormalizedLocation,
     orchestration::{Access, AccessControlList, Identifier, IdentifierDiscriminant, Work},
     types::GlyphName,
+    variations::VariationRegion,
 };
 use fontir::{
     ir::{self, GlyphOrder, KernGroup},
@@ -24,7 +25,6 @@ use fontir::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
         PersistentStorage, WorkId as FeWorkIdentifier,
     },
-    variations::VariationRegion,
 };
 
 use ordered_float::OrderedFloat;
@@ -1088,8 +1088,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use fontdrasil::coords::NormalizedCoord;
-    use fontir::variations::{Tent, VariationRegion};
+    use fontdrasil::{
+        coords::NormalizedCoord,
+        variations::{Tent, VariationRegion},
+    };
 
     use super::*;
 

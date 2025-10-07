@@ -6,7 +6,7 @@ use std::{
     ops::{Add, Mul, Sub},
 };
 
-use fontdrasil::{
+use crate::{
     coords::{NormalizedCoord, NormalizedLocation},
     types::{Axes, Axis},
 };
@@ -19,7 +19,16 @@ use write_fonts::{
     types::{F2Dot14, Tag},
 };
 
-use crate::error::VariationModelError;
+#[derive(Debug, Error)]
+pub enum VariationModelError {
+    #[error("{axis_names:?} in {location:?} have no assigned order")]
+    AxesWithoutAssignedOrder {
+        axis_names: Vec<Tag>,
+        location: NormalizedLocation,
+    },
+    #[error("{0} is an axis of variation defined only at a single point")]
+    PointAxis(Tag),
+}
 
 /// Different ways of rounding values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -872,12 +881,13 @@ fn delta_weights(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::{
         collections::{HashMap, HashSet},
         str::FromStr,
     };
 
-    use fontdrasil::{
+    use crate::{
         coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
         types::Axis,
     };
@@ -885,10 +895,6 @@ mod tests {
     use ordered_float::OrderedFloat;
 
     use pretty_assertions::assert_eq;
-
-    use crate::variations::ONE;
-
-    use super::*;
 
     fn default_master_weight() -> Vec<(usize, OrderedFloat<f64>)> {
         // no locations are contributing deltas

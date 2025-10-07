@@ -5,12 +5,15 @@
 use std::any::type_name;
 use std::collections::{BTreeSet, HashMap};
 
-use fontdrasil::types::Axes;
-use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
-use fontir::ir::{GlobalMetrics, GlobalMetricsInstance, GlyphInstance};
-use fontir::{ir::Glyph, variations::VariationModel};
-use write_fonts::dump_table;
-use write_fonts::{tables::variations::VariationRegion, validate::Validate, FontWrite, OtRound};
+use fontdrasil::{
+    coords::NormalizedLocation,
+    types::{Axes, GlyphName},
+    variations::VariationModel,
+};
+use fontir::ir::{GlobalMetrics, GlobalMetricsInstance, Glyph, GlyphInstance};
+use write_fonts::{
+    dump_table, tables::variations::VariationRegion, validate::Validate, FontWrite, OtRound,
+};
 
 use crate::error::Error;
 

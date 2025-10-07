@@ -17,7 +17,10 @@ serde.workspace = true
 write-fonts.workspace = true
 log.workspace = true
 env_logger.workspace = true
+thiserror.workspace = true
+kurbo.workspace = true
 
 [dev-dependencies]
 diff.workspace = true
 tempfile.workspace = true
+pretty_assertions.workspace = true

@@ -270,11 +270,11 @@ mod tests {
         orchestration::Access,
         paths::string_to_filename,
         types::{GlyphName, WidthClass},
+        variations::{Tent, VariationRegion},
     };
     use fontir::{
         ir::{self, GlobalMetric, GlyphOrder, KernGroup, KernPair, KernSide},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
-        variations::{Tent, VariationRegion},
     };
     use kurbo::{Point, Rect};
     use log::info;

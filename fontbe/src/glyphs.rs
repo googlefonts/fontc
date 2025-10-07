@@ -12,11 +12,11 @@ use fontdrasil::{
     coords::NormalizedLocation,
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
+    variations::{VariationModel, VariationRegion},
 };
 use fontir::{
     ir::{self, GlobalMetrics, GlyphOrder},
     orchestration::{Flags, WorkId as FeWorkId},
-    variations::{VariationModel, VariationRegion},
 };
 use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect, Vec2};
 use log::{log_enabled, trace, warn};

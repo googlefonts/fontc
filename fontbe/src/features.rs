@@ -26,13 +26,13 @@ use fea_rs::{
 use fontir::{
     ir::{FeaturesSource, GlyphOrder, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
-    variations::{DeltaError, VariationModel},
 };
 
 use fontdrasil::{
     coords::NormalizedLocation,
     orchestration::{Access, AccessBuilder, Work},
     types::Axis,
+    variations::{DeltaError, VariationModel},
 };
 use properties::UnicodeShortName;
 use write_fonts::{

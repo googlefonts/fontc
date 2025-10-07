@@ -2,21 +2,18 @@
 
 use std::collections::BTreeMap;
 
-use fontdrasil::orchestration::AccessBuilder;
-
 use fontdrasil::{
-    orchestration::{Access, Work},
+    orchestration::{Access, AccessBuilder, Work},
     types::Axes,
+    variations::{ModelDeltas, VariationModel},
 };
-use fontir::variations::ModelDeltas;
-use fontir::{orchestration::WorkId as FeWorkId, variations::VariationModel};
-use write_fonts::types::MajorMinor;
+use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
     tables::{
         mvar::{Mvar, ValueRecord},
         variations::{ivs_builder::VariationStoreBuilder, VariationRegion},
     },
-    types::Tag,
+    types::{MajorMinor, Tag},
     OtRound,
 };
 

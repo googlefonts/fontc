@@ -1859,6 +1859,7 @@ mod tests {
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
         orchestration::{Access, AccessBuilder},
         types::GlyphName,
+        variations::Tent,
     };
     use fontir::{
         ir::{
@@ -1868,7 +1869,6 @@ mod tests {
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
-        variations::Tent,
     };
     use norad::designspace;
 
