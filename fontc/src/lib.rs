@@ -144,7 +144,7 @@ pub fn generate_font(
 }
 
 fn _generate_font(
-    source: &Input,
+    input: &Input,
     build_dir: &Path,
     output_file: Option<&PathBuf>,
     flags: Flags,
@@ -155,6 +155,13 @@ fn _generate_font(
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
     let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
+    timer.add(time.complete());
+    let time = timer
+        .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
+        .run();
+
+    let source = input.create_source()?;
+
     timer.add(time.complete());
     let workload = Workload::new(source, timer, skip_features)?;
     let fe_root = FeContext::new_root(flags, ir_paths);
@@ -348,8 +355,8 @@ mod tests {
 
             let fe_context = FeContext::new_root(flags, ir_paths);
             let be_context = BeContext::new_root(flags, be_paths, &fe_context.read_only());
-            let source = args.source().unwrap();
-            let workload = Workload::new(&source, timer, args.skip_features).unwrap();
+            let input = args.source().unwrap().create_source().unwrap();
+            let workload = Workload::new(input, timer, args.skip_features).unwrap();
 
             TestCompile {
                 _temp_dir: temp_dir,
