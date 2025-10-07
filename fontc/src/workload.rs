@@ -52,7 +52,7 @@ use log::{debug, trace, warn};
 use crate::{
     timing::{JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
-    Error, Input,
+    Error,
 };
 
 /// A set of interdependent jobs to execute.
@@ -117,14 +117,11 @@ fn priority(id: &AnyWorkId) -> u32 {
 
 impl Workload {
     // Pass in timer to enable t0 to be as early as possible
-    pub fn new(input: &Input, mut timer: JobTimer, skip_features: bool) -> Result<Self, Error> {
-        let time = timer
-            .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
-            .run();
-
-        let source = input.create_source()?;
-
-        timer.add(time.complete());
+    pub fn new(
+        source: Box<dyn Source>,
+        timer: JobTimer,
+        skip_features: bool,
+    ) -> Result<Self, Error> {
         let time = timer
             .create_timer(AnyWorkId::InternalTiming("Create workload"), 0)
             .run();
