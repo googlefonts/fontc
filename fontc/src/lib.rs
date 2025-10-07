@@ -90,10 +90,17 @@ impl TryFrom<&Path> for Input {
 ///
 /// This is the main entry point for the fontc command line utility.
 #[cfg(feature = "cli")]
-pub fn run(args: Args, timer: JobTimer) -> Result<(), Error> {
-    let source = args.source()?;
+pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
+    let input = args.source()?;
+    let time = timer
+        .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
+        .run();
+    let source = input.create_source()?;
+
+    timer.add(time.complete());
+
     let (be_root, mut timing) = _generate_font(
-        &source,
+        source,
         &args.build_dir,
         args.output_file.as_ref(),
         args.flags(),
@@ -126,7 +133,7 @@ pub fn run(args: Args, timer: JobTimer) -> Result<(), Error> {
 ///
 /// This is the library entry point to fontc.
 pub fn generate_font(
-    source: &Input,
+    source: Box<dyn Source>,
     build_dir: &Path,
     output_file: Option<&PathBuf>,
     flags: Flags,
@@ -144,7 +151,7 @@ pub fn generate_font(
 }
 
 fn _generate_font(
-    input: &Input,
+    source: Box<dyn Source>,
     build_dir: &Path,
     output_file: Option<&PathBuf>,
     flags: Flags,
@@ -155,13 +162,6 @@ fn _generate_font(
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
     let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
-    timer.add(time.complete());
-    let time = timer
-        .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
-        .run();
-
-    let source = input.create_source()?;
-
     timer.add(time.complete());
     let workload = Workload::new(source, timer, skip_features)?;
     let fe_root = FeContext::new_root(flags, ir_paths);
