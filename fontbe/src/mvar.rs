@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::Axes,
-    variations::{ModelDeltas, VariationModel},
+    variations::ModelDeltas,
 };
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
@@ -38,8 +38,7 @@ struct MvarBuilder {
 }
 
 impl MvarBuilder {
-    fn new(global_model: VariationModel) -> Self {
-        let axes = global_model.axes().cloned().collect();
+    fn new(axes: Axes) -> Self {
         MvarBuilder {
             axes,
             deltas: BTreeMap::new(),
@@ -118,9 +117,7 @@ impl Work<Context, AnyWorkId, Error> for MvarWork {
         // https://github.com/fonttools/fonttools/blob/2dc887c/Lib/fontTools/varLib/__init__.py#L661-L736
         let static_metadata = context.ir.static_metadata.get();
         let metrics = context.ir.global_metrics.get();
-        let var_model = &static_metadata.variation_model;
-
-        let mut mvar_builder = MvarBuilder::new(var_model.clone());
+        let mut mvar_builder = MvarBuilder::new(static_metadata.axes.clone());
         for (metric, deltas) in metrics.iter() {
             // some of the GlobalMetric variants are not MVAR-relevant, e.g.
             // hhea ascender/descender/lineGap so we just skip those
@@ -154,10 +151,9 @@ mod tests {
     use super::*;
     use crate::test_util;
 
-    fn new_mvar_builder(locations: Vec<&NormalizedLocation>, axes: Vec<Axis>) -> MvarBuilder {
-        let locations = locations.into_iter().cloned().collect();
-        let model = VariationModel::new(locations, axes.into()).unwrap();
-        MvarBuilder::new(model)
+    fn new_mvar_builder(axes: Vec<Axis>) -> MvarBuilder {
+        let axes = Axes::new(axes);
+        MvarBuilder::new(axes)
     }
 
     fn build_metrics(
@@ -195,7 +191,7 @@ mod tests {
         let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
         let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let axes = vec![test_util::axis("wght", 400.0, 400.0, 700.0)];
-        let mut builder = new_mvar_builder(vec![&regular, &bold], axes.clone());
+        let mut builder = new_mvar_builder(axes.clone());
 
         let metrics = build_metrics(
             &[(GlobalMetric::XHeight, &[(&regular, 500.0), (&bold, 550.0)])],
@@ -235,7 +231,7 @@ mod tests {
         let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
         let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let axes = vec![test_util::axis("wght", 400.0, 400.0, 700.0)];
-        let mut builder = new_mvar_builder(vec![&regular, &bold], axes.clone());
+        let mut builder = new_mvar_builder(axes.clone());
 
         let metrics = build_metrics(
             &[
@@ -278,7 +274,7 @@ mod tests {
         let medium = NormalizedLocation::for_pos(&[("wght", 0.5)]);
         let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let axes = vec![test_util::axis("wght", 400.0, 400.0, 700.0)];
-        let mut builder = new_mvar_builder(vec![&regular, &medium, &bold], axes.clone());
+        let mut builder = new_mvar_builder(axes.clone());
 
         let metrics = build_metrics(
             &[

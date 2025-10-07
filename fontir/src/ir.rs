@@ -588,8 +588,8 @@ impl GlobalMetricsBuilder {
             .0
             .into_iter()
             .map(|(tag, values)| -> Result<_, Error> {
-                let model = VariationModel::new(values.keys().cloned().collect(), axes.clone())
-                    .map_err(|e| Error::MetricVariationError(tag, e))?;
+                let model =
+                    VariationModel::new(values.keys().cloned().collect(), axes.axis_order());
 
                 let sources = values
                     .into_iter()
