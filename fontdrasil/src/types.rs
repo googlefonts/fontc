@@ -10,7 +10,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
-use write_fonts::types::Tag;
+pub use write_fonts::types::Tag;
 
 use crate::coords::{CoordConverter, UserCoord};
 
@@ -208,6 +208,10 @@ impl Axes {
     pub fn new(axes: Vec<Axis>) -> Self {
         let by_tag = axes.iter().enumerate().map(|(i, ax)| (ax.tag, i)).collect();
         Self { axes, by_tag }
+    }
+
+    pub fn axis_order(&self) -> Vec<Tag> {
+        self.axes.iter().map(|ax| ax.tag).collect()
     }
 
     #[doc(hidden)]

@@ -10,7 +10,7 @@ use fontdrasil::{
     types::{Axes, GlyphName},
     variations::VariationModel,
 };
-use fontir::ir::{GlobalMetrics, GlobalMetricsInstance, Glyph, GlyphInstance};
+use fontir::ir::{GlobalMetrics, GlobalMetricsInstance, Glyph, GlyphInstance, StaticMetadata};
 use write_fonts::{
     dump_table, tables::variations::VariationRegion, validate::Validate, FontWrite, OtRound,
 };
@@ -65,15 +65,19 @@ pub(crate) struct AdvanceDeltas {
 
 impl AdvanceDeltas {
     pub(crate) fn new<'a>(
-        global_model: VariationModel,
+        static_metadata: &StaticMetadata,
         glyph_locations: impl IntoIterator<Item = &'a NormalizedLocation>,
         global_metrics: &'a GlobalMetrics,
         direction: DeltaDirection,
     ) -> Self {
-        let axes = global_model.axes().cloned().collect();
-        let global_locations = global_model.locations().cloned().collect::<BTreeSet<_>>();
+        let axes = static_metadata.axes.clone();
+        let global_locations = static_metadata
+            .variation_model
+            .locations()
+            .cloned()
+            .collect::<BTreeSet<_>>();
         let mut models = HashMap::new();
-        models.insert(global_locations, global_model);
+        models.insert(global_locations, static_metadata.variation_model.clone());
 
         // prune axes that are not in the global model (e.g. 'point' axes) which might
         // be confused for a distinct sub-model
@@ -140,7 +144,7 @@ impl AdvanceDeltas {
         let locations = advances.keys().cloned().collect::<BTreeSet<_>>();
         let model = self.models.entry(locations).or_insert_with(|| {
             // this glyph defines its own set of locations, a new sparse model is needed
-            VariationModel::new(advances.keys().cloned().collect(), self.axes.clone()).unwrap()
+            VariationModel::new(advances.keys().cloned().collect(), self.axes.axis_order())
         });
         self.deltas.push(
             model

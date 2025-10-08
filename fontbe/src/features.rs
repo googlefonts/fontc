@@ -207,13 +207,10 @@ pub(crate) fn resolve_variable_metric<'a>(
     let var_model: Cow<'_, VariationModel> = if locations == global_locations {
         Cow::Borrowed(&static_metadata.variation_model)
     } else {
-        Cow::Owned(
-            VariationModel::new(
-                locations.into_iter().cloned().collect(),
-                static_metadata.axes.clone(),
-            )
-            .unwrap(),
-        )
+        Cow::Owned(VariationModel::new(
+            locations.into_iter().cloned().collect(),
+            static_metadata.axes.axis_order(),
+        ))
     };
 
     let raw_deltas: Vec<_> = var_model
@@ -335,13 +332,10 @@ impl VariationInfo for FeaVariationInfo<'_> {
         let var_model: Cow<'_, VariationModel> = if locations == global_locations {
             Cow::Borrowed(&self.static_metadata.variation_model)
         } else {
-            Cow::Owned(
-                VariationModel::new(
-                    locations.into_iter().cloned().collect(),
-                    self.static_metadata.axes.clone(),
-                )
-                .unwrap(),
-            )
+            Cow::Owned(VariationModel::new(
+                locations.into_iter().cloned().collect(),
+                self.static_metadata.axes.axis_order(),
+            ))
         };
 
         // Only 1 value per region for our input

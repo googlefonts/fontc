@@ -54,7 +54,7 @@ impl Work<Context, AnyWorkId, Error> for VvarWork {
         }
         let var_model = &static_metadata.variation_model;
         let glyph_order = context.ir.glyph_order.get();
-        let axis_count = var_model.axes().count().try_into().unwrap();
+        let axis_count = var_model.axis_order().len().try_into().unwrap();
         let glyphs: Vec<_> = glyph_order
             .names()
             .map(|name| context.ir.glyphs.get(&FeWorkId::Glyph(name.clone())))
@@ -63,7 +63,7 @@ impl Work<Context, AnyWorkId, Error> for VvarWork {
         let metrics = context.ir.global_metrics.get();
 
         let mut glyph_deltas = AdvanceDeltas::new(
-            var_model.clone(),
+            &static_metadata,
             glyph_locations,
             &metrics,
             DeltaDirection::Vertical,

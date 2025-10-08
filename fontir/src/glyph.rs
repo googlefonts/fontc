@@ -492,10 +492,10 @@ fn variation_model_for_glyph<'a>(
     // otherwise we need a special model for this glyph.
     // This code is duplicated in various places (hvar, e.g.)
     // and maybe we can share it? or cache these models more globally?
-    Cow::Owned(
-        VariationModel::new(glyph.sources().keys().cloned().collect(), meta.axes.clone())
-            .expect("point axes not present in meta.axes"),
-    )
+    Cow::Owned(VariationModel::new(
+        glyph.sources().keys().cloned().collect(),
+        meta.axes.iter().map(|ax| ax.tag).collect(),
+    ))
 }
 
 fn move_contours_to_new_component(
