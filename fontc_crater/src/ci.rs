@@ -100,6 +100,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let input_file_sha = super::get_input_sha(&args.to_run);
 
     let cache_dir = args.cache_dir();
+    inputs.update_fonts_repo(&cache_dir)?;
     log::info!("using cache dir {}", cache_dir.display());
     let results_cache = ResultsCache::in_dir(&cache_dir);
 
@@ -266,8 +267,8 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
             .insert(repo_dir.clone(), repo.repo_url.clone());
 
         let sources_dir = if repo.config_is_external() {
-            // virtual config always assumes it is in a directory named 'sources'
-            repo.repo_path(cache_dir).join("sources")
+            // virtual config always assumes it is in directory root
+            repo.repo_path(cache_dir)
         } else {
             // otherwise the config file is always in the source directory
             config_path.parent().unwrap().to_owned()

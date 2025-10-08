@@ -9,8 +9,6 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-static VIRTUAL_CONFIG_DIR: &str = "sources";
-
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Target {
     /// path to the source repo, relative to the cache dir root
@@ -74,7 +72,7 @@ impl Target {
     /// Otherwise, it is the parent directory of the config file.
     fn source_dir(&self) -> PathBuf {
         if self.is_virtual {
-            self.repo_dir.join(VIRTUAL_CONFIG_DIR)
+            self.repo_dir.clone()
         } else {
             self.repo_dir.join(self.config.parent().unwrap())
         }
