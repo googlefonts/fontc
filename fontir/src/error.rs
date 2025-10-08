@@ -3,13 +3,14 @@ use std::{fmt::Display, io, path::PathBuf};
 use fontdrasil::{
     coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
     types::GlyphName,
+    variations::{DeltaError, VariationModelError},
 };
 use kurbo::Point;
 use smol_str::SmolStr;
 use thiserror::Error;
 use write_fonts::types::{InvalidTag, Tag};
 
-use crate::{ir::GlobalMetric, variations::DeltaError};
+use crate::ir::GlobalMetric;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -179,17 +180,6 @@ pub enum PathConversionError {
     /// The source data could not be parsed or interpreted
     #[error("{0}")]
     Parse(String),
-}
-
-#[derive(Debug, Error)]
-pub enum VariationModelError {
-    #[error("{axis_names:?} in {location:?} have no assigned order")]
-    AxesWithoutAssignedOrder {
-        axis_names: Vec<Tag>,
-        location: NormalizedLocation,
-    },
-    #[error("{0} is an axis of variation defined only at a single point")]
-    PointAxis(Tag),
 }
 
 impl Display for BadAnchorReason {

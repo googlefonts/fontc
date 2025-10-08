@@ -9,6 +9,7 @@ use fea_rs::{
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
+    variations::DeltaError,
 };
 
 use ordered_float::OrderedFloat;
@@ -36,7 +37,6 @@ use crate::{
 use fontir::{
     ir::{self, Anchor, AnchorKind, GlyphAnchors, GlyphOrder, StaticMetadata},
     orchestration::WorkId as FeWorkId,
-    variations::DeltaError,
 };
 
 use super::{

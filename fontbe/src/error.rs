@@ -1,11 +1,12 @@
 use std::{fmt::Display, io, path::PathBuf};
 
 use fea_rs::compile::error::CompilerError;
-use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
-use fontir::{
-    error::VariationModelError, ir::KernPair, orchestration::WorkId as FeWorkId,
-    variations::DeltaError,
+use fontdrasil::{
+    coords::NormalizedLocation,
+    types::GlyphName,
+    variations::{DeltaError, VariationModelError},
 };
+use fontir::{ir::KernPair, orchestration::WorkId as FeWorkId};
 use smol_str::SmolStr;
 use thiserror::Error;
 use write_fonts::{

@@ -13,6 +13,7 @@ use fontdrasil::{
     coords::NormalizedLocation,
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
+    variations::{RoundingBehaviour, VariationModel},
 };
 use kurbo::{Affine, BezPath};
 use log::{debug, log_enabled, trace};
@@ -23,7 +24,6 @@ use crate::{
     error::{BadGlyph, Error},
     ir::{Component, GlobalMetric, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
-    variations::VariationModel,
 };
 
 pub fn create_glyph_order_work() -> Box<IrWork> {
@@ -467,7 +467,7 @@ fn instantiate_instance(
     // the fractional bits can be very important).
     // This matches fonttools, see https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/_compilers/baseCompiler.py#L266
     let deltas = model
-        .deltas_with_rounding(&point_seqs, crate::variations::RoundingBehaviour::None)
+        .deltas_with_rounding(&point_seqs, RoundingBehaviour::None)
         .map_err(|e| BadGlyph::new(&glyph.name, e))?;
     let points = VariationModel::interpolate_from_deltas(loc, &deltas);
     Ok(glyph

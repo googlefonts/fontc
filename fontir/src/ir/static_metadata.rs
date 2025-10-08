@@ -18,9 +18,10 @@ use write_fonts::{
 use fontdrasil::{
     coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserLocation},
     types::{Axes, Axis, GlyphName},
+    variations::{VariationModel, VariationModelError},
 };
 
-use crate::{error::VariationModelError, orchestration::Persistable, variations::VariationModel};
+use crate::orchestration::Persistable;
 
 /// Glyph names mapped to postscript names
 pub type PostscriptNames = HashMap<GlyphName, GlyphName>;

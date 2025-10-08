@@ -7,4 +7,3 @@ pub mod ir;
 pub mod orchestration;
 pub mod paths;
 pub mod source;
-pub mod variations;

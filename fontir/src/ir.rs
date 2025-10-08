@@ -20,12 +20,12 @@ use write_fonts::{
 use fontdrasil::{
     coords::NormalizedLocation,
     types::{Axes, GlyphName},
+    variations::{ModelDeltas, VariationModel},
 };
 
 use crate::{
     error::{BadAnchor, BadAnchorReason, BadGlyph, BadGlyphKind, Error},
     orchestration::{IdAware, Persistable, WorkId},
-    variations::{ModelDeltas, VariationModel},
 };
 
 // just public so we publish the docs
