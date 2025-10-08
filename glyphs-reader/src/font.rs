@@ -32,11 +32,13 @@ static LOGGED_WARNINGS: LazyLock<Mutex<HashSet<String>>> =
 /// Log a warning message only once per process lifetime
 macro_rules! log_once_warn {
     ($($arg:tt)*) => {{
-        let msg = format!($($arg)*);
-        let mut logged = LOGGED_WARNINGS.lock().unwrap();
-        if !logged.contains(&msg) {
-            log::warn!("{}", msg);
-            logged.insert(msg);
+        if log::log_enabled!(log::Level::Warn) {
+            let msg = format!($($arg)*);
+            let mut logged = LOGGED_WARNINGS.lock().unwrap();
+            if !logged.contains(&msg) {
+                log::warn!("{}", msg);
+                logged.insert(msg);
+            }
         }
     }};
 }
