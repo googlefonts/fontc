@@ -1,6 +1,9 @@
 use std::{io, num::TryFromIntError, path::PathBuf};
 
+use smol_str::SmolStr;
 use thiserror::Error;
+
+use crate::smart_components::BadSmartComponent;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -24,6 +27,12 @@ pub enum Error {
     InvalidCodePage(u32),
     #[error("Invalid value: {0}")]
     BadValue(String),
+    #[error("Bad smart component '{component}' in glyph '{glyph}': {issue}")]
+    SmartComponent {
+        glyph: SmolStr,
+        component: SmolStr,
+        issue: BadSmartComponent,
+    },
     #[error("{value} expected to be between {lbound} and {ubound}")]
     ProductionNameOutOfBounds {
         value: u32,

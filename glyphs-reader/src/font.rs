@@ -526,6 +526,13 @@ impl Shape {
             Shape::Component(c) => &c.attributes,
         }
     }
+
+    pub(crate) fn as_path(&self) -> Option<&Path> {
+        match self {
+            Shape::Path(path) => Some(path),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
@@ -1098,7 +1105,9 @@ impl RawLayer {
     /// Without 'attributes' that specify whether it's a special intermediate, alternate or
     /// color layer, we can assume the non-master layer is a draft.
     fn is_draft(&self) -> bool {
-        self.associated_master_id.is_some() && self.attributes == Default::default()
+        self.associated_master_id.is_some()
+            && self.attributes == Default::default()
+            && self.part_selection.is_empty()
     }
 
     /// Glyphs uses the concept of 'bracket layers' to represent GSUB feature variations.
@@ -3110,17 +3119,17 @@ impl Font {
     pub fn load_from_string(data: &str) -> Result<Font, Error> {
         let raw_font = RawFont::load_from_string(data)?;
         let mut font = Font::try_from(raw_font)?;
-        font.preprocess();
+        font.preprocess()?;
         Ok(font)
     }
 
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
         let mut font = Self::load_raw(glyphs_file)?;
-        font.preprocess();
+        font.preprocess()?;
         Ok(font)
     }
 
-    fn preprocess(&mut self) {
+    fn preprocess(&mut self) -> Result<(), Error> {
         // ensure that glyphs with components that have bracket layers
         // also have bracket layers.
         self.align_bracket_layers();
@@ -3129,6 +3138,9 @@ impl Font {
         if self.custom_parameters.propagate_anchors.unwrap_or(true) {
             self.propagate_all_anchors();
         }
+        // if any glyphs reference smart components, convert them to outlines.
+        // (see https://glyphsapp.com/learn/smart-components)
+        self.inline_all_smart_components()
     }
 
     /// if a glyph has components that have alternate layers, copy the layer
@@ -3201,6 +3213,82 @@ impl Font {
                 .bracket_layers
                 .extend_from_slice(&new_layers);
         }
+    }
+
+    // smart components get converted into normal paths before IR.
+    // see https://glyphsapp.com/learn/smart-components
+    fn inline_all_smart_components(&mut self) -> Result<(), Error> {
+        // find all the glyphs that include smart components
+        let glyphs_with_smart_components = self
+            .glyphs
+            .values()
+            .filter(|glyph| {
+                glyph
+                    .layers
+                    .iter()
+                    .flat_map(|layer| layer.components())
+                    .any(|comp| {
+                        //https://github.com/googlefonts/glyphsLib/blob/52c982399b/Lib/glyphsLib/builder/components.py#L77
+                        !comp.smart_component_values.is_empty()
+                            && self
+                                .glyphs
+                                .get(&comp.name)
+                                .map(|ref_glyph| !ref_glyph.smart_component_axes.is_empty())
+                                .unwrap_or(false)
+                    })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if glyphs_with_smart_components.is_empty() {
+            return Ok(());
+        }
+
+        // convert the smart components to normal outlines, per-glyph
+        for mut glyph in glyphs_with_smart_components {
+            for layer in glyph.layers.iter_mut() {
+                let old_shapes = std::mem::take(&mut layer.shapes);
+                let mut new_shapes = Vec::new();
+                for shape in old_shapes {
+                    match &shape {
+                        Shape::Component(comp) if !comp.smart_component_values.is_empty() => {
+                            if let Some(ref_glyph) = self
+                                .glyphs
+                                .get(&comp.name)
+                                .filter(|g| !g.smart_component_axes.is_empty())
+                            {
+                                log::debug!(
+                                    "instantiating smart component '{}' for '{}'",
+                                    comp.name,
+                                    glyph.name
+                                );
+                                new_shapes.extend(
+                                    crate::smart_components::instantiate_for_layer(
+                                        layer.master_id(),
+                                        comp,
+                                        ref_glyph,
+                                    )
+                                    .map_err(|issue| {
+                                        Error::SmartComponent {
+                                            glyph: glyph.name.clone(),
+                                            component: comp.name.clone(),
+                                            issue,
+                                        }
+                                    })?,
+                                );
+                            } else {
+                                layer.shapes.push(shape);
+                            }
+                        }
+                        _ => layer.shapes.push(shape),
+                    };
+                }
+                layer.shapes.extend(new_shapes);
+            }
+            // replace the old glyph with the new, component-free glyph
+            self.glyphs.insert(glyph.name.clone(), glyph);
+        }
+        Ok(())
     }
 
     // load without propagating anchors or components
@@ -3282,7 +3370,7 @@ impl From<Affine> for AffineForEqAndHash {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Font, FontMaster, Node, Shape, plist::FromPlist};
+    use crate::{Font, FontMaster, Node, Shape, plist::FromPlist, smart_components};
     use std::{
         collections::{BTreeMap, BTreeSet, HashSet},
         path::{Path, PathBuf},
@@ -4906,7 +4994,10 @@ etc;
 
     #[test]
     fn parse_smart_components_v3() {
-        let font = Font::load(&glyphs3_dir().join("SmartComponents.glyphs")).unwrap();
+        // we load from raw directly so that we can skip preprocessing, which would
+        // replace the components with the actual outlines
+        let font = RawFont::load(&glyphs3_dir().join("SmartComponents.glyphs")).unwrap();
+        let font = Font::try_from(font).unwrap();
         let shoulder = font.glyphs.get("_part.shoulder").unwrap();
         assert_eq!(
             shoulder.smart_component_axes,
@@ -4944,6 +5035,51 @@ etc;
         assert_eq!(
             m.layers[0].components().cloned().collect::<Vec<_>>(),
             expected
+        );
+    }
+
+    fn instantiate_shoulder_at(location: &[(&str, f64)]) -> Shape {
+        fn make_component_values(inp: &[(&str, f64)]) -> BTreeMap<SmolStr, f64> {
+            inp.iter().map(|(k, v)| (k.to_smolstr(), *v)).collect()
+        }
+        let font = RawFont::load(&glyphs3_dir().join("SmartComponents.glyphs")).unwrap();
+        let font = Font::try_from(font).unwrap();
+
+        let smart_comp = font.glyphs.get("_part.shoulder").unwrap();
+        let default_pos = Component {
+            name: "_part.shoulder".into(),
+            smart_component_values: make_component_values(location),
+            ..Default::default()
+        };
+
+        let shapes =
+            smart_components::instantiate_for_layer("m01", &default_pos, smart_comp).unwrap();
+        assert_eq!(shapes.len(), 1);
+        shapes[0].clone()
+    }
+
+    #[test]
+    fn instantiate_smart_component_at_default() {
+        let font = Font::load(&glyphs3_dir().join("SmartComponents.glyphs")).unwrap();
+        let smart_comp = font.glyphs.get("_part.shoulder").unwrap();
+        let shape = instantiate_shoulder_at(&[("shoulderWidth", 100.), ("crotchDepth", 0.)]);
+
+        assert_eq!(shape, smart_comp.layers[0].shapes[0]);
+    }
+
+    #[test]
+    fn instantiate_smart_component_at_not_default() {
+        let Shape::Path(path) =
+            instantiate_shoulder_at(&[("shoulderWidth", 0.), ("crotchDepth", -100.)])
+        else {
+            panic!("wat")
+        };
+        // the first point is at its lowest value (crotch -100) (first point is at end!)
+        assert_eq!(path.nodes.last().unwrap().pt.round().y, 267.0);
+        // the shoulder width means the max x is also at its lowest value
+        assert_eq!(
+            path.nodes.iter().map(|nd| nd.pt.x.round() as i64).max(),
+            Some(335)
         );
     }
 }
