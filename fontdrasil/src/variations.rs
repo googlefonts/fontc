@@ -1,5 +1,6 @@
 //! Helps manipulate variation data.
 use std::{
+    borrow::Cow,
     cmp::Ordering,
     collections::{BTreeMap, HashMap, HashSet},
     fmt::{Debug, Display},
@@ -260,20 +261,7 @@ impl VariationModel {
             return Ok(Vec::new());
         }
 
-        let point_seqs: HashMap<_, _> = point_seqs
-            .iter()
-            .map(|(loc, seq)| {
-                let mut loc = loc.clone();
-                loc.retain(|tag, _| self.axis_order.contains(tag));
-                (loc, seq)
-            })
-            .collect();
-
-        for loc in point_seqs.keys() {
-            if !self.locations.contains(loc) {
-                return Err(DeltaError::UnknownLocation(loc.clone()));
-            }
-        }
+        let point_seqs = self.normalize_point_seqs(point_seqs, self.axis_order())?;
 
         // we know point_seqs is non-empty
         let point_seq_len = point_seqs.values().next().unwrap().len();
@@ -331,6 +319,34 @@ impl VariationModel {
         }
 
         Ok(result)
+    }
+
+    /// Remove unknown axes and add missing axes to locations, if needed
+    fn normalize_point_seqs<'a, T: Clone>(
+        &self,
+        seqs: &'a HashMap<NormalizedLocation, T>,
+        axes: &[Tag],
+    ) -> Result<Cow<'a, HashMap<NormalizedLocation, T>>, DeltaError> {
+        let seqs = if seqs.keys().all(|loc| loc.has_exact_axes(axes)) {
+            Cow::Borrowed(seqs)
+        } else {
+            let normalized = seqs
+                .iter()
+                .map(|(k, v)| {
+                    let mut k = k.to_owned();
+                    k.fit_to_axes(axes);
+                    (k, v.clone())
+                })
+                .collect();
+            Cow::Owned(normalized)
+        };
+
+        for loc in seqs.keys() {
+            if !self.locations.contains(loc) {
+                return Err(DeltaError::UnknownLocation(loc.clone()));
+            }
+        }
+        Ok(seqs)
     }
 
     /// Convert relative deltas to absolute values at the given location.

@@ -7,6 +7,7 @@ mod glyphdata_bundled;
 mod glyphslib_enums;
 mod plist;
 mod propagate_anchors;
+mod smart_components;
 
 pub use font::{
     Anchor, Axis, Component, CustomParameters, FeatureSnippet, Font, FontMaster, Glyph,
