@@ -602,7 +602,7 @@ mod tests {
     }
 
     macro_rules! assert_approx {
-        ($left:expr, $right:expr) => {
+        ($left:expr_2021, $right:expr_2021) => {
             assert!(($left - $right).abs() < 1e-4, "{} !~= {}", $left, $right)
         };
     }

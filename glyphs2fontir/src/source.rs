@@ -594,14 +594,14 @@ fn condset_to_nbox(condset: ConditionSet, axes: &Axes) -> NBox {
 pub(crate) fn bracket_glyph_names<'a>(
     glyph: &'a glyphs_reader::Glyph,
     axes: &Axes,
-) -> impl Iterator<Item = (GlyphName, Vec<&'a Layer>)> {
+) -> impl Iterator<Item = (GlyphName, Vec<&'a Layer>)> + use<'a> {
     bracket_glyphs(glyph, axes).map(|x| x.1)
 }
 
 fn bracket_glyphs<'a>(
     glyph: &'a glyphs_reader::Glyph,
     axes: &Axes,
-) -> impl Iterator<Item = (ConditionSet, (GlyphName, Vec<&'a Layer>))> {
+) -> impl Iterator<Item = (ConditionSet, (GlyphName, Vec<&'a Layer>))> + use<'a> {
     let mut seen_sets = IndexMap::new();
     for layer in &glyph.bracket_layers {
         let condition_set = get_bracket_info(layer, axes);
@@ -781,7 +781,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                     )
                 };
                 // base case, both branches above resolve to this
-                ($variant:ident, $getter:expr ) => {
+                ($variant:ident, $getter:expr_2021 ) => {
                     metrics.set_if_some(GlobalMetric::$variant, pos.clone(), $getter)
                 };
             }
@@ -1176,7 +1176,7 @@ fn expand_kerning_to_brackets(
     bracket_glyph_map: &HashMap<&str, Vec<&GlyphName>>,
     participants: (KernSide, KernSide),
     value: OrderedFloat<f64>,
-) -> impl Iterator<Item = ((KernSide, KernSide), OrderedFloat<f64>)> {
+) -> impl Iterator<Item = ((KernSide, KernSide), OrderedFloat<f64>)> + use<> {
     let first_match = participants
         .0
         .glyph_name()
@@ -1643,7 +1643,7 @@ mod tests {
         );
     }
 
-    fn context_for(glyphs_file: &Path) -> (impl Source, Context) {
+    fn context_for(glyphs_file: &Path) -> (impl Source + use<>, Context) {
         let source = GlyphsIrSource::new(glyphs_file).unwrap();
         let mut flags = Flags::default();
         flags.set(Flags::EMIT_IR, false); // we don't want to write anything down

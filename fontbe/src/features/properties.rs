@@ -324,7 +324,7 @@ fn ot_tag_to_unicode_short_name(tag: Tag) -> UnicodeShortName {
 }
 
 /// a script can correspond to one or two tags, because
-pub(crate) fn script_to_ot_tags(script: &UnicodeShortName) -> impl Iterator<Item = Tag> {
+pub(crate) fn script_to_ot_tags(script: &UnicodeShortName) -> impl Iterator<Item = Tag> + use<> {
     let mut out = [None, None];
     if let Some(tag) = SCRIPT_EXCEPTIONS.binary_search_exact(&script.as_str()) {
         out[0] = Some(tag);

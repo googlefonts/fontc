@@ -1327,7 +1327,7 @@ mod tests {
         s.trim().chars().filter(|c| *c != ' ').collect()
     }
     macro_rules! assert_eq_ignoring_ws {
-        ($left:expr, $right:expr) => {
+        ($left:expr_2021, $right:expr_2021) => {
             let left = normalize_layout_repr(&$left);
             let right = normalize_layout_repr(&$right);
             pretty_assertions::assert_str_eq!(left, right)

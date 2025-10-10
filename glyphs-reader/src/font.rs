@@ -791,7 +791,7 @@ impl RawCustomParameters {
                     add_and_report_issues!($field, $converter(value).map(Into::into))
                 }};
 
-                ($field:ident, $value_expr:expr) => {{
+                ($field:ident, $value_expr:expr_2021) => {{
                     let value = $value_expr;
 
                     if value.is_none() {

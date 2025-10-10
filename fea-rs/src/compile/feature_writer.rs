@@ -149,7 +149,7 @@ impl<'a> FeatureBuilder<'a> {
     }
 
     /// An iterator over the default language systems registered in the FEA
-    pub fn language_systems(&self) -> impl Iterator<Item = LanguageSystem> + 'a {
+    pub fn language_systems(&self) -> impl Iterator<Item = LanguageSystem> + 'a + use<'a> {
         self.language_systems.iter()
     }
 

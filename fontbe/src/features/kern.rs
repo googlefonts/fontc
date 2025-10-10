@@ -795,7 +795,7 @@ impl KernSplitContext {
     fn partition_by_script<'b>(
         &self,
         pair: &'b KernPair,
-    ) -> impl Iterator<Item = (BTreeSet<UnicodeShortName>, KernPair)> + 'b {
+    ) -> impl Iterator<Item = (BTreeSet<UnicodeShortName>, KernPair)> + 'b + use<'b> {
         //TODO: we could definitely make a reusable context and save all this
         //reallocation
         let mut resolved_scripts = HashMap::new();
@@ -1278,7 +1278,7 @@ mod tests {
     }
 
     macro_rules! assert_eq_ignoring_ws {
-        ($left:expr, $right:expr) => {
+        ($left:expr_2021, $right:expr_2021) => {
             let left = normalize_layout_repr(&$left);
             let right = normalize_layout_repr(&$right);
             pretty_assertions::assert_str_eq!(left, right)

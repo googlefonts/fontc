@@ -1935,7 +1935,7 @@ mod tests {
         Flags::default() - Flags::EMIT_IR
     }
 
-    fn build_static_metadata(name: &str, flags: Flags) -> (impl Source, Context) {
+    fn build_static_metadata(name: &str, flags: Flags) -> (impl Source + use<>, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let source = load_designspace(name);
         let context = Context::new_root(flags, Paths::new(Path::new("/nothing/should/write/here")));
@@ -1964,7 +1964,7 @@ mod tests {
             .set((*task_context.preliminary_glyph_order.get()).clone());
     }
 
-    fn build_global_metrics(name: &str) -> (impl Source, Context) {
+    fn build_global_metrics(name: &str) -> (impl Source + use<>, Context) {
         let (source, context) = build_static_metadata(name, default_test_flags());
         let task_context = context.copy_for_work(
             Access::Variant(WorkId::StaticMetadata),
@@ -1978,7 +1978,7 @@ mod tests {
         (source, context)
     }
 
-    fn build_kerning(name: &str) -> (impl Source, Context) {
+    fn build_kerning(name: &str) -> (impl Source + use<>, Context) {
         let (source, context) = build_static_metadata(name, default_test_flags());
 
         // static metadata includes preliminary glyph order; just copy it to be the final one
@@ -2005,7 +2005,7 @@ mod tests {
         (source, context)
     }
 
-    fn build_glyphs(name: &str) -> (impl Source, Context) {
+    fn build_glyphs(name: &str) -> (impl Source + use<>, Context) {
         let (source, context) = build_static_metadata(name, default_test_flags());
         build_glyph_order(&context);
 

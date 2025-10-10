@@ -151,7 +151,7 @@ impl Compilation {
     pub fn to_font_builder(&self) -> Result<FontBuilder<'_>, BuilderError> {
         let mut builder = FontBuilder::default();
         macro_rules! add_if_some {
-            ($table:expr) => {
+            ($table:expr_2021) => {
                 if let Some(table) = $table.as_ref() {
                     builder.add_table(table)?;
                 }

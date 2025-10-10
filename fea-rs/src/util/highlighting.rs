@@ -40,7 +40,7 @@ pub fn style_for_kind(kind: Kind) -> Style {
 const MAX_PRINT_WIDTH: usize = 100;
 
 macro_rules! style_or_dont {
-    ($tty:expr, $kind:expr) => {
+    ($tty:expr_2021, $kind:expr_2021) => {
         if $tty {
             $kind.into()
         } else {
