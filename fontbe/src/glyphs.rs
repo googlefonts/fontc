@@ -185,15 +185,13 @@ fn create_composite(
                         // ignored) or from the glyf+gvar phantom points of the flagged component.
                         // While we could detect this inconsistency and only set the flag when it is
                         // safe (basically no-op), it's not worth the extra complexity.
-                        if !is_variable {
-                            if let Some(default_component) =
+                        if !is_variable
+                            && let Some(default_component) =
                                 component_glyph.sources().get(default_location)
-                            {
-                                if can_reuse_metrics(default_glyph, default_component, transform) {
-                                    set_use_my_metrics = true;
-                                    component.flags.use_my_metrics = true;
-                                }
-                            }
+                            && can_reuse_metrics(default_glyph, default_component, transform)
+                        {
+                            set_use_my_metrics = true;
+                            component.flags.use_my_metrics = true;
                         }
                     }
                     (component, bbox)

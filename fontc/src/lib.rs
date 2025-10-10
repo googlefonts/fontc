@@ -200,10 +200,10 @@ pub fn init_paths(
         BePaths::new(build_dir)
     };
     // create the output file's parent directory if it doesn't exist
-    if let Some(output_file) = output_file {
-        if let Some(parent) = output_file.parent() {
-            require_dir(parent)?;
-        }
+    if let Some(output_file) = output_file
+        && let Some(parent) = output_file.parent()
+    {
+        require_dir(parent)?;
     }
 
     // the build dir stores the IR (for incremental builds) and the default output
@@ -4216,11 +4216,10 @@ mod tests {
             );
         };
 
-        let has_flag = glyph.components().any(|comp| {
+        glyph.components().any(|comp| {
             comp.flags
                 .contains(glyf::CompositeGlyphFlags::USE_MY_METRICS)
-        });
-        has_flag
+        })
     }
 
     #[test]

@@ -667,10 +667,10 @@ pub(crate) fn parse_int(s: &str) -> Result<i64, Error> {
 }
 
 pub(crate) fn parse_float(s: &str) -> Result<f64, Error> {
-    if numeric_ok(s) {
-        if let Ok(num) = s.parse::<f64>() {
-            return Ok(num);
-        }
+    if numeric_ok(s)
+        && let Ok(num) = s.parse::<f64>()
+    {
+        return Ok(num);
     }
     Err(Error::ExpectedNumber)
 }

@@ -141,10 +141,10 @@ impl GdefBuilder {
         class: GlyphClassDef,
     ) -> Result<(), (GlyphId16, GlyphClassDef)> {
         for glyph in glyphs.iter() {
-            if let Some(prev_class) = self.glyph_classes.insert(glyph, class) {
-                if prev_class != class {
-                    return Err((glyph, prev_class));
-                }
+            if let Some(prev_class) = self.glyph_classes.insert(glyph, class)
+                && prev_class != class
+            {
+                return Err((glyph, prev_class));
             }
         }
         Ok(())

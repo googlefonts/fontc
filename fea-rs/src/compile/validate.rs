@@ -1289,10 +1289,10 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     }
 
     fn validate_value_record(&mut self, node: &typed::ValueRecord) {
-        if let Some(name) = node.named() {
-            if !self.value_record_defs.contains_key(&name.text) {
-                self.error(name.range(), "undefined value record name");
-            }
+        if let Some(name) = node.named()
+            && !self.value_record_defs.contains_key(&name.text)
+        {
+            self.error(name.range(), "undefined value record name");
         }
 
         for metric in node.all_metrics() {
@@ -1301,10 +1301,10 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     }
 
     fn validate_anchor(&mut self, anchor: &typed::Anchor) {
-        if let Some(name) = anchor.name() {
-            if !self.anchor_defs.contains_key(&name.text) {
-                self.error(name.range(), "undefined anchor name");
-            }
+        if let Some(name) = anchor.name()
+            && !self.anchor_defs.contains_key(&name.text)
+        {
+            self.error(name.range(), "undefined anchor name");
         }
         if let Some((one, two)) = anchor.coords() {
             self.validate_metric(&one);

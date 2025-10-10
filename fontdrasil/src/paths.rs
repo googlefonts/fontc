@@ -181,10 +181,10 @@ pub fn safe_filename(name: &str, suffix: &str) -> String {
     }
     filename.extend(suffix.chars());
 
-    if let Some(ch) = filename.first() {
-        if *ch == '.' {
-            filename[0] = '_';
-        }
+    if let Some(ch) = filename.first()
+        && *ch == '.'
+    {
+        filename[0] = '_';
     }
 
     let filename: String = filename.into_iter().collect();

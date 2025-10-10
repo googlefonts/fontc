@@ -187,10 +187,11 @@ impl From<&str> for ProductionName {
             ubound: u32,
             f: impl Fn(u32) -> ProductionName,
         ) -> Option<ProductionName> {
-            if let Ok(v) = u32::from_str_radix(v, 16) {
-                if v >= lbound && v <= ubound {
-                    return Some(f(v));
-                }
+            if let Ok(v) = u32::from_str_radix(v, 16)
+                && v >= lbound
+                && v <= ubound
+            {
+                return Some(f(v));
             }
             None
         }

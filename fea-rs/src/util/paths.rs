@@ -68,10 +68,10 @@ pub(crate) fn resolve_path(path: &Path, root: &Path, parent: Option<&Path>) -> P
     if root.join(path).exists() {
         return rebase_path(path, root);
     }
-    if let Some(parent) = parent {
-        if parent.join(path).exists() {
-            return rebase_path(path, parent);
-        }
+    if let Some(parent) = parent
+        && parent.join(path).exists()
+    {
+        return rebase_path(path, parent);
     }
     path.to_owned()
 }

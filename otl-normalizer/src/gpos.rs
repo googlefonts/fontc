@@ -101,17 +101,17 @@ fn print_rules<T: PrintNames + Clone>(
             last_flag = Some(flags);
         }
 
-        if filter_set_id != last_filter_set {
-            if let Some(filter_id) = filter_set_id {
-                let filter_set = mark_glyph_sets
-                    .as_ref()
-                    .map(|gsets| gsets.coverages().get(filter_id as usize))
-                    .transpose()
-                    .unwrap();
-                let glyphs = filter_set.map(|cov| cov.iter().collect::<GlyphSet>());
-                if let Some(glyphs) = glyphs {
-                    writeln!(f, "# filter glyphs: {}", glyphs.printer(names))?;
-                }
+        if filter_set_id != last_filter_set
+            && let Some(filter_id) = filter_set_id
+        {
+            let filter_set = mark_glyph_sets
+                .as_ref()
+                .map(|gsets| gsets.coverages().get(filter_id as usize))
+                .transpose()
+                .unwrap();
+            let glyphs = filter_set.map(|cov| cov.iter().collect::<GlyphSet>());
+            if let Some(glyphs) = glyphs {
+                writeln!(f, "# filter glyphs: {}", glyphs.printer(names))?;
             }
         }
         last_filter_set = filter_set_id;

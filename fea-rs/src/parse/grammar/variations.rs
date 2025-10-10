@@ -83,10 +83,10 @@ pub(crate) fn variation(parser: &mut Parser) {
         }
         parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
         let close_tag = parser.expect_tag(TokenSet::TOP_LEVEL);
-        if let (Some(open), Some(close)) = (open_tag, close_tag) {
-            if open.tag != close.tag {
-                parser.raw_error(close.range, format!("expected tag '{}'", open.tag));
-            }
+        if let (Some(open), Some(close)) = (open_tag, close_tag)
+            && open.tag != close.tag
+        {
+            parser.raw_error(close.range, format!("expected tag '{}'", open.tag));
         }
         parser.expect_semi();
     }

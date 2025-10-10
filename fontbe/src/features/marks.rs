@@ -556,14 +556,14 @@ impl<'a> MarkLookupBuilder<'a> {
                 continue;
             }
             for anchor in anchors {
-                if let AnchorKind::Mark(group) = &anchor.kind {
-                    if liga_anchor_groups.contains(group) {
-                        groups
-                            .entry(group.to_owned())
-                            .or_default()
-                            .marks
-                            .push((*gid, anchor));
-                    }
+                if let AnchorKind::Mark(group) = &anchor.kind
+                    && liga_anchor_groups.contains(group)
+                {
+                    groups
+                        .entry(group.to_owned())
+                        .or_default()
+                        .marks
+                        .push((*gid, anchor));
                 }
             }
         }

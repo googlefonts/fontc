@@ -1181,10 +1181,10 @@ impl AnchorKind {
                 return Err(BadAnchorReason::NilMarkGroup);
             }
             // error on '_top_3'
-            if let Some((_, suffix)) = suffix.rsplit_once('_') {
-                if suffix.parse::<usize>().is_ok() {
-                    return Err(BadAnchorReason::NumberedMarkAnchor);
-                }
+            if let Some((_, suffix)) = suffix.rsplit_once('_')
+                && suffix.parse::<usize>().is_ok()
+            {
+                return Err(BadAnchorReason::NumberedMarkAnchor);
             }
             // looks like a mark!
             return Ok(AnchorKind::Mark(suffix.into()));
@@ -1394,14 +1394,14 @@ fn has_overflowing_2x2_transforms(
         })
     });
 
-    if log_enabled!(log::Level::Trace) {
-        if let Some((location, component_name, value)) = overflow_info.as_ref() {
-            trace!(
-                "{} at location {:?} has component '{}' \
+    if log_enabled!(log::Level::Trace)
+        && let Some((location, component_name, value)) = overflow_info.as_ref()
+    {
+        trace!(
+            "{} at location {:?} has component '{}' \
                 with a transform value ({}) overflowing [-2.0, 2.0] range",
-                name, location, component_name, value
-            );
-        }
+            name, location, component_name, value
+        );
     }
 
     overflow_info.is_some()

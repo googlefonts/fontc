@@ -303,10 +303,10 @@ fn lookup_kerning_value(
         (first_group.clone(), second.cloned()),
         (first_group.clone(), second_group.clone()),
     ] {
-        if let Some(pair) = first.zip(second) {
-            if let Some(value) = kerning.get(&pair) {
-                return *value;
-            }
+        if let Some(pair) = first.zip(second)
+            && let Some(value) = kerning.get(&pair)
+        {
+            return *value;
         }
     }
 

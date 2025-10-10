@@ -578,10 +578,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn add_lookup_to_current_feature_if_present(&mut self, lookup: LookupId) {
-        if lookup != LookupId::Empty {
-            if let Some(active) = self.active_feature.as_mut() {
-                active.add_lookup(lookup);
-            }
+        if lookup != LookupId::Empty
+            && let Some(active) = self.active_feature.as_mut()
+        {
+            active.add_lookup(lookup);
         }
     }
 

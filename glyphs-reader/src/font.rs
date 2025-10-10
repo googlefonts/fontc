@@ -1917,15 +1917,14 @@ impl RawFont {
             .collect::<Vec<_>>();
 
             // append "Italic" if italic angle != 0
-            if let Some(italic_angle) = master.italic_angle {
-                if italic_angle != 0.0
-                    && (names.is_empty()
-                        || !names
-                            .iter()
-                            .any(|name| *name == "Italic" || *name == "Oblique"))
-                {
-                    names.push("Italic");
-                }
+            if let Some(italic_angle) = master.italic_angle
+                && italic_angle != 0.0
+                && (names.is_empty()
+                    || !names
+                        .iter()
+                        .any(|name| *name == "Italic" || *name == "Oblique"))
+            {
+                names.push("Italic");
             }
             // if all are empty, default to "Regular"
             master.name = if names.is_empty() {
@@ -2503,13 +2502,13 @@ impl RawGlyph {
             .map(|s| parse_codepoint_str(&s, format_version.codepoint_radix()))
             .unwrap_or_default();
 
-        if category.is_none() || sub_category.is_none() || production_name.is_none() {
-            if let Some(result) = glyph_data.query(&self.glyphname, Some(&codepoints)) {
-                // if they were manually set don't change them, otherwise do
-                category = category.or(Some(result.category));
-                sub_category = sub_category.or(result.subcategory);
-                production_name = production_name.or(result.production_name.map(Into::into));
-            }
+        if (category.is_none() || sub_category.is_none() || production_name.is_none())
+            && let Some(result) = glyph_data.query(&self.glyphname, Some(&codepoints))
+        {
+            // if they were manually set don't change them, otherwise do
+            category = category.or(Some(result.category));
+            sub_category = sub_category.or(result.subcategory);
+            production_name = production_name.or(result.production_name.map(Into::into));
         }
 
         Ok(Glyph {

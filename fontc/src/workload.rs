@@ -213,13 +213,12 @@ impl Workload {
     /// True if job might read what other produces
     #[cfg(test)]
     fn might_read(&self, job: &Job, other: &Job) -> bool {
-        let result = job.read_access.check(&other.id)
+        job.read_access.check(&other.id)
             || self
                 .also_completes
                 .get(&other.id)
                 .map(|also| also.iter().any(|other_id| job.read_access.check(other_id)))
-                .unwrap_or_default();
-        result
+                .unwrap_or_default()
     }
 
     pub(crate) fn add(&mut self, work: impl Into<AnyWork>) {
