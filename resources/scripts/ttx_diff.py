@@ -421,7 +421,7 @@ def source_is_variable(path: Path) -> bool:
         return False
     if path.suffix == ".designspace":
         dspace = DesignSpaceDocument.fromfile(path)
-        return len(dspace.sources) > 1
+        return len(dspace.axes) > 0
     if path.suffix == ".glyphs" or path.suffix == ".glyphspackage":
         font = GSFont(path)
         return len(font.masters) > 1
