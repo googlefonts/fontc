@@ -70,8 +70,8 @@ mod tests {
     use std::path::Path;
 
     use crate::{
-        compile::{Compilation, MockVariationInfo, NopFeatureProvider},
         Compiler,
+        compile::{Compilation, MockVariationInfo, NopFeatureProvider},
     };
 
     use super::*;

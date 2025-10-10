@@ -547,9 +547,10 @@ impl VariationRegion {
     /// In Python, supportScalar. We only implement the ot=True, extrapolate=False paths.
     /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L123>.
     pub fn scalar_at(&self, location: &NormalizedLocation) -> OrderedFloat<f64> {
-        let scalar = self.axis_tents.iter().filter(|(_, ar)| ar.validate()).fold(
-            ONE,
-            |scalar, (tag, tent)| {
+        self.axis_tents
+            .iter()
+            .filter(|(_, ar)| ar.validate())
+            .fold(ONE, |scalar, (tag, tent)| {
                 let v = location
                     .get(*tag)
                     .map(|v| v.into_inner())
@@ -579,9 +580,7 @@ impl VariationRegion {
                     tent.max.into_inner()
                 };
                 scalar * (v - subtract_me) / (peak - subtract_me)
-            },
-        );
-        scalar
+            })
     }
 
     pub fn insert(&mut self, tag: Tag, tent: Tent) {
@@ -1501,9 +1500,11 @@ mod tests {
             assert_ne!(deltas_float, deltas_round);
             assert_ne!(deltas_float, deltas_late_round);
             assert_ne!(deltas_round, deltas_late_round);
-            assert!(deltas_round
-                .iter()
-                .all(|(_, deltas)| { deltas.iter().all(|d| d.fract() == 0.0) }));
+            assert!(
+                deltas_round
+                    .iter()
+                    .all(|(_, deltas)| { deltas.iter().all(|d| d.fract() == 0.0) })
+            );
 
             let expected: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_float);
             let actual: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_round);

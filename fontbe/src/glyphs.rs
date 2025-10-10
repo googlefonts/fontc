@@ -18,10 +18,11 @@ use fontir::{
     ir::{self, GlobalMetrics, GlyphOrder},
     orchestration::{Flags, WorkId as FeWorkId},
 };
-use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect, Vec2};
+use kurbo::{Affine, BezPath, CubicBez, PathEl, Point, Rect, Vec2, cubics_to_quadratic_splines};
 use log::{log_enabled, trace, warn};
 
 use write_fonts::{
+    OtRound,
     read::{
         tables::glyf::{self, Anchor, Transform},
         types::F2Dot14,
@@ -31,10 +32,9 @@ use write_fonts::{
             Bbox, Component, ComponentFlags, CompositeGlyph, GlyfLocaBuilder, Glyph as RawGlyph,
             SimpleGlyph,
         },
-        gvar::{iup::iup_delta_optimize, GlyphDelta},
+        gvar::{GlyphDelta, iup::iup_delta_optimize},
     },
     types::GlyphId16,
-    OtRound,
 };
 
 use crate::{
@@ -185,15 +185,13 @@ fn create_composite(
                         // ignored) or from the glyf+gvar phantom points of the flagged component.
                         // While we could detect this inconsistency and only set the flag when it is
                         // safe (basically no-op), it's not worth the extra complexity.
-                        if !is_variable {
-                            if let Some(default_component) =
+                        if !is_variable
+                            && let Some(default_component) =
                                 component_glyph.sources().get(default_location)
-                            {
-                                if can_reuse_metrics(default_glyph, default_component, transform) {
-                                    set_use_my_metrics = true;
-                                    component.flags.use_my_metrics = true;
-                                }
-                            }
+                            && can_reuse_metrics(default_glyph, default_component, transform)
+                        {
+                            set_use_my_metrics = true;
+                            component.flags.use_my_metrics = true;
                         }
                     }
                     (component, bbox)
@@ -631,7 +629,9 @@ impl CheckedGlyph {
             .map(|s| s.components.iter().map(|c| c.base.clone()).collect())
             .collect();
         if components.len() > 1 {
-            warn!("{name} has inconsistent component glyph sequences; fontir is supposed to fix that for us");
+            warn!(
+                "{name} has inconsistent component glyph sequences; fontir is supposed to fix that for us"
+            );
             return Err(Error::GlyphError(
                 name.clone(),
                 GlyphProblem::InconsistentComponents,

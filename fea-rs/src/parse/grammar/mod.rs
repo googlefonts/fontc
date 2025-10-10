@@ -1,5 +1,5 @@
-use super::lexer::{Kind, TokenSet};
 use super::Parser;
+use super::lexer::{Kind, TokenSet};
 use crate::token_tree::Kind as AstKind;
 
 mod feature;

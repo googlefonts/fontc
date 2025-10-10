@@ -5,10 +5,9 @@ use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use log::trace;
 use write_fonts::{
-    dump_table,
+    OtRound, dump_table,
     tables::{vhea::Vhea, vmtx::Vmtx},
     types::FWord,
-    OtRound,
 };
 
 use crate::{

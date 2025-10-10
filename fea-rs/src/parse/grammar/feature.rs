@@ -14,16 +14,16 @@ pub(crate) fn feature(parser: &mut Parser) {
         parser.eat(Kind::UseExtensionKw);
         parser.expect(Kind::LBrace);
         eat_feature_block_items(parser);
-        if !parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI) {
-            if let Some(tag) = open_tag.as_ref() {
-                parser.raw_error(tag.range.clone(), "Feature block is unclosed");
-            }
+        if !parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI)
+            && let Some(tag) = open_tag.as_ref()
+        {
+            parser.raw_error(tag.range.clone(), "Feature block is unclosed");
         };
         let close_tag = parser.expect_tag(TokenSet::TOP_LEVEL);
-        if let (Some(open), Some(close)) = (open_tag, close_tag) {
-            if open.tag != close.tag {
-                parser.raw_error(close.range, format!("expected tag '{}'", open.tag));
-            }
+        if let (Some(open), Some(close)) = (open_tag, close_tag)
+            && open.tag != close.tag
+        {
+            parser.raw_error(close.range, format!("expected tag '{}'", open.tag));
         }
         parser.expect_semi();
     }

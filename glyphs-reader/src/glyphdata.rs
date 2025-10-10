@@ -4,8 +4,8 @@
 //! (and potentially user-provided) data files.
 
 use quick_xml::{
-    events::{BytesStart, Event},
     Reader,
+    events::{BytesStart, Event},
 };
 use std::{
     borrow::Cow,
@@ -187,10 +187,11 @@ impl From<&str> for ProductionName {
             ubound: u32,
             f: impl Fn(u32) -> ProductionName,
         ) -> Option<ProductionName> {
-            if let Ok(v) = u32::from_str_radix(v, 16) {
-                if v >= lbound && v <= ubound {
-                    return Some(f(v));
-                }
+            if let Ok(v) = u32::from_str_radix(v, 16)
+                && v >= lbound
+                && v <= ubound
+            {
+                return Some(f(v));
             }
             None
         }
@@ -431,7 +432,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
             other => {
                 return Err(GlyphDataError::UnknownAttribute(
                     String::from_utf8_lossy(other).into_owned(),
-                ))
+                ));
             }
         }
     }

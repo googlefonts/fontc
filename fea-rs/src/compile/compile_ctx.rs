@@ -15,14 +15,14 @@ use write_fonts::{
         self,
         gdef::GlyphClassDef,
         gpos::{
+            ValueFormat,
             builders::{
                 AnchorBuilder as Anchor, PreviouslyAssignedClass, ValueRecordBuilder as ValueRecord,
             },
-            ValueFormat,
         },
         layout::{
-            builders::{CaretValueBuilder as CaretValue, DeviceOrDeltas, Metric},
             ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag,
+            builders::{CaretValueBuilder as CaretValue, DeviceOrDeltas, Metric},
         },
         variations::ivs_builder::{RemapVariationIndices, VariationStoreBuilder},
     },
@@ -30,17 +30,18 @@ use write_fonts::{
 };
 
 use crate::{
+    Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken, Opts,
     common::{GlyphClass, GlyphId16, GlyphOrClass, GlyphSet, MarkClass},
     parse::SourceMap,
     token_tree::{
-        typed::{self, AstNode},
         Token,
+        typed::{self, AstNode},
     },
     typed::ContextualRuleNode,
-    Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken, Opts,
 };
 
 use super::{
+    VariationInfo,
     feature_writer::{FeatureBuilder, FeatureProvider, InsertionPoint},
     features::{
         AaltFeature, ActiveFeature, AllFeatures, ConditionSetMap, CvParams, SizeFeature,
@@ -51,7 +52,7 @@ use super::{
     lookups::{AllLookups, FilterSetId, LookupFlagInfo, LookupId, SomeLookup},
     output::Compilation,
     tables::{GlyphClassDefExt, ScriptRecord, Tables},
-    tags, VariationInfo,
+    tags,
 };
 
 /// Context that manages state for a compilation.
@@ -577,10 +578,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn add_lookup_to_current_feature_if_present(&mut self, lookup: LookupId) {
-        if lookup != LookupId::Empty {
-            if let Some(active) = self.active_feature.as_mut() {
-                active.add_lookup(lookup);
-            }
+        if lookup != LookupId::Empty
+            && let Some(active) = self.active_feature.as_mut()
+        {
+            active.add_lookup(lookup);
         }
     }
 
@@ -1983,10 +1984,11 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         } else if item.kind() == Kind::Semi {
             // continue
         } else if item.kind() == Kind::Comment {
-            assert!(item
-                .token_text()
-                .unwrap_or_default()
-                .contains("# Automatic Code"));
+            assert!(
+                item.token_text()
+                    .unwrap_or_default()
+                    .contains("# Automatic Code")
+            );
             if self.active_feature.is_none() {
                 self.warning(
                     item.range(),
@@ -2047,7 +2049,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 return self.error(
                     anchor_block.range(),
                     "named anchor definition can only be in format A or B",
-                )
+                );
             }
         };
 

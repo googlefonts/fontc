@@ -11,10 +11,10 @@ use fontir::{
     orchestration::WorkId as FeWorkId,
 };
 use write_fonts::{
-    read::{tables::hmtx::Hmtx, FontData, TopLevelTable},
+    OtRound,
+    read::{FontData, TopLevelTable, tables::hmtx::Hmtx},
     tables::os2::Os2,
     types::Tag,
-    OtRound,
 };
 
 use crate::{

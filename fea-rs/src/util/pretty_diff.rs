@@ -19,13 +19,13 @@ const SIGN_LEFT: char = '<'; // - < ←
 #[cfg(test)]
 #[macro_export]
 macro_rules! assert_eq_str {
-    ($left:expr, $right:expr$(,)?) => ({
+    ($left:expr_2021, $right:expr_2021$(,)?) => ({
         $crate::assert_eq_str!(@ $left, $right, "", "");
     });
-    ($left:expr, $right:expr, $($arg:tt)*) => ({
+    ($left:expr_2021, $right:expr_2021, $($arg:tt)*) => ({
         $crate::assert_eq_str!(@ $left, $right, ": ", $($arg)+);
     });
-    (@ $left:expr, $right:expr, $maybe_semicolon:expr, $($arg:tt)*) => ({
+    (@ $left:expr_2021, $right:expr_2021, $maybe_semicolon:expr_2021, $($arg:tt)*) => ({
         match (&($left), &($right)) {
             (left, right) => {
                 if !(*left == *right) {
@@ -44,7 +44,7 @@ macro_rules! assert_eq_str {
 }
 
 macro_rules! paint {
-    ($f:expr, $colour:expr, $fmt:expr, $($args:tt)*) => (
+    ($f:expr_2021, $colour:expr_2021, $fmt:expr_2021, $($args:tt)*) => (
         write!($f, "{}", $colour.paint(format!($fmt, $($args)*)))
     )
 }

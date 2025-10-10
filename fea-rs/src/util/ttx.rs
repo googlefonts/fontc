@@ -10,10 +10,10 @@ use std::{
 };
 
 use crate::{
-    compile::{
-        error::CompilerError, Compiler, FeatureProvider, MockVariationInfo, Opts, PendingLookup,
-    },
     DiagnosticSet, GlyphIdent, GlyphMap, ParseTree,
+    compile::{
+        Compiler, FeatureProvider, MockVariationInfo, Opts, PendingLookup, error::CompilerError,
+    },
 };
 
 use ansi_term::Color;
@@ -220,11 +220,13 @@ pub fn iter_fea_files(
 ) -> impl Iterator<Item = PathBuf> + 'static {
     let path = path.as_ref();
     let mut dir = path.read_dir().ok();
-    std::iter::from_fn(move || loop {
-        let entry = dir.as_mut()?.next()?.unwrap();
-        let path = entry.path();
-        if is_fea(&path) && filter.filter(&path) {
-            return Some(path);
+    std::iter::from_fn(move || {
+        loop {
+            let entry = dir.as_mut()?.next()?.unwrap();
+            let path = entry.path();
+            if is_fea(&path) && filter.filter(&path) {
+                return Some(path);
+            }
         }
     })
 }
@@ -883,6 +885,9 @@ impl Display for ReportSummary {
             compile,
             ..
         } = self;
-        write!(f, "passed {passed}/{total} tests: ({panic} panics {parse} unparsed {compile} compile) {perc:.2}% avg diff")
+        write!(
+            f,
+            "passed {passed}/{total} tests: ({panic} panics {parse} unparsed {compile} compile) {perc:.2}% avg diff"
+        )
     }
 }

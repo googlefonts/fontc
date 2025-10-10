@@ -6,11 +6,11 @@ use std::{
 };
 
 use crate::{
-    parse::{FileSystemResolver, SourceResolver},
     DiagnosticSet, GlyphMap,
+    parse::{FileSystemResolver, SourceResolver},
 };
 
-use super::{error::CompilerError, Compilation, FeatureProvider, Opts, VariationInfo};
+use super::{Compilation, FeatureProvider, Opts, VariationInfo, error::CompilerError};
 
 const DEFAULT_N_MESSAGES_TO_PRINT: usize = 100;
 
@@ -169,11 +169,11 @@ fn print_warnings_return_errors(
 ) -> Result<(), DiagnosticSet> {
     diagnostics.set_max_to_print(max_to_print);
     let warnings = diagnostics.split_off_warnings();
-    if let Some(warnings) = warnings {
-        if print_warnings {
-            // get around a CI check denying eprintln
-            let _ = writeln!(std::io::stderr(), "{}", warnings.display());
-        }
+    if let Some(warnings) = warnings
+        && print_warnings
+    {
+        // get around a CI check denying eprintln
+        let _ = writeln!(std::io::stderr(), "{}", warnings.display());
     }
 
     if diagnostics.is_empty() {

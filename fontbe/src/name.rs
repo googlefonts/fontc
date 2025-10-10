@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
+    OffsetMarker,
     tables::name::{Name, NameRecord},
     types::NameId,
-    OffsetMarker,
 };
 
 use crate::{

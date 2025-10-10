@@ -39,7 +39,7 @@ pub trait AstNode {
 
 /// Create a new AstNode wrapping a token.
 macro_rules! ast_token {
-    ($typ:ident, $kind:expr) => {
+    ($typ:ident, $kind:expr_2021) => {
         #[derive(Clone, Debug)]
         #[allow(missing_docs)]
         pub struct $typ {
@@ -85,7 +85,7 @@ macro_rules! ast_token {
 
 /// Create a new AstNode, wrapping a Node
 macro_rules! ast_node {
-    ($typ:ident, $kind:expr) => {
+    ($typ:ident, $kind:expr_2021) => {
         #[derive(Clone, Debug)]
         #[allow(missing_docs)]
         pub struct $typ {

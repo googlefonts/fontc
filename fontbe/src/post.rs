@@ -4,9 +4,9 @@ use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use std::collections::HashMap;
 use write_fonts::{
+    OtRound,
     tables::post::Post,
     types::{FWord, Fixed},
-    OtRound,
 };
 
 use crate::{

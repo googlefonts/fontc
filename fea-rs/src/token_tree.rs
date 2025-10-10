@@ -5,7 +5,7 @@ use std::{ops::Range, sync::Arc};
 use smol_str::SmolStr;
 
 use crate::parse::{FileId, IncludeStatement};
-use crate::{diagnostic::Diagnostic, GlyphMap, Level};
+use crate::{GlyphMap, Level, diagnostic::Diagnostic};
 
 use self::cursor::Cursor;
 use typed::AstNode as _;
@@ -167,17 +167,17 @@ impl<'a> AstSink<'a> {
     /// We can perform additional validation here. Currently it is mostly for
     /// disambiguating glyph names that might be ranges.
     fn validate_token(&mut self, kind: Kind, text: &str) -> NodeOrToken {
-        if kind == Kind::GlyphNameOrRange {
-            if let Some(map) = self.glyph_map {
-                if map.contains(text) {
-                    return Token::new(Kind::GlyphName, text.into()).into();
-                }
-                match try_split_range(text, map) {
-                    Ok(node) => return node.into(),
-                    Err(message) => {
-                        let range = self.text_pos..self.text_pos + text.len();
-                        self.error(Diagnostic::error(FileId::CURRENT_FILE, range, message));
-                    }
+        if kind == Kind::GlyphNameOrRange
+            && let Some(map) = self.glyph_map
+        {
+            if map.contains(text) {
+                return Token::new(Kind::GlyphName, text.into()).into();
+            }
+            match try_split_range(text, map) {
+                Ok(node) => return node.into(),
+                Err(message) => {
+                    let range = self.text_pos..self.text_pos + text.len();
+                    self.error(Diagnostic::error(FileId::CURRENT_FILE, range, message));
                 }
             }
         }
@@ -566,13 +566,21 @@ fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
         .filter_map(|(idx, b)| (b == b'-').then_some(idx))
     {
         let (head, tail) = text.split_at(idx);
-        if glyph_map.contains(head) && glyph_map.contains(tail.trim_start_matches('-')) {
-            if let Some(prev_idx) = solution.replace(idx) {
-                let (head1, tail1) = text.split_at(prev_idx);
-                let (head2, tail2) = text.split_at(idx);
-                let message = format!("the name '{}' contains multiple possible glyph ranges ({} to {} and {} to {}). Please insert spaces around the '-' to clarify your intent.", text, head1, tail1.trim_end_matches('-'), head2, tail2.trim_end_matches('-'));
-                return Err(message);
-            }
+        if glyph_map.contains(head)
+            && glyph_map.contains(tail.trim_start_matches('-'))
+            && let Some(prev_idx) = solution.replace(idx)
+        {
+            let (head1, tail1) = text.split_at(prev_idx);
+            let (head2, tail2) = text.split_at(idx);
+            let message = format!(
+                "the name '{}' contains multiple possible glyph ranges ({} to {} and {} to {}). Please insert spaces around the '-' to clarify your intent.",
+                text,
+                head1,
+                tail1.trim_end_matches('-'),
+                head2,
+                tail2.trim_end_matches('-')
+            );
+            return Err(message);
         }
     }
 

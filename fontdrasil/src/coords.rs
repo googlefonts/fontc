@@ -10,7 +10,7 @@ use std::{
 };
 
 use ordered_float::OrderedFloat;
-use serde::{ser::SerializeSeq, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, ser::SerializeSeq};
 use write_fonts::types::{F2Dot14, Fixed, Tag};
 
 use crate::{piecewise_linear_map::PiecewiseLinearMap, types::Axes};

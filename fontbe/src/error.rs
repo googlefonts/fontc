@@ -14,7 +14,7 @@ use write_fonts::{
     tables::{
         cmap::CmapConflict,
         glyf::MalformedPath,
-        gvar::{iup::IupError, GvarInputError},
+        gvar::{GvarInputError, iup::IupError},
     },
     types::Tag,
 };

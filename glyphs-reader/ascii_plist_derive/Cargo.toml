@@ -2,7 +2,7 @@
 name = "ascii_plist_derive"
 version = "0.1.0"
 authors = ["Raph Levien <raph.levien@gmail.com>"]
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/googlefonts/fontc"
 description = "A derive macro for parsing NeXTSTEP (ASCII) plist files"
 readme = "README.md"

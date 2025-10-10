@@ -17,7 +17,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use parking_lot::RwLock;
-use write_fonts::{read::FontRead, validate::Validate, FontWrite};
+use write_fonts::{FontWrite, read::FontRead, validate::Validate};
 
 bitflags! {
     #[derive(Clone, Copy, Debug)]
@@ -98,11 +98,11 @@ where
         }
 
         // it's *not* in memory but perhaps it's written down?
-        if self.persistent_storage.active() {
-            if let Some(mut reader) = self.persistent_storage.reader(&self.id) {
-                let restored = T::read(&mut reader);
-                *self.value.write() = Some(Arc::from(restored));
-            }
+        if self.persistent_storage.active()
+            && let Some(mut reader) = self.persistent_storage.reader(&self.id)
+        {
+            let restored = T::read(&mut reader);
+            *self.value.write() = Some(Arc::from(restored));
         }
 
         // if we still don't have an answer just give up
@@ -215,11 +215,11 @@ where
         }
 
         // it's *not* in memory but perhaps it's written down?
-        if self.persistent_storage.active() {
-            if let Some(mut reader) = self.persistent_storage.reader(id) {
-                let restored = T::read(&mut reader);
-                self.value.write().insert(id.clone(), Arc::from(restored));
-            }
+        if self.persistent_storage.active()
+            && let Some(mut reader) = self.persistent_storage.reader(id)
+        {
+            let restored = T::read(&mut reader);
+            self.value.write().insert(id.clone(), Arc::from(restored));
         }
 
         // if we still don't have an answer just give up

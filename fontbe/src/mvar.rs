@@ -9,12 +9,12 @@ use fontdrasil::{
 };
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
+    OtRound,
     tables::{
         mvar::{Mvar, ValueRecord},
-        variations::{ivs_builder::VariationStoreBuilder, VariationRegion},
+        variations::{VariationRegion, ivs_builder::VariationStoreBuilder},
     },
     types::{MajorMinor, Tag},
-    OtRound,
 };
 
 use crate::{
@@ -142,8 +142,8 @@ mod tests {
     use write_fonts::{
         dump_table,
         read::{
-            tables::{mvar as read_mvar, variations::ItemVariationData},
             FontData, FontRead,
+            tables::{mvar as read_mvar, variations::ItemVariationData},
         },
         types::F2Dot14,
     };

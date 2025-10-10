@@ -1,6 +1,6 @@
 //! Compiling OpenType Layout tables
 
-use crate::{parse::ParseTree, DiagnosticSet, GlyphMap};
+use crate::{DiagnosticSet, GlyphMap, parse::ParseTree};
 use fontdrasil::types::GlyphName;
 use write_fonts::{tables::layout::builders::CaretValueBuilder as CaretValue, types::GlyphId16};
 
@@ -101,7 +101,7 @@ pub fn get_ufo_glyph_order(font: &norad::Font) -> Result<GlyphMap, UfoGlyphOrder
 pub fn get_post_glyph_order(font_data: &[u8]) -> Result<GlyphMap, FontGlyphOrderError> {
     use write_fonts::{
         from_obj::ToOwnedTable,
-        read::{tables::post::DEFAULT_GLYPH_NAMES, FontRef, TableProvider},
+        read::{FontRef, TableProvider, tables::post::DEFAULT_GLYPH_NAMES},
         tables::post::Post,
     };
     let post: Post = FontRef::new(font_data)?.post()?.to_owned_table();

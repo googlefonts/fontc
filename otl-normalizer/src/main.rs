@@ -6,7 +6,7 @@ use std::{
 };
 
 use clap::Parser;
-use otl_normalizer::{args, Error, NameMap};
+use otl_normalizer::{Error, NameMap, args};
 use write_fonts::read::{FileRef, FontRef, ReadError, TableProvider};
 
 fn main() -> Result<(), Error> {
@@ -36,26 +36,26 @@ fn main() -> Result<(), Error> {
     let to_print = args.table;
     let gdef = font.gdef().ok();
 
-    if matches!(to_print, args::Table::All | args::Table::Gdef) {
-        if let Some(gdef) = gdef.as_ref().filter(|gdef| gdef.lig_caret_list().is_some()) {
-            writeln!(&mut write_target, "# GDEF #")?;
-            otl_normalizer::print_gdef(&mut write_target, gdef, &name_map)?;
-        }
+    if matches!(to_print, args::Table::All | args::Table::Gdef)
+        && let Some(gdef) = gdef.as_ref().filter(|gdef| gdef.lig_caret_list().is_some())
+    {
+        writeln!(&mut write_target, "# GDEF #")?;
+        otl_normalizer::print_gdef(&mut write_target, gdef, &name_map)?;
     }
 
-    if matches!(to_print, args::Table::All | args::Table::Gpos) {
-        if let Ok(gpos) = font.gpos() {
-            writeln!(&mut write_target, "# GPOS #")?;
-            otl_normalizer::print_gpos(&mut write_target, &gpos, gdef.as_ref(), &name_map)?;
-        }
+    if matches!(to_print, args::Table::All | args::Table::Gpos)
+        && let Ok(gpos) = font.gpos()
+    {
+        writeln!(&mut write_target, "# GPOS #")?;
+        otl_normalizer::print_gpos(&mut write_target, &gpos, gdef.as_ref(), &name_map)?;
     }
 
-    if matches!(to_print, args::Table::All | args::Table::Gsub) {
-        if let Ok(_gsub) = font.gsub() {
-            // we don't currently handle GSUB, and it's not clear we want to?
-            //writeln!(&mut write_target, "# GSUB #")?;
-            //otl_normalizer::print_gsub(&mut write_target, &gsub, gdef.as_ref(), &name_map)?;
-        }
+    if matches!(to_print, args::Table::All | args::Table::Gsub)
+        && let Ok(_gsub) = font.gsub()
+    {
+        // we don't currently handle GSUB, and it's not clear we want to?
+        //writeln!(&mut write_target, "# GSUB #")?;
+        //otl_normalizer::print_gsub(&mut write_target, &gsub, gdef.as_ref(), &name_map)?;
     }
     write_target.flush().unwrap();
 

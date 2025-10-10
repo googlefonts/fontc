@@ -2,9 +2,9 @@
 
 use std::fmt::Display;
 
-use write_fonts::{read::ReadError, BuilderError};
+use write_fonts::{BuilderError, read::ReadError};
 
-use crate::{parse::SourceLoadError, DiagnosticSet};
+use crate::{DiagnosticSet, parse::SourceLoadError};
 
 /// An error that occurs when extracting a glyph order from a UFO.
 #[derive(Clone, Debug, thiserror::Error)]

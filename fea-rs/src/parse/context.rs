@@ -10,11 +10,11 @@ use std::{
 use super::source::{Source, SourceLoadError, SourceLoader, SourceResolver};
 use super::{FileId, ParseTree, Parser, SourceList, SourceMap};
 use crate::{
-    token_tree::{
-        typed::{self, AstNode as _},
-        AstSink,
-    },
     Diagnostic, DiagnosticSet, GlyphMap, Kind, Node,
+    token_tree::{
+        AstSink,
+        typed::{self, AstNode as _},
+    },
 };
 
 const MAX_INCLUDE_DEPTH: usize = 50;
@@ -366,8 +366,8 @@ fn parse_src(
 mod tests {
     use super::*;
     use crate::{
-        token_tree::{typed, TreeBuilder},
         Kind,
+        token_tree::{TreeBuilder, typed},
     };
 
     fn make_ids<const N: usize>() -> [FileId; N] {

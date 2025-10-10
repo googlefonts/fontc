@@ -1,6 +1,6 @@
 //! Font IR types.
 use std::{
-    collections::{hash_map::RandomState, BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map::RandomState},
     fmt::{Debug, Display},
     io::Read,
     path::PathBuf,
@@ -10,11 +10,11 @@ use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
-use serde::{de::Error as _, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Error as _};
 use smol_str::SmolStr;
 use write_fonts::{
-    types::{GlyphId16, NameId, Tag},
     OtRound,
+    types::{GlyphId16, NameId, Tag},
 };
 
 use fontdrasil::{
@@ -1181,10 +1181,10 @@ impl AnchorKind {
                 return Err(BadAnchorReason::NilMarkGroup);
             }
             // error on '_top_3'
-            if let Some((_, suffix)) = suffix.rsplit_once('_') {
-                if suffix.parse::<usize>().is_ok() {
-                    return Err(BadAnchorReason::NumberedMarkAnchor);
-                }
+            if let Some((_, suffix)) = suffix.rsplit_once('_')
+                && suffix.parse::<usize>().is_ok()
+            {
+                return Err(BadAnchorReason::NumberedMarkAnchor);
             }
             // looks like a mark!
             return Ok(AnchorKind::Mark(suffix.into()));
@@ -1394,17 +1394,14 @@ fn has_overflowing_2x2_transforms(
         })
     });
 
-    if log_enabled!(log::Level::Trace) {
-        if let Some((location, component_name, value)) = overflow_info.as_ref() {
-            trace!(
-                "{} at location {:?} has component '{}' \
+    if log_enabled!(log::Level::Trace)
+        && let Some((location, component_name, value)) = overflow_info.as_ref()
+    {
+        trace!(
+            "{} at location {:?} has component '{}' \
                 with a transform value ({}) overflowing [-2.0, 2.0] range",
-                name,
-                location,
-                component_name,
-                value
-            );
-        }
+            name, location, component_name, value
+        );
     }
 
     overflow_info.is_some()
@@ -1426,7 +1423,7 @@ impl Glyph {
         let default_location = match (defaults.next(), defaults.next()) {
             (None, _) => return Err(BadGlyph::new(name, BadGlyphKind::NoDefaultLocation)),
             (Some(_), Some(_)) => {
-                return Err(BadGlyph::new(name, BadGlyphKind::MultipleDefaultLocations))
+                return Err(BadGlyph::new(name, BadGlyphKind::MultipleDefaultLocations));
             }
             (Some(pos), None) => pos.to_owned(),
         };
@@ -1995,7 +1992,7 @@ mod tests {
     use std::collections::HashMap;
 
     use fontdrasil::types::Axis;
-    use write_fonts::{types::NameId, OtRound};
+    use write_fonts::{OtRound, types::NameId};
 
     use pretty_assertions::assert_eq;
 
@@ -2262,12 +2259,16 @@ mod tests {
             (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Regular Italic"),
         ]);
 
-        assert!(different_subfamily
-            .get(NameId::TYPOGRAPHIC_FAMILY_NAME)
-            .is_some());
-        assert!(different_subfamily
-            .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
-            .is_some());
+        assert!(
+            different_subfamily
+                .get(NameId::TYPOGRAPHIC_FAMILY_NAME)
+                .is_some()
+        );
+        assert!(
+            different_subfamily
+                .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
+                .is_some()
+        );
     }
 
     // If x-height is undefined, ufo2ft derives the strikeout position from its

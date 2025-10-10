@@ -15,24 +15,24 @@ use fontdrasil::{
 };
 use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
-    feature_variations::{overlay_feature_variations, NBox},
+    feature_variations::{NBox, overlay_feature_variations},
     ir::{
-        self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, GdefCategories,
-        GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphInstance, GlyphOrder, KernGroup,
-        KernSide, KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey,
-        NamedInstance, PostscriptNames, Rule, StaticMetadata, Substitution, VariableFeature,
-        DEFAULT_VENDOR_ID,
+        self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, DEFAULT_VENDOR_ID,
+        GdefCategories, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphInstance,
+        GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues,
+        NameBuilder, NameKey, NamedInstance, PostscriptNames, Rule, StaticMetadata, Substitution,
+        VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
 };
 use glyphs_reader::{
-    glyphdata::{Category, Subcategory},
     Font, InstanceType, Layer,
+    glyphdata::{Category, Subcategory},
 };
 use indexmap::IndexMap;
 use ordered_float::OrderedFloat;
-use smol_str::{format_smolstr, SmolStr};
+use smol_str::{SmolStr, format_smolstr};
 use write_fonts::{
     tables::{
         gasp::{GaspRange, GaspRangeBehavior},
@@ -42,7 +42,7 @@ use write_fonts::{
     types::{NameId, Tag},
 };
 
-use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
+use crate::toir::{FontInfo, design_location, to_ir_contours_and_components, to_ir_features};
 
 #[derive(Debug, Clone)]
 pub struct GlyphsIrSource {
@@ -471,7 +471,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 };
                 let range_gasp_behavior = GaspRangeBehavior::from_bits_truncate(*behavior as u16);
                 if range_gasp_behavior == GaspRangeBehavior::empty() {
-                    warn!("Invalid gasp entry at rangeMaxPPEM {max_ppem}, no behavior bits set by {behavior}, ignoring range");
+                    warn!(
+                        "Invalid gasp entry at rangeMaxPPEM {max_ppem}, no behavior bits set by {behavior}, ignoring range"
+                    );
                     continue;
                 }
                 static_metadata.misc.gasp.push(GaspRange {
@@ -594,14 +596,14 @@ fn condset_to_nbox(condset: ConditionSet, axes: &Axes) -> NBox {
 pub(crate) fn bracket_glyph_names<'a>(
     glyph: &'a glyphs_reader::Glyph,
     axes: &Axes,
-) -> impl Iterator<Item = (GlyphName, Vec<&'a Layer>)> {
+) -> impl Iterator<Item = (GlyphName, Vec<&'a Layer>)> + use<'a> {
     bracket_glyphs(glyph, axes).map(|x| x.1)
 }
 
 fn bracket_glyphs<'a>(
     glyph: &'a glyphs_reader::Glyph,
     axes: &Axes,
-) -> impl Iterator<Item = (ConditionSet, (GlyphName, Vec<&'a Layer>))> {
+) -> impl Iterator<Item = (ConditionSet, (GlyphName, Vec<&'a Layer>))> + use<'a> {
     let mut seen_sets = IndexMap::new();
     for layer in &glyph.bracket_layers {
         let condition_set = get_bracket_info(layer, axes);
@@ -781,7 +783,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                     )
                 };
                 // base case, both branches above resolve to this
-                ($variant:ident, $getter:expr ) => {
+                ($variant:ident, $getter:expr_2021 ) => {
                     metrics.set_if_some(GlobalMetric::$variant, pos.clone(), $getter)
                 };
             }
@@ -1176,7 +1178,7 @@ fn expand_kerning_to_brackets(
     bracket_glyph_map: &HashMap<&str, Vec<&GlyphName>>,
     participants: (KernSide, KernSide),
     value: OrderedFloat<f64>,
-) -> impl Iterator<Item = ((KernSide, KernSide), OrderedFloat<f64>)> {
+) -> impl Iterator<Item = ((KernSide, KernSide), OrderedFloat<f64>)> + use<> {
     let first_match = participants
         .0
         .glyph_name()
@@ -1373,7 +1375,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         let mut ir_glyph = ir_glyph.build()?;
         if self.is_bracket_layer() {
             let box_ = bracket_glyphs(glyph, axes)
-                .find(|x| x.1 .0 == ir_glyph.name)
+                .find(|x| x.1.0 == ir_glyph.name)
                 .unwrap()
                 .0;
             update_bracket_glyph_components(&mut ir_glyph, font, axes, &box_);
@@ -1590,9 +1592,9 @@ mod tests {
         paths::Paths,
         source::Source,
     };
-    use glyphs_reader::{glyphdata::Category, Font};
+    use glyphs_reader::{Font, glyphdata::Category};
 
-    use ir::{test_helpers::Round2, Panose};
+    use ir::{Panose, test_helpers::Round2};
     use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
@@ -1643,7 +1645,7 @@ mod tests {
         );
     }
 
-    fn context_for(glyphs_file: &Path) -> (impl Source, Context) {
+    fn context_for(glyphs_file: &Path) -> (impl Source + use<>, Context) {
         let source = GlyphsIrSource::new(glyphs_file).unwrap();
         let mut flags = Flags::default();
         flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
@@ -2829,17 +2831,21 @@ mod tests {
         let peso_anchors = context.get_anchor("peso");
 
         // non-bracket layer anchor x-positions are all even numbers
-        assert!(peso_anchors
-            .anchors
-            .iter()
-            .all(|a| (a.default_pos().x as u32).is_multiple_of(2)));
+        assert!(
+            peso_anchors
+                .anchors
+                .iter()
+                .all(|a| (a.default_pos().x as u32).is_multiple_of(2))
+        );
 
         // bracket anchor x positions are odd numbers
         let peso_bracket_anchors = context.get_anchor("peso.BRACKET.varAlt01");
-        assert!(peso_bracket_anchors
-            .anchors
-            .iter()
-            .all(|a| a.default_pos().x as u32 % 2 == 1));
+        assert!(
+            peso_bracket_anchors
+                .anchors
+                .iter()
+                .all(|a| a.default_pos().x as u32 % 2 == 1)
+        );
     }
 
     #[test]
@@ -2940,7 +2946,7 @@ mod tests {
         let box_ = condset_to_nbox(condset, &axes);
         let readable = box_
             .iter()
-            .map(|x| (x.0, x.1 .0.to_f64(), x.1 .1.to_f64()))
+            .map(|x| (x.0, x.1.0.to_f64(), x.1.1.to_f64()))
             .collect::<Vec<_>>();
 
         assert_eq!(readable, [(WGHT, 0.0, 0.25)])
@@ -2955,7 +2961,7 @@ mod tests {
         let box_ = condset_to_nbox(condset, &axes);
         let readable = box_
             .iter()
-            .map(|x| (x.0, x.1 .0.to_f64(), x.1 .1.to_f64()))
+            .map(|x| (x.0, x.1.0.to_f64(), x.1.1.to_f64()))
             .collect::<Vec<_>>();
 
         assert_eq!(readable, [(WGHT, 0.0, 1.0)])

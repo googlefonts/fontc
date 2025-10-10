@@ -18,7 +18,7 @@ use fontdrasil::{
 use kurbo::{Affine, BezPath};
 use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
-use write_fonts::{types::GlyphId16, OtRound};
+use write_fonts::{OtRound, types::GlyphId16};
 
 use crate::{
     error::{BadGlyph, Error},
@@ -379,8 +379,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
 
         trace!(
             "'{}' retains {} {component_affine:?} at {loc:?}",
-            original.name,
-            referenced_glyph.name
+            original.name, referenced_glyph.name
         );
         let inst = simple
             .sources
@@ -1121,14 +1120,18 @@ mod tests {
         );
 
         assert_simple(&simple);
-        assert!(composite
-            .sources()
-            .values()
-            .all(|gi| gi.contours.is_empty()));
-        assert!(composite
-            .sources()
-            .values()
-            .all(|gi| !gi.components.is_empty()));
+        assert!(
+            composite
+                .sources()
+                .values()
+                .all(|gi| gi.contours.is_empty())
+        );
+        assert!(
+            composite
+                .sources()
+                .values()
+                .all(|gi| !gi.components.is_empty())
+        );
     }
 
     #[test]
@@ -1299,10 +1302,12 @@ mod tests {
 
     fn assert_is_simple_glyph(context: &Context, glyph_name: GlyphName) {
         let glyph = context.get_glyph(glyph_name);
-        assert!(glyph
-            .sources()
-            .values()
-            .all(|inst| !inst.contours.is_empty() && inst.components.is_empty()));
+        assert!(
+            glyph
+                .sources()
+                .values()
+                .all(|inst| !inst.contours.is_empty() && inst.components.is_empty())
+        );
     }
 
     fn assert_is_flattened_component(context: &Context, glyph_name: GlyphName) {
@@ -1310,14 +1315,16 @@ mod tests {
         for (loc, inst) in glyph.sources().iter() {
             assert!(!inst.components.is_empty());
             for component in inst.components.iter() {
-                assert!(context
-                    .glyphs
-                    .get(&WorkId::Glyph(component.base.clone()))
-                    .sources()
-                    .get(loc)
-                    .unwrap()
-                    .components
-                    .is_empty());
+                assert!(
+                    context
+                        .glyphs
+                        .get(&WorkId::Glyph(component.base.clone()))
+                        .sources()
+                        .get(loc)
+                        .unwrap()
+                        .components
+                        .is_empty()
+                );
             }
         }
     }
@@ -1918,8 +1925,8 @@ mod tests {
     }
 
     #[test]
-    fn composite_with_intermediate_component_layer_and_another_nested_compoonent_without_intermediates(
-    ) {
+    fn composite_with_intermediate_component_layer_and_another_nested_compoonent_without_intermediates()
+     {
         // based on ecaron in Savate.glyphs
         let _ = env_logger::builder().is_test(true).try_init();
 

@@ -13,18 +13,17 @@ use smol_str::SmolStr;
 use write_fonts::{read::tables::name::Encoding, types::Tag};
 
 use super::{
-    glyph_range,
+    VariationInfo, glyph_range,
     tags::{self, WIN_PLATFORM_ID},
-    VariationInfo,
 };
 use crate::{
+    Diagnostic, GlyphMap, Kind, NodeOrToken,
     parse::SourceMap,
     token_tree::{
-        typed::{self, AstNode},
         Token,
+        typed::{self, AstNode},
     },
     typed::ContextualRuleNode,
-    Diagnostic, GlyphMap, Kind, NodeOrToken,
 };
 
 pub struct ValidationCtx<'a, V: VariationInfo> {
@@ -1290,10 +1289,10 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     }
 
     fn validate_value_record(&mut self, node: &typed::ValueRecord) {
-        if let Some(name) = node.named() {
-            if !self.value_record_defs.contains_key(&name.text) {
-                self.error(name.range(), "undefined value record name");
-            }
+        if let Some(name) = node.named()
+            && !self.value_record_defs.contains_key(&name.text)
+        {
+            self.error(name.range(), "undefined value record name");
         }
 
         for metric in node.all_metrics() {
@@ -1302,10 +1301,10 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     }
 
     fn validate_anchor(&mut self, anchor: &typed::Anchor) {
-        if let Some(name) = anchor.name() {
-            if !self.anchor_defs.contains_key(&name.text) {
-                self.error(name.range(), "undefined anchor name");
-            }
+        if let Some(name) = anchor.name()
+            && !self.anchor_defs.contains_key(&name.text)
+        {
+            self.error(name.range(), "undefined anchor name");
         }
         if let Some((one, two)) = anchor.coords() {
             self.validate_metric(&one);
@@ -1376,7 +1375,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         let mut iter = expr.items();
         match iter.next() {
             Some(typed::GlyphsAppExprItem::Operator(op)) => {
-                return self.error(op.range(), "expression must begin with value")
+                return self.error(op.range(), "expression must begin with value");
             }
             Some(typed::GlyphsAppExprItem::Ident(ident)) => {
                 self.validate_glyphsapp_number_name(&ident)
@@ -1386,14 +1385,14 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         while let Some(first) = iter.next() {
             match (&first, iter.next()) {
                 (typed::GlyphsAppExprItem::Operator(_), None) => {
-                    return self.error(first.range(), "expression should end in value")
+                    return self.error(first.range(), "expression should end in value");
                 }
                 (
                     typed::GlyphsAppExprItem::Operator(_),
                     Some(typed::GlyphsAppExprItem::Operator(op)),
                 ) => return self.error(op.range(), "operator can only follow value"),
                 (typed::GlyphsAppExprItem::Ident(_) | typed::GlyphsAppExprItem::Lit(_), _) => {
-                    return self.error(first.range(), "value cannot follow other value")
+                    return self.error(first.range(), "value cannot follow other value");
                 }
                 (
                     typed::GlyphsAppExprItem::Operator(_),

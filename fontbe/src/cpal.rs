@@ -7,7 +7,7 @@ use crate::{
 use fontdrasil::orchestration::{Access, Work};
 use fontir::{ir, orchestration::WorkId as FeWorkId};
 use log::debug;
-use write_fonts::{tables::cpal::ColorRecord, tables::cpal::Cpal, NullableOffsetMarker};
+use write_fonts::{NullableOffsetMarker, tables::cpal::ColorRecord, tables::cpal::Cpal};
 
 #[derive(Debug)]
 struct CpalWork {}

@@ -6,8 +6,8 @@ use std::ops::Range;
 use write_fonts::types::Tag;
 
 use super::{
-    lexer::{Kind as LexemeKind, Lexeme, Lexer, TokenSet},
     FileId,
+    lexer::{Kind as LexemeKind, Lexeme, Lexer, TokenSet},
 };
 use crate::token_tree::{AstSink, Kind};
 
@@ -409,12 +409,12 @@ impl<'b, 'a> Parser<'a, 'b> {
     }
 
     pub(crate) fn eat_tag(&mut self) -> Option<TagToken> {
-        if self.matches(0, TokenSet::TAG_LIKE) {
-            if let Ok(tag) = Tag::new_checked(self.nth_raw(0)) {
-                let range = self.nth_range(0);
-                self.do_bump::<1>(Kind::Tag);
-                return Some(TagToken { tag, range });
-            }
+        if self.matches(0, TokenSet::TAG_LIKE)
+            && let Ok(tag) = Tag::new_checked(self.nth_raw(0))
+        {
+            let range = self.nth_range(0);
+            self.do_bump::<1>(Kind::Tag);
+            return Some(TagToken { tag, range });
         }
         None
     }

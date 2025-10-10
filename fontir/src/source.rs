@@ -49,7 +49,7 @@ pub trait Source {
     ///
     /// When run work should update [crate::orchestration::Context] with [crate::ir::KerningInstance].
     fn create_kerning_instance_ir_work(&self, at: NormalizedLocation)
-        -> Result<Box<IrWork>, Error>;
+    -> Result<Box<IrWork>, Error>;
 
     /// Create a function that could be called to generate [crate::ir::ColorPalettes].
     ///

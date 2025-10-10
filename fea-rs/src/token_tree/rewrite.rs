@@ -5,7 +5,7 @@
 //! lookahead. Instead, when we encounter a mark glyph we parse the statement
 //! naively, and then reparse it again afterwards.
 
-use crate::{parse::FileId, Diagnostic, Level, NodeOrToken};
+use crate::{Diagnostic, Level, NodeOrToken, parse::FileId};
 
 use super::{AstSink, Kind};
 
@@ -152,16 +152,19 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
     // the backtrack sequence
     eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
     // the contextual sequence
-    rewriter.in_node(Kind::ContextSequence, |rewriter| loop {
-        if !at_glyph_or_glyph_class(rewriter.nth_kind(0)) || !rewriter.matches(1, Kind::SingleQuote)
-        {
-            break;
+    rewriter.in_node(Kind::ContextSequence, |rewriter| {
+        loop {
+            if !at_glyph_or_glyph_class(rewriter.nth_kind(0))
+                || !rewriter.matches(1, Kind::SingleQuote)
+            {
+                break;
+            }
+            rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
+                expect_glyph_or_glyph_class(rewriter);
+                rewriter.expect(Kind::SingleQuote);
+                eat_contextual_lookups(rewriter);
+            })
         }
-        rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
-            expect_glyph_or_glyph_class(rewriter);
-            rewriter.expect(Kind::SingleQuote);
-            eat_contextual_lookups(rewriter);
-        })
     });
     // the lookahead sequence
     eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
@@ -199,19 +202,22 @@ pub(crate) fn reparse_contextual_pos_rule(rewriter: &mut ReparseCtx) -> Kind {
     // there is one funny special case here,
     // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#example-3c
     let mut num_marked_glyphs_and_lookups = 0;
-    rewriter.in_node(Kind::ContextSequence, |rewriter| loop {
-        if !at_glyph_or_glyph_class(rewriter.nth_kind(0)) || !rewriter.matches(1, Kind::SingleQuote)
-        {
-            break;
-        }
-        num_marked_glyphs_and_lookups += 1;
-        rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
-            expect_glyph_or_glyph_class(rewriter);
-            rewriter.expect(Kind::SingleQuote);
-            if eat_contextual_lookups(rewriter) || rewriter.eat(Kind::ValueRecordNode) {
-                num_marked_glyphs_and_lookups += 1;
+    rewriter.in_node(Kind::ContextSequence, |rewriter| {
+        loop {
+            if !at_glyph_or_glyph_class(rewriter.nth_kind(0))
+                || !rewriter.matches(1, Kind::SingleQuote)
+            {
+                break;
             }
-        })
+            num_marked_glyphs_and_lookups += 1;
+            rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
+                expect_glyph_or_glyph_class(rewriter);
+                rewriter.expect(Kind::SingleQuote);
+                if eat_contextual_lookups(rewriter) || rewriter.eat(Kind::ValueRecordNode) {
+                    num_marked_glyphs_and_lookups += 1;
+                }
+            })
+        }
     });
 
     // the lookahead sequence
@@ -251,16 +257,18 @@ fn expect_ignore_rule_statement(rewriter: &mut ReparseCtx) {
     if has_mark_glyph {
         rewriter.in_node(Kind::IgnoreRuleStatementNode, |rewriter| {
             eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
-            rewriter.in_node(Kind::ContextSequence, |rewriter| loop {
-                if !at_glyph_or_glyph_class(rewriter.nth_kind(0))
-                    || !rewriter.matches(1, Kind::SingleQuote)
-                {
-                    break;
+            rewriter.in_node(Kind::ContextSequence, |rewriter| {
+                loop {
+                    if !at_glyph_or_glyph_class(rewriter.nth_kind(0))
+                        || !rewriter.matches(1, Kind::SingleQuote)
+                    {
+                        break;
+                    }
+                    rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
+                        expect_glyph_or_glyph_class(rewriter);
+                        rewriter.expect(Kind::SingleQuote);
+                    })
                 }
-                rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
-                    expect_glyph_or_glyph_class(rewriter);
-                    rewriter.expect(Kind::SingleQuote);
-                })
             });
             eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
         });
@@ -283,11 +291,13 @@ fn expect_ignore_rule_statement(rewriter: &mut ReparseCtx) {
 // impl common to eating backtrack or lookahead
 fn eat_non_marked_seqeunce(rewriter: &mut ReparseCtx, kind: Kind) -> bool {
     let mut ate_something = false;
-    rewriter.in_node(kind, |rewriter| loop {
-        if rewriter.matches(1, Kind::SingleQuote) || !eat_glyph_or_glyph_class(rewriter) {
-            break;
+    rewriter.in_node(kind, |rewriter| {
+        loop {
+            if rewriter.matches(1, Kind::SingleQuote) || !eat_glyph_or_glyph_class(rewriter) {
+                break;
+            }
+            ate_something = true;
         }
-        ate_something = true;
     });
     ate_something
 }

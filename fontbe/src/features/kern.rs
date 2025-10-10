@@ -6,8 +6,8 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{FeatureKey, FeatureProvider},
     GlyphSet, ParseTree,
+    compile::{FeatureKey, FeatureProvider},
 };
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -22,7 +22,7 @@ use icu_properties::props::BidiClass;
 use log::debug;
 use ordered_float::OrderedFloat;
 use write_fonts::{
-    read::{collections::IntSet, tables::gsub::Gsub, ReadError},
+    read::{ReadError, collections::IntSet, tables::gsub::Gsub},
     tables::{
         gdef::GlyphClassDef,
         gpos::builders::{PairPosBuilder, ValueRecordBuilder},
@@ -34,7 +34,7 @@ use write_fonts::{
 use crate::{
     error::Error,
     features::{
-        properties::{ScriptDirection, UnicodeShortName, COMMON_SCRIPT, INHERITED_SCRIPT},
+        properties::{COMMON_SCRIPT, INHERITED_SCRIPT, ScriptDirection, UnicodeShortName},
         resolve_variable_metric,
     },
     orchestration::{
@@ -43,7 +43,7 @@ use crate::{
     },
 };
 
-use super::{properties::CharMap, PendingLookup, DFLT_LANG, DFLT_SCRIPT};
+use super::{DFLT_LANG, DFLT_SCRIPT, PendingLookup, properties::CharMap};
 
 /// On Linux it took ~0.01 ms per loop, try to get enough to make fan out worthwhile
 /// based on empirical testing
@@ -303,10 +303,10 @@ fn lookup_kerning_value(
         (first_group.clone(), second.cloned()),
         (first_group.clone(), second_group.clone()),
     ] {
-        if let Some(pair) = first.zip(second) {
-            if let Some(value) = kerning.get(&pair) {
-                return *value;
-            }
+        if let Some(pair) = first.zip(second)
+            && let Some(value) = kerning.get(&pair)
+        {
+            return *value;
         }
     }
 
@@ -720,9 +720,11 @@ impl KernSplitContext {
                 }
 
                 let script_direction = ScriptDirection::for_script(scripts.first().unwrap());
-                assert!(scripts
-                    .iter()
-                    .all(|x| ScriptDirection::for_script(x) == script_direction));
+                assert!(
+                    scripts
+                        .iter()
+                        .all(|x| ScriptDirection::for_script(x) == script_direction)
+                );
                 let script_is_rtl = matches!(script_direction, ScriptDirection::RightToLeft);
                 let pair_is_rtl = script_is_rtl && !bidi_buf.contains(&BidiClass::LeftToRight);
                 if pair_is_rtl {
@@ -795,7 +797,7 @@ impl KernSplitContext {
     fn partition_by_script<'b>(
         &self,
         pair: &'b KernPair,
-    ) -> impl Iterator<Item = (BTreeSet<UnicodeShortName>, KernPair)> + 'b {
+    ) -> impl Iterator<Item = (BTreeSet<UnicodeShortName>, KernPair)> + 'b + use<'b> {
         //TODO: we could definitely make a reusable context and save all this
         //reallocation
         let mut resolved_scripts = HashMap::new();
@@ -837,39 +839,43 @@ impl KernSplitContext {
                 .map(move |s2d| (s1d.clone(), s2d))
         });
 
-        std::iter::from_fn(move || loop {
-            // we need to loop here so that we can skip some items
+        std::iter::from_fn(move || {
+            loop {
+                // we need to loop here so that we can skip some items
 
-            let ((side1_dir, side1_glyphs), (side2_dir, side2_glyphs)) = product.next()?;
+                let ((side1_dir, side1_glyphs), (side2_dir, side2_glyphs)) = product.next()?;
 
-            let side1: GlyphSet = side1_glyphs.iter().copied().collect();
-            let side1_scripts = side1
-                .iter()
-                .flat_map(|gid| resolved_scripts.get(&gid).unwrap().iter().copied())
-                .collect::<HashSet<_>>();
-            let side2: GlyphSet = side2_glyphs.iter().copied().collect();
-            let side2_scripts = side2
-                .iter()
-                .flat_map(|gid| resolved_scripts.get(&gid).unwrap().iter().copied())
-                .collect::<HashSet<_>>();
+                let side1: GlyphSet = side1_glyphs.iter().copied().collect();
+                let side1_scripts = side1
+                    .iter()
+                    .flat_map(|gid| resolved_scripts.get(&gid).unwrap().iter().copied())
+                    .collect::<HashSet<_>>();
+                let side2: GlyphSet = side2_glyphs.iter().copied().collect();
+                let side2_scripts = side2
+                    .iter()
+                    .flat_map(|gid| resolved_scripts.get(&gid).unwrap().iter().copied())
+                    .collect::<HashSet<_>>();
 
-            if !side1_dir.plays_nicely_with(&side2_dir) {
-                log::warn!("skipping kerning pair {side1:?}/{side2:?} with mixed direction {side1_dir:?}/{side2_dir:?}");
-                continue;
+                if !side1_dir.plays_nicely_with(&side2_dir) {
+                    log::warn!(
+                        "skipping kerning pair {side1:?}/{side2:?} with mixed direction {side1_dir:?}/{side2_dir:?}"
+                    );
+                    continue;
+                }
+
+                let mut scripts = side1_scripts
+                    .iter()
+                    .copied()
+                    .chain(side2_scripts.iter().copied())
+                    .collect::<BTreeSet<_>>();
+                if ![side1_scripts, side2_scripts]
+                    .iter()
+                    .all(|x| x.contains(&COMMON_SCRIPT))
+                {
+                    scripts.remove(&COMMON_SCRIPT);
+                }
+                return Some((scripts, pair.with_new_glyphs(side1, side2)));
             }
-
-            let mut scripts = side1_scripts
-                .iter()
-                .copied()
-                .chain(side2_scripts.iter().copied())
-                .collect::<BTreeSet<_>>();
-            if ![side1_scripts, side2_scripts]
-                .iter()
-                .all(|x| x.contains(&COMMON_SCRIPT))
-            {
-                scripts.remove(&COMMON_SCRIPT);
-            }
-            return Some((scripts, pair.with_new_glyphs(side1, side2)));
         })
     }
 
@@ -1278,7 +1284,7 @@ mod tests {
     }
 
     macro_rules! assert_eq_ignoring_ws {
-        ($left:expr, $right:expr) => {
+        ($left:expr_2021, $right:expr_2021) => {
             let left = normalize_layout_repr(&$left);
             let right = normalize_layout_repr(&$right);
             pretty_assertions::assert_str_eq!(left, right)

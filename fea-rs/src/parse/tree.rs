@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::source::Source;
 use super::{FileId, SourceList, SourceMap};
-use crate::{token_tree::typed, Diagnostic, Node};
+use crate::{Diagnostic, Node, token_tree::typed};
 
 /// A fully parsed feature file, with attached imports and a sourcemap.
 ///

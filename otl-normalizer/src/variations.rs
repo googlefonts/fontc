@@ -1,7 +1,7 @@
 use write_fonts::read::{
+    ReadError,
     tables::{layout::VariationIndex, variations::ItemVariationStore},
     types::F2Dot14,
-    ReadError,
 };
 
 type MasterLocations = Vec<Vec<F2Dot14>>;

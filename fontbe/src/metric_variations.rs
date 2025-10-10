@@ -12,7 +12,7 @@ use fontdrasil::{
 };
 use fontir::ir::{GlobalMetrics, GlobalMetricsInstance, Glyph, GlyphInstance, StaticMetadata};
 use write_fonts::{
-    dump_table, tables::variations::VariationRegion, validate::Validate, FontWrite, OtRound,
+    FontWrite, OtRound, dump_table, tables::variations::VariationRegion, validate::Validate,
 };
 
 use crate::error::Error;

@@ -10,7 +10,7 @@ extern crate proc_macro;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use std::iter;
-use syn::{parse_macro_input, spanned::Spanned, Data, DeriveInput, Fields};
+use syn::{Data, DeriveInput, Fields, parse_macro_input, spanned::Spanned};
 
 mod attrs;
 

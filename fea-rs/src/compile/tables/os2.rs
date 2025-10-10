@@ -61,8 +61,12 @@ fn set_bit_impl<const N: usize>(array: &mut [u32; N], bit: u8) {
 impl Os2Builder {
     pub fn build(&self) -> write_fonts::tables::os2::Os2 {
         let [ul_code_page_range_1, ul_code_page_range_2] = self.code_page_range.0;
-        let [ul_unicode_range_1, ul_unicode_range_2, ul_unicode_range_3, ul_unicode_range_4] =
-            self.unicode_range.0;
+        let [
+            ul_unicode_range_1,
+            ul_unicode_range_2,
+            ul_unicode_range_3,
+            ul_unicode_range_4,
+        ] = self.unicode_range.0;
 
         write_fonts::tables::os2::Os2 {
             us_weight_class: self.us_weight_class,

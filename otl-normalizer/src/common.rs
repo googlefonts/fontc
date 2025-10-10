@@ -9,11 +9,11 @@ use std::{
 
 use write_fonts::{
     read::{
+        ReadError,
         tables::{
             gpos::DeviceOrVariationIndex,
             layout::{FeatureList, ScriptList},
         },
-        ReadError,
     },
     tables::layout::LookupFlag,
     types::{GlyphId16, Tag},
@@ -109,13 +109,13 @@ impl DeviceOrDeltas {
 }
 
 impl LanguageSystem {
-    fn sort_key(&self) -> impl Ord {
+    fn sort_key(&self) -> impl Ord + use<> {
         (tag_to_int(self.script), tag_to_int(self.lang))
     }
 }
 
 impl Feature {
-    fn sort_key(&self) -> impl Ord {
+    fn sort_key(&self) -> impl Ord + use<> {
         (
             tag_to_int(self.feature),
             self.lang_systems

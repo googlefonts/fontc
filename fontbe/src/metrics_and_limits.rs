@@ -11,7 +11,7 @@ use std::{
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
-    dump_table,
+    OtRound, dump_table,
     tables::{
         glyf::{Bbox, Contour, Glyph as RawGlyph},
         head,
@@ -21,7 +21,6 @@ use write_fonts::{
         vmtx::LongMetric,
     },
     types::{FWord, GlyphId16, UfWord},
-    OtRound,
 };
 
 use crate::{

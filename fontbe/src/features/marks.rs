@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
-    compile::{FeatureProvider, LookupId, PendingLookup},
     GlyphSet,
+    compile::{FeatureProvider, LookupId, PendingLookup},
 };
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
@@ -22,7 +22,7 @@ use write_fonts::{
             AnchorBuilder, CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder,
             MarkToMarkBuilder,
         },
-        layout::{builders::CaretValueBuilder, LookupFlag},
+        layout::{LookupFlag, builders::CaretValueBuilder},
     },
     types::{GlyphId16, Tag},
 };
@@ -556,14 +556,14 @@ impl<'a> MarkLookupBuilder<'a> {
                 continue;
             }
             for anchor in anchors {
-                if let AnchorKind::Mark(group) = &anchor.kind {
-                    if liga_anchor_groups.contains(group) {
-                        groups
-                            .entry(group.to_owned())
-                            .or_default()
-                            .marks
-                            .push((*gid, anchor));
-                    }
+                if let AnchorKind::Mark(group) = &anchor.kind
+                    && liga_anchor_groups.contains(group)
+                {
+                    groups
+                        .entry(group.to_owned())
+                        .or_default()
+                        .marks
+                        .push((*gid, anchor));
                 }
             }
         }
@@ -1043,8 +1043,8 @@ mod tests {
     use write_fonts::{
         dump_table,
         read::{
-            tables::{gdef::Gdef as RGdef, gpos::Gpos as RGpos},
             FontRead,
+            tables::{gdef::Gdef as RGdef, gpos::Gpos as RGpos},
         },
         tables::gdef::CaretValue as RawCaretValue,
     };
@@ -1327,7 +1327,7 @@ mod tests {
         s.trim().chars().filter(|c| *c != ' ').collect()
     }
     macro_rules! assert_eq_ignoring_ws {
-        ($left:expr, $right:expr) => {
+        ($left:expr_2021, $right:expr_2021) => {
             let left = normalize_layout_repr(&$left);
             let right = normalize_layout_repr(&$right);
             pretty_assertions::assert_str_eq!(left, right)

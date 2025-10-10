@@ -4,8 +4,8 @@ use write_fonts::types::Tag;
 
 use crate::{
     parse::{
-        lexer::{Kind, TokenSet},
         Parser,
+        lexer::{Kind, TokenSet},
     },
     token_tree::Kind as AstKind,
 };
@@ -64,10 +64,10 @@ fn table_impl(parser: &mut Parser, tag: Tag, table_fn: impl Fn(&mut Parser, Toke
     }
 
     parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
-    if let Some(close) = parser.expect_tag(TokenSet::TOP_SEMI) {
-        if close.tag != tag {
-            parser.raw_error(close.range, format!("expected tag '{tag}'"));
-        }
+    if let Some(close) = parser.expect_tag(TokenSet::TOP_SEMI)
+        && close.tag != tag
+    {
+        parser.raw_error(close.range, format!("expected tag '{tag}'"));
     }
 
     parser.expect_semi();

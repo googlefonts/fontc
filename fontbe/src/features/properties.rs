@@ -5,12 +5,12 @@ use std::{
 };
 
 use icu_properties::{
-    props::{BidiClass, Script},
     CodePointMapData, PropertyNamesShort, PropertyParser,
+    props::{BidiClass, Script},
 };
 use tinystr::tinystr;
 use write_fonts::{
-    read::{collections::IntSet, tables::gsub::Gsub, ReadError},
+    read::{ReadError, collections::IntSet, tables::gsub::Gsub},
     types::{GlyphId, GlyphId16, Tag},
 };
 
@@ -324,7 +324,7 @@ fn ot_tag_to_unicode_short_name(tag: Tag) -> UnicodeShortName {
 }
 
 /// a script can correspond to one or two tags, because
-pub(crate) fn script_to_ot_tags(script: &UnicodeShortName) -> impl Iterator<Item = Tag> {
+pub(crate) fn script_to_ot_tags(script: &UnicodeShortName) -> impl Iterator<Item = Tag> + use<> {
     let mut out = [None, None];
     if let Some(tag) = SCRIPT_EXCEPTIONS.binary_search_exact(&script.as_str()) {
         out[0] = Some(tag);

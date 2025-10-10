@@ -6,9 +6,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use fontdrasil::types::GlyphName;
 use write_fonts::read::{
+    FontRef, TableProvider,
     tables::cmap::{CmapSubtable, EncodingRecord, PlatformId},
     types::{GlyphId16, Tag},
-    FontRef, TableProvider,
 };
 
 use crate::error::Error;

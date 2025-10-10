@@ -2,7 +2,7 @@
 name = "fontc"
 version = "0.3.2"
 build = "build.rs"
-edition = "2021"
+edition = "2024"
 license = "MIT/Apache-2.0"
 description = "A compiler for fonts."
 repository = "https://github.com/googlefonts/fontc"

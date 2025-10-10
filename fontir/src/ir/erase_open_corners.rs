@@ -325,11 +325,7 @@ impl PossibleCorner {
         let dist = p1.distance(p2);
         // the value of 0.2 was chosen experimentally (it lets our tests pass,
         // but doesn't seem to hurt any fonts in crater)
-        if dist < 0.2 {
-            Some(candidate)
-        } else {
-            None
-        }
+        if dist < 0.2 { Some(candidate) } else { None }
     }
 }
 
@@ -602,7 +598,7 @@ mod tests {
     }
 
     macro_rules! assert_approx {
-        ($left:expr, $right:expr) => {
+        ($left:expr_2021, $right:expr_2021) => {
             assert!(($left - $right).abs() < 1e-4, "{} !~= {}", $left, $right)
         };
     }
@@ -718,8 +714,14 @@ mod tests {
     fn test_double_corner_glyph() {
         let glyph = python_test_glyphs::doubleCornerGlyph();
         let after = erase_open_corners(&glyph).unwrap();
-        let &[PathEl::MoveTo(one), PathEl::LineTo(two), PathEl::LineTo(tre), PathEl::LineTo(four), PathEl::LineTo(end), PathEl::ClosePath] =
-            after.elements()
+        let &[
+            PathEl::MoveTo(one),
+            PathEl::LineTo(two),
+            PathEl::LineTo(tre),
+            PathEl::LineTo(four),
+            PathEl::LineTo(end),
+            PathEl::ClosePath,
+        ] = after.elements()
         else {
             panic!("wrong path elements: {:?}", after.elements())
         };
@@ -742,8 +744,14 @@ mod tests {
     fn test_double_corner_glyph_wrap() {
         let glyph = python_test_glyphs::doubleCornerGlyphTrickyBitInMiddle();
         let after = erase_open_corners(&glyph).unwrap();
-        let &[PathEl::MoveTo(one), PathEl::LineTo(two), PathEl::LineTo(tre), PathEl::LineTo(four), PathEl::LineTo(end), PathEl::ClosePath] =
-            after.elements()
+        let &[
+            PathEl::MoveTo(one),
+            PathEl::LineTo(two),
+            PathEl::LineTo(tre),
+            PathEl::LineTo(four),
+            PathEl::LineTo(end),
+            PathEl::ClosePath,
+        ] = after.elements()
         else {
             panic!("wrong path elements: {:?}", after.elements())
         };
@@ -963,16 +971,24 @@ mod tests {
     fn same_sidedness() {
         let origin = Point { x: 1.0, y: 1.0 };
         // both right
-        assert!(origin
-            .points_are_on_same_side(origin + Vec2::new(1.0, 1.0), origin + Vec2::new(1.0, -1.0)));
+        assert!(
+            origin.points_are_on_same_side(
+                origin + Vec2::new(1.0, 1.0),
+                origin + Vec2::new(1.0, -1.0)
+            )
+        );
         // both left
         assert!(origin.points_are_on_same_side(
             origin + Vec2::new(-1.0, 1.0),
             origin + Vec2::new(-1.0, -1.0)
         ));
         //// both above
-        assert!(origin
-            .points_are_on_same_side(origin + Vec2::new(-1.0, 1.0), origin + Vec2::new(-1.0, 1.0)));
+        assert!(
+            origin.points_are_on_same_side(
+                origin + Vec2::new(-1.0, 1.0),
+                origin + Vec2::new(-1.0, 1.0)
+            )
+        );
 
         // both below
         assert!(origin.points_are_on_same_side(
@@ -981,13 +997,25 @@ mod tests {
         ));
 
         // one up-left and one down-right (fail)
-        assert!(!origin
-            .points_are_on_same_side(origin + Vec2::new(-1.0, 1.0), origin + Vec2::new(1.0, -1.0)));
+        assert!(
+            !origin.points_are_on_same_side(
+                origin + Vec2::new(-1.0, 1.0),
+                origin + Vec2::new(1.0, -1.0)
+            )
+        );
 
         // zero doesn't count
-        assert!(!origin
-            .points_are_on_same_side(origin + Vec2::new(0.0, -1.0), origin + Vec2::new(0.0, 1.0)));
-        assert!(!origin
-            .points_are_on_same_side(origin + Vec2::new(-1.0, 0.0), origin + Vec2::new(1.0, 0.0)));
+        assert!(
+            !origin.points_are_on_same_side(
+                origin + Vec2::new(0.0, -1.0),
+                origin + Vec2::new(0.0, 1.0)
+            )
+        );
+        assert!(
+            !origin.points_are_on_same_side(
+                origin + Vec2::new(-1.0, 0.0),
+                origin + Vec2::new(1.0, 0.0)
+            )
+        );
     }
 }

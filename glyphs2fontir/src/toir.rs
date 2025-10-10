@@ -46,9 +46,7 @@ pub(crate) fn to_ir_contours_and_components(
 fn to_ir_component(glyph_name: GlyphName, component: &Component) -> ir::Component {
     trace!(
         "{} reuses {} with transform {:?}",
-        glyph_name,
-        component.name,
-        component.transform
+        glyph_name, component.name, component.transform
     );
     ir::Component {
         base: component.name.as_str().into(),

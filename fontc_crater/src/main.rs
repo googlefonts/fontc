@@ -10,7 +10,7 @@ use std::{
 };
 
 use clap::Parser;
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::{ThreadPoolBuilder, prelude::*};
 
 mod args;
 mod ci;
@@ -18,7 +18,7 @@ mod error;
 mod target;
 mod ttx_diff_runner;
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use args::{Args, Commands};
 use error::Error;

@@ -783,15 +783,11 @@ impl RawCustomParameters {
             // we need to use a macro here because you can't pass the name of a field to a
             // function.
             macro_rules! add_and_report_issues {
-                ($field:ident, $converter:path) => {{
-                    add_and_report_issues!($field, $converter(value))
-                }};
+                ($field:ident, $converter:path) => {{ add_and_report_issues!($field, $converter(value)) }};
 
-                ($field:ident, $converter:path, into) => {{
-                    add_and_report_issues!($field, $converter(value).map(Into::into))
-                }};
+                ($field:ident, $converter:path, into) => {{ add_and_report_issues!($field, $converter(value).map(Into::into)) }};
 
-                ($field:ident, $value_expr:expr) => {{
+                ($field:ident, $value_expr:expr_2021) => {{
                     let value = $value_expr;
 
                     if value.is_none() {
@@ -1440,7 +1436,7 @@ trait GlyphsV2OrderedAxes {
             _ => {
                 return Err(Error::StructuralError(format!(
                     "We don't know what field to use for axis {nth_axis}"
-                )))
+                )));
             }
         })
     }
@@ -1921,15 +1917,14 @@ impl RawFont {
             .collect::<Vec<_>>();
 
             // append "Italic" if italic angle != 0
-            if let Some(italic_angle) = master.italic_angle {
-                if italic_angle != 0.0
-                    && (names.is_empty()
-                        || !names
-                            .iter()
-                            .any(|name| *name == "Italic" || *name == "Oblique"))
-                {
-                    names.push("Italic");
-                }
+            if let Some(italic_angle) = master.italic_angle
+                && italic_angle != 0.0
+                && (names.is_empty()
+                    || !names
+                        .iter()
+                        .any(|name| *name == "Italic" || *name == "Oblique"))
+            {
+                names.push("Italic");
             }
             // if all are empty, default to "Regular"
             master.name = if names.is_empty() {
@@ -2507,13 +2502,13 @@ impl RawGlyph {
             .map(|s| parse_codepoint_str(&s, format_version.codepoint_radix()))
             .unwrap_or_default();
 
-        if category.is_none() || sub_category.is_none() || production_name.is_none() {
-            if let Some(result) = glyph_data.query(&self.glyphname, Some(&codepoints)) {
-                // if they were manually set don't change them, otherwise do
-                category = category.or(Some(result.category));
-                sub_category = sub_category.or(result.subcategory);
-                production_name = production_name.or(result.production_name.map(Into::into));
-            }
+        if (category.is_none() || sub_category.is_none() || production_name.is_none())
+            && let Some(result) = glyph_data.query(&self.glyphname, Some(&codepoints))
+        {
+            // if they were manually set don't change them, otherwise do
+            category = category.or(Some(result.category));
+            sub_category = sub_category.or(result.subcategory);
+            production_name = production_name.or(result.production_name.map(Into::into));
         }
 
         Ok(Glyph {
@@ -3238,7 +3233,7 @@ impl From<Affine> for AffineForEqAndHash {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{plist::FromPlist, Font, FontMaster, Node, Shape};
+    use crate::{Font, FontMaster, Node, Shape, plist::FromPlist};
     use std::{
         collections::{BTreeMap, BTreeSet, HashSet},
         path::{Path, PathBuf},
@@ -3933,11 +3928,13 @@ etc;
             ..Default::default()
         };
 
-        assert!(feature
-            .raw_feature_to_feature()
-            .unwrap()
-            .content
-            .contains("# Automatic Code"))
+        assert!(
+            feature
+                .raw_feature_to_feature()
+                .unwrap()
+                .content
+                .contains("# Automatic Code")
+        )
     }
 
     #[test]
@@ -3948,11 +3945,13 @@ etc;
             ..Default::default()
         };
 
-        assert!(!feature
-            .raw_feature_to_feature()
-            .unwrap()
-            .content
-            .contains("# Automatic Code"))
+        assert!(
+            !feature
+                .raw_feature_to_feature()
+                .unwrap()
+                .content
+                .contains("# Automatic Code")
+        )
     }
 
     #[test]
@@ -4226,11 +4225,11 @@ etc;
     #[test]
     fn parse_alignment_zone_smoke_test() {
         assert_eq!(
-            super::parse_alignment_zone("{1, -12}").map(|x| (x.0 .0, x.1 .0)),
+            super::parse_alignment_zone("{1, -12}").map(|x| (x.0.0, x.1.0)),
             Some((1., -12.))
         );
         assert_eq!(
-            super::parse_alignment_zone("{-5001, 12}").map(|x| (x.0 .0, x.1 .0)),
+            super::parse_alignment_zone("{-5001, 12}").map(|x| (x.0.0, x.1.0)),
             Some((-5001., 12.))
         );
     }
@@ -4344,9 +4343,10 @@ etc;
             panic!("wrong number of features");
         };
 
-        assert!(ss01
-            .content
-            .contains("name 3 1 0x409 \"Alternate placeholder\""));
+        assert!(
+            ss01.content
+                .contains("name 3 1 0x409 \"Alternate placeholder\"")
+        );
         assert!(!ss02.content.contains("name 3 1"))
     }
 
@@ -4677,14 +4677,18 @@ etc;
         assert_eq!(glyph.layers.len(), 3);
         assert_eq!(glyph.bracket_layers.len(), 3);
 
-        assert!(glyph
-            .layers
-            .iter()
-            .all(|l| l.attributes.axis_rules.is_empty()));
-        assert!(glyph
-            .bracket_layers
-            .iter()
-            .all(|l| !l.attributes.axis_rules.is_empty()));
+        assert!(
+            glyph
+                .layers
+                .iter()
+                .all(|l| l.attributes.axis_rules.is_empty())
+        );
+        assert!(
+            glyph
+                .bracket_layers
+                .iter()
+                .all(|l| !l.attributes.axis_rules.is_empty())
+        );
     }
 
     #[test]
@@ -4694,14 +4698,18 @@ etc;
         assert_eq!(glyph.layers.len(), 2);
         assert_eq!(glyph.bracket_layers.len(), 2);
 
-        assert!(glyph
-            .layers
-            .iter()
-            .all(|l| l.attributes.axis_rules.is_empty()));
-        assert!(glyph
-            .bracket_layers
-            .iter()
-            .all(|l| !l.attributes.axis_rules.is_empty()));
+        assert!(
+            glyph
+                .layers
+                .iter()
+                .all(|l| l.attributes.axis_rules.is_empty())
+        );
+        assert!(
+            glyph
+                .bracket_layers
+                .iter()
+                .all(|l| !l.attributes.axis_rules.is_empty())
+        );
     }
 
     #[test]

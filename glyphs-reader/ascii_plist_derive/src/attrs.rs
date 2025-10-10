@@ -1,6 +1,6 @@
 use syn::{
-    punctuated::Punctuated, spanned::Spanned, Attribute, Expr, ExprLit, Lit, Meta, MetaNameValue,
-    Token,
+    Attribute, Expr, ExprLit, Lit, Meta, MetaNameValue, Token, punctuated::Punctuated,
+    spanned::Spanned,
 };
 
 static IGNORE: &str = "ignore";

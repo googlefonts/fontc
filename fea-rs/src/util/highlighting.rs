@@ -2,7 +2,7 @@
 
 use std::{fmt::Write, path::Path};
 
-use crate::{parse::Source, Diagnostic, Kind, Level};
+use crate::{Diagnostic, Kind, Level, parse::Source};
 use ansi_term::{Colour, Style};
 
 /// Return the appropriate visual style for this token kind.
@@ -40,12 +40,8 @@ pub fn style_for_kind(kind: Kind) -> Style {
 const MAX_PRINT_WIDTH: usize = 100;
 
 macro_rules! style_or_dont {
-    ($tty:expr, $kind:expr) => {
-        if $tty {
-            $kind.into()
-        } else {
-            Style::default()
-        }
+    ($tty:expr_2021, $kind:expr_2021) => {
+        if $tty { $kind.into() } else { Style::default() }
     };
 }
 

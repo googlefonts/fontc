@@ -4,9 +4,9 @@ use std::{
 };
 
 use write_fonts::read::{
+    ReadError,
     tables::gpos::{MarkBasePosFormat1, MarkLigPosFormat1, MarkMarkPosFormat1},
     types::GlyphId16,
-    ReadError,
 };
 
 use crate::{common::GlyphSet, glyph_names::NameMap, variations::DeltaComputer};

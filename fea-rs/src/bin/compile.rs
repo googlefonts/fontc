@@ -4,12 +4,11 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use fea_rs::{
-    compile::{
-        self,
-        error::{CompilerError, FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
-        Compiler, MockVariationInfo, NopFeatureProvider, Opts,
-    },
     GlyphMap,
+    compile::{
+        self, Compiler, MockVariationInfo, NopFeatureProvider, Opts,
+        error::{CompilerError, FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
+    },
 };
 
 /// Attempt to compile features into a font file.

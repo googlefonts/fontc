@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use write_fonts::read::{tables::gpos::CursivePosFormat1, ReadError};
+use write_fonts::read::{ReadError, tables::gpos::CursivePosFormat1};
 
 use crate::{
     common::PrintNames,

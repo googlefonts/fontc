@@ -1,6 +1,6 @@
 //! Logic for tracking features during compilation
 
-use std::collections::{hash_map, BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, hash_map};
 
 use smol_str::SmolStr;
 use write_fonts::{
@@ -276,7 +276,10 @@ impl AllFeatures {
                     hash_map::Entry::Occupied(entry) => {
                         let var_lookups = entry.into_mut();
                         var_lookups.extend_from_slice(&lookups);
-                        log::warn!("feature variations exist for {} in FEA and also in feature writer; this is weird!", key.feature);
+                        log::warn!(
+                            "feature variations exist for {} in FEA and also in feature writer; this is weird!",
+                            key.feature
+                        );
                     }
                     hash_map::Entry::Vacant(entry) => {
                         entry.insert(lookups);

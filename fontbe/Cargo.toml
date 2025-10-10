@@ -1,7 +1,7 @@
 [package]
 name = "fontbe"
 version = "0.2.3"
-edition = "2021"
+edition = "2024"
 license = "MIT/Apache-2.0"
 description = "the backend for fontc, a font compiler."
 repository = "https://github.com/googlefonts/fontmake-rs"

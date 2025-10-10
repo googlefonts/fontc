@@ -1,8 +1,8 @@
 use super::glyph;
 
 use crate::parse::{
-    lexer::{Kind, TokenSet},
     Parser,
+    lexer::{Kind, TokenSet},
 };
 use crate::token_tree::Kind as AstKind;
 
