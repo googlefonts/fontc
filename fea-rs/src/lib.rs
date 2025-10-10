@@ -19,4 +19,4 @@ pub use common::{GlyphIdent, GlyphMap, GlyphSet};
 pub use compile::{Compiler, Opts};
 pub use diagnostic::{Diagnostic, DiagnosticSet, Level};
 pub use parse::{ParseTree, TokenSet};
-pub use token_tree::{typed, Kind, Node, NodeOrToken, Token};
+pub use token_tree::{Kind, Node, NodeOrToken, Token, typed};

@@ -5,7 +5,7 @@ use std::{ops::Range, sync::Arc};
 use smol_str::SmolStr;
 
 use crate::parse::{FileId, IncludeStatement};
-use crate::{diagnostic::Diagnostic, GlyphMap, Level};
+use crate::{GlyphMap, Level, diagnostic::Diagnostic};
 
 use self::cursor::Cursor;
 use typed::AstNode as _;
@@ -570,7 +570,14 @@ fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
             if let Some(prev_idx) = solution.replace(idx) {
                 let (head1, tail1) = text.split_at(prev_idx);
                 let (head2, tail2) = text.split_at(idx);
-                let message = format!("the name '{}' contains multiple possible glyph ranges ({} to {} and {} to {}). Please insert spaces around the '-' to clarify your intent.", text, head1, tail1.trim_end_matches('-'), head2, tail2.trim_end_matches('-'));
+                let message = format!(
+                    "the name '{}' contains multiple possible glyph ranges ({} to {} and {} to {}). Please insert spaces around the '-' to clarify your intent.",
+                    text,
+                    head1,
+                    tail1.trim_end_matches('-'),
+                    head2,
+                    tail2.trim_end_matches('-')
+                );
                 return Err(message);
             }
         }

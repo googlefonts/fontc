@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
-    compile::{FeatureProvider, LookupId, PendingLookup},
     GlyphSet,
+    compile::{FeatureProvider, LookupId, PendingLookup},
 };
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
@@ -22,7 +22,7 @@ use write_fonts::{
             AnchorBuilder, CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder,
             MarkToMarkBuilder,
         },
-        layout::{builders::CaretValueBuilder, LookupFlag},
+        layout::{LookupFlag, builders::CaretValueBuilder},
     },
     types::{GlyphId16, Tag},
 };
@@ -1043,8 +1043,8 @@ mod tests {
     use write_fonts::{
         dump_table,
         read::{
-            tables::{gdef::Gdef as RGdef, gpos::Gpos as RGpos},
             FontRead,
+            tables::{gdef::Gdef as RGdef, gpos::Gpos as RGpos},
         },
         tables::gdef::CaretValue as RawCaretValue,
     };

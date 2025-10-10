@@ -5,7 +5,7 @@
 #![allow(dead_code)]
 use std::ops::Range;
 
-use super::{cursor::Cursor, Node, TreeBuilder};
+use super::{Node, TreeBuilder, cursor::Cursor};
 
 /// if 'skip_parent' is true, then the children of inserted nodes are added
 /// but the inserted node itself is skipped.
@@ -100,9 +100,9 @@ enum EditOp {
 #[cfg(test)]
 mod tests {
     use crate::{
+        TokenSet,
         parse::{FileId, Parser},
         token_tree::AstSink,
-        TokenSet,
     };
 
     use super::*;

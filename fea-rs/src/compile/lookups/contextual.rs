@@ -6,19 +6,18 @@ use std::{
 };
 
 use write_fonts::{
+    FontWrite,
     tables::{
         gpos::builders::ValueRecordBuilder as ValueRecord,
         gsub::{self as write_gsub, ReverseChainSingleSubstFormat1},
         layout::{
-            self as write_layout,
+            self as write_layout, LookupFlag,
             builders::{ClassDefBuilder, CoverageTableBuilder},
-            LookupFlag,
         },
         variations::ivs_builder::VariationStoreBuilder,
     },
     types::GlyphId16,
     validate::Validate,
-    FontWrite,
 };
 
 use crate::common::GlyphOrClass;
@@ -694,7 +693,7 @@ impl SubContextBuilder {
 }
 impl SubChainContextBuilder {
     pub(crate) fn bump_all_lookup_ids(&mut self, from: usize, by: usize) {
-        self.0 .0.bump_all_lookup_ids(from, by)
+        self.0.0.bump_all_lookup_ids(from, by)
     }
 
     pub(crate) fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {
@@ -720,13 +719,13 @@ impl Builder for SubChainContextBuilder {
 
 impl RemapIds for PosChainContextBuilder {
     fn remap_ids(&mut self, id_map: &super::LookupIdMap) {
-        self.0 .0.remap_ids(id_map);
+        self.0.0.remap_ids(id_map);
     }
 }
 
 impl RemapIds for SubChainContextBuilder {
     fn remap_ids(&mut self, id_map: &super::LookupIdMap) {
-        self.0 .0.remap_ids(id_map);
+        self.0.0.remap_ids(id_map);
     }
 }
 // invariant: at least one item must be Some

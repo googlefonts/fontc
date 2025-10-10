@@ -6,12 +6,12 @@ use std::{
 
 use write_fonts::{
     read::{
+        FontData, ReadError,
         tables::{
             gdef::{Gdef, MarkGlyphSets},
             gpos::{AnchorTable, Gpos, PositionLookupList, PositionSubtables, ValueRecord},
             layout::DeviceOrVariationIndex,
         },
-        FontData, ReadError,
     },
     tables::layout::LookupFlag,
     types::GlyphId16,

@@ -15,26 +15,26 @@ use fontdrasil::{
 use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
-        AnchorBuilder, Condition, ConditionSet, FeaturesSource, GdefCategories, GlobalMetric,
-        GlobalMetricsBuilder, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
-        MetaTableValues, NameBuilder, NameKey, NamedInstance, Panose, PostscriptNames, Rule,
-        StaticMetadata, Substitution, VariableFeature, DEFAULT_VENDOR_ID,
+        AnchorBuilder, Condition, ConditionSet, DEFAULT_VENDOR_ID, FeaturesSource, GdefCategories,
+        GlobalMetric, GlobalMetricsBuilder, GlyphOrder, KernGroup, KernSide, KerningGroups,
+        KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance, Panose,
+        PostscriptNames, Rule, StaticMetadata, Substitution, VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
 };
-use log::{debug, log_enabled, trace, warn, Level};
+use log::{Level, debug, log_enabled, trace, warn};
 use norad::{
+    DataRequest,
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
-    DataRequest,
 };
 use plist::{Dictionary, Value};
 use write_fonts::{
+    OtRound,
     read::tables::gasp::GaspRangeBehavior,
     tables::{gasp::GaspRange, gdef::GlyphClassDef, head, os2::SelectionFlags},
     types::{NameId, Tag},
-    OtRound,
 };
 
 use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph};
@@ -259,7 +259,10 @@ impl Source for DesignSpaceIrSource {
                 }
                 // Default master went first, so if we've never seen this glyph before that's weird
                 if source_idx != default_master_idx && !glyphs.contains_key(&glyph_name) {
-                    warn!("The glyph name '{:?}' exists in {} but not in the default master and will be ignored", glyph_name, source.filename);
+                    warn!(
+                        "The glyph name '{:?}' exists in {} but not in the default master and will be ignored",
+                        glyph_name, source.filename
+                    );
                     continue;
                 }
 
@@ -419,7 +422,9 @@ fn merge_default_master_lib_into_designspace_lib(
                 base.insert(key, value);
             }
             (Some(a), b) if a != &b => {
-                log::warn!("conflicting lib key '{key}' will not be merged. Designspace is '{a:?}', ufo is '{b:?}'");
+                log::warn!(
+                    "conflicting lib key '{key}' will not be merged. Designspace is '{a:?}', ufo is '{b:?}'"
+                );
             }
             _ => (),
         }
@@ -608,7 +613,9 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<Option<PostscriptNa
             .filter(|ps_name| !seen_values.insert((*ps_name).clone()))
             .collect::<BTreeSet<_>>();
         if !duplicate_values.is_empty() {
-            warn!("public.postscriptNames: the following production names are used by multiple glyphs: {duplicate_values:?}");
+            warn!(
+                "public.postscriptNames: the following production names are used by multiple glyphs: {duplicate_values:?}"
+            );
         }
     }
     Ok(Some(postscript_names))
@@ -1183,7 +1190,7 @@ pub fn to_ir_variations(
             return Err(Error::InvalidEntry(
                 "wrong type for lib key",
                 FEATURE_VARS_FEATURE_TAG.to_string(),
-            ))
+            ));
         }
         //https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#rules-element
         None => match rules.processing {
@@ -1462,7 +1469,9 @@ impl Work<Context, WorkId, Error> for FeatureWork {
         let fea_files = self.fea_files.as_ref();
         for fea_file in fea_files.iter().skip(1) {
             if !files_identical(&fea_files[0], fea_file)? {
-                warn!("Bailing out due to non-identical feature files. This is an unnecessary limitation.");
+                warn!(
+                    "Bailing out due to non-identical feature files. This is an unnecessary limitation."
+                );
                 return Err(Error::NonIdenticalFea(
                     fea_files[0].to_path_buf(),
                     fea_file.to_path_buf(),
@@ -1780,8 +1789,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!(
             "Generate glyph IR for {:?} from {:#?}",
-            self.glyph_name,
-            self.glif_files
+            self.glyph_name, self.glif_files
         );
         let static_metadata = context.static_metadata.get();
 
@@ -1863,8 +1871,8 @@ mod tests {
     };
     use fontir::{
         ir::{
-            test_helpers::Round2, AnchorKind, GlobalMetricsInstance, GlyphOrder, NameKey,
-            PostscriptNames,
+            AnchorKind, GlobalMetricsInstance, GlyphOrder, NameKey, PostscriptNames,
+            test_helpers::Round2,
         },
         orchestration::{Context, Flags, WorkId},
         paths::Paths,

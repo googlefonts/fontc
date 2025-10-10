@@ -9,8 +9,8 @@
 use std::{env, path::PathBuf};
 
 use crate::{
-    util::ttx::{self as test_utils, Filter, Report, TestCase, TestResult},
     GlyphIdent, GlyphMap,
+    util::ttx::{self as test_utils, Filter, Report, TestCase, TestResult},
 };
 
 static PARSE_GOOD: &str = "./test-data/parse-tests/good";

@@ -3,6 +3,7 @@
 //! See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#usmaxcontext>
 
 use write_fonts::{
+    NullableOffsetMarker, OffsetMarker,
     tables::{
         gpos::{
             ExtensionSubtable as GposExt, Gpos, PositionChainContext, PositionLookup,
@@ -21,7 +22,6 @@ use write_fonts::{
             SequenceRuleSet,
         },
     },
-    NullableOffsetMarker, OffsetMarker,
 };
 
 /// main entry point for computing max context.

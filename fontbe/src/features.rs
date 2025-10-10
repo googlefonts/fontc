@@ -14,13 +14,13 @@ use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
 use fea_rs::{
+    DiagnosticSet, GlyphMap, Opts, ParseTree,
     compile::{
-        error::CompilerError, Compilation, FeatureBuilder, FeatureProvider, NopFeatureProvider,
-        PendingLookup, VariationInfo,
+        Compilation, FeatureBuilder, FeatureProvider, NopFeatureProvider, PendingLookup,
+        VariationInfo, error::CompilerError,
     },
     parse::{FileSystemResolver, SourceLoadError, SourceResolver},
     typed::{AstNode, LanguageSystem},
-    DiagnosticSet, GlyphMap, Opts, ParseTree,
 };
 
 use fontir::{
@@ -36,9 +36,9 @@ use fontdrasil::{
 };
 use properties::UnicodeShortName;
 use write_fonts::{
+    OtRound,
     tables::{gdef::GlyphClassDef, layout::ClassDef, variations::VariationRegion},
     types::{GlyphId16, NameId, Tag},
-    OtRound,
 };
 
 use crate::{

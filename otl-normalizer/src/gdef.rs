@@ -4,11 +4,11 @@ use std::{fmt::Display, io};
 
 use fontdrasil::types::GlyphName;
 use write_fonts::read::{
-    tables::gdef::{CaretValue, Gdef, LigGlyph},
     ReadError,
+    tables::gdef::{CaretValue, Gdef, LigGlyph},
 };
 
-use crate::{common::DeviceOrDeltas, variations::DeltaComputer, Error, NameMap};
+use crate::{Error, NameMap, common::DeviceOrDeltas, variations::DeltaComputer};
 
 /// Print normalized GDEF ligature carets
 pub fn print(f: &mut dyn io::Write, table: &Gdef, names: &NameMap) -> Result<(), Error> {

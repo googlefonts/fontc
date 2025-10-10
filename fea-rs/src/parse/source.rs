@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{util, Diagnostic};
+use crate::{Diagnostic, util};
 
 /// Uniquely identifies a source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]

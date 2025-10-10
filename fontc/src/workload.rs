@@ -4,8 +4,8 @@ use std::{
     collections::{HashMap, HashSet},
     panic::AssertUnwindSafe,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -16,8 +16,8 @@ use fontbe::{
     colr::create_colr_work,
     cpal::create_cpal_work,
     features::{
-        create_gather_ir_kerning_work, create_kern_segment_work, create_kerns_work,
-        create_mark_work, FeatureCompilationWork, FeatureFirstPassWork,
+        FeatureCompilationWork, FeatureFirstPassWork, create_gather_ir_kerning_work,
+        create_kern_segment_work, create_kerns_work, create_mark_work,
     },
     font::create_font_work,
     fvar::create_fvar_work,
@@ -50,9 +50,9 @@ use fontir::{
 use log::{debug, trace, warn};
 
 use crate::{
+    Error,
     timing::{JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
-    Error,
 };
 
 /// A set of interdependent jobs to execute.
@@ -589,7 +589,11 @@ impl Workload {
                 self.update_launchable(&mut launchable);
                 if launchable.is_empty() && !self.jobs_pending.values().any(|j| j.running) {
                     if log::log_enabled!(log::Level::Warn) {
-                        warn!("{}/{} jobs have succeeded, nothing is running, and nothing is launchable", self.success.len(), self.job_count);
+                        warn!(
+                            "{}/{} jobs have succeeded, nothing is running, and nothing is launchable",
+                            self.success.len(),
+                            self.job_count
+                        );
                         for pending in self.jobs_pending.keys() {
                             warn!("  blocked: {pending:?}");
                         }

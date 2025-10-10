@@ -9,10 +9,10 @@ use fontdrasil::{
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::tables::{
     hvar::Hvar,
-    variations::{ivs_builder::VariationStoreBuilder, DeltaSetIndexMap},
+    variations::{DeltaSetIndexMap, ivs_builder::VariationStoreBuilder},
 };
 
-use crate::metric_variations::{table_size, AdvanceDeltas, DeltaDirection};
+use crate::metric_variations::{AdvanceDeltas, DeltaDirection, table_size};
 use crate::{
     error::Error,
     orchestration::{AnyWorkId, BeWork, Context, WorkId},
@@ -76,10 +76,12 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             }
             // sanity checks
             assert_eq!(var_idxes.len(), glyph_order.len());
-            assert!(var_idxes
-                .drain(..)
-                .enumerate()
-                .all(|(i, idx)| i as u32 == idx));
+            assert!(
+                var_idxes
+                    .drain(..)
+                    .enumerate()
+                    .all(|(i, idx)| i as u32 == idx)
+            );
             // we don't use the returned (identity) map in this case
             Some(direct_builder.build().0)
         } else {

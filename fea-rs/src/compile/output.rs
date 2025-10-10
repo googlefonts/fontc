@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 
 use write_fonts::{
+    BuilderError, FontBuilder,
     tables::{
         self as wtables, gdef::GlyphClassDef, layout::FeatureParams, maxp::Maxp, stat::AxisValue,
     },
     types::{GlyphId16, NameId},
-    BuilderError, FontBuilder,
 };
 
 use super::Opts;

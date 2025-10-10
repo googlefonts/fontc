@@ -9,12 +9,12 @@ use std::collections::{BTreeMap, HashMap};
 
 use indexmap::IndexMap;
 use kurbo::{Affine, Vec2};
-use smol_str::{format_smolstr, SmolStr};
+use smol_str::{SmolStr, format_smolstr};
 
 use crate::{
+    Component, Font, Glyph, Layer, Shape,
     font::Anchor,
     glyphdata::{Category, Subcategory},
-    Component, Font, Glyph, Layer, Shape,
 };
 
 impl fontdrasil::util::CompositeLike for Glyph {
@@ -409,9 +409,9 @@ mod tests {
     use kurbo::Point;
 
     use crate::{
+        Layer, Shape,
         font::{AxisRule, LayerAttributes},
         glyphdata::GlyphData,
-        Layer, Shape,
     };
 
     use super::*;
@@ -1011,11 +1011,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(expected.glyphs.len(), font.glyphs.len());
-        assert!(expected
-            .glyphs
-            .keys()
-            .zip(font.glyphs.keys())
-            .all(|(a, b)| a == b));
+        assert!(
+            expected
+                .glyphs
+                .keys()
+                .zip(font.glyphs.keys())
+                .all(|(a, b)| a == b)
+        );
 
         for (g1, g2) in expected.glyphs.values().zip(font.glyphs.values()) {
             assert_eq!(g1.layers.len(), g2.layers.len());

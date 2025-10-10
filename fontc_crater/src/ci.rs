@@ -17,10 +17,10 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::de::DeserializeOwned;
 
 use crate::{
+    BuildType, Results, Target,
     args::CiArgs,
     error::Error,
     ttx_diff_runner::{DiffError, DiffOutput},
-    BuildType, Results, Target,
 };
 
 mod html;

@@ -314,11 +314,7 @@ impl WidthClass {
             .map(|v| (*v, (v.to_percent() - percent).abs()))
             .reduce(
                 |(w0, d0), (w1, d1)| {
-                    if d1 < d0 {
-                        (w1, d1)
-                    } else {
-                        (w0, d0)
-                    }
+                    if d1 < d0 { (w1, d1) } else { (w0, d0) }
                 },
             )
             .unwrap()

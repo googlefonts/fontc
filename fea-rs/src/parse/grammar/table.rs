@@ -4,8 +4,8 @@ use write_fonts::types::Tag;
 
 use crate::{
     parse::{
-        lexer::{Kind, TokenSet},
         Parser,
+        lexer::{Kind, TokenSet},
     },
     token_tree::Kind as AstKind,
 };

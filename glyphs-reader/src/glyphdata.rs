@@ -4,8 +4,8 @@
 //! (and potentially user-provided) data files.
 
 use quick_xml::{
-    events::{BytesStart, Event},
     Reader,
+    events::{BytesStart, Event},
 };
 use std::{
     borrow::Cow,
@@ -431,7 +431,7 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
             other => {
                 return Err(GlyphDataError::UnknownAttribute(
                     String::from_utf8_lossy(other).into_owned(),
-                ))
+                ));
             }
         }
     }

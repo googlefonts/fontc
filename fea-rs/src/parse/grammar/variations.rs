@@ -3,8 +3,8 @@
 //! See <https://github.com/adobe-type-tools/afdko/pull/1350>
 
 use crate::parse::{
-    lexer::{Kind, TokenSet},
     Parser,
+    lexer::{Kind, TokenSet},
 };
 use crate::token_tree::Kind as AstKind;
 

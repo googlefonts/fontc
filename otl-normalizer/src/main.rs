@@ -6,7 +6,7 @@ use std::{
 };
 
 use clap::Parser;
-use otl_normalizer::{args, Error, NameMap};
+use otl_normalizer::{Error, NameMap, args};
 use write_fonts::read::{FileRef, FontRef, ReadError, TableProvider};
 
 fn main() -> Result<(), Error> {

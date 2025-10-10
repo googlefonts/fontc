@@ -5,12 +5,12 @@ use std::{
 };
 
 use icu_properties::{
-    props::{BidiClass, Script},
     CodePointMapData, PropertyNamesShort, PropertyParser,
+    props::{BidiClass, Script},
 };
 use tinystr::tinystr;
 use write_fonts::{
-    read::{collections::IntSet, tables::gsub::Gsub, ReadError},
+    read::{ReadError, collections::IntSet, tables::gsub::Gsub},
     types::{GlyphId, GlyphId16, Tag},
 };
 

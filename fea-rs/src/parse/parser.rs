@@ -6,8 +6,8 @@ use std::ops::Range;
 use write_fonts::types::Tag;
 
 use super::{
-    lexer::{Kind as LexemeKind, Lexeme, Lexer, TokenSet},
     FileId,
+    lexer::{Kind as LexemeKind, Lexeme, Lexer, TokenSet},
 };
 use crate::token_tree::{AstSink, Kind};
 

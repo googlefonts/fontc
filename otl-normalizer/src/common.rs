@@ -9,11 +9,11 @@ use std::{
 
 use write_fonts::{
     read::{
+        ReadError,
         tables::{
             gpos::DeviceOrVariationIndex,
             layout::{FeatureList, ScriptList},
         },
-        ReadError,
     },
     tables::layout::LookupFlag,
     types::{GlyphId16, Tag},

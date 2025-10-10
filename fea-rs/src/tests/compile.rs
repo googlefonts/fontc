@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    compile::{error::CompilerError, Compiler, MockVariationInfo, NopFeatureProvider, Opts},
-    util::ttx::{self as test_utils, Filter, Report, TestCase, TestResult},
     GlyphMap,
+    compile::{Compiler, MockVariationInfo, NopFeatureProvider, Opts, error::CompilerError},
+    util::ttx::{self as test_utils, Filter, Report, TestCase, TestResult},
 };
 use fontdrasil::types::GlyphName;
 
@@ -81,11 +81,13 @@ fn iter_test_groups(
 
 fn iter_test_group_dirs(root_dir: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
     let mut dir = root_dir.as_ref().read_dir().unwrap();
-    std::iter::from_fn(move || loop {
-        let entry = dir.next()?.unwrap();
-        let path = entry.path();
-        if path.is_dir() {
-            return Some(path);
+    std::iter::from_fn(move || {
+        loop {
+            let entry = dir.next()?.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                return Some(path);
+            }
         }
     })
 }

@@ -1,6 +1,6 @@
 //! A cursor for navigating through a tree.
 
-use super::{stack::Stack, Kind, Node, NodeOrToken, Token};
+use super::{Kind, Node, NodeOrToken, Token, stack::Stack};
 
 pub(crate) struct Cursor<'a> {
     pos: usize,

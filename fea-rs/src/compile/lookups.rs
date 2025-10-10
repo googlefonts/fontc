@@ -28,11 +28,11 @@ use write_fonts::{
             },
         },
         layout::{
-            builders::{Builder, LookupBuilder},
             ConditionSet as RawConditionSet, Feature, FeatureList, FeatureRecord,
             FeatureTableSubstitution, FeatureTableSubstitutionRecord, FeatureVariationRecord,
             FeatureVariations, LangSys, LangSysRecord, LookupFlag, LookupList, Script, ScriptList,
             ScriptRecord,
+            builders::{Builder, LookupBuilder},
         },
         variations::ivs_builder::VariationStoreBuilder,
     },
@@ -40,9 +40,9 @@ use write_fonts::{
 };
 
 use crate::{
+    Kind, Opts,
     common::{GlyphId16, GlyphOrClass, GlyphSet},
     compile::lookups::contextual::ChainOrNot,
-    Kind, Opts,
 };
 
 use super::{features::AllFeatures, tags};
@@ -856,10 +856,10 @@ impl SomeLookup {
         // special kinds:
         match kind {
             Kind::GposType7 | Kind::GposType8 => {
-                return SomeLookup::GposContextual(ContextualLookupBuilder::new(flags, filter))
+                return SomeLookup::GposContextual(ContextualLookupBuilder::new(flags, filter));
             }
             Kind::GsubType5 | Kind::GsubType6 => {
-                return SomeLookup::GsubContextual(ContextualLookupBuilder::new(flags, filter))
+                return SomeLookup::GsubContextual(ContextualLookupBuilder::new(flags, filter));
             }
             _ => (),
         }

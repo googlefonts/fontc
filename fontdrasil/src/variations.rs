@@ -1501,9 +1501,11 @@ mod tests {
             assert_ne!(deltas_float, deltas_round);
             assert_ne!(deltas_float, deltas_late_round);
             assert_ne!(deltas_round, deltas_late_round);
-            assert!(deltas_round
-                .iter()
-                .all(|(_, deltas)| { deltas.iter().all(|d| d.fract() == 0.0) }));
+            assert!(
+                deltas_round
+                    .iter()
+                    .all(|(_, deltas)| { deltas.iter().all(|d| d.fract() == 0.0) })
+            );
 
             let expected: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_float);
             let actual: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_round);

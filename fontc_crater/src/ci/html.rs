@@ -9,11 +9,11 @@ use std::{
 };
 
 use crate::{
+    BuildType, Target,
     error::Error,
     ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput, DiffValue},
-    BuildType, Target,
 };
-use maud::{html, Markup, PreEscaped};
+use maud::{Markup, PreEscaped, html};
 
 use super::{DiffResults, RunSummary};
 

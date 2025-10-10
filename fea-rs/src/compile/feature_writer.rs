@@ -9,17 +9,18 @@ use write_fonts::{
             PairPosBuilder,
         },
         gsub::builders::SingleSubBuilder,
-        layout::{builders::LookupBuilder, ConditionSet, LookupFlag},
+        layout::{ConditionSet, LookupFlag, builders::LookupBuilder},
     },
     types::{GlyphId16, Tag},
 };
 
 use crate::{
-    compile::tags::{LANG_DFLT, SCRIPT_DFLT},
     GlyphSet,
+    compile::tags::{LANG_DFLT, SCRIPT_DFLT},
 };
 
 use super::{
+    CaretValue,
     features::{AllFeatures, FeatureLookups},
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{
@@ -27,7 +28,6 @@ use super::{
         SubstitutionLookup,
     },
     tables::{GdefBuilder, Tables},
-    CaretValue,
 };
 
 /// A trait that can be implemented by the client to do custom feature writing.
@@ -571,7 +571,7 @@ impl MergeCtx<'_> {
                 // features in front of it
                 for j in 0..i {
                     let j = i - j - 1; // we want to go in reverse order,
-                                       // prepending each time
+                    // prepending each time
                     if inserts[j].is_none() {
                         inserts[j] = Some(InsertionPoint {
                             lookup_id: insert.lookup_id,

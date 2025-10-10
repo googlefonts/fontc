@@ -18,8 +18,8 @@ use write_fonts::tables::{
         LigGlyph, MarkGlyphSets,
     },
     layout::{
-        builders::{CaretValueBuilder, CoverageTableBuilder},
         ClassDef,
+        builders::{CaretValueBuilder, CoverageTableBuilder},
     },
     variations::ivs_builder::RemapVariationIndices,
 };

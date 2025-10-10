@@ -1,7 +1,7 @@
 //! Reporting errors, warnings, and other information to the user.
 use crate::{
-    parse::{FileId, SourceList},
     ParseTree,
+    parse::{FileId, SourceList},
 };
 use std::{convert::TryInto, ops::Range, sync::Arc};
 

@@ -17,7 +17,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use parking_lot::RwLock;
-use write_fonts::{read::FontRead, validate::Validate, FontWrite};
+use write_fonts::{FontWrite, read::FontRead, validate::Validate};
 
 bitflags! {
     #[derive(Clone, Copy, Debug)]

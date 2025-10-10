@@ -288,11 +288,12 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
-    use skrifa::{charmap::Charmap, instance::Size, outline::DrawSettings, MetadataProvider};
-    use tempfile::{tempdir, TempDir};
+    use skrifa::{MetadataProvider, charmap::Charmap, instance::Size, outline::DrawSettings};
+    use tempfile::{TempDir, tempdir};
     use write_fonts::{
         dump_table,
         read::{
+            FontData, FontRead, FontReadWithArgs, FontRef, TableProvider, TableRef,
             tables::{
                 cmap::{Cmap, CmapSubtable},
                 cpal::ColorRecord,
@@ -308,7 +309,6 @@ mod tests {
                 post::Post,
                 variations::{DeltaSetIndexMap, ItemVariationData, ItemVariationStore},
             },
-            FontData, FontRead, FontReadWithArgs, FontRef, TableProvider, TableRef,
         },
         tables::{
             gdef::GlyphClassDef,
@@ -1245,11 +1245,13 @@ mod tests {
     fn compile_generates_notdef() {
         let result = TestCompile::compile_source("glyphs2/WghtVar.glyphs");
 
-        assert!(!result
-            .fe_context
-            .preliminary_glyph_order
-            .get()
-            .contains(&GlyphName::NOTDEF));
+        assert!(
+            !result
+                .fe_context
+                .preliminary_glyph_order
+                .get()
+                .contains(&GlyphName::NOTDEF)
+        );
         assert_eq!(
             Some(GlyphId16::NOTDEF),
             result
@@ -3022,9 +3024,11 @@ mod tests {
         assert!(!expected_delta_sets.is_empty());
         let expected_num_regions = expected_delta_sets[0].len() as u16;
         assert!(expected_num_regions > 0);
-        assert!(expected_delta_sets
-            .iter()
-            .all(|row| row.len() as u16 == expected_num_regions));
+        assert!(
+            expected_delta_sets
+                .iter()
+                .all(|row| row.len() as u16 == expected_num_regions)
+        );
 
         assert_eq!(
             varstore.variation_region_list().unwrap().region_count(),
@@ -3213,10 +3217,11 @@ mod tests {
         assert_eq!(fvar.axis_count(), gvar.axis_count());
         let glyph_count = font.maxp().unwrap().num_glyphs();
         assert_eq!(gvar.glyph_count(), glyph_count);
-        assert!((0..glyph_count).all(|gid| gvar
-            .glyph_variation_data(GlyphId16::new(gid).into())
-            .unwrap()
-            .is_none()));
+        assert!((0..glyph_count).all(|gid| {
+            gvar.glyph_variation_data(GlyphId16::new(gid).into())
+                .unwrap()
+                .is_none()
+        }));
     }
 
     // if a font has custom gdef categories defined, create the gdef table and
@@ -3818,11 +3823,12 @@ mod tests {
             .unwrap();
         let rvrn = feature_list.feature_records()[rvrn_idx];
         // base rvrn feature has no lookups
-        assert!(rvrn
-            .feature(feature_list.offset_data())
-            .unwrap()
-            .lookup_list_indices()
-            .is_empty());
+        assert!(
+            rvrn.feature(feature_list.offset_data())
+                .unwrap()
+                .lookup_list_indices()
+                .is_empty()
+        );
 
         let rvrn_replacement = get_first_feature_substitution(gsub, rvrn_idx);
         // rvrn at the front
@@ -3845,11 +3851,12 @@ mod tests {
             .unwrap();
         let rvrn = feature_list.feature_records()[rvrn_idx];
         // base rvrn feature has no lookups
-        assert!(rvrn
-            .feature(feature_list.offset_data())
-            .unwrap()
-            .lookup_list_indices()
-            .is_empty());
+        assert!(
+            rvrn.feature(feature_list.offset_data())
+                .unwrap()
+                .lookup_list_indices()
+                .is_empty()
+        );
 
         let rvrn_replacement = get_first_feature_substitution(gsub, rvrn_idx);
         assert_eq!(rvrn_replacement.lookup_list_indices(), [0]);
@@ -3921,11 +3928,12 @@ mod tests {
 
         let fvar = font.fvar().unwrap();
 
-        assert!(fvar
-            .instances()
-            .unwrap()
-            .iter()
-            .all(|instance| instance.unwrap().post_script_name_id.is_none()));
+        assert!(
+            fvar.instances()
+                .unwrap()
+                .iter()
+                .all(|instance| instance.unwrap().post_script_name_id.is_none())
+        );
     }
 
     #[rstest]
@@ -4117,9 +4125,11 @@ mod tests {
         let peso_gid = result.get_gid("peso");
         let peso_bracket_gid = result.get_gid("peso.BRACKET.varAlt01");
 
-        assert!([yen_gid, yen_bracket_gid, peso_gid, peso_bracket_gid]
-            .iter()
-            .all(|gid| *gid > GlyphId16::NOTDEF));
+        assert!(
+            [yen_gid, yen_bracket_gid, peso_gid, peso_bracket_gid]
+                .iter()
+                .all(|gid| *gid > GlyphId16::NOTDEF)
+        );
 
         fn get_component_gids(glyph: &glyf::Glyph) -> Vec<GlyphId16> {
             match glyph {

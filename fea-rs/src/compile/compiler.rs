@@ -6,11 +6,11 @@ use std::{
 };
 
 use crate::{
-    parse::{FileSystemResolver, SourceResolver},
     DiagnosticSet, GlyphMap,
+    parse::{FileSystemResolver, SourceResolver},
 };
 
-use super::{error::CompilerError, Compilation, FeatureProvider, Opts, VariationInfo};
+use super::{Compilation, FeatureProvider, Opts, VariationInfo, error::CompilerError};
 
 const DEFAULT_N_MESSAGES_TO_PRINT: usize = 100;
 

@@ -3,11 +3,11 @@ use std::fmt::Debug;
 use write_fonts::{
     tables::{
         gpos::{
+            MarkBasePosFormat1, PairPos,
             builders::{
                 AnchorBuilder as Anchor, MarkToBaseBuilder, PairPosBuilder,
                 ValueRecordBuilder as ValueRecord,
             },
-            MarkBasePosFormat1, PairPos,
         },
         layout::builders::Builder,
         variations::ivs_builder::VariationStoreBuilder,

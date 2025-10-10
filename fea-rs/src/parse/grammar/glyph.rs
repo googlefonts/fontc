@@ -1,6 +1,6 @@
 use crate::parse::{
-    lexer::{Kind, TokenSet},
     Parser,
+    lexer::{Kind, TokenSet},
 };
 use crate::token_tree::Kind as AstKind;
 
@@ -213,9 +213,9 @@ fn validate_glyph_name(name: &[u8]) -> NameType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::GlyphMap;
     use crate::parse::FileId;
     use crate::token_tree::AstSink;
-    use crate::GlyphMap;
     use fontdrasil::types::GlyphName;
 
     #[test]
