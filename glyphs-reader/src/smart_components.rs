@@ -121,9 +121,12 @@ pub(crate) fn instantiate_for_layer(
     let deltas = model.deltas(&point_seqs).unwrap();
     let points = VariationModel::interpolate_from_deltas(&location, &deltas);
     let mut shapes = shapes_with_new_points(relevant_layers[0], &points);
-    shapes
-        .iter_mut()
-        .for_each(|shape| shape.apply_affine(component.transform));
+    shapes.iter_mut().for_each(|shape| {
+        shape.apply_affine(component.transform);
+        if component.transform.determinant() < 0.0 {
+            shape.reverse();
+        }
+    });
 
     Ok(shapes)
 }
@@ -240,7 +243,7 @@ fn normalized_location(
 
 #[cfg(test)]
 mod tests {
-    use kurbo::{Rect, Shape as _};
+    use kurbo::{BezPath, Rect, Shape as _};
 
     use super::*;
     use crate::{Path, Shape};
@@ -380,16 +383,18 @@ mod tests {
     fn get_rectangle_data(shape: &Shape) -> (Rect, PathDirection) {
         let shape = shape.as_path().unwrap();
         let nodes = &shape.nodes;
-        let init = Rect::from_points(nodes[0].pt, nodes[0].pt);
-        let rect = nodes.iter().fold(init, |acc, node| acc.union_pt(node.pt));
+        assert_eq!(nodes.len(), 4);
+        let mut rect = BezPath::new();
+        rect.move_to(nodes[0].pt);
+        nodes[1..].iter().for_each(|nd| rect.line_to(nd.pt));
 
-        let as_path = rect.to_path(0.1);
-        let dir = if as_path.winding(rect.center()) < 0 {
+        let center = rect.bounding_box().center();
+        let dir = if rect.winding(center) < 0 {
             PathDirection::Clockwise
         } else {
             PathDirection::Otherwise
         };
-        (rect, dir)
+        (rect.bounding_box(), dir)
     }
 
     //https://github.com/googlefonts/glyphsLib/blob/52c982399b/tests/smart_components_test.py#L159
@@ -469,6 +474,90 @@ mod tests {
                 dir,
                 PathDirection::Otherwise,
                 "Expected counter-clockwise winding for values: {:?}",
+                location
+            );
+        }
+    }
+
+    //https://github.com/googlefonts/glyphsLib/blob/52c982399b/tests/smart_components_test.py#L198
+    #[test]
+    fn test_smart_component_regular_flipped_x() {
+        let master_id = "master01";
+        let test_cases = [
+            // Eight corners
+            (
+                [("Width", 0.0), ("Height", 100.0), ("Shift", 0.0)].as_slice(),
+                (-200.0, 100.0, 100.0, 100.0),
+            ),
+            (
+                [("Width", 1.0), ("Height", 100.0), ("Shift", 0.0)].as_slice(),
+                (-600.0, 100.0, 500.0, 100.0),
+            ),
+            (
+                [("Width", 0.0), ("Height", 500.0), ("Shift", 0.0)].as_slice(),
+                (-200.0, 100.0, 100.0, 500.0),
+            ),
+            (
+                [("Width", 1.0), ("Height", 500.0), ("Shift", 0.0)].as_slice(),
+                (-600.0, 100.0, 500.0, 500.0),
+            ),
+            (
+                [("Width", 0.0), ("Height", 100.0), ("Shift", -100.0)].as_slice(),
+                (-100.0, 0.0, 100.0, 100.0),
+            ),
+            (
+                [("Width", 1.0), ("Height", 100.0), ("Shift", -100.0)].as_slice(),
+                (-500.0, 0.0, 500.0, 100.0),
+            ),
+            (
+                [("Width", 0.0), ("Height", 500.0), ("Shift", -100.0)].as_slice(),
+                (-100.0, 0.0, 100.0, 500.0),
+            ),
+            (
+                [("Width", 1.0), ("Height", 500.0), ("Shift", -100.0)].as_slice(),
+                (-500.0, 0.0, 500.0, 500.0),
+            ),
+            // Some points in the middle
+            (
+                [("Width", 0.5), ("Height", 300.0), ("Shift", -50.0)].as_slice(),
+                (-350.0, 50.0, 300.0, 300.0),
+            ),
+            // Extrapolation
+            // NOTE: this currently fails. Does our variation model support extrapolation?
+            //(
+            //    [("Width", 0.0), ("Height", 800.0), ("Shift", 0.0)].as_slice(),
+            //    (-200.0, 100.0, 100.0, 800.0),
+            //),
+        ];
+
+        let glyphs = smart_glyphs(master_id);
+        let a_glyph = glyphs.get(&SmolStr::new("a")).unwrap();
+        let a_layer = &a_glyph.layers[0];
+        let component = a_layer.shapes[0].as_smart_component().unwrap();
+
+        for (location, expected) in test_cases {
+            // Set smart component values and flip x transform
+            let mut modified_component = component.clone();
+            modified_component.transform = Affine::new([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+            assert!(modified_component.transform.determinant() < 0.0);
+            modified_component.smart_component_values = location
+                .iter()
+                .map(|(k, v)| (SmolStr::new(k), *v))
+                .collect();
+
+            let rectangle = glyphs.get(&SmolStr::new("_part.rectangle")).unwrap();
+            let shapes = instantiate_for_layer(master_id, &modified_component, rectangle)
+                .expect("instantiate should succeed");
+
+            let (rect, dir) = get_rectangle_data(&shapes[0]);
+            let (x, y, w, h) = expected;
+            let expected = Rect::new(x, y, x + w, y + h);
+
+            assert_eq!(rect, expected, "Failed for values: {:?}", location);
+            assert_eq!(
+                dir,
+                PathDirection::Otherwise,
+                "Expected counter-clockwise winding after flipped x transform for values: {:?}",
                 location
             );
         }

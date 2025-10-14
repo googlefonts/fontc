@@ -546,6 +546,13 @@ impl Shape {
             _ => None,
         }
     }
+
+    /// If the shape is a path, reverse it
+    pub(crate) fn reverse(&mut self) {
+        if let Shape::Path(path) = self {
+            path.reverse();
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
