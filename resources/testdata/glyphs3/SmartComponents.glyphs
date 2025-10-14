@@ -1,0 +1,287 @@
+{
+.appVersion = "3434";
+.formatVersion = 3;
+familyName = SmartComponentsFromGlyphsExample;
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = -200;
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = m;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+ref = _part.stem;
+},
+{
+piece = {
+crotchDepth = -44.28304;
+shoulderWidth = 28.78011;
+};
+pos = (17,0);
+ref = _part.shoulder;
+},
+{
+piece = {
+crotchDepth = -81.24796;
+shoulderWidth = 0;
+};
+pos = (180,1);
+ref = _part.shoulder;
+}
+);
+width = 600;
+}
+);
+unicode = 109;
+},
+{
+glyphname = n;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(187,1,l),
+(193,28,l),
+(153,41,l),
+(153,286,l),
+(127,365,l),
+(26,345,l),
+(26,321,l),
+(88,280,l),
+(88,39,l),
+(60,32,l),
+(57,1,l)
+);
+},
+{
+piece = {
+crotchDepth = -100;
+shoulderWidth = 0;
+};
+ref = _part.shoulder;
+}
+);
+width = 600;
+}
+);
+unicode = 110;
+},
+{
+export = 0;
+glyphname = _part.shoulder;
+layers = (
+{
+anchors = (
+{
+name = _connect;
+pos = (136,0);
+},
+{
+name = connect;
+pos = (320,1);
+}
+);
+layerId = m01;
+partSelection = {
+shoulderWidth = 2;
+crotchDepth = 2;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(157,306,o),
+(207,329,o),
+(230,329,cs),
+(251,329,o),
+(260,285,o),
+(260,250,cs),
+(260,39,l),
+(232,32,l),
+(229,1,l),
+(359,1,l),
+(365,28,l),
+(325,41,l),
+(325,286,ls),
+(325,332,o),
+(287,365,o),
+(249,365,cs),
+(214,365,o),
+(170,336,o),
+(136,308,c),
+(136,297,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = _connect;
+pos = (136,0);
+},
+{
+name = connect;
+pos = (290,1);
+}
+);
+associatedMasterId = m01;
+layerId = "6EA41A40-C55F-4F54-876F-57FFD9569161";
+name = NarrowShoulder;
+partSelection = {
+shoulderWidth = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(157,309,o),
+(177,329,o),
+(200,329,cs),
+(221,329,o),
+(230,270,o),
+(230,250,cs),
+(230,39,l),
+(202,32,l),
+(199,1,l),
+(329,1,l),
+(335,28,l),
+(295,41,l),
+(295,286,ls),
+(295,332,o),
+(257,365,o),
+(219,365,cs),
+(184,365,o),
+(161,336,o),
+(136,308,c),
+(136,297,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = _connect;
+pos = (136,0);
+},
+{
+name = connect;
+pos = (320,1);
+}
+);
+associatedMasterId = m01;
+layerId = "D1E0A44B-7252-4699-BE1F-FE1D1C8DA55E";
+name = LowCrotch;
+partSelection = {
+crotchDepth = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(157,285,o),
+(207,329,o),
+(230,329,cs),
+(251,329,o),
+(260,288,o),
+(260,250,cs),
+(260,39,l),
+(232,32,l),
+(229,1,l),
+(359,1,l),
+(365,28,l),
+(325,41,l),
+(325,286,ls),
+(325,340,o),
+(282,365,o),
+(244,365,cs),
+(209,365,o),
+(171,325,o),
+(136,278,c),
+(136,267,l)
+);
+}
+);
+width = 600;
+}
+);
+partsSettings = (
+{
+bottomValue = 0;
+name = shoulderWidth;
+topValue = 100;
+},
+{
+bottomValue = -100;
+name = crotchDepth;
+topValue = 0;
+}
+);
+},
+{
+export = 0;
+glyphname = _part.stem;
+layers = (
+{
+anchors = (
+{
+name = connect;
+pos = (153,0);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(187,1,l),
+(193,28,l),
+(153,41,l),
+(153,306,l),
+(127,365,l),
+(26,345,l),
+(26,321,l),
+(88,280,l),
+(88,39,l),
+(60,32,l),
+(57,1,l)
+);
+}
+);
+width = 600;
+}
+);
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = descender;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

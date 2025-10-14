@@ -315,6 +315,16 @@ impl<Space> Location<Space> {
             .collect()
     }
 
+    /// `true` if this location contains only and exactly the axes provided
+    ///
+    /// The `axes` argument should not contain any duplicates (it is expcted to
+    /// come from [`VariationModel::axis_order`]).
+    ///
+    /// [`VariationModel::axis_order`]: crate::variations::VariationModel::axis_order
+    pub(crate) fn has_exact_axes(&self, axes: &[Tag]) -> bool {
+        axes.len() == self.0.len() && axes.iter().all(|tag| self.0.contains_key(tag))
+    }
+
     pub fn insert(&mut self, tag: Tag, pos: Coord<Space>) -> &mut Location<Space> {
         self.0.insert(tag, pos);
         self
@@ -373,6 +383,16 @@ impl<Space> Location<Space> {
 
 // methods we only want available on NormalizedSpace
 impl Location<NormalizedSpace> {
+    /// Ensures that the location includes coords for every axis in this set.
+    ///
+    /// Missing axes are added at position `0.0`. Axes not in the list are removed.
+    pub fn fit_to_axes(&mut self, axes: &[Tag]) {
+        self.0.retain(|k, _| axes.contains(k));
+        for ax in axes {
+            self.0.entry(*ax).or_default();
+        }
+    }
+
     pub fn has_non_zero(&self, tag: Tag) -> bool {
         self.get(tag).unwrap_or_default().to_f64() != 0.0
     }
