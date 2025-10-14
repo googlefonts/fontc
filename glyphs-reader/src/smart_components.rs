@@ -25,6 +25,12 @@ pub enum BadSmartComponent {
         child: AxisPole,
         axis: SmolStr,
     },
+    #[error("Smart component layers are not interpolation compatible")]
+    IncoherentLayers,
+    #[error("Axis '{0}' is not defined for the default layer")]
+    AxisUndefinedForDefaultLayer(SmolStr),
+    #[error("No layers exist with associated id '{0}'")]
+    NoLayer(String),
 }
 
 /// Instantiate an instance of a smart component.
@@ -55,6 +61,9 @@ pub(crate) fn instantiate_for_layer(
         })
         .collect::<Vec<_>>();
 
+    if relevant_layers.is_empty() {
+        return Err(BadSmartComponent::NoLayer(layer_master_id.to_string()));
+    }
     if relevant_layers.len() == 1 {
         log::debug!("smart component {} only has one layer?", component.name);
         let mut shapes = relevant_layers[0].shapes.clone();
@@ -62,6 +71,16 @@ pub(crate) fn instantiate_for_layer(
             .iter_mut()
             .for_each(|shape| shape.apply_affine(component.transform));
         return Ok(shapes);
+    }
+
+    validate_relevant_layers(&relevant_layers)?;
+    for axis in ref_glyph.smart_component_axes.keys() {
+        if !relevant_layers[0]
+            .smart_component_positions
+            .contains_key(axis)
+        {
+            return Err(BadSmartComponent::UnknownAxis(axis.clone()));
+        }
     }
 
     let locations = relevant_layers
@@ -75,11 +94,11 @@ pub(crate) fn instantiate_for_layer(
         .smart_component_axes
         .iter()
         .map(|(name, range)| {
-            let default_value = if relevant_layers[0]
+            let default_value = if *relevant_layers[0]
                 .smart_component_positions
                 .get(name)
-                .copied()
-                == Some(AxisPole::Min)
+                .unwrap()
+                == AxisPole::Min
             {
                 *range.start()
             } else {
@@ -129,6 +148,29 @@ pub(crate) fn instantiate_for_layer(
     });
 
     Ok(shapes)
+}
+
+fn validate_relevant_layers(layers: &[&Layer]) -> Result<(), BadSmartComponent> {
+    let Some((head, tail)) = layers.split_first() else {
+        return Ok(());
+    };
+
+    for layer in tail {
+        if layer.shapes.len() != head.shapes.len()
+            || layer
+                .shapes
+                .iter()
+                .zip(&head.shapes)
+                .any(|pair| match pair {
+                    (Shape::Component(_), Shape::Component(_)) => false,
+                    (Shape::Path(one), Shape::Path(two)) => one.nodes.len() != two.nodes.len(),
+                    _ => true,
+                })
+        {
+            return Err(BadSmartComponent::IncoherentLayers);
+        }
+    }
+    Ok(())
 }
 
 // component parts just have names, not tags, but VariationModel needs tags;
