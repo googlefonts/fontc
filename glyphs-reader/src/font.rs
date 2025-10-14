@@ -291,8 +291,7 @@ pub struct Glyph {
     pub category: Option<Category>,
     pub sub_category: Option<Subcategory>,
     pub production_name: Option<SmolStr>,
-    /// If this is a smart component, these are the variable values.
-    // should this just be an 'axis'?
+    /// If this is a smart component, these are the axe names -> user coords
     pub smart_component_axes: BTreeMap<SmolStr, RangeInclusive<i64>>,
 }
 
@@ -314,8 +313,9 @@ impl Glyph {
     }
 }
 
+/// Whether a given layer of a smart component is at the min or max of a given axis.
 #[derive(Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SmartComponentValue {
+pub enum AxisPole {
     /// this layer is at the minimum value for this property
     Min,
     /// this layer is at the maximum value for this property
@@ -332,7 +332,11 @@ pub struct Layer {
     pub shapes: Vec<Shape>,
     pub anchors: Vec<Anchor>,
     pub attributes: LayerAttributes,
-    pub smart_component_positions: BTreeMap<SmolStr, SmartComponentValue>,
+    /// If this layer is part of a smart component, this defines its location.
+    ///
+    /// Smart component layers can only be defined at the min or max of a given
+    /// axis.
+    pub smart_component_positions: BTreeMap<SmolStr, AxisPole>,
 }
 
 impl Layer {
@@ -530,6 +534,15 @@ impl Shape {
     pub(crate) fn as_path(&self) -> Option<&Path> {
         match self {
             Shape::Path(path) => Some(path),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_smart_component(&self) -> Option<&Component> {
+        match self {
+            Shape::Component(component) if !component.smart_component_values.is_empty() => {
+                Some(component)
+            }
             _ => None,
         }
     }
@@ -1092,7 +1105,8 @@ struct RawLayer {
     anchors: Vec<RawAnchor>,
     #[fromplist(alt_name = "attr")]
     attributes: LayerAttributes,
-    // if this layer is part of a smart component
+    // if this layer is part of a smart component; values should be 1 or 2
+    // (this is validated when we convert to Layer)
     part_selection: BTreeMap<SmolStr, i64>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
@@ -1162,7 +1176,8 @@ struct RawShape {
     // ref is reserved so take advantage of alt names
     #[fromplist(alt_name = "ref", alt_name = "name")]
     glyph_name: Option<SmolStr>,
-    // if this is a reference to a smart component, these are the values for interpolation
+    // if this is a reference to a smart component, this is the location in the
+    // mini designspace of the component instance (user coords).
     piece: BTreeMap<SmolStr, f64>,
 
     // for components, an optional name to rename an anchor
@@ -1197,7 +1212,10 @@ pub struct Component {
     /// For instance, if an acute accent is a component of a ligature glyph,
     /// we might rename its 'top' anchor to 'top_2'
     pub anchor: Option<SmolStr>,
-    /// If this references a smart component, these are the values for interpolation.
+    /// For smart components, the location in the mini designspace of the instance.
+    ///
+    /// Keys should reference the axes in the component, with the value being
+    /// a position in user coords.
     pub smart_component_values: BTreeMap<SmolStr, f64>,
     pub attributes: ShapeAttributes,
 }
@@ -2493,8 +2511,8 @@ impl RawLayer {
             .part_selection
             .into_iter()
             .map(|(k, v)| match v {
-                1 => Ok((k, SmartComponentValue::Min)),
-                2 => Ok((k, SmartComponentValue::Max)),
+                1 => Ok((k, AxisPole::Min)),
+                2 => Ok((k, AxisPole::Max)),
                 other => Err(Error::BadValue(format!(
                     "expected only 1 or 2 in partSelection, found '{other}'"
                 ))),
@@ -3140,7 +3158,7 @@ impl Font {
         }
         // if any glyphs reference smart components, convert them to outlines.
         // (see https://glyphsapp.com/learn/smart-components)
-        self.inline_all_smart_components()
+        self.instantiate_all_smart_components()
     }
 
     /// if a glyph has components that have alternate layers, copy the layer
@@ -3217,7 +3235,7 @@ impl Font {
 
     // smart components get converted into normal paths before IR.
     // see https://glyphsapp.com/learn/smart-components
-    fn inline_all_smart_components(&mut self) -> Result<(), Error> {
+    fn instantiate_all_smart_components(&mut self) -> Result<(), Error> {
         // find all the glyphs that include smart components
         let glyphs_with_smart_components = self
             .glyphs
@@ -3250,38 +3268,34 @@ impl Font {
                 let old_shapes = std::mem::take(&mut layer.shapes);
                 let mut new_shapes = Vec::new();
                 for shape in old_shapes {
-                    match &shape {
-                        Shape::Component(comp) if !comp.smart_component_values.is_empty() => {
-                            if let Some(ref_glyph) = self
-                                .glyphs
-                                .get(&comp.name)
-                                .filter(|g| !g.smart_component_axes.is_empty())
-                            {
-                                log::debug!(
-                                    "instantiating smart component '{}' for '{}'",
-                                    comp.name,
-                                    glyph.name
-                                );
-                                new_shapes.extend(
-                                    crate::smart_components::instantiate_for_layer(
-                                        layer.master_id(),
-                                        comp,
-                                        ref_glyph,
-                                    )
-                                    .map_err(|issue| {
-                                        Error::SmartComponent {
-                                            glyph: glyph.name.clone(),
-                                            component: comp.name.clone(),
-                                            issue,
-                                        }
-                                    })?,
-                                );
-                            } else {
-                                layer.shapes.push(shape);
-                            }
-                        }
-                        _ => layer.shapes.push(shape),
-                    };
+                    if let Some(comp) = shape.as_smart_component()
+                        && let Some(ref_glyph) = self
+                            .glyphs
+                            .get(&comp.name)
+                            .filter(|g| !g.smart_component_axes.is_empty())
+                    {
+                        log::debug!(
+                            "instantiating smart component '{}' for '{}'",
+                            comp.name,
+                            glyph.name
+                        );
+                        new_shapes.extend(
+                            crate::smart_components::instantiate_for_layer(
+                                layer.master_id(),
+                                comp,
+                                ref_glyph,
+                            )
+                            .map_err(|issue| {
+                                Error::BadSmartComponent {
+                                    glyph: glyph.name.clone(),
+                                    component: comp.name.clone(),
+                                    issue,
+                                }
+                            })?,
+                        );
+                    } else {
+                        layer.shapes.push(shape);
+                    }
                 }
                 layer.shapes.extend(new_shapes);
             }

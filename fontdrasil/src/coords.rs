@@ -316,7 +316,12 @@ impl<Space> Location<Space> {
     }
 
     /// `true` if this location contains only and exactly the axes provided
-    pub fn has_exact_axes(&self, axes: &[Tag]) -> bool {
+    ///
+    /// The `axes` argument should not contain any duplicates (it is expcted to
+    /// come from [`VariationModel::axis_order`]).
+    ///
+    /// [`VariationModel::axis_order`]: crate::variations::VariationModel::axis_order
+    pub(crate) fn has_exact_axes(&self, axes: &[Tag]) -> bool {
         axes.len() == self.0.len() && axes.iter().all(|tag| self.0.contains_key(tag))
     }
 

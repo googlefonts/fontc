@@ -261,7 +261,7 @@ impl VariationModel {
             return Ok(Vec::new());
         }
 
-        let point_seqs = self.normalize_point_seqs(point_seqs, self.axis_order())?;
+        let point_seqs = self.fit_to_axes(point_seqs)?;
 
         // we know point_seqs is non-empty
         let point_seq_len = point_seqs.values().next().unwrap().len();
@@ -322,19 +322,18 @@ impl VariationModel {
     }
 
     /// Remove unknown axes and add missing axes to locations, if needed
-    fn normalize_point_seqs<'a, T: Clone>(
+    fn fit_to_axes<'a, T: Clone>(
         &self,
         seqs: &'a HashMap<NormalizedLocation, T>,
-        axes: &[Tag],
     ) -> Result<Cow<'a, HashMap<NormalizedLocation, T>>, DeltaError> {
-        let seqs = if seqs.keys().all(|loc| loc.has_exact_axes(axes)) {
+        let seqs = if seqs.keys().all(|loc| loc.has_exact_axes(self.axis_order())) {
             Cow::Borrowed(seqs)
         } else {
             let normalized = seqs
                 .iter()
                 .map(|(k, v)| {
                     let mut k = k.to_owned();
-                    k.fit_to_axes(axes);
+                    k.fit_to_axes(self.axis_order());
                     (k, v.clone())
                 })
                 .collect();

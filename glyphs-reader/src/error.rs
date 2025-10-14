@@ -28,7 +28,7 @@ pub enum Error {
     #[error("Invalid value: {0}")]
     BadValue(String),
     #[error("Bad smart component '{component}' in glyph '{glyph}': {issue}")]
-    SmartComponent {
+    BadSmartComponent {
         glyph: SmolStr,
         component: SmolStr,
         issue: BadSmartComponent,
