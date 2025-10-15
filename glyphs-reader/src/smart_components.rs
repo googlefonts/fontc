@@ -88,7 +88,7 @@ pub(crate) fn instantiate_for_layer(
         .map(|layer| normalized_location(layer, relevant_layers[0], &name_to_tag_map))
         .collect::<Result<_, _>>()?;
 
-    let model = VariationModel::new(locations, axis_order.clone());
+    let model = VariationModel::new_extrapolating(locations, axis_order.clone());
 
     let axis_tuples = ref_glyph
         .smart_component_axes
@@ -483,11 +483,10 @@ mod tests {
                 (50.0, 50.0, 300.0, 300.0),
             ),
             // Extrapolation
-            // NOTE: this currently fails. Does our variation model support extrapolation?
-            //(
-            //[("Width", 0.0), ("Height", 800.0), ("Shift", 0.0)].as_slice(),
-            //(100.0, 100.0, 100.0, 800.0),
-            //),
+            (
+                [("Width", 0.0), ("Height", 800.0), ("Shift", 0.0)].as_slice(),
+                (100.0, 100.0, 100.0, 800.0),
+            ),
         ];
 
         let glyphs = smart_glyphs(master_id);
@@ -565,11 +564,10 @@ mod tests {
                 (-350.0, 50.0, 300.0, 300.0),
             ),
             // Extrapolation
-            // NOTE: this currently fails. Does our variation model support extrapolation?
-            //(
-            //    [("Width", 0.0), ("Height", 800.0), ("Shift", 0.0)].as_slice(),
-            //    (-200.0, 100.0, 100.0, 800.0),
-            //),
+            (
+                [("Width", 0.0), ("Height", 800.0), ("Shift", 0.0)].as_slice(),
+                (-200.0, 100.0, 100.0, 800.0),
+            ),
         ];
 
         let glyphs = smart_glyphs(master_id);

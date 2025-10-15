@@ -4,7 +4,7 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap, HashSet},
     fmt::{Debug, Display},
-    ops::{Add, Mul, Sub},
+    ops::{Add, Mul, RangeInclusive, Sub},
 };
 
 use crate::{
@@ -108,7 +108,7 @@ pub type ModelDeltas<V> = Vec<(VariationRegion, Vec<V>)>;
 /// region assigns to each master. This enables us to compute deltas for variation stores.
 ///
 /// See `class VariationModel` in <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/varLib/models.py>
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct VariationModel {
     pub default: NormalizedLocation,
 
@@ -123,6 +123,9 @@ pub struct VariationModel {
 
     // [n] gives a vec of (master index, scale for deltas from that master)
     delta_weights: Vec<Vec<(usize, OrderedFloat<f64>)>>,
+    // if the model supports extrapolation, these are the min/max supported positions,
+    // per-tag.
+    axis_ranges_for_extrapolation: Option<HashMap<Tag, RangeInclusive<OrderedFloat<f64>>>>,
 }
 
 impl VariationModel {
@@ -176,17 +179,43 @@ impl VariationModel {
             locations,
             influence,
             delta_weights,
+            axis_ranges_for_extrapolation: None,
         }
     }
 
+    /// A variation model that supports extrapolation
+    pub fn new_extrapolating(locations: HashSet<NormalizedLocation>, axis_order: Vec<Tag>) -> Self {
+        // compute axis ranges
+        // https://github.com/googlefonts/glyphsLib/blob/52c98239/venv/lib/python3.13/site-packages/fontTools/varLib/models.py#L306
+
+        let all_axes = locations
+            .iter()
+            .flat_map(|loc| loc.axis_tags().copied())
+            .collect::<HashSet<_>>();
+
+        let ranges = all_axes
+            .iter()
+            .map(|axis| {
+                let (min, max) = locations
+                    .iter()
+                    .fold((f64::MAX, f64::MIN), |(min, max), loc| {
+                        match loc.get(*axis) {
+                            Some(val) => (min.min(val.to_f64()), max.max(val.to_f64())),
+                            None => (min, max),
+                        }
+                    });
+                (*axis, min.into()..=max.into())
+            })
+            .collect();
+
+        let mut this = Self::new(locations, axis_order);
+        this.axis_ranges_for_extrapolation = Some(ranges);
+
+        this
+    }
+
     pub fn empty() -> Self {
-        VariationModel {
-            default: NormalizedLocation::new(),
-            axis_order: Default::default(),
-            locations: Vec::new(),
-            influence: Vec::new(),
-            delta_weights: Vec::new(),
-        }
+        Default::default()
     }
 
     pub fn num_locations(&self) -> usize {
@@ -365,7 +394,14 @@ impl VariationModel {
     {
         deltasets
             .iter()
-            .map(|(region, deltas)| (region.scalar_at(location).0, deltas))
+            .map(|(region, deltas)| {
+                (
+                    region
+                        .scalar_at_with_args(location, self.axis_ranges_for_extrapolation.as_ref())
+                        .0,
+                    deltas,
+                )
+            })
             .filter(|(scalar, _deltas)| *scalar != 0.0)
             .fold(None, |result, (scalar, deltas)| {
                 let contribution = deltas.iter().map(|d| *d * scalar);
@@ -558,11 +594,27 @@ impl VariationRegion {
         Self::default()
     }
 
-    /// The scalar multiplier for the provided location for this region
-    ///
-    /// In Python, supportScalar. We only implement the ot=True, extrapolate=False paths.
-    /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L123>.
+    /// The scalar multiplier for the provided location for this region.
     pub fn scalar_at(&self, location: &NormalizedLocation) -> OrderedFloat<f64> {
+        self.scalar_at_with_args(location, None)
+    }
+
+    /// The scalar multiplier for the provided location for this region,
+    /// with extra arguments.
+    ///
+    /// Based on varLib.supportScalar, although we do not support all the
+    /// arguments there yet.
+    ///
+    /// Specifically, the `axis_ranges` argument implies extrapolation: it is
+    /// a map of the allowed ranges for input values. If it is `None`, then we
+    /// will only allow values in the range `-1.0..=1.0`.
+    ///
+    /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e/Lib/fontTools/varLib/models.py#L123>.
+    pub(crate) fn scalar_at_with_args(
+        &self,
+        location: &NormalizedLocation,
+        axis_ranges: Option<&HashMap<Tag, RangeInclusive<OrderedFloat<f64>>>>,
+    ) -> OrderedFloat<f64> {
         self.axis_tents
             .iter()
             .filter(|(_, ar)| ar.validate())
@@ -583,6 +635,27 @@ impl VariationRegion {
                 // If the Tent is 0,0,0 it's always in full effect
                 if (min, peak, max) == (ZERO, ZERO, ZERO) {
                     return scalar; // *= 1
+                }
+
+                if let Some(axis_ranges) = axis_ranges
+                    && let Some(range) = axis_ranges.get(tag)
+                //https://github.com/fonttools/fonttools/blob/03a3c8ed/Lib/fontTools/varLib/models.py#L181
+                {
+                    let axis_min = *range.start();
+                    let axis_max = *range.end();
+                    if v < axis_min && min <= axis_min {
+                        if peak <= axis_min && peak < max {
+                            return scalar * (v - max) / (peak - max);
+                        } else if axis_min < peak {
+                            return scalar * (v - min) / (peak - min);
+                        }
+                    } else if axis_max < v && axis_max <= max {
+                        if axis_max <= peak && min < peak {
+                            return scalar * (v - min) / (peak - min);
+                        } else if peak < axis_max {
+                            return scalar * (v - max) / (peak - max);
+                        }
+                    }
                 }
 
                 if v <= min || max <= v {
@@ -1610,5 +1683,109 @@ mod tests {
                 ))
                 .collect::<Vec<_>>()
         );
+    }
+
+    // ported from python:
+    // https://github.com/fonttools/fonttools/blob/03a3c8ed/Tests/varLib/models_test.py#L134
+    #[test]
+    fn model_extrapolate() {
+        let locations = HashSet::from([
+            NormalizedLocation::for_pos(&[("a", 0.0), ("b", 0.0)]),
+            NormalizedLocation::for_pos(&[("a", 1.0), ("b", 0.0)]),
+            NormalizedLocation::for_pos(&[("a", 0.0), ("b", 1.0)]),
+            NormalizedLocation::for_pos(&[("a", 1.0), ("b", 1.0)]),
+        ]);
+        let axes = axis_order(&["a", "b"]);
+        let model = VariationModel::new_extrapolating(locations, axes);
+
+        let master_values = HashMap::from([
+            (
+                NormalizedLocation::for_pos(&[("a", 0.0), ("b", 0.0)]),
+                vec![100.0],
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 1.0), ("b", 0.0)]),
+                vec![200.0],
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 0.0), ("b", 1.0)]),
+                vec![300.0],
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 1.0), ("b", 1.0)]),
+                vec![400.0],
+            ),
+        ]);
+
+        let deltas = model.deltas(&master_values).unwrap();
+
+        let test_locs_and_values = vec![
+            (
+                NormalizedLocation::for_pos(&[("a", -1.0), ("b", -1.0)]),
+                -200.0,
+            ),
+            (NormalizedLocation::for_pos(&[("a", -1.0), ("b", 0.0)]), 0.0),
+            (
+                NormalizedLocation::for_pos(&[("a", -1.0), ("b", 1.0)]),
+                200.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", -1.0), ("b", 2.0)]),
+                400.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 0.0), ("b", -1.0)]),
+                -100.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 0.0), ("b", 0.0)]),
+                100.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 0.0), ("b", 1.0)]),
+                300.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 0.0), ("b", 2.0)]),
+                500.0,
+            ),
+            (NormalizedLocation::for_pos(&[("a", 1.0), ("b", -1.0)]), 0.0),
+            (
+                NormalizedLocation::for_pos(&[("a", 1.0), ("b", 0.0)]),
+                200.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 1.0), ("b", 1.0)]),
+                400.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 1.0), ("b", 2.0)]),
+                600.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 2.0), ("b", -1.0)]),
+                100.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 2.0), ("b", 0.0)]),
+                300.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 2.0), ("b", 1.0)]),
+                500.0,
+            ),
+            (
+                NormalizedLocation::for_pos(&[("a", 2.0), ("b", 2.0)]),
+                700.0,
+            ),
+        ];
+
+        for (loc, expected_value) in test_locs_and_values {
+            let interpolated = model.interpolate_from_deltas(&loc, &deltas);
+            assert_eq!(
+                expected_value, interpolated[0],
+                "Failed at location {loc:?}",
+            );
+        }
     }
 }
