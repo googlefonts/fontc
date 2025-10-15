@@ -1,0 +1,106 @@
+{
+.appVersion = "3434";
+familyName = SmartComponent;
+fontMaster = (
+{
+id = "034236B8-3FA8-43DA-9EDA-EFF269A687EC";
+}
+);
+glyphs = (
+{
+glyphname = composite;
+layers = (
+{
+components = (
+{
+alignment = -1;
+name = _part.square;
+piece = {
+Width = 413;
+};
+},
+{
+alignment = -1;
+name = _part.square;
+piece = {
+Width = 310;
+};
+transform = "{1, 0, 0, 1, 100, 100}";
+}
+);
+layerId = "034236B8-3FA8-43DA-9EDA-EFF269A687EC";
+width = 600;
+}
+);
+unicode = 004A;
+},
+{
+export = 0;
+glyphname = _part.square;
+layers = (
+{
+layerId = "034236B8-3FA8-43DA-9EDA-EFF269A687EC";
+paths = (
+{
+closed = 1;
+nodes = (
+"9 405 LINE",
+"9 383 LINE",
+"276 383 LINE",
+"276 405 LINE"
+);
+}
+);
+userData = {
+PartSelection = {
+Width = 1;
+};
+};
+width = 600;
+},
+{
+associatedMasterId = "034236B8-3FA8-43DA-9EDA-EFF269A687EC";
+layerId = "37412DF8-D748-433C-9EA9-03BA22CFDD6D";
+name = Wide;
+paths = (
+{
+closed = 1;
+nodes = (
+"9 405 LINE",
+"9 300 LINE",
+"276 300 LINE",
+"276 405 LINE"
+);
+}
+);
+userData = {
+PartSelection = {
+Width = 2;
+};
+};
+width = 693;
+}
+);
+partsSettings = (
+{
+name = Width;
+bottomName = Low;
+bottomValue = 310;
+topName = High;
+topValue = 413;
+}
+);
+}
+);
+instances = (
+{
+instanceInterpolations = {
+"034236B8-3FA8-43DA-9EDA-EFF269A687EC" = 1;
+};
+name = Regular;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 500;
+}
