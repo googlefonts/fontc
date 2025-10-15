@@ -64,6 +64,8 @@ defcon[lxml,pens]==0.12.2
     #   glyphsets
     #   mutatormath
     #   ufoprocessor
+ffmpeg-python==0.2.0
+    # via gftools
 filelock==3.20.0
     # via youseedee
 font-v==2.1.0
@@ -115,13 +117,15 @@ fonttools[lxml,repacker,ufo,unicode,woff]==4.60.1
     #   ufoprocessor
     #   vharfbuzz
     #   vttlib
+future==1.0.0
+    # via ffmpeg-python
 gflanguages==0.7.7
     # via
     #   gftools
     #   glyphsets
 gfsubsets==2024.9.25
     # via gftools
-gftools==0.9.85
+gftools==0.9.92
     # via -r resources/scripts/requirements.in
 gitdb==4.0.12
     # via gitpython
