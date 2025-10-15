@@ -1115,8 +1115,16 @@ struct RawLayer {
     // if this layer is part of a smart component; values should be 1 or 2
     // (this is validated when we convert to Layer)
     part_selection: BTreeMap<SmolStr, i64>,
+    // glyphs2 only?
+    user_data: LayerUserData,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
+}
+
+#[derive(Default, Clone, Debug, PartialEq, FromPlist)]
+struct LayerUserData {
+    #[fromplist(alt_name = "PartSelection")]
+    part_selection: BTreeMap<SmolStr, i64>,
 }
 
 impl RawLayer {
@@ -1128,7 +1136,8 @@ impl RawLayer {
     fn is_draft(&self) -> bool {
         self.associated_master_id.is_some()
             && self.attributes == Default::default()
-            && self.part_selection.is_empty()
+            && self.part_selection.is_empty() // v3
+            && self.user_data.part_selection.is_empty() // v2
     }
 
     /// Glyphs uses the concept of 'bracket layers' to represent GSUB feature variations.
@@ -1223,6 +1232,7 @@ pub struct Component {
     ///
     /// Keys should reference the axes in the component, with the value being
     /// a position in user coords.
+    #[fromplist(alt_name = "piece")]
     pub smart_component_values: BTreeMap<SmolStr, f64>,
     pub attributes: ShapeAttributes,
 }
@@ -2514,17 +2524,20 @@ impl RawLayer {
             );
             attributes.axis_rules.push(axis_rule);
         }
-        let smart_component_positions = self
-            .part_selection
-            .into_iter()
-            .map(|(k, v)| match v {
-                1 => Ok((k, AxisPole::Min)),
-                2 => Ok((k, AxisPole::Max)),
-                other => Err(Error::BadValue(format!(
-                    "expected only 1 or 2 in partSelection, found '{other}'"
-                ))),
-            })
-            .collect::<Result<_, _>>()?;
+        let smart_component_positions = if format_version.is_v2() {
+            self.user_data.part_selection
+        } else {
+            self.part_selection
+        }
+        .into_iter()
+        .map(|(k, v)| match v {
+            1 => Ok((k, AxisPole::Min)),
+            2 => Ok((k, AxisPole::Max)),
+            other => Err(Error::BadValue(format!(
+                "expected only 1 or 2 in partSelection, found '{other}'"
+            ))),
+        })
+        .collect::<Result<_, _>>()?;
         Ok(Layer {
             layer_id: self.layer_id,
             associated_master_id: self.associated_master_id,
@@ -5102,5 +5115,35 @@ etc;
             path.nodes.iter().map(|nd| nd.pt.x.round() as i64).max(),
             Some(335)
         );
+    }
+
+    #[test]
+    fn smart_component_v2() {
+        let font = Font::load(&glyphs2_dir().join("SmartComponent.glyphs")).unwrap();
+
+        let glyph = font.glyphs.get("composite").unwrap();
+        let shapes = &glyph.layers[0].shapes;
+        let paths = shapes
+            .iter()
+            .map(|s| {
+                s.as_path()
+                    .unwrap()
+                    .nodes
+                    .iter()
+                    .map(|n| n.pt)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let expected1 = [(9., 405.), (9., 300.), (276., 300.), (276.0, 405.0)]
+            .into_iter()
+            .map(Point::from)
+            .collect::<Vec<_>>();
+
+        let expected2 = [(9., 405.), (9., 383.), (276., 383.), (276.0, 405.0)]
+            .into_iter()
+            .map(|pt| Point::from(pt) + Vec2::new(100., 100.))
+            .collect::<Vec<_>>();
+
+        assert_eq!(paths, [expected1, expected2]);
     }
 }
