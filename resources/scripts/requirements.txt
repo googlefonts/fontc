@@ -12,7 +12,7 @@ absl-py==2.3.1
     #   picosvg
 afdko==4.0.2
     # via gftools
-attrs==25.3.0
+attrs==25.4.0
     # via
     #   cattrs
     #   statmake
@@ -21,7 +21,7 @@ axisregistry==0.4.16
     # via gftools
 babelfont==3.1.3
     # via gftools
-beautifulsoup4==4.13.5
+beautifulsoup4==4.14.2
     # via gftools
 booleanoperations==0.9.0
     # via
@@ -36,13 +36,13 @@ bump2version==1.0.1
     # via bumpfontversion
 bumpfontversion==0.4.1
     # via gftools
-cattrs==25.2.0
+cattrs==25.3.0
     # via
     #   statmake
     #   ufolib2
 cdifflib==1.2.9
     # via -r resources/scripts/requirements.in
-certifi==2025.8.3
+certifi==2025.10.5
     # via requests
 cffi==2.0.0
     # via
@@ -51,11 +51,11 @@ cffi==2.0.0
     #   pynacl
 cffsubr==0.3.0
     # via ufo2ft
-charset-normalizer==3.4.3
+charset-normalizer==3.4.4
     # via requests
 compreffor==0.5.6
     # via ufo2ft
-cryptography==46.0.1
+cryptography==46.0.2
     # via pyjwt
 defcon[lxml,pens]==0.12.2
     # via
@@ -64,7 +64,7 @@ defcon[lxml,pens]==0.12.2
     #   glyphsets
     #   mutatormath
     #   ufoprocessor
-filelock==3.19.1
+filelock==3.20.0
     # via youseedee
 font-v==2.1.0
     # via gftools
@@ -86,7 +86,7 @@ fontparts==0.13.3
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.60.0
+fonttools[lxml,repacker,ufo,unicode,woff]==4.60.1
     # via
     #   -r resources/scripts/requirements.in
     #   afdko
@@ -129,14 +129,14 @@ gitpython==3.1.45
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.11.6
+glyphslib==6.12.0
     # via
     #   -r resources/scripts/requirements.in
     #   bumpfontversion
     #   fontmake
     #   gftools
     #   glyphsets
-idna==3.10
+idna==3.11
     # via requests
 importlib-resources==6.5.2
     # via gfsubsets
@@ -152,13 +152,13 @@ lxml==6.0.2
     #   picosvg
 markdown-it-py==4.0.0
     # via rich
-markupsafe==3.0.2
+markupsafe==3.0.3
     # via jinja2
 mdurl==0.1.2
     # via markdown-it-py
 mutatormath==3.0.1
     # via ufoprocessor
-nanoemoji==0.15.8
+nanoemoji==0.15.9
     # via gftools
 networkx==3.5
     # via gftools
@@ -166,7 +166,7 @@ ninja==1.13.0
     # via
     #   gftools
     #   nanoemoji
-openstep-plist==0.5.0
+openstep-plist==0.5.1
     # via
     #   babelfont
     #   bumpfontversion
@@ -185,7 +185,7 @@ pillow==11.3.0
     # via
     #   gftools
     #   nanoemoji
-platformdirs==4.4.0
+platformdirs==4.5.0
     # via youseedee
 pngquant-cli==3.0.3
     # via nanoemoji
@@ -212,7 +212,7 @@ pyparsing==3.2.5
     # via vttlib
 python-dateutil==2.9.0.post0
     # via strictyaml
-pyyaml==6.0.2
+pyyaml==6.0.3
     # via
     #   gftools
     #   glyphsets
@@ -226,7 +226,7 @@ requests==2.32.5
     #   youseedee
 resvg-cli==0.44.0
     # via nanoemoji
-rich==14.1.0
+rich==14.2.0
     # via gftools
 ruamel-yaml==0.18.15
     # via gftools
@@ -261,7 +261,7 @@ typing-extensions==4.15.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.6.6
+ufo2ft[cffsubr,compreffor]==3.6.8
     # via
     #   fontmake
     #   nanoemoji
@@ -278,11 +278,11 @@ ufomerge==1.9.6
     # via
     #   babelfont
     #   gftools
-ufonormalizer==0.6.2
+ufonormalizer==0.6.3
     # via afdko
 ufoprocessor==1.14.0
     # via afdko
-uharfbuzz==0.51.5
+uharfbuzz==0.51.7
     # via
     #   fonttools
     #   vharfbuzz
