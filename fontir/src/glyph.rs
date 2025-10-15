@@ -468,7 +468,7 @@ fn instantiate_instance(
     let deltas = model
         .deltas_with_rounding(&point_seqs, RoundingBehaviour::None)
         .map_err(|e| BadGlyph::new(&glyph.name, e))?;
-    let points = VariationModel::interpolate_from_deltas(loc, &deltas);
+    let points = model.interpolate_from_deltas(loc, &deltas);
     Ok(glyph
         .default_instance()
         .new_with_interpolated_values(&points))

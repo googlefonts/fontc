@@ -138,7 +138,7 @@ pub(crate) fn instantiate_for_layer(
         })
         .collect::<Result<HashMap<_, _>, BadSmartComponent>>()?;
     let deltas = model.deltas(&point_seqs).unwrap();
-    let points = VariationModel::interpolate_from_deltas(&location, &deltas);
+    let points = model.interpolate_from_deltas(&location, &deltas);
     let mut shapes = shapes_with_new_points(relevant_layers[0], &points);
     shapes.iter_mut().for_each(|shape| {
         shape.apply_affine(component.transform);

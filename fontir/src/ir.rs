@@ -625,7 +625,10 @@ impl GlobalMetrics {
     pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f64> {
         let deltas = self.deltas(metric);
 
-        VariationModel::interpolate_from_deltas(pos, deltas)
+        VariationModel::empty()
+            // the 'self' param of this method is only used to get extrapolation
+            // information, and we are not extrapolating here.
+            .interpolate_from_deltas(pos, deltas)
             .iter()
             .map(|float| OrderedFloat::<f64>::from(*float))
             .sum()
