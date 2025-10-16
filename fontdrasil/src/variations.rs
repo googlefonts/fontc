@@ -356,6 +356,7 @@ impl VariationModel {
     /// type parameter for the return value so that e.g. absolute Points are returned
     /// when the deltas are Vec2?
     pub fn interpolate_from_deltas<V>(
+        &self,
         location: &NormalizedLocation,
         deltasets: &[(VariationRegion, Vec<V>)],
     ) -> Vec<V>
@@ -1429,10 +1430,7 @@ mod tests {
 
         let loc = NormalizedLocation::for_pos(&[("wght", -0.5)]);
         let expected = vec![7.5];
-        assert_eq!(
-            expected,
-            VariationModel::interpolate_from_deltas(&loc, &deltas)
-        );
+        assert_eq!(expected, model.interpolate_from_deltas(&loc, &deltas));
     }
 
     #[derive(Debug, Default, Copy, Clone, PartialEq)]
@@ -1521,8 +1519,8 @@ mod tests {
                     .all(|(_, deltas)| { deltas.iter().all(|d| d.fract() == 0.0) })
             );
 
-            let expected: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_float);
-            let actual: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_round);
+            let expected: Vec<f64> = model.interpolate_from_deltas(&loc, &deltas_float);
+            let actual: Vec<f64> = model.interpolate_from_deltas(&loc, &deltas_round);
 
             let err = (actual[0] - expected[0]).abs();
             assert!(err <= 0.5, "i: {i}, err: {err}");
@@ -1530,7 +1528,7 @@ mod tests {
             // when the influence of many masters overlap a particular location
             // interpolating from late-rounded deltas may lead to an accummulation
             // of rounding errors that exceed the max tolerance
-            let bad = VariationModel::interpolate_from_deltas(&loc, &deltas_late_round);
+            let bad = model.interpolate_from_deltas(&loc, &deltas_late_round);
             let err_bad = (bad[0] - expected[0]).abs();
             if err_bad > 0.5 {
                 num_bad_errors += 1;
@@ -1608,9 +1606,7 @@ mod tests {
                 .iter()
                 .map(|(loc, _)| (
                     loc.clone(),
-                    VariationModel::interpolate_from_deltas(loc, &deltas)
-                        .iter()
-                        .sum()
+                    model.interpolate_from_deltas(loc, &deltas).iter().sum()
                 ))
                 .collect::<Vec<_>>()
         );
