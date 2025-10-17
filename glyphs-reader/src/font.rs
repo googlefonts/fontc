@@ -75,6 +75,7 @@ pub struct Font {
     pub virtual_masters: Vec<BTreeMap<String, OrderedFloat<f64>>>,
     pub features: Vec<FeatureSnippet>,
     pub names: BTreeMap<String, String>,
+    pub localized_names: BTreeMap<String, Vec<(String, String)>>,
     pub instances: Vec<Instance>,
     pub version_major: i32,
     pub version_minor: u32,
@@ -1038,6 +1039,12 @@ impl RawName {
             })
             .min()
             .map(|(_, raw)| raw)
+    }
+
+    fn localized_values(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.values
+            .iter()
+            .map(|raw| (raw.language.as_str(), raw.value.as_str()))
     }
 }
 
@@ -2645,6 +2652,14 @@ static GLYPHS_TO_OPENTYPE_LANGUAGE_ID: &[(&str, i32)] = &[
     ("dflt", 0x0409),
 ];
 
+/// Maps Glyphs language codes to OpenType language IDs
+pub fn glyphs_to_opentype_lang_id(lang: &str) -> Option<u16> {
+    GLYPHS_TO_OPENTYPE_LANGUAGE_ID
+        .binary_search_by_key(&lang, |entry| entry.0)
+        .ok()
+        .map(|idx| GLYPHS_TO_OPENTYPE_LANGUAGE_ID[idx].1 as u16)
+}
+
 impl RawFeature {
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L43
     fn autostr(&self) -> &str {
@@ -2747,19 +2762,12 @@ impl RawNameValue {
             return None;
         }
 
-        match GLYPHS_TO_OPENTYPE_LANGUAGE_ID
-            .binary_search_by_key(&self.language.as_str(), |entry| entry.0)
-        {
-            Ok(idx) => {
-                let language_id = GLYPHS_TO_OPENTYPE_LANGUAGE_ID[idx].1;
-                let name = self.value.replace("\\", "\\005c").replace("\"", "\\0022");
-                Some(format!("  name 3 1 0x{language_id:04X} \"{name}\";"))
-            }
-            Err(_) => {
-                warn!("Unknown feature label language: {}", self.language);
-                None
-            }
-        }
+        let Some(language_id) = glyphs_to_opentype_lang_id(&self.language) else {
+            warn!("Unknown feature label language: {}", self.language);
+            return None;
+        };
+        let name = self.value.replace("\\", "\\005c").replace("\"", "\\0022");
+        Some(format!("  name 3 1 0x{language_id:04X} \"{name}\";"))
     }
 }
 
@@ -2981,11 +2989,23 @@ fn codepage_range_bit(codepage: u32) -> Result<u32, Error> {
     })
 }
 
-fn update_names(names: &mut BTreeMap<String, String>, raw_names: &[RawName]) {
+fn update_names(
+    names: &mut BTreeMap<String, String>,
+    localized_names: &mut BTreeMap<String, Vec<(String, String)>>,
+    raw_names: &[RawName],
+) {
     for name in raw_names {
-        // Name may have one value, in which case use it, or lots, in which case try to pick a winner
         if let Some(value) = name.get_value() {
             names.insert(name.key.clone(), value.to_string());
+        }
+
+        let localized: Vec<_> = name
+            .localized_values()
+            .filter(|(lang, _)| !matches!(*lang, "dflt" | "default" | "ENG"))
+            .map(|(lang, val)| (lang.to_string(), val.to_string()))
+            .collect();
+        if !localized.is_empty() {
+            localized_names.insert(name.key.clone(), localized);
         }
     }
 }
@@ -3055,20 +3075,19 @@ impl TryFrom<RawFont> for Font {
         let units_per_em = units_per_em.try_into().map_err(Error::InvalidUpem)?;
 
         let mut names = BTreeMap::new();
-        update_names(&mut names, &from.properties);
-        // Evidently names can come from instances too! They are higher priority so do them last (overwriting prior values)
+        let mut localized_names = BTreeMap::new();
+        update_names(&mut names, &mut localized_names, &from.properties);
         for instance in &instances {
             if instance.active
                 && instance.type_ == InstanceType::Variable
                     // glyphsLib has instance.familyName return the root familyName
                     // if it has no other value; we just unwrap_or_true here
                     // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577/Lib/glyphsLib/classes.py#L3272
-                && instance.family_name().map(|name| name ==  from.family_name.as_str()).unwrap_or(true)
+                && instance.family_name().map(|name| name == from.family_name.as_str()).unwrap_or(true)
             {
-                update_names(&mut names, &instance.properties);
+                update_names(&mut names, &mut localized_names, &instance.properties);
             }
         }
-        // And a final few delicate butterflies
         names.insert("familyNames".into(), from.family_name);
         if let Some(version) = names.remove("versionString") {
             names.insert("version".into(), version);
@@ -3127,6 +3146,7 @@ impl TryFrom<RawFont> for Font {
             virtual_masters,
             features,
             names,
+            localized_names,
             instances,
             version_major: from.versionMajor.unwrap_or_default() as i32,
             version_minor: from.versionMinor.unwrap_or_default() as u32,
@@ -3544,6 +3564,37 @@ mod tests {
         GlyphsAndPackage,
     }
 
+    /// Asserts that two Font structs are equal, excluding the localized_names field.
+    /// This is useful for comparing v2 and v3 Glyphs files where localized_names
+    /// may differ due to format changes.
+    fn assert_fonts_equal_sans_localized_names(f1: &Font, f2: &Font, context: &str) {
+        assert_eq!(f1.units_per_em, f2.units_per_em, "{context}");
+        assert_eq!(f1.axes, f2.axes, "{context}");
+        assert_eq!(f1.masters, f2.masters, "{context}");
+        assert_eq!(f1.default_master_idx, f2.default_master_idx, "{context}");
+        assert_eq!(f1.glyphs, f2.glyphs, "{context}");
+        assert_eq!(f1.glyph_order, f2.glyph_order, "{context}");
+        assert_eq!(f1.axis_mappings, f2.axis_mappings, "{context}");
+        assert_eq!(f1.virtual_masters, f2.virtual_masters, "{context}");
+        assert_eq!(f1.features, f2.features, "{context}");
+        assert_eq!(f1.names, f2.names, "{context}");
+        assert_eq!(f1.instances, f2.instances, "{context}");
+        assert_eq!(f1.version_major, f2.version_major, "{context}");
+        assert_eq!(f1.version_minor, f2.version_minor, "{context}");
+        assert_eq!(f1.date, f2.date, "{context}");
+        assert_eq!(f1.kerning_ltr, f2.kerning_ltr, "{context}");
+        assert_eq!(f1.kerning_rtl, f2.kerning_rtl, "{context}");
+        assert_eq!(f1.custom_parameters, f2.custom_parameters, "{context}");
+        // Note: localized_names is intentionally excluded from comparison
+    }
+
+    /// Asserts that two Font structs are equal, including the localized_names field.
+    /// This is useful for comparing two v3 Glyphs files where all fields should match.
+    fn assert_fonts_equal(f1: &Font, f2: &Font, context: &str) {
+        assert_fonts_equal_sans_localized_names(f1, f2, context);
+        assert_eq!(f1.localized_names, f2.localized_names, "{context}");
+    }
+
     fn assert_load_v2_matches_load_v3(name: &str, compare: LoadCompare) {
         let has_package = matches!(compare, LoadCompare::GlyphsAndPackage);
         let _ = env_logger::builder().is_test(true).try_init();
@@ -3558,12 +3609,11 @@ mod tests {
         std::fs::write("/tmp/g2.glyphs.txt", format!("{g2:#?}")).unwrap();
         std::fs::write("/tmp/g3.glyphs.txt", format!("{g3:#?}")).unwrap();
 
-        // Assert fields that often don't match individually before doing the whole struct for nicer diffs
-        assert_eq!(g2.axes, g3.axes, "axes mismatch {g2_file:?} vs {g3_file:?}");
-        for (g2m, g3m) in g2.masters.iter().zip(g3.masters.iter()) {
-            assert_eq!(g2m, g3m, "master mismatch {g2_file:?} vs {g3_file:?}");
-        }
-        assert_eq!(g2, g3, "g2 should match g3 {g2_file:?} vs {g3_file:?}");
+        assert_fonts_equal_sans_localized_names(
+            &g2,
+            &g3,
+            &format!("g2 vs g3: {g2_file:?} vs {g3_file:?}"),
+        );
 
         if has_package {
             let g2_pkg = Font::load(&glyphs2_dir().join(pkgname.clone())).unwrap();
@@ -3572,8 +3622,8 @@ mod tests {
             std::fs::write("/tmp/g2.glyphspackage.txt", format!("{g2_pkg:#?}")).unwrap();
             std::fs::write("/tmp/g3.glyphspackage.txt", format!("{g3_pkg:#?}")).unwrap();
 
-            assert_eq!(g2_pkg, g3_pkg, "g2_pkg should match g3_pkg");
-            assert_eq!(g3_pkg, g3, "g3_pkg should match g3");
+            assert_fonts_equal_sans_localized_names(&g2_pkg, &g3_pkg, "g2_pkg vs g3_pkg");
+            assert_fonts_equal(&g3_pkg, &g3, "g3_pkg vs g3");
         }
     }
 

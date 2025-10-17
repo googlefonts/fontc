@@ -117,6 +117,15 @@ impl NameKey {
         }
     }
 
+    pub fn new_with_lang(name_id: NameId, value: &str, lang_id: u16) -> NameKey {
+        NameKey {
+            platform_id: 3,
+            encoding_id: Self::encoding_for(value),
+            lang_id,
+            name_id,
+        }
+    }
+
     /// The encoding for a Windows-platform (which works everywhere) name.
     ///
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name#platform-specific-encoding-and-language-ids-windows-platform-platform-id-3>

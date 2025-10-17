@@ -191,6 +191,14 @@ fn try_name_id(name: &str) -> Option<NameId> {
     }
 }
 
+fn try_language_id(lang: &str) -> Option<u16> {
+    let lang_id = glyphs_reader::glyphs_to_opentype_lang_id(lang);
+    if lang_id.is_none() {
+        warn!("Unknown language code: {}", lang);
+    }
+    lang_id
+}
+
 fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     let mut builder = NameBuilder::default();
     builder.set_version(font.version_major, font.version_minor);
@@ -247,7 +255,28 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
         .unwrap_or(DEFAULT_VENDOR_ID);
     builder.apply_default_fallbacks(vendor);
 
-    builder.into_inner()
+    let mut names = builder.into_inner();
+
+    for (key, localized_values) in font.localized_names.iter() {
+        let Some(name_id) = try_name_id(key) else {
+            continue;
+        };
+
+        for (lang, value) in localized_values {
+            if matches!(lang.as_str(), "dflt" | "default" | "ENG") {
+                continue;
+            }
+
+            let Some(lang_id) = try_language_id(lang) else {
+                continue;
+            };
+
+            let name_key = NameKey::new_with_lang(name_id, value, lang_id);
+            names.insert(name_key, value.clone());
+        }
+    }
+
+    names
 }
 
 #[derive(Debug)]
@@ -2158,6 +2187,226 @@ mod tests {
             ],
         );
         assert_eq!(expected_names, names);
+    }
+
+    #[test]
+    fn name_table_with_localized_properties() {
+        let font = Font::load(&glyphs3_dir().join("LocalizedNames.glyphs")).unwrap();
+        let names = names(&font, SelectionFlags::REGULAR);
+
+        assert_eq!(
+            "Copyright Default",
+            names
+                .get(&NameKey::new_bmp_only(NameId::COPYRIGHT_NOTICE))
+                .unwrap()
+        );
+        assert_eq!(
+            "Droit d'auteur",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::COPYRIGHT_NOTICE,
+                    "Droit d'auteur",
+                    0x040C
+                ))
+                .unwrap()
+        );
+        assert_eq!(
+            "Urheberrecht",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::COPYRIGHT_NOTICE,
+                    "Urheberrecht",
+                    0x0407
+                ))
+                .unwrap()
+        );
+
+        assert_eq!(
+            "Designer Name",
+            names.get(&NameKey::new_bmp_only(NameId::DESIGNER)).unwrap()
+        );
+        assert_eq!(
+            "デザイナー名",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::DESIGNER,
+                    "デザイナー名",
+                    0x0411
+                ))
+                .unwrap()
+        );
+
+        assert_eq!(
+            "Manufacturer Name",
+            names
+                .get(&NameKey::new_bmp_only(NameId::MANUFACTURER))
+                .unwrap()
+        );
+        assert_eq!(
+            "Fabricant",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::MANUFACTURER,
+                    "Fabricant",
+                    0x040C
+                ))
+                .unwrap()
+        );
+        assert_eq!(
+            "Hersteller",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::MANUFACTURER,
+                    "Hersteller",
+                    0x0407
+                ))
+                .unwrap()
+        );
+
+        assert_eq!(
+            "A test font with localized properties",
+            names
+                .get(&NameKey::new_bmp_only(NameId::DESCRIPTION))
+                .unwrap()
+        );
+        assert_eq!(
+            "Une police de test avec des propriétés localisées",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::DESCRIPTION,
+                    "Une police de test avec des propriétés localisées",
+                    0x040C
+                ))
+                .unwrap()
+        );
+        assert_eq!(
+            "ローカライズされたプロパティを持つテストフォント",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::DESCRIPTION,
+                    "ローカライズされたプロパティを持つテストフォント",
+                    0x0411
+                ))
+                .unwrap()
+        );
+
+        assert_eq!(
+            "Licensed under the SIL Open Font License",
+            names
+                .get(&NameKey::new_bmp_only(NameId::LICENSE_DESCRIPTION))
+                .unwrap()
+        );
+        assert_eq!(
+            "Sous licence SIL Open Font License",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::LICENSE_DESCRIPTION,
+                    "Sous licence SIL Open Font License",
+                    0x040C
+                ))
+                .unwrap()
+        );
+        assert_eq!(
+            "Lizenziert unter der SIL Open Font License",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::LICENSE_DESCRIPTION,
+                    "Lizenziert unter der SIL Open Font License",
+                    0x0407
+                ))
+                .unwrap()
+        );
+
+        assert_eq!(
+            "LocalizedFont is a trademark",
+            names
+                .get(&NameKey::new_bmp_only(NameId::TRADEMARK))
+                .unwrap()
+        );
+        assert_eq!(
+            "LocalizedFont est une marque déposée",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::TRADEMARK,
+                    "LocalizedFont est une marque déposée",
+                    0x040C
+                ))
+                .unwrap()
+        );
+
+        assert_eq!(
+            "The quick brown fox",
+            names
+                .get(&NameKey::new_bmp_only(NameId::SAMPLE_TEXT))
+                .unwrap()
+        );
+        assert_eq!(
+            "Portez ce vieux whisky",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::SAMPLE_TEXT,
+                    "Portez ce vieux whisky",
+                    0x040C
+                ))
+                .unwrap()
+        );
+        assert_eq!(
+            "Zwölf Boxkämpfer",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::SAMPLE_TEXT,
+                    "Zwölf Boxkämpfer",
+                    0x0407
+                ))
+                .unwrap()
+        );
+        assert_eq!(
+            "いろはにほへと",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::SAMPLE_TEXT,
+                    "いろはにほへと",
+                    0x0411
+                ))
+                .unwrap()
+        );
+
+        assert_eq!(
+            "LocalizedFont",
+            names
+                .get(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
+                .unwrap()
+        );
+        assert_eq!(
+            "PoliceLocalisée",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::FAMILY_NAME,
+                    "PoliceLocalisée",
+                    0x040C
+                ))
+                .unwrap()
+        );
+        assert_eq!(
+            "LokalisierteSchrift",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::FAMILY_NAME,
+                    "LokalisierteSchrift",
+                    0x0407
+                ))
+                .unwrap()
+        );
+        assert_eq!(
+            "ローカライズフォント",
+            names
+                .get(&NameKey::new_with_lang(
+                    NameId::FAMILY_NAME,
+                    "ローカライズフォント",
+                    0x0411
+                ))
+                .unwrap()
+        );
     }
 
     #[test]
