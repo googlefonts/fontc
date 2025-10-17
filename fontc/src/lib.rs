@@ -154,13 +154,20 @@ fn _generate_font(
     source: Box<dyn Source>,
     build_dir: &Path,
     output_file: Option<&PathBuf>,
-    flags: Flags,
+    mut flags: Flags,
     skip_features: bool,
     mut timer: JobTimer,
 ) -> Result<(BeContext, JobTimer), Error> {
+    // Handle flatten_components: CLI flag takes precedence, source is fallback
+    // See https://github.com/googlefonts/fontc/issues/1665
+    if !flags.contains(Flags::FLATTEN_COMPONENTS) && source.should_flatten_components() {
+        flags.set(Flags::FLATTEN_COMPONENTS, true);
+    }
+
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
+
     let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
     timer.add(time.complete());
     let workload = Workload::new(source, timer, skip_features)?;

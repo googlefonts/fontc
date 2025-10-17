@@ -1330,6 +1330,7 @@ pub struct FontMaster {
     metric_values: BTreeMap<String, MetricValue>,
     pub number_values: BTreeMap<SmolStr, OrderedFloat<f64>>,
     pub custom_parameters: CustomParameters,
+    pub user_data: Option<Plist>,
 }
 
 impl FontMaster {
@@ -1398,6 +1399,7 @@ struct RawFontMaster {
 
     custom_parameters: RawCustomParameters,
     number_values: Vec<OrderedFloat<f64>>,
+    user_data: Option<Plist>,
 
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
@@ -3111,6 +3113,7 @@ impl TryFrom<RawFont> for Font {
                         .map(|(k, v)| (k.name.clone(), *v))
                         .collect(),
                     custom_parameters,
+                    user_data: m.user_data,
                 })
             })
             .collect::<Result<_, Error>>()?;

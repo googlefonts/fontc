@@ -44,7 +44,8 @@ pub struct Args {
 
     /// Eliminate component references to other glyphs using components (that is, nested components),
     /// emitting only component references to simple (contour) glyphs.
-    #[arg(long, default_value = "false")]
+    /// The source file's userData/lib may enable this automatically.
+    #[arg(long, default_value_t = false)]
     pub flatten_components: bool,
 
     /// Whether all components with a non-identity 2x2 transform will be converted to outlines.

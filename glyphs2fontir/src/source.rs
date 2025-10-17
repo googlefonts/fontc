@@ -62,6 +62,29 @@ impl GlyphsIrSource {
             bracket_glyph_parent: base_name,
         })
     }
+
+    /// Check if the default master's userData contains the flattenComponents filter
+    fn should_flatten_components(&self) -> bool {
+        const FILTERS_LIB_KEY: &str = "com.github.googlei18n.ufo2ft.filters";
+
+        self.font_info
+            .font
+            .default_master()
+            .user_data
+            .as_ref()
+            .and_then(|plist| plist.as_dict())
+            .and_then(|dict| dict.get(FILTERS_LIB_KEY))
+            .and_then(|filters| filters.as_array())
+            .map(|filters| {
+                filters
+                    .iter()
+                    .filter_map(|filter| filter.as_dict())
+                    .any(|filter| {
+                        filter.get("name").and_then(|v| v.as_str()) == Some("flattenComponents")
+                    })
+            })
+            .unwrap_or(false)
+    }
 }
 
 impl Source for GlyphsIrSource {
@@ -141,6 +164,11 @@ impl Source for GlyphsIrSource {
         Ok(Box::new(PaintGraphWork {
             _font_info: self.font_info.clone(),
         }))
+    }
+
+    fn should_flatten_components(&self) -> bool {
+        // Delegate to the private method in the inherent impl
+        self.should_flatten_components()
     }
 }
 
