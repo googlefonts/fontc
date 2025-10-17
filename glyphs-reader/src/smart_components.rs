@@ -53,13 +53,23 @@ pub(crate) fn instantiate_for_layer(
 
     // these are the layers of the glyph that have the same associated master
     // as the layer that we are instantiating for.
-    let relevant_layers = ref_glyph
+    let mut relevant_layers = ref_glyph
         .layers
         .iter()
         .filter(|layer| {
             !layer.smart_component_positions.is_empty() && layer.master_id() == layer_master_id
         })
         .collect::<Vec<_>>();
+
+    // make sure default layer is first (in python this happens in the iterator itself)
+    // https://github.com/googlefonts/glyphsLib/blob/52c98239/Lib/glyphsLib/classes.py#L555
+    if let Some(idx) = relevant_layers
+        .iter()
+        .position(|l| l.layer_id == layer_master_id)
+        .filter(|idx| *idx != 0)
+    {
+        relevant_layers.swap(0, idx);
+    }
 
     if relevant_layers.is_empty() {
         return Err(BadSmartComponent::NoLayer(layer_master_id.to_string()));

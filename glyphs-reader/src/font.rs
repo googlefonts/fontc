@@ -5098,7 +5098,8 @@ etc;
         let smart_comp = font.glyphs.get("_part.shoulder").unwrap();
         let shape = instantiate_shoulder_at(&[("shoulderWidth", 100.), ("crotchDepth", 0.)]);
 
-        assert_eq!(shape, smart_comp.layers[0].shapes[0]);
+        assert_eq!(smart_comp.layers[1].layer_id, "m01");
+        assert_eq!(shape, smart_comp.layers[1].shapes[0]);
     }
 
     #[test]
