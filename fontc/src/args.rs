@@ -44,8 +44,9 @@ pub struct Args {
 
     /// Eliminate component references to other glyphs using components (that is, nested components),
     /// emitting only component references to simple (contour) glyphs.
-    #[arg(long, default_value = "false")]
-    pub flatten_components: bool,
+    /// If not specified, the source file's userData/lib may enable this automatically.
+    #[arg(long)]
+    pub flatten_components: Option<bool>,
 
     /// Whether all components with a non-identity 2x2 transform will be converted to outlines.
     // Named to match the ufo2ft flag as suggested in <https://github.com/googlefonts/fontc/pull/480#discussion_r1343801553>
@@ -118,7 +119,10 @@ impl Args {
         flags.set(Flags::EMIT_IR, self.emit_ir);
         flags.set(Flags::EMIT_DEBUG, self.emit_debug);
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
-        flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
+        // flatten_components is handled separately in _generate_font() to support tri-state logic
+        if let Some(flatten) = self.flatten_components {
+            flags.set(Flags::FLATTEN_COMPONENTS, flatten);
+        }
         flags.set(
             Flags::DECOMPOSE_TRANSFORMED_COMPONENTS,
             self.decompose_transformed_components,
@@ -142,7 +146,7 @@ impl Args {
             emit_timing: false,
             build_dir: build_dir.to_path_buf(),
             prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
-            flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
+            flatten_components: None, // Tri-state: None means check source
             decompose_transformed_components: Flags::default()
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             decompose_components: Flags::default().contains(Flags::DECOMPOSE_COMPONENTS),

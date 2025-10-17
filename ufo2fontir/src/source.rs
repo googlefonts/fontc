@@ -151,6 +151,25 @@ impl DesignSpaceIrSource {
             })
             .unwrap_or(false)
     }
+
+    /// Check if the lib contains the flattenComponents filter
+    /// See https://github.com/googlefonts/fontc/issues/1665
+    fn should_flatten_components(&self) -> bool {
+        const FILTERS_LIB_KEY: &str = "com.github.googlei18n.ufo2ft.filters";
+        self.designspace
+            .lib
+            .get(FILTERS_LIB_KEY)
+            .and_then(Value::as_array)
+            .map(|filters| {
+                filters
+                    .iter()
+                    .filter_map(Value::as_dictionary)
+                    .any(|filter| {
+                        filter.get("name").and_then(Value::as_string) == Some("flattenComponents")
+                    })
+            })
+            .unwrap_or(false)
+    }
 }
 
 fn load_designspace(
@@ -393,6 +412,11 @@ impl Source for DesignSpaceIrSource {
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         Ok(Box::new(PaintGraphWork {}))
+    }
+
+    fn should_flatten_components(&self) -> bool {
+        // Delegate to the private method in the inherent impl
+        self.should_flatten_components()
     }
 }
 

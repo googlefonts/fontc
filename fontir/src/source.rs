@@ -60,4 +60,12 @@ pub trait Source {
     ///
     /// When run work should update [crate::orchestration::Context] with new [crate::ir::PaintGraph].
     fn create_paint_graph_work(&self) -> Result<Box<IrWork>, Error>;
+
+    /// Check if this source contains a flattenComponents filter in its userData/lib.
+    ///
+    /// For Glyphs files, this checks the default master's userData for the ufo2ft filter.
+    /// See <https://github.com/googlefonts/fontc/issues/1665>
+    fn should_flatten_components(&self) -> bool {
+        false // default implementation
+    }
 }
