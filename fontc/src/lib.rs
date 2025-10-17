@@ -4267,4 +4267,12 @@ mod tests {
             HashSet::from([1000, 1100])
         );
     }
+
+    #[test]
+    fn ufo2ftfilters() {
+        let result = TestCompile::compile_source("glyphs3/UfoFilters.glyphs");
+        let meta = result.fe_context.static_metadata.get();
+        assert!(meta.args.flatten_components);
+        assert!(meta.args.propagate_anchors);
+    }
 }

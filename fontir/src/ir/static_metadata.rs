@@ -78,6 +78,8 @@ pub struct StaticMetadata {
 
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
+    /// Additional compilation arguments derived from the source
+    pub args: SourceArgs,
     pub gdef_categories: GdefCategories,
     /// Feature variation rules
     pub variations: Option<VariableFeature>,
@@ -198,6 +200,13 @@ pub struct MiscMetadata {
 
     // <https://learn.microsoft.com/en-us/typography/opentype/spec/gasp>
     pub gasp: Vec<GaspRange>,
+}
+
+/// Compilation arguments stored in the source file
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+pub struct SourceArgs {
+    pub flatten_components: bool,
+    pub propagate_anchors: bool,
 }
 
 /// Records that will go in the '[meta]' table.
@@ -475,6 +484,7 @@ impl StaticMetadata {
                 gasp: Vec::new(),
             },
             variations: None,
+            args: Default::default(),
         })
     }
 
@@ -626,6 +636,7 @@ mod tests {
             number_values: Default::default(),
             variations: None,
             build_vertical: false,
+            args: Default::default(),
         }
     }
 
