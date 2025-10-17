@@ -203,7 +203,7 @@ pub struct MiscMetadata {
 }
 
 /// Compilation arguments stored in the source file
-#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceArgs {
     pub flatten_components: bool,
     pub propagate_anchors: bool,
