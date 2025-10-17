@@ -1,0 +1,33 @@
+{
+.appVersion = "3227";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+fontMaster = (
+{
+axesValues = (
+220
+);
+id = "EC64484B-0978-4CB1-9EE9-C40A2D8C4059";
+userData = {
+com.github.googlei18n.ufo2ft.filters = (
+{
+name = propagateAnchors;
+pre = 1;
+},
+{
+name = flattenComponents;
+}
+);
+};
+visible = 1;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 2;
+versionMinor = 201;
+}
