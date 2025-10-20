@@ -83,6 +83,10 @@ value = "Manufacturer Name";
 },
 {
 language = FRA;
+value = "Fabricant Premier";
+},
+{
+language = FRA;
 value = Fabricant;
 },
 {

@@ -2236,12 +2236,15 @@ mod tests {
                 .unwrap()
         );
 
+        // Test manufacturers with duplicate FRA entries - should pick the last occurrence
         assert_eq!(
             "Manufacturer Name",
             names
                 .get(&NameKey::new_bmp_only(NameId::MANUFACTURER))
                 .unwrap()
         );
+        // Verify that the SECOND FRA value wins (last occurrence after dedup)
+        // Note: NameKey doesn't include the value, so we can only verify the correct value exists
         assert_eq!(
             "Fabricant",
             names

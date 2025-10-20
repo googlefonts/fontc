@@ -62,7 +62,7 @@ pub struct AxisUserToDesignMap(Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>);
 /// A tidied up font from a plist.
 ///
 /// Normalized representation of Glyphs 2/3 content
-#[derive(Debug, Default, PartialEq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Hash)]
 pub struct Font {
     pub units_per_em: u16,
     pub axes: Vec<Axis>,
@@ -261,7 +261,7 @@ impl FromPlist for Kerning {
 }
 
 /// A chunk of FEA code
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FeatureSnippet {
     pub content: String,
     /// If `true` the content should be ignored.
@@ -2999,12 +2999,14 @@ fn update_names(
             names.insert(name.key.clone(), value.to_string());
         }
 
-        let localized: Vec<_> = name
+        // Collect into BTreeMap to deduplicate language codes (last occurrence wins)
+        let localized_map: BTreeMap<String, String> = name
             .localized_values()
             .filter(|(lang, _)| !matches!(*lang, "dflt" | "default" | "ENG"))
             .map(|(lang, val)| (lang.to_string(), val.to_string()))
             .collect();
-        if !localized.is_empty() {
+        if !localized_map.is_empty() {
+            let localized: Vec<_> = localized_map.into_iter().collect();
             localized_names.insert(name.key.clone(), localized);
         }
     }
@@ -3568,24 +3570,11 @@ mod tests {
     /// This is useful for comparing v2 and v3 Glyphs files where localized_names
     /// may differ due to format changes.
     fn assert_fonts_equal_sans_localized_names(f1: &Font, f2: &Font, context: &str) {
-        assert_eq!(f1.units_per_em, f2.units_per_em, "{context}");
-        assert_eq!(f1.axes, f2.axes, "{context}");
-        assert_eq!(f1.masters, f2.masters, "{context}");
-        assert_eq!(f1.default_master_idx, f2.default_master_idx, "{context}");
-        assert_eq!(f1.glyphs, f2.glyphs, "{context}");
-        assert_eq!(f1.glyph_order, f2.glyph_order, "{context}");
-        assert_eq!(f1.axis_mappings, f2.axis_mappings, "{context}");
-        assert_eq!(f1.virtual_masters, f2.virtual_masters, "{context}");
-        assert_eq!(f1.features, f2.features, "{context}");
-        assert_eq!(f1.names, f2.names, "{context}");
-        assert_eq!(f1.instances, f2.instances, "{context}");
-        assert_eq!(f1.version_major, f2.version_major, "{context}");
-        assert_eq!(f1.version_minor, f2.version_minor, "{context}");
-        assert_eq!(f1.date, f2.date, "{context}");
-        assert_eq!(f1.kerning_ltr, f2.kerning_ltr, "{context}");
-        assert_eq!(f1.kerning_rtl, f2.kerning_rtl, "{context}");
-        assert_eq!(f1.custom_parameters, f2.custom_parameters, "{context}");
-        // Note: localized_names is intentionally excluded from comparison
+        let mut f1_clone = f1.clone();
+        let mut f2_clone = f2.clone();
+        f1_clone.localized_names.clear();
+        f2_clone.localized_names.clear();
+        assert_eq!(f1_clone, f2_clone, "{context}");
     }
 
     /// Asserts that two Font structs are equal, including the localized_names field.
