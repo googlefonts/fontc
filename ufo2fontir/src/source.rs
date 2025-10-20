@@ -41,6 +41,7 @@ use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph}
 
 const UFO_KERN1_PREFIX: &str = "public.kern1.";
 const UFO_KERN2_PREFIX: &str = "public.kern2.";
+const UFO2FT_FILTERS: &str = "com.github.googlei18n.ufo2ft.filters";
 
 #[derive(Clone, Debug)]
 pub struct DesignSpaceIrSource {
@@ -136,10 +137,10 @@ impl DesignSpaceIrSource {
     }
 
     fn should_erase_open_corners(&self) -> bool {
-        const FILTERS_LIB_KEY: &str = "com.github.googlei18n.ufo2ft.filters";
+        // TODO: this should be turned into compilation flag
         self.designspace
             .lib
-            .get(FILTERS_LIB_KEY)
+            .get(UFO2FT_FILTERS)
             .and_then(Value::as_array)
             .map(|filters| {
                 filters
@@ -393,6 +394,33 @@ impl Source for DesignSpaceIrSource {
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         Ok(Box::new(PaintGraphWork {}))
+    }
+
+    fn compilation_flags(&self) -> Flags {
+        let mut flags = Flags::empty();
+
+        // ufo2ft filters are stored in the masters' lib.plist rather than the
+        // designspace; however, the default master's lib was already merged
+        // into the designspace.lib in the constructor above.
+        // https://github.com/googlefonts/ufo2ft/issues/933
+        if let Some(filters) = self
+            .designspace
+            .lib
+            .get(UFO2FT_FILTERS)
+            .and_then(Value::as_array)
+        {
+            for item in filters.iter().filter_map(Value::as_dictionary) {
+                let Some(name) = item.get("name").and_then(Value::as_string) else {
+                    continue;
+                };
+                match name {
+                    "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
+                    // Note: propagateAnchors, eraseOpenCorners, etc. will be handled in future work
+                    other => log::info!("unhandled ufo2ft filter '{other}'"),
+                }
+            }
+        }
+        flags
     }
 }
 
