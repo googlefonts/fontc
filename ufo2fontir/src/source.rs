@@ -131,26 +131,8 @@ impl DesignSpaceIrSource {
         Ok(GlyphIrWork {
             glyph_name: glyph_name.clone(),
             export,
-            erase_open_corners: self.should_erase_open_corners(),
             glif_files: glif_files.clone(),
         })
-    }
-
-    fn should_erase_open_corners(&self) -> bool {
-        // TODO: this should be turned into compilation flag
-        self.designspace
-            .lib
-            .get(UFO2FT_FILTERS)
-            .and_then(Value::as_array)
-            .map(|filters| {
-                filters
-                    .iter()
-                    .filter_map(Value::as_dictionary)
-                    .any(|filter| {
-                        filter.get("name").and_then(Value::as_string) == Some("eraseOpenCorners")
-                    })
-            })
-            .unwrap_or(false)
     }
 }
 
@@ -415,7 +397,8 @@ impl Source for DesignSpaceIrSource {
                 };
                 match name {
                     "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
-                    // Note: propagateAnchors, eraseOpenCorners, etc. will be handled in future work
+                    "eraseOpenCorners" => flags.set(Flags::ERASE_OPEN_CORNERS, true),
+                    // Note: propagateAnchors will be handled in future work
                     other => log::info!("unhandled ufo2ft filter '{other}'"),
                 }
             }
@@ -1790,7 +1773,6 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 struct GlyphIrWork {
     glyph_name: GlyphName,
     export: bool,
-    erase_open_corners: bool,
     glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
 }
 
@@ -1831,11 +1813,13 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             glif_files.insert(path, normalized_locations);
         }
 
+        let erase_open_corners = context.flags.contains(Flags::ERASE_OPEN_CORNERS);
+
         let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
         let glyph_ir = to_ir_glyph(
             self.glyph_name.clone(),
             self.export,
-            self.erase_open_corners,
+            erase_open_corners,
             &glif_files,
             &mut ir_anchors,
         )?;

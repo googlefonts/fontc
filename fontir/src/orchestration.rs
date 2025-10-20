@@ -40,6 +40,8 @@ bitflags! {
         const PRODUCTION_NAMES = 0b10000000;
         // If set, all the composite glyphs will be decomposed to simple glyphs
         const DECOMPOSE_COMPONENTS = 0b100000000;
+        // If set, open corners will be erased (Glyphs-native feature)
+        const ERASE_OPEN_CORNERS = 0b1000000000;
     }
 }
 

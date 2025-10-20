@@ -4284,6 +4284,7 @@ mod tests {
         let result = TestCompile::compile_source("glyphs3/UfoFilters.glyphs");
         // Flags should be set from source filters
         assert!(result.fe_context.flags.contains(Flags::FLATTEN_COMPONENTS));
+        assert!(!result.fe_context.flags.contains(Flags::ERASE_OPEN_CORNERS));
         // Note: propagate_anchors test removed as that flag doesn't exist yet
     }
 }

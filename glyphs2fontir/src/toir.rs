@@ -23,6 +23,7 @@ use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
 pub(crate) fn to_ir_contours_and_components(
     glyph_name: GlyphName,
     shapes: &[Shape],
+    erase_open_corners: bool,
 ) -> Result<(Vec<BezPath>, Vec<ir::Component>), BadGlyph> {
     // For most glyphs in most fonts all the shapes are contours so it's a good guess
     let mut contours = Vec::with_capacity(shapes.len());
@@ -34,7 +35,7 @@ pub(crate) fn to_ir_contours_and_components(
                 components.push(to_ir_component(glyph_name.clone(), component))
             }
             Shape::Path(path) => contours.push(
-                to_ir_path(glyph_name.clone(), path)
+                to_ir_path(glyph_name.clone(), path, erase_open_corners)
                     .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?,
             ),
         }
@@ -76,7 +77,11 @@ fn add_to_path<'a>(
     Ok(())
 }
 
-fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, PathConversionError> {
+fn to_ir_path(
+    glyph_name: GlyphName,
+    src_path: &Path,
+    erase_open_corners: bool,
+) -> Result<BezPath, PathConversionError> {
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/paths.py#L20
     // See also https://github.com/fonttools/ufoLib2/blob/4d8a9600148b670b0840120658d9aab0b38a9465/src/ufoLib2/pointPens/glyphPointPen.py#L16
     if src_path.nodes.is_empty() {
@@ -111,7 +116,7 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, PathCon
         add_to_path(&mut path_builder, src_path.nodes.iter())?;
     };
 
-    if path_builder.erase_open_corners()? {
+    if erase_open_corners && path_builder.erase_open_corners()? {
         log::debug!("erased open contours for {glyph_name}");
     }
 
@@ -353,7 +358,7 @@ mod tests {
             pt: (32.0, 32.0).into(),
             node_type: glyphs_reader::NodeType::Curve,
         });
-        let bez = to_ir_path("test".into(), &path).unwrap();
+        let bez = to_ir_path("test".into(), &path, false).unwrap();
         assert_eq!("M32,32 C64,64 64,0 32,32 Z", bez.to_svg());
     }
 
@@ -374,7 +379,7 @@ mod tests {
             ..Default::default()
         };
 
-        let bez = to_ir_path("hello".into(), &path).unwrap();
+        let bez = to_ir_path("hello".into(), &path, false).unwrap();
         assert_eq!(
             bez.elements().first(),
             Some(&kurbo::PathEl::MoveTo((5., 0.).into()))

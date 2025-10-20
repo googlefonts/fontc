@@ -153,16 +153,26 @@ impl Source for GlyphsIrSource {
             .get(UFO2FT_FILTERS)
             .and_then(|pl| pl.as_array())
         {
+            // ufo2ft filters explicitly defined in the default master's userData -
+            // only set flags for filters that are present. This handles the case
+            // where a .glyphs source was converted from DS+UFOs with an older version
+            // of glyphsLib which didn't include certain filters, or the author
+            // deliberately opted out of certain filters.
             for item in filters.iter().filter_map(Plist::as_dict) {
                 let Some(name) = item.get("name").and_then(Plist::as_str) else {
                     continue;
                 };
                 match name {
                     "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
+                    "eraseOpenCorners" => flags.set(Flags::ERASE_OPEN_CORNERS, true),
                     // Note: propagateAnchors will be handled in future work
                     other => log::info!("unhandled ufo2ft filter '{other}'"),
                 }
             }
+        } else {
+            // No ufo2ft filters defined - eraseOpenCorners is a Glyphs-native feature,
+            // which should be enabled by default.
+            flags.set(Flags::ERASE_OPEN_CORNERS, true);
         }
         flags
     }
@@ -1307,6 +1317,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         let static_metadata = context.static_metadata.get();
         let axes = &static_metadata.all_source_axes;
         let global_metrics = context.global_metrics.get();
+        let erase_open_corners = context.flags.contains(Flags::ERASE_OPEN_CORNERS);
 
         let glyph = font
             .glyphs
@@ -1347,7 +1358,8 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         for layer in layers.iter() {
             seen_master_ids.insert(layer.master_id());
 
-            let (location, instance) = process_layer(glyph, layer, font_info, &global_metrics)?;
+            let (location, instance) =
+                process_layer(glyph, layer, font_info, &global_metrics, erase_open_corners)?;
 
             for (tag, coord) in location.iter() {
                 axis_positions.entry(*tag).or_default().insert(*coord);
@@ -1384,7 +1396,13 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                     .iter()
                     .find(|l| l.master_id() == missing_master_id)
                 {
-                    let (loc, instance) = process_layer(glyph, layer, font_info, &global_metrics)?;
+                    let (loc, instance) = process_layer(
+                        glyph,
+                        layer,
+                        font_info,
+                        &global_metrics,
+                        erase_open_corners,
+                    )?;
                     ir_glyph.try_add_source(&loc, instance)?;
                     for (tag, coord) in loc.iter() {
                         axis_positions.entry(*tag).or_default().insert(*coord);
@@ -1429,6 +1447,7 @@ fn process_layer(
     instance: &Layer,
     font_info: &FontInfo,
     global_metrics: &GlobalMetrics,
+    erase_open_corners: bool,
 ) -> Result<(NormalizedLocation, GlyphInstance), Error> {
     // skip not-yet-supported types of layers (e.g. alternate, color, etc.)
     let master_id = instance.master_id();
@@ -1466,8 +1485,11 @@ fn process_layer(
         .into_inner();
 
     // TODO populate width and height properly
-    let (contours, components) =
-        to_ir_contours_and_components(glyph.name.clone().into(), &instance.shapes)?;
+    let (contours, components) = to_ir_contours_and_components(
+        glyph.name.clone().into(),
+        &instance.shapes,
+        erase_open_corners,
+    )?;
     let glyph_instance = GlyphInstance {
         // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
         width: if glyph.is_nonspacing_mark() {
