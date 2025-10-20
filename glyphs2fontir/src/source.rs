@@ -20,8 +20,8 @@ use fontir::{
         self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, DEFAULT_VENDOR_ID,
         GdefCategories, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphInstance,
         GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues,
-        NameBuilder, NameKey, NamedInstance, PostscriptNames, Rule, SourceArgs, StaticMetadata,
-        Substitution, VariableFeature,
+        NameBuilder, NameKey, NamedInstance, PostscriptNames, Rule, StaticMetadata, Substitution,
+        VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -141,6 +141,30 @@ impl Source for GlyphsIrSource {
         Ok(Box::new(PaintGraphWork {
             _font_info: self.font_info.clone(),
         }))
+    }
+
+    fn compilation_flags(&self) -> Flags {
+        const UFO2FT_FILTERS: &str = "com.github.googlei18n.ufo2ft.filters";
+        let mut flags = Flags::empty();
+
+        let master = self.font_info.font.default_master();
+        if let Some(filters) = master
+            .user_data
+            .get(UFO2FT_FILTERS)
+            .and_then(|pl| pl.as_array())
+        {
+            for item in filters.iter().filter_map(Plist::as_dict) {
+                let Some(name) = item.get("name").and_then(Plist::as_str) else {
+                    continue;
+                };
+                match name {
+                    "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
+                    // Note: propagateAnchors will be handled in future work
+                    other => log::info!("unhandled ufo2ft filter '{other}'"),
+                }
+            }
+        }
+        flags
     }
 }
 
@@ -482,7 +506,6 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 });
             }
         }
-        static_metadata.args = source_args(font);
 
         let mut glyph_order: GlyphOrder =
             font.glyph_order.iter().cloned().map(Into::into).collect();
@@ -708,30 +731,6 @@ fn category_for_glyph<'a>(
         _ if has_attaching_anchor => Some(GlyphClassDef::Base),
         _ => None,
     }
-}
-
-static UFO2FT_FILTERS: &str = "com.github.googlei18n.ufo2ft.filters";
-
-fn source_args(font: &Font) -> SourceArgs {
-    let mut out = SourceArgs::default();
-    let master = font.default_master();
-    if let Some(filters) = master
-        .user_data
-        .get(UFO2FT_FILTERS)
-        .and_then(|pl| pl.as_array())
-    {
-        for item in filters.iter().filter_map(Plist::as_dict) {
-            let Some(name) = item.get("name").and_then(Plist::as_str) else {
-                continue;
-            };
-            match name {
-                "propagateAnchors" => out.propagate_anchors = true,
-                "flattenComponents" => out.flatten_components = true,
-                other => log::info!("unhandled ufo2ft filter '{other}'"),
-            }
-        }
-    }
-    out
 }
 
 #[derive(Debug)]

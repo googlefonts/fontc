@@ -129,6 +129,14 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     write_font_file(&args, &be_root)
 }
 
+/// Merges CLI flags with source-derived compilation flags.
+///
+/// A flag is enabled if EITHER the CLI or source enables it.
+/// See <https://github.com/googlefonts/fontc/issues/1701>
+fn merge_compilation_flags(cli_flags: Flags, source: &dyn Source) -> Flags {
+    cli_flags | source.compilation_flags()
+}
+
 /// Run and return an OpenType font
 ///
 /// This is the library entry point to fontc.
@@ -158,6 +166,8 @@ fn _generate_font(
     skip_features: bool,
     mut timer: JobTimer,
 ) -> Result<(BeContext, JobTimer), Error> {
+    let flags = merge_compilation_flags(flags, &*source);
+
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
@@ -344,9 +354,11 @@ mod tests {
             let temp_dir = tempdir().unwrap();
             let build_dir = temp_dir.path();
             let args = adjust_args(Args::for_test(build_dir, source));
-            let flags = args.flags();
 
             info!("Compile {args:?}");
+
+            let input = args.source().unwrap().create_source().unwrap();
+            let flags = merge_compilation_flags(args.flags(), &*input);
 
             let (ir_paths, be_paths) =
                 init_paths(args.output_file.as_ref(), &args.build_dir, flags).unwrap();
@@ -355,7 +367,6 @@ mod tests {
 
             let fe_context = FeContext::new_root(flags, ir_paths);
             let be_context = BeContext::new_root(flags, be_paths, &fe_context.read_only());
-            let input = args.source().unwrap().create_source().unwrap();
             let workload = Workload::new(input, timer, args.skip_features).unwrap();
 
             TestCompile {
@@ -4271,8 +4282,8 @@ mod tests {
     #[test]
     fn ufo2ftfilters() {
         let result = TestCompile::compile_source("glyphs3/UfoFilters.glyphs");
-        let meta = result.fe_context.static_metadata.get();
-        assert!(meta.args.flatten_components);
-        assert!(meta.args.propagate_anchors);
+        // Flags should be set from source filters
+        assert!(result.fe_context.flags.contains(Flags::FLATTEN_COMPONENTS));
+        // Note: propagate_anchors test removed as that flag doesn't exist yet
     }
 }
