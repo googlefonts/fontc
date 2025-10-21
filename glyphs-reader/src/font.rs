@@ -3260,7 +3260,7 @@ impl Font {
     // see https://glyphsapp.com/learn/smart-components
     fn instantiate_all_smart_components(&mut self) -> Result<(), Error> {
         // find all the glyphs that include smart components
-        let glyphs_with_smart_components = self
+        let mut glyphs_with_smart_components = self
             .glyphs
             .values()
             .filter(|glyph| {
@@ -3284,6 +3284,16 @@ impl Font {
         if glyphs_with_smart_components.is_empty() {
             return Ok(());
         }
+        // then make sure we do everything depth-first, so that if any smart components
+        // contain _other_ smart components, those are instantiated first.
+        let depth_ranked = self
+            .depth_sorted_composite_glyphs()
+            .into_iter()
+            .enumerate()
+            .map(|(rank, name)| (name, rank))
+            .collect::<HashMap<_, _>>();
+
+        glyphs_with_smart_components.sort_by_key(|g| depth_ranked.get(&g.name).unwrap());
 
         // convert the smart components to normal outlines, per-glyph
         for mut glyph in glyphs_with_smart_components {
@@ -3417,7 +3427,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use kurbo::{Affine, Point};
+    use kurbo::{Affine, Point, Rect};
 
     use rstest::rstest;
     use smol_str::ToSmolStr;
@@ -5121,6 +5131,20 @@ etc;
         );
     }
 
+    impl crate::Path {
+        fn to_points(&self) -> Vec<Point> {
+            self.nodes.iter().map(|n| n.pt).collect()
+        }
+        fn bbox(&self) -> Option<Rect> {
+            let points = self.to_points();
+            let (head, rest) = points.as_slice().split_first()?;
+            Some(
+                rest.iter()
+                    .fold(Rect::ZERO.with_origin(*head), |bbox, pt| bbox.union_pt(*pt)),
+            )
+        }
+    }
+
     #[test]
     fn smart_component_v2() {
         let font = Font::load(&glyphs2_dir().join("SmartComponent.glyphs")).unwrap();
@@ -5129,14 +5153,7 @@ etc;
         let shapes = &glyph.layers[0].shapes;
         let paths = shapes
             .iter()
-            .map(|s| {
-                s.as_path()
-                    .unwrap()
-                    .nodes
-                    .iter()
-                    .map(|n| n.pt)
-                    .collect::<Vec<_>>()
-            })
+            .map(|s| s.as_path().unwrap().to_points())
             .collect::<Vec<_>>();
         let expected1 = [(9., 405.), (9., 300.), (276., 300.), (276.0, 405.0)]
             .into_iter()
@@ -5149,5 +5166,27 @@ etc;
             .collect::<Vec<_>>();
 
         assert_eq!(paths, [expected1, expected2]);
+    }
+
+    #[test]
+    fn nested_smart_components() {
+        // ensure that if a smart component has its own smart components, those
+        // get instantiated first.
+        let font = Font::load(&glyphs2_dir().join("NestedSmartComponent.glyphs")).unwrap();
+        let glyph = font.glyphs.get("w").unwrap();
+        let shapes = &glyph.layers[0].shapes;
+        let rects = shapes
+            .iter()
+            .map(|s| s.as_path().unwrap().bbox().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rects,
+            [
+                Rect::new(0., 200., 400., 400.),
+                Rect::new(0., 0., 400., 100.),
+                Rect::new(500., 200., 550., 400.),
+                Rect::new(500., 0., 550., 100.),
+            ]
+        );
     }
 }
