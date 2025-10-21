@@ -202,13 +202,6 @@ jobs:
           container: off
           args: --release -o dist
 
-      - name: Install x86_64 wheel
-        if: startsWith(matrix.platform.target, 'x86_64')
-        run: |
-          /usr/bin/python3 -m pip install --no-index --find-links dist/ --force-reinstall fontc
-          which fontc
-          fontc --version
-
       - name: Archive binary
         run: tar czvf target/release/fontc-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release fontc
 
