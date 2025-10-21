@@ -133,7 +133,7 @@ gitpython==3.1.45
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.12.0
+glyphslib==6.12.1
     # via
     #   -r resources/scripts/requirements.in
     #   bumpfontversion
@@ -220,7 +220,7 @@ pyyaml==6.0.3
     # via
     #   gftools
     #   glyphsets
-regex==2025.9.18
+regex==2025.10.23
     # via nanoemoji
 requests==2.32.5
     # via
