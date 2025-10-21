@@ -3,11 +3,11 @@
 //! [VVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/VVAR) tables
 
 use std::any::type_name;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use fontdrasil::types::Axes;
 use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
-use fontir::ir::{GlobalMetrics, GlobalMetricsInstance, GlyphInstance};
+use fontir::ir::{GlobalMetrics, GlobalMetricsInstance};
 use fontir::{ir::Glyph, variations::VariationModel};
 use write_fonts::dump_table;
 use write_fonts::{tables::variations::VariationRegion, validate::Validate, FontWrite, OtRound};
@@ -34,19 +34,6 @@ pub(crate) enum DeltaDirection {
     Vertical,
 }
 
-impl DeltaDirection {
-    fn of(&self, glyph_instance: &GlyphInstance, metrics: &GlobalMetricsInstance) -> f64 {
-        match self {
-            DeltaDirection::Horizontal => {
-                // widths must be rounded before the computing deltas to match fontmake
-                // https://github.com/googlefonts/fontc/issues/1043
-                glyph_instance.width.ot_round()
-            }
-            DeltaDirection::Vertical => glyph_instance.height(metrics) as f64,
-        }
-    }
-}
-
 /// Helper to collect advance width or height deltas for all glyphs in a font
 pub(crate) struct AdvanceDeltas {
     /// Variation axes
@@ -55,8 +42,10 @@ pub(crate) struct AdvanceDeltas {
     models: HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
     /// Glyph's advance width deltas sorted by glyph order
     deltas: Vec<Vec<(VariationRegion, i16)>>,
-    /// All the glyph locations defined in the font and the metrics for each
-    metrics: HashMap<NormalizedLocation, GlobalMetricsInstance>,
+    /// All the glyph locations that are defined in the font
+    glyph_locations: HashSet<NormalizedLocation>,
+    /// Cached global metrics at each location (only populated for Vertical direction)
+    metrics_cache: HashMap<NormalizedLocation, GlobalMetricsInstance>,
     direction: DeltaDirection,
 }
 
@@ -64,7 +53,7 @@ impl AdvanceDeltas {
     pub(crate) fn new<'a>(
         global_model: VariationModel,
         glyph_locations: impl IntoIterator<Item = &'a NormalizedLocation>,
-        global_metrics: &'a GlobalMetrics,
+        global_metrics: &GlobalMetrics,
         direction: DeltaDirection,
     ) -> Self {
         let axes = global_model.axes().cloned().collect();
@@ -72,22 +61,30 @@ impl AdvanceDeltas {
         let mut models = HashMap::new();
         models.insert(global_locations, global_model);
 
-        // prune axes that are not in the global model (e.g. 'point' axes) which might
-        // be confused for a distinct sub-model
+        // Collect unique glyph locations, pruning axes that are not in the global model
+        // (e.g. 'point' axes) which might be confused for a distinct sub-model
         // https://github.com/googlefonts/fontc/issues/1256
-        let metrics = glyph_locations
+        let glyph_locations: HashSet<NormalizedLocation> = glyph_locations
             .into_iter()
-            .map(|loc| {
-                let loc = loc.subset_axes(&axes);
-                let metrics = global_metrics.at(&loc);
-                (loc, metrics)
-            })
+            .map(|loc| loc.subset_axes(&axes))
             .collect();
+
+        // Pre-compute metrics for all locations if we're computing vertical metrics
+        // This avoids repeated interpolation when processing each glyph
+        let metrics_cache = match direction {
+            DeltaDirection::Vertical => glyph_locations
+                .iter()
+                .map(|loc| (loc.clone(), global_metrics.at(loc)))
+                .collect(),
+            DeltaDirection::Horizontal => HashMap::new(),
+        };
+
         AdvanceDeltas {
             axes,
             models,
             deltas: Vec::new(),
-            metrics,
+            glyph_locations,
+            metrics_cache,
             direction,
         }
     }
@@ -96,13 +93,19 @@ impl AdvanceDeltas {
         let mut advances: HashMap<_, Vec<f64>> = Default::default();
         for (loc, glyph_instance) in glyph.sources().iter() {
             let loc = loc.subset_axes(&self.axes);
-            let metrics = self
-                .metrics
-                .get(&loc)
-                .ok_or_else(|| Error::NoGlobalMetricsInstance(loc.clone()))?;
-            // widths must be rounded before the computing deltas to match fontmake
-            // https://github.com/googlefonts/fontc/issues/1043
-            advances.insert(loc, vec![self.direction.of(glyph_instance, metrics)]);
+            // Only compute metrics when needed (for vertical direction)
+            // For horizontal, we just need glyph_instance.width which doesn't require metrics
+            let advance = match self.direction {
+                DeltaDirection::Horizontal => glyph_instance.width.ot_round(),
+                DeltaDirection::Vertical => {
+                    let metrics = self
+                        .metrics_cache
+                        .get(&loc)
+                        .expect("metrics should be pre-computed for all glyph locations");
+                    glyph_instance.height(metrics) as f64
+                }
+            };
+            advances.insert(loc, vec![advance]);
         }
         let name = glyph.name.clone();
         let i = self.deltas.len();
@@ -123,7 +126,7 @@ impl AdvanceDeltas {
             // all other glyph locations...
             if i == 0 && name == GlyphName::NOTDEF {
                 let notdef_dim = advances.values().next().unwrap()[0];
-                for loc in self.metrics.keys() {
+                for loc in self.glyph_locations.iter() {
                     advances
                         .entry(loc.clone())
                         .or_insert_with(|| vec![notdef_dim]);
