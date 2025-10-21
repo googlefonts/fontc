@@ -3458,27 +3458,50 @@ mod tests {
         let names = name
             .name_record()
             .iter()
-            .map(|rec| (rec.name_id(), resolve_name(&name, rec.name_id()).unwrap()))
+            .map(|rec| {
+                (
+                    rec.name_id(),
+                    rec.language_id(),
+                    rec.string(name.string_data()).unwrap().to_string(),
+                )
+            })
             .collect::<Vec<_>>();
         assert_eq!(
             names,
             [
-                (NameId::COPYRIGHT_NOTICE, "Copy!".to_owned()),
-                (NameId::FAMILY_NAME, "WghtVar".to_owned()),
-                (NameId::SUBFAMILY_NAME, "Regular".to_owned()),
-                (NameId::UNIQUE_ID, "1.234;NONE;WghtVar-Regular".to_owned()),
-                (NameId::FULL_NAME, "WghtVar Regular".to_owned()),
-                (NameId::VERSION_STRING, "Version 1.234".to_owned()),
-                (NameId::POSTSCRIPT_NAME, "WghtVar-Regular".to_owned()),
-                (NameId::DESCRIPTION, "The greatest weight var".to_owned()),
+                (NameId::COPYRIGHT_NOTICE, 0x0409, "Copy!".to_owned()),
+                (NameId::FAMILY_NAME, 0x0409, "WghtVar".to_owned()),
+                (NameId::SUBFAMILY_NAME, 0x0409, "Regular".to_owned()),
+                (
+                    NameId::UNIQUE_ID,
+                    0x0409,
+                    "1.234;NONE;WghtVar-Regular".to_owned()
+                ),
+                (NameId::FULL_NAME, 0x0409, "WghtVar Regular".to_owned()),
+                (NameId::VERSION_STRING, 0x0409, "Version 1.234".to_owned()),
+                (
+                    NameId::POSTSCRIPT_NAME,
+                    0x0409,
+                    "WghtVar-Regular".to_owned()
+                ),
+                (
+                    NameId::DESCRIPTION,
+                    0x0409,
+                    "The greatest weight var".to_owned()
+                ),
                 (
                     NameId::LICENSE_URL,
+                    0x0409,
                     "https://example.com/my/font/license".to_owned()
                 ),
-                // axis & instance names
-                (NameId::new(256), "Weight".to_owned()),
-                // from FEA, merged after names of axes and named instances
-                (NameId::new(257), "my fun feature".to_owned()),
+                (NameId::new(256), 0x0409, "Weight".to_owned()),
+                (NameId::new(257), 0x0409, "my fun feature".to_owned()),
+                (NameId::FAMILY_NAME, 0x0C0A, "SpanishWghtVar".to_owned()),
+                (
+                    NameId::DESCRIPTION,
+                    0x0C0A,
+                    "El mayor peso variable".to_owned()
+                ),
             ]
         );
 

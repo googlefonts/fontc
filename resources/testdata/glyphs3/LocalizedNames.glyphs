@@ -1,0 +1,191 @@
+{
+.appVersion = "3253";
+.formatVersion = 3;
+customParameters = (
+{
+name = postscriptSlantAngle;
+value = 0;
+}
+);
+familyName = LocalizedFont;
+fontMaster = (
+{
+id = "master01";
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = 0;
+},
+{
+pos = -200;
+},
+{
+pos = 700;
+},
+{
+pos = 500;
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = "master01";
+width = 200;
+}
+);
+unicode = 32;
+}
+);
+properties = (
+{
+key = copyrights;
+values = (
+{
+language = dflt;
+value = "Copyright Default";
+},
+{
+language = FRA;
+value = "Droit d'auteur";
+},
+{
+language = DEU;
+value = "Urheberrecht";
+}
+);
+},
+{
+key = designers;
+values = (
+{
+language = dflt;
+value = "Designer Name";
+},
+{
+language = JPN;
+value = "デザイナー名";
+}
+);
+},
+{
+key = manufacturers;
+values = (
+{
+language = dflt;
+value = "Manufacturer Name";
+},
+{
+language = FRA;
+value = "Fabricant Premier";
+},
+{
+language = FRA;
+value = Fabricant;
+},
+{
+language = DEU;
+value = Hersteller;
+}
+);
+},
+{
+key = descriptions;
+values = (
+{
+language = dflt;
+value = "A test font with localized properties";
+},
+{
+language = FRA;
+value = "Une police de test avec des propriétés localisées";
+},
+{
+language = JPN;
+value = "ローカライズされたプロパティを持つテストフォント";
+}
+);
+},
+{
+key = licenses;
+values = (
+{
+language = dflt;
+value = "Licensed under the SIL Open Font License";
+},
+{
+language = FRA;
+value = "Sous licence SIL Open Font License";
+},
+{
+language = DEU;
+value = "Lizenziert unter der SIL Open Font License";
+}
+);
+},
+{
+key = trademarks;
+values = (
+{
+language = dflt;
+value = "LocalizedFont is a trademark";
+},
+{
+language = FRA;
+value = "LocalizedFont est une marque déposée";
+}
+);
+},
+{
+key = sampleTexts;
+values = (
+{
+language = dflt;
+value = "The quick brown fox";
+},
+{
+language = FRA;
+value = "Portez ce vieux whisky";
+},
+{
+language = DEU;
+value = "Zwölf Boxkämpfer";
+},
+{
+language = JPN;
+value = "いろはにほへと";
+}
+);
+},
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = LocalizedFont;
+},
+{
+language = FRA;
+value = "PoliceLocalisée";
+},
+{
+language = DEU;
+value = LokalisierteSchrift;
+},
+{
+language = JPN;
+value = "ローカライズフォント";
+}
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
