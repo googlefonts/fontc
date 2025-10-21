@@ -47,6 +47,13 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub flatten_components: bool,
 
+    /// Whether to erase open corners (Glyphs-native feature).
+    ///
+    /// This is enabled by default for Glyphs sources or when the eraseOpenCorners
+    /// ufo2ft filter is present. This flag can force it on even when not set in the source.
+    #[arg(long, default_value = "false")]
+    pub erase_open_corners: bool,
+
     /// Whether all components with a non-identity 2x2 transform will be converted to outlines.
     // Named to match the ufo2ft flag as suggested in <https://github.com/googlefonts/fontc/pull/480#discussion_r1343801553>
     #[arg(long, default_value = "false")]
@@ -119,6 +126,7 @@ impl Args {
         flags.set(Flags::EMIT_DEBUG, self.emit_debug);
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
         flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
+        flags.set(Flags::ERASE_OPEN_CORNERS, self.erase_open_corners);
         flags.set(
             Flags::DECOMPOSE_TRANSFORMED_COMPONENTS,
             self.decompose_transformed_components,
@@ -143,6 +151,7 @@ impl Args {
             build_dir: build_dir.to_path_buf(),
             prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
             flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
+            erase_open_corners: Flags::default().contains(Flags::ERASE_OPEN_CORNERS),
             decompose_transformed_components: Flags::default()
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             decompose_components: Flags::default().contains(Flags::DECOMPOSE_COMPONENTS),

@@ -4,7 +4,10 @@ use std::path::Path;
 
 use fontdrasil::coords::NormalizedLocation;
 
-use crate::{error::Error, orchestration::IrWork};
+use crate::{
+    error::Error,
+    orchestration::{Flags, IrWork},
+};
 
 /// A source of data from which one could compile a font.
 ///
@@ -60,4 +63,12 @@ pub trait Source {
     ///
     /// When run work should update [crate::orchestration::Context] with new [crate::ir::PaintGraph].
     fn create_paint_graph_work(&self) -> Result<Box<IrWork>, Error>;
+
+    /// Returns compilation flags derived from source file settings.
+    ///
+    /// CLI flags will be combined with these using bitwise OR.
+    /// See <https://github.com/googlefonts/fontc/issues/1701>
+    fn compilation_flags(&self) -> Flags {
+        Flags::empty() // default: no flags from source
+    }
 }

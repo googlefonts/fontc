@@ -568,7 +568,6 @@ fn apply_optional_transformations(
     context: &Context,
     glyph_order: &GlyphOrder,
 ) -> Result<(), BadGlyph> {
-    let source_args = context.static_metadata.get().args;
     // If we are decomposing all components, the rest of the flags can be ignored
     if context.flags.contains(Flags::DECOMPOSE_COMPONENTS) {
         for glyph_name in glyph_order.names() {
@@ -597,7 +596,7 @@ fn apply_optional_transformations(
         }
     }
 
-    if context.flags.contains(Flags::FLATTEN_COMPONENTS) || source_args.flatten_components {
+    if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
         for glyph_name in glyph_order.names() {
             let glyph = context.get_glyph(glyph_name.clone());
             flatten_glyph(context, &glyph)?;
@@ -1349,13 +1348,11 @@ mod tests {
     }
 
     #[test]
-    fn flatten_components_source_arg() {
+    fn flatten_components_with_flag() {
         let test_data = deep_component();
-        let context = test_context();
-        assert!(!context.flags.contains(Flags::FLATTEN_COMPONENTS));
-        let mut meta: StaticMetadata = context.static_metadata.get().as_ref().clone();
-        meta.args.flatten_components = true;
-        context.static_metadata.set(meta);
+        let mut context = test_context();
+        context.flags.set(Flags::FLATTEN_COMPONENTS, true);
+
         test_data.write_to(&context);
         apply_optional_transformations(&context, &test_data.glyph_order()).unwrap();
         assert_is_flattened_component(&context, test_data.deep_component.name);
