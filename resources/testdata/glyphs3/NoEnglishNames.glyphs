@@ -1,0 +1,69 @@
+{
+.appVersion = "3151";
+.formatVersion = 3;
+familyName = NoEnglishTest;
+fontMaster = (
+{
+id = "master01";
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = "master01";
+width = 200;
+}
+);
+unicode = 32;
+}
+);
+properties = (
+{
+key = copyrights;
+values = (
+{
+language = FRA;
+value = "Droit d'auteur français";
+},
+{
+language = DEU;
+value = "Deutsches Urheberrecht";
+},
+{
+language = JPN;
+value = "日本の著作権";
+}
+);
+},
+{
+key = designers;
+values = (
+{
+language = FRA;
+value = "Concepteur français";
+},
+{
+language = DEU;
+value = "Deutscher Designer";
+}
+);
+},
+{
+key = manufacturers;
+values = (
+{
+language = ITA;
+value = "Produttore italiano";
+},
+{
+language = ESP;
+value = "Fabricante español";
+}
+);
+}
+);
+unitsPerEm = 1000;
+}

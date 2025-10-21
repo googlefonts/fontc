@@ -74,8 +74,9 @@ pub struct Font {
     pub axis_mappings: UserToDesignMapping,
     pub virtual_masters: Vec<BTreeMap<String, OrderedFloat<f64>>>,
     pub features: Vec<FeatureSnippet>,
-    pub names: BTreeMap<String, String>,
-    pub localized_names: BTreeMap<String, Vec<(String, String)>>,
+    // Incliudes both default (English) and localized property names.
+    // Maps property key (e.g., "familyNames") to list of (language code, value)
+    pub all_names: BTreeMap<String, Vec<(String, String)>>,
     pub instances: Vec<Instance>,
     pub version_major: i32,
     pub version_minor: u32,
@@ -1010,6 +1011,19 @@ struct RawName {
     values: Vec<RawNameValue>,
 }
 
+/// Compute a priority score for a language code when selecting default names.
+///
+/// Lower scores have higher priority.
+/// Priority order: dflt > default > ENG > others (by insertion order)
+fn default_language_score(lang: &str, index: usize, scale: i32) -> i32 {
+    match lang {
+        "dflt" => -scale * 3 - index as i32,
+        "default" => -scale * 2 - index as i32,
+        "ENG" => -scale - index as i32,
+        _ => index as i32,
+    }
+}
+
 impl RawName {
     fn is_empty(&self) -> bool {
         self.value.is_none() && self.values.is_empty()
@@ -1026,16 +1040,15 @@ impl RawName {
         // <https://github.com/googlefonts/glyphsLib/blob/1cb4fc5ae2cf385df95d2b7768e7ab4eb60a5ac3/Lib/glyphsLib/classes.py#L3155-L3161>
         // If the same name is defined repeatedly, e.g. dflt has 2 values, pick the last occurrence.
 
-        let scale: i32 = 1000;
+        let scale = self.values.len() as i32;
         self.values
             .iter()
             .enumerate()
-            // (score [lower better], index)
-            .map(|(i, raw)| match raw.language.as_str() {
-                "dflt" => (-scale * 3 - i as i32, raw.value.as_str()),
-                "default" => (-scale * 2 - i as i32, raw.value.as_str()),
-                "ENG" => (-scale - i as i32, raw.value.as_str()),
-                _ => (i as i32, raw.value.as_str()),
+            .map(|(i, raw)| {
+                (
+                    default_language_score(raw.language.as_str(), i, scale),
+                    raw.value.as_str(),
+                )
             })
             .min()
             .map(|(_, raw)| raw)
@@ -2989,25 +3002,28 @@ fn codepage_range_bit(codepage: u32) -> Result<u32, Error> {
     })
 }
 
-fn update_names(
-    names: &mut BTreeMap<String, String>,
-    localized_names: &mut BTreeMap<String, Vec<(String, String)>>,
-    raw_names: &[RawName],
-) {
+fn update_names(all_names: &mut BTreeMap<String, Vec<(String, String)>>, raw_names: &[RawName]) {
     for name in raw_names {
-        if let Some(value) = name.get_value() {
-            names.insert(name.key.clone(), value.to_string());
+        // Collect ALL language values into IndexMap to deduplicate (last occurrence wins)
+        // while preserving insertion order. This is critical for the fallback behavior:
+        // when there's no dflt/default/ENG, the FIRST entry becomes the English fallback,
+        // see `return list(self._localized_values.values())[0]` in glyphsLib:
+        // https://github.com/googlefonts/glyphsLib/blob/f90e406/Lib/glyphsLib/classes.py#L3162
+        let mut lang_map: IndexMap<String, String> = IndexMap::new();
+
+        // Handle old-style single value (v2 format); we treat as dflt
+        if let Some(value) = &name.value {
+            lang_map.insert("dflt".to_string(), value.clone());
         }
 
-        // Collect into BTreeMap to deduplicate language codes (last occurrence wins)
-        let localized_map: BTreeMap<String, String> = name
-            .localized_values()
-            .filter(|(lang, _)| !matches!(*lang, "dflt" | "default" | "ENG"))
-            .map(|(lang, val)| (lang.to_string(), val.to_string()))
-            .collect();
-        if !localized_map.is_empty() {
-            let localized: Vec<_> = localized_map.into_iter().collect();
-            localized_names.insert(name.key.clone(), localized);
+        // Handle new-style localized values (v3 format)
+        for (lang, val) in name.localized_values() {
+            lang_map.insert(lang.to_string(), val.to_string());
+        }
+
+        if !lang_map.is_empty() {
+            let values: Vec<_> = lang_map.into_iter().collect();
+            all_names.insert(name.key.clone(), values);
         }
     }
 }
@@ -3076,9 +3092,8 @@ impl TryFrom<RawFont> for Font {
         let units_per_em = from.units_per_em.ok_or(Error::NoUnitsPerEm)?;
         let units_per_em = units_per_em.try_into().map_err(Error::InvalidUpem)?;
 
-        let mut names = BTreeMap::new();
-        let mut localized_names = BTreeMap::new();
-        update_names(&mut names, &mut localized_names, &from.properties);
+        let mut all_names = BTreeMap::new();
+        update_names(&mut all_names, &from.properties);
         for instance in &instances {
             if instance.active
                 && instance.type_ == InstanceType::Variable
@@ -3087,12 +3102,19 @@ impl TryFrom<RawFont> for Font {
                     // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577/Lib/glyphsLib/classes.py#L3272
                 && instance.family_name().map(|name| name == from.family_name.as_str()).unwrap_or(true)
             {
-                update_names(&mut names, &mut localized_names, &instance.properties);
+                update_names(&mut all_names, &instance.properties);
             }
         }
-        names.insert("familyNames".into(), from.family_name);
-        if let Some(version) = names.remove("versionString") {
-            names.insert("version".into(), version);
+        // Insert RawFont.family_name as the default familyNames where downstream code
+        // expects to find it
+        let family_names = all_names
+            .entry("familyNames".into())
+            .or_insert_with(Vec::new);
+        family_names.retain(|(lang, _)| lang != "dflt");
+        family_names.insert(0, ("dflt".to_string(), from.family_name.clone()));
+        // Rename versionString to version
+        if let Some(version_values) = all_names.remove("versionString") {
+            all_names.insert("version".into(), version_values);
         }
 
         let metric_names: BTreeMap<usize, String> = from
@@ -3147,8 +3169,7 @@ impl TryFrom<RawFont> for Font {
             axis_mappings,
             virtual_masters,
             features,
-            names,
-            localized_names,
+            all_names,
             instances,
             version_major: from.versionMajor.unwrap_or_default() as i32,
             version_minor: from.versionMinor.unwrap_or_default() as u32,
@@ -3361,8 +3382,65 @@ impl Font {
         variable_instance_for(&self.instances, &master.name)
     }
 
-    pub fn vendor_id(&self) -> Option<&String> {
-        self.names.get("vendorID")
+    /// Get the default (English) value for a name property.
+    ///
+    /// Searches for a value with language "dflt", "default", or "ENG" in the all_names field,
+    /// in order of preference: dflt > default > ENG > first value.
+    /// Returns None if the property key doesn't exist or has no values.
+    pub fn get_default_name(&self, key: &str) -> Option<&str> {
+        let values = self.all_names.get(key)?;
+        let scale = values.len() as i32;
+        values
+            .iter()
+            .enumerate()
+            .map(|(i, (lang, val))| {
+                (
+                    default_language_score(lang.as_str(), i, scale),
+                    val.as_str(),
+                )
+            })
+            .min()
+            .map(|(_, val)| val)
+    }
+
+    /// Get all localized values for a name property.
+    ///
+    /// Returns an iterator of (language code, value) tuples. Default languages
+    /// ("dflt", "default", "ENG") are excluded.
+    pub fn get_localized_names(&self, key: &str) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.all_names
+            .get(key)
+            .into_iter()
+            .flat_map(|v| v.iter())
+            .filter(|(lang, _)| !matches!(lang.as_str(), "dflt" | "default" | "ENG"))
+            .map(|(lang, val)| (lang.as_str(), val.as_str()))
+    }
+
+    /// Iterate over all default name entries.
+    ///
+    /// Returns an iterator of (property key, default value) tuples.
+    /// Uses priority order: dflt > default > ENG > first value.
+    pub fn default_names(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.all_names
+            .keys()
+            .filter_map(|key| self.get_default_name(key).map(|val| (key.as_str(), val)))
+    }
+
+    /// Iterate over all localized name entries.
+    ///
+    /// Returns an iterator of (property key, language code, value) tuples.
+    /// Default languages ("dflt", "default", "ENG") are excluded.
+    pub fn localized_names(&self) -> impl Iterator<Item = (&str, &str, &str)> + '_ {
+        self.all_names.iter().flat_map(|(key, values)| {
+            values
+                .iter()
+                .filter(|(lang, _)| !matches!(lang.as_str(), "dflt" | "default" | "ENG"))
+                .map(move |(lang, val)| (key.as_str(), lang.as_str(), val.as_str()))
+        })
+    }
+
+    pub fn vendor_id(&self) -> Option<&str> {
+        self.get_default_name("vendorID")
     }
 }
 
@@ -3566,22 +3644,25 @@ mod tests {
         GlyphsAndPackage,
     }
 
-    /// Asserts that two Font structs are equal, excluding the localized_names field.
-    /// This is useful for comparing v2 and v3 Glyphs files where localized_names
-    /// may differ due to format changes.
+    /// Asserts that two Font structs are equal, excluding localized name entries.
+    /// This is useful for comparing v2 and v3 Glyphs files where localized names
+    /// may differ due to format changes. Only default (dflt/default/ENG) names are compared.
     fn assert_fonts_equal_sans_localized_names(f1: &Font, f2: &Font, context: &str) {
         let mut f1_clone = f1.clone();
         let mut f2_clone = f2.clone();
-        f1_clone.localized_names.clear();
-        f2_clone.localized_names.clear();
+        // Filter all_names to keep only default entries (dflt/default/ENG)
+        for all_names in [&mut f1_clone.all_names, &mut f2_clone.all_names] {
+            for values in all_names.values_mut() {
+                values.retain(|(lang, _)| matches!(lang.as_str(), "dflt" | "default" | "ENG"));
+            }
+        }
         assert_eq!(f1_clone, f2_clone, "{context}");
     }
 
-    /// Asserts that two Font structs are equal, including the localized_names field.
+    /// Asserts that two Font structs are equal, including localized name entries.
     /// This is useful for comparing two v3 Glyphs files where all fields should match.
     fn assert_fonts_equal(f1: &Font, f2: &Font, context: &str) {
-        assert_fonts_equal_sans_localized_names(f1, f2, context);
-        assert_eq!(f1.localized_names, f2.localized_names, "{context}");
+        assert_eq!(f1, f2, "{context}");
     }
 
     fn assert_load_v2_matches_load_v3(name: &str, compare: LoadCompare) {
@@ -4168,42 +4249,42 @@ etc;
     fn v2_to_v3_simple_names() {
         let v2 = Font::load(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
         let v3 = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
-        assert_eq!(v3.names, v2.names);
+        // Compare only default names - v2 and v3 may have different localized entries
+        let v2_defaults: BTreeMap<_, _> = v2.default_names().collect();
+        let v3_defaults: BTreeMap<_, _> = v3.default_names().collect();
+        assert_eq!(v3_defaults, v2_defaults);
     }
 
     #[test]
     fn v2_to_v3_more_names() {
         let v2 = Font::load(&glyphs2_dir().join("TheBestNames.glyphs")).unwrap();
         let v3 = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
-        assert_eq!(v3.names, v2.names);
+
+        // V2 root-level fields (designer, manufacturer, copyright, etc.) are converted
+        // to properties format by v2_to_v3_names(), so v2 and v3 should have identical defaults
+        let v2_defaults: BTreeMap<_, _> = v2.default_names().collect();
+        let v3_defaults: BTreeMap<_, _> = v3.default_names().collect();
+
+        assert_eq!(v2_defaults, v3_defaults);
     }
 
     #[test]
     fn v2_long_param_names() {
         let v2 = Font::load(&glyphs2_dir().join("LongParamNames.glyphs")).unwrap();
-        assert_eq!(v2.names.get("vendorID").cloned().as_deref(), Some("DERP"));
+        assert_eq!(v2.get_default_name("vendorID"), Some("DERP"));
         assert_eq!(
-            v2.names.get("descriptions").cloned().as_deref(),
+            v2.get_default_name("descriptions"),
             Some("legacy description")
         );
         assert_eq!(
-            v2.names.get("licenseURL").cloned().as_deref(),
+            v2.get_default_name("licenseURL"),
             Some("www.example.com/legacy")
         );
+        assert_eq!(v2.get_default_name("version"), Some("legacy version"));
+        assert_eq!(v2.get_default_name("licenses"), Some("legacy license"));
+        assert_eq!(v2.get_default_name("uniqueID"), Some("legacy unique id"));
         assert_eq!(
-            v2.names.get("version").cloned().as_deref(),
-            Some("legacy version")
-        );
-        assert_eq!(
-            v2.names.get("licenses").cloned().as_deref(),
-            Some("legacy license")
-        );
-        assert_eq!(
-            v2.names.get("uniqueID").cloned().as_deref(),
-            Some("legacy unique id")
-        );
-        assert_eq!(
-            v2.names.get("sampleTexts").cloned().as_deref(),
+            v2.get_default_name("sampleTexts"),
             Some("legacy sample text")
         );
     }
@@ -4213,7 +4294,48 @@ etc;
         let v3_mixed_with_v2 =
             Font::load(&glyphs3_dir().join("TheBestV2NamesInAV3File.glyphs")).unwrap();
         let v3 = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
-        assert_eq!(v3.names, v3_mixed_with_v2.names);
+
+        // V3 file with v2-style root-level fields (copyright, designer, etc.) gets those
+        // converted to properties format by v2_to_v3_names(), so should match the pure v3 file
+        let v3_mixed_defaults: BTreeMap<_, _> = v3_mixed_with_v2.default_names().collect();
+        let v3_defaults: BTreeMap<_, _> = v3.default_names().collect();
+
+        assert_eq!(v3_mixed_defaults, v3_defaults);
+    }
+
+    #[test]
+    fn no_english_names_fallback() {
+        // Test file with NO dflt/default/ENG entries, only FRA, DEU, ITA, ESP, JPN
+        // This validates that the fallback uses insertion-order first, and not
+        // alphabetical first, and that the overlap between default_names() and
+        // localized_names() is as intended.
+        let font = Font::load(&glyphs3_dir().join("NoEnglishNames.glyphs")).unwrap();
+
+        // copyrights: FRA (1st), DEU (2nd), JPN (3rd) => should use FRA
+        assert_eq!(
+            font.get_default_name("copyrights"),
+            Some("Droit d'auteur français")
+        );
+
+        // designers: FRA (1st), DEU (2nd) => should use FRA
+        assert_eq!(
+            font.get_default_name("designers"),
+            Some("Concepteur français")
+        );
+
+        // manufacturers: ITA (1st), ESP (2nd) => should use ITA
+        assert_eq!(
+            font.get_default_name("manufacturers"),
+            Some("Produttore italiano")
+        );
+
+        let localized: Vec<_> = font.localized_names().collect();
+
+        // The FRA copyright should appear in both default and localized
+        assert!(localized.contains(&("copyrights", "FRA", "Droit d'auteur français")));
+        // The DEU and JPN copyright should only appear in localized
+        assert!(localized.contains(&("copyrights", "DEU", "Deutsches Urheberrecht")));
+        assert!(localized.contains(&("copyrights", "JPN", "日本の著作権")));
     }
 
     fn assert_wghtvar_avar_master_and_axes(glyphs_file: &Path) {
@@ -4763,13 +4885,9 @@ etc;
                 Some("Name 25?!")
             ],
             vec![
-                font.names.get("preferredFamilyNames").map(|s| s.as_str()),
-                font.names
-                    .get("preferredSubfamilyNames")
-                    .map(|s| s.as_str()),
-                font.names
-                    .get("variationsPostScriptNamePrefix")
-                    .map(|s| s.as_str()),
+                font.get_default_name("preferredFamilyNames"),
+                font.get_default_name("preferredSubfamilyNames"),
+                font.get_default_name("variationsPostScriptNamePrefix"),
             ]
         );
     }
@@ -4793,7 +4911,10 @@ etc;
     #[test]
     fn names_from_instances() {
         let font = Font::load(&glyphs3_dir().join("InstanceNames.glyphs")).unwrap();
-        assert_eq!(font.names.get("preferredSubfamilyNames").unwrap(), "Italic")
+        assert_eq!(
+            font.get_default_name("preferredSubfamilyNames").unwrap(),
+            "Italic"
+        )
     }
 
     #[rstest]

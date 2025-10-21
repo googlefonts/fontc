@@ -203,9 +203,9 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     let mut builder = NameBuilder::default();
     builder.set_version(font.version_major, font.version_minor);
 
-    for (name, value) in font.names.iter() {
+    for (name, value) in font.default_names() {
         if let Some(name_id) = try_name_id(name) {
-            builder.add(name_id, value.clone());
+            builder.add(name_id, value.to_string());
         }
     }
 
@@ -249,31 +249,22 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
         );
     }
 
-    let vendor = font
-        .vendor_id()
-        .map(|v| v.as_str())
-        .unwrap_or(DEFAULT_VENDOR_ID);
+    let vendor = font.vendor_id().unwrap_or(DEFAULT_VENDOR_ID);
     builder.apply_default_fallbacks(vendor);
 
     let mut names = builder.into_inner();
 
-    for (key, localized_values) in font.localized_names.iter() {
+    for (key, lang, value) in font.localized_names() {
         let Some(name_id) = try_name_id(key) else {
             continue;
         };
 
-        for (lang, value) in localized_values {
-            if matches!(lang.as_str(), "dflt" | "default" | "ENG") {
-                continue;
-            }
+        let Some(lang_id) = try_language_id(lang) else {
+            continue;
+        };
 
-            let Some(lang_id) = try_language_id(lang) else {
-                continue;
-            };
-
-            let name_key = NameKey::new_with_lang(name_id, value, lang_id);
-            names.insert(name_key, value.clone());
-        }
+        let name_key = NameKey::new_with_lang(name_id, value, lang_id);
+        names.insert(name_key, value.to_string());
     }
 
     names
@@ -296,9 +287,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let font = &font_info.font;
         debug!(
             "Static metadata for {}",
-            font.names
-                .get("familyNames")
-                .map(|s| s.as_str())
+            font.get_default_name("familyNames")
                 .unwrap_or("<nameless family>")
         );
         let axes = font_info.axes.clone();
@@ -755,9 +744,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
         let font = &font_info.font;
         debug!(
             "Global metrics for {}",
-            font.names
-                .get("familyNames")
-                .map(|s| s.as_str())
+            font.get_default_name("familyNames")
                 .unwrap_or("<nameless family>")
         );
 
