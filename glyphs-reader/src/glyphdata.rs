@@ -586,9 +586,12 @@ impl GlyphData {
         if let Some(base_names) = self.split_ligature_glyph_name(base_name) {
             let base_names_attributes: Vec<_> = base_names
                 .iter()
-                .filter_map(|name| self.query_no_synthesis(name, None))
+                .map(|name| self.query_no_synthesis(name, None))
                 .collect();
-            if let Some(first_attr) = base_names_attributes.first() {
+            if let Some(first_attr) = base_names_attributes
+                .first()
+                .expect("if we have base_names it is non-empty")
+            {
                 // if first is mark, we're a mark
                 if first_attr.category == Category::Mark {
                     return Some((Category::Mark, first_attr.subcategory));
@@ -597,8 +600,8 @@ impl GlyphData {
                     if base_names_attributes
                         .iter()
                         .skip(1)
-                        .map(|result| result.category)
-                        .all(|cat| matches!(cat, Category::Mark | Category::Separator))
+                        .map(|result| result.as_ref().map(|r| r.category))
+                        .all(|cat| matches!(cat, None | Some(Category::Mark | Category::Separator)))
                     {
                         return Some((first_attr.category, first_attr.subcategory));
                     } else {
@@ -1217,6 +1220,22 @@ mod tests {
         assert_eq!(u, Some((Category::Mark, Some(Subcategory::Nonspacing))));
         let g = get_category("longlowtonecomb-nko", &[]);
         assert_eq!(g, Some((Category::Mark, Some(Subcategory::Nonspacing))));
+    }
+
+    #[test]
+    fn unknown_name_combined_with_mark() {
+        // if first part is unknown, we don't assign a category
+        assert_eq!(get_category("Whata-WEIRDNameLOL_brevecomb", &[]), None)
+    }
+
+    #[test]
+    fn known_name_with_unknown_mark() {
+        // if first part is a letter and rest is unknown, we use categories of
+        // first part
+        assert_eq!(
+            get_category("i_acutecombcombcy", &[]),
+            get_category("i", &[])
+        )
     }
 
     #[test]
