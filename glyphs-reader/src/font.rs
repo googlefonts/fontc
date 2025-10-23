@@ -324,6 +324,134 @@ pub enum AxisPole {
     Max,
 }
 
+/// A hint in a Glyphs layer (e.g., corner component, stem hint, etc.)
+#[derive(Clone, Debug, Default, PartialEq, FromPlist)]
+pub struct RawHint {
+    #[fromplist(alt_name = "type")]
+    hint_type: SmolStr,
+    name: SmolStr,
+    origin: Vec<i64>, // (shape_index, node_index)
+    scale: Vec<f64>,
+    options: i64, // Alignment option for corner components
+}
+
+impl RawHint {
+    fn to_hint(&self) -> Result<Hint, Error> {
+        let type_ = match self.hint_type.as_str() {
+            "Corner" => HintType::Corner,
+            "Cap" => HintType::Cap,
+            "Stem" => HintType::Stem,
+            "TTStem" => HintType::TTStem,
+            _other => {
+                log::info!("unhandled hint type '{_other}'");
+                HintType::Unknown
+            }
+        };
+        let (shape_index, node_index) = match self.origin.as_slice() {
+            &[a, b] if a.is_negative() || b.is_negative() => {
+                return Err(Error::BadValue(format!(
+                    "hint origin field ({a}, {b}) cannot contain negative number"
+                )));
+            }
+            &[a, b] => (a as usize, b as usize),
+            _other => {
+                return Err(Error::BadValue(format!(
+                    "unexpected origin value '{_other:?}'"
+                )));
+            }
+        };
+
+        let scale = match self.scale.as_slice() {
+            &[] => Default::default(),
+            &[a, b] => Scale::new(a, b),
+            _other => return Err(Error::BadValue(format!("unexpected scale '{_other:?}'"))),
+        };
+
+        let alignment = match self.options {
+            0 => Alignment::OutStroke,
+            1 => Alignment::InStroke,
+            2 => Alignment::Middle,
+            3 => Alignment::Unused,
+            4 => Alignment::Unaligned,
+            _other => {
+                // doesn't seem worth it to fail for this, easy to imagine
+                // new variants added in the future
+                log::info!("unexpected hint option '{_other}'");
+                Default::default()
+            }
+        };
+
+        Ok(Hint {
+            type_,
+            name: self.name.clone(),
+            shape_index,
+            node_index,
+            scale,
+            alignment,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub struct Hint {
+    type_: HintType,
+    name: SmolStr,
+    shape_index: usize,
+    node_index: usize,
+    scale: Scale,
+    alignment: Alignment,
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub struct Scale {
+    x: OrderedFloat<f64>,
+    y: OrderedFloat<f64>,
+}
+
+impl Default for Scale {
+    fn default() -> Self {
+        Self {
+            x: 1.0.into(),
+            y: 1.0.into(),
+        }
+    }
+}
+
+impl Scale {
+    fn new(x: f64, y: f64) -> Self {
+        Self {
+            x: x.into(),
+            y: y.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
+#[non_exhaustive]
+pub enum HintType {
+    Corner,
+    // other hint types are currently unused
+    Stem,
+    Cap,
+    TTStem,
+    // catch all, we don't want to fail parsing unknwon variants,
+    Unknown,
+}
+
+/// How to align a corner component to the attaching node
+#[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
+#[non_exhaustive]
+pub enum Alignment {
+    // glyphs calls this 'left'
+    #[default]
+    OutStroke,
+    // glyphs calls this 'right'
+    InStroke,
+    Middle,
+    Unused,
+    Unaligned,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Hash)]
 pub struct Layer {
     pub layer_id: String,
@@ -339,6 +467,8 @@ pub struct Layer {
     /// Smart component layers can only be defined at the min or max of a given
     /// axis.
     pub smart_component_positions: BTreeMap<SmolStr, AxisPole>,
+    /// Hints for this layer (e.g., corner components, stem hints, etc.)
+    pub hints: Vec<Hint>,
 }
 
 impl Layer {
@@ -1130,6 +1260,7 @@ struct RawLayer {
     paths: Vec<Path>,
     components: Vec<Component>,
     anchors: Vec<RawAnchor>,
+    hints: Vec<RawHint>,
     #[fromplist(alt_name = "attr")]
     attributes: LayerAttributes,
     // if this layer is part of a smart component; values should be 1 or 2
@@ -2565,6 +2696,11 @@ impl RawLayer {
             ))),
         })
         .collect::<Result<_, _>>()?;
+        let hints = self
+            .hints
+            .iter()
+            .map(RawHint::to_hint)
+            .collect::<Result<_, _>>()?;
         Ok(Layer {
             layer_id: self.layer_id,
             associated_master_id: self.associated_master_id,
@@ -2575,6 +2711,7 @@ impl RawLayer {
             anchors,
             attributes,
             smart_component_positions,
+            hints,
         })
     }
 }
@@ -5297,9 +5434,6 @@ etc;
     }
 
     impl crate::Path {
-        fn to_points(&self) -> Vec<Point> {
-            self.nodes.iter().map(|n| n.pt).collect()
-        }
         fn bbox(&self) -> Option<Rect> {
             let points = self.to_points();
             let (head, rest) = points.as_slice().split_first()?;
@@ -5353,5 +5487,53 @@ etc;
                 Rect::new(500., 0., 550., 100.),
             ]
         );
+    }
+
+    #[test]
+    fn parse_basic_corner_component_hint() {
+        let font = Font::load(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+
+        let glyph = font.glyphs.get("aa_simple_angleinstroke").unwrap();
+        let hints = &glyph.layers[0].hints;
+
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].name, "_corner.one");
+        assert_eq!(hints[0].shape_index, 0);
+        assert_eq!(hints[0].node_index, 0);
+        assert_eq!(hints[0].type_, HintType::Corner);
+        assert_eq!(hints[0].scale, Default::default());
+        assert_eq!(hints[0].alignment, Alignment::OutStroke);
+    }
+
+    #[test]
+    fn parse_corner_component_hint_with_scale() {
+        let font = Font::load(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+
+        let glyph = font.glyphs.get("ac_scale").unwrap();
+        let hints = &glyph.layers[0].hints;
+
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].name, "_corner.one");
+        assert_eq!(hints[0].shape_index, 0);
+        assert_eq!(hints[0].node_index, 0);
+        assert_eq!(hints[0].type_, HintType::Corner);
+        assert_eq!(hints[0].scale, (Scale::new(1.2, 1.5)));
+        assert_eq!(hints[0].alignment, Alignment::OutStroke);
+    }
+
+    #[test]
+    fn parse_corner_component_hint_with_alignment() {
+        let font = Font::load(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+
+        let glyph = font.glyphs.get("aj_right_alignment").unwrap();
+        let hints = &glyph.layers[0].hints;
+
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].name, "_corner.one");
+        assert_eq!(hints[0].shape_index, 0);
+        assert_eq!(hints[0].node_index, 1);
+        assert_eq!(hints[0].type_, HintType::Corner);
+        assert_eq!(hints[0].scale, Default::default());
+        assert_eq!(hints[0].alignment, Alignment::InStroke);
     }
 }
