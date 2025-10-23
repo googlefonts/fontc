@@ -1689,6 +1689,11 @@ impl Path {
     pub fn reverse(&mut self) {
         self.nodes.reverse();
     }
+
+    #[cfg(test)]
+    pub(crate) fn to_points(&self) -> Vec<Point> {
+        self.nodes.iter().map(|n| n.pt).collect()
+    }
 }
 
 fn v2_to_v3_name(v2_prop: Option<&str>, v3_name: &str) -> Option<RawName> {
