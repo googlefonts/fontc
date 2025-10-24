@@ -105,3 +105,7 @@ pytest
 ```bash
 pytest --cov=ttx_diff --cov-report=html
 ```
+
+## Releasing
+
+See <https://googlefonts.github.io/python#make-a-release>.
