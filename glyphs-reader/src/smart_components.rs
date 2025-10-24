@@ -7,7 +7,7 @@ use thiserror::Error;
 use fontdrasil::{
     coords::{NormalizedCoord, NormalizedLocation},
     types::Tag,
-    variations::VariationModel,
+    variations::{RoundingBehaviour, VariationModel},
 };
 use kurbo::{Affine, Vec2};
 use smol_str::SmolStr;
@@ -147,7 +147,9 @@ pub(crate) fn instantiate_for_layer(
             Ok((loc, points))
         })
         .collect::<Result<HashMap<_, _>, BadSmartComponent>>()?;
-    let deltas = model.deltas(&point_seqs).unwrap();
+    let deltas = model
+        .deltas_with_rounding(&point_seqs, RoundingBehaviour::None)
+        .unwrap();
     let points = model.interpolate_from_deltas(&location, &deltas);
     let mut shapes = shapes_with_new_points(relevant_layers[0], &points);
     shapes.iter_mut().for_each(|shape| {
