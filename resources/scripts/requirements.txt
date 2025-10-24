@@ -138,7 +138,7 @@ gitpython==3.1.45
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.12.1
+glyphslib==6.12.2
     # via
     #   bumpfontversion
     #   fontmake
