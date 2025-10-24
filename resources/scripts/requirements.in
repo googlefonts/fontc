@@ -1,5 +1,5 @@
 # ttx-diff package with all its dependencies (single source of truth)
--e ./ttx_diff
+-e file:./ttx_diff
 
 # Pin versions for CI stability (overrides ttx-diff's minimum versions)
 # keep fontmake version pinned to ensure output from ttx-diff is stable;

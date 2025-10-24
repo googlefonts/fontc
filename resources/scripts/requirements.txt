@@ -4,7 +4,7 @@
 #
 #    pip-compile resources/scripts/requirements.in
 #
--e file:///Users/clupo/oss/fontc/ttx_diff
+-e file:./ttx_diff
     # via -r resources/scripts/requirements.in
 absl-py==2.3.1
     # via
@@ -182,7 +182,7 @@ openstep-plist==0.5.1
     #   glyphslib
 opentype-sanitizer==9.2.0
     # via gftools
-orjson==3.11.3
+orjson==3.11.4
     # via
     #   babelfont
     #   ufolib2
@@ -238,7 +238,7 @@ resvg-cli==0.44.0
     # via nanoemoji
 rich==14.2.0
     # via gftools
-ruamel-yaml==0.18.15
+ruamel-yaml==0.18.16
     # via gftools
 ruamel-yaml-clib==0.2.14
     # via ruamel-yaml
