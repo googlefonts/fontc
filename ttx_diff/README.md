@@ -1,5 +1,8 @@
 # ttx-diff
 
+[![PyPI](https://img.shields.io/pypi/v/ttx-diff)](https://pypi.org/project/ttx-diff/)
+[![Python Version](https://img.shields.io/pypi/pyversions/ttx-diff)](https://pypi.org/project/ttx-diff/)
+
 A tool for comparing font compiler outputs between fontc (Rust) and fontmake (Python).
 
 ## Overview
