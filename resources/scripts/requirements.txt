@@ -4,12 +4,14 @@
 #
 #    pip-compile resources/scripts/requirements.in
 #
+-e file:./ttx_diff
+    # via -r resources/scripts/requirements.in
 absl-py==2.3.1
     # via
-    #   -r resources/scripts/requirements.in
     #   gftools
     #   nanoemoji
     #   picosvg
+    #   ttx-diff
 afdko==4.0.2
     # via gftools
 attrs==25.4.0
@@ -41,7 +43,7 @@ cattrs==25.3.0
     #   statmake
     #   ufolib2
 cdifflib==1.2.9
-    # via -r resources/scripts/requirements.in
+    # via ttx-diff
 certifi==2025.10.5
     # via requests
 cffi==2.0.0
@@ -76,6 +78,7 @@ fontmake[json,repacker]==3.11.0
     # via
     #   -r resources/scripts/requirements.in
     #   gftools
+    #   ttx-diff
 fontmath==0.9.4
     # via
     #   afdko
@@ -90,7 +93,6 @@ fontpens==0.2.4
     # via defcon
 fonttools[lxml,repacker,ufo,unicode,woff]==4.60.1
     # via
-    #   -r resources/scripts/requirements.in
     #   afdko
     #   axisregistry
     #   babelfont
@@ -111,6 +113,7 @@ fonttools[lxml,repacker,ufo,unicode,woff]==4.60.1
     #   mutatormath
     #   nanoemoji
     #   statmake
+    #   ttx-diff
     #   ufo2ft
     #   ufolib2
     #   ufomerge
@@ -126,7 +129,9 @@ gflanguages==0.7.7
 gfsubsets==2024.9.25
     # via gftools
 gftools==0.9.93
-    # via -r resources/scripts/requirements.in
+    # via
+    #   -r resources/scripts/requirements.in
+    #   ttx-diff
 gitdb==4.0.12
     # via gitpython
 gitpython==3.1.45
@@ -135,11 +140,11 @@ glyphsets==1.1.0
     # via gftools
 glyphslib==6.12.1
     # via
-    #   -r resources/scripts/requirements.in
     #   bumpfontversion
     #   fontmake
     #   gftools
     #   glyphsets
+    #   ttx-diff
 idna==3.11
     # via requests
 importlib-resources==6.5.2
@@ -148,12 +153,12 @@ jinja2==3.1.6
     # via gftools
 lxml==6.0.2
     # via
-    #   -r resources/scripts/requirements.in
     #   afdko
     #   fontfeatures
     #   fonttools
     #   nanoemoji
     #   picosvg
+    #   ttx-diff
 markdown-it-py==4.0.0
     # via rich
 markupsafe==3.0.3
@@ -177,7 +182,7 @@ openstep-plist==0.5.1
     #   glyphslib
 opentype-sanitizer==9.2.0
     # via gftools
-orjson==3.11.3
+orjson==3.11.4
     # via
     #   babelfont
     #   ufolib2
@@ -220,6 +225,7 @@ pyyaml==6.0.3
     # via
     #   gftools
     #   glyphsets
+    #   ttx-diff
 regex==2025.10.23
     # via nanoemoji
 requests==2.32.5
@@ -232,7 +238,7 @@ resvg-cli==0.44.0
     # via nanoemoji
 rich==14.2.0
     # via gftools
-ruamel-yaml==0.18.15
+ruamel-yaml==0.18.16
     # via gftools
 ruamel-yaml-clib==0.2.14
     # via ruamel-yaml

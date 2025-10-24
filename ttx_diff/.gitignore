@@ -1,0 +1,33 @@
+# Python cache
+__pycache__/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+
+# Environments
+.venv
+venv/
+
+# OSX Finder
+.DS_Store
+
+# VSCode
+.vscode
+
+# setuptools_scm generated version file
+src/ttx_diff/_version.py
+
+# Build artifacts
+dist/
+*.egg-info/

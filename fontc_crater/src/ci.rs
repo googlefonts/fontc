@@ -209,7 +209,7 @@ fn ttx_diff_has_changes(last_run_sha: &str) -> bool {
         .unwrap();
     std::str::from_utf8(&output.stdout)
         .unwrap()
-        .contains("ttx_diff.py")
+        .contains("ttx_diff/")
 }
 
 #[derive(Debug, Default)]

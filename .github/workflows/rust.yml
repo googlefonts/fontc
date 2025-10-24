@@ -1,11 +1,21 @@
 on:
   pull_request:
+    paths-ignore:
+      - 'ttx_diff/**'
+      - '.github/workflows/python.yml'
+      - 'resources/scripts/requirements.in'
+      - 'resources/scripts/requirements.txt'
   merge_group:
   push:
     branches:
       - main
     tags:
       - "*"
+    paths-ignore:
+      - 'ttx_diff/**'
+      - '.github/workflows/python.yml'
+      - 'resources/scripts/requirements.in'
+      - 'resources/scripts/requirements.txt'
 
 name: Continuous integration
 

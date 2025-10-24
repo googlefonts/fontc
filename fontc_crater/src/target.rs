@@ -145,7 +145,7 @@ impl Target {
             Default::default()
         };
         let mut cmd = format!(
-            "python3 resources/scripts/ttx_diff.py '{repo_url}{sha_part}#{}'",
+            "python3 -m ttx_diff '{repo_url}{sha_part}#{}'",
             rel_source_path.display()
         );
         if self.build == BuildType::GfTools {
@@ -371,7 +371,7 @@ mod tests {
         let hmm = target.repro_command("example.com");
         assert_eq!(
             hmm,
-            "python3 resources/scripts/ttx_diff.py 'example.com?123456789a#sources/hi.glyphs'"
+            "python3 -m ttx_diff 'example.com?123456789a#sources/hi.glyphs'"
         );
     }
 }

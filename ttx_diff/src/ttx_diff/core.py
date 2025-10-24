@@ -34,30 +34,29 @@ JSON:
     is the command that was used to run that compiler.
 """
 
-from collections import defaultdict
-from absl import app
-from absl import flags
-from functools import cache
-from lxml import etree
-from pathlib import Path
 import json
+import os
 import shutil
 import subprocess
 import sys
-import os
-import yaml
-from urllib.parse import urlparse
-from cdifflib import CSequenceMatcher as SequenceMatcher
+import time
+from collections import defaultdict
 from contextlib import contextmanager
+from functools import cache
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
-from glyphsLib import GSFont
-from fontTools.designspaceLib import DesignSpaceDocument
-from fontTools.varLib.iup import iup_delta
-from fontTools.ttLib import TTFont
-from fontTools.misc.fixedTools import otRound
-import time
+from urllib.parse import urlparse
 
+import yaml
+from absl import flags
+from cdifflib import CSequenceMatcher as SequenceMatcher
+from fontTools.designspaceLib import DesignSpaceDocument
+from fontTools.misc.fixedTools import otRound
+from fontTools.ttLib import TTFont
+from fontTools.varLib.iup import iup_delta
+from glyphsLib import GSFont
+from lxml import etree
 
 _COMPARE_DEFAULTS = "default"
 _COMPARE_GFTOOLS = "gftools"
@@ -168,7 +167,6 @@ def rel_user(fragment: Any) -> str:
 # All additional kwargs are passed to subprocess.run
 def log_and_run(cmd: Sequence, cwd=None, **kwargs):
     # Convert to ~ format because it's annoying to see really long usr paths
-    cmd_string = " ".join(str(c) for c in cmd)
     log_cmd = " ".join(rel_user(c) for c in cmd)
     if cwd is not None:
         eprint(f"  (cd {rel_user(cwd)} && {log_cmd})")
@@ -1351,14 +1349,49 @@ def get_fontc_and_normalizer_binary_paths(root_dir: Path) -> Tuple[Path, Path]:
     return (fontc_path, norm_path)
 
 
-def get_crate_path(cli_arg: Optional[str], root_dir: Path, crate_name: str) -> Path:
-    if cli_arg:
-        return Path(cli_arg)
+def get_crate_path(
+    bin_path: Optional[str], root_dir: Optional[Path], crate_name: str
+) -> Path:
+    """Get path to a crate binary, building it if in fontc repo, or finding in PATH.
 
-    manifest_path = root_dir / crate_name / "Cargo.toml"
-    bin_path = root_dir / "target" / "release" / crate_name
-    build_crate(manifest_path)
-    return bin_path
+    Args:
+        bin_path: Path provided via CLI flag
+        root_dir: Path to fontc repository root (if we're in one)
+        crate_name: Name of the crate (e.g., "fontc" or "otl-normalizer")
+
+    Returns:
+        Path to the binary
+
+    Raises:
+        SystemExit: If binary cannot be found or built
+    """
+    if bin_path:
+        path = Path(bin_path)
+        if not path.is_file():
+            sys.exit(f"Specified {crate_name} path '{path}' does not exist")
+        return path
+
+    # If we're in the fontc repo, try to build it
+    if root_dir is not None:
+        manifest_path = root_dir / crate_name / "Cargo.toml"
+        if manifest_path.is_file():
+            built_path = root_dir / "target" / "release" / crate_name
+            build_crate(manifest_path)
+            if built_path.is_file():
+                return built_path
+
+    # Try to find in PATH
+    which_result = shutil.which(crate_name)
+    if which_result:
+        return Path(which_result)
+
+    # Give helpful error message
+    sys.exit(
+        f"Could not find '{crate_name}' binary. Please either:\n"
+        f"  1. Specify the path with --{crate_name}_path flag\n"
+        f"  2. Install {crate_name} and ensure it's in your PATH\n"
+        f"  3. Run from the fontc repository root to build it automatically"
+    )
 
 
 def main(argv):
@@ -1367,28 +1400,35 @@ def main(argv):
 
     source = resolve_source(argv[1]).resolve()
 
-    root = Path(".").resolve()
-    if not (root / "fontc" / "Cargo.toml").is_file():
-        sys.exit(
-            "This script must be run from the root of the fontc repository; "
-            "could not find 'fontc/Cargo.toml'."
-        )
+    # Check if we're in the fontc repository (optional - allows building binaries)
+    cwd = Path(".").resolve()
+    fontc_repo_root = None
+    if (cwd / "fontc" / "Cargo.toml").is_file():
+        fontc_repo_root = cwd
+        eprint(f"Detected fontc repository at {rel_user(fontc_repo_root)}")
 
-    fontc_bin_path = get_crate_path(FLAGS.fontc_path, root, "fontc")
-    otl_bin_path = get_crate_path(FLAGS.normalizer_path, root, "otl-normalizer")
-
-    assert fontc_bin_path.is_file(), f"fontc path '{fontc_bin_path}' does not exist"
-    assert otl_bin_path.is_file(), f"normalizer path '{otl_bin_path}' does not exist"
+    # Get binary paths - will look in PATH or build if in repo
+    fontc_bin_path = get_crate_path(FLAGS.fontc_path, fontc_repo_root, "fontc")
+    otl_bin_path = get_crate_path(
+        FLAGS.normalizer_path, fontc_repo_root, "otl-normalizer"
+    )
 
     if shutil.which("fontmake") is None:
         sys.exit("No fontmake")
     if shutil.which("ttx") is None:
         sys.exit("No ttx")
 
-    out_dir = root / "build"
     if FLAGS.outdir is not None:
         out_dir = Path(FLAGS.outdir).resolve()
-        assert out_dir.exists(), f"output directory {out_dir} does not exist"
+        if not out_dir.exists():
+            sys.exit(f"Specified output directory {out_dir} does not exist")
+    elif fontc_repo_root is not None:
+        # If in fontc repo, use repo's build directory
+        out_dir = fontc_repo_root / "build"
+    else:
+        # Otherwise use current directory
+        out_dir = cwd / "ttx_diff_output"
+        eprint(f"No --outdir specified, using {rel_user(out_dir)}")
 
     diffs = False
 
@@ -1445,7 +1485,3 @@ def main(argv):
             print_json(output)
 
     sys.exit(diffs * 2)  # 0 or 2
-
-
-if __name__ == "__main__":
-    app.run(main)
