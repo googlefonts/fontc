@@ -53,8 +53,6 @@ The tool needs the `fontc` and `otl-normalizer` binaries. You can:
 
 **Note**: Unlike the original `ttx_diff.py` script, this standalone version can be run from any directory. You don't need to be in the fontc repository.
 
-### Basic comparison
-
 Rebuild with both fontmake and fontc and compare:
 
 ```bash
@@ -67,23 +65,17 @@ If the binaries are in your PATH:
 ttx-diff path/to/source.glyphs
 ```
 
-### Selective rebuild
-
 Rebuild only fontc's font and reuse existing fontmake output:
 
 ```bash
 ttx-diff --rebuild fontc path/to/source.glyphs
 ```
 
-### JSON output
-
 Output results in machine-readable JSON format, as used by the [`fontc_crater`](https://github.com/googlefonts/fontc/tree/main/fontc_crater) tool.
 
 ```bash
 ttx-diff --json path/to/source.glyphs
 ```
-
-### Using gftools
 
 Compare using gftools build pipeline:
 
@@ -93,14 +85,14 @@ ttx-diff --compare gftools --config config.yaml path/to/source.glyphs
 
 ## Development
 
-### Running tests
+Running tests
 
 ```bash
 pip install -e .[test]
 pytest
 ```
 
-### Running tests with coverage
+Running tests with coverage
 
 ```bash
 pytest --cov=ttx_diff --cov-report=html
