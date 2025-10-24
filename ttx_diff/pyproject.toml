@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ttx-diff"
+dynamic = ["version"]
+description = "A tool for comparing font compiler outputs (fontc vs fontmake)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    {name = "Google Fonts", email = "fonts@google.com"}
+]
+keywords = ["fonts", "font-compilation", "fontc", "fontmake", "testing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Text Processing :: Fonts",
+]
+dependencies = [
+    "absl-py",
+    "fontmake[repacker]>=3.11.0",
+    "fonttools",
+    "lxml",
+    "cdifflib",
+    "glyphsLib",
+    "gftools>=0.9.74",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "ruff",
+]
+
+[project.urls]
+Homepage = "https://github.com/googlefonts/fontc"
+Repository = "https://github.com/googlefonts/fontc"
+Issues = "https://github.com/googlefonts/fontc/issues"
+
+[project.scripts]
+ttx-diff = "ttx_diff.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools_scm]
+# Support custom tag format for monorepo: ttx-diff-v#.#.#
+tag_regex = "^ttx-diff-v(?P<version>[^\\+]+)(?P<extra>.*)?$"
+# Git repo is in parent directory (monorepo setup)
+root = ".."
+# Write version file relative to pyproject.toml location (not relative to root)
+version_file = "src/ttx_diff/_version.py"
+# Only consider ttx-diff-v* tags, ignore other tags in monorepo
+# Based on DEFAULT_DESCRIBE from setuptools_scm.git, just with custom --match pattern
+# https://github.com/pypa/setuptools-scm/blob/e56b78f/src/setuptools_scm/git.py#L44-L53
+git_describe_command = "git describe --dirty --tags --long --match 'ttx-diff-v*' --abbrev=40"
+# Fallback version when no matching tags exist
+fallback_version = "0.0.0"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+extend-exclude = ["src/ttx_diff/_version.py"]
+
+[tool.ruff.lint]
+# Ruff's recommended set: pyflakes (F) + pycodestyle (E, W) + isort (I)
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",  # line-length violations (handled by formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"_version.py" = ["ALL"]  # Don't lint auto-generated files
+
+[tool.ruff.lint.isort]
+known-first-party = ["ttx_diff"]
