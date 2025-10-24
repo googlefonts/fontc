@@ -34,30 +34,29 @@ JSON:
     is the command that was used to run that compiler.
 """
 
-from collections import defaultdict
-from absl import app
-from absl import flags
-from functools import cache
-from lxml import etree
-from pathlib import Path
 import json
+import os
 import shutil
 import subprocess
 import sys
-import os
-import yaml
-from urllib.parse import urlparse
-from cdifflib import CSequenceMatcher as SequenceMatcher
+import time
+from collections import defaultdict
 from contextlib import contextmanager
+from functools import cache
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
-from glyphsLib import GSFont
-from fontTools.designspaceLib import DesignSpaceDocument
-from fontTools.varLib.iup import iup_delta
-from fontTools.ttLib import TTFont
-from fontTools.misc.fixedTools import otRound
-import time
+from urllib.parse import urlparse
 
+import yaml
+from absl import flags
+from cdifflib import CSequenceMatcher as SequenceMatcher
+from fontTools.designspaceLib import DesignSpaceDocument
+from fontTools.misc.fixedTools import otRound
+from fontTools.ttLib import TTFont
+from fontTools.varLib.iup import iup_delta
+from glyphsLib import GSFont
+from lxml import etree
 
 _COMPARE_DEFAULTS = "default"
 _COMPARE_GFTOOLS = "gftools"
@@ -168,7 +167,6 @@ def rel_user(fragment: Any) -> str:
 # All additional kwargs are passed to subprocess.run
 def log_and_run(cmd: Sequence, cwd=None, **kwargs):
     # Convert to ~ format because it's annoying to see really long usr paths
-    cmd_string = " ".join(str(c) for c in cmd)
     log_cmd = " ".join(rel_user(c) for c in cmd)
     if cwd is not None:
         eprint(f"  (cd {rel_user(cwd)} && {log_cmd})")
@@ -1351,7 +1349,9 @@ def get_fontc_and_normalizer_binary_paths(root_dir: Path) -> Tuple[Path, Path]:
     return (fontc_path, norm_path)
 
 
-def get_crate_path(bin_path: Optional[str], root_dir: Optional[Path], crate_name: str) -> Path:
+def get_crate_path(
+    bin_path: Optional[str], root_dir: Optional[Path], crate_name: str
+) -> Path:
     """Get path to a crate binary, building it if in fontc repo, or finding in PATH.
 
     Args:
@@ -1409,7 +1409,9 @@ def main(argv):
 
     # Get binary paths - will look in PATH or build if in repo
     fontc_bin_path = get_crate_path(FLAGS.fontc_path, fontc_repo_root, "fontc")
-    otl_bin_path = get_crate_path(FLAGS.normalizer_path, fontc_repo_root, "otl-normalizer")
+    otl_bin_path = get_crate_path(
+        FLAGS.normalizer_path, fontc_repo_root, "otl-normalizer"
+    )
 
     if shutil.which("fontmake") is None:
         sys.exit("No fontmake")

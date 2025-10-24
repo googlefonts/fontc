@@ -1,6 +1,6 @@
 """ttx-diff: A tool for comparing font compiler outputs."""
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("ttx-diff")
