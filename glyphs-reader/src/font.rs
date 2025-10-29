@@ -419,18 +419,18 @@ impl RawHint {
 
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub struct Hint {
-    type_: HintType,
-    name: SmolStr,
-    shape_index: usize,
-    node_index: usize,
-    scale: Scale,
-    alignment: Alignment,
+    pub type_: HintType,
+    pub name: SmolStr,
+    pub shape_index: usize,
+    pub node_index: usize,
+    pub scale: Scale,
+    pub alignment: Alignment,
 }
 
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub struct Scale {
-    x: OrderedFloat<f64>,
-    y: OrderedFloat<f64>,
+    pub x: OrderedFloat<f64>,
+    pub y: OrderedFloat<f64>,
 }
 
 impl Default for Scale {
@@ -1429,7 +1429,7 @@ impl Hash for Component {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Node {
     pub pt: Point,
     pub node_type: NodeType,
@@ -3391,7 +3391,10 @@ impl Font {
         }
         // if any glyphs reference smart components, convert them to outlines.
         // (see https://glyphsapp.com/learn/smart-components)
-        self.instantiate_all_smart_components()
+        self.instantiate_all_smart_components()?;
+
+        // if any glyphs have corner component hints, insert them into the paths
+        self.insert_all_corner_components()
     }
 
     /// if a glyph has components that have alternate layers, copy the layer
@@ -3545,6 +3548,48 @@ impl Font {
             // replace the old glyph with the new, component-free glyph
             self.glyphs.insert(glyph.name.clone(), glyph);
         }
+        Ok(())
+    }
+
+    // insert corner components into glyphs that have them
+    fn insert_all_corner_components(&mut self) -> Result<(), Error> {
+        // Find all glyphs that have corner component hints
+        let glyphs_with_corners: Vec<_> = self
+            .glyphs
+            .values()
+            .filter(|glyph| {
+                glyph.layers.iter().any(|layer| {
+                    layer
+                        .hints
+                        .iter()
+                        .any(|hint| hint.type_ == HintType::Corner)
+                })
+            })
+            .cloned()
+            .collect();
+
+        if glyphs_with_corners.is_empty() {
+            return Ok(());
+        }
+
+        for mut glyph in glyphs_with_corners {
+            for layer in &mut glyph.layers {
+                crate::corner_components::insert_corner_components_for_layer(
+                    &glyph.name,
+                    layer,
+                    &self.glyphs,
+                )
+                .map_err(|e| {
+                    Error::StructuralError(format!(
+                        "Failed to insert corner components for {}: {}",
+                        glyph.name, e
+                    ))
+                })?;
+            }
+
+            self.glyphs.insert(glyph.name.clone(), glyph);
+        }
+
         Ok(())
     }
 
@@ -5516,7 +5561,7 @@ etc;
 
     #[test]
     fn parse_basic_corner_component_hint() {
-        let font = Font::load(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+        let font = Font::load_raw(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
 
         let glyph = font.glyphs.get("aa_simple_angleinstroke").unwrap();
         let hints = &glyph.layers[0].hints;
@@ -5532,7 +5577,7 @@ etc;
 
     #[test]
     fn parse_corner_component_hint_with_scale() {
-        let font = Font::load(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+        let font = Font::load_raw(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
 
         let glyph = font.glyphs.get("ac_scale").unwrap();
         let hints = &glyph.layers[0].hints;
@@ -5548,7 +5593,7 @@ etc;
 
     #[test]
     fn parse_corner_component_hint_with_alignment() {
-        let font = Font::load(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+        let font = Font::load_raw(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
 
         let glyph = font.glyphs.get("aj_right_alignment").unwrap();
         let hints = &glyph.layers[0].hints;
