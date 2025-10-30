@@ -1,9 +1,10 @@
 {
-.appVersion = "3225";
+.appVersion = "3436";
 .formatVersion = 3;
 DisplayStrings = (
 "/_corner.large/aw_direction",
-"/aw_direction.expectation"
+"/aw_direction.expectation",
+"/ai_curved_outstroke.expectation"
 );
 customParameters = (
 {
@@ -873,7 +874,7 @@ width = 600;
 },
 {
 glyphname = ai_curved_outstroke.expectation;
-lastChange = "2022-11-22 13:21:43 +0000";
+lastChange = "2025-10-30 20:12:58 +0000";
 layers = (
 {
 background = {
@@ -899,10 +900,10 @@ shapes = (
 closed = 1;
 nodes = (
 (505,226,l),
-(550,181,l),
-(585,217,l),
-(532,270,l),
-(455,334,o),
+(549,181,l),
+(585,216,l),
+(533,270,l),
+(456,334,o),
 (166,492,o),
 (90,448,c),
 (290,102,l)
