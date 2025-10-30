@@ -25,6 +25,35 @@ impl OtRound<Node> for Node {
     }
 }
 
+#[derive(Debug, Error, Clone)]
+#[error("component '{component}' failed: {reason}")]
+pub struct BadCornerComponent {
+    component: SmolStr,
+    reason: BadCornerComponentReason,
+}
+
+#[derive(Debug, Error, Clone)]
+pub enum BadCornerComponentReason {
+    #[error("corner glyph contains no layer '{0}'")]
+    MissingLayer(SmolStr),
+    #[error("glyph contains no paths")]
+    NoPaths,
+    #[error("no path at shape index '{0}'")]
+    BadShapeIndex(usize),
+    #[error("path contains too few points")]
+    PathTooShort,
+}
+
+impl BadCornerComponentReason {
+    // convenience to turn this into the actual error type we return
+    fn add_name(self, component: SmolStr) -> BadCornerComponent {
+        BadCornerComponent {
+            component,
+            reason: self,
+        }
+    }
+}
+
 /// Find the t parameter on a segment at a given distance along it
 ///
 /// <https://github.com/googlefont/glyphsLib/blob/f90e4060/Lib/glyphsLib/filters/cornerComponents.py#L151>
@@ -58,10 +87,9 @@ fn point_on_seg_at_distance(seg: PathSeg, distance: f64) -> f64 {
 
 /// Insert all corner components for a layer
 pub(crate) fn insert_corner_components_for_layer(
-    _glyph_name: &SmolStr,
     layer: &mut Layer,
     glyphs: &BTreeMap<SmolStr, Glyph>,
-) -> Result<(), BadCornerComponentReason> {
+) -> Result<(), BadCornerComponent> {
     let mut corner_hints: Vec<Hint> = layer
         .hints
         .iter()
@@ -85,13 +113,23 @@ pub(crate) fn insert_corner_components_for_layer(
             inserted_pts = 0;
         }
 
-        let component = glyphs
-            .get(&hint.name)
-            .ok_or(BadCornerComponentReason::MissingComponent)
-            .and_then(CornerComponent::new)?;
+        let Some(corner_glyph) = glyphs.get(&hint.name) else {
+            log::warn!("corner component '{}' not found", hint.name);
+            return Ok(());
+        };
+
+        let component = corner_glyph
+            .layers
+            .iter()
+            .find(|l| l.layer_id == layer.master_id())
+            .ok_or_else(|| BadCornerComponentReason::MissingLayer(layer.master_id().into()))
+            .and_then(CornerComponent::new)
+            .map_err(|e| e.add_name(hint.name.clone()))?;
 
         let n_points = component.corner_path.nodes.len() - 1;
-        layer.insert_corner_component(component, &hint, inserted_pts)?;
+        layer
+            .insert_corner_component(component, &hint, inserted_pts)
+            .map_err(|e| e.add_name(hint.name.clone()))?;
         inserted_pts += n_points;
     }
 
@@ -121,12 +159,6 @@ impl Layer {
         };
 
         let point_idx = (hint.node_index + delta_pt_index) % path.nodes.len();
-        log::debug!(
-            "inserting corner component '{}' at node {point_idx} with alignment {:?}",
-            hint.name,
-            hint.alignment,
-        );
-
         // scale paths
         let scale = Affine::scale_non_uniform(hint.scale.x.0, hint.scale.y.0);
         component.apply_transform(scale);
@@ -137,15 +169,11 @@ impl Layer {
             correction,
         } = component.align_to_main_path(path, hint, point_idx);
 
-        eprintln!("correction {correction}");
-
         let original_outstroke = path.get_next_segment(point_idx).unwrap();
         if hint.alignment != Alignment::InStroke && correction {
             instroke_pt = component
                 .recompute_instroke_intersection_point(path, point_idx)
                 .unwrap_or(instroke_pt);
-
-            eprintln!("hmm {instroke_pt:?}");
 
             if !matches!(
                 component.corner_path.get_next_segment(0).unwrap(),
@@ -154,11 +182,12 @@ impl Layer {
                 component.stretch_first_seg_to_fit(instroke_pt);
             }
         }
+        // first adjust the instroke
         path.split_instroke(point_idx, instroke_pt);
-        // now insert the new corner into us
-        eprintln!("{:?}", component.corner_path.nodes);
+        // now insert the corner into the path
+        let insert_pt = path.next_idx(point_idx);
         path.nodes.splice(
-            point_idx + 1..point_idx + 1,
+            insert_pt..insert_pt,
             component
                 .corner_path
                 .nodes
@@ -169,15 +198,26 @@ impl Layer {
         );
 
         let added_points = component.corner_path.nodes.len() - 1;
+        // 'prev' because the last point we inserted is the new outstroke start
+        let new_outstroke_idx = path.prev_idx(insert_pt + added_points);
 
+        // then adjust the outstroke
         if let Some(outstroke_intersection_point) =
             component.recompute_outstroke_intersection_point(original_outstroke, hint)
         {
             path.fixup_outstroke(
                 original_outstroke,
                 outstroke_intersection_point,
-                point_idx + added_points,
+                new_outstroke_idx,
             );
+        }
+
+        // and finally, add any new extra paths
+        for mut path in component.other_paths.into_iter() {
+            path.nodes
+                .iter_mut()
+                .for_each(|node| *node = node.ot_round());
+            self.shapes.push(Shape::Path(path));
         }
 
         Ok(())
@@ -249,41 +289,51 @@ impl Path {
         (idx + 1) % self.nodes.len()
     }
 
+    fn set_point(&mut self, idx: usize, point: Point) {
+        self.nodes[idx].pt = point;
+        self.nodes[idx] = self.nodes[idx].ot_round();
+    }
+
     // should maybe be called "truncate instroke?"
     //https://github.com/googlefonts/glyphsLib/blob/f90e4060ba/Lib/glyphsLib/filters/cornerComponents.py#L414
     fn split_instroke(&mut self, point_idx: usize, intersection: Point) {
         let instroke = self.get_previous_segment(point_idx).unwrap();
         let nearest_t = instroke.nearest(intersection, 1e-6).t;
         let split = instroke.subsegment(0.0..nearest_t);
-        let start_idx = match instroke {
-            PathSeg::Line(_) => self.prev_idx(point_idx),
-            PathSeg::Quad(_) => self.prev_idx(self.prev_idx(point_idx)),
-            PathSeg::Cubic(_) => self.prev_idx(self.prev_idx(self.prev_idx(point_idx))),
+        match split {
+            PathSeg::Line(line) => self.set_point(point_idx, line.p1),
+            PathSeg::Quad(quad) => {
+                self.set_point(point_idx, quad.p2);
+                let idx = self.prev_idx(point_idx);
+                self.set_point(idx, quad.p1);
+            }
+            PathSeg::Cubic(cubic) => {
+                self.set_point(point_idx, cubic.p3);
+                let idx = self.prev_idx(point_idx);
+                self.set_point(idx, cubic.p2);
+                let idx = self.prev_idx(idx);
+                self.set_point(idx, cubic.p1);
+            }
         };
-
-        self.replace_segment_at(start_idx, split);
     }
 
     fn fixup_outstroke(&mut self, original: PathSeg, intersection: Point, point_idx: usize) {
         let nearest_t = original.nearest(intersection, 1e-6).t;
         let split = original.subsegment(nearest_t..1.0);
-        self.replace_segment_at(point_idx, split);
-    }
-
-    fn replace_segment_at(&mut self, mut idx: usize, new_seg: PathSeg) {
-        let pts = match new_seg {
-            PathSeg::Line(line) => [None, None, Some(line.p1)],
-            PathSeg::Quad(quad) => [None, Some(quad.p1), Some(quad.p2)],
-            PathSeg::Cubic(cubic) => [Some(cubic.p1), Some(cubic.p2), Some(cubic.p3)],
-        };
-
-        // we keep the first point unchanged:
-        idx = self.next_idx(idx);
-
-        for pt in pts.into_iter().flatten() {
-            self.nodes[idx].pt = pt;
-            self.nodes[idx] = self.nodes[idx].ot_round();
-            idx = self.next_idx(idx);
+        match split {
+            PathSeg::Line(line) => self.set_point(point_idx, line.p0),
+            PathSeg::Quad(quad) => {
+                self.set_point(point_idx, quad.p0);
+                let idx = self.next_idx(point_idx);
+                self.set_point(idx, quad.p1);
+            }
+            PathSeg::Cubic(cubic) => {
+                self.set_point(point_idx, cubic.p0);
+                let idx = self.next_idx(point_idx);
+                self.set_point(idx, cubic.p1);
+                let idx = self.next_idx(idx);
+                self.set_point(idx, cubic.p2);
+            }
         }
     }
 }
@@ -300,12 +350,7 @@ struct CornerComponent {
 }
 
 impl CornerComponent {
-    fn new(corner_glyph: &Glyph) -> Result<Self, BadCornerComponentReason> {
-        let corner_layer = corner_glyph
-            .layers
-            .first()
-            .ok_or(BadCornerComponentReason::EmptyGlyph)?;
-
+    fn new(corner_layer: &Layer) -> Result<Self, BadCornerComponentReason> {
         let origin = corner_layer.get_anchor_pt("origin").unwrap_or_default();
         let left = corner_layer.get_anchor_pt("left").unwrap_or_default();
         let right = corner_layer.get_anchor_pt("right").unwrap_or_default();
@@ -353,12 +398,29 @@ impl CornerComponent {
         self.corner_path.nodes.last().unwrap().pt
     }
 
+    fn reverse_corner_path(&mut self) {
+        self.corner_path.reverse();
+        // fixup the node types; a simple cubic bezier corner has types,
+        // 'line, offcurve, offcurve, curveto' and when reversed we end up
+        // with a lineto at the end, which we later think is an error:
+        let [.., p0, pn] = self.corner_path.nodes.as_mut_slice() else {
+            return;
+        };
+        if p0.node_type == NodeType::OffCurve {
+            pn.node_type = match pn.node_type {
+                NodeType::Line => NodeType::Curve,
+                NodeType::LineSmooth => NodeType::CurveSmooth,
+                other => other,
+            };
+        }
+    }
+
     //https://github.com/googlefonts/glyphsLib/blob/f90e4060/Lib/glyphsLib/filters/cornerComponents.py#L340
     fn align_to_main_path(&mut self, path: &Path, hint: &Hint, point_idx: usize) -> AlignmentState {
         let mut angle = (-self.last_point().y).atan2(self.last_point().x);
         if hint.is_flipped() {
             angle += std::f64::consts::FRAC_PI_2;
-            self.corner_path.reverse();
+            self.reverse_corner_path();
         }
 
         let instroke = path.get_previous_segment(point_idx).unwrap();
@@ -417,10 +479,10 @@ impl CornerComponent {
         target_node_ix: usize,
     ) -> Option<Point> {
         // see ref above, this just treats it as a line
-        let corner_in_line = &self.corner_path.nodes.as_slice()[..2];
-        let corner_in_line = Line::new(corner_in_line[0].pt, corner_in_line[1].pt);
+        let first_seg_as_line = &self.corner_path.nodes.as_slice()[..2];
+        let first_seg_as_line = Line::new(first_seg_as_line[0].pt, first_seg_as_line[1].pt);
         let instroke = path.get_previous_segment(target_node_ix).unwrap();
-        unbounded_seg_seg_intersection(corner_in_line.into(), instroke)
+        unbounded_seg_seg_intersection(first_seg_as_line.into(), instroke)
     }
 
     //https://github.com/googlefonts/glyphsLib/blob/f90e4060b/Lib/glyphsLib/filters/cornerComponents.py#L401
@@ -457,11 +519,17 @@ fn unbounded_seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Point>
     match (seg1, seg2) {
         (PathSeg::Line(one), PathSeg::Line(two)) => one.crossing_point(two),
         (seg, PathSeg::Line(line)) | (PathSeg::Line(line), seg) => {
-            let angle = (line.p1 - line.p0).angle();
-            let transform = Affine::translate(line.p0.to_vec2()) * Affine::rotate(-angle);
-            let aligned_curve = transform * seg;
-            aligned_curve
-                .intersect_line(line)
+            // a value by which we extend our line, to find the crossing point.
+            // should be enough for anybody!
+            const LITERALLY_UNBOUNDED: f64 = 10000.;
+
+            // Extend the line by 1000 units in both directions to simulate unbounded line
+            let direction = (line.p1 - line.p0).normalize();
+            let extended_line = Line::new(
+                line.p0 - direction * LITERALLY_UNBOUNDED,
+                line.p1 + direction * LITERALLY_UNBOUNDED,
+            );
+            seg.intersect_line(extended_line)
                 .first()
                 .map(|hit| seg.eval(hit.segment_t))
         }
@@ -478,22 +546,9 @@ fn py_is_close(a: f64, b: f64) -> bool {
 
 struct AlignmentState {
     instroke_pt: Point,
+    #[expect(dead_code, reason = "python does it")]
     outstroke_pt: Point,
     correction: bool,
-}
-
-#[derive(Debug, Error, Clone)]
-pub enum BadCornerComponentReason {
-    #[error("missing component")]
-    MissingComponent,
-    #[error("glyph contains no layers")]
-    EmptyGlyph,
-    #[error("glyph contains no paths")]
-    NoPaths,
-    #[error("no path at shape index '{0}'")]
-    BadShapeIndex(usize),
-    #[error("path contains too few points")]
-    PathTooShort,
 }
 
 #[cfg(test)]
@@ -563,7 +618,7 @@ mod tests {
 
         // Apply corner components to the test glyph
         for layer in &mut test_glyph.layers {
-            insert_corner_components_for_layer(&test_glyph.name, layer, &font.glyphs)
+            insert_corner_components_for_layer(layer, &font.glyphs)
                 .expect("Failed to insert corner components");
         }
 
@@ -622,7 +677,7 @@ mod tests {
         // Skip glyphs with left_anchor as noted in the Python test
         if glyph_name.contains("left_anchor") {
             // In rstest we can't easily skip tests, so we just return early
-            eprintln!(
+            log::info!(
                 "Skipping '{}': left anchors not quite working yet",
                 glyph_name
             );

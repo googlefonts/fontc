@@ -3558,12 +3558,16 @@ impl Font {
             .glyphs
             .values()
             .filter(|glyph| {
-                glyph.layers.iter().any(|layer| {
-                    layer
-                        .hints
-                        .iter()
-                        .any(|hint| hint.type_ == HintType::Corner)
-                })
+                glyph
+                    .layers
+                    .iter()
+                    .chain(glyph.bracket_layers.iter())
+                    .any(|layer| {
+                        layer
+                            .hints
+                            .iter()
+                            .any(|hint| hint.type_ == HintType::Corner)
+                    })
             })
             .cloned()
             .collect();
@@ -3573,17 +3577,15 @@ impl Font {
         }
 
         for mut glyph in glyphs_with_corners {
-            for layer in &mut glyph.layers {
-                crate::corner_components::insert_corner_components_for_layer(
-                    &glyph.name,
-                    layer,
-                    &self.glyphs,
-                )
-                .map_err(|e| {
-                    Error::StructuralError(format!(
-                        "Failed to insert corner components for {}: {}",
-                        glyph.name, e
-                    ))
+            for layer in glyph
+                .layers
+                .iter_mut()
+                .chain(glyph.bracket_layers.iter_mut())
+            {
+                crate::corner_components::insert_corner_components_for_layer(layer, &self.glyphs)
+                    .map_err(|issue| Error::BadCornerComponent {
+                    glyph: glyph.name.clone(),
+                    issue,
                 })?;
             }
 
