@@ -330,9 +330,45 @@ pub struct RawHint {
     #[fromplist(alt_name = "type")]
     hint_type: SmolStr,
     name: SmolStr,
-    origin: Vec<i64>, // (shape_index, node_index)
-    scale: Vec<f64>,
+    origin: RawHint2Tuple, // (shape_index, node_index)
+    scale: Option<RawHint2Tuple>,
     options: i64, // Alignment option for corner components
+}
+
+// we use a custom type because the data has a different shape between
+// glyphs formats
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RawHint2Tuple {
+    x: f64,
+    y: f64,
+}
+
+impl FromPlist for RawHint2Tuple {
+    fn parse(tokenizer: &mut Tokenizer) -> Result<Self, crate::plist::Error> {
+        if matches!(tokenizer.peek(), Ok(Token::String(_))) {
+            let s = tokenizer.parse::<SmolStr>().unwrap();
+            // format2 is a string, like "{0, 3}"
+            let s = s.trim_matches(['{', '}']);
+            let Some((x, y)) = s.split_once(',') else {
+                return Err(crate::plist::Error::ExpectedComma);
+            };
+            let x = x
+                .trim()
+                .parse()
+                .map_err(|_| crate::plist::Error::ExpectedNumber)?;
+            let y = y
+                .trim()
+                .parse()
+                .map_err(|_| crate::plist::Error::ExpectedNumber)?;
+            return Ok(RawHint2Tuple { x, y });
+        }
+
+        let origin: Vec<f64> = tokenizer.parse()?;
+        Ok(RawHint2Tuple {
+            x: origin.get(0).copied().unwrap_or_default(),
+            y: origin.get(1).copied().unwrap_or_default(),
+        })
+    }
 }
 
 impl RawHint {
@@ -347,25 +383,14 @@ impl RawHint {
                 HintType::Unknown
             }
         };
-        let (shape_index, node_index) = match self.origin.as_slice() {
-            &[a, b] if a.is_negative() || b.is_negative() => {
-                return Err(Error::BadValue(format!(
-                    "hint origin field ({a}, {b}) cannot contain negative number"
-                )));
-            }
-            &[a, b] => (a as usize, b as usize),
-            _other => {
-                return Err(Error::BadValue(format!(
-                    "unexpected origin value '{_other:?}'"
-                )));
-            }
-        };
 
-        let scale = match self.scale.as_slice() {
-            &[] => Default::default(),
-            &[a, b] => Scale::new(a, b),
-            _other => return Err(Error::BadValue(format!("unexpected scale '{_other:?}'"))),
-        };
+        let shape_index = self.origin.x as usize;
+        let node_index = self.origin.y as usize;
+
+        let scale = self
+            .scale
+            .map(|RawHint2Tuple { x, y }| Scale::new(x, y))
+            .unwrap_or_default();
 
         let alignment = match self.options {
             0 => Alignment::OutStroke,
@@ -5535,5 +5560,21 @@ etc;
         assert_eq!(hints[0].type_, HintType::Corner);
         assert_eq!(hints[0].scale, Default::default());
         assert_eq!(hints[0].alignment, Alignment::InStroke);
+    }
+
+    #[test]
+    fn parse_v2_corner_component() {
+        let hint_plist = r#"
+{
+origin = "{0, 0}";
+scale = "{0.7, 1}";
+type = Corner;
+name = _corner.hi;
+}
+        "#;
+
+        let hint = RawHint::parse_plist(hint_plist).unwrap().to_hint().unwrap();
+        assert_eq!(hint.scale.x, 0.7);
+        assert_eq!(hint.scale.y, 1.0);
     }
 }
