@@ -310,7 +310,9 @@ def build_fontmake(source: Path, build_dir: Path):
 
 @contextmanager
 def modified_gftools_config(
-    cmdline: List[str], extra_args: Sequence[str]
+    maybe_path_to_move_config: Optional[Path],
+    cmdline: List[str],
+    extra_args: Sequence[str],
 ) -> Generator[None, None, None]:
     """Modify the gftools config file to add extra arguments.
 
@@ -347,12 +349,14 @@ def modified_gftools_config(
             config.get("extraFontmakeArgs", "").split(" ") + extra_args
         )
 
+        config_dir = maybe_path_to_move_config or Path(config_path).parent
+
         with NamedTemporaryFile(
             mode="w",
             prefix="config_",
             suffix=".yaml",
             delete=False,
-            dir=Path(config_path).parent,
+            dir=config_dir,
         ) as f:
             yaml.dump(config, f)
         temp_path = Path(f.name)
@@ -368,8 +372,9 @@ def modified_gftools_config(
 
 
 def run_gftools(
-    source: Path, config: Path, build_dir: Path, fontc_bin: Optional[Path] = None
+    source: Path, config: str, build_dir: Path, fontc_bin: Optional[Path] = None
 ):
+    config_path = Path(config)
     tool = "fontmake" if fontc_bin is None else "fontc"
     filename = tool + ".ttf"
     out_file = build_dir / filename
@@ -398,7 +403,8 @@ def run_gftools(
     if not FLAGS.production_names:
         extra_args.append("--no-production-names")
 
-    with modified_gftools_config(cmd, extra_args):
+    maybe_new_config_path = path_to_move_external_config(source, config_path)
+    with modified_gftools_config(maybe_new_config_path, cmd, extra_args):
         build(cmd, None)
 
     # return a concise error if gftools produces != one output
@@ -412,6 +418,23 @@ def run_gftools(
 
     if out_dir.exists():
         shutil.rmtree(out_dir)
+
+
+def path_to_move_external_config(source: Path, config: Path) -> Optional[Path]:
+    source_repo = find_repo_root(source)
+    config_repo = find_repo_root(config)
+
+    if source_repo != config_repo:
+        return source_repo
+
+
+def find_repo_root(path: Path) -> Optional[Path]:
+    if path.is_dir() and path.joinpath(".git").exists():
+        return path
+    elif path.parent == path:
+        return None
+    else:
+        return find_repo_root(path.parent)
 
 
 def source_is_variable(path: Path) -> bool:
