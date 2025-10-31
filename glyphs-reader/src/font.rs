@@ -17,7 +17,7 @@ use crate::glyphdata::{Category, GlyphData, Subcategory};
 use ascii_plist_derive::FromPlist;
 use fontdrasil::types::WidthClass;
 use indexmap::{IndexMap, IndexSet};
-use kurbo::{Affine, Point, Vec2};
+use kurbo::{Affine, CubicBez, Line, PathSeg, Point, QuadBez, Vec2};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
 use regex::Regex;
@@ -365,7 +365,7 @@ impl FromPlist for RawHint2Tuple {
 
         let origin: Vec<f64> = tokenizer.parse()?;
         Ok(RawHint2Tuple {
-            x: origin.get(0).copied().unwrap_or_default(),
+            x: origin.first().copied().unwrap_or_default(),
             y: origin.get(1).copied().unwrap_or_default(),
         })
     }
@@ -537,6 +537,12 @@ impl Layer {
             .collect()
     }
 
+    pub(crate) fn get_anchor_pt(&self, anchor_name: &str) -> Option<Point> {
+        self.anchors
+            .iter()
+            .find(|a| a.name == anchor_name)
+            .map(|a| a.pos)
+    }
     // TODO add is_alternate, is_color, etc.
 }
 
@@ -1844,6 +1850,64 @@ impl Path {
 
     pub fn reverse(&mut self) {
         self.nodes.reverse();
+    }
+
+    /// get the segment ending at `idx`
+    pub(crate) fn get_previous_segment(&self, idx: usize) -> Option<PathSeg> {
+        if self.nodes.len() < 2 {
+            return None;
+        }
+        let end = self.nodes.get(idx)?.pt;
+        let mut idx = self.prev_idx(idx);
+        let prev = self.nodes.get(idx)?;
+        if prev.node_type == NodeType::OffCurve {
+            idx = self.prev_idx(idx);
+            let control1 = self.nodes.get(idx)?;
+            if control1.node_type != NodeType::OffCurve {
+                // seems extremely unlikely but not exactly impossible, let's at least log?
+                log::info!("path for corner component contains unexpected quadratic");
+                return Some(QuadBez::new(control1.pt, prev.pt, end).into());
+            }
+            let start = self.nodes.get(self.prev_idx(idx))?;
+            Some(CubicBez::new(start.pt, control1.pt, prev.pt, end).into())
+        } else {
+            Some(Line::new(prev.pt, end).into())
+        }
+    }
+
+    /// get the segment beginning at `idx`
+    pub(crate) fn get_next_segment(&self, idx: usize) -> Option<PathSeg> {
+        if self.nodes.len() < 2 {
+            return None;
+        }
+        let start = self.nodes.get(idx)?.pt;
+        let mut idx = self.next_idx(idx);
+        let next = self.nodes.get(idx)?;
+        if next.node_type == NodeType::OffCurve {
+            idx = self.next_idx(idx);
+            let control2 = self.nodes.get(idx)?;
+            if control2.node_type != NodeType::OffCurve {
+                // seems extremely unlikely but not exactly impossible, let's at least log?
+                log::info!("path for corner component contains unexpected quadratic");
+                return Some(QuadBez::new(start, next.pt, control2.pt).into());
+            }
+            let end = self.nodes.get(self.next_idx(idx))?;
+            Some(CubicBez::new(start, next.pt, control2.pt, end.pt).into())
+        } else {
+            Some(Line::new(start, next.pt).into())
+        }
+    }
+
+    pub(crate) fn prev_idx(&self, idx: usize) -> usize {
+        if idx == 0 {
+            self.nodes.len().saturating_sub(1)
+        } else {
+            idx - 1
+        }
+    }
+
+    pub(crate) fn next_idx(&self, idx: usize) -> usize {
+        (idx + 1) % self.nodes.len()
     }
 
     #[cfg(test)]
@@ -5563,7 +5627,7 @@ etc;
 
     #[test]
     fn parse_basic_corner_component_hint() {
-        let font = Font::load_raw(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+        let font = Font::load_raw(glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
 
         let glyph = font.glyphs.get("aa_simple_angleinstroke").unwrap();
         let hints = &glyph.layers[0].hints;
@@ -5579,7 +5643,7 @@ etc;
 
     #[test]
     fn parse_corner_component_hint_with_scale() {
-        let font = Font::load_raw(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+        let font = Font::load_raw(glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
 
         let glyph = font.glyphs.get("ac_scale").unwrap();
         let hints = &glyph.layers[0].hints;
@@ -5595,7 +5659,7 @@ etc;
 
     #[test]
     fn parse_corner_component_hint_with_alignment() {
-        let font = Font::load_raw(&glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+        let font = Font::load_raw(glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
 
         let glyph = font.glyphs.get("aj_right_alignment").unwrap();
         let hints = &glyph.layers[0].hints;

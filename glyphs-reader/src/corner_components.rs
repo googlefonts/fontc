@@ -1,14 +1,11 @@
 //! Corner components support
 //!
 //! Implements corner component insertion for Glyphs fonts.
-//! Based on: https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/filters/cornerComponents.py
+//! Based on: <https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/filters/cornerComponents.py>
 
 use std::collections::BTreeMap;
 
-use kurbo::{
-    Affine, CubicBez, Line, ParamCurve, ParamCurveArclen, ParamCurveNearest, PathSeg, Point,
-    QuadBez,
-};
+use kurbo::{Affine, Line, ParamCurve, ParamCurveArclen, ParamCurveNearest, PathSeg, Point};
 use smol_str::SmolStr;
 use thiserror::Error;
 use write_fonts::OtRound;
@@ -56,33 +53,9 @@ impl BadCornerComponentReason {
 
 /// Find the t parameter on a segment at a given distance along it
 ///
-/// <https://github.com/googlefont/glyphsLib/blob/f90e4060/Lib/glyphsLib/filters/cornerComponents.py#L151>
+/// <https://github.com/googlefonts/glyphsLib/blob/f90e4060/Lib/glyphsLib/filters/cornerComponents.py#L151>
 fn point_on_seg_at_distance(seg: PathSeg, distance: f64) -> f64 {
     seg.inv_arclen(distance, 1e-6)
-    // below is an LLM impl
-    //if let PathSeg::Line(line) = &seg {
-    //let length = line.length();
-    //if length == 0.0 {
-    //return 0.0;
-    //}
-    //return (distance / length).clamp(0.0, 1.0);
-    //}
-
-    //// Simple approximation: find t where arc length ≈ distance
-    //let mut accumulated = 0.0;
-    //let steps = 100;
-    //let mut last_pt = seg.start();
-
-    //for i in 1..=steps {
-    //let t = i as f64 / steps as f64;
-    //let pt = seg.eval(t);
-    //accumulated += (pt - last_pt).hypot();
-    //if accumulated >= distance {
-    //return t;
-    //}
-    //last_pt = pt;
-    //}
-    //1.0
 }
 
 /// Insert all corner components for a layer
@@ -104,6 +77,8 @@ pub(crate) fn insert_corner_components_for_layer(
         return Ok(());
     }
 
+    // if we insert points for one corner, it will change the index of
+    // a subsequent corner, so we track how many points we've inserted.
     let mut inserted_pts = 0;
     let mut current_shape = 0;
 
@@ -115,7 +90,7 @@ pub(crate) fn insert_corner_components_for_layer(
 
         let Some(corner_glyph) = glyphs.get(&hint.name) else {
             log::warn!("corner component '{}' not found", hint.name);
-            return Ok(());
+            continue;
         };
 
         let component = corner_glyph
@@ -140,13 +115,7 @@ pub(crate) fn insert_corner_components_for_layer(
 }
 
 impl Layer {
-    fn get_anchor_pt(&self, anchor_name: &str) -> Option<Point> {
-        self.anchors
-            .iter()
-            .find(|a| a.name == anchor_name)
-            .map(|a| a.pos)
-    }
-
+    // approximately follows the logic at https://github.com/googlefonts/glyphsLib/blob/f90e4060b/Lib/glyphsLib/filters/cornerComponents.py#L230
     fn insert_corner_component(
         &mut self,
         mut component: CornerComponent,
@@ -159,14 +128,15 @@ impl Layer {
         };
 
         let point_idx = (hint.node_index + delta_pt_index) % path.nodes.len();
-        // scale paths
         let scale = Affine::scale_non_uniform(hint.scale.x.0, hint.scale.y.0);
+        // first scale the component as required by the hint
         component.apply_transform(scale);
 
         let AlignmentState {
             mut instroke_pt,
             outstroke_pt: _,
             correction,
+            // this mutates the component, aligning it with the target segment
         } = component.align_to_main_path(path, hint, point_idx);
 
         let original_outstroke = path.get_next_segment(point_idx).unwrap();
@@ -182,7 +152,8 @@ impl Layer {
                 component.stretch_first_seg_to_fit(instroke_pt);
             }
         }
-        // first adjust the instroke
+        // adjust the instroke (the stroke leading into the point where we're
+        // adding the new corner)
         path.split_instroke(point_idx, instroke_pt);
         // now insert the corner into the path
         let insert_pt = path.next_idx(point_idx);
@@ -231,64 +202,6 @@ impl Hint {
 }
 
 impl Path {
-    /// get the segment ending at `idx`
-    fn get_previous_segment(&self, idx: usize) -> Option<PathSeg> {
-        if self.nodes.len() < 2 {
-            return None;
-        }
-        let end = self.nodes.get(idx)?.pt;
-        let mut idx = self.prev_idx(idx);
-        let prev = self.nodes.get(idx)?;
-        if prev.node_type == NodeType::OffCurve {
-            idx = self.prev_idx(idx);
-            let control1 = self.nodes.get(idx)?;
-            if control1.node_type != NodeType::OffCurve {
-                // seems extremely unlikely but not exactly impossible, let's at least log?
-                log::info!("path for corner component contains unexpected quadratic");
-                return Some(QuadBez::new(control1.pt, prev.pt, end).into());
-            }
-            let start = self.nodes.get(self.prev_idx(idx))?;
-            Some(CubicBez::new(start.pt, control1.pt, prev.pt, end).into())
-        } else {
-            Some(Line::new(prev.pt, end).into())
-        }
-    }
-
-    /// get the segment beginning at `idx`
-    fn get_next_segment(&self, idx: usize) -> Option<PathSeg> {
-        if self.nodes.len() < 2 {
-            return None;
-        }
-        let start = self.nodes.get(idx)?.pt;
-        let mut idx = self.next_idx(idx);
-        let next = self.nodes.get(idx)?;
-        if next.node_type == NodeType::OffCurve {
-            idx = self.next_idx(idx);
-            let control2 = self.nodes.get(idx)?;
-            if control2.node_type != NodeType::OffCurve {
-                // seems extremely unlikely but not exactly impossible, let's at least log?
-                log::info!("path for corner component contains unexpected quadratic");
-                return Some(QuadBez::new(start, next.pt, control2.pt).into());
-            }
-            let end = self.nodes.get(self.next_idx(idx))?;
-            Some(CubicBez::new(start, next.pt, control2.pt, end.pt).into())
-        } else {
-            Some(Line::new(start, next.pt).into())
-        }
-    }
-
-    fn prev_idx(&self, idx: usize) -> usize {
-        if idx == 0 {
-            self.nodes.len().saturating_sub(1)
-        } else {
-            idx - 1
-        }
-    }
-
-    fn next_idx(&self, idx: usize) -> usize {
-        (idx + 1) % self.nodes.len()
-    }
-
     fn set_point(&mut self, idx: usize, point: Point) {
         self.nodes[idx].pt = point;
         self.nodes[idx] = self.nodes[idx].ot_round();
@@ -342,10 +255,10 @@ struct CornerComponent {
     corner_path: Path,
     other_paths: Vec<Path>,
     // the 'left' anchor of the component, (0,0) by default
-    #[allow(dead_code)] // used for alignment, not handled yet
+    #[expect(dead_code)] // used for alignment, not handled yet
     left: Point,
     // the 'right' anchor of the component, (0,0) by default
-    #[allow(dead_code)] // used for alignment, not handled yet
+    #[expect(dead_code)] // used for alignment, not handled yet
     right: Point,
 }
 
@@ -465,11 +378,11 @@ impl CornerComponent {
         let xform = Affine::translate(target_pt.to_vec2()).pre_rotate(angle);
         self.apply_transform(xform);
 
-        return AlignmentState {
+        AlignmentState {
             instroke_pt,
             outstroke_pt,
             correction,
-        };
+        }
     }
 
     //https://github.com/googlefonts/glyphsLib/blob/f90e4060/Lib/glyphsLib/filters/cornerComponents.py#L396
@@ -513,7 +426,7 @@ impl CornerComponent {
 
 /// Find the intersection of two unbounded segments
 ///
-/// https://github.com/googlefonts/glyphsLib/blob/f90e4060b/Lib/glyphsLib/filters/cornerComponents.py#L127
+/// <https://github.com/googlefonts/glyphsLib/blob/f90e4060b/Lib/glyphsLib/filters/cornerComponents.py#L127>
 fn unbounded_seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Point> {
     // Line-line intersection
     match (seg1, seg2) {
@@ -521,7 +434,7 @@ fn unbounded_seg_seg_intersection(seg1: PathSeg, seg2: PathSeg) -> Option<Point>
         (seg, PathSeg::Line(line)) | (PathSeg::Line(line), seg) => {
             // a value by which we extend our line, to find the crossing point.
             // should be enough for anybody!
-            const LITERALLY_UNBOUNDED: f64 = 10000.;
+            const LITERALLY_UNBOUNDED: f64 = 1e9;
 
             // Extend the line by 1000 units in both directions to simulate unbounded line
             let direction = (line.p1 - line.p0).normalize();
