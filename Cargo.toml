@@ -47,7 +47,6 @@ members = [
     "ufo2fontir",
     "fontc",
     "fea-rs",
-    "fea-lsp",
     "otl-normalizer",
     "fontc_crater",
 ]
