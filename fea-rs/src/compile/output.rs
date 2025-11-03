@@ -24,6 +24,7 @@ use crate::GlyphMap;
 /// method to generate a binary font.
 ///
 /// [`to_binary`]: Compilation::to_binary
+/// [`write-fonts`]: https://docs.rs/write-fonts/latest/write_fonts/
 pub struct Compilation {
     /// The options passed in for this compilation.
     pub(crate) opts: Opts,
