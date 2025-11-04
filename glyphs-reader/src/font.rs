@@ -87,6 +87,7 @@ pub struct Font {
     pub kerning_rtl: Kerning,
 
     pub custom_parameters: CustomParameters,
+    pub user_data: FontUserData,
 }
 
 /// Custom parameter options that can be set on a glyphs font
@@ -277,6 +278,17 @@ impl FeatureSnippet {
     pub fn str_if_enabled(&self) -> Option<&str> {
         (!self.disabled).then_some(&self.content)
     }
+}
+
+/// The userData dictionary of a font.
+///
+/// for common entries we can provide actual types.
+#[derive(Clone, Default, Debug, PartialEq, FromPlist, Hash)]
+pub struct FontUserData {
+    #[fromplist(key = "com.schriftgestaltung.Glyphs.originalKerningGroups")]
+    pub original_kerning_groups: BTreeMap<SmolStr, Vec<SmolStr>>,
+    // we can add more stuff as we need it
+    other_stuff: BTreeMap<SmolStr, Plist>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Hash)]
@@ -595,6 +607,7 @@ struct RawFont {
     kerning_RTL: Kerning,
     custom_parameters: RawCustomParameters,
     numbers: Vec<NumberName>,
+    user_data: FontUserData,
 }
 
 #[derive(Default, Debug, PartialEq, FromPlist)]
@@ -3180,6 +3193,7 @@ impl TryFrom<RawFont> for Font {
             kerning_ltr: from.kerning_LTR,
             kerning_rtl: from.kerning_RTL,
             custom_parameters,
+            user_data: from.user_data,
         })
     }
 }
@@ -5348,5 +5362,16 @@ etc;
                 Rect::new(500., 0., 550., 100.),
             ]
         );
+    }
+
+    #[test]
+    fn parse_user_data() {
+        let font = RawFont::load(&glyphs3_dir().join("FontcIssue1728.glyphs")).unwrap();
+        let thingie = font
+            .user_data
+            .original_kerning_groups
+            .get("public.kern1.A")
+            .unwrap();
+        assert_eq!(thingie[0], "A");
     }
 }
