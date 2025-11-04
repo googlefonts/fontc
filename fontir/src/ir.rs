@@ -270,11 +270,31 @@ impl KernSide {
 }
 
 impl KernGroup {
+    pub const UFO_KERN1_PREFIX: &str = "public.kern1.";
+    pub const UFO_KERN2_PREFIX: &str = "public.kern2.";
     /// Convert to the other side. Used when processing RTL kerns in glyphs.
     pub fn flip(self) -> Self {
         match self {
             KernGroup::Side1(name) => KernGroup::Side2(name),
             KernGroup::Side2(name) => KernGroup::Side1(name),
+        }
+    }
+
+    /// Construct from a string with the conventional prefixes used in UFO
+    pub fn from_ufo_group_name(name: &str) -> Option<KernGroup> {
+        name.strip_prefix(Self::UFO_KERN1_PREFIX)
+            .map(|name| Self::Side1(name.into()))
+            .or_else(|| {
+                name.strip_prefix(Self::UFO_KERN2_PREFIX)
+                    .map(|name| Self::Side2(name.into()))
+            })
+    }
+
+    /// the side number, as an integer
+    pub fn side_integer(&self) -> u8 {
+        match self {
+            KernGroup::Side1(_) => 1,
+            KernGroup::Side2(_) => 2,
         }
     }
 }
