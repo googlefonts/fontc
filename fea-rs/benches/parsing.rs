@@ -1,8 +1,8 @@
 //! A very simple benchmark for the parser
 
-use std::sync::Arc;
+use std::{hint::black_box, sync::Arc};
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 const DEVA: &str = include_str!("../test-data/real-files/plex_devanagari.fea");
 const LATN: &str = include_str!("../test-data/real-files/roboto-regular.fea");
