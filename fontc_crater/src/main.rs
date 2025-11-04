@@ -3,6 +3,7 @@
 use std::{
     collections::BTreeMap,
     fmt::Display,
+    io::Write,
     path::Path,
     process::{Command, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
@@ -110,18 +111,39 @@ fn get_git_rev(repo_path: Option<&Path>) -> Option<String> {
 }
 
 fn pip_freeze_sha() -> String {
-    let mut pipfreeze = Command::new("pip")
+    let pipfreeze = Command::new("pip")
         .arg("freeze")
+        .output()
+        .expect("pip should be installed")
+        .stdout;
+    let pipfreeze = String::from_utf8(pipfreeze).expect("pip freeze output is utf-8");
+    compute_sha1sum_skipping_ttx_diff(pipfreeze)
+}
+
+/// input is expected to be the raw output of `pip freeze`
+fn compute_sha1sum_skipping_ttx_diff(pip_freeze_output: String) -> String {
+    let mut sha1sum = Command::new("shasum")
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .unwrap();
-    let sha1sum = Command::new("shasum")
-        .stdin(Stdio::from(pipfreeze.stdout.take().unwrap()))
-        .output()
         .expect("shasum should be preinstalled everywhere");
-    pipfreeze.wait().unwrap();
-    assert!(sha1sum.status.success());
-    std::str::from_utf8(sha1sum.stdout.trim_ascii())
+
+    let mut stdin = sha1sum.stdin.take().expect("Failed to open stdin");
+    std::thread::spawn(move || {
+        for line in pip_freeze_output.lines() {
+            // we don't want to include ttx_diff in our pip requirements, we handle it separately.
+            if !line.contains("ttx_diff") {
+                stdin
+                    .write_all(line.as_bytes())
+                    .expect("failed to write to stdin");
+            }
+        }
+    });
+
+    let output = sha1sum.wait_with_output().expect("Failed to read stdout");
+    assert!(output.status.success());
+
+    std::str::from_utf8(output.stdout.trim_ascii())
         .expect("shasum output always ascii")
         .to_owned()
 }
@@ -248,6 +270,43 @@ mod tests {
         assert_eq!(
             human_readable_duration(mins2secs11point3355).to_string(),
             "2m11.34s"
+        );
+    }
+
+    #[test]
+    fn pip_freeze_sha_skips_ttx_diff() {
+        let one = "strictyaml==1.7.3
+tabulate==0.9.0
+-e git+ssh://git@github.com/googlefonts/fontc.git@0a4fa039a#egg=ttx_diff&subdirectory=ttx_diff
+typing_extensions==4.15.0
+youseedee==0.7.0
+zopfli==0.2.3.post1
+";
+
+        // same as one but ttx_diff has a different sha
+        let two = "strictyaml==1.7.3
+tabulate==0.9.0
+-e git+ssh://git@github.com/googlefonts/fontc.git@deadbeefc0w#egg=ttx_diff&subdirectory=ttx_diff
+typing_extensions==4.15.0
+youseedee==0.7.0
+zopfli==0.2.3.post1
+";
+        // same as two but zopfli has a different version
+        let three = "strictyaml==1.7.3
+tabulate==0.9.0
+-e git+ssh://git@github.com/googlefonts/fontc.git@deadbeefc0w#egg=ttx_diff&subdirectory=ttx_diff
+typing_extensions==4.15.0
+youseedee==0.7.0
+zopfli==0.9.3.post1
+";
+
+        assert_eq!(
+            compute_sha1sum_skipping_ttx_diff(one.into()),
+            compute_sha1sum_skipping_ttx_diff(two.into())
+        );
+        assert_ne!(
+            compute_sha1sum_skipping_ttx_diff(two.into()),
+            compute_sha1sum_skipping_ttx_diff(three.into())
         );
     }
 }
