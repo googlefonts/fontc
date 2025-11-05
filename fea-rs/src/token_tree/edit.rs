@@ -1,6 +1,4 @@
 //! facilities for editing the AST.
-//!
-//! This is currently unused.
 
 #![allow(dead_code)]
 use std::ops::Range;
