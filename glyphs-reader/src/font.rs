@@ -2579,10 +2579,13 @@ impl RawGlyph {
     fn build(self, format_version: FormatVersion, glyph_data: &GlyphData) -> Result<Glyph, Error> {
         let mut instances = Vec::new();
         let mut bracket_layers = Vec::new();
-        for layer in self.layers {
+        for mut layer in self.layers {
             if layer.is_bracket_layer(format_version) {
                 bracket_layers.push(layer.build(format_version)?);
             } else if !layer.is_draft() {
+                // it's possible for these to exist even if there's no
+                // associated master id, in which case we don't care
+                layer.attributes.axis_rules.clear();
                 instances.push(layer.build(format_version)?);
             }
         }
@@ -4983,6 +4986,14 @@ etc;
                 },
             ]
         )
+    }
+
+    #[test]
+    fn drop_axis_rules_if_no_assoc_master() {
+        // as in, if it's a bracket layer it doesn't need axis rules
+        let font = Font::load(&glyphs3_dir().join("AxisRules.glyphs")).unwrap();
+        let space = font.glyphs.get("space").unwrap();
+        assert!(space.layers[0].attributes.axis_rules.is_empty());
     }
 
     #[test]
