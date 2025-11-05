@@ -1,0 +1,41 @@
+{
+.appVersion = "3260";
+familyName = FunnyAxisThing;
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+},
+{
+Name = Width;
+Tag = wdth;
+}
+);
+},
+);
+fontMaster = (
+{
+id = master01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+
+associatedMasterId = master01;
+layerId = bracket01;
+width = 600;
+name = "]141]";
+}
+);
+unicode = 32;
+}
+);
+unitsPerEm = 1000;
+}

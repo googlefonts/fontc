@@ -3074,10 +3074,17 @@ impl TryFrom<RawFont> for Font {
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
-            glyphs.insert(
-                raw_glyph.glyphname.clone(),
-                raw_glyph.build(from.format_version, &glyph_data)?,
-            );
+            let mut glyph = raw_glyph.build(from.format_version, &glyph_data)?;
+            // v2 bracket layers can only reference a single axis position (on the
+            // first axis in the font) so we add empty axis rules for any other
+            // axes.
+            for layer in glyph.bracket_layers.iter_mut() {
+                layer
+                    .attributes
+                    .axis_rules
+                    .resize(from.axes.len(), Default::default());
+            }
+            glyphs.insert(glyph.name.clone(), glyph);
         }
 
         let mut features = Vec::new();
@@ -4976,6 +4983,22 @@ etc;
                 },
             ]
         )
+    }
+
+    #[test]
+    fn parse_v2_bracket_layers() {
+        let font = Font::load(&glyphs2_dir().join("AxisRules.glyphs")).unwrap();
+        let glyph = font.glyphs.get("space").unwrap();
+        assert_eq!(
+            glyph.bracket_layers[0].attributes.axis_rules,
+            [
+                AxisRule {
+                    min: None,
+                    max: Some(141)
+                },
+                AxisRule::default()
+            ]
+        );
     }
 
     #[test]
