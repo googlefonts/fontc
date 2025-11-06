@@ -1280,7 +1280,7 @@ struct GlyphIrWork {
 }
 
 impl GlyphIrWork {
-    fn is_bracket_layer(&self) -> bool {
+    fn is_bracket_glyph(&self) -> bool {
         self.bracket_glyph_parent.is_some()
     }
 }
@@ -1348,14 +1348,14 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         let mut ir_glyph = ir::GlyphBuilder::new(self.glyph_name.clone());
         ir_glyph.emit_to_binary = glyph.export;
         // only non-bracket glyphs get codepoints
-        ir_glyph.codepoints = if !self.is_bracket_layer() {
+        ir_glyph.codepoints = if !self.is_bracket_glyph() {
             glyph.unicode.iter().copied().collect()
         } else {
             Default::default()
         };
 
         let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
-        let layers = if self.is_bracket_layer() {
+        let layers = if self.is_bracket_glyph() {
             bracket_glyph_names(glyph, axes)
                 .find(|(name, _layers)| *name == self.glyph_name)
                 .ok_or_else(|| Error::NoGlyphForName(self.glyph_name.clone()))?
@@ -1392,7 +1392,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         }
 
         // special logic, if this was a bracket layer:
-        if self.is_bracket_layer() {
+        if self.is_bracket_glyph() {
             // If any master locations don't have a bracket layer, reuse the
             // base layer for that location. See "Switching Only One Master" at
             // https://glyphsapp.com/tutorials/alternating-glyph-shapes.
@@ -1423,15 +1423,17 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                     for (tag, coord) in loc.iter() {
                         axis_positions.entry(*tag).or_default().insert(*coord);
                     }
-                    layer
-                        .anchors
-                        .iter()
-                        .try_for_each(|a| ir_anchors.add(a.name.clone(), loc.clone(), a.pos))?;
+                    if glyph.export {
+                        // we only care about anchors from exportable glyphs (see ref above)
+                        for anchor in layer.anchors.iter() {
+                            ir_anchors.add(anchor.name.clone(), loc.clone(), anchor.pos)?;
+                        }
+                    }
                 }
             }
         }
         let mut ir_glyph = ir_glyph.build()?;
-        if self.is_bracket_layer() {
+        if self.is_bracket_glyph() {
             let box_ = bracket_glyphs(glyph, axes)
                 .find(|x| x.1.0 == ir_glyph.name)
                 .unwrap()
