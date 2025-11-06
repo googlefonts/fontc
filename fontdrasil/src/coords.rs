@@ -158,6 +158,10 @@ impl Coord<NormalizedSpace> {
         coord: OrderedFloat(1.0),
         space: PhantomData,
     };
+
+    pub fn to_f2dot14(self) -> F2Dot14 {
+        F2Dot14::from_f32(self.to_f64() as _)
+    }
 }
 
 /// Converts between Design, User, and Normalized coordinates.
