@@ -676,7 +676,7 @@ impl GlyphData {
                 if let Some(stripped) = part.strip_prefix("uni") {
                     uni_names.push(Cow::Borrowed(stripped));
                 } else if part.len() == 5 && is_u_name(part.as_ref()) {
-                    uni_names.push(Cow::Borrowed(&part.as_ref()[1..]));
+                    uni_names.push(Cow::Borrowed(&part.as_str()[1..]));
                 } else if let Some(ch) = fontdrasil::agl::char_for_agl_name(part.as_ref()) {
                     uni_names.push(Cow::Owned(format!("{:04X}", ch as u32)));
                 } else {
