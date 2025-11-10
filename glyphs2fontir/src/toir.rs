@@ -16,7 +16,7 @@ use fontdrasil::{
 };
 use fontir::{
     error::{BadGlyph, Error, PathConversionError},
-    ir::{self, GlyphPathBuilder},
+    ir::{self, Color, GlyphPathBuilder, Paint, PaintSolid},
 };
 use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
 
@@ -331,6 +331,24 @@ impl TryFrom<Font> for FontInfo {
             axes,
         })
     }
+}
+
+pub(crate) fn to_ir_paint(shapes: &[Shape]) -> Result<Paint, Error> {
+    let mut color = Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+    if let Some(c) = shapes.iter().flat_map(|s| s.attributes().colors()).next() {
+        color = Color {
+            r: c.r as u8,
+            g: c.g as u8,
+            b: c.b as u8,
+            a: c.a as u8,
+        }
+    };
+    Ok(Paint::Solid(PaintSolid { color }.into()))
 }
 
 #[cfg(test)]

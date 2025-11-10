@@ -155,7 +155,7 @@ impl Workload {
             .for_each(|w| workload.add(w));
         workload.add(create_glyph_order_work());
         workload.add(workload.source.create_color_palette_work()?);
-        workload.add(workload.source.create_paint_graph_work()?);
+        workload.add(workload.source.create_color_glyphs_work()?);
 
         // BE: f(IR, maybe other BE work) => binary
         workload.add_skippable_feature_work(FeatureFirstPassWork::create());

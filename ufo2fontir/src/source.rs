@@ -372,7 +372,7 @@ impl Source for DesignSpaceIrSource {
         Ok(Box::new(ColorPaletteWork {}))
     }
 
-    fn create_paint_graph_work(
+    fn create_color_glyphs_work(
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         Ok(Box::new(PaintGraphWork {}))

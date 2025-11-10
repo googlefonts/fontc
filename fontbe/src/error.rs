@@ -6,7 +6,10 @@ use fontdrasil::{
     types::GlyphName,
     variations::{DeltaError, VariationModelError},
 };
-use fontir::{ir::KernPair, orchestration::WorkId as FeWorkId};
+use fontir::{
+    ir::{Color, KernPair},
+    orchestration::WorkId as FeWorkId,
+};
 use smol_str::SmolStr;
 use thiserror::Error;
 use write_fonts::{
@@ -110,10 +113,12 @@ pub enum GlyphProblem {
     MissingDefault,
     NoComponents,
     NotInGlyphOrder,
+    NotInColorPalette(Color),
 }
 
 impl Display for GlyphProblem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut _alloc: Option<String> = None; // keep-alive for format! strings
         let message = match self {
             GlyphProblem::HasComponentsAndPath => "has components *and* paths",
             GlyphProblem::InconsistentComponents => {
@@ -123,6 +128,10 @@ impl Display for GlyphProblem {
             GlyphProblem::MissingDefault => "has no default master",
             GlyphProblem::NoComponents => "has no components",
             GlyphProblem::NotInGlyphOrder => "has no entry in glyph order",
+            GlyphProblem::NotInColorPalette(color) => {
+                _alloc = Some(format!("{color:?} has no entry in color palette"));
+                _alloc.as_ref().unwrap().as_str()
+            }
         };
         f.write_str(message)
     }

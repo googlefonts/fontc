@@ -35,6 +35,33 @@ width = 600;
 }
 );
 unicode = 65;
+},
+{
+glyphname = B;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{
+attr = {
+fillColor = (42,43,44,255);
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 66;
 }
 );
 
