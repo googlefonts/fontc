@@ -3663,17 +3663,17 @@ mod tests {
                 2,
                 [
                     ColorRecord {
+                        red: 64,
+                        green: 64,
+                        blue: 64,
+                        alpha: 255
+                    },
+                    ColorRecord {
                         red: 0,
                         green: 0,
                         blue: 0,
                         alpha: 255
                     },
-                    ColorRecord {
-                        red: 64,
-                        green: 64,
-                        blue: 64,
-                        alpha: 255
-                    }
                 ]
                 .as_slice()
             ),
@@ -3695,15 +3695,15 @@ mod tests {
                 2,
                 [
                     ColorRecord {
-                        red: 0,
-                        green: 0,
-                        blue: 255,
-                        alpha: 255
-                    },
-                    ColorRecord {
                         red: 255,
                         green: 0,
                         blue: 0,
+                        alpha: 255
+                    },
+                    ColorRecord {
+                        red: 0,
+                        green: 0,
+                        blue: 255,
                         alpha: 255
                     }
                 ]

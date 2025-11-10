@@ -1964,12 +1964,18 @@ impl ColorPalettes {
 
         // Trivial optimization: if there is only one palette we can deduplicate it
         if let [one_palette] = palettes.as_mut_slice() {
-            one_palette.sort();
-            one_palette.dedup();
-        }
-        // Sort for stability in output
-        for p in palettes.iter_mut() {
-            p.sort();
+            // Keep the first occurance in original order to match fontmake
+            let mut seen = HashSet::new();
+            let mut delme = Vec::new();
+            for (i, c) in one_palette.iter().enumerate() {
+                if !seen.insert(c) {
+                    delme.push(i);
+                }
+            }
+
+            for i in delme.into_iter().rev() {
+                one_palette.remove(i);
+            }
         }
 
         Ok(Some(Self { palettes }))
