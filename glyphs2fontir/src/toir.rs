@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-use kurbo::BezPath;
+use kurbo::{BezPath, Point};
 use log::trace;
 use ordered_float::OrderedFloat;
 
@@ -15,8 +15,11 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadGlyph, Error, PathConversionError},
-    ir::{self, Color, GlyphPathBuilder, Paint, PaintSolid},
+    error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
+    ir::{
+        self, Color, ColorStop, GlyphPathBuilder, Paint, PaintLinearGradient, PaintRadialGradient,
+        PaintSolid,
+    },
 };
 use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
 
@@ -333,22 +336,74 @@ impl TryFrom<Font> for FontInfo {
     }
 }
 
-pub(crate) fn to_ir_paint(shapes: &[Shape]) -> Result<Paint, Error> {
-    let mut color = Color {
-        r: 0,
-        g: 0,
-        b: 0,
-        a: 255,
-    };
-    if let Some(c) = shapes.iter().flat_map(|s| s.attributes().colors()).next() {
-        color = Color {
-            r: c.r as u8,
-            g: c.g as u8,
-            b: c.b as u8,
-            a: c.a as u8,
-        }
-    };
-    Ok(Paint::Solid(PaintSolid { color }.into()))
+pub(crate) fn to_ir_color(color: glyphs_reader::Color) -> Color {
+    Color {
+        r: color.r as u8,
+        g: color.g as u8,
+        b: color.b as u8,
+        a: color.a as u8,
+    }
+}
+
+pub(crate) fn to_ir_color_stops(stops: &[glyphs_reader::ColorStop]) -> Vec<ColorStop> {
+    stops
+        .iter()
+        .map(|cs| ColorStop {
+            offset: (cs.stop_offset.0 as f32).into(),
+            color: to_ir_color(cs.color),
+            alpha: 255.0.into(),
+        })
+        .collect()
+}
+
+pub(crate) fn to_ir_paint(glyph_name: impl Into<GlyphName>, shape: &Shape) -> Result<Paint, Error> {
+    let attr = shape.attributes();
+    if let Some(color) = attr.fill_color {
+        return Ok(Paint::Solid(
+            PaintSolid {
+                color: to_ir_color(color),
+            }
+            .into(),
+        ));
+    }
+
+    // TODO: scaling of points and proper radius values
+
+    if let Some(gradient) = &attr.gradient {
+        // <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/color_layers.py#L72>
+        let start = Point::new(gradient.start[0].0, gradient.start[1].0);
+        let end = Point::new(gradient.end[0].0, gradient.end[1].0);
+        return match gradient.style.as_str() {
+            "circle" => Ok(Paint::RadialGradient(
+                PaintRadialGradient {
+                    p0: start,
+                    p1: start,
+                    r0: 0.0.into(),
+                    r1: 1.0.into(),
+                    color_line: to_ir_color_stops(&gradient.colors),
+                }
+                .into(),
+            )),
+            "" => Ok(Paint::LinearGradient(
+                PaintLinearGradient {
+                    p0: start,
+                    p1: end,
+                    p2: Point::new(start.x + end.y - start.y, start.y - (end.x - start.x)),
+                    color_line: to_ir_color_stops(&gradient.colors),
+                }
+                .into(),
+            )),
+            _ => Err(Error::BadGlyph(BadGlyph::new(
+                glyph_name,
+                BadGlyphKind::FrontendSpecific(format!("Unrecognized gradient {}", gradient.style)),
+            ))),
+        };
+    }
+
+    Err(Error::BadGlyph(BadGlyph::new(
+        glyph_name,
+        BadGlyphKind::FrontendSpecific(format!("Unable to produce paint for {attr:?}")),
+    )))
 }
 
 #[cfg(test)]

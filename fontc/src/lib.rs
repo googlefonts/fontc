@@ -306,6 +306,7 @@ mod tests {
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider, TableRef,
             tables::{
                 cmap::{Cmap, CmapSubtable},
+                colr::{Colr, Paint, PaintGlyph},
                 cpal::ColorRecord,
                 gasp::GaspRangeBehavior,
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
@@ -3719,7 +3720,7 @@ mod tests {
 
     #[test]
     fn cpal_gradients() {
-        let result = TestCompile::compile_source("glyphs3/COLRv1-simple.glyphs");
+        let result = TestCompile::compile_source("glyphs3/COLRv1-gradient.glyphs");
         let cpal = result.font().cpal().unwrap();
         assert_eq!(
             (
@@ -3767,6 +3768,49 @@ mod tests {
     fn colr_grayscale() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
         result.font().colr().unwrap(); // for now just check the table exists
+    }
+
+    fn root_paint<'a>(compile: &TestCompile, colr: Colr<'a>, glyph_name: &str) -> Paint<'a> {
+        let gid = compile.get_gid(glyph_name);
+        let base_glyph_list = colr.base_glyph_list().unwrap().unwrap();
+        let base_glyphs = base_glyph_list.base_glyph_paint_records();
+        let base_glyph = base_glyphs.iter().find(|bg| bg.glyph_id() == gid).unwrap();
+
+        base_glyph
+            .paint(base_glyph_list.offset_data())
+            .expect("A valid paint")
+    }
+
+    fn root_paint_glyph<'a>(
+        compile: &TestCompile,
+        colr: Colr<'a>,
+        glyph_name: &str,
+    ) -> PaintGlyph<'a> {
+        let paint = root_paint(&compile, colr, glyph_name);
+        let Paint::Glyph(paint) = paint else {
+            panic!("Expected a PaintGlyph for {glyph_name}, got {paint:#?}");
+        };
+        paint
+    }
+
+    #[test]
+    fn colr_gradient_linear() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
+        let colr = result.font().colr().expect("COLR");
+        assert!(matches!(
+            root_paint_glyph(&result, colr, "A").paint(),
+            Ok(Paint::LinearGradient(_))
+        ));
+    }
+
+    #[test]
+    fn colr_gradient_radial() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-gradient.glyphs");
+        let colr = result.font().colr().expect("COLR");
+        assert!(matches!(
+            root_paint_glyph(&result, colr, "K").paint(),
+            Ok(Paint::RadialGradient(_))
+        ));
     }
 
     #[test]
@@ -4368,7 +4412,7 @@ mod tests {
 
     #[test]
     fn color_base_glyphs() {
-        let result = TestCompile::compile_source("glyphs3/COLRv1-simple.glyphs");
+        let result = TestCompile::compile_source("glyphs3/COLRv1-gradient.glyphs");
         let colr = result.font().colr().unwrap();
         assert_eq!(
             8,

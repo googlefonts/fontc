@@ -140,7 +140,7 @@ impl Source for GlyphsIrSource {
     fn create_color_glyphs_work(
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        Ok(Box::new(PaintGraphWork {
+        Ok(Box::new(ColorGlyphsWork {
             font_info: self.font_info.clone(),
         }))
     }
@@ -1629,11 +1629,11 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
 }
 
 #[derive(Debug)]
-struct PaintGraphWork {
+struct ColorGlyphsWork {
     font_info: Arc<FontInfo>,
 }
 
-impl Work<Context, WorkId, Error> for PaintGraphWork {
+impl Work<Context, WorkId, Error> for ColorGlyphsWork {
     fn id(&self) -> WorkId {
         WorkId::PaintGraph
     }
@@ -1669,24 +1669,39 @@ impl Work<Context, WorkId, Error> for PaintGraphWork {
             base_glyphs: IndexMap::with_capacity(color_glyphs.len()),
         };
         for color_glyph in color_glyphs {
+            let glyph_name: GlyphName = color_glyph.name.clone().into();
             let Some(default_layer) = color_glyph
                 .layers
                 .iter()
                 .find(|l| l.layer_id == default_master_id)
             else {
                 return Err(Error::BadGlyph(BadGlyph::new(
-                    color_glyph.name.clone(),
+                    glyph_name,
                     BadGlyphKind::MissingMaster(default_master_id.to_string()),
                 )));
             };
 
-            let paint = Paint::Glyph(
-                PaintGlyph {
-                    name: color_glyph.name.clone().into(),
-                    paint: to_ir_paint(&default_layer.shapes)?,
-                }
-                .into(),
-            );
+            let paint = if default_layer.shapes.len() == 1 {
+                Paint::Glyph(
+                    PaintGlyph {
+                        name: color_glyph.name.clone().into(),
+                        paint: to_ir_paint(&glyph_name, &default_layer.shapes[0])?,
+                    }
+                    .into(),
+                )
+            } else {
+                warn!(
+                    "multiple color shapes in {}, not yet supported",
+                    color_glyph.name
+                );
+                Paint::Glyph(
+                    PaintGlyph {
+                        name: color_glyph.name.clone().into(),
+                        paint: to_ir_paint(&glyph_name, &default_layer.shapes[0])?,
+                    }
+                    .into(),
+                )
+            };
             graph
                 .base_glyphs
                 .insert(color_glyph.name.clone().into(), paint);
@@ -3387,7 +3402,7 @@ mod tests {
     #[test]
     fn unique_colors_in_source_order() {
         // we used to sort and end up with different ordering than fontmake
-        let (_, context) = build_color_palettes(glyphs3_dir().join("COLRv1-simple.glyphs"));
+        let (_, context) = build_color_palettes(glyphs3_dir().join("COLRv1-gradient.glyphs"));
         let colors = context.colors.get();
         assert_eq!(
             vec![vec![

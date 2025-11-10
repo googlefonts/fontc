@@ -4804,7 +4804,7 @@ etc;
 
     #[test]
     fn parse_colrv1_identify_colr_glyphs() {
-        let font = Font::load(&glyphs3_dir().join("COLRv1-simple.glyphs")).unwrap();
+        let font = Font::load(&glyphs3_dir().join("COLRv1-gradient.glyphs")).unwrap();
         let expected_colr = HashSet::from(["A", "B", "C", "D", "K", "L", "M", "N"]);
         assert_eq!(
             expected_colr,
@@ -4818,7 +4818,7 @@ etc;
 
     #[test]
     fn parse_colrv1_gradients() {
-        let font = Font::load(&glyphs3_dir().join("COLRv1-simple.glyphs")).unwrap();
+        let font = Font::load(&glyphs3_dir().join("COLRv1-gradient.glyphs")).unwrap();
         let expected_colr = HashSet::from([
             (
                 "A",

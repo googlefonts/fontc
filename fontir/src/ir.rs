@@ -2017,6 +2017,8 @@ pub struct ColorGlyphs {
 pub enum Paint {
     Glyph(Box<PaintGlyph>),
     Solid(Box<PaintSolid>),
+    LinearGradient(Box<PaintLinearGradient>),
+    RadialGradient(Box<PaintRadialGradient>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -2028,6 +2030,23 @@ pub struct PaintGlyph {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintSolid {
     pub color: Color,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintLinearGradient {
+    pub color_line: Vec<ColorStop>,
+    pub p0: Point,
+    pub p1: Point,
+    pub p2: Point,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintRadialGradient {
+    pub color_line: Vec<ColorStop>,
+    pub p0: Point,
+    pub r0: OrderedFloat<f32>,
+    pub p1: Point,
+    pub r1: OrderedFloat<f32>,
 }
 
 #[cfg(test)]
