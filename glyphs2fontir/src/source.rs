@@ -1872,6 +1872,20 @@ mod tests {
         (source, context)
     }
 
+    fn build_color_palettes(glyphs_file: PathBuf) -> (impl Source, Context) {
+        let (source, context) = build_static_metadata(glyphs_file);
+        let task_context = context.copy_for_work(
+            Access::Variant(WorkId::StaticMetadata),
+            Access::Variant(WorkId::ColorPalettes),
+        );
+        source
+            .create_color_palette_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        (source, context)
+    }
+
     fn build_kerning(glyphs_file: PathBuf) -> (impl Source, Context) {
         let (source, context) = build_static_metadata(glyphs_file);
 
@@ -3305,6 +3319,30 @@ mod tests {
                 .copied()
                 .collect::<Vec<_>>(),
             [Tag::new(b"wght")]
+        );
+    }
+
+    #[test]
+    fn unique_colors_in_source_order() {
+        // we used to sort and end up with different ordering than fontmake
+        let (_, context) = build_color_palettes(glyphs3_dir().join("COLRv1-simple.glyphs"));
+        let colors = context.colors.get();
+        assert_eq!(
+            vec![vec![
+                Color {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                },
+                Color {
+                    r: 0,
+                    g: 0,
+                    b: 255,
+                    a: 255,
+                }
+            ]],
+            colors.palettes
         );
     }
 }
