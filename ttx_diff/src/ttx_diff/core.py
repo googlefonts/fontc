@@ -769,7 +769,6 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
         name = fontmake_container.attrib[name_attr]
         fontc_container = fontc_items.get(name)
         if fontc_container is None:
-            eprint(f"no item where {name_attr}='{name}' in {container}")
             continue
 
         fontc_els = [el for el in fontc_container.iter() if el.tag == coord_tag]
