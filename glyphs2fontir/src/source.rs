@@ -1380,7 +1380,22 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             for (tag, coord) in location.iter() {
                 axis_positions.entry(*tag).or_default().insert(*coord);
             }
-            ir_glyph.try_add_source(&location, instance)?;
+            ir_glyph.try_add_source(&location, instance).map_err(|_| {
+                // It's a duplicate location, but we have more context so pass it on to user
+                BadGlyph::new(
+                    &self.glyph_name,
+                    BadGlyphKind::FrontendSpecific(format!(
+                        "layer {} provided outline at {} but an outline for this location was already defined",
+                        layer.layer_id,
+                        location
+                            .to_design(&font_info.axes)
+                            .iter()
+                            .map(|(t, v)| format!("{}={}", t, v.to_f64()))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )),
+                )
+            })?;
 
             // we only care about anchors from exportable glyphs
             // https://github.com/googlefonts/fontc/issues/1397
