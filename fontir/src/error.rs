@@ -143,6 +143,7 @@ pub enum BadGlyphKind {
     PathConversion(PathConversionError),
     Anchor(BadAnchor),
     BadDeltas(DeltaError),
+    FrontendSpecific(String),
 }
 
 /// An error that occurs while parsing glyph anchors
@@ -286,6 +287,7 @@ impl std::fmt::Display for BadGlyphKind {
             BadGlyphKind::NoAxisPosition(axis) => write!(f, "no position on '{axis}' axis"),
             BadGlyphKind::Anchor(e) => write!(f, "bad anchor: '{e}'"),
             BadGlyphKind::BadDeltas(e) => write!(f, "delta error: '{e}'"),
+            BadGlyphKind::FrontendSpecific(e) => write!(f, "{}", e),
         }
     }
 }
