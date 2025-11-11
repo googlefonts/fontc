@@ -3654,6 +3654,30 @@ mod tests {
     }
 
     #[test]
+    fn cpal_solid() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-solid.glyphs");
+        let cpal = result.font().cpal().unwrap();
+        assert_eq!(
+            (
+                1,
+                1,
+                [ColorRecord {
+                    red: 177,
+                    green: 216,
+                    blue: 243,
+                    alpha: 255
+                },]
+                .as_slice()
+            ),
+            (
+                cpal.num_palettes(),
+                cpal.num_palette_entries(),
+                cpal.color_records_array().unwrap().unwrap()
+            )
+        );
+    }
+
+    #[test]
     fn cpal_grayscale() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
         let cpal = result.font().cpal().unwrap();
@@ -3686,7 +3710,7 @@ mod tests {
     }
 
     #[test]
-    fn cpal_color() {
+    fn cpal_gradients() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-simple.glyphs");
         let cpal = result.font().cpal().unwrap();
         assert_eq!(

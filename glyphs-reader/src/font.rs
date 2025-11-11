@@ -460,62 +460,89 @@ impl FromPlist for LayerAttributes {
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash, FromPlist)]
 pub struct ShapeAttributes {
-    pub gradient: Gradient,
+    pub gradient: Option<Gradient>,
+    pub fill_color: Option<Color>,
+}
+
+impl ShapeAttributes {
+    pub fn colors(&self) -> impl Iterator<Item = &Color> {
+        self.gradient
+            .iter()
+            .flat_map(|g| g.colors())
+            .chain(self.fill_color.iter())
+    }
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash, FromPlist)]
 pub struct Gradient {
     pub start: Vec<OrderedFloat<f64>>,
     pub end: Vec<OrderedFloat<f64>>,
-    pub colors: Vec<Color>,
+    pub colors: Vec<ColorStop>,
     #[fromplist(key = "type")]
     pub style: String,
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
+impl Gradient {
+    fn colors(&self) -> impl Iterator<Item = &Color> {
+        self.colors.iter().map(|c| &c.color)
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
 pub struct Color {
     pub r: i64,
     pub g: i64,
     pub b: i64,
     pub a: i64,
+}
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
+pub struct ColorStop {
+    pub color: Color,
     // The position on the color line, see <https://learn.microsoft.com/en-us/typography/opentype/spec/colr#color-lines>
     pub stop_offset: OrderedFloat<f64>,
+}
+
+impl Color {
+    pub fn rgba(r: i64, g: i64, b: i64, a: i64) -> Self {
+        Self { r, g, b, a }
+    }
 }
 
 // hand-parse because it's a list of inconsistent types
 impl FromPlist for Color {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
-        tokenizer.eat(b'(')?;
-
         let colors = tokenizer.parse::<Vec<i64>>()?;
-        tokenizer.eat(b',')?;
-        let stop_offset = tokenizer.parse::<f64>()?;
-        tokenizer.eat(b')')?;
 
         // See <https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f456d64ebe9993818770e170454/Lib/glyphsLib/builder/common.py#L41-L50>
         match *colors.as_slice() {
             // Grayscale
-            [black, alpha] => Ok(Color {
-                r: black,
-                g: black,
-                b: black,
-                a: alpha,
-                stop_offset: stop_offset.into(),
-            }),
-            // RGB
-            [r, g, b, a] => Ok(Color {
-                r,
-                g,
-                b,
-                a,
-                stop_offset: stop_offset.into(),
-            }),
+            [black, alpha] => Ok(Color::rgba(black, black, black, alpha)),
+            // RGBA
+            [r, g, b, a] => Ok(Color::rgba(r, g, b, a)),
             // 5 is CMYK, match python by not supporting that
             _ => Err(crate::plist::Error::UnexpectedNumberOfValues {
                 value_type: "grayscale (2) or rgba (4)",
                 actual: colors.len(),
             }),
         }
+    }
+}
+
+// hand-parse because it's a list of inconsistent types
+impl FromPlist for ColorStop {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+        tokenizer.eat(b'(')?;
+
+        let color = Color::parse(tokenizer)?;
+        tokenizer.eat(b',')?;
+        let stop_offset = tokenizer.parse::<f64>()?;
+        tokenizer.eat(b')')?;
+
+        Ok(ColorStop {
+            color,
+            stop_offset: stop_offset.into(),
+        })
     }
 }
 
@@ -4799,18 +4826,12 @@ etc;
                     start: vec![OrderedFloat(0.1), OrderedFloat(0.1)],
                     end: vec![OrderedFloat(0.9), OrderedFloat(0.9)],
                     colors: vec![
-                        Color {
-                            r: 255,
-                            g: 0,
-                            b: 0,
-                            a: 255,
+                        ColorStop {
+                            color: Color::rgba(255, 0, 0, 255),
                             stop_offset: 0.into(),
                         },
-                        Color {
-                            r: 0,
-                            g: 0,
-                            b: 255,
-                            a: 255,
+                        ColorStop {
+                            color: Color::rgba(0, 0, 255, 255),
                             stop_offset: 1.into(),
                         },
                     ],
@@ -4823,18 +4844,12 @@ etc;
                     start: vec![OrderedFloat(1.0), OrderedFloat(1.0)],
                     end: vec![OrderedFloat(0.0), OrderedFloat(0.0)],
                     colors: vec![
-                        Color {
-                            r: 255,
-                            g: 0,
-                            b: 0,
-                            a: 255,
+                        ColorStop {
+                            color: Color::rgba(255, 0, 0, 255),
                             stop_offset: 0.into(),
                         },
-                        Color {
-                            r: 0,
-                            g: 0,
-                            b: 255,
-                            a: 255,
+                        ColorStop {
+                            color: Color::rgba(0, 0, 255, 255),
                             stop_offset: 1.into(),
                         },
                     ],
@@ -4847,11 +4862,10 @@ etc;
             font.glyphs
                 .values()
                 .filter(|g| expected_colr.iter().any(|(name, _)| *name == g.name))
-                .flat_map(|g| g
-                    .layers
-                    .iter()
-                    .flat_map(|l| l.shapes.iter())
-                    .map(|s| (g.name.as_str(), s.attributes().gradient.clone())))
+                .flat_map(|g| g.layers.iter().flat_map(|l| l.shapes.iter()).map(|s| (
+                    g.name.as_str(),
+                    s.attributes().gradient.as_ref().unwrap().clone()
+                )))
                 .collect::<HashSet<_>>()
         );
     }
@@ -4861,18 +4875,12 @@ etc;
         let font = Font::load(&glyphs3_dir().join("COLRv1-grayscale.glyphs")).unwrap();
         assert_eq!(
             vec![
-                Color {
-                    r: 64,
-                    g: 64,
-                    b: 64,
-                    a: 255,
+                ColorStop {
+                    color: Color::rgba(64, 64, 64, 255),
                     stop_offset: 0.into(),
                 },
-                Color {
-                    r: 0,
-                    g: 0,
-                    b: 0,
-                    a: 255,
+                ColorStop {
+                    color: Color::rgba(0, 0, 0, 255),
                     stop_offset: 1.into(),
                 },
             ],
@@ -4882,8 +4890,8 @@ etc;
                     |g| g.layers.iter().flat_map(|l| l.shapes.iter()).flat_map(|s| s
                         .attributes()
                         .gradient
-                        .colors
                         .iter()
+                        .flat_map(|g| g.colors.iter())
                         .cloned())
                 )
                 .collect::<Vec<_>>()

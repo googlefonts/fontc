@@ -1589,7 +1589,7 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
                 g.layers
                     .iter()
                     .flat_map(|l| l.shapes.iter())
-                    .flat_map(|s| s.attributes().gradient.colors.iter())
+                    .flat_map(|s| s.attributes().colors())
             })
             .map(|c| Color {
                 r: c.r as u8,
