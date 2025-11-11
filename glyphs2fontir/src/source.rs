@@ -1588,6 +1588,7 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
             .flat_map(|g| {
                 g.layers
                     .iter()
+                    .filter(|l| l.attributes.color)
                     .flat_map(|l| l.shapes.iter())
                     .flat_map(|s| s.attributes().colors())
             })

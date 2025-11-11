@@ -1,0 +1,41 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+familyName = "New Font";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+attr = {
+fillColor = (177,216,243,255);
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 65;
+}
+);
+
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

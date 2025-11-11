@@ -3749,6 +3749,13 @@ mod tests {
     }
 
     #[test]
+    fn color_only_if_explicitly_color() {
+        let compile = TestCompile::compile_source("glyphs3/COLRv1-solidnoncolor.glyphs");
+        assert!(compile.font().cpal().is_err());
+        assert!(compile.font().colr().is_err());
+    }
+
+    #[test]
     fn colr_grayscale() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
         result.font().colr().unwrap(); // for now just check the table exists
