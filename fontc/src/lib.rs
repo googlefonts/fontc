@@ -3660,13 +3660,21 @@ mod tests {
         assert_eq!(
             (
                 1,
-                1,
-                [ColorRecord {
-                    red: 177,
-                    green: 216,
-                    blue: 243,
-                    alpha: 255
-                },]
+                2,
+                [
+                    ColorRecord {
+                        red: 177,
+                        green: 216,
+                        blue: 243,
+                        alpha: 255
+                    },
+                    ColorRecord {
+                        red: 42,
+                        green: 43,
+                        blue: 44,
+                        alpha: 255
+                    },
+                ]
                 .as_slice()
             ),
             (
@@ -3759,6 +3767,22 @@ mod tests {
     fn colr_grayscale() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
         result.font().colr().unwrap(); // for now just check the table exists
+    }
+
+    #[test]
+    fn colr_cliprun() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-solid.glyphs");
+        let colr = result.font().colr().unwrap();
+        assert_eq!(
+            vec![(1, 2)],
+            colr.clip_list()
+                .unwrap()
+                .unwrap()
+                .clips()
+                .iter()
+                .map(|c| (c.start_glyph_id().to_u32(), c.end_glyph_id().to_u32()))
+                .collect::<Vec<_>>()
+        )
     }
 
     #[rstest]
@@ -4340,5 +4364,20 @@ mod tests {
         assert!(result.fe_context.flags.contains(Flags::FLATTEN_COMPONENTS));
         assert!(!result.fe_context.flags.contains(Flags::ERASE_OPEN_CORNERS));
         // Note: propagate_anchors test removed as that flag doesn't exist yet
+    }
+
+    #[test]
+    fn color_base_glyphs() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-simple.glyphs");
+        let colr = result.font().colr().unwrap();
+        assert_eq!(
+            8,
+            colr.base_glyph_list()
+                .expect("A base glyph list")
+                .expect("A valid base glyph list")
+                .base_glyph_paint_records()
+                .iter()
+                .count()
+        );
     }
 }

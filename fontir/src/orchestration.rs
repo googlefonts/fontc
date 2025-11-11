@@ -422,7 +422,7 @@ pub struct Context {
     pub kerning_at: FeContextMap<ir::KerningInstance>,
     pub anchors: FeContextMap<ir::GlyphAnchors>,
     pub colors: FeContextItem<ir::ColorPalettes>,
-    pub paint_graph: FeContextItem<ir::PaintGraph>,
+    pub paint_graph: FeContextItem<ir::ColorGlyphs>,
 }
 
 pub fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {

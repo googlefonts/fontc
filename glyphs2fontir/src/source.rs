@@ -17,11 +17,11 @@ use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
     feature_variations::{NBox, overlay_feature_variations},
     ir::{
-        self, AnchorBuilder, Color, ColorPalettes, Condition, ConditionSet, DEFAULT_VENDOR_ID,
-        GdefCategories, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphInstance,
-        GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues,
-        NameBuilder, NameKey, NamedInstance, PostscriptNames, Rule, StaticMetadata, Substitution,
-        VariableFeature,
+        self, AnchorBuilder, Color, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
+        DEFAULT_VENDOR_ID, GdefCategories, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder,
+        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        MetaTableValues, NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames,
+        Rule, StaticMetadata, Substitution, VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -42,7 +42,9 @@ use write_fonts::{
     types::{NameId, Tag},
 };
 
-use crate::toir::{FontInfo, design_location, to_ir_contours_and_components, to_ir_features};
+use crate::toir::{
+    FontInfo, design_location, to_ir_contours_and_components, to_ir_features, to_ir_paint,
+};
 
 #[derive(Debug, Clone)]
 pub struct GlyphsIrSource {
@@ -135,11 +137,11 @@ impl Source for GlyphsIrSource {
         }))
     }
 
-    fn create_paint_graph_work(
+    fn create_color_glyphs_work(
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         Ok(Box::new(PaintGraphWork {
-            _font_info: self.font_info.clone(),
+            font_info: self.font_info.clone(),
         }))
     }
 
@@ -1628,7 +1630,7 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
 
 #[derive(Debug)]
 struct PaintGraphWork {
-    _font_info: Arc<FontInfo>,
+    font_info: Arc<FontInfo>,
 }
 
 impl Work<Context, WorkId, Error> for PaintGraphWork {
@@ -1644,8 +1646,52 @@ impl Work<Context, WorkId, Error> for PaintGraphWork {
         Access::Variant(WorkId::PaintGraph)
     }
 
-    fn exec(&self, _context: &Context) -> Result<(), Error> {
-        debug!("TODO: actually create paint graph");
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let default_master_id = self.font_info.font.default_master().id.as_str();
+
+        let color_glyphs = self
+            .font_info
+            .font
+            .glyphs
+            .values()
+            .filter(|g| {
+                g.layers.iter().filter(|l| l.attributes.color).any(|l| {
+                    l.shapes
+                        .iter()
+                        .any(|s| s.attributes().colors().next().is_some())
+                })
+            })
+            .collect::<Vec<_>>();
+        if color_glyphs.is_empty() {
+            return Ok(());
+        }
+        let mut graph = ColorGlyphs {
+            base_glyphs: IndexMap::with_capacity(color_glyphs.len()),
+        };
+        for color_glyph in color_glyphs {
+            let Some(default_layer) = color_glyph
+                .layers
+                .iter()
+                .find(|l| l.layer_id == default_master_id)
+            else {
+                return Err(Error::BadGlyph(BadGlyph::new(
+                    color_glyph.name.clone(),
+                    BadGlyphKind::MissingMaster(default_master_id.to_string()),
+                )));
+            };
+
+            let paint = Paint::Glyph(
+                PaintGlyph {
+                    name: color_glyph.name.clone().into(),
+                    paint: to_ir_paint(&default_layer.shapes)?,
+                }
+                .into(),
+            );
+            graph
+                .base_glyphs
+                .insert(color_glyph.name.clone().into(), paint);
+        }
+        context.paint_graph.set(graph);
         Ok(())
     }
 }

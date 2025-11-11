@@ -156,7 +156,7 @@ impl Source for FontraIrSource {
         todo!()
     }
 
-    fn create_paint_graph_work(
+    fn create_color_glyphs_work(
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         todo!()

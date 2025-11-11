@@ -59,10 +59,10 @@ pub trait Source {
     /// When run work should update [crate::orchestration::Context] with new [crate::ir::ColorPalettes].
     fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error>;
 
-    /// Create a function that could be called to generate [crate::ir::PaintGraph].
+    /// Create a function that could be called to generate [crate::ir::ColorGlyphs].
     ///
-    /// When run work should update [crate::orchestration::Context] with new [crate::ir::PaintGraph].
-    fn create_paint_graph_work(&self) -> Result<Box<IrWork>, Error>;
+    /// When run work should update [crate::orchestration::Context] with new [crate::ir::ColorGlyphs].
+    fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error>;
 
     /// Returns compilation flags derived from source file settings.
     ///

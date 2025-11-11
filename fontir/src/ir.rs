@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
@@ -1624,7 +1624,7 @@ impl Persistable for ColorPalettes {
     }
 }
 
-impl Persistable for PaintGraph {
+impl Persistable for ColorGlyphs {
     fn read(from: &mut dyn Read) -> Self {
         serde_yaml::from_reader(from).unwrap()
     }
@@ -1940,7 +1940,7 @@ impl Component {
 }
 
 /// Data to inform construction of [CPAL](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal#palette-table-header)
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 pub struct ColorPalettes {
     // All palettes have the same number of colors; there is at least one palette with at least one color
     pub palettes: Vec<Vec<Color>>,
@@ -1980,10 +1980,18 @@ impl ColorPalettes {
 
         Ok(Some(Self { palettes }))
     }
+
+    pub fn index_of(&self, color: Color) -> Option<usize> {
+        if self.palettes.is_empty() {
+            return None;
+        }
+        // Palettes assumed small
+        self.palettes[0].iter().position(|c| *c == color)
+    }
 }
 
 /// We may in time need more than RGBA, but likely not for some years so start simple
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Color {
     pub r: u8,
     pub g: u8,
@@ -1991,9 +1999,36 @@ pub struct Color {
     pub a: u8,
 }
 
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ColorStop {
+    pub offset: OrderedFloat<f32>,
+    pub color: Color,
+    pub alpha: OrderedFloat<f32>,
+}
+
 /// Data to inform construction of [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr)
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct PaintGraph {}
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ColorGlyphs {
+    pub base_glyphs: IndexMap<GlyphName, Paint>,
+}
+
+/// <https://learn.microsoft.com/en-us/typography/opentype/spec/colr#paint-tables>
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum Paint {
+    Glyph(Box<PaintGlyph>),
+    Solid(Box<PaintSolid>),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintGlyph {
+    pub name: GlyphName,
+    pub paint: Paint,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintSolid {
+    pub color: Color,
+}
 
 #[cfg(test)]
 mod tests {
