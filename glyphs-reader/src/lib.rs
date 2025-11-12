@@ -10,7 +10,7 @@ mod propagate_anchors;
 mod smart_components;
 
 pub use font::{
-    Anchor, Axis, Component, CustomParameters, FeatureSnippet, Font, FontMaster, Glyph,
-    InstanceType, Layer, Node, NodeType, Path, Shape, glyphs_to_opentype_lang_id,
+    Anchor, Axis, Color, ColorStop, Component, CustomParameters, FeatureSnippet, Font, FontMaster,
+    Glyph, InstanceType, Layer, Node, NodeType, Path, Shape, glyphs_to_opentype_lang_id,
 };
 pub use plist::Plist;

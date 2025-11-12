@@ -14,7 +14,8 @@ use fontir::{
 };
 use write_fonts::{
     tables::colr::{
-        BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, Colr, Paint, PaintGlyph, PaintSolid,
+        BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, ColorLine, ColorStop, Colr, Extend,
+        Paint, PaintGlyph, PaintLinearGradient, PaintRadialGradient, PaintSolid,
     },
     types::F2Dot14,
 };
@@ -26,6 +27,28 @@ struct ColrWork {}
 
 pub fn create_colr_work() -> Box<BeWork> {
     Box::new(ColrWork {})
+}
+
+fn to_colr_line(
+    palette: &ColorPalettes,
+    glyph_name: &GlyphName,
+    stops: &[ir::ColorStop],
+) -> Result<ColorLine, Error> {
+    let mut color_stops = Vec::with_capacity(stops.len());
+    for stop in stops {
+        color_stops.push(ColorStop::new(
+            F2Dot14::from_f32(stop.offset.0),
+            palette.index_of(stop.color).ok_or_else(|| {
+                Error::GlyphError(
+                    glyph_name.clone(),
+                    GlyphProblem::NotInColorPalette(stop.color),
+                )
+            })? as u16,
+            OPAQUE,
+        ));
+    }
+
+    Ok(ColorLine::new(Extend::Pad, stops.len() as u16, color_stops))
 }
 
 fn to_colr_paint(
@@ -50,6 +73,24 @@ fn to_colr_paint(
             })? as u16,
             alpha: OPAQUE,
         })),
+        ir::Paint::LinearGradient(linear) => Ok(Paint::LinearGradient(PaintLinearGradient::new(
+            to_colr_line(palette, glyph_name, &linear.color_line)?,
+            (linear.p0.x as i16).into(),
+            (linear.p0.y as i16).into(),
+            (linear.p1.x as i16).into(),
+            (linear.p1.y as i16).into(),
+            (linear.p2.x as i16).into(),
+            (linear.p2.y as i16).into(),
+        ))),
+        ir::Paint::RadialGradient(radial) => Ok(Paint::RadialGradient(PaintRadialGradient::new(
+            to_colr_line(palette, glyph_name, &radial.color_line)?,
+            (radial.p0.x as i16).into(),
+            (radial.p0.y as i16).into(),
+            (radial.r0.0 as u16).into(),
+            (radial.p1.x as i16).into(),
+            (radial.p1.y as i16).into(),
+            (radial.r1.0 as u16).into(),
+        ))),
     }
 }
 
@@ -60,6 +101,7 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
 
     fn read_access(&self) -> Access<AnyWorkId> {
         AccessBuilder::new()
+            .variant(FeWorkId::PaintGraph)
             .variant(FeWorkId::ColorPalettes)
             .variant(WorkId::ALL_GLYF_FRAGMENTS)
             .specific_instance(FeWorkId::GlyphOrder)
