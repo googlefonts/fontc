@@ -3786,7 +3786,7 @@ mod tests {
         colr: Colr<'a>,
         glyph_name: &str,
     ) -> PaintGlyph<'a> {
-        let paint = root_paint(&compile, colr, glyph_name);
+        let paint = root_paint(compile, colr, glyph_name);
         let Paint::Glyph(paint) = paint else {
             panic!("Expected a PaintGlyph for {glyph_name}, got {paint:#?}");
         };
