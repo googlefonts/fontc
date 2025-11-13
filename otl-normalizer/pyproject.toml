@@ -1,0 +1,33 @@
+[build-system]
+requires = ["maturin>=0.12"]
+build-backend = "maturin"
+
+[tool.maturin]
+# maturin needs a manifest with a [package], can't just use the workspace's Cargo.toml
+manifest-path = "Cargo.toml"
+# treat the project as a Rust binary application: https://www.maturin.rs/bindings#bin
+bindings = "bin"
+# somehow these standard files aren't included automatically in the sdist,
+# it's better to keep them in there
+include = [
+  { path = "README.md", format = "sdist" },
+  { path = "../LICENSE", format = "sdist" },
+]
+# exclude rust source files from the wheel (they're not needed at runtime)
+exclude = [
+  { path = "src/**/*", format = "wheel" },
+]
+
+# maturin merges the metadata from Cargo.toml with the pyproject.toml's below,
+# which takes precedence and overrides Cargo.toml
+[project]
+# 'name' key is required for [project]
+name = "otl-normalizer"
+# We want to use the same 'version' as Cargo.toml; only override if needed
+# (e.g. for a post-release to fix some packaging issues with a previous release)
+# version = "0.0.1.post1"
+# Since 'version' is required filed in [project], we must also set it as
+# 'dynamic' otherwise tools such as `uv venv` issue a warning message
+dynamic = ["version"]
+# Use the otl-normalizer's README.md for the sdist/wheel metadata
+readme = "README.md"

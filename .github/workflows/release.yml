@@ -3,28 +3,40 @@
 # Maturin is a tool to build Rust crates as Python packages with minimal configuration,
 # which uses cargo under the hood and ensures the binaries are compatible with a wide
 # array of platforms and architectures.
-# Although fontc itself is a pure Rust project and as such doesn't use Python,
-# making it available on PyPI as a binary wheel package suitable to be installed by pip
-# increases its reach among font developers accustomed to Python tools.
+# Although fontc and otl-normalizer are pure Rust projects and as such don't use Python,
+# making them available on PyPI as binary wheel packages suitable to be installed by pip
+# increases their reach among font developers accustomed to Python tools.
 #
-# The Release workflow uses maturin to build fontc for Linux (x86_64 and aarch64),
+# The Release workflow uses maturin to build fontc or otl-normalizer for Linux (x86_64 and aarch64),
 # Windows (i686 and x86_64) and macOS (universal2 'fat' binary supporting both
 # x86_64 and arm64 architectures), package these as Python wheels, and upload to PyPI.
-# The same fontc binaries are also uploaded as Github Release assets which can be used
+# The same binaries are also uploaded as Github Release assets which can be used
 # with `cargo binstall` command.
-# The workflow runs automatically when a fontc version tag (i.e. starting with 'fontc-v')
-# gets pushed, or can be manually triggered from Github Actions interface (in which case
-# artifacts don't get published, just temporarily uploaded to Github Actions).
+# The workflow runs automatically when a version tag (i.e. starting with 'fontc-v' or
+# 'otl-normalizer-v') gets pushed, or can be manually triggered from Github Actions
+# interface (in which case artifacts don't get published, just temporarily uploaded to
+# Github Actions).
 
 name: Release
 
 on:
-  # only run on fontc-specific, version-tagged commits or manually
+  # only run on version-tagged commits for fontc or otl-normalizer, or manually
   push:
-    tags: ["fontc-v*.*.*"]
+    tags:
+      - "fontc-v*.*.*"
+      - "otl-normalizer-v*.*.*"
   # enables workflow to be run manually
   # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#workflow_dispatch
   workflow_dispatch:
+    inputs:
+      tool:
+        description: 'Which tool to build'
+        required: true
+        type: choice
+        options:
+          - fontc
+          - otl-normalizer
+        default: fontc
 
 # read-only access to repo contents by default; specific jobs may override it
 # https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs
@@ -32,8 +44,44 @@ permissions:
   contents: read
 
 jobs:
+  detect:
+    name: Detect which tool to release
+    runs-on: ubuntu-latest
+    outputs:
+      tool: ${{ steps.detect.outputs.tool }}
+      working-directory: ${{ steps.detect.outputs.working-directory }}
+      manifest-path: ${{ steps.detect.outputs.manifest-path }}
+    steps:
+      - name: Detect tool from tag or manual input
+        id: detect
+        run: |
+          # Check if this is a manual workflow_dispatch with an input
+          if [[ -n "${{ inputs.tool }}" ]]; then
+            TOOL="${{ inputs.tool }}"
+          # Otherwise detect from tag
+          elif [[ "${{ github.ref }}" == refs/tags/fontc-v* ]]; then
+            TOOL="fontc"
+          elif [[ "${{ github.ref }}" == refs/tags/otl-normalizer-v* ]]; then
+            TOOL="otl-normalizer"
+          else
+            # Fallback (shouldn't happen)
+            TOOL="fontc"
+          fi
+
+          # Set outputs based on the detected tool
+          if [[ "$TOOL" == "fontc" ]]; then
+            echo "tool=fontc" >> $GITHUB_OUTPUT
+            echo "working-directory=." >> $GITHUB_OUTPUT
+            echo "manifest-path=fontc/Cargo.toml" >> $GITHUB_OUTPUT
+          elif [[ "$TOOL" == "otl-normalizer" ]]; then
+            echo "tool=otl-normalizer" >> $GITHUB_OUTPUT
+            echo "working-directory=otl-normalizer" >> $GITHUB_OUTPUT
+            echo "manifest-path=otl-normalizer/Cargo.toml" >> $GITHUB_OUTPUT
+          fi
+
   build:
-    name: Build ${{ matrix.platform.target }}
+    name: Build ${{ needs.detect.outputs.tool }} ${{ matrix.platform.target }}
+    needs: detect
     strategy:
       fail-fast: false
       matrix:
@@ -41,16 +89,15 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             python-architecture: x64
-            archive: fontc-x86_64-apple-darwin.tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             python-architecture: x64
-            archive: fontc-x86_64-pc-windows-msvc.zip
           - target: i686-pc-windows-msvc
             os: windows-latest
             python-architecture: x86
-            archive: fontc-i686-pc-windows-msvc.zip
     runs-on: ${{ matrix.platform.os }}
+    env:
+      TOOL: ${{ needs.detect.outputs.tool }}
     steps:
       - uses: actions/checkout@v4
 
@@ -77,6 +124,7 @@ jobs:
         with:
           target: universal2-apple-darwin
           args: --release -o dist --sdist
+          working-directory: ${{ needs.detect.outputs.working-directory }}
 
       - name: Build wheel (without sdist)
         if: matrix.platform.target != 'x86_64-apple-darwin'
@@ -84,56 +132,62 @@ jobs:
         with:
           target: ${{matrix.platform.target}}
           args: --release -o dist
+          working-directory: ${{ needs.detect.outputs.working-directory }}
 
       - name: Install wheel
         shell: bash
+        working-directory: ${{ needs.detect.outputs.working-directory }}
         run: |
-          pip install --no-index --find-links dist/ --force-reinstall fontc
-          which fontc
-          fontc --version
+          pip install --no-index --find-links dist/ --force-reinstall ${{ env.TOOL }}
+          which ${{ env.TOOL }}
+          ${{ env.TOOL }} --version
 
       - name: Check sdist metadata
         if: matrix.platform.target == 'x86_64-apple-darwin'
+        working-directory: ${{ needs.detect.outputs.working-directory }}
         run: pipx run twine check dist/*.tar.gz
 
       - name: Archive binary
         if: matrix.platform.os != 'windows-latest'
         run: |
           cd target/${{ matrix.platform.target }}/release
-          tar czvf ../../../${{ matrix.platform.archive }} fontc
+          tar czvf ../../../${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz ${{ env.TOOL }}
           cd -
 
       - name: Archive binary (windows)
         if: matrix.platform.os == 'windows-latest'
         run: |
           cd target/${{ matrix.platform.target }}/release
-          7z a ../../../${{ matrix.platform.archive }} fontc.exe
+          7z a ../../../${{ env.TOOL }}-${{ matrix.platform.target }}.zip ${{ env.TOOL }}.exe
           cd -
 
       - name: Archive binary (macOS aarch64)
         if: matrix.platform.os == 'macos-latest'
         run: |
           cd target/aarch64-apple-darwin/release
-          tar czvf ../../../fontc-aarch64-apple-darwin.tar.gz fontc
+          tar czvf ../../../${{ env.TOOL }}-aarch64-apple-darwin.tar.gz ${{ env.TOOL }}
           cd -
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.platform.target }}
-          path: dist
+          name: wheels-${{ env.TOOL }}-${{ matrix.platform.target }}
+          path: ${{ needs.detect.outputs.working-directory }}/dist
 
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.platform.target }}
+          name: binaries-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: |
             *.tar.gz
             *.zip
 
   build_linux_glibc:
-    name: Build ${{ matrix.platform.target }} (glibc)
+    name: Build ${{ needs.detect.outputs.tool }} ${{ matrix.platform.target }} (glibc)
+    needs: detect
     runs-on: ubuntu-latest
+    env:
+      TOOL: ${{ needs.detect.outputs.tool }}
     strategy:
       fail-fast: false
       matrix:
@@ -151,32 +205,37 @@ jobs:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.manylinux }}
           args: --release -o dist
+          working-directory: ${{ needs.detect.outputs.working-directory }}
 
       - name: Install x86_64 wheel
         if: startsWith(matrix.platform.target, 'x86_64')
+        working-directory: ${{ needs.detect.outputs.working-directory }}
         run: |
-          pip install --no-index --find-links dist/ --force-reinstall fontc
-          which fontc
-          fontc --version
+          pip install --no-index --find-links dist/ --force-reinstall ${{ env.TOOL }}
+          which ${{ env.TOOL }}
+          ${{ env.TOOL }} --version
 
       - name: Archive binary
-        run: tar czvf target/release/fontc-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release fontc
+        run: tar czvf target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${{ env.TOOL }}
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.platform.target }}
-          path: dist
+          name: wheels-${{ env.TOOL }}-${{ matrix.platform.target }}
+          path: ${{ needs.detect.outputs.working-directory }}/dist
 
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.platform.target }}
-          path: target/release/fontc-${{ matrix.platform.target }}.tar.gz
+          name: binaries-${{ env.TOOL }}-${{ matrix.platform.target }}
+          path: target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz
 
   build_linux_musl:
-    name: Build ${{ matrix.platform.target }} (musl)
+    name: Build ${{ needs.detect.outputs.tool }} ${{ matrix.platform.target }} (musl)
+    needs: detect
     runs-on: ubuntu-latest
+    env:
+      TOOL: ${{ needs.detect.outputs.tool }}
     strategy:
       fail-fast: false
       matrix:
@@ -201,26 +260,27 @@ jobs:
           manylinux: ${{ matrix.platform.compatibility }}
           container: off
           args: --release -o dist
+          working-directory: ${{ needs.detect.outputs.working-directory }}
 
       - name: Archive binary
-        run: tar czvf target/release/fontc-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release fontc
+        run: tar czvf target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${{ env.TOOL }}
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.platform.target }}
-          path: dist
+          name: wheels-${{ env.TOOL }}-${{ matrix.platform.target }}
+          path: ${{ needs.detect.outputs.working-directory }}/dist
 
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.platform.target }}
-          path: target/release/fontc-${{ matrix.platform.target }}.tar.gz
+          name: binaries-${{ env.TOOL }}-${{ matrix.platform.target }}
+          path: target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz
 
   release-pypi:
     name: Publish to PyPI
-    if: startsWith(github.ref, 'refs/tags/fontc-v')
-    needs: [build, build_linux_glibc, build_linux_musl]
+    if: startsWith(github.ref, 'refs/tags/fontc-v') || startsWith(github.ref, 'refs/tags/otl-normalizer-v')
+    needs: [detect, build, build_linux_glibc, build_linux_musl]
     runs-on: ubuntu-latest
     permissions:
       # IMPORTANT: this permission is mandatory for trusted publishing
@@ -230,7 +290,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: wheels-*
+          pattern: wheels-${{ needs.detect.outputs.tool }}-*
           # so that all artifacts are downloaded in the same directory specified by 'path'
           merge-multiple: true
           path: dist
@@ -245,21 +305,23 @@ jobs:
       contents: write
     name: Publish to GitHub releases
     runs-on: ubuntu-latest
-    if: "startsWith(github.ref, 'refs/tags/fontc-v')"
-    needs: [build, build_linux_glibc, build_linux_musl]
+    if: startsWith(github.ref, 'refs/tags/fontc-v') || startsWith(github.ref, 'refs/tags/otl-normalizer-v')
+    needs: [detect, build, build_linux_glibc, build_linux_musl]
+    env:
+      TOOL: ${{ needs.detect.outputs.tool }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: binaries-*
+          pattern: binaries-${{ needs.detect.outputs.tool }}-*
           merge-multiple: true
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: wheels-*
+          pattern: wheels-${{ needs.detect.outputs.tool }}-*
           merge-multiple: true
           path: wheels
 
-      # this requirements.txt can be used to pip install fontc more securely
+      # this requirements.txt can be used to pip install the tool more securely
       # https://pip.pypa.io/en/stable/topics/secure-installs/
       - name: Generate requirements.txt with SHA256 hashes
         # Pin pip due to incompatibility of later releases with pip-tools
@@ -267,7 +329,7 @@ jobs:
         run: |
           pipx install pip-tools
           pipx runpip pip-tools install 'pip==25.0.1'
-          echo fontc | pip-compile - --no-index --find-links wheels/ --no-emit-find-links --generate-hashes --pip-args '--only-binary=:all:' --no-annotate --no-header --output-file requirements.txt
+          echo ${{ env.TOOL }} | pip-compile - --no-index --find-links wheels/ --no-emit-find-links --generate-hashes --pip-args '--only-binary=:all:' --no-annotate --no-header --output-file requirements.txt
 
       - name: Compute checksums of release assets
         run: |
@@ -276,8 +338,8 @@ jobs:
       - name: Detect if tag is a pre-release
         id: before_release
         env:
-          # e.g. v0.1.0a1, v1.2.0b2 or v2.3.0rc3, but not v1.0.0
-          PRERELEASE_TAG_PATTERN: "fontc-v[[:digit:]]+\\.[[:digit:]]+\\.[[:digit:]]+([ab]|rc)[[:digit:]]+"
+          # e.g. fontc-v0.1.0a1 or otl-normalizer-v1.2.0b2, but not fontc-v1.0.0
+          PRERELEASE_TAG_PATTERN: "(fontc|otl-normalizer)-v[[:digit:]]+\\.[[:digit:]]+\\.[[:digit:]]+([ab]|rc)[[:digit:]]+"
         run: |
           # strip leading 'refs/tags/' to get the tag name
           TAG_NAME="${GITHUB_REF##*/}"
@@ -288,8 +350,17 @@ jobs:
             echo "Tag ${TAG_NAME} does not contain a pre-release suffix"
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
           fi
-          # strip the redundant 'fontc-v' prefix from the Github Release title
-          echo "release_title=${TAG_NAME#fontc-v}" >> "$GITHUB_OUTPUT"
+          # Create descriptive release title with tool name
+          # e.g. fontc-v0.3.2 -> fontc 0.3.2, otl-normalizer-v0.0.1 -> otl-normalizer 0.0.1
+          if [[ "$TAG_NAME" == fontc-v* ]]; then
+            VERSION="${TAG_NAME#fontc-v}"
+            echo "release_title=fontc ${VERSION}" >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG_NAME" == otl-normalizer-v* ]]; then
+            VERSION="${TAG_NAME#otl-normalizer-v}"
+            echo "release_title=otl-normalizer ${VERSION}" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_title=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Release
         uses: softprops/action-gh-release@v2
