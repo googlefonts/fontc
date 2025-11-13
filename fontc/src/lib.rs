@@ -3770,7 +3770,7 @@ mod tests {
         result.font().colr().unwrap(); // for now just check the table exists
     }
 
-    fn root_paint<'a>(compile: &TestCompile, colr: Colr<'a>, glyph_name: &str) -> Paint<'a> {
+    fn root_paint<'a>(compile: &TestCompile, colr: &Colr<'a>, glyph_name: &str) -> Paint<'a> {
         let gid = compile.get_gid(glyph_name);
         let base_glyph_list = colr.base_glyph_list().unwrap().unwrap();
         let base_glyphs = base_glyph_list.base_glyph_paint_records();
@@ -3783,7 +3783,7 @@ mod tests {
 
     fn root_paint_glyph<'a>(
         compile: &TestCompile,
-        colr: Colr<'a>,
+        colr: &Colr<'a>,
         glyph_name: &str,
     ) -> PaintGlyph<'a> {
         let paint = root_paint(compile, colr, glyph_name);
@@ -3798,7 +3798,7 @@ mod tests {
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
         let colr = result.font().colr().expect("COLR");
         assert!(matches!(
-            root_paint_glyph(&result, colr, "A").paint(),
+            root_paint_glyph(&result, &colr, "A").paint(),
             Ok(Paint::LinearGradient(_))
         ));
     }
@@ -3808,7 +3808,7 @@ mod tests {
         let result = TestCompile::compile_source("glyphs3/COLRv1-gradient.glyphs");
         let colr = result.font().colr().expect("COLR");
         assert!(matches!(
-            root_paint_glyph(&result, colr, "K").paint(),
+            root_paint_glyph(&result, &colr, "K").paint(),
             Ok(Paint::RadialGradient(_))
         ));
     }
@@ -3846,8 +3846,48 @@ mod tests {
     }
 
     #[test]
-    fn colr_split_based_on_paint() {
-        // Only one paint, no need to split
+    fn colr_split_based_on_paint_type() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-gradientsolid.glyphs");
+        assert_eq!(
+            vec![".notdef", "A", "A.color0", "A.color1"],
+            result
+                .fe_context
+                .glyph_order
+                .get()
+                .names()
+                .map(|gn| gn.as_str())
+                .collect::<Vec<_>>()
+        );
+        let colr = result.font().colr().unwrap();
+        assert!(matches!(
+            root_paint(&result, &colr, "A"),
+            Paint::ColrLayers(_)
+        ));
+        let layer_list = colr
+            .layer_list()
+            .expect("A layer list")
+            .expect("A valid layer list");
+        let layers = layer_list
+            .paints()
+            .iter()
+            .map(|p| {
+                let Ok(Paint::Glyph(paint_glyph)) = p else {
+                    panic!("Bad paint {p:?}");
+                };
+                paint_glyph.paint().unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            matches!(
+                layers.as_slice(),
+                [Paint::LinearGradient(_), Paint::Solid(_),]
+            ),
+            "{layers:#?}"
+        );
+    }
+
+    #[test]
+    fn colr_split_based_on_paint_same_paint() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-manyshapes-per-glyph.glyphs");
         assert_eq!(
             vec![".notdef", "A", "A.color0", "A.color1"],
@@ -3858,6 +3898,32 @@ mod tests {
                 .names()
                 .map(|gn| gn.as_str())
                 .collect::<Vec<_>>()
+        );
+        let colr = result.font().colr().unwrap();
+        assert!(matches!(
+            root_paint(&result, &colr, "A"),
+            Paint::ColrLayers(_)
+        ));
+        let layer_list = colr
+            .layer_list()
+            .expect("A layer list")
+            .expect("A valid layer list");
+        let layers = layer_list
+            .paints()
+            .iter()
+            .map(|p| {
+                let Ok(Paint::Glyph(paint_glyph)) = p else {
+                    panic!("Bad paint {p:?}");
+                };
+                paint_glyph.paint().unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            matches!(
+                layers.as_slice(),
+                [Paint::LinearGradient(_), Paint::LinearGradient(_),]
+            ),
+            "{layers:#?}"
         );
     }
 

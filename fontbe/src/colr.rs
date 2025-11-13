@@ -15,7 +15,8 @@ use fontir::{
 use write_fonts::{
     tables::colr::{
         BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, ColorLine, ColorStop, Colr, Extend,
-        Paint, PaintGlyph, PaintLinearGradient, PaintRadialGradient, PaintSolid,
+        LayerList, Paint, PaintColrLayers, PaintGlyph, PaintLinearGradient, PaintRadialGradient,
+        PaintSolid,
     },
     types::F2Dot14,
 };
@@ -55,11 +56,13 @@ fn to_colr_paint(
     glyph_order: &GlyphOrder,
     palette: &ColorPalettes,
     glyph_name: &GlyphName,
+    layer_list: &mut LayerList,
     ir_paint: &ir::Paint,
 ) -> Result<Paint, Error> {
     match ir_paint {
         ir::Paint::Glyph(paint) => Ok(Paint::Glyph(PaintGlyph {
-            paint: to_colr_paint(glyph_order, palette, glyph_name, &paint.paint)?.into(),
+            paint: to_colr_paint(glyph_order, palette, glyph_name, layer_list, &paint.paint)?
+                .into(),
             glyph_id: glyph_order
                 .glyph_id(&paint.name)
                 .expect("Validated earlier"),
@@ -91,6 +94,17 @@ fn to_colr_paint(
             (radial.p1.y as i16).into(),
             (radial.r1.0 as u16).into(),
         ))),
+        ir::Paint::Layers(layers) => {
+            let start_idx = layer_list.num_layers;
+            for ir_paint in layers.iter() {
+                let paint = to_colr_paint(glyph_order, palette, glyph_name, layer_list, ir_paint)?;
+                layer_list.paints.push(paint.into());
+            }
+            Ok(Paint::ColrLayers(PaintColrLayers::new(
+                layers.len() as u8,
+                start_idx,
+            )))
+        }
     }
 }
 
@@ -117,17 +131,22 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
         let glyph_order = context.ir.glyph_order.get();
         let mut colr = Colr::new(0, None, None, 0);
         let mut base_glyphs = Vec::with_capacity(paint_graph.base_glyphs.len());
+        let mut layer_list = LayerList::default();
         for (glyph_name, paint) in paint_graph.base_glyphs.iter() {
             base_glyphs.push(BaseGlyphPaint::new(
                 glyph_order
                     .glyph_id(glyph_name)
                     .ok_or_else(|| Error::MissingGlyphId(glyph_name.clone()))?,
-                to_colr_paint(&glyph_order, &palette, glyph_name, paint)?,
+                to_colr_paint(&glyph_order, &palette, glyph_name, &mut layer_list, paint)?,
             ));
         }
 
         colr.base_glyph_list =
             BaseGlyphList::new(paint_graph.base_glyphs.len() as u32, base_glyphs).into();
+        if !layer_list.paints.is_empty() {
+            layer_list.num_layers = layer_list.paints.len() as u32;
+            colr.layer_list = layer_list.into();
+        }
 
         let mut clips = Vec::<Clip>::new();
         for glyph_name in paint_graph.base_glyphs.iter().map(|(g, _)| g) {

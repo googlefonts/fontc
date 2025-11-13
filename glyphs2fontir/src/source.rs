@@ -1633,6 +1633,38 @@ struct ColorGlyphsWork {
     font_info: Arc<FontInfo>,
 }
 
+impl ColorGlyphsWork {
+    fn get_glyph(&self, glyph_name: &SmolStr) -> &glyphs_reader::Glyph {
+        self.font_info
+            .font
+            .glyphs
+            .get(glyph_name)
+            .unwrap_or_else(|| panic!("No glyph for name {glyph_name}"))
+    }
+}
+
+/// Creates a [PaintGlyph] for a split glyph, that is one that is known to have 1..N shapes with the same paint
+fn create_paint_glyph(
+    default_master_id: &str,
+    color_glyph: &glyphs_reader::Glyph,
+) -> Result<PaintGlyph, Error> {
+    // TODO: create a location=>paint structure, similar to Glyph=>GlyphInstance to support variation
+    let Some(default_layer) = color_glyph
+        .layers
+        .iter()
+        .find(|l| l.layer_id == default_master_id)
+    else {
+        return Err(Error::BadGlyph(BadGlyph::new(
+            color_glyph.name.clone(),
+            BadGlyphKind::MissingMaster(default_master_id.to_string()),
+        )));
+    };
+    Ok(PaintGlyph {
+        name: color_glyph.name.clone().into(),
+        paint: to_ir_paint(color_glyph.name.clone(), &default_layer.shapes[0])?,
+    })
+}
+
 impl Work<Context, WorkId, Error> for ColorGlyphsWork {
     fn id(&self) -> WorkId {
         WorkId::PaintGraph
@@ -1649,58 +1681,26 @@ impl Work<Context, WorkId, Error> for ColorGlyphsWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let default_master_id = self.font_info.font.default_master().id.as_str();
 
-        let color_glyphs = self
-            .font_info
-            .font
-            .glyphs
-            .values()
-            .filter(|g| {
-                g.layers.iter().filter(|l| l.attributes.color).any(|l| {
-                    l.shapes
-                        .iter()
-                        .any(|s| s.attributes().colors().next().is_some())
-                })
-            })
-            .collect::<Vec<_>>();
-        if color_glyphs.is_empty() {
+        if self.font_info.color_glyphs.is_empty() {
             return Ok(());
         }
         let mut graph = ColorGlyphs {
-            base_glyphs: IndexMap::with_capacity(color_glyphs.len()),
+            base_glyphs: IndexMap::with_capacity(self.font_info.color_glyphs.len()),
         };
-        for color_glyph in color_glyphs {
-            let glyph_name: GlyphName = color_glyph.name.clone().into();
-            let Some(default_layer) = color_glyph
-                .layers
-                .iter()
-                .find(|l| l.layer_id == default_master_id)
-            else {
-                return Err(Error::BadGlyph(BadGlyph::new(
-                    glyph_name,
-                    BadGlyphKind::MissingMaster(default_master_id.to_string()),
-                )));
-            };
+        for (glyph_name, split_glyph_names) in self.font_info.color_glyphs.iter() {
+            let color_glyph = self.get_glyph(glyph_name);
 
-            let paint = if default_layer.shapes.len() == 1 {
-                Paint::Glyph(
-                    PaintGlyph {
-                        name: color_glyph.name.clone().into(),
-                        paint: to_ir_paint(&glyph_name, &default_layer.shapes[0])?,
-                    }
-                    .into(),
-                )
+            // Both single glyphs and split glyphs have 1..N shapes with the same paint
+            let paint = if split_glyph_names.is_empty() {
+                Paint::Glyph(create_paint_glyph(default_master_id, color_glyph)?.into())
             } else {
-                warn!(
-                    "multiple color shapes in {}, not yet supported",
-                    color_glyph.name
-                );
-                Paint::Glyph(
-                    PaintGlyph {
-                        name: color_glyph.name.clone().into(),
-                        paint: to_ir_paint(&glyph_name, &default_layer.shapes[0])?,
-                    }
-                    .into(),
-                )
+                let mut layers = Vec::with_capacity(split_glyph_names.len());
+                for glyph_name in split_glyph_names {
+                    layers.push(Paint::Glyph(
+                        create_paint_glyph(default_master_id, self.get_glyph(glyph_name))?.into(),
+                    ));
+                }
+                Paint::Layers(layers.into())
             };
             graph
                 .base_glyphs

@@ -4,6 +4,7 @@ use std::{
     str::FromStr,
 };
 
+use indexmap::IndexMap;
 use kurbo::{BezPath, Point};
 use log::trace;
 use ordered_float::OrderedFloat;
@@ -281,6 +282,8 @@ pub(crate) struct FontInfo {
     /// Axes values => location for every instance and master
     pub locations: HashMap<Vec<OrderedFloat<f64>>, NormalizedLocation>,
     pub axes: fontdrasil::types::Axes,
+    /// Name of glyph : color glyphs split from it, if any
+    pub color_glyphs: IndexMap<SmolStr, Vec<SmolStr>>,
 }
 
 impl TryFrom<Font> for FontInfo {
@@ -329,7 +332,7 @@ impl TryFrom<Font> for FontInfo {
             })
             .collect();
 
-        let font = split_color_glyphs(font)?;
+        let (font, color_glyphs) = split_color_glyphs(font)?;
 
         Ok(FontInfo {
             font,
@@ -337,6 +340,7 @@ impl TryFrom<Font> for FontInfo {
             master_positions,
             locations,
             axes,
+            color_glyphs,
         })
     }
 }
@@ -373,9 +377,10 @@ impl PaintKey {
     }
 }
 
-fn split_color_glyphs(font: Font) -> Result<Font, Error> {
+fn split_color_glyphs(font: Font) -> Result<(Font, IndexMap<SmolStr, Vec<SmolStr>>), Error> {
     // <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/glyph.py#L309-L357>
     let mut font = font;
+    let mut color_glyphs: IndexMap<SmolStr, Vec<SmolStr>> = Default::default();
     let default_master_id = font.default_master().id.clone();
 
     let mut additions = Vec::new();
@@ -384,6 +389,8 @@ fn split_color_glyphs(font: Font) -> Result<Font, Error> {
         if glyph.layers.iter().all(|l| !l.attributes.color) {
             continue;
         }
+        // Remember the name!
+        color_glyphs.entry(glyph_name.clone()).or_default();
         let Some(default_master_layer) = glyph
             .layers
             .iter()
@@ -408,10 +415,6 @@ fn split_color_glyphs(font: Font) -> Result<Font, Error> {
 
         // There are multiple runs, we must split this glyph apart
         // The original will remain but uncolored
-        glyph
-            .layers
-            .iter_mut()
-            .for_each(|l| l.attributes.color = false);
 
         // Each color run becomes a new glyph named [original].color[i]
         let mut glyph = glyph.clone();
@@ -449,6 +452,10 @@ fn split_color_glyphs(font: Font) -> Result<Font, Error> {
                 new_glyph.layers.push(new_layer);
             }
 
+            color_glyphs
+                .entry(glyph_name.clone())
+                .or_default()
+                .push(new_glyph_name.clone());
             additions.push((new_glyph_name, new_glyph));
             nth += 1;
         }
@@ -460,7 +467,7 @@ fn split_color_glyphs(font: Font) -> Result<Font, Error> {
 
     trace!("updated glyph order {:?}", font.glyph_order);
 
-    Ok(font)
+    Ok((font, color_glyphs))
 }
 
 pub(crate) fn to_ir_color(color: glyphs_reader::Color) -> Color {
