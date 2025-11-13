@@ -1,6 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 #[derive(Clone, Debug, clap::Parser)]
+#[command(version)]
 pub struct Args {
     pub font_path: PathBuf,
     #[arg(short, long)]

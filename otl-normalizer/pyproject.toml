@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [tool.maturin]
 # maturin needs a manifest with a [package], can't just use the workspace's Cargo.toml
-manifest-path = "fontc/Cargo.toml"
+manifest-path = "Cargo.toml"
 # treat the project as a Rust binary application: https://www.maturin.rs/bindings#bin
 bindings = "bin"
 # somehow these standard files aren't included automatically in the sdist,
@@ -13,24 +13,22 @@ include = [
   { path = "README.md", format = "sdist" },
   { path = "LICENSE", format = "sdist" },
 ]
-# without this exclude, maturin installs all fontc/*.rs source files in the
-# site-packages which is useless (maybe it expects to find *.py in there?)
+# exclude rust source files from the wheel (they're not needed at runtime)
 exclude = [
-  { path = "fontc/**/*", format = "wheel" },
+  { path = "src/**/*", format = "wheel" },
 ]
 
 # maturin merges the metadata from Cargo.toml with the pyproject.toml's below,
 # which takes precedence and overrides Cargo.toml
 [project]
 # 'name' key is required for [project]
-name = "fontc"
-description = "A font compiler written in Rust."
+name = "otl-normalizer"
+description = "Normalized text representation of OpenType layout subtables"
 # We want to use the same 'version' as Cargo.toml; only override if needed
 # (e.g. for a post-release to fix some packaging issues with a previous release)
 # version = "0.0.1.post1"
 # Since 'version' is required filed in [project], we must also set it as
 # 'dynamic' otherwise tools such as `uv venv` issue a warning message
 dynamic = ["version"]
-# Ensure we use the workspace's top-level README.md for the sdist/wheel metadata
-# not the fontc crate's specific README.md
+# Use the otl-normalizer's README.md for the sdist/wheel metadata
 readme = "README.md"
