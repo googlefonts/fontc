@@ -1,6 +1,6 @@
 [package]
 name = "fontbe"
-version = "0.2.3"
+version = "0.3.0"
 edition = "2024"
 license = "MIT/Apache-2.0"
 description = "the backend for fontc, a font compiler."
@@ -11,9 +11,9 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-fontdrasil = { version = "0.2.3", path = "../fontdrasil" }
-fontir = { version = "0.3.1", path = "../fontir" }
-fea-rs = { version = "0.20.3", path = "../fea-rs", features = ["serde"] }
+fontdrasil = { version = "0.3.0", path = "../fontdrasil" }
+fontir = { version = "0.4.0", path = "../fontir" }
+fea-rs = { version = "0.21.0", path = "../fea-rs", features = ["serde"] }
 tinystr = {version = "0.8.0", features = ["serde"] }
 
 icu_properties.workspace = true
@@ -47,4 +47,4 @@ temp-env.workspace = true
 rstest.workspace = true
 pretty_assertions.workspace = true
 env_logger.workspace = true
-otl-normalizer = { version = "0.1.1", path = "../otl-normalizer" }
+otl-normalizer = { version = "0.2.0", path = "../otl-normalizer" }
