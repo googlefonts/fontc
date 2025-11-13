@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     path::PathBuf,
     str::FromStr,
 };
@@ -8,6 +8,7 @@ use kurbo::{BezPath, Point};
 use log::trace;
 use ordered_float::OrderedFloat;
 
+use smol_str::SmolStr;
 use write_fonts::types::Tag;
 
 use fontdrasil::{
@@ -21,7 +22,9 @@ use fontir::{
         PaintSolid,
     },
 };
-use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
+use glyphs_reader::{
+    Component, FeatureSnippet, Font, Glyph, Layer, NodeType, Path, Shape, ShapeAttributes,
+};
 
 pub(crate) fn to_ir_contours_and_components(
     glyph_name: GlyphName,
@@ -326,6 +329,8 @@ impl TryFrom<Font> for FontInfo {
             })
             .collect();
 
+        let font = split_color_glyphs(font)?;
+
         Ok(FontInfo {
             font,
             master_indices,
@@ -334,6 +339,128 @@ impl TryFrom<Font> for FontInfo {
             axes,
         })
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum PaintKey {
+    NonColor,
+    Solid(glyphs_reader::Color),
+    Linear(Vec<glyphs_reader::ColorStop>),
+    Radial(Vec<glyphs_reader::ColorStop>),
+    Unknown(ShapeAttributes),
+}
+
+impl PaintKey {
+    fn key_for(layer: &Layer, shape: &Shape) -> Self {
+        if !layer.attributes.color {
+            return PaintKey::NonColor;
+        }
+        let attr = shape.attributes();
+        if let Some(gradient) = &attr.gradient {
+            if gradient.style == "circle" {
+                return PaintKey::Radial(gradient.colors.clone());
+            }
+            return PaintKey::Linear(gradient.colors.clone());
+        }
+        if let Some(fill) = attr.fill_color {
+            return PaintKey::Solid(fill);
+        }
+        PaintKey::Unknown(attr.clone())
+    }
+
+    fn color(&self) -> bool {
+        !matches!(self, Self::NonColor)
+    }
+}
+
+fn split_color_glyphs(font: Font) -> Result<Font, Error> {
+    // <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/glyph.py#L309-L357>
+    let mut font = font;
+    let default_master_id = font.default_master().id.clone();
+
+    let mut additions = Vec::new();
+    for (glyph_name, glyph) in font.glyphs.iter_mut() {
+        // Normal path: nop, not a color glyph
+        if glyph.layers.iter().all(|l| !l.attributes.color) {
+            continue;
+        }
+        let Some(default_master_layer) = glyph
+            .layers
+            .iter()
+            .find(|l| l.layer_id == default_master_id)
+        else {
+            continue;
+        };
+
+        // Split into runs of the same paint type
+        let mut paint_groups = default_master_layer
+            .shapes
+            .iter()
+            .map(|s| PaintKey::key_for(default_master_layer, s))
+            .collect::<Vec<_>>();
+        paint_groups.dedup();
+        let mut paint_groups: VecDeque<_> = paint_groups.into();
+
+        // If there is only one run we're done
+        if paint_groups.len() <= 1 {
+            continue;
+        }
+
+        // There are multiple runs, we must split this glyph apart
+        // The original will remain but uncolored
+        glyph
+            .layers
+            .iter_mut()
+            .for_each(|l| l.attributes.color = false);
+
+        // Each color run becomes a new glyph named [original].color[i]
+        let mut glyph = glyph.clone();
+        let mut nth = 0;
+        while let Some(paint_group) = paint_groups.pop_front() {
+            let new_glyph_name: SmolStr = format!("{glyph_name}.color{nth}").into();
+            let mut new_glyph = Glyph {
+                name: new_glyph_name.clone(),
+                export: glyph.export,
+                ..Default::default()
+            };
+
+            // For each layer, chop the head that matches this paint group off glyph and attach it here
+            for old_layer in glyph.layers.iter_mut() {
+                let mut new_layer = old_layer.clone();
+                new_layer.attributes.color = paint_group.color();
+                if let Some(split_at) = old_layer
+                    .shapes
+                    .iter()
+                    .position(|s| PaintKey::key_for(&new_layer, s) != paint_group)
+                {
+                    // Only some of the shapes fit the current run take them
+                    // Amusingly this results in the opposite arrangement than we want so swap
+                    new_layer.shapes = old_layer.shapes.split_off(split_at);
+                    std::mem::swap(&mut new_layer.shapes, &mut old_layer.shapes);
+                } else {
+                    // All the shapes fit the current run
+                    old_layer.shapes.clear();
+                }
+                trace!(
+                    "{glyph_name} {} takes {} shapes for {paint_group:?}",
+                    old_layer.layer_id,
+                    new_layer.shapes.len()
+                );
+                new_glyph.layers.push(new_layer);
+            }
+
+            additions.push((new_glyph_name, new_glyph));
+            nth += 1;
+        }
+    }
+
+    font.glyph_order
+        .extend(additions.iter().map(|(gn, _)| gn.clone()));
+    font.glyphs.extend(additions);
+
+    trace!("updated glyph order {:?}", font.glyph_order);
+
+    Ok(font)
 }
 
 pub(crate) fn to_ir_color(color: glyphs_reader::Color) -> Color {

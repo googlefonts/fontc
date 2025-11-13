@@ -115,12 +115,13 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
         };
         let palette = context.ir.colors.try_get().unwrap_or_default();
         let glyph_order = context.ir.glyph_order.get();
-
         let mut colr = Colr::new(0, None, None, 0);
         let mut base_glyphs = Vec::with_capacity(paint_graph.base_glyphs.len());
         for (glyph_name, paint) in paint_graph.base_glyphs.iter() {
             base_glyphs.push(BaseGlyphPaint::new(
-                glyph_order.glyph_id(glyph_name).unwrap(),
+                glyph_order
+                    .glyph_id(glyph_name)
+                    .ok_or_else(|| Error::MissingGlyphId(glyph_name.clone()))?,
                 to_colr_paint(&glyph_order, &palette, glyph_name, paint)?,
             ));
         }

@@ -11,6 +11,7 @@ mod smart_components;
 
 pub use font::{
     Anchor, Axis, Color, ColorStop, Component, CustomParameters, FeatureSnippet, Font, FontMaster,
-    Glyph, InstanceType, Layer, Node, NodeType, Path, Shape, glyphs_to_opentype_lang_id,
+    Glyph, InstanceType, Layer, Node, NodeType, Path, Shape, ShapeAttributes,
+    glyphs_to_opentype_lang_id,
 };
 pub use plist::Plist;

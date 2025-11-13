@@ -3829,6 +3829,38 @@ mod tests {
         )
     }
 
+    #[test]
+    fn colr_split_not_required() {
+        // Only one paint, no need to split blah.color#
+        let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
+        assert_eq!(
+            vec![".notdef", "A"],
+            result
+                .fe_context
+                .glyph_order
+                .get()
+                .names()
+                .map(|gn| gn.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn colr_split_based_on_paint() {
+        // Only one paint, no need to split
+        let result = TestCompile::compile_source("glyphs3/COLRv1-manyshapes-per-glyph.glyphs");
+        assert_eq!(
+            vec![".notdef", "A", "A.color0", "A.color1"],
+            result
+                .fe_context
+                .glyph_order
+                .get()
+                .names()
+                .map(|gn| gn.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[rstest]
     #[case("glyphs2/IncompatibleUnexported.glyphs")]
     #[case("glyphs3/IncompatibleUnexported.glyphs")]
