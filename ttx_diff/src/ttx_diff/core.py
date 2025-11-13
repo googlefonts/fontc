@@ -1436,25 +1436,24 @@ def get_crate_path(
 
 
 def main(argv):
-    has_precompiled_fonts = (
-        FLAGS.fontc_font is not None or FLAGS.fontmake_font is not None
-    )
     has_source = len(argv) == 2
 
-    if has_precompiled_fonts:
-        if FLAGS.fontc_font is None or FLAGS.fontmake_font is None:
-            sys.exit(
-                "When using precompiled fonts, both --fontc_font and --fontmake_font must be provided"
-            )
-        if has_source:
-            sys.exit("Cannot specify both a source file and precompiled fonts")
-        source = None
-    else:
-        if not has_source:
-            sys.exit(
-                "Either a source file or both --fontc_font and --fontmake_font must be provided"
-            )
-        source = resolve_source(argv[1]).resolve()
+    if (FLAGS.fontc_font is None) != (FLAGS.fontmake_font is None):
+        sys.exit(
+            "When using precompiled fonts, both --fontc_font and --fontmake_font must be provided"
+        )
+
+    has_precompiled_fonts = FLAGS.fontc_font is not None
+
+    if has_precompiled_fonts and has_source:
+        sys.exit("Cannot specify both a source file and precompiled fonts")
+
+    if not has_precompiled_fonts and not has_source:
+        sys.exit(
+            "Either a source file or both --fontc_font and --fontmake_font must be provided"
+        )
+
+    source = resolve_source(argv[1]).resolve() if has_source else None
 
     # Check if we're in the fontc repository (optional - allows building binaries)
     cwd = Path(".").resolve()
