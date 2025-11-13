@@ -373,4 +373,4 @@ jobs:
             checksums.txt
             requirements.txt
           prerelease: ${{ steps.before_release.outputs.is_prerelease }}
-          generate_release_notes: true
+          generate_release_notes: ${{ needs.detect.outputs.tool == 'fontc' }}
