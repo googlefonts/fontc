@@ -581,6 +581,7 @@ fn make_feature_variations(fontinfo: &FontInfo) -> Option<VariableFeature> {
         return None;
     }
 
+    //https://github.com/googlefonts/glyphsLib/blob/bb17c74be/Lib/glyphsLib/builder/bracket_layers.py#L52
     let overlayed = overlay_feature_variations(rules);
 
     let raw_feature = fontinfo
@@ -685,12 +686,18 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
     );
 
     axes.iter()
+        .filter(|ax| !ax.is_point())
         .zip(&layer.attributes.axis_rules)
-        .filter_map(|(axis, rule)| {
-            let min = rule.min.map(|v| DesignCoord::new(v as f64));
-            let max = rule.max.map(|v| DesignCoord::new(v as f64));
-            // skip axes that aren't relevant
-            (min.is_some() || max.is_some()).then(|| Condition::new(axis.tag, min, max))
+        .map(|(axis, rule)| {
+            let min = rule
+                .min
+                .map(|v| DesignCoord::new(v as f64))
+                .unwrap_or(axis.min.to_design(&axis.converter));
+            let max = rule
+                .max
+                .map(|v| DesignCoord::new(v as f64))
+                .unwrap_or(axis.max.to_design(&axis.converter));
+            Condition::new(axis.tag, min.into(), max.into())
         })
         .collect()
 }
@@ -1733,7 +1740,7 @@ mod tests {
         paths::Paths,
         source::Source,
     };
-    use glyphs_reader::{Font, glyphdata::Category};
+    use glyphs_reader::{AxisRule, Font, glyphdata::Category};
 
     use ir::{Panose, test_helpers::Round2};
     use write_fonts::types::{NameId, Tag};
@@ -3377,6 +3384,40 @@ mod tests {
                 .as_str(),
             "e.BRACKET.varAlt01"
         );
+    }
+
+    #[test]
+    fn bracket_info_include_unspecified_layers() {
+        let axes = Axes::for_test(&["wght", "wdth"]);
+        let mut layer = Layer::default();
+        layer.attributes.axis_rules = vec![
+            AxisRule {
+                min: Some(42),
+                max: None,
+            },
+            Default::default(),
+        ];
+
+        // even though we don't specify anything for the second axis, it should still
+        // be included in the condition set
+        let result = get_bracket_info(&layer, &axes);
+
+        assert_eq!(
+            result,
+            ConditionSet::from_iter([
+                Condition::new(
+                    WGHT,
+                    Some(DesignCoord::new(42.)),
+                    Some(DesignCoord::new(700.))
+                ),
+                Condition::new(
+                    Tag::new(b"wdth"),
+                    // these are the default values defined in the mock axis
+                    Some(DesignCoord::new(75.)),
+                    Some(DesignCoord::new(125.))
+                )
+            ])
+        )
     }
 
     #[test]

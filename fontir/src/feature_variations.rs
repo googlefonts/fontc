@@ -47,15 +47,20 @@ impl NBox {
         let conditions = self
             .0
             .iter()
-            .map(|(tag, (min, max))| {
+            .filter_map(|(tag, (min, max))| {
                 let axis_index = static_meta
                     .axes
                     .iter()
                     .position(|a| a.tag == *tag)
                     .expect("should be checked before now");
+                let axis = static_meta.axes.iter().nth(axis_index).unwrap();
                 let min = F2Dot14::from_f32(min.to_f64() as _);
                 let max = F2Dot14::from_f32(max.to_f64() as _);
-                ConditionFormat1::new(axis_index.try_into().unwrap(), min, max).into()
+                let axis_min = axis.min.to_normalized(&axis.converter).to_f2dot14();
+                let axis_max = axis.max.to_normalized(&axis.converter).to_f2dot14();
+
+                ((min, max) != (axis_min, axis_max))
+                    .then(|| ConditionFormat1::new(axis_index.try_into().unwrap(), min, max).into())
             })
             .collect();
         ConditionSet::new(conditions)
