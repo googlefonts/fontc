@@ -64,8 +64,9 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/otl-normalizer-v* ]]; then
             TOOL="otl-normalizer"
           else
-            # Fallback (shouldn't happen)
-            TOOL="fontc"
+            echo "Error: Could not detect tool from tag or manual input"
+            echo "Tag was: ${{ github.ref }}"
+            exit 1
           fi
 
           # Set outputs based on the detected tool
