@@ -1,6 +1,6 @@
 [package]
 name = "otl-normalizer"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT/Apache-2.0"
 description = "a normalized text representation of OpenType layout subtables"
