@@ -11,7 +11,7 @@ bindings = "bin"
 # it's better to keep them in there
 include = [
   { path = "README.md", format = "sdist" },
-  { path = "../LICENSE", format = "sdist" },
+  { path = "LICENSE", format = "sdist" },
 ]
 # exclude rust source files from the wheel (they're not needed at runtime)
 exclude = [
