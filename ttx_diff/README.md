@@ -65,6 +65,14 @@ If the binaries are in your PATH:
 ttx-diff path/to/source.glyphs
 ```
 
+Compare two precompiled fonts directly (without building from source):
+
+```bash
+ttx-diff --fontc_font path/to/fontc.ttf --fontmake_font path/to/fontmake.ttf
+```
+
+This is useful for comparing font differences when you already have both builds.
+
 Rebuild only fontc's font and reuse existing fontmake output:
 
 ```bash
