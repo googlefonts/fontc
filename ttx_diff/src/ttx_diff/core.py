@@ -14,6 +14,9 @@ Usage:
     # useful if you are making changes to fontc meant to narrow the diff
     python resources/scripts/ttx_diff.py --rebuild fontc ../OswaldFont/sources/Oswald.glyphs
 
+    # compare two precompiled fonts directly (no compilation from source)
+    python resources/scripts/ttx_diff.py --fontc_font path/to/fontc.ttf --fontmake_font path/to/fontmake.ttf
+
 JSON:
     If the `--json` flag is passed, this tool will output JSON.
 
@@ -136,6 +139,16 @@ flags.DEFINE_bool(
 )
 flags.DEFINE_bool(
     "keep_direction", False, "Preserve contour winding direction from source."
+)
+flags.DEFINE_string(
+    "fontc_font",
+    default=None,
+    help="Optional path to precompiled fontc font. Must be used with --fontmake_font.",
+)
+flags.DEFINE_string(
+    "fontmake_font",
+    default=None,
+    help="Optional path to precompiled fontmake font. Must be used with --fontc_font.",
 )
 
 
@@ -1328,16 +1341,22 @@ def resolve_source(source: str) -> Path:
     return source
 
 
-def delete_things_we_must_rebuild(rebuild: str, fontmake_ttf: Path, fontc_ttf: Path):
+def delete_things_we_must_rebuild(
+    rebuild: str, fontmake_ttf: Path, fontc_ttf: Path, skip_fonts: bool = False
+):
+    # we delete all resources that we have to rebuild. The rest of the script
+    # will assume it can reuse anything that still exists.
     for tool, ttf_path in [("fontmake", fontmake_ttf), ("fontc", fontc_ttf)]:
         must_rebuild = rebuild in [tool, "both"]
         if must_rebuild:
-            for path in [
-                ttf_path,
+            paths = [
                 ttf_path.with_suffix(".ttx"),
                 ttf_path.with_suffix(".markkern.txt"),
                 ttf_path.with_suffix(".ligcaret.txt"),
-            ]:
+            ]
+            if not skip_fonts:
+                paths.append(ttf_path)
+            for path in paths:
                 if path.exists():
                     os.remove(path)
 
@@ -1417,10 +1436,24 @@ def get_crate_path(
 
 
 def main(argv):
-    if len(argv) != 2:
-        sys.exit("Only one argument, a source file, is expected")
+    has_source = len(argv) == 2
 
-    source = resolve_source(argv[1]).resolve()
+    if (FLAGS.fontc_font is None) != (FLAGS.fontmake_font is None):
+        sys.exit(
+            "When using precompiled fonts, both --fontc_font and --fontmake_font must be provided"
+        )
+
+    has_precompiled_fonts = FLAGS.fontc_font is not None
+
+    if has_precompiled_fonts and has_source:
+        sys.exit("Cannot specify both a source file and precompiled fonts")
+
+    if not has_precompiled_fonts and not has_source:
+        sys.exit(
+            "Either a source file or both --fontc_font and --fontmake_font must be provided"
+        )
+
+    source = resolve_source(argv[1]).resolve() if has_source else None
 
     # Check if we're in the fontc repository (optional - allows building binaries)
     cwd = Path(".").resolve()
@@ -1430,12 +1463,15 @@ def main(argv):
         eprint(f"Detected fontc repository at {rel_user(fontc_repo_root)}")
 
     # Get binary paths - will look in PATH or build if in repo
-    fontc_bin_path = get_crate_path(FLAGS.fontc_path, fontc_repo_root, "fontc")
+    fontc_bin_path = None
+    if not has_precompiled_fonts:
+        fontc_bin_path = get_crate_path(FLAGS.fontc_path, fontc_repo_root, "fontc")
+
     otl_bin_path = get_crate_path(
         FLAGS.normalizer_path, fontc_repo_root, "otl-normalizer"
     )
 
-    if shutil.which("fontmake") is None:
+    if not has_precompiled_fonts and shutil.which("fontmake") is None:
         sys.exit("No fontmake")
     if shutil.which("ttx") is None:
         sys.exit("No ttx")
@@ -1464,30 +1500,53 @@ def main(argv):
     fontmake_ttf = build_dir / "fontmake.ttf"
     fontc_ttf = build_dir / "fontc.ttf"
 
-    # we delete all resources that we have to rebuild. The rest of the script
-    # will assume it can reuse anything that still exists.
-    delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
+    if has_precompiled_fonts:
+        eprint("Using precompiled fonts:")
+        eprint(f"  fontc: {rel_user(FLAGS.fontc_font)}")
+        eprint(f"  fontmake: {rel_user(FLAGS.fontmake_font)}")
 
-    try:
-        if compare == _COMPARE_DEFAULTS:
-            build_fontc(source, fontc_bin_path, build_dir)
-        else:
-            run_gftools(source, FLAGS.config, build_dir, fontc_bin=fontc_bin_path)
-    except BuildFail as e:
-        failures["fontc"] = {
-            "command": " ".join(e.command),
-            "stderr": e.msg[-MAX_ERR_LEN:],
-        }
-    try:
-        if compare == _COMPARE_DEFAULTS:
-            build_fontmake(source, build_dir)
-        else:
-            run_gftools(source, FLAGS.config, build_dir)
-    except BuildFail as e:
-        failures["fontmake"] = {
-            "command": " ".join(e.command),
-            "stderr": e.msg[-MAX_ERR_LEN:],
-        }
+        fontc_input = Path(FLAGS.fontc_font).resolve()
+        fontmake_input = Path(FLAGS.fontmake_font).resolve()
+
+        if not fontc_input.is_file():
+            sys.exit(f"fontc font not found: {fontc_input}")
+        if not fontmake_input.is_file():
+            sys.exit(f"fontmake font not found: {fontmake_input}")
+
+        # When using precompiled fonts, always clean up and rebuild all derived files
+        if FLAGS.rebuild != "both":
+            eprint(
+                "WARN: --rebuild flag ignored with precompiled fonts (always rebuilds derived files)"
+            )
+        delete_things_we_must_rebuild("both", fontmake_ttf, fontc_ttf, skip_fonts=True)
+
+        if fontc_input != fontc_ttf:
+            copy(fontc_input, fontc_ttf)
+        if fontmake_input != fontmake_ttf:
+            copy(fontmake_input, fontmake_ttf)
+    else:
+        delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
+
+        try:
+            if compare == _COMPARE_DEFAULTS:
+                build_fontc(source, fontc_bin_path, build_dir)
+            else:
+                run_gftools(source, FLAGS.config, build_dir, fontc_bin=fontc_bin_path)
+        except BuildFail as e:
+            failures["fontc"] = {
+                "command": " ".join(e.command),
+                "stderr": e.msg[-MAX_ERR_LEN:],
+            }
+        try:
+            if compare == _COMPARE_DEFAULTS:
+                build_fontmake(source, build_dir)
+            else:
+                run_gftools(source, FLAGS.config, build_dir)
+        except BuildFail as e:
+            failures["fontmake"] = {
+                "command": " ".join(e.command),
+                "stderr": e.msg[-MAX_ERR_LEN:],
+            }
 
     report_errors_and_exit_if_there_were_any(failures)
 
