@@ -2019,6 +2019,7 @@ pub enum Paint {
     Solid(Box<PaintSolid>),
     LinearGradient(Box<PaintLinearGradient>),
     RadialGradient(Box<PaintRadialGradient>),
+    Layers(Box<Vec<Paint>>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

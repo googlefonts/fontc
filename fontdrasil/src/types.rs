@@ -56,6 +56,12 @@ impl From<SmolStr> for GlyphName {
     }
 }
 
+impl From<&SmolStr> for GlyphName {
+    fn from(value: &SmolStr) -> Self {
+        GlyphName(value.clone())
+    }
+}
+
 impl From<&GlyphName> for GlyphName {
     fn from(value: &GlyphName) -> Self {
         value.to_owned()
