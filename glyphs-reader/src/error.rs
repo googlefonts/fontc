@@ -3,7 +3,7 @@ use std::{io, num::TryFromIntError, path::PathBuf};
 use smol_str::SmolStr;
 use thiserror::Error;
 
-use crate::smart_components::BadSmartComponent;
+use crate::{corner_components::BadCornerComponent, smart_components::BadSmartComponent};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -32,6 +32,11 @@ pub enum Error {
         glyph: SmolStr,
         component: SmolStr,
         issue: BadSmartComponent,
+    },
+    #[error("Bad corner component for glyph '{glyph}': {issue}")]
+    BadCornerComponent {
+        glyph: SmolStr,
+        issue: BadCornerComponent,
     },
     #[error("{value} expected to be between {lbound} and {ubound}")]
     ProductionNameOutOfBounds {

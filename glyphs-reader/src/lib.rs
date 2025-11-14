@@ -1,5 +1,6 @@
 //! Lightweight library for reading and writing Glyphs font files.
 
+mod corner_components;
 pub mod error;
 mod font;
 pub mod glyphdata;
