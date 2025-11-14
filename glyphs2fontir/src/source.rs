@@ -1681,6 +1681,7 @@ impl ColorGlyphsWork {
 
 /// Creates a [PaintGlyph] for a split glyph, that is one that is known to have 1..N shapes with the same paint
 fn create_paint_glyph(
+    palette: Option<&[glyphs_reader::Color]>,
     default_master_id: &str,
     color_glyph: &glyphs_reader::Glyph,
 ) -> Result<PaintGlyph, Error> {
@@ -1697,7 +1698,12 @@ fn create_paint_glyph(
     };
     Ok(PaintGlyph {
         name: color_glyph.name.clone().into(),
-        paint: to_ir_paint(color_glyph.name.clone(), &default_layer.shapes[0])?,
+        paint: to_ir_paint(
+            palette,
+            color_glyph.name.clone(),
+            default_layer,
+            default_layer.shapes[0].attributes(),
+        )?,
     })
 }
 
@@ -1723,17 +1729,24 @@ impl Work<Context, WorkId, Error> for ColorGlyphsWork {
         let mut graph = ColorGlyphs {
             base_glyphs: IndexMap::with_capacity(self.font_info.color_glyphs.len()),
         };
+        let palette = self.font_info.font.default_palette();
         for (glyph_name, split_glyph_names) in self.font_info.color_glyphs.iter() {
             let color_glyph = self.get_glyph(glyph_name);
 
             // Both single glyphs and split glyphs have 1..N shapes with the same paint
             let paint = if split_glyph_names.is_empty() {
-                Paint::Glyph(create_paint_glyph(default_master_id, color_glyph)?.into())
+                Paint::Glyph(create_paint_glyph(palette, default_master_id, color_glyph)?.into())
+            } else if let [glyph_name] = split_glyph_names.as_slice() {
+                Paint::Glyph(
+                    create_paint_glyph(palette, default_master_id, self.get_glyph(glyph_name))?
+                        .into(),
+                )
             } else {
                 let mut layers = Vec::with_capacity(split_glyph_names.len());
                 for glyph_name in split_glyph_names {
                     layers.push(Paint::Glyph(
-                        create_paint_glyph(default_master_id, self.get_glyph(glyph_name))?.into(),
+                        create_paint_glyph(palette, default_master_id, self.get_glyph(glyph_name))?
+                            .into(),
                     ));
                 }
                 Paint::Layers(layers.into())

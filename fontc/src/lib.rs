@@ -412,6 +412,14 @@ mod tests {
                 .map(|v| v.to_u16() as u32)
         }
 
+        fn get_glyph_name(&self, gid: GlyphId16) -> Option<GlyphName> {
+            self.fe_context
+                .glyph_order
+                .get()
+                .glyph_name(gid.to_u32() as usize)
+                .cloned()
+        }
+
         fn contains_glyph(&self, name: &str) -> bool {
             self.get_glyph_index(name).is_some()
         }
@@ -3752,7 +3760,7 @@ mod tests {
 
     #[test]
     fn cpal_from_declared_palettes() {
-        let result = TestCompile::compile_source("glyphs3/COLRv0-simple.glyphs");
+        let result = TestCompile::compile_source("glyphs3/COLRv0-1layer.glyphs");
         let cpal = result.font().cpal().unwrap();
         assert_eq!(
             (
@@ -3955,7 +3963,7 @@ mod tests {
 
     #[test]
     fn colr_cliprun() {
-        let result = TestCompile::compile_source("glyphs3/COLRv1-solid.glyphs");
+        let result = TestCompile::compile_source("glyphs3/COLRv1-cliprun.glyphs");
         let colr = result.font().colr().unwrap();
         assert_eq!(
             vec![(1, 2)],
@@ -4064,6 +4072,60 @@ mod tests {
                 [Paint::LinearGradient(_), Paint::LinearGradient(_),]
             ),
             "{layers:#?}"
+        );
+    }
+
+    fn assert_colr0(compile: &TestCompile, expected: Vec<(String, Vec<(String, u16)>)>) {
+        let colr = compile.font().colr().unwrap();
+        let layers = colr
+            .layer_records()
+            .expect("A layer list")
+            .expect("A valid layer list");
+        assert_eq!(0, colr.version());
+        assert_eq!(
+            expected,
+            colr.base_glyph_records()
+                .expect("v0 records")
+                .expect("Valid v0 records")
+                .iter()
+                .map(|g| (
+                    compile
+                        .get_glyph_name(g.glyph_id())
+                        .expect("Valid gids")
+                        .to_string(),
+                    (g.first_layer_index()..(g.first_layer_index() + g.num_layers()))
+                        .map(|i| layers[i as usize])
+                        .map(|l| (
+                            compile
+                                .get_glyph_name(l.glyph_id())
+                                .expect("Valid gids")
+                                .to_string(),
+                            l.palette_index()
+                        ))
+                        .collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>()
+        )
+    }
+
+    #[test]
+    fn colr0_1layer() {
+        let result = TestCompile::compile_source("glyphs3/COLRv0-1layer.glyphs");
+        assert_colr0(
+            &result,
+            vec![("A".to_string(), vec![("A.color0".to_string(), 1)])],
+        );
+    }
+
+    #[test]
+    fn colr0_2layers() {
+        let result = TestCompile::compile_source("glyphs3/COLRv0-2layers.glyphs");
+        assert_colr0(
+            &result,
+            vec![(
+                "A".to_string(),
+                vec![("A.color0".to_string(), 1), ("A.color1".to_string(), 0)],
+            )],
         );
     }
 

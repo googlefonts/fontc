@@ -6,7 +6,7 @@ use std::{
 
 use indexmap::IndexMap;
 use kurbo::{BezPath, Point};
-use log::trace;
+use log::{debug, trace};
 use ordered_float::OrderedFloat;
 
 use smol_str::SmolStr;
@@ -346,7 +346,7 @@ impl TryFrom<Font> for FontInfo {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-enum PaintKey {
+enum Colrv1RunType {
     NonColor,
     Solid(glyphs_reader::Color),
     Linear(Vec<glyphs_reader::ColorStop>),
@@ -354,27 +354,173 @@ enum PaintKey {
     Unknown(ShapeAttributes),
 }
 
-impl PaintKey {
+#[derive(Debug)]
+struct Colrv1Run {
+    run_type: Colrv1RunType,
+    start: usize,
+    end: usize,
+}
+
+impl Colrv1Run {
+    fn color(&self) -> bool {
+        !matches!(self.run_type, Colrv1RunType::NonColor)
+    }
+}
+
+impl Colrv1RunType {
     fn key_for(layer: &Layer, shape: &Shape) -> Self {
+        // COLRv1?
         if !layer.attributes.color {
-            return PaintKey::NonColor;
+            return Colrv1RunType::NonColor;
         }
         let attr = shape.attributes();
         if let Some(gradient) = &attr.gradient {
             if gradient.style == "circle" {
-                return PaintKey::Radial(gradient.colors.clone());
+                return Colrv1RunType::Radial(gradient.colors.clone());
             }
-            return PaintKey::Linear(gradient.colors.clone());
+            return Colrv1RunType::Linear(gradient.colors.clone());
         }
         if let Some(fill) = attr.fill_color {
-            return PaintKey::Solid(fill);
+            return Colrv1RunType::Solid(fill);
         }
-        PaintKey::Unknown(attr.clone())
+        Colrv1RunType::Unknown(attr.clone())
+    }
+}
+
+fn new_color_glyph(original: &Glyph, nth: &mut usize) -> Glyph {
+    let new_glyph_name: SmolStr = format!("{}.color{nth}", original.name).into();
+    let new_production_name = original
+        .production_name
+        .as_ref()
+        .map(|production_name| format!("{}.color{nth}", production_name).into());
+    let new_glyph = Glyph {
+        name: new_glyph_name.clone(),
+        production_name: new_production_name,
+        export: original.export,
+        ..Default::default()
+    };
+    *nth += 1;
+    new_glyph
+}
+
+fn split_colrv0_glyph(
+    original: &Glyph,
+    default_master_layer: &Layer,
+    color_glyphs: &mut IndexMap<SmolStr, Vec<SmolStr>>,
+    additions: &mut Vec<(SmolStr, Glyph)>,
+) -> Result<(), Error> {
+    let glyph_name = &original.name;
+
+    // COLRv0 runs are just consecutive shapes by palette index
+    // The original glyph becomes uncolored,
+    // each color run becomes a new glyph named [original].color[i]
+    let mut nth = 0;
+    for layer in original.layers.iter() {
+        if layer.shapes.is_empty() || layer.attributes.color_palette.is_none() {
+            continue;
+        }
+        if layer.associated_master_id.as_deref() != Some(default_master_layer.layer_id.as_str()) {
+            continue;
+        }
+
+        // Every layer associated with the master that has a palette index becomes a new color glyph
+        let mut new_glyph = new_color_glyph(original, &mut nth);
+        let mut layer = layer.clone();
+        layer.layer_id = layer.associated_master_id.take().unwrap();
+        new_glyph.layers.push(layer);
+
+        debug!("Add COLRv0 {}", new_glyph.name);
+
+        color_glyphs
+            .entry(glyph_name.clone())
+            .or_default()
+            .push(new_glyph.name.clone());
+        additions.push((new_glyph.name.clone(), new_glyph));
+    }
+    Ok(())
+}
+
+fn split_colrv1_glyph(
+    glyph: &Glyph,
+    default_master_layer: &Layer,
+    color_glyphs: &mut IndexMap<SmolStr, Vec<SmolStr>>,
+    additions: &mut Vec<(SmolStr, Glyph)>,
+) -> Result<(), Error> {
+    let glyph_name = &glyph.name;
+
+    // Split into runs of the same paint
+    let mut runs = VecDeque::<Colrv1Run>::new();
+    for (idx, shape) in default_master_layer.shapes.iter().enumerate() {
+        let run_type = Colrv1RunType::key_for(default_master_layer, shape);
+        if let Some(curr) = runs.back_mut()
+            && curr.run_type == run_type
+        {
+            // Extend the current run
+            curr.end = idx + 1;
+        } else {
+            // New run
+            runs.push_back(Colrv1Run {
+                run_type,
+                start: idx,
+                end: idx + 1,
+            });
+        }
     }
 
-    fn color(&self) -> bool {
-        !matches!(self, Self::NonColor)
+    // Only one run we're done
+    if runs.len() <= 1 {
+        return Ok(());
     }
+
+    // There are multiple runs, we must split this glyph apart
+    // The original will remain but uncolored
+
+    // Each color run becomes a new glyph named [original].color[i]
+    let mut nth = 0;
+    for run in runs {
+        let new_glyph_name: SmolStr = format!("{glyph_name}.color{nth}").into();
+        let mut new_glyph = new_color_glyph(glyph, &mut nth);
+
+        // For each layer, chop the head that matches this paint group off glyph and attach it here
+        for old_layer in glyph.layers.iter() {
+            let mut new_layer = old_layer.clone();
+            new_layer.attributes.color = run.color();
+            new_layer.shapes = old_layer.shapes[run.start..run.end].to_vec();
+            trace!(
+                "{glyph_name} {} takes {} shapes for {run:?}",
+                old_layer.layer_id,
+                new_layer.shapes.len()
+            );
+            new_glyph.layers.push(new_layer);
+        }
+
+        let mut layer_sizes = new_glyph
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .collect::<Vec<_>>();
+        layer_sizes.sort();
+        layer_sizes.dedup();
+        if layer_sizes.len() != 1 {
+            return Err(Error::BadGlyph(BadGlyph::new(
+                new_glyph_name,
+                BadGlyphKind::FrontendSpecific(format!("Inconsistent layer sizes {layer_sizes:?}")),
+            )));
+        }
+        if layer_sizes.first() == Some(&0) {
+            return Err(Error::BadGlyph(BadGlyph::new(
+                new_glyph_name,
+                BadGlyphKind::FrontendSpecific("All layers are empty?!".to_string()),
+            )));
+        }
+
+        color_glyphs
+            .entry(glyph_name.clone())
+            .or_default()
+            .push(new_glyph_name.clone());
+        additions.push((new_glyph_name, new_glyph));
+    }
+    Ok(())
 }
 
 fn split_color_glyphs(font: Font) -> Result<(Font, IndexMap<SmolStr, Vec<SmolStr>>), Error> {
@@ -383,14 +529,8 @@ fn split_color_glyphs(font: Font) -> Result<(Font, IndexMap<SmolStr, Vec<SmolStr
     let mut color_glyphs: IndexMap<SmolStr, Vec<SmolStr>> = Default::default();
     let default_master_id = font.default_master().id.clone();
 
-    let mut additions = Vec::new();
-    for (glyph_name, glyph) in font.glyphs.iter_mut() {
-        // Normal path: nop, not a color glyph
-        if glyph.layers.iter().all(|l| !l.attributes.color) {
-            continue;
-        }
-        // Remember the name!
-        color_glyphs.entry(glyph_name.clone()).or_default();
+    let mut additions: Vec<(SmolStr, Glyph)> = Vec::new();
+    for glyph in font.glyphs.values_mut() {
         let Some(default_master_layer) = glyph
             .layers
             .iter()
@@ -399,66 +539,32 @@ fn split_color_glyphs(font: Font) -> Result<(Font, IndexMap<SmolStr, Vec<SmolStr
             continue;
         };
 
-        // Split into runs of the same paint type
-        let mut paint_groups = default_master_layer
-            .shapes
-            .iter()
-            .map(|s| PaintKey::key_for(default_master_layer, s))
-            .collect::<Vec<_>>();
-        paint_groups.dedup();
-        let mut paint_groups: VecDeque<_> = paint_groups.into();
-
-        // If there is only one run we're done
-        if paint_groups.len() <= 1 {
+        // If 1..N layers with palette indices are associated this is COLRv0
+        // See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/glyph.py#L289-L292>
+        if glyph.layers.iter().any(|l| {
+            l.attributes.color_palette.is_some()
+                && l.associated_master_id.as_deref() == Some(default_master_layer.layer_id.as_str())
+        }) {
+            split_colrv0_glyph(
+                glyph,
+                default_master_layer,
+                &mut color_glyphs,
+                &mut additions,
+            )?;
+        } else if default_master_layer.is_color() {
+            split_colrv1_glyph(
+                glyph,
+                default_master_layer,
+                &mut color_glyphs,
+                &mut additions,
+            )?;
+        } else {
+            // Not color
             continue;
         }
 
-        // There are multiple runs, we must split this glyph apart
-        // The original will remain but uncolored
-
-        // Each color run becomes a new glyph named [original].color[i]
-        let mut glyph = glyph.clone();
-        let mut nth = 0;
-        while let Some(paint_group) = paint_groups.pop_front() {
-            let new_glyph_name: SmolStr = format!("{glyph_name}.color{nth}").into();
-            let mut new_glyph = Glyph {
-                name: new_glyph_name.clone(),
-                export: glyph.export,
-                ..Default::default()
-            };
-
-            // For each layer, chop the head that matches this paint group off glyph and attach it here
-            for old_layer in glyph.layers.iter_mut() {
-                let mut new_layer = old_layer.clone();
-                new_layer.attributes.color = paint_group.color();
-                if let Some(split_at) = old_layer
-                    .shapes
-                    .iter()
-                    .position(|s| PaintKey::key_for(&new_layer, s) != paint_group)
-                {
-                    // Only some of the shapes fit the current run take them
-                    // Amusingly this results in the opposite arrangement than we want so swap
-                    new_layer.shapes = old_layer.shapes.split_off(split_at);
-                    std::mem::swap(&mut new_layer.shapes, &mut old_layer.shapes);
-                } else {
-                    // All the shapes fit the current run
-                    old_layer.shapes.clear();
-                }
-                trace!(
-                    "{glyph_name} {} takes {} shapes for {paint_group:?}",
-                    old_layer.layer_id,
-                    new_layer.shapes.len()
-                );
-                new_glyph.layers.push(new_layer);
-            }
-
-            color_glyphs
-                .entry(glyph_name.clone())
-                .or_default()
-                .push(new_glyph_name.clone());
-            additions.push((new_glyph_name, new_glyph));
-            nth += 1;
-        }
+        // Remember the name so it gets added to COLR
+        color_glyphs.entry(glyph.name.clone()).or_default();
     }
 
     font.glyph_order
@@ -490,8 +596,34 @@ pub(crate) fn to_ir_color_stops(stops: &[glyphs_reader::ColorStop]) -> Vec<Color
         .collect()
 }
 
-pub(crate) fn to_ir_paint(glyph_name: impl Into<GlyphName>, shape: &Shape) -> Result<Paint, Error> {
-    let attr = shape.attributes();
+pub(crate) fn to_ir_paint(
+    palette: Option<&[glyphs_reader::Color]>,
+    glyph_name: impl Into<GlyphName>,
+    layer: &Layer,
+    attr: &ShapeAttributes,
+) -> Result<Paint, Error> {
+    if let Some(palette_idx) = layer.attributes.color_palette {
+        let Some(palette) = palette else {
+            return Err(Error::BadGlyph(BadGlyph::new(
+                glyph_name,
+                BadGlyphKind::FrontendSpecific("Uses palette but there isn't one".to_string()),
+            )));
+        };
+        let Some(color) = palette.get(palette_idx as usize) else {
+            return Err(Error::BadGlyph(BadGlyph::new(
+                glyph_name,
+                BadGlyphKind::FrontendSpecific(format!(
+                    "Out of bounds palette index {palette_idx}"
+                )),
+            )));
+        };
+        return Ok(Paint::Solid(
+            PaintSolid {
+                color: to_ir_color(*color),
+            }
+            .into(),
+        ));
+    }
     if let Some(color) = attr.fill_color {
         return Ok(Paint::Solid(
             PaintSolid {
@@ -545,7 +677,10 @@ pub(crate) fn to_ir_paint(glyph_name: impl Into<GlyphName>, shape: &Shape) -> Re
 
     Err(Error::BadGlyph(BadGlyph::new(
         glyph_name,
-        BadGlyphKind::FrontendSpecific(format!("Unable to produce paint for {attr:?}")),
+        BadGlyphKind::FrontendSpecific(format!(
+            "Unable to produce paint for {:?}, {attr:?}",
+            layer.attributes
+        )),
     )))
 }
 
