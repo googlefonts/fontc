@@ -96,6 +96,39 @@ fn scale_gradient_point(bbox: &Bbox, x_pct: f64, y_pct: f64) -> (i16, i16) {
     (x_abs.round() as i16, y_abs.round() as i16)
 }
 
+/// Calculate the quantization factor for COLR ClipBoxes.
+///
+/// This quantizes to 1/10th of the font's upem, rounded to nearest multiple of 10.
+/// E.g., 100 unit intervals for 1000 upem, 200 units for 2048 upem, etc.
+/// This matches ufo2ft's behavior to maximize clipbox reuse.
+///
+/// See <https://github.com/googlefonts/ufo2ft/blob/1315f37d/Lib/ufo2ft/util.py#L646-L6600>
+fn colr_clip_box_quantization(upem: u16) -> i16 {
+    let upem_f = upem as f64;
+    let factor = upem_f / 10.0;
+    // Round to nearest 10
+    (factor / 10.0).round() as i16 * 10
+}
+
+/// Quantize a bounding box to multiples of the given factor.
+///
+/// Expands the bbox by rounding xMin/yMin down and xMax/yMax up to the nearest
+/// multiple of the factor. This matches fontTools' quantizeRect behavior.
+///
+/// See <https://github.com/fonttools/fonttools/blob/3b9a9f6d7ad146c30c9161e527bb3cd07aa9c57b/Lib/fontTools/misc/arrayTools.py#L287-L305>
+fn quantize_bbox(bbox: &Bbox, factor: i16) -> Bbox {
+    if factor <= 1 {
+        return *bbox;
+    }
+    let factor = factor as i32;
+    Bbox {
+        x_min: ((bbox.x_min as i32 / factor) * factor) as i16,
+        y_min: ((bbox.y_min as i32 / factor) * factor) as i16,
+        x_max: (((bbox.x_max as i32 + factor - 1) / factor) * factor) as i16,
+        y_max: (((bbox.y_max as i32 + factor - 1) / factor) * factor) as i16,
+    }
+}
+
 fn to_colr_paint(
     context: &Context,
     glyph_order: &GlyphOrder,
@@ -218,6 +251,7 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
             .variant(FeWorkId::ColorPalettes)
             .variant(WorkId::ALL_GLYF_FRAGMENTS)
             .specific_instance(FeWorkId::GlyphOrder)
+            .specific_instance(FeWorkId::StaticMetadata)
             .build()
     }
 
@@ -228,6 +262,8 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
         };
         let palette = context.ir.colors.try_get().unwrap_or_default();
         let glyph_order = context.ir.glyph_order.get();
+        let static_metadata = context.ir.static_metadata.get();
+        let quantization = colr_clip_box_quantization(static_metadata.units_per_em);
         let mut colr = Colr::new(0, None, None, 0);
         let mut base_glyphs = Vec::with_capacity(paint_graph.base_glyphs.len());
         let mut layer_list = LayerList::default();
@@ -267,7 +303,9 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
             let next_glyph = context
                 .glyphs
                 .get(&WorkId::GlyfFragment(glyph_name.clone()).into());
-            let next_clip = next_glyph.data.bbox().unwrap_or_default();
+            let bbox = next_glyph.data.bbox().unwrap_or_default();
+            // Quantize the bbox to maximize clipbox reuse
+            let next_clip = quantize_bbox(&bbox, quantization);
             let next_clip = ClipBox::format_1(
                 next_clip.x_min.into(),
                 next_clip.y_min.into(),
