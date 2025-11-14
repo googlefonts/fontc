@@ -139,6 +139,7 @@ pub struct CustomParameters {
     pub glyph_order: Option<Vec<SmolStr>>,
     pub gasp_table: Option<BTreeMap<i64, i64>>,
     pub feature_for_feature_variations: Option<SmolStr>,
+    pub color_palettes: Option<Vec<Vec<Color>>>,
 }
 
 /// Values for the 'meta Table' custom parameter
@@ -507,15 +508,10 @@ impl Color {
     pub fn rgba(r: i64, g: i64, b: i64, a: i64) -> Self {
         Self { r, g, b, a }
     }
-}
 
-// hand-parse because it's a list of inconsistent types
-impl FromPlist for Color {
-    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
-        let colors = tokenizer.parse::<Vec<i64>>()?;
-
+    pub(crate) fn from_glyphs_color(colors: &[i64]) -> Result<Self, crate::plist::Error> {
         // See <https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f456d64ebe9993818770e170454/Lib/glyphsLib/builder/common.py#L41-L50>
-        match *colors.as_slice() {
+        match *colors {
             // Grayscale
             [black, alpha] => Ok(Color::rgba(black, black, black, alpha)),
             // RGBA
@@ -526,6 +522,14 @@ impl FromPlist for Color {
                 actual: colors.len(),
             }),
         }
+    }
+}
+
+// hand-parse because it's a list of inconsistent types
+impl FromPlist for Color {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+        let colors = tokenizer.parse::<Vec<i64>>()?;
+        Color::from_glyphs_color(&colors)
     }
 }
 
@@ -701,6 +705,7 @@ trait PlistParamsExt {
     fn as_axis_mappings(&self) -> Option<Vec<AxisMapping>>;
     fn as_virtual_master(&self) -> Option<BTreeMap<String, OrderedFloat<f64>>>;
     fn as_gasp_table(&self) -> Option<BTreeMap<i64, i64>>;
+    fn as_color_palettes(&self) -> Option<Vec<Vec<Color>>>;
 }
 
 impl PlistParamsExt for Plist {
@@ -824,6 +829,33 @@ impl PlistParamsExt for Plist {
                 .filter_map(|(k, v)| k.parse::<i64>().ok().zip(v.as_i64()))
                 .collect(),
         )
+    }
+
+    fn as_color_palettes(&self) -> Option<Vec<Vec<Color>>> {
+        let raw_palettes = self.as_array()?;
+        let mut palettes = Vec::with_capacity(raw_palettes.len());
+        for raw_palette in raw_palettes {
+            let Some(raw_palette) = raw_palette.as_array() else {
+                warn!("Non-array color palette, ignored");
+                continue;
+            };
+
+            let mut palette = Vec::with_capacity(raw_palette.len());
+            for raw_color in raw_palette {
+                let Some(raw_color) = raw_color.as_vec_of_ints() else {
+                    warn!("Non-int-array color palette entry, ignored");
+                    continue;
+                };
+                let Ok(color) = Color::from_glyphs_color(&raw_color) else {
+                    warn!("Invalid color palette entry, ignored");
+                    continue;
+                };
+                palette.push(color);
+            }
+
+            palettes.push(palette);
+        }
+        Some(palettes)
     }
 }
 
@@ -962,6 +994,9 @@ impl RawCustomParameters {
                 "gasp Table" => add_and_report_issues!(gasp_table, Plist::as_gasp_table),
                 "Feature for Feature Variations" => {
                     add_and_report_issues!(feature_for_feature_variations, Plist::as_str, into)
+                }
+                "Color Palettes" => {
+                    add_and_report_issues!(color_palettes, Plist::as_color_palettes)
                 }
                 _ => log_once_warn!("unknown custom parameter '{name}'"),
             }

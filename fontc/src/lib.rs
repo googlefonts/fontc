@@ -3751,6 +3751,50 @@ mod tests {
     }
 
     #[test]
+    fn cpal_from_declared_palettes() {
+        let result = TestCompile::compile_source("glyphs3/COLRv0-simple.glyphs");
+        let cpal = result.font().cpal().unwrap();
+        assert_eq!(
+            (
+                2,
+                2,
+                [
+                    ColorRecord {
+                        red: 1,
+                        green: 2,
+                        blue: 3,
+                        alpha: 4
+                    },
+                    ColorRecord {
+                        red: 5,
+                        green: 6,
+                        blue: 7,
+                        alpha: 8
+                    },
+                    ColorRecord {
+                        red: 9,
+                        green: 10,
+                        blue: 11,
+                        alpha: 12
+                    },
+                    ColorRecord {
+                        red: 13,
+                        green: 14,
+                        blue: 15,
+                        alpha: 16
+                    },
+                ]
+                .as_slice()
+            ),
+            (
+                cpal.num_palettes(),
+                cpal.num_palette_entries(),
+                cpal.color_records_array().unwrap().unwrap()
+            )
+        );
+    }
+
+    #[test]
     fn color_me_not() {
         let compile = TestCompile::compile_source("glyphs3/WghtVar.glyphs");
         assert!(compile.font().cpal().is_err());
