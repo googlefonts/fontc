@@ -3841,20 +3841,127 @@ mod tests {
     fn colr_gradient_linear() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
         let colr = result.font().colr().expect("COLR");
-        assert!(matches!(
-            root_paint_glyph(&result, &colr, "A").paint(),
-            Ok(Paint::LinearGradient(_))
-        ));
+
+        // Glyph A has bbox (63, 0) to (542, 500) -> width=479, height=500
+        // Gradient p0=(0.1, 0.1), p1=(0.9, 0.9) in percentage coordinates
+        // Expected absolute coordinates:
+        //   p0: (63 + 479*0.1, 0 + 500*0.1) = (111, 50)
+        //   p1: (63 + 479*0.9, 0 + 500*0.9) = (494, 450)
+        //   p2: perpendicular rotation in absolute space = (511, -333)
+        let Paint::LinearGradient(grad) = root_paint_glyph(&result, &colr, "A")
+            .paint()
+            .expect("Valid paint")
+        else {
+            panic!("Expected LinearGradient");
+        };
+
+        assert_eq!(grad.x0().to_i16(), 111, "p0.x");
+        assert_eq!(grad.y0().to_i16(), 50, "p0.y");
+        assert_eq!(grad.x1().to_i16(), 494, "p1.x");
+        assert_eq!(grad.y1().to_i16(), 450, "p1.y");
+        assert_eq!(grad.x2().to_i16(), 511, "p2.x");
+        assert_eq!(grad.y2().to_i16(), -333, "p2.y");
     }
 
     #[test]
     fn colr_gradient_radial() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-gradient.glyphs");
         let colr = result.font().colr().expect("COLR");
-        assert!(matches!(
-            root_paint_glyph(&result, &colr, "K").paint(),
-            Ok(Paint::RadialGradient(_))
-        ));
+
+        // Glyph K has bbox (63, 0) to (542, 500) -> width=479, height=500
+        // Radial gradient with center=(0.5, 0.5) in percentage coordinates
+        // Expected absolute coordinates:
+        //   p0 = p1: (63 + 479*0.5, 0 + 500*0.5) = (303, 250)
+        //   r0: 0 (default)
+        //   r1: max distance from center to corners = 346
+        //     Center in bbox-relative coords: (239.5, 250)
+        //     Distance to all corners (0,0), (479,0), (0,500), (479,500): ~346
+        let Paint::RadialGradient(grad) = root_paint_glyph(&result, &colr, "K")
+            .paint()
+            .expect("Valid paint")
+        else {
+            panic!("Expected RadialGradient");
+        };
+
+        assert_eq!(grad.x0().to_i16(), 303, "p0.x");
+        assert_eq!(grad.y0().to_i16(), 250, "p0.y");
+        assert_eq!(grad.radius0().to_u16(), 0, "r0");
+        assert_eq!(grad.x1().to_i16(), 303, "p1.x");
+        assert_eq!(grad.y1().to_i16(), 250, "p1.y");
+        assert_eq!(grad.radius1().to_u16(), 346, "r1");
+    }
+
+    #[test]
+    fn colr_gradient_radial_outside_bbox() {
+        // Test radial gradient with center outside the bounding box
+        let result = TestCompile::compile_source("glyphs3/COLRv1-gradient.glyphs");
+        let colr = result.font().colr().expect("COLR");
+
+        // Glyph L has bbox (63, 0) to (542, 500) -> width=479, height=500
+        // Radial gradient with center at x=-0.2 (outside bbox to the left), y=0.5
+        // Expected absolute coordinates:
+        //   center_x = 63 + 479*(-0.2) = 63 - 95.8 ≈ -33
+        //   center_y = 0 + 500*0.5 = 250
+        //   p0 = p1: (-33, 250)
+        //   r0: 0 (default)
+        //   r1: max distance from (-96, 250) in bbox-relative coords to all corners
+        //     Distance to (479, 0): sqrt((479-(-96))^2 + (0-250)^2) = sqrt(575^2 + 250^2) ~= 627
+        let Paint::RadialGradient(grad) = root_paint_glyph(&result, &colr, "L")
+            .paint()
+            .expect("Valid paint")
+        else {
+            panic!("Expected RadialGradient");
+        };
+
+        assert_eq!(grad.x0().to_i16(), -33, "p0.x (outside bbox)");
+        assert_eq!(grad.y0().to_i16(), 250, "p0.y");
+        assert_eq!(grad.radius0().to_u16(), 0, "r0");
+        assert_eq!(grad.x1().to_i16(), -33, "p1.x (outside bbox)");
+        assert_eq!(grad.y1().to_i16(), 250, "p1.y");
+        assert_eq!(grad.radius1().to_u16(), 627, "r1 (max to far right corner)");
+    }
+
+    #[test]
+    fn colr_clipbox_quantization() {
+        use write_fonts::read::tables::colr::ClipBox;
+
+        let result = TestCompile::compile_source("glyphs3/COLRv1-gradient.glyphs");
+        let colr = result.font().colr().expect("COLR");
+        let clip_list = colr
+            .clip_list()
+            .expect("offset")
+            .expect("ClipList should exist");
+
+        for clip in clip_list.clips() {
+            let clip_box = clip.clip_box(clip_list.offset_data()).expect("ClipBox");
+            let (x_min, y_min, x_max, y_max) = match clip_box {
+                ClipBox::Format1(cb) => (cb.x_min(), cb.y_min(), cb.x_max(), cb.y_max()),
+                ClipBox::Format2(cb) => (cb.x_min(), cb.y_min(), cb.x_max(), cb.y_max()),
+            };
+
+            fn assert_multiple_of_100(value: i16, field_name: &str) {
+                assert_eq!(
+                    value % 100,
+                    0,
+                    "ClipBox {} should be multiple of 100, got {}",
+                    field_name,
+                    value
+                );
+            }
+
+            // This font has 1000 upem so ClipBoxes get quantized to multiples of 100 units
+            assert_multiple_of_100(x_min.to_i16(), "xMin");
+            assert_multiple_of_100(y_min.to_i16(), "yMin");
+            assert_multiple_of_100(x_max.to_i16(), "xMax");
+            assert_multiple_of_100(y_max.to_i16(), "yMax");
+
+            // All glyphs in this test file have bbox (63, 0, 542, 500)
+            // which quantizes to (0, 0, 600, 500) with factor 100
+            assert_eq!(x_min.to_i16(), 0);
+            assert_eq!(y_min.to_i16(), 0);
+            assert_eq!(x_max.to_i16(), 600);
+            assert_eq!(y_max.to_i16(), 500);
+        }
     }
 
     #[test]
