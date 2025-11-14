@@ -501,32 +501,41 @@ pub(crate) fn to_ir_paint(glyph_name: impl Into<GlyphName>, shape: &Shape) -> Re
         ));
     }
 
-    // TODO: scaling of points and proper radius values
-
+    // Note: Gradient coordinates from Glyphs are percentages (0.0-1.0) of the layer's bounding box.
+    // The scaling to absolute coordinates is done later in fontbe/src/colr.rs, in order to reuse
+    // the already-computed glyf bounding boxes and avoid redundant work.
     if let Some(gradient) = &attr.gradient {
-        // <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/color_layers.py#L72>
+        // See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/color_layers.py#L72>
         let start = Point::new(gradient.start[0].0, gradient.start[1].0);
         let end = Point::new(gradient.end[0].0, gradient.end[1].0);
         return match gradient.style.as_str() {
-            "circle" => Ok(Paint::RadialGradient(
-                PaintRadialGradient {
-                    p0: start,
-                    p1: start,
-                    r0: 0.0.into(),
-                    r1: 1.0.into(),
-                    color_line: to_ir_color_stops(&gradient.colors),
-                }
-                .into(),
-            )),
-            "" => Ok(Paint::LinearGradient(
-                PaintLinearGradient {
-                    p0: start,
-                    p1: end,
-                    p2: Point::new(start.x + end.y - start.y, start.y - (end.x - start.x)),
-                    color_line: to_ir_color_stops(&gradient.colors),
-                }
-                .into(),
-            )),
+            "circle" => {
+                // Glyphs radial gradient only has a single circle centered at 'start'
+                // with the radius calculated as % of the max distance to bbox corners.
+                Ok(Paint::RadialGradient(
+                    PaintRadialGradient {
+                        p0: start,
+                        p1: start,
+                        r0: None, // Defaults to 0
+                        r1: None, // Calculated in backend
+                        color_line: to_ir_color_stops(&gradient.colors),
+                    }
+                    .into(),
+                ))
+            }
+            "" => {
+                // p2 is calculated in backend after scaling to absolute coordinates
+                // (rotation works differently in percentage vs absolute space).
+                Ok(Paint::LinearGradient(
+                    PaintLinearGradient {
+                        p0: start,
+                        p1: end,
+                        p2: None,
+                        color_line: to_ir_color_stops(&gradient.colors),
+                    }
+                    .into(),
+                ))
+            }
             _ => Err(Error::BadGlyph(BadGlyph::new(
                 glyph_name,
                 BadGlyphKind::FrontendSpecific(format!("Unrecognized gradient {}", gradient.style)),
