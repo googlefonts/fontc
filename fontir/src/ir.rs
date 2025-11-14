@@ -2038,16 +2038,21 @@ pub struct PaintLinearGradient {
     pub color_line: Vec<ColorStop>,
     pub p0: Point,
     pub p1: Point,
-    pub p2: Point,
+    /// Third point defining gradient rotation. None means calculate perpendicular
+    /// to p0-p1 line (rotated -90° around p0) after scaling to absolute coordinates.
+    pub p2: Option<Point>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintRadialGradient {
     pub color_line: Vec<ColorStop>,
     pub p0: Point,
-    pub r0: OrderedFloat<f32>,
+    /// Inner radius. None means 0 (gradient radiating from center, not a ring).
+    pub r0: Option<OrderedFloat<f32>>,
     pub p1: Point,
-    pub r1: OrderedFloat<f32>,
+    /// Outer radius. None means calculate as max distance from center to
+    /// bounding box corners (like Glyphs.app does).
+    pub r1: Option<OrderedFloat<f32>>,
 }
 
 #[cfg(test)]

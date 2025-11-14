@@ -13,10 +13,13 @@ use fontir::{
     orchestration::WorkId as FeWorkId,
 };
 use write_fonts::{
-    tables::colr::{
-        BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, ColorLine, ColorStop, Colr, Extend,
-        LayerList, Paint, PaintColrLayers, PaintGlyph, PaintLinearGradient, PaintRadialGradient,
-        PaintSolid,
+    tables::{
+        colr::{
+            BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, ColorLine, ColorStop, Colr,
+            Extend, LayerList, Paint, PaintColrLayers, PaintGlyph, PaintLinearGradient,
+            PaintRadialGradient, PaintSolid,
+        },
+        glyf::Bbox,
     },
     types::F2Dot14,
 };
@@ -52,21 +55,113 @@ fn to_colr_line(
     Ok(ColorLine::new(Extend::Pad, stops.len() as u16, color_stops))
 }
 
+/// Calculate the radius for a radial gradient, matching glyphsLib's behavior.
+///
+/// Emulates how AppKit's "drawInRect:relativeCenterPosition:" calculates the radius.
+/// The center point is given as percentages (0-1) of the bounding box dimensions.
+/// The radius is the maximum distance from the center to any of the four corners.
+///
+/// See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/color_layers.py#L57-L69>
+fn scale_gradient_radius(bbox: &Bbox, center_pct_x: f64, center_pct_y: f64) -> u16 {
+    let width = (bbox.x_max - bbox.x_min) as f64;
+    let height = (bbox.y_max - bbox.y_min) as f64;
+
+    // Convert center from percentage to absolute within the bbox dimensions (not yet offset)
+    let center_x = width * center_pct_x;
+    let center_y = height * center_pct_y;
+
+    // Calculate distance to all 4 corners (relative to bbox origin at 0,0)
+    let corners = [(0.0, 0.0), (width, 0.0), (0.0, height), (width, height)];
+
+    let max_dist_squared = corners
+        .iter()
+        .map(|(x, y)| {
+            let dx = x - center_x;
+            let dy = y - center_y;
+            dx * dx + dy * dy
+        })
+        .fold(0.0f64, f64::max);
+
+    max_dist_squared.sqrt().round() as u16
+}
+
+/// Scale a gradient coordinate from percentage (0.0-1.0) to absolute coordinates
+/// within the given bounding box.
+///
+/// Glyphs gradient coordinates are percentages of the layer's bounding box.
+/// See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/color_layers.py#L72-L81>
+fn scale_gradient_point(bbox: &Bbox, x_pct: f64, y_pct: f64) -> (i16, i16) {
+    let x_abs = bbox.x_min as f64 + ((bbox.x_max - bbox.x_min) as f64 * x_pct);
+    let y_abs = bbox.y_min as f64 + ((bbox.y_max - bbox.y_min) as f64 * y_pct);
+    (x_abs.round() as i16, y_abs.round() as i16)
+}
+
+/// Calculate the quantization factor for COLR ClipBoxes.
+///
+/// This quantizes to 1/10th of the font's upem, rounded to nearest multiple of 10.
+/// E.g., 100 unit intervals for 1000 upem, 200 units for 2048 upem, etc.
+/// This matches ufo2ft's behavior to maximize clipbox reuse.
+///
+/// See <https://github.com/googlefonts/ufo2ft/blob/1315f37d/Lib/ufo2ft/util.py#L646-L6600>
+fn colr_clip_box_quantization(upem: u16) -> i16 {
+    let upem_f = upem as f64;
+    let factor = upem_f / 10.0;
+    // Round to nearest 10
+    (factor / 10.0).round() as i16 * 10
+}
+
+/// Quantize a bounding box to multiples of the given factor.
+///
+/// Expands the bbox by rounding xMin/yMin down and xMax/yMax up to the nearest
+/// multiple of the factor. This matches fontTools' quantizeRect behavior.
+///
+/// See <https://github.com/fonttools/fonttools/blob/3b9a9f6d7ad146c30c9161e527bb3cd07aa9c57b/Lib/fontTools/misc/arrayTools.py#L287-L305>
+fn quantize_bbox(bbox: &Bbox, factor: i16) -> Bbox {
+    if factor <= 1 {
+        return *bbox;
+    }
+    let factor = factor as i32;
+    Bbox {
+        x_min: ((bbox.x_min as i32 / factor) * factor) as i16,
+        y_min: ((bbox.y_min as i32 / factor) * factor) as i16,
+        x_max: (((bbox.x_max as i32 + factor - 1) / factor) * factor) as i16,
+        y_max: (((bbox.y_max as i32 + factor - 1) / factor) * factor) as i16,
+    }
+}
+
 fn to_colr_paint(
+    context: &Context,
     glyph_order: &GlyphOrder,
     palette: &ColorPalettes,
     glyph_name: &GlyphName,
+    bbox: &Bbox,
     layer_list: &mut LayerList,
     ir_paint: &ir::Paint,
 ) -> Result<Paint, Error> {
     match ir_paint {
-        ir::Paint::Glyph(paint) => Ok(Paint::Glyph(PaintGlyph {
-            paint: to_colr_paint(glyph_order, palette, glyph_name, layer_list, &paint.paint)?
+        ir::Paint::Glyph(paint) => {
+            // Fetch the bbox of the referenced glyph for proper gradient scaling
+            let ref_glyph = context
+                .glyphs
+                .get(&WorkId::GlyfFragment(paint.name.clone()).into());
+            let bbox = ref_glyph.data.bbox().unwrap_or_default();
+
+            Ok(Paint::Glyph(PaintGlyph {
+                paint: to_colr_paint(
+                    context,
+                    glyph_order,
+                    palette,
+                    &paint.name,
+                    &bbox,
+                    layer_list,
+                    &paint.paint,
+                )?
                 .into(),
-            glyph_id: glyph_order
-                .glyph_id(&paint.name)
-                .expect("Validated earlier"),
-        })),
+                glyph_id: glyph_order
+                    .glyph_id(&paint.name)
+                    .expect("Validated earlier"),
+            }))
+        }
         ir::Paint::Solid(paint) => Ok(Paint::Solid(PaintSolid {
             palette_index: palette.index_of(paint.color).ok_or_else(|| {
                 Error::GlyphError(
@@ -76,28 +171,65 @@ fn to_colr_paint(
             })? as u16,
             alpha: OPAQUE,
         })),
-        ir::Paint::LinearGradient(linear) => Ok(Paint::LinearGradient(PaintLinearGradient::new(
-            to_colr_line(palette, glyph_name, &linear.color_line)?,
-            (linear.p0.x as i16).into(),
-            (linear.p0.y as i16).into(),
-            (linear.p1.x as i16).into(),
-            (linear.p1.y as i16).into(),
-            (linear.p2.x as i16).into(),
-            (linear.p2.y as i16).into(),
-        ))),
-        ir::Paint::RadialGradient(radial) => Ok(Paint::RadialGradient(PaintRadialGradient::new(
-            to_colr_line(palette, glyph_name, &radial.color_line)?,
-            (radial.p0.x as i16).into(),
-            (radial.p0.y as i16).into(),
-            (radial.r0.0 as u16).into(),
-            (radial.p1.x as i16).into(),
-            (radial.p1.y as i16).into(),
-            (radial.r1.0 as u16).into(),
-        ))),
+        ir::Paint::LinearGradient(linear) => {
+            // Scale gradient points from relative 0-1 to absolute coordinates
+            let (x0, y0) = scale_gradient_point(bbox, linear.p0.x, linear.p0.y);
+            let (x1, y1) = scale_gradient_point(bbox, linear.p1.x, linear.p1.y);
+            let (x2, y2) = if let Some(p2) = linear.p2 {
+                scale_gradient_point(bbox, p2.x, p2.y)
+            } else {
+                // Calculate perpendicular point: rotate p0-p1 vector by -90° around p0
+                (x0 + (y1 - y0), y0 - (x1 - x0))
+            };
+
+            Ok(Paint::LinearGradient(PaintLinearGradient::new(
+                to_colr_line(palette, glyph_name, &linear.color_line)?,
+                x0.into(),
+                y0.into(),
+                x1.into(),
+                y1.into(),
+                x2.into(),
+                y2.into(),
+            )))
+        }
+        ir::Paint::RadialGradient(radial) => {
+            // Scale gradient points from relative 0-1 to absolute coordinates
+            let (x0, y0) = scale_gradient_point(bbox, radial.p0.x, radial.p0.y);
+            let (x1, y1) = scale_gradient_point(bbox, radial.p1.x, radial.p1.y);
+            // Handle optional radii
+            let r0 = radial.r0.map(|r| r.0 as u16).unwrap_or(0); // default to 0
+            let r1 = if let Some(r) = radial.r1 {
+                // TODO: Semantics of explicit radius values are unclear. Are they absolute font units,
+                // or percentages of bbox dimensions? For now treat as absolute, revisit when we have
+                // a source format that actually provides explicit radii.
+                r.0 as u16
+            } else {
+                // Calculate radius from bbox dimensions, matching glyphsLib behavior
+                scale_gradient_radius(bbox, radial.p1.x, radial.p1.y)
+            };
+
+            Ok(Paint::RadialGradient(PaintRadialGradient::new(
+                to_colr_line(palette, glyph_name, &radial.color_line)?,
+                x0.into(),
+                y0.into(),
+                r0.into(),
+                x1.into(),
+                y1.into(),
+                r1.into(),
+            )))
+        }
         ir::Paint::Layers(layers) => {
             let start_idx = layer_list.num_layers;
             for ir_paint in layers.iter() {
-                let paint = to_colr_paint(glyph_order, palette, glyph_name, layer_list, ir_paint)?;
+                let paint = to_colr_paint(
+                    context,
+                    glyph_order,
+                    palette,
+                    glyph_name,
+                    bbox,
+                    layer_list,
+                    ir_paint,
+                )?;
                 layer_list.paints.push(paint.into());
             }
             Ok(Paint::ColrLayers(PaintColrLayers::new(
@@ -119,6 +251,7 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
             .variant(FeWorkId::ColorPalettes)
             .variant(WorkId::ALL_GLYF_FRAGMENTS)
             .specific_instance(FeWorkId::GlyphOrder)
+            .specific_instance(FeWorkId::StaticMetadata)
             .build()
     }
 
@@ -129,15 +262,31 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
         };
         let palette = context.ir.colors.try_get().unwrap_or_default();
         let glyph_order = context.ir.glyph_order.get();
+        let static_metadata = context.ir.static_metadata.get();
+        let quantization = colr_clip_box_quantization(static_metadata.units_per_em);
         let mut colr = Colr::new(0, None, None, 0);
         let mut base_glyphs = Vec::with_capacity(paint_graph.base_glyphs.len());
         let mut layer_list = LayerList::default();
         for (glyph_name, paint) in paint_graph.base_glyphs.iter() {
+            // Fetch the glyph's bounding box for gradient coordinate scaling
+            let glyph = context
+                .glyphs
+                .get(&WorkId::GlyfFragment(glyph_name.clone()).into());
+            let bbox = glyph.data.bbox().unwrap_or_default();
+
             base_glyphs.push(BaseGlyphPaint::new(
                 glyph_order
                     .glyph_id(glyph_name)
                     .ok_or_else(|| Error::MissingGlyphId(glyph_name.clone()))?,
-                to_colr_paint(&glyph_order, &palette, glyph_name, &mut layer_list, paint)?,
+                to_colr_paint(
+                    context,
+                    &glyph_order,
+                    &palette,
+                    glyph_name,
+                    &bbox,
+                    &mut layer_list,
+                    paint,
+                )?,
             ));
         }
 
@@ -154,7 +303,9 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
             let next_glyph = context
                 .glyphs
                 .get(&WorkId::GlyfFragment(glyph_name.clone()).into());
-            let next_clip = next_glyph.data.bbox().unwrap_or_default();
+            let bbox = next_glyph.data.bbox().unwrap_or_default();
+            // Quantize the bbox to maximize clipbox reuse
+            let next_clip = quantize_bbox(&bbox, quantization);
             let next_clip = ClipBox::format_1(
                 next_clip.x_min.into(),
                 next_clip.y_min.into(),
