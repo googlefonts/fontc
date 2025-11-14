@@ -364,6 +364,10 @@ impl Layer {
         self.associated_master_id.is_some() && !self.attributes.coordinates.is_empty()
     }
 
+    pub fn is_color(&self) -> bool {
+        self.attributes.color || self.attributes.color_palette.is_some()
+    }
+
     pub(crate) fn components(&self) -> impl Iterator<Item = &Component> + '_ {
         self.shapes.iter().filter_map(|shape| match shape {
             Shape::Path(_) => None,
@@ -392,6 +396,7 @@ pub struct LayerAttributes {
     pub color: bool,
     // in the same order that axes are declared for the font
     pub axis_rules: Vec<AxisRule>,
+    pub color_palette: Option<i64>,
 }
 
 #[derive(Clone, Default, FromPlist, Debug, PartialEq, Hash)]
@@ -430,6 +435,7 @@ impl FromPlist for LayerAttributes {
         let mut coordinates = Vec::new();
         let mut color = false;
         let mut axis_rules = Vec::new();
+        let mut color_palette = None;
 
         tokenizer.eat(b'{')?;
 
@@ -444,6 +450,7 @@ impl FromPlist for LayerAttributes {
                 "coordinates" => coordinates = tokenizer.parse()?,
                 "color" => color = tokenizer.parse()?,
                 "axisRules" => axis_rules = tokenizer.parse()?,
+                "colorPalette" => color_palette = Some(tokenizer.parse()?),
                 // skip unsupported attributes for now
                 // TODO: match the others
                 _ => tokenizer.skip_rec()?,
@@ -455,6 +462,7 @@ impl FromPlist for LayerAttributes {
             coordinates,
             color,
             axis_rules,
+            color_palette,
         })
     }
 }
@@ -3231,7 +3239,7 @@ impl TryFrom<RawFont> for Font {
                     user_data: m.user_data,
                 })
             })
-            .collect::<Result<_, Error>>()?;
+            .collect::<Result<Vec<_>, Error>>()?;
 
         let virtual_masters = custom_parameters.virtual_masters.take().unwrap_or_default();
         Ok(Font {
@@ -3283,6 +3291,13 @@ impl Font {
         let mut font = Self::load_raw(glyphs_file)?;
         font.preprocess()?;
         Ok(font)
+    }
+
+    pub fn default_palette(&self) -> Option<&[Color]> {
+        self.custom_parameters
+            .color_palettes
+            .as_ref()
+            .map(|p| p[0].as_slice())
     }
 
     fn preprocess(&mut self) -> Result<(), Error> {
