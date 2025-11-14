@@ -3855,12 +3855,12 @@ mod tests {
             panic!("Expected LinearGradient");
         };
 
-        assert_eq!(grad.x0().to_i16(), 111, "p0.x");
-        assert_eq!(grad.y0().to_i16(), 50, "p0.y");
-        assert_eq!(grad.x1().to_i16(), 494, "p1.x");
-        assert_eq!(grad.y1().to_i16(), 450, "p1.y");
-        assert_eq!(grad.x2().to_i16(), 511, "p2.x");
-        assert_eq!(grad.y2().to_i16(), -333, "p2.y");
+        let coords = (
+            (grad.x0().to_i16(), grad.y0().to_i16()),
+            (grad.x1().to_i16(), grad.y1().to_i16()),
+            (grad.x2().to_i16(), grad.y2().to_i16()),
+        );
+        assert_eq!(coords, ((111, 50), (494, 450), (511, -333)), "p0, p1, p2");
     }
 
     #[test]
@@ -3883,12 +3883,13 @@ mod tests {
             panic!("Expected RadialGradient");
         };
 
-        assert_eq!(grad.x0().to_i16(), 303, "p0.x");
-        assert_eq!(grad.y0().to_i16(), 250, "p0.y");
-        assert_eq!(grad.radius0().to_u16(), 0, "r0");
-        assert_eq!(grad.x1().to_i16(), 303, "p1.x");
-        assert_eq!(grad.y1().to_i16(), 250, "p1.y");
-        assert_eq!(grad.radius1().to_u16(), 346, "r1");
+        let values = (
+            (grad.x0().to_i16(), grad.y0().to_i16()),
+            grad.radius0().to_u16(),
+            (grad.x1().to_i16(), grad.y1().to_i16()),
+            grad.radius1().to_u16(),
+        );
+        assert_eq!(values, ((303, 250), 0, (303, 250), 346), "p0, r0, p1, r1");
     }
 
     #[test]
@@ -3913,12 +3914,13 @@ mod tests {
             panic!("Expected RadialGradient");
         };
 
-        assert_eq!(grad.x0().to_i16(), -33, "p0.x (outside bbox)");
-        assert_eq!(grad.y0().to_i16(), 250, "p0.y");
-        assert_eq!(grad.radius0().to_u16(), 0, "r0");
-        assert_eq!(grad.x1().to_i16(), -33, "p1.x (outside bbox)");
-        assert_eq!(grad.y1().to_i16(), 250, "p1.y");
-        assert_eq!(grad.radius1().to_u16(), 627, "r1 (max to far right corner)");
+        let values = (
+            (grad.x0().to_i16(), grad.y0().to_i16()),
+            grad.radius0().to_u16(),
+            (grad.x1().to_i16(), grad.y1().to_i16()),
+            grad.radius1().to_u16(),
+        );
+        assert_eq!(values, ((-33, 250), 0, (-33, 250), 627), "p0, r0, p1, r1");
     }
 
     #[test]
@@ -3939,28 +3941,15 @@ mod tests {
                 ClipBox::Format2(cb) => (cb.x_min(), cb.y_min(), cb.x_max(), cb.y_max()),
             };
 
-            fn assert_multiple_of_100(value: i16, field_name: &str) {
-                assert_eq!(
-                    value % 100,
-                    0,
-                    "ClipBox {} should be multiple of 100, got {}",
-                    field_name,
-                    value
-                );
-            }
-
-            // This font has 1000 upem so ClipBoxes get quantized to multiples of 100 units
-            assert_multiple_of_100(x_min.to_i16(), "xMin");
-            assert_multiple_of_100(y_min.to_i16(), "yMin");
-            assert_multiple_of_100(x_max.to_i16(), "xMax");
-            assert_multiple_of_100(y_max.to_i16(), "yMax");
-
             // All glyphs in this test file have bbox (63, 0, 542, 500)
-            // which quantizes to (0, 0, 600, 500) with factor 100
-            assert_eq!(x_min.to_i16(), 0);
-            assert_eq!(y_min.to_i16(), 0);
-            assert_eq!(x_max.to_i16(), 600);
-            assert_eq!(y_max.to_i16(), 500);
+            // which quantizes to (0, 0, 600, 500) with factor 100 (1000 upem)
+            let coords = (
+                x_min.to_i16(),
+                y_min.to_i16(),
+                x_max.to_i16(),
+                y_max.to_i16(),
+            );
+            assert_eq!(coords, (0, 0, 600, 500), "quantized ClipBox coordinates");
         }
     }
 
