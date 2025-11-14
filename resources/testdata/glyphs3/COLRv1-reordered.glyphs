@@ -1,0 +1,105 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+
+customParameters = (
+{
+name = glyphOrder;
+value = (B, A);
+}
+);
+
+familyName = "New Font";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(255,255,0,255),
+0
+),
+(
+(255,0,255,255),
+1
+)
+);
+end = (0.9,0.9);
+start = (0.1,0.1);
+};
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+glyphname = B;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(255,0,0,255),
+0
+),
+(
+(0,0,255,255),
+1
+)
+);
+end = (0.9,0.9);
+start = (0.1,0.1);
+};
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 66;
+}
+);
+
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
