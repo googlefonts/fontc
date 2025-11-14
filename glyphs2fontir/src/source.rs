@@ -17,7 +17,7 @@ use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
     feature_variations::{NBox, overlay_feature_variations},
     ir::{
-        self, AnchorBuilder, Color, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
+        self, AnchorBuilder, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
         DEFAULT_VENDOR_ID, GdefCategories, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder,
         GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
         MetaTableValues, NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames,
@@ -43,7 +43,8 @@ use write_fonts::{
 };
 
 use crate::toir::{
-    FontInfo, design_location, to_ir_contours_and_components, to_ir_features, to_ir_paint,
+    FontInfo, design_location, to_ir_color, to_ir_contours_and_components, to_ir_features,
+    to_ir_paint,
 };
 
 #[derive(Debug, Clone)]
@@ -1603,8 +1604,34 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        // Since we're only [for now, baby steps] producing one palette we can dedup it
-        let palette = self
+        // Directly declared palette(s)
+        let mut palettes = if let Some(declared_palettes) = self
+            .font_info
+            .font
+            .custom_parameters
+            .color_palettes
+            .as_ref()
+        {
+            declared_palettes
+                .iter()
+                .map(|raw_palette| {
+                    raw_palette
+                        .iter()
+                        .map(|c| to_ir_color(*c))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+
+        if palettes.is_empty() {
+            palettes.push(Vec::new());
+        }
+
+        // Plus any colors declared directly on glyphs
+        // Glue them onto all palettes to keep size even, duplication will be resolved later
+        let glyph_colors = self
             .font_info
             .font
             .glyphs
@@ -1616,15 +1643,17 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
                     .flat_map(|l| l.shapes.iter())
                     .flat_map(|s| s.attributes().colors())
             })
-            .map(|c| Color {
-                r: c.r as u8,
-                g: c.g as u8,
-                b: c.b as u8,
-                a: c.a as u8,
-            })
+            .map(|c| to_ir_color(*c))
             .collect::<Vec<_>>();
-        debug!("{} color palette entries", palette.len());
-        match ColorPalettes::new(vec![palette]) {
+        for palette in palettes.iter_mut() {
+            palette.extend(&glyph_colors);
+        }
+
+        debug!(
+            "{:?} color palette sizes",
+            palettes.iter().map(|p| p.len()).collect::<Vec<_>>()
+        );
+        match ColorPalettes::new(palettes) {
             Ok(Some(palettes)) => {
                 context.colors.set(palettes);
                 Ok(())
@@ -1735,7 +1764,7 @@ mod tests {
     };
     use fontir::{
         error::Error,
-        ir::{AnchorKind, GlobalMetricsInstance, Glyph, GlyphOrder, NameKey},
+        ir::{AnchorKind, Color, GlobalMetricsInstance, Glyph, GlyphOrder, NameKey},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
