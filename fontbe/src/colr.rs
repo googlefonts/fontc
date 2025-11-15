@@ -2,7 +2,7 @@
 
 use crate::{
     error::{Error, GlyphProblem},
-    orchestration::{AnyWorkId, BeWork, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, Glyph, WorkId},
 };
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
@@ -15,13 +15,13 @@ use fontir::{
 use write_fonts::{
     tables::{
         colr::{
-            BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, ColorLine, ColorStop, Colr,
-            Extend, LayerList, Paint, PaintColrLayers, PaintGlyph, PaintLinearGradient,
-            PaintRadialGradient, PaintSolid,
+            BaseGlyph, BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, ColorLine,
+            ColorStop, Colr, Extend, Layer, LayerList, Paint, PaintColrLayers, PaintGlyph,
+            PaintLinearGradient, PaintRadialGradient, PaintSolid,
         },
         glyf::Bbox,
     },
-    types::F2Dot14,
+    types::{F2Dot14, GlyphId16},
 };
 
 static OPAQUE: F2Dot14 = F2Dot14::ONE;
@@ -240,6 +240,85 @@ fn to_colr_paint(
     }
 }
 
+fn add_or_extend_clip(clips: &mut Vec<Clip>, quantization: i16, gid: GlyphId16, glyph: &Glyph) {
+    let bbox = glyph.data.bbox().unwrap_or_default();
+    // Quantize the bbox to maximize clipbox reuse
+    let next_clip = quantize_bbox(&bbox, quantization);
+    let next_clip = ClipBox::format_1(
+        next_clip.x_min.into(),
+        next_clip.y_min.into(),
+        next_clip.x_max.into(),
+        next_clip.y_max.into(),
+    );
+    if let Some(curr) = clips.last_mut()
+        && curr.end_glyph_id.to_u32() + 1 == gid.to_u32()
+        && *curr.clip_box == next_clip
+    {
+        // wow wow wow, a run!
+        curr.end_glyph_id = gid;
+        return; // DONE
+    }
+
+    // Evidently we didn't make a run
+    clips.push(Clip::new(gid, gid, next_clip));
+}
+
+fn is_paint_glyph_solid(paint: &ir::Paint) -> bool {
+    if let ir::Paint::Glyph(paint_glyph) = paint
+        && let ir::Paint::Solid(_) = &paint_glyph.paint
+    {
+        true
+    } else {
+        false
+    }
+}
+
+fn colr_v0_compatible(paint: &ir::Paint) -> bool {
+    if is_paint_glyph_solid(paint) {
+        return true;
+    }
+    if let ir::Paint::Layers(layers) = paint
+        && layers.iter().all(is_paint_glyph_solid)
+    {
+        return true;
+    }
+    false
+}
+
+fn new_colr0(
+    palette: &ColorPalettes,
+    glyph_order: &GlyphOrder,
+    glyph_name: &GlyphName,
+    paint: &[&ir::PaintGlyph],
+    layers: &mut Vec<Layer>,
+) -> Result<BaseGlyph, Error> {
+    let gid = glyph_order.glyph_id(glyph_name).expect("Prevalidated");
+    let candidate_layers = paint
+        .iter()
+        .map(|p| {
+            let ir::Paint::Solid(solid) = &p.paint else {
+                panic!("Prevalidated");
+            };
+            let palette_idx = palette.index_of(solid.color).expect("Prevalidated");
+            Layer {
+                glyph_id: glyph_order.glyph_id(&p.name).expect("Prevalidated"),
+                palette_index: palette_idx as u16,
+            }
+        })
+        .collect::<Vec<_>>();
+    let first_idx = if let Some(pos) = layers
+        .windows(candidate_layers.len())
+        .position(|window| candidate_layers.as_slice() == window)
+    {
+        pos
+    } else {
+        let pos = layers.len();
+        layers.extend(candidate_layers);
+        pos
+    };
+    Ok(BaseGlyph::new(gid, first_idx as u16, paint.len() as u16))
+}
+
 impl Work<Context, AnyWorkId, Error> for ColrWork {
     fn id(&self) -> AnyWorkId {
         WorkId::Colr.into()
@@ -264,67 +343,100 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
         let glyph_order = context.ir.glyph_order.get();
         let static_metadata = context.ir.static_metadata.get();
         let quantization = colr_clip_box_quantization(static_metadata.units_per_em);
-        let mut colr = Colr::new(0, None, None, 0);
-        let mut base_glyphs = Vec::with_capacity(paint_graph.base_glyphs.len());
-        let mut layer_list = LayerList::default();
+
+        let mut colr_v0_glyphs = Vec::new();
+        let mut colr_v0_layers = Vec::new();
+        let mut colr_v1_glyphs = Vec::with_capacity(paint_graph.base_glyphs.len());
+        let mut colr_v1_layers = LayerList::default();
+        let mut clips = Vec::new();
+
         for (glyph_name, paint) in paint_graph.base_glyphs.iter() {
-            // Fetch the glyph's bounding box for gradient coordinate scaling
-            let glyph = context
-                .glyphs
-                .get(&WorkId::GlyfFragment(glyph_name.clone()).into());
-            let bbox = glyph.data.bbox().unwrap_or_default();
+            if colr_v0_compatible(paint) {
+                // This can be a COLRv0 glyph!
+                if let ir::Paint::Glyph(paint_glyph) = paint {
+                    colr_v0_glyphs.push(new_colr0(
+                        &palette,
+                        &glyph_order,
+                        glyph_name,
+                        &[paint_glyph],
+                        &mut colr_v0_layers,
+                    )?);
+                } else if let ir::Paint::Layers(layers) = paint {
+                    let mut paint_glyphs: Vec<&ir::PaintGlyph> = Vec::with_capacity(layers.len());
+                    for paint in layers.iter() {
+                        let ir::Paint::Glyph(paint_glyph) = paint else {
+                            panic!("We *just* checked for this! What is {paint:#?}");
+                        };
+                        paint_glyphs.push(paint_glyph);
+                    }
+                    colr_v0_glyphs.push(new_colr0(
+                        &palette,
+                        &glyph_order,
+                        glyph_name,
+                        &paint_glyphs,
+                        &mut colr_v0_layers,
+                    )?);
+                } else {
+                    panic!("We *just* checked for this! What is {paint:#?}");
+                };
+            } else {
+                // This is too complicated and fiddly to be a COLRv0, use v1
+                // Fetch the glyph's bounding box for gradient coordinate scaling
+                let glyph = context
+                    .glyphs
+                    .get(&WorkId::GlyfFragment(glyph_name.clone()).into());
+                let bbox = glyph.data.bbox().unwrap_or_default();
 
-            base_glyphs.push(BaseGlyphPaint::new(
-                glyph_order
-                    .glyph_id(glyph_name)
-                    .ok_or_else(|| Error::MissingGlyphId(glyph_name.clone()))?,
-                to_colr_paint(
-                    context,
-                    &glyph_order,
-                    &palette,
-                    glyph_name,
-                    &bbox,
-                    &mut layer_list,
-                    paint,
-                )?,
-            ));
-        }
-
-        colr.base_glyph_list =
-            BaseGlyphList::new(paint_graph.base_glyphs.len() as u32, base_glyphs).into();
-        if !layer_list.paints.is_empty() {
-            layer_list.num_layers = layer_list.paints.len() as u32;
-            colr.layer_list = layer_list.into();
-        }
-
-        let mut clips = Vec::<Clip>::new();
-        for glyph_name in paint_graph.base_glyphs.iter().map(|(g, _)| g) {
-            let next_gid = glyph_order.glyph_id(glyph_name).expect("Validated earlier");
-            let next_glyph = context
-                .glyphs
-                .get(&WorkId::GlyfFragment(glyph_name.clone()).into());
-            let bbox = next_glyph.data.bbox().unwrap_or_default();
-            // Quantize the bbox to maximize clipbox reuse
-            let next_clip = quantize_bbox(&bbox, quantization);
-            let next_clip = ClipBox::format_1(
-                next_clip.x_min.into(),
-                next_clip.y_min.into(),
-                next_clip.x_max.into(),
-                next_clip.y_max.into(),
-            );
-            if let Some(curr) = clips.last_mut()
-                && curr.end_glyph_id.to_u32() + 1 == next_gid.to_u32()
-                && *curr.clip_box == next_clip
-            {
-                // wow wow wow, a run!
-                curr.end_glyph_id = next_gid;
-                continue; // DONE
+                colr_v1_glyphs.push(BaseGlyphPaint::new(
+                    glyph_order
+                        .glyph_id(glyph_name)
+                        .ok_or_else(|| Error::MissingGlyphId(glyph_name.clone()))?,
+                    to_colr_paint(
+                        context,
+                        &glyph_order,
+                        &palette,
+                        glyph_name,
+                        &bbox,
+                        &mut colr_v1_layers,
+                        paint,
+                    )?,
+                ));
+                add_or_extend_clip(
+                    &mut clips,
+                    quantization,
+                    glyph_order.glyph_id(glyph_name).expect("Prevalidated"),
+                    &glyph,
+                );
             }
-
-            // Evidently we didn't make a run
-            clips.push(Clip::new(next_gid, next_gid, next_clip));
         }
-        colr.clip_list = ClipList::new(1, clips.len() as u32, clips).into();
+
+        // Create the COLR table
+        let num_colr_v0_layers = colr_v0_layers.len() as u16;
+        let mut colr = Colr::new(
+            colr_v0_glyphs.len() as u16,
+            if !colr_v0_glyphs.is_empty() {
+                Some(colr_v0_glyphs)
+            } else {
+                None
+            },
+            if !colr_v0_layers.is_empty() {
+                Some(colr_v0_layers)
+            } else {
+                None
+            },
+            num_colr_v0_layers,
+        );
+        if !colr_v1_glyphs.is_empty() {
+            colr.base_glyph_list =
+                BaseGlyphList::new(colr_v1_glyphs.len() as u32, colr_v1_glyphs).into();
+        }
+        if !colr_v1_layers.paints.is_empty() {
+            colr_v1_layers.num_layers = colr_v1_layers.paints.len() as u32;
+            colr.layer_list = colr_v1_layers.into();
+        }
+        if !clips.is_empty() {
+            colr.clip_list = ClipList::new(1, clips.len() as u32, clips).into();
+        }
 
         // All done, claim victory!
         context.colr.set(colr);
