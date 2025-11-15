@@ -380,8 +380,13 @@ impl Colrv1Group {
 
 fn new_color_glyph(original: &Glyph, nth: &mut usize) -> Glyph {
     let new_glyph_name: SmolStr = format!("{}.color{nth}", original.name).into();
+    let new_production_name = original
+        .production_name
+        .as_ref()
+        .map(|production_name| format!("{}.color{nth}", production_name).into());
     let new_glyph = Glyph {
         name: new_glyph_name.clone(),
+        production_name: new_production_name,
         export: original.export,
         ..Default::default()
     };
