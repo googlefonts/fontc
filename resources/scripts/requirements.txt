@@ -30,7 +30,7 @@ booleanoperations==0.9.0
     #   afdko
     #   fontparts
     #   ufo2ft
-brotli==1.1.0
+brotli==1.2.0
     # via
     #   fonttools
     #   gftools
@@ -44,7 +44,7 @@ cattrs==25.3.0
     #   ufolib2
 cdifflib==1.2.9
     # via ttx-diff
-certifi==2025.10.5
+certifi==2025.11.12
     # via requests
 cffi==2.0.0
     # via
@@ -126,7 +126,7 @@ gflanguages==0.7.7
     # via
     #   gftools
     #   glyphsets
-gfsubsets==2024.9.25
+gfsubsets==2025.11.4
     # via gftools
 gftools==0.9.93
     # via
@@ -138,7 +138,7 @@ gitpython==3.1.45
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.12.2
+glyphslib==6.12.4
     # via
     #   bumpfontversion
     #   fontmake
@@ -215,7 +215,7 @@ pygments==2.19.2
     # via rich
 pyjwt[crypto]==2.10.1
     # via pygithub
-pynacl==1.6.0
+pynacl==1.6.1
     # via pygithub
 pyparsing==3.2.5
     # via vttlib
@@ -226,7 +226,7 @@ pyyaml==6.0.3
     #   gftools
     #   glyphsets
     #   ttx-diff
-regex==2025.10.23
+regex==2025.11.3
     # via nanoemoji
 requests==2.32.5
     # via
@@ -240,11 +240,11 @@ rich==14.2.0
     # via gftools
 ruamel-yaml==0.18.16
     # via gftools
-ruamel-yaml-clib==0.2.14
+ruamel-yaml-clib==0.2.15
     # via ruamel-yaml
 six==1.17.0
     # via python-dateutil
-skia-pathops==0.8.0.post2
+skia-pathops==0.9.0
     # via
     #   gftools
     #   picosvg
@@ -290,13 +290,13 @@ ufomerge==1.9.6
     #   gftools
 ufonormalizer==0.6.3
     # via afdko
-ufoprocessor==1.14.0
+ufoprocessor==1.14.1
     # via afdko
 uharfbuzz==0.52.0
     # via
     #   fonttools
     #   vharfbuzz
-unicodedata2==16.0.0
+unicodedata2==17.0.0
     # via glyphsets
 unidecode==1.4.0
     # via gftools
@@ -310,7 +310,7 @@ vttlib==0.12.0
     # via gftools
 youseedee==0.7.0
     # via glyphsets
-zopfli==0.2.3.post1
+zopfli==0.4.0
     # via
     #   fonttools
     #   nanoemoji
