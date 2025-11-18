@@ -4724,4 +4724,26 @@ mod tests {
                 .count()
         );
     }
+
+    #[test]
+    fn colr_sorting_by_gid() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-sorting.glyphs");
+        let colr = result.font().colr().unwrap();
+        let base_glyphs = colr
+            .base_glyph_list()
+            .expect("A base glyph list")
+            .expect("A valid base glyph list")
+            .base_glyph_paint_records();
+
+        assert_eq!(2, base_glyphs.len());
+
+        // Check that records are sorted by GID
+        let gids: Vec<_> = base_glyphs.iter().map(|g| g.glyph_id().to_u16()).collect();
+        let mut sorted_gids = gids.clone();
+        sorted_gids.sort();
+        assert_eq!(
+            gids, sorted_gids,
+            "BaseGlyph records must be sorted by Glyph ID. Got {gids:?}, expected {sorted_gids:?}"
+        );
+    }
 }
