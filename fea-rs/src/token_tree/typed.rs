@@ -1278,6 +1278,22 @@ impl BaseMinMax {
             _other => unreachable!("parsing invariant violation"),
         }
     }
+
+    pub(crate) fn script(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub(crate) fn language(&self) -> Tag {
+        self.iter().filter_map(Tag::cast).nth(1).unwrap()
+    }
+
+    pub(crate) fn minmax(&self) -> (i16, i16) {
+        let mut it = self.iter().filter_map(Number::cast);
+        let min = it.next().unwrap();
+        let max = it.next().unwrap();
+
+        (min.parse_signed(), max.parse_signed())
+    }
 }
 
 impl HheaTable {

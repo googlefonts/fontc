@@ -1604,6 +1604,15 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             base.horiz_script_list
                 .sort_unstable_by_key(|rec| rec.script);
         }
+        for minmax in table.iter_horiz_min_max() {
+            let script = minmax.script();
+            let lang = minmax.language();
+            let (min, max) = minmax.minmax();
+            base.horiz_min_max
+                .entry(script.to_raw())
+                .or_insert(Vec::new())
+                .push((lang.to_raw(), super::tables::MinMax { min, max }))
+        }
 
         if let Some(list) = table.vert_base_tag_list() {
             base.vert_tag_list = list.tags().map(|t| t.to_raw()).collect();
@@ -1618,6 +1627,16 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 })
                 .collect();
             base.vert_script_list.sort_unstable_by_key(|rec| rec.script);
+        }
+
+        for minmax in table.iter_vert_min_max() {
+            let script = minmax.script();
+            let lang = minmax.language();
+            let (min, max) = minmax.minmax();
+            base.vert_min_max
+                .entry(script.to_raw())
+                .or_insert(Vec::new())
+                .push((lang.to_raw(), super::tables::MinMax { min, max }))
         }
         self.tables.base = Some(base);
     }
