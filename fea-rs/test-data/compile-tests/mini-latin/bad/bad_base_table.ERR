@@ -1,0 +1,17 @@
+error: must have exactly one value for each declared baseline tag
+in ./test-data/compile-tests/mini-latin/bad/bad_base_table.fea at 4:28
+  | 
+4 |    HorizAxis.BaseScriptList latn romn -120,  grek romn -120 0 404;
+  |                             ^^^^^^^^^^^^^^
+
+error: must have exactly one value for each declared baseline tag
+in ./test-data/compile-tests/mini-latin/bad/bad_base_table.fea at 4:45
+  | 
+4 |    HorizAxis.BaseScriptList latn romn -120,  grek romn -120 0 404;
+  |                                              ^^^^^^^^^^^^^^^^^^^^
+
+error: tag not in base tag list
+in ./test-data/compile-tests/mini-latin/bad/bad_base_table.fea at 8:32
+  | 
+8 |    VertAxis.BaseScriptList latn lake -120;
+  |                                 ^^^^

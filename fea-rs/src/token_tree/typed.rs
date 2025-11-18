@@ -254,6 +254,8 @@ ast_enum!(Table {
 
 ast_node!(BaseTagList, Kind::BaseTagListNode);
 ast_node!(BaseScriptList, Kind::BaseScriptListNode);
+ast_node!(BaseMinMax, Kind::BaseMinMaxNode);
+ast_node!(BaseMinMaxFeatureNode, Kind::BaseMinMaxFeatureNode);
 ast_node!(ScriptRecord, Kind::ScriptRecordNode);
 
 ast_node!(MetricRecord, Kind::MetricValueNode);
@@ -1207,6 +1209,17 @@ impl BaseTable {
             .filter_map(BaseScriptList::cast)
             .find(|b| !b.is_horiz())
     }
+    pub(crate) fn iter_horiz_min_max(&self) -> impl Iterator<Item = BaseMinMax> {
+        self.iter()
+            .filter_map(BaseMinMax::cast)
+            .filter(BaseMinMax::is_horiz)
+    }
+
+    pub(crate) fn iter_vert_min_max(&self) -> impl Iterator<Item = BaseMinMax> {
+        self.iter()
+            .filter_map(BaseMinMax::cast)
+            .filter(|b| !b.is_horiz())
+    }
 }
 
 impl BaseTagList {
@@ -1254,6 +1267,16 @@ impl ScriptRecord {
 
     pub(crate) fn values(&self) -> impl Iterator<Item = Number> + '_ {
         self.iter().skip(2).filter_map(Number::cast)
+    }
+}
+
+impl BaseMinMax {
+    pub(crate) fn is_horiz(&self) -> bool {
+        match self.iter().next().map(|t| t.kind()) {
+            Some(Kind::HorizAxisMinMaxKw) => true,
+            Some(Kind::VertAxisMinMaxKw) => false,
+            _other => unreachable!("parsing invariant violation"),
+        }
     }
 }
 

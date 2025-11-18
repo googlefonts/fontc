@@ -1,6 +1,39 @@
 //! The BASE table
 
-use write_fonts::{tables::base as write_base, types::Tag};
+use std::collections::HashMap;
+
+use write_fonts::{
+    tables::base::{self as write_base, BaseLangSysRecord},
+    types::Tag,
+};
+
+/// Baseline tags, used in the BASE table.
+///
+/// These are guaranteed to be sorted lexicographically.
+///
+/// Baseline tags are used in the BASE table to provide additional font metric
+/// values that may apply to particular scripts or usage contexts.
+///
+/// See <https://learn.microsoft.com/en-us/typography/opentype/spec/baselinetags>
+pub static BASELINE_TAGS: &[Tag] = &[HANG, ICFB, ICFT, IDEO, IDTP, MATH, ROMN];
+
+/// The hanging baseline.
+///
+/// This is the horizontal line from which syllables seem to hang in Tibetan
+/// and other similar scripts.
+pub const HANG: Tag = Tag::new(b"hang");
+/// Ideographic character face bottom edge.
+pub const ICFB: Tag = Tag::new(b"icfb");
+/// Ideographic character face top edge.
+pub const ICFT: Tag = Tag::new(b"icft");
+/// Ideographic em-box bottom edge.
+pub const IDEO: Tag = Tag::new(b"ideo");
+/// Ideographic em-box top edge.
+pub const IDTP: Tag = Tag::new(b"idtp");
+/// The baseline about which characters in mathematical formulas are centered.
+pub const MATH: Tag = Tag::new(b"math");
+/// The baseline used by alphabetic scripts such as Latin, Cyrillic and Greek.
+pub const ROMN: Tag = Tag::new(b"romn");
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BaseBuilder {

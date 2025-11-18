@@ -1,0 +1,9 @@
+table BASE {
+   HorizAxis.BaseTagList ideo romn;
+   # too few values & too many values
+   HorizAxis.BaseScriptList latn romn -120,  grek romn -120 0 404;
+   # 'fake' not a registered baseline tag (warning, not captured by test)
+   VertAxis.BaseTagList fake;
+   # 'lake' not a declared tag
+   VertAxis.BaseScriptList latn lake -120;
+} BASE;

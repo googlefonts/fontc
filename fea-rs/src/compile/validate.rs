@@ -301,8 +301,60 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         }
     }
 
-    fn validate_base(&mut self, _node: &typed::BaseTable) {
-        //TODO: same number of records as there are number of baseline tags
+    fn validate_base(&mut self, node: &typed::BaseTable) {
+        if let Some(horiz_tags) = node.horiz_base_tag_list() {
+            self.validate_base_axis(
+                &horiz_tags,
+                node.horiz_base_script_record_list(),
+                node.iter_horiz_min_max(),
+            );
+        }
+        if let Some(vert_tags) = node.vert_base_tag_list() {
+            self.validate_base_axis(
+                &vert_tags,
+                node.vert_base_script_record_list(),
+                node.iter_vert_min_max(),
+            );
+        }
+    }
+
+    fn validate_base_axis(
+        &mut self,
+        taglist: &typed::BaseTagList,
+        script_list: Option<typed::BaseScriptList>,
+        _minmax: impl Iterator<Item = typed::BaseMinMax>,
+    ) {
+        let Some(script_list) = script_list else {
+            return self.error(
+                taglist.range(),
+                "Tag list without ScriptList is meaningless",
+            );
+        };
+
+        for tag in taglist.tags() {
+            if !super::tables::BASELINE_TAGS.contains(&tag.to_raw()) {
+                self.warning(tag.range(), "not a known baseline tag");
+            }
+        }
+        let all_tags = taglist.tags().map(|t| t.to_raw()).collect::<HashSet<_>>();
+        for record in script_list.script_records() {
+            if !all_tags.contains(&record.default_baseline().to_raw()) {
+                self.error(
+                    record.default_baseline().range(),
+                    "tag not in base tag list",
+                );
+            }
+
+            // "The number of baseline values for a particular script should be
+            // the same as the number of baseline tags in the corresponding BaseTagList."
+            // (https://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#:~:text=The%20number%20of%20baseline%20values)
+            if record.values().count() != all_tags.len() {
+                self.error(
+                    record.range(),
+                    "must have exactly one value for each declared baseline tag",
+                );
+            }
+        }
     }
 
     fn validate_hhea(&mut self, node: &typed::HheaTable) {
