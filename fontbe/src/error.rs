@@ -103,6 +103,8 @@ pub enum Error {
     InconsistentPaletteLength(Vec<usize>),
     #[error("No metrics instance for '{0:?}'")]
     NoGlobalMetricsInstance(NormalizedLocation),
+    #[error("No palette entry for '{0:?}'")]
+    MissingPaletteEntry(Color),
 }
 
 #[derive(Debug)]

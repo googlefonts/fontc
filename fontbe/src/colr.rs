@@ -293,11 +293,11 @@ fn new_colr0(
     palette: &ColorPalettes,
     glyph_order: &GlyphOrder,
     glyph_name: &GlyphName,
-    paint: &[&ir::PaintGlyph],
+    paints: &[&ir::PaintGlyph],
     layers: &mut Vec<Layer>,
 ) -> Result<BaseGlyph, Error> {
     let gid = glyph_order.glyph_id(glyph_name).expect("Prevalidated");
-    let candidate_layers = paint
+    let candidate_layers = paints
         .iter()
         .map(|p| {
             let ir::Paint::Solid(solid) = &p.paint else {
@@ -320,7 +320,7 @@ fn new_colr0(
         layers.extend(candidate_layers);
         pos
     };
-    Ok(BaseGlyph::new(gid, first_idx as u16, paint.len() as u16))
+    Ok(BaseGlyph::new(gid, first_idx as u16, paints.len() as u16))
 }
 
 impl Work<Context, AnyWorkId, Error> for ColrWork {
