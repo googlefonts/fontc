@@ -1604,14 +1604,8 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        // Directly declared palette(s)
-        let mut palettes = if let Some(declared_palettes) = self
-            .font_info
-            .font
-            .custom_parameters
-            .color_palettes
-            .as_ref()
-        {
+        // Directly declared palette(s), preferring master to global
+        let mut palettes = if let Some(declared_palettes) = self.font_info.font.color_palettes() {
             declared_palettes
                 .iter()
                 .map(|raw_palette| {
@@ -1629,7 +1623,7 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
             palettes.push(Vec::new());
         }
 
-        // Plus any colors declared directly on glyphs
+        // Plus any colors declared directly on COLRv1 glyphs
         // Glue them onto all palettes to keep size even, duplication will be resolved later
         let glyph_colors = self
             .font_info

@@ -3293,11 +3293,16 @@ impl Font {
         Ok(font)
     }
 
-    pub fn default_palette(&self) -> Option<&[Color]> {
-        self.custom_parameters
+    pub fn color_palettes(&self) -> Option<&Vec<Vec<Color>>> {
+        self.default_master()
+            .custom_parameters
             .color_palettes
             .as_ref()
-            .map(|p| p[0].as_slice())
+            .or(self.custom_parameters.color_palettes.as_ref())
+    }
+
+    pub fn default_palette(&self) -> Option<&[Color]> {
+        self.color_palettes().map(|p| p[0].as_slice())
     }
 
     fn preprocess(&mut self) -> Result<(), Error> {

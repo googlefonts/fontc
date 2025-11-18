@@ -3695,6 +3695,50 @@ mod tests {
     }
 
     #[test]
+    fn cpal_prefer_master() {
+        let result = TestCompile::compile_source("glyphs3/COLRv0-palette-redefinition.glyphs");
+        let cpal = result.font().cpal().unwrap();
+        assert_eq!(
+            (
+                2,
+                2,
+                [
+                    ColorRecord {
+                        red: 20,
+                        green: 21,
+                        blue: 22,
+                        alpha: 23
+                    },
+                    ColorRecord {
+                        red: 24,
+                        green: 25,
+                        blue: 26,
+                        alpha: 27
+                    },
+                    ColorRecord {
+                        red: 28,
+                        green: 29,
+                        blue: 30,
+                        alpha: 31
+                    },
+                    ColorRecord {
+                        red: 32,
+                        green: 33,
+                        blue: 34,
+                        alpha: 35
+                    },
+                ]
+                .as_slice()
+            ),
+            (
+                cpal.num_palettes(),
+                cpal.num_palette_entries(),
+                cpal.color_records_array().unwrap().unwrap()
+            )
+        );
+    }
+
+    #[test]
     fn cpal_grayscale() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
         let cpal = result.font().cpal().unwrap();
