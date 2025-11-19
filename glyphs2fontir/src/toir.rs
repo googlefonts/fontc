@@ -686,9 +686,16 @@ pub(crate) fn to_ir_paint(
 
 #[cfg(test)]
 mod tests {
-    use glyphs_reader::{Node, Path};
+    use glyphs_reader::{Font, Glyph, Layer, LayerAttributes, Node, Path};
+    use std::path::PathBuf;
 
-    use super::to_ir_path;
+    use super::{split_color_glyphs, to_ir_path};
+
+    fn testdata_dir() -> PathBuf {
+        let dir = PathBuf::from("../resources/testdata");
+        assert!(dir.is_dir(), "{dir:?} isn't a dir");
+        dir
+    }
 
     #[test]
     fn the_last_of_a_closed_contour_is_first() {
@@ -734,6 +741,62 @@ mod tests {
         assert_eq!(
             bez.elements().first(),
             Some(&kurbo::PathEl::MoveTo((5., 0.).into()))
+        );
+    }
+
+    /// Test that glyphs with empty color palette layers are NOT added to color_glyphs.
+    ///
+    /// This reproduces a bug where a non-printing glyph like "CR" may nominally contain
+    /// palette layers that trigger the COLRv0 code path, but none of the layers have shapes.
+    /// The glyph was incorrectly added to color_glyphs, causing a panic when trying to access
+    /// layer.shapes[0].
+    #[test]
+    fn colrv0_glyph_with_empty_palette_layers_is_skipped() {
+        let mut font = Font::load(&testdata_dir().join("glyphs3/COLRv0-1layer.glyphs")).unwrap();
+        let master_id = font.default_master().id.clone();
+
+        // Add a glyph "CR" with palette layers but no shapes
+        let cr_glyph = Glyph {
+            name: "CR".into(),
+            export: true,
+            layers: vec![
+                // Default master layer with empty shapes
+                Layer {
+                    layer_id: master_id.clone(),
+                    associated_master_id: None,
+                    width: 0.0.into(),
+                    shapes: vec![], // Empty!
+                    anchors: vec![],
+                    attributes: LayerAttributes::default(),
+                    ..Default::default()
+                },
+                // Palette layer has color_palette but empty shapes
+                Layer {
+                    layer_id: "palette-layer-1".to_string(),
+                    associated_master_id: Some(master_id.clone()),
+                    width: 0.0.into(),
+                    shapes: vec![], // Empty!
+                    anchors: vec![],
+                    attributes: LayerAttributes {
+                        color_palette: Some(0), // This triggers COLRv0 path
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        font.glyphs.insert("CR".into(), cr_glyph);
+        font.glyph_order.push("CR".into());
+
+        // this would panic with the old code
+        let (_, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        // The glyph should NOT be in color_glyphs because it has no color content
+        assert!(
+            !color_glyphs.contains_key("CR"),
+            "Glyph with empty palette layers should not be added to color_glyphs"
         );
     }
 }
