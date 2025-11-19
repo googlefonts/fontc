@@ -37,13 +37,15 @@ pub const ROMN: Tag = Tag::new(b"romn");
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BaseBuilder {
-    pub horiz_tag_list: Vec<Tag>,
-    pub horiz_script_list: Vec<ScriptRecord>,
-    // maps script -> (lang, minmax). lang can be dflt.
-    pub horiz_min_max: HashMap<Tag, Vec<(Tag, MinMax)>>,
-    pub vert_tag_list: Vec<Tag>,
-    pub vert_script_list: Vec<ScriptRecord>,
-    pub vert_min_max: HashMap<Tag, Vec<(Tag, MinMax)>>,
+    vert: BaseAxisBuilder,
+    horiz: BaseAxisBuilder,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct BaseAxisBuilder {
+    tag_list: Vec<Tag>,
+    script_list: Vec<ScriptRecord>,
+    min_max: HashMap<Tag, Vec<(Tag, MinMax)>>,
 }
 
 #[derive(Clone, Debug)]
@@ -69,35 +71,34 @@ pub(crate) struct FeatMinMax {
     pub max: i16,
 }
 
-impl BaseBuilder {
-    pub(crate) fn build(&self) -> write_base::Base {
-        let mut result = write_base::Base::default();
-        if !self.horiz_tag_list.is_empty() {
-            assert!(!self.horiz_script_list.is_empty(), "validate this");
-            let haxis = BaseBuilder::build_axis(
-                &self.horiz_tag_list,
-                &self.horiz_script_list,
-                &self.horiz_min_max,
-            );
-            result.horiz_axis = haxis.into();
+impl BaseAxisBuilder {
+    pub(crate) fn new(
+        mut tag_list: Vec<Tag>,
+        mut script_list: Vec<ScriptRecord>,
+        minmax: Vec<(Tag, Tag, (i16, i16))>,
+    ) -> Self {
+        tag_list.sort_unstable();
+        script_list.sort_unstable_by_key(|rec| rec.script);
+        let mut minmaxmap = HashMap::new();
+        for (script, lang, (min, max)) in minmax {
+            minmaxmap
+                .entry(script)
+                .or_insert(Vec::new())
+                .push((lang, MinMax { min, max }));
         }
-        if !self.vert_tag_list.is_empty() && !self.vert_script_list.is_empty() {
-            assert!(!self.vert_script_list.is_empty(), "validate this");
-            let vaxis = BaseBuilder::build_axis(
-                &self.vert_tag_list,
-                &self.vert_script_list,
-                &self.vert_min_max,
-            );
-            result.vert_axis = vaxis.into();
+
+        Self {
+            tag_list,
+            script_list,
+            min_max: minmaxmap,
         }
-        result
     }
 
-    fn build_axis(
-        tag_list: &[Tag],
-        script_list: &[ScriptRecord],
-        minmax: &HashMap<Tag, Vec<(Tag, MinMax)>>,
-    ) -> write_base::Axis {
+    fn build(&self) -> Option<write_base::Axis> {
+        if self.tag_list.is_empty() {
+            return None;
+        }
+
         // a little helper fn
         fn get_dflt_and_lang_sys_minmax(
             minmax: Option<&Vec<(Tag, MinMax)>>,
@@ -116,18 +117,18 @@ impl BaseBuilder {
             (dflt, rest)
         }
 
-        let records = script_list.iter().map(|rec| {
-            let minmax = minmax.get(&rec.script);
+        let records = self.script_list.iter().map(|rec| {
+            let minmax = self.min_max.get(&rec.script);
             let (default_min_max, base_lang_sys_records) = get_dflt_and_lang_sys_minmax(minmax);
 
             write_base::BaseScriptRecord::new(
                 rec.script,
                 write_base::BaseScript::new(
                     Some(write_base::BaseValues::new(
-                        tag_list
+                        self.tag_list
                             .iter()
                             .position(|x| *x == rec.default_baseline_tag)
-                            .expect("validate this") as _,
+                            .expect("validated") as _,
                         rec.values
                             .iter()
                             .map(|coord| write_base::BaseCoord::format_1(*coord))
@@ -138,12 +139,25 @@ impl BaseBuilder {
                 ),
             )
         });
-        write_base::Axis::new(
-            Some(write_base::BaseTagList::new(tag_list.to_owned())),
+        Some(write_base::Axis::new(
+            Some(write_base::BaseTagList::new(self.tag_list.clone())),
             write_base::BaseScriptList::new(records.collect()),
-        )
+        ))
     }
 }
+
+impl BaseBuilder {
+    pub(crate) fn new(horiz: BaseAxisBuilder, vert: BaseAxisBuilder) -> Self {
+        Self { horiz, vert }
+    }
+
+    pub(crate) fn build(&self) -> write_base::Base {
+        let horiz = self.horiz.build();
+        let vert = self.vert.build();
+        write_base::Base::new(horiz, vert)
+    }
+}
+
 impl MinMax {
     fn compile(&self) -> write_base::MinMax {
         write_base::MinMax::new(
