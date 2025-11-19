@@ -113,6 +113,7 @@ impl BaseAxisBuilder {
                     rest.push(BaseLangSysRecord::new(*tag, table.compile()));
                 }
             }
+            rest.sort_unstable_by_key(|rec| rec.base_lang_sys_tag);
 
             (dflt, rest)
         }
