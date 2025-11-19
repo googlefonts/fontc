@@ -563,8 +563,12 @@ fn split_color_glyphs(font: Font) -> Result<(Font, IndexMap<SmolStr, Vec<SmolStr
             continue;
         }
 
-        // Remember the name so it gets added to COLR
-        color_glyphs.entry(glyph.name.clone()).or_default();
+        // For COLRv1 single-run glyphs (i.e. no split glyphs created, shapes in default layer),
+        // reserve an entry with empty vec so it gets included in COLR (see ColorGlyphsWork::exec).
+        // For COLRv0 and v1 multi-run, an non-empty vec already exists from the split_colr* funcs.
+        if !default_master_layer.shapes.is_empty() {
+            color_glyphs.entry(glyph.name.clone()).or_default();
+        }
     }
 
     font.glyph_order

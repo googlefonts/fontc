@@ -1690,13 +1690,22 @@ fn create_paint_glyph(
             BadGlyphKind::MissingMaster(default_master_id.to_string()),
         )));
     };
+    let Some(first_shape) = default_layer.shapes.first() else {
+        return Err(Error::BadGlyph(BadGlyph::new(
+            color_glyph.name.clone(),
+            BadGlyphKind::FrontendSpecific(format!(
+                "Color glyph has no shapes in default layer (layer_id: {})",
+                default_layer.layer_id
+            )),
+        )));
+    };
     Ok(PaintGlyph {
         name: color_glyph.name.clone().into(),
         paint: to_ir_paint(
             palette,
             color_glyph.name.clone(),
             default_layer,
-            default_layer.shapes[0].attributes(),
+            first_shape.attributes(),
         )?,
     })
 }
