@@ -799,4 +799,47 @@ mod tests {
             "Glyph with empty palette layers should not be added to color_glyphs"
         );
     }
+
+    /// Test that COLRv1 glyphs with empty color layers are not added to color_glyphs.
+    ///
+    /// This is similar to the COLRv0 test but for the COLRv1 code path.
+    #[test]
+    fn colrv1_glyph_with_empty_color_layer_is_skipped() {
+        let mut font = Font::load(&testdata_dir().join("glyphs3/COLRv1-gradient.glyphs")).unwrap();
+        let master_id = font.default_master().id.clone();
+
+        // Add a glyph "empty_color" with a color layer but no shapes
+        let empty_glyph = Glyph {
+            name: "empty_color".into(),
+            export: true,
+            layers: vec![
+                // Default master layer - marked as color but empty shapes
+                Layer {
+                    layer_id: master_id.clone(),
+                    associated_master_id: None,
+                    width: 0.0.into(),
+                    shapes: vec![], // Empty!
+                    anchors: vec![],
+                    attributes: LayerAttributes {
+                        color: true, // This triggers COLRv1 path
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        font.glyphs.insert("empty_color".into(), empty_glyph);
+        font.glyph_order.push("empty_color".into());
+
+        // this would add the glyph incorrectly with old code
+        let (_, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        // The glyph should NOT be in color_glyphs because it has no shapes
+        assert!(
+            !color_glyphs.contains_key("empty_color"),
+            "COLRv1 glyph with empty color layer should not be added to color_glyphs"
+        );
+    }
 }
