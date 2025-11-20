@@ -4128,7 +4128,9 @@ mod tests {
     fn colr_split_based_on_paint_same_paint() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-manyshapes-per-glyph.glyphs");
         assert_eq!(
-            vec![".notdef", "A", "A.color0", "A.color1"],
+            vec![
+                ".notdef", "A", "B", "A.color0", "A.color1", "B.color0", "B.color1"
+            ],
             result
                 .fe_context
                 .glyph_order
@@ -4159,7 +4161,12 @@ mod tests {
         assert!(
             matches!(
                 layers.as_slice(),
-                [Paint::LinearGradient(_), Paint::LinearGradient(_),]
+                [
+                    Paint::LinearGradient(_),
+                    Paint::LinearGradient(_),
+                    Paint::LinearGradient(_),
+                    Paint::LinearGradient(_),
+                ]
             ),
             "{layers:#?}"
         );

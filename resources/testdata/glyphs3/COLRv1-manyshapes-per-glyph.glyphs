@@ -73,9 +73,73 @@ width = 600;
 }
 );
 unicode = 65;
+},
+{
+glyphname = B;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(0,255,0,255),
+0
+),
+(
+(0,255,255,255),
+1
+)
+);
+end = (0.2515,0.8412);
+start = (0.7111,0.1428);
+};
+};
+closed = 1;
+nodes = (
+(467,0,l),
+(746,0,l),
+(746,500,l),
+(467,500,l)
+);
+},
+{
+attr = {
+gradient = {
+colors = (
+(
+(0,255,0,255),
+0
+),
+(
+(0,255,255,255),
+1
+)
+);
+end = (0.9,0.9);
+start = (0.1,0.1);
+};
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(342,0,l),
+(342,300,l),
+(63,300,l)
+);
 }
 );
-
+width = 600;
+}
+);
+unicode = 66;
+}
+);
 unitsPerEm = 1000;
 versionMajor = 1;
 versionMinor = 0;
