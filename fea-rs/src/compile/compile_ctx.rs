@@ -1588,38 +1588,43 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn resolve_base(&mut self, table: &typed::BaseTable) {
-        let mut base = super::tables::BaseBuilder::default();
-        if let Some(list) = table.horiz_base_tag_list() {
-            base.horiz_tag_list = list.tags().map(|t| t.to_raw()).collect();
-        }
-        if let Some(list) = table.horiz_base_script_record_list() {
-            base.horiz_script_list = list
-                .script_records()
-                .map(|record| ScriptRecord {
-                    script: record.script().to_raw(),
-                    default_baseline_tag: record.default_baseline().to_raw(),
-                    values: record.values().map(|i| i.parse_signed()).collect(),
+        fn cook_axis(
+            tags: Option<typed::BaseTagList>,
+            scripts: Option<typed::BaseScriptList>,
+            minmax: impl Iterator<Item = typed::BaseMinMax>,
+        ) -> super::tables::BaseAxisBuilder {
+            let tags = tags
+                .map(|tags| tags.tags().map(|t| t.to_raw()).collect())
+                .unwrap_or_default();
+            let scripts = scripts
+                .map(|list| {
+                    list.script_records()
+                        .map(|record| ScriptRecord {
+                            script: record.script().to_raw(),
+                            default_baseline_tag: record.default_baseline().to_raw(),
+                            values: record.values().map(|i| i.parse_signed()).collect(),
+                        })
+                        .collect()
                 })
+                .unwrap_or_default();
+            let minmax = minmax
+                .map(|rec| (rec.script().to_raw(), rec.language().to_raw(), rec.minmax()))
                 .collect();
-            base.horiz_script_list
-                .sort_unstable_by_key(|rec| rec.script);
+            super::tables::BaseAxisBuilder::new(tags, scripts, minmax)
         }
 
-        if let Some(list) = table.vert_base_tag_list() {
-            base.vert_tag_list = list.tags().map(|t| t.to_raw()).collect();
-        }
-        if let Some(list) = table.vert_base_script_record_list() {
-            base.vert_script_list = list
-                .script_records()
-                .map(|record| ScriptRecord {
-                    script: record.script().to_raw(),
-                    default_baseline_tag: record.default_baseline().to_raw(),
-                    values: record.values().map(|i| i.parse_signed()).collect(),
-                })
-                .collect();
-            base.vert_script_list.sort_unstable_by_key(|rec| rec.script);
-        }
-        self.tables.base = Some(base);
+        let horiz = cook_axis(
+            table.horiz_base_tag_list(),
+            table.horiz_base_script_record_list(),
+            table.iter_horiz_min_max(),
+        );
+        let vert = cook_axis(
+            table.vert_base_tag_list(),
+            table.vert_base_script_record_list(),
+            table.iter_vert_min_max(),
+        );
+
+        self.tables.base = Some(super::tables::BaseBuilder::new(horiz, vert));
     }
 
     fn resolve_name(&mut self, table: &typed::NameTable) {

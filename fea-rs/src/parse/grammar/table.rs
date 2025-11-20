@@ -133,7 +133,8 @@ mod base {
         } else if parser.matches(0, MINMAX) {
             parser.in_node(AstKind::BaseMinMaxNode, |parser| {
                 assert!(parser.eat(MINMAX));
-                parser.eat_until(EAT_UNTIL);
+                expect_minmax(parser, recovery);
+                parser.expect_semi();
             });
         } else {
             // any unrecognized token
@@ -165,6 +166,37 @@ mod base {
             script_record_body(parser, recovery);
         });
         true
+    }
+
+    fn expect_minmax(parser: &mut Parser, recovery: TokenSet) -> bool {
+        const MINMAX_RECOVERY: TokenSet = TokenSet::new(&[Kind::Number, Kind::Comma]);
+        let recovery = recovery.union(MINMAX_RECOVERY);
+        if !(parser.expect_remap_recover(TokenSet::TAG_LIKE, AstKind::Tag, recovery)
+            && parser.expect_remap_recover(TokenSet::TAG_LIKE, AstKind::Tag, recovery)
+            && parser.expect_recover(Kind::Number, recovery)
+            && parser.expect_recover(Kind::Comma, recovery)
+            && parser.expect_recover(Kind::Number, recovery))
+        {
+            return false;
+        }
+
+        if parser.matches(0, Kind::Semi) {
+            return true;
+        }
+        while parser.eat(Kind::Comma) {
+            eat_feature_values(parser, recovery);
+        }
+        true
+    }
+
+    // eat a statement like TAG NUM, NUM[,] e.g. (kern -400, 400[,])
+    fn eat_feature_values(parser: &mut Parser, recovery: TokenSet) -> bool {
+        parser.in_node(AstKind::BaseMinMaxFeatureNode, |parser| {
+            parser.expect_remap_recover(TokenSet::TAG_LIKE, AstKind::Tag, recovery)
+                && parser.expect_recover(Kind::Number, recovery)
+                && parser.expect_recover(Kind::Comma, recovery)
+                && parser.expect_recover(Kind::Number, recovery)
+        })
     }
 }
 

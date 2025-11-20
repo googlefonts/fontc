@@ -1,0 +1,6 @@
+table BASE {
+ HorizAxis.MinMax cyrl dflt -800, 1200;
+ VertAxis.MinMax cyrl RUS  -1000, 1000,
+    hurp -900, 900,
+    durp -700, 700;
+} BASE;

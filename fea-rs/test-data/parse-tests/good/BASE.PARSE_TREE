@@ -26,9 +26,9 @@ FILE@[0; 138)
         BaseMinMaxNode@[91; 129)
           HorizAxis.MinMax@91 "HorizAxis.MinMax"
           WS@107 " "
-          ID@108 "latn"
+          Tag@108 "latn"
           WS@112 " "
-          ID@113 "dflt"
+          Tag@113 "dflt"
           WS@117 " "
           NUM@118 "-500"
           ,@122 ","

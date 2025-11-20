@@ -26,7 +26,7 @@ mod name;
 mod os2;
 mod stat;
 
-pub(crate) use base::{BaseBuilder, ScriptRecord};
+pub(crate) use base::{BASELINE_TAGS, BaseAxisBuilder, BaseBuilder, ScriptRecord};
 pub(crate) use gdef::{GdefBuilder, GlyphClassDefExt};
 pub(crate) use name::{NameBuilder, NameSpec};
 pub(crate) use os2::{CodePageRange, Os2Builder};
