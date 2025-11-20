@@ -4140,10 +4140,28 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         let colr = result.font().colr().unwrap();
-        assert!(matches!(
-            root_paint(&result, &colr, "A"),
-            Paint::ColrLayers(_)
-        ));
+
+        let Paint::ColrLayers(a_layers) = root_paint(&result, &colr, "A") else {
+            panic!("Expected ColrLayers for glyph A");
+        };
+        let Paint::ColrLayers(b_layers) = root_paint(&result, &colr, "B") else {
+            panic!("Expected ColrLayers for glyph B");
+        };
+
+        // "A" should point to layers 0-1, "B" should point to layers 2-3
+        // We had a bug where both had first_layer_index=0 instead
+        // https://github.com/googlefonts/fontc/issues/1767
+        assert_eq!(
+            (a_layers.first_layer_index(), a_layers.num_layers()),
+            (0, 2),
+            "Glyph A: FirstLayerIndex, NumLayers"
+        );
+        assert_eq!(
+            (b_layers.first_layer_index(), b_layers.num_layers()),
+            (2, 2),
+            "Glyph B: FirstLayerIndex, NumLayers"
+        );
+
         let layer_list = colr
             .layer_list()
             .expect("A layer list")
@@ -4158,17 +4176,39 @@ mod tests {
                 paint_glyph.paint().unwrap()
             })
             .collect::<Vec<_>>();
-        assert!(
-            matches!(
-                layers.as_slice(),
-                [
-                    Paint::LinearGradient(_),
-                    Paint::LinearGradient(_),
-                    Paint::LinearGradient(_),
-                    Paint::LinearGradient(_),
-                ]
-            ),
-            "{layers:#?}"
+        let [
+            Paint::LinearGradient(g0),
+            Paint::LinearGradient(g1),
+            Paint::LinearGradient(g2),
+            Paint::LinearGradient(g3),
+        ] = layers.as_slice()
+        else {
+            panic!("Expected 4 LinearGradients, got {layers:#?}");
+        };
+
+        let coords = [g0, g1, g2, g3].map(|g| {
+            (
+                (g.x0().to_i16(), g.y0().to_i16()),
+                (g.x1().to_i16(), g.y1().to_i16()),
+                (g.x2().to_i16(), g.y2().to_i16()),
+            )
+        });
+
+        assert_eq!(
+            coords,
+            [
+                // A.color0: red->blue linear gradient, bbox(263,0,542,500), start(0.1,0.1), end(0.9,0.9)
+                ((291, 50), (514, 450), (691, -173)),
+                // A.color1: green->cyan linear gradient, bbox(63,0,342,300), start(0.1,0.1), end(0.9,0.9)
+                ((91, 30), (314, 270), (331, -193)),
+                // B.color0: green->cyan with DIFFERENT geometry, bbox(467,0,746,500)
+                // start(0.7111,0.1428), end(0.2515,0.8412). This verifies that we do split despite
+                // same gradient type & colors: https://github.com/googlefonts/fontc/issues/1766
+                ((665, 71), (537, 421), (1015, 200)),
+                // B.color1: green->cyan (same as A.color1)
+                ((91, 30), (314, 270), (331, -193)),
+            ],
+            "p0, p1, p2 for gradients A.color0, A.color1, B.color0, B.color1"
         );
     }
 
