@@ -349,8 +349,17 @@ impl TryFrom<Font> for FontInfo {
 enum Colrv1RunType {
     NonColor,
     Solid(glyphs_reader::Color),
-    Linear(Vec<glyphs_reader::ColorStop>),
-    Radial(Vec<glyphs_reader::ColorStop>),
+    // (start, end, colors) - geometry matters for distinguishing gradients
+    Linear(
+        Vec<OrderedFloat<f64>>,
+        Vec<OrderedFloat<f64>>,
+        Vec<glyphs_reader::ColorStop>,
+    ),
+    Radial(
+        Vec<OrderedFloat<f64>>,
+        Vec<OrderedFloat<f64>>,
+        Vec<glyphs_reader::ColorStop>,
+    ),
     Unknown(ShapeAttributes),
 }
 
@@ -376,9 +385,17 @@ impl Colrv1RunType {
         let attr = shape.attributes();
         if let Some(gradient) = &attr.gradient {
             if gradient.style == "circle" {
-                return Colrv1RunType::Radial(gradient.colors.clone());
+                return Colrv1RunType::Radial(
+                    gradient.start.clone(),
+                    gradient.end.clone(),
+                    gradient.colors.clone(),
+                );
             }
-            return Colrv1RunType::Linear(gradient.colors.clone());
+            return Colrv1RunType::Linear(
+                gradient.start.clone(),
+                gradient.end.clone(),
+                gradient.colors.clone(),
+            );
         }
         if let Some(fill) = attr.fill_color {
             return Colrv1RunType::Solid(fill);
