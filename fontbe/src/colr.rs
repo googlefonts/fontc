@@ -13,6 +13,7 @@ use fontir::{
     orchestration::WorkId as FeWorkId,
 };
 use write_fonts::{
+    OtRound,
     tables::{
         colr::{
             BaseGlyph, BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, ColorLine,
@@ -21,7 +22,7 @@ use write_fonts::{
         },
         glyf::Bbox,
     },
-    types::{F2Dot14, GlyphId16},
+    types::{F2Dot14, FWord, GlyphId16},
 };
 
 static OPAQUE: F2Dot14 = F2Dot14::ONE;
@@ -82,18 +83,25 @@ fn scale_gradient_radius(bbox: &Bbox, center_pct_x: f64, center_pct_y: f64) -> u
         })
         .fold(0.0f64, f64::max);
 
-    max_dist_squared.sqrt().round() as u16
+    max_dist_squared.sqrt().ot_round()
 }
 
 /// Scale a gradient coordinate from percentage (0.0-1.0) to absolute coordinates
 /// within the given bounding box.
 ///
 /// Glyphs gradient coordinates are percentages of the layer's bounding box.
+/// Returns floats - use OtRound when converting to i16.
 /// See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/color_layers.py#L72-L81>
-fn scale_gradient_point(bbox: &Bbox, x_pct: f64, y_pct: f64) -> (i16, i16) {
+fn scale_gradient_point(bbox: &Bbox, x_pct: f64, y_pct: f64) -> (f64, f64) {
     let x_abs = bbox.x_min as f64 + ((bbox.x_max - bbox.x_min) as f64 * x_pct);
     let y_abs = bbox.y_min as f64 + ((bbox.y_max - bbox.y_min) as f64 * y_pct);
-    (x_abs.round() as i16, y_abs.round() as i16)
+    (x_abs, y_abs)
+}
+
+/// Round a float to FWord using OtRound (round half up).
+#[inline]
+fn round_fword(value: f64) -> FWord {
+    OtRound::<i16>::ot_round(value).into()
 }
 
 /// Calculate the quantization factor for COLR ClipBoxes.
@@ -184,12 +192,12 @@ fn to_colr_paint(
 
             Ok(Paint::LinearGradient(PaintLinearGradient::new(
                 to_colr_line(palette, glyph_name, &linear.color_line)?,
-                x0.into(),
-                y0.into(),
-                x1.into(),
-                y1.into(),
-                x2.into(),
-                y2.into(),
+                round_fword(x0),
+                round_fword(y0),
+                round_fword(x1),
+                round_fword(y1),
+                round_fword(x2),
+                round_fword(y2),
             )))
         }
         ir::Paint::RadialGradient(radial) => {
@@ -210,11 +218,11 @@ fn to_colr_paint(
 
             Ok(Paint::RadialGradient(PaintRadialGradient::new(
                 to_colr_line(palette, glyph_name, &radial.color_line)?,
-                x0.into(),
-                y0.into(),
+                round_fword(x0),
+                round_fword(y0),
                 r0.into(),
-                x1.into(),
-                y1.into(),
+                round_fword(x1),
+                round_fword(y1),
                 r1.into(),
             )))
         }
