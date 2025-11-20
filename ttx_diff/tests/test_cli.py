@@ -14,7 +14,7 @@ def test_version():
 def test_cli_missing_source():
     """Test CLI with non-existent source file."""
     result = subprocess.run(
-        [sys.executable, "-m", "ttx_diff.cli", "/nonexistent/file.glyphs"],
+        [sys.executable, "-m", "ttx_diff", "/nonexistent/file.glyphs"],
         capture_output=True,
         text=True,
     )
