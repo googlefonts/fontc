@@ -15,7 +15,13 @@ use std::{
 /// GlyphId16s that will be used in the final font.
 ///
 /// Currently, the only way to construct this type is by calling `collect()`
-/// on an iterator of cids or names.
+/// on an iterator of some type that impls `Into<GlyphIdent>` (such as `&str`,
+/// `GlyphName`, or `u16` (if using CIDs)).
+///
+/// ```
+/// # use fea_rs::GlyphMap;
+/// let myglyphs = GlyphMap::from_iter(["a", "b", "gee", "whiz"]);
+/// ```
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GlyphMap {
@@ -92,40 +98,13 @@ impl GlyphMap {
     }
 }
 
-impl FromIterator<u16> for GlyphMap {
-    fn from_iter<T: IntoIterator<Item = u16>>(iter: T) -> Self {
-        GlyphMap {
-            names: HashMap::new(),
-            cids: iter
-                .into_iter()
-                .enumerate()
-                .map(|(i, cid)| (cid, GlyphId16::new(i.try_into().unwrap())))
-                .collect(),
-        }
-    }
-}
-
-impl FromIterator<GlyphName> for GlyphMap {
-    fn from_iter<T: IntoIterator<Item = GlyphName>>(iter: T) -> Self {
-        GlyphMap {
-            names: iter
-                .into_iter()
-                .enumerate()
-                .map(|(i, cid)| (cid, GlyphId16::new(i.try_into().unwrap())))
-                .collect(),
-            cids: HashMap::new(),
-        }
-    }
-}
-
-// only intended for testing.
-impl FromIterator<GlyphIdent> for GlyphMap {
-    fn from_iter<T: IntoIterator<Item = GlyphIdent>>(iter: T) -> Self {
+impl<T: Into<GlyphIdent>> FromIterator<T> for GlyphMap {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut names = HashMap::new();
         let mut cids = HashMap::new();
         for (idx, item) in iter.into_iter().enumerate() {
             let idx = GlyphId16::new(idx.try_into().unwrap());
-            match item {
+            match item.into() {
                 GlyphIdent::Cid(cid) => cids.insert(cid, idx),
                 GlyphIdent::Name(name) => names.insert(name, idx),
             };
