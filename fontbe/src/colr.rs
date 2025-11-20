@@ -219,7 +219,7 @@ fn to_colr_paint(
             )))
         }
         ir::Paint::Layers(layers) => {
-            let start_idx = layer_list.num_layers;
+            let start_idx = layer_list.paints.len() as u32;
             for ir_paint in layers.iter() {
                 let paint = to_colr_paint(
                     context,
