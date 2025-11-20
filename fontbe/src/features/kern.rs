@@ -662,7 +662,7 @@ impl KernSplitContext {
         })
     }
 
-    // <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfc/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L242>
+    // <https://github.com/googlefonts/ufo2ft/blob/cea60d71/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L422>
     fn make_lookups(
         &self,
         pairs: &[&KernPair],
@@ -1101,25 +1101,37 @@ mod tests {
             ('\u{302}', "circumflexcomb"),
             ('\u{0430}', "a-cy"),
             ('\u{0431}', "be-cy"),
+            ('\u{60C}', "comma-ar"),
             ('\u{627}', "alef-ar"),
             ('\u{631}', "reh-ar"),
             ('\u{632}', "zain-ar"),
             ('\u{644}', "lam-ar"),
             ('\u{64E}', "fatha-ar"),
+            ('\u{661}', "one-ar"),
             ('\u{664}', "four-ar"),
             ('\u{667}', "seven-ar"),
+            ('\u{7DC}', "gba-nko"),
+            ('\u{B05}', "a-orya"),
+            ('\u{B86}', "aa-tamil"),
+            ('\u{BB5}', "va-tamil"),
+            ('\u{BD7}', "aulengthmark-tamil"),
             ('\u{CBE}', "aaMatra_kannada"),
             ('\u{CD6}', "ailength_kannada"),
+            ('\u{3042}', "a-hira"),
+            ('\u{30A2}', "a-kana"),
             ('\u{10A06}', "u10A06"),
             ('\u{10A1E}', "u10A1E"),
         ];
         EXTRA_GLYPH_NAMES
             .binary_search_by(|probe| probe.0.cmp(&c))
-            .map(|idx| EXTRA_GLYPH_NAMES[idx].1)
+            .map(|idx| EXTRA_GLYPH_NAMES[idx].1.into())
             .ok()
-            .or_else(|| fontdrasil::agl::agl_name_for_char(c))
-            .unwrap()
-            .into()
+            .or_else(|| fontdrasil::agl::agl_name_for_char(c).map(Into::into))
+            .unwrap_or_else(|| {
+                // Fallback to uni{:04X} or naming for characters without standard names
+                let codepoint = c as u32;
+                format!("uni{codepoint:04X}").into()
+            })
     }
 
     struct KernInput {
@@ -1214,7 +1226,7 @@ mod tests {
         }
 
         // manually indicate some glyphs are 'nonspacing'. In real code, this is
-        // determined by checking the glyohs' advance widths.
+        // determined by checking the glyphs' advance widths.
         fn with_nonspacing_glyphs(mut self, glyphs: &[char]) -> Self {
             self.non_spacing.extend(
                 glyphs
@@ -1293,13 +1305,13 @@ mod tests {
 
     const ACUTE_COMB: char = '\u{0301}';
     const CIRCUM_COMB: char = '\u{302}';
+    const A_CY: char = 'а';
     const KERN_DFLT_DFLT: FeatureKey = FeatureKey::new(KERN, DFLT_LANG, DFLT_SCRIPT);
     const KERN_LATN_DFLT: FeatureKey = FeatureKey::new(KERN, DFLT_LANG, Tag::new(b"latn"));
     const KERN_CYRL_DFLT: FeatureKey = FeatureKey::new(KERN, DFLT_LANG, Tag::new(b"cyrl"));
 
     #[test]
     fn split_latin_and_cyrillic() {
-        const A_CY: char = 'а';
         const BE_CY: char = 'б';
         let kerns = KernInput::new(&['a', 'b', A_CY, BE_CY])
             .with_rule('a', 'b', 5)
@@ -1914,5 +1926,255 @@ mod tests {
         let dflt_mah = FeatureKey::new(KERN, Tag::new(b"MAH "), DFLT_SCRIPT);
         // ensure that the feature was registered for the DFLT/Mah language system
         assert!(features.contains_key(&dflt_mah));
+    }
+
+    const GBA_NKO: char = '\u{07DC}';
+    /// Test that mixed script pairs don't go anywhere.
+    // https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1609
+    #[test]
+    fn kern_split_and_drop_mixed() {
+        let (_kerns, normalized) = KernInput::new(&['V', 'W', GBA_NKO])
+            .with_rule(['V', 'W'], [GBA_NKO, 'W'], -20)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt, latn/dflt
+            # 2 PairPos rules
+            # lookupflag LookupFlag(8)
+            V -20 W
+            W -20 W
+            "#
+        );
+    }
+
+    /// Test that that everyone gets common-script glyphs, but they get it per-script
+    ///
+    // https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1645
+    #[test]
+    fn kern_split_and_mix_common() {
+        let (_kerns, normalized) = KernInput::new(&['V', 'W', GBA_NKO, '.'])
+            .with_rule(['V', GBA_NKO, 'W'], '.', -20)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # dist: nko/dflt
+            # 1 PairPos rules
+            # lookupflag LookupFlag(8)
+            gba-nko <-20 0 -20 0> period
+
+            # kern: DFLT/dflt, latn/dflt
+            # 2 PairPos rules
+            # lookupflag LookupFlag(8)
+            V -20 period
+            W -20 period
+            "#
+        );
+    }
+
+    /// Test that if both sides are common, the output is common
+    //https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1679
+    #[test]
+    fn kern_keep_common() {
+        let (_kerns, normalized) = KernInput::new(&['.']).with_rule('.', '.', -20).build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt
+            # 1 PairPos rules
+            # lookupflag LookupFlag(8)
+            period -20 period
+            "#
+        );
+    }
+
+    const COMMA_AR: char = '\u{060C}';
+    const ONE_AR: char = '\u{661}';
+
+    /// Test that glyphs with more than one script get associated with all of
+    /// the relevant scripts in the pair
+    //https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1696
+    #[test]
+    fn kern_multi_script() {
+        let (_kerns, normalized) = KernInput::new(&[GBA_NKO, COMMA_AR, LAM_AR])
+            .with_rule([LAM_AR, GBA_NKO], COMMA_AR, -20)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # dist: nko/dflt
+            # 2 PairPos rules
+            # lookupflag LookupFlag(8)
+            gba-nko <-20 0 -20 0> comma-ar
+            lam-ar <-20 0 -20 0> comma-ar
+
+            # kern: DFLT/dflt, arab/dflt
+            # 2 PairPos rules
+            # lookupflag LookupFlag(8)
+            gba-nko <-20 0 -20 0> comma-ar
+            lam-ar <-20 0 -20 0> comma-ar
+            "#
+        );
+    }
+
+    /// Test that BiDi types for pairs are respected
+    //https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1730
+    #[test]
+    fn kern_mixed_bidis() {
+        let (_kerns, normalized) = KernInput::new(&['a', ',', ALEF_AR, COMMA_AR, ONE_AR])
+            // Undetermined: LTR
+            .with_rule(',', ',', -1)
+            // LTR
+            .with_rule('a', 'a', 1)
+            .with_rule('a', ',', 2)
+            .with_rule(',', 'a', 3)
+            // RTL
+            .with_rule(ALEF_AR, ALEF_AR, 4)
+            .with_rule(ALEF_AR, COMMA_AR, 5)
+            .with_rule(COMMA_AR, ALEF_AR, 6)
+            // Mixed: should be dropped
+            .with_rule(ALEF_AR, ONE_AR, 7)
+            .with_rule(ONE_AR, ALEF_AR, 8)
+            // LTR despite being an RTL script
+            .with_rule(ONE_AR, ONE_AR, 9)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt, latn/dflt
+            # 4 PairPos rules
+            # lookupflag LookupFlag(8)
+            a 1 a
+            a 2 comma
+            comma 3 a
+            comma -1 comma
+
+            # kern: arab/dflt
+            # 5 PairPos rules
+            # lookupflag LookupFlag(8)
+            comma -1 comma
+            alef-ar <4 0 4 0> alef-ar
+            alef-ar <5 0 5 0> comma-ar
+            comma-ar <6 0 6 0> alef-ar
+            one-ar 9 one-ar
+            "#
+        );
+    }
+
+    const A_HIRA: char = '\u{3042}';
+    const A_KANA: char = '\u{30A2}';
+
+    /// Test that Hiragana and Katakana land in the same lookup and can be
+    /// kerned against each other and common glyphs are kerned just once
+    //https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1969
+    #[test]
+    fn kern_hira_kana_hrkt() {
+        let (_kerns, normalized) = KernInput::new(&[A_HIRA, A_KANA, '.'])
+            .with_rule(A_HIRA, A_HIRA, 1)
+            .with_rule(A_HIRA, A_KANA, 2)
+            .with_rule(A_KANA, A_HIRA, 3)
+            .with_rule(A_KANA, A_KANA, 4)
+            .with_rule('.', '.', 5)
+            .with_rule(A_HIRA, '.', 6)
+            .with_rule('.', A_HIRA, 7)
+            .with_rule(A_KANA, '.', 8)
+            .with_rule('.', A_KANA, 9)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt, kana/dflt
+            # 9 PairPos rules
+            # lookupflag LookupFlag(8)
+            a-hira 1 a-hira
+            a-hira 2 a-kana
+            a-hira 6 period
+            a-kana 3 a-hira
+            a-kana 4 a-kana
+            a-kana 8 period
+            period 7 a-hira
+            period 9 a-kana
+            period 5 period
+            "#
+        );
+    }
+
+    const AA_TAMIL: char = '\u{0B86}';
+    const VA_TAMIL: char = '\u{0BB5}';
+    const AULENGTHMARK_TAMIL: char = '\u{0BD7}';
+
+    /// Check that kerning of bases against marks is correctly split into
+    /// base-only and mixed-mark-and-base lookups, to preserve the semantics of
+    /// kerning exceptions (pairs modifying the effect of other pairs)
+    //https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L2129
+    #[test]
+    fn mark_base_kerning() {
+        const E_TAMIL_GROUP: [char; 2] = [AULENGTHMARK_TAMIL, VA_TAMIL];
+        let (_kerns, normalized) = KernInput::new(&[AA_TAMIL, VA_TAMIL, AULENGTHMARK_TAMIL])
+            .with_opentype_category_marks(&[AULENGTHMARK_TAMIL])
+            .with_nonspacing_glyphs(&[AULENGTHMARK_TAMIL])
+            .with_rule(AA_TAMIL, VA_TAMIL, -20)
+            .with_rule(AA_TAMIL, E_TAMIL_GROUP, -35)
+            .with_rule(VA_TAMIL, AA_TAMIL, -20)
+            .with_rule(E_TAMIL_GROUP, AA_TAMIL, -35)
+            .with_rule(AULENGTHMARK_TAMIL, AULENGTHMARK_TAMIL, -200)
+            .with_rule(E_TAMIL_GROUP, E_TAMIL_GROUP, -100)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # dist: taml/dflt, tml2/dflt
+            # 8 PairPos rules
+            # lookupflag LookupFlag(8)
+            aa-tamil -20 va-tamil
+            # lookupflag LookupFlag(0)
+            aa-tamil -35 aulengthmark-tamil
+            # lookupflag LookupFlag(8)
+            va-tamil -20 aa-tamil
+            va-tamil -100 va-tamil
+            # lookupflag LookupFlag(0)
+            va-tamil -100 aulengthmark-tamil
+            aulengthmark-tamil -35 aa-tamil
+            aulengthmark-tamil -100 va-tamil
+            aulengthmark-tamil -200 aulengthmark-tamil
+            "#
+        );
+    }
+
+    /// Check that languages defined for the special DFLT script are registered as well
+    //https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L2237
+    #[test]
+    fn test_dflt_language() {
+        let (_kerns, normalized) = KernInput::new(&['a', ','])
+            .with_user_fea(
+                "
+                languagesystem DFLT dflt;
+                languagesystem DFLT ZND;
+                languagesystem latn dflt;
+                languagesystem latn ANG;
+                ",
+            )
+            .with_rule('a', 'a', 1)
+            .with_rule(',', ',', 2)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt, DFLT/ZND , latn/dflt, latn/ANG
+            # 2 PairPos rules
+            # lookupflag LookupFlag(8)
+            a 1 a
+            comma 2 comma
+            "#
+        );
     }
 }
