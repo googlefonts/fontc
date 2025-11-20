@@ -61,8 +61,7 @@ from fontTools.varLib.iup import iup_delta
 from glyphsLib import GSFont
 from lxml import etree
 
-_COMPARE_DEFAULTS = "default"
-_COMPARE_GFTOOLS = "gftools"
+from ttx_diff import __version__
 
 # environment variable used by GFTOOLS
 GFTOOLS_FONTC_PATH = "GFTOOLS_FONTC_PATH"
@@ -85,71 +84,6 @@ if "SOURCE_DATE_EPOCH" not in os.environ:
 # print to stderr
 def eprint(*objects):
     print(*objects, file=sys.stderr)
-
-
-flags.DEFINE_string(
-    "config",
-    default=None,
-    help="config.yaml to be passed to gftools in gftools mode",
-)
-flags.DEFINE_string(
-    "fontc_path",
-    default=None,
-    help="Optional path to precompiled fontc binary",
-)
-flags.DEFINE_string(
-    "normalizer_path",
-    default=None,
-    help="Optional path to precompiled otl-normalizer binary",
-)
-flags.DEFINE_enum(
-    "compare",
-    "default",
-    [_COMPARE_DEFAULTS, _COMPARE_GFTOOLS],
-    "Compare results using either a default build or a build managed by gftools. Note that as of 5/21/2023 defaults still sets flags for fontmake to match fontc behavior.",
-)
-flags.DEFINE_enum(
-    "rebuild",
-    "both",
-    ["both", "fontc", "fontmake", "none"],
-    "Which compilers to rebuild with if the output appears to already exist. None is handy when playing with ttx_diff.py itself.",
-)
-flags.DEFINE_float(
-    "off_by_one_budget",
-    0.1,
-    "The percentage of point (glyf) or delta (gvar) values allowed to differ by one without counting as a diff",
-)
-flags.DEFINE_bool("json", False, "print results in machine-readable JSON format")
-flags.DEFINE_string("outdir", default=None, help="directory to store generated files")
-flags.DEFINE_bool(
-    "production_names",
-    True,
-    "rename glyphs to AGL-compliant names (uniXXXX, etc.) suitable for production. Disable to see the original glyph names.",
-)
-
-# fontmake - and so gftools' - static builds perform overlaps removal, but fontc
-# can't do that yet, and so we default to disabling the filter to make the diff
-# less noisy.
-# TODO: Change the default if/when fontc gains the ability to remove overlaps.
-# https://github.com/googlefonts/fontc/issues/975
-flags.DEFINE_bool(
-    "keep_overlaps",
-    True,
-    "Keep overlaps when building static fonts. Disable to compare with simplified outlines.",
-)
-flags.DEFINE_bool(
-    "keep_direction", False, "Preserve contour winding direction from source."
-)
-flags.DEFINE_string(
-    "fontc_font",
-    default=None,
-    help="Optional path to precompiled fontc font. Must be used with --fontmake_font.",
-)
-flags.DEFINE_string(
-    "fontmake_font",
-    default=None,
-    help="Optional path to precompiled fontmake font. Must be used with --fontc_font.",
-)
 
 
 def to_xml_string(e) -> str:
@@ -1436,6 +1370,10 @@ def get_crate_path(
 
 
 def main(argv):
+    if FLAGS.version:
+        print(f"ttx-diff version {__version__}")
+        sys.exit(0)
+
     has_source = len(argv) == 2
 
     if (FLAGS.fontc_font is None) != (FLAGS.fontmake_font is None):
@@ -1528,7 +1466,7 @@ def main(argv):
         delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
 
         try:
-            if compare == _COMPARE_DEFAULTS:
+            if compare == "default":
                 build_fontc(source, fontc_bin_path, build_dir)
             else:
                 run_gftools(source, FLAGS.config, build_dir, fontc_bin=fontc_bin_path)
@@ -1538,7 +1476,7 @@ def main(argv):
                 "stderr": e.msg[-MAX_ERR_LEN:],
             }
         try:
-            if compare == _COMPARE_DEFAULTS:
+            if compare == "default":
                 build_fontmake(source, build_dir)
             else:
                 run_gftools(source, FLAGS.config, build_dir)
