@@ -846,10 +846,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{BTreeSet, HashSet},
-        path::Path,
-    };
+    use std::collections::{BTreeSet, HashSet};
 
     use fontdrasil::{
         orchestration::Access,
@@ -864,7 +861,6 @@ mod tests {
             StaticMetadata,
         },
         orchestration::{Context, Flags, WorkId},
-        paths::Paths,
     };
 
     use super::*;
@@ -934,8 +930,7 @@ mod tests {
         .unwrap();
         let mut flags = Flags::default();
         flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
-        let ctx = Context::new_root(flags, Paths::new(Path::new("/fake/path")))
-            .copy_for_work(Access::All, Access::All);
+        let ctx = Context::new_root(flags).copy_for_work(Access::All, Access::All);
         ctx.static_metadata.set(meta);
         ctx
     }

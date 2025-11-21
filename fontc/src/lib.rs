@@ -171,10 +171,10 @@ fn _generate_font(
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
-    let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
+    let (_ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
     timer.add(time.complete());
     let workload = Workload::new(source, timer, skip_features)?;
-    let fe_root = FeContext::new_root(flags, ir_paths);
+    let fe_root = FeContext::new_root(flags);
     let be_root = BeContext::new_root(flags, be_paths, &fe_root);
     let timing = workload.exec(&fe_root, &be_root)?;
     Ok((be_root, timing))
@@ -352,12 +352,12 @@ mod tests {
             let input = args.source().unwrap().create_source().unwrap();
             let flags = merge_compilation_flags(args.flags(), &*input);
 
-            let (ir_paths, be_paths) =
+            let (_ir_paths, be_paths) =
                 init_paths(args.output_file.as_ref(), &args.build_dir, flags).unwrap();
 
             let build_dir = be_paths.build_dir().to_path_buf();
 
-            let fe_context = FeContext::new_root(flags, ir_paths);
+            let fe_context = FeContext::new_root(flags);
             let be_context = BeContext::new_root(flags, be_paths, &fe_context.read_only());
             let workload = Workload::new(input, timer, args.skip_features).unwrap();
 

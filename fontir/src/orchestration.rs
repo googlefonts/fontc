@@ -1,15 +1,8 @@
 //! Helps coordinate the graph execution for IR
 
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    fs::File,
-    hash::Hash,
-    io::{BufReader, BufWriter, Read, Write},
-    sync::Arc,
-};
+use std::{collections::HashMap, fmt::Debug, hash::Hash, sync::Arc};
 
-use crate::{error::Error, ir, paths::Paths};
+use crate::{error::Error, ir};
 use bitflags::bitflags;
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -54,26 +47,23 @@ impl Default for Flags {
 ///
 /// Courtesy of Arc this is Clone even if T isn't
 #[derive(Default)]
-pub struct ContextItem<I, T, P>
+pub struct ContextItem<I, T>
 where
     I: Identifier,
 {
     id: I,
     acl: Arc<AccessControlList<I>>,
-    persistent_storage: Arc<P>,
     value: Arc<RwLock<Option<Arc<T>>>>,
 }
 
-impl<I, T, P> ContextItem<I, T, P>
+impl<I, T> ContextItem<I, T>
 where
     I: Identifier,
-    P: PersistentStorage<I>,
 {
-    pub fn new(id: I, acl: Arc<AccessControlList<I>>, persistent_storage: Arc<P>) -> Self {
+    pub fn new(id: I, acl: Arc<AccessControlList<I>>) -> Self {
         ContextItem {
             id,
             acl,
-            persistent_storage,
             value: Default::default(),
         }
     }
@@ -82,7 +72,6 @@ where
         ContextItem {
             id: self.id.clone(),
             acl,
-            persistent_storage: self.persistent_storage.clone(),
             value: self.value.clone(),
         }
     }
@@ -104,11 +93,10 @@ where
     }
 }
 
-impl<I, T, P> ContextItem<I, T, P>
+impl<I, T> ContextItem<I, T>
 where
     I: Identifier,
     T: PartialEq,
-    P: PersistentStorage<I>,
 {
     /// Update the value if it has changed.
     ///
@@ -135,27 +123,23 @@ where
 ///
 /// Courtesy of Arc this is Clone even if T isn't
 #[derive(Default)]
-pub struct ContextMap<I, T, P>
+pub struct ContextMap<I, T>
 where
     I: Identifier,
     T: IdAware<I>,
-    P: PersistentStorage<I>,
 {
     acl: Arc<AccessControlList<I>>,
-    persistent_storage: Arc<P>,
     value: Arc<RwLock<HashMap<I, Arc<T>>>>,
 }
 
-impl<I, T, P> ContextMap<I, T, P>
+impl<I, T> ContextMap<I, T>
 where
     I: Identifier,
     T: IdAware<I>,
-    P: PersistentStorage<I>,
 {
-    pub fn new(acl: Arc<AccessControlList<I>>, persistent_storage: Arc<P>) -> Self {
+    pub fn new(acl: Arc<AccessControlList<I>>) -> Self {
         ContextMap {
             acl,
-            persistent_storage,
             value: Default::default(),
         }
     }
@@ -163,7 +147,6 @@ where
     pub fn clone_with_acl(&self, acl: Arc<AccessControlList<I>>) -> Self {
         ContextMap {
             acl,
-            persistent_storage: self.persistent_storage.clone(),
             value: self.value.clone(),
         }
     }
@@ -198,11 +181,10 @@ where
     }
 }
 
-impl<I, T, Ir> ContextMap<I, T, Ir>
+impl<I, T> ContextMap<I, T>
 where
     I: Identifier,
     T: IdAware<I>,
-    Ir: PersistentStorage<I>,
 {
     pub fn set_unconditionally(&self, value: T) {
         let key = value.id();
@@ -212,11 +194,10 @@ where
     }
 }
 
-impl<I, T, Ir> ContextMap<I, T, Ir>
+impl<I, T> ContextMap<I, T>
 where
     I: Identifier,
     T: IdAware<I> + PartialEq,
-    Ir: PersistentStorage<I>,
 {
     pub fn set(&self, value: T) {
         let key = value.id();
@@ -239,17 +220,6 @@ where
 
 pub trait IdAware<I> {
     fn id(&self) -> I;
-}
-
-/// Reads and writes to somewhere that lives longer than processes.
-///
-/// This enables the compiler to restore state from prior executions which is
-/// crucial to incremental operation.
-pub trait PersistentStorage<I> {
-    fn active(&self) -> bool;
-    /// None if there is nothing written down for id
-    fn reader(&self, id: &I) -> Option<Box<dyn Read>>;
-    fn writer(&self, id: &I) -> Box<dyn Write>;
 }
 
 // Unique identifier of work. If there are no fields work is unique.
@@ -309,38 +279,8 @@ impl Identifier for WorkId {
 
 pub type IrWork = dyn Work<Context, WorkId, Error> + Send;
 
-pub struct IrPersistentStorage {
-    active: bool,
-    pub(crate) paths: Paths,
-}
-
-impl PersistentStorage<WorkId> for IrPersistentStorage {
-    fn active(&self) -> bool {
-        self.active
-    }
-
-    fn reader(&self, id: &WorkId) -> Option<Box<dyn Read>> {
-        let file = self.paths.target_file(id);
-        if !file.exists() {
-            return None;
-        }
-        let raw_file = File::open(file.clone())
-            .map_err(|e| panic!("Unable to write {file:?} {e}"))
-            .unwrap();
-        Some(Box::from(BufReader::new(raw_file)))
-    }
-
-    fn writer(&self, id: &WorkId) -> Box<dyn Write> {
-        let file = self.paths.target_file(id);
-        let raw_file = File::create(file.clone())
-            .map_err(|e| panic!("Unable to write {file:?} {e}"))
-            .unwrap();
-        Box::from(BufWriter::new(raw_file))
-    }
-}
-
-type FeContextItem<T> = ContextItem<WorkId, T, IrPersistentStorage>;
-type FeContextMap<T> = ContextMap<WorkId, T, IrPersistentStorage>;
+type FeContextItem<T> = ContextItem<WorkId, T>;
+type FeContextMap<T> = ContextMap<WorkId, T>;
 
 /// Read/write access to data for async work.
 ///
@@ -349,8 +289,6 @@ type FeContextMap<T> = ContextMap<WorkId, T, IrPersistentStorage>;
 /// execution order / mistakes, not to block actual bad actors.
 pub struct Context {
     pub flags: Flags,
-
-    pub(crate) persistent_storage: Arc<IrPersistentStorage>,
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
@@ -377,7 +315,6 @@ impl Context {
         let acl = Arc::from(acl);
         Context {
             flags: self.flags,
-            persistent_storage: self.persistent_storage.clone(),
             static_metadata: self.static_metadata.clone_with_acl(acl.clone()),
             preliminary_glyph_order: self.preliminary_glyph_order.clone_with_acl(acl.clone()),
             glyph_order: self.glyph_order.clone_with_acl(acl.clone()),
@@ -392,50 +329,21 @@ impl Context {
         }
     }
 
-    pub fn new_root(flags: Flags, paths: Paths) -> Context {
+    pub fn new_root(flags: Flags) -> Context {
         let acl = Arc::from(AccessControlList::read_only());
-        let persistent_storage = Arc::from(IrPersistentStorage {
-            active: flags.contains(Flags::EMIT_IR),
-            paths,
-        });
         Context {
             flags,
-            persistent_storage: persistent_storage.clone(),
-            static_metadata: ContextItem::new(
-                WorkId::StaticMetadata,
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            preliminary_glyph_order: ContextItem::new(
-                WorkId::PreliminaryGlyphOrder,
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            glyph_order: ContextItem::new(
-                WorkId::GlyphOrder,
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            global_metrics: ContextItem::new(
-                WorkId::GlobalMetrics,
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            glyphs: ContextMap::new(acl.clone(), persistent_storage.clone()),
-            features: ContextItem::new(WorkId::Features, acl.clone(), persistent_storage.clone()),
-            kerning_groups: ContextItem::new(
-                WorkId::KerningGroups,
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            kerning_at: ContextMap::new(acl.clone(), persistent_storage.clone()),
-            anchors: ContextMap::new(acl.clone(), persistent_storage.clone()),
-            colors: ContextItem::new(
-                WorkId::ColorPalettes,
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            paint_graph: ContextItem::new(WorkId::PaintGraph, acl, persistent_storage),
+            static_metadata: ContextItem::new(WorkId::StaticMetadata, acl.clone()),
+            preliminary_glyph_order: ContextItem::new(WorkId::PreliminaryGlyphOrder, acl.clone()),
+            glyph_order: ContextItem::new(WorkId::GlyphOrder, acl.clone()),
+            global_metrics: ContextItem::new(WorkId::GlobalMetrics, acl.clone()),
+            glyphs: ContextMap::new(acl.clone()),
+            features: ContextItem::new(WorkId::Features, acl.clone()),
+            kerning_groups: ContextItem::new(WorkId::KerningGroups, acl.clone()),
+            kerning_at: ContextMap::new(acl.clone()),
+            anchors: ContextMap::new(acl.clone()),
+            colors: ContextItem::new(WorkId::ColorPalettes, acl.clone()),
+            paint_graph: ContextItem::new(WorkId::PaintGraph, acl),
         }
     }
 

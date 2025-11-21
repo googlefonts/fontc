@@ -666,14 +666,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
 
         // Enables the assumption that if the file exists features were compiled
         if context.flags.contains(Flags::EMIT_IR) {
-            fs::write(
-                context
-                    .persistent_storage
-                    .paths
-                    .target_file(&WorkId::Features),
-                "1",
-            )
-            .map_err(Error::IoError)?;
+            fs::write(context.paths.target_file(&WorkId::Features), "1").map_err(Error::IoError)?;
         }
         Ok(())
     }
