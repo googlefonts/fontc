@@ -12,7 +12,7 @@ edition = "2024"
 exclude = ["test-data"]
 
 [dependencies]
-fontdrasil = { version = "0.3.0", path = "../fontdrasil" }
+fontdrasil = { version = "0.4.0", path = "../fontdrasil" }
 ansi_term = "0.12.1"
 serde_json = {version = "1.0.87", optional = true }
 

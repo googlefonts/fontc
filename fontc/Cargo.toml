@@ -20,7 +20,7 @@ default = ["cli"]
 cli = ["clap"]
 
 [dependencies]
-fontdrasil = { version = "0.3.0", path = "../fontdrasil" }
+fontdrasil = { version = "0.4.0", path = "../fontdrasil" }
 fontbe = { version = "0.4.0", path = "../fontbe" }
 fontir = { version = "0.5.0", path = "../fontir" }
 glyphs2fontir = { version = "0.5.0", path = "../glyphs2fontir" }
