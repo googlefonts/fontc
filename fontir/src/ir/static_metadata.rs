@@ -3,7 +3,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Debug,
-    io::Read,
 };
 
 use chrono::{DateTime, Utc};
@@ -20,8 +19,6 @@ use fontdrasil::{
     types::{Axes, Axis, GlyphName},
     variations::{VariationModel, VariationModelError},
 };
-
-use crate::orchestration::Persistable;
 
 /// Glyph names mapped to postscript names
 pub type PostscriptNames = HashMap<GlyphName, GlyphName>;
@@ -539,16 +536,6 @@ impl Panose {
             self.midline,
             self.x_height,
         ]
-    }
-}
-
-impl Persistable for StaticMetadata {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
     }
 }
 

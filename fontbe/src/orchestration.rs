@@ -4,7 +4,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     fmt::Display,
     fs::File,
-    io::{self, BufReader, BufWriter, Read, Write},
+    io::{self, BufReader, BufWriter, Read},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -22,8 +22,8 @@ use fontdrasil::{
 use fontir::{
     ir::{self, GlyphOrder, KernGroup},
     orchestration::{
-        Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
-        PersistentStorage, WorkId as FeWorkIdentifier,
+        Context as FeContext, ContextItem, ContextMap, Flags, IdAware, PersistentStorage,
+        WorkId as FeWorkIdentifier,
     },
 };
 
@@ -273,57 +273,6 @@ impl ExtraFeaTables {
     }
 }
 
-// we could use serde here but it produces really big outputs; so instead
-// we can use fontwrite on each table, and then serialize an array of Option<Vec<u8>>
-impl Persistable for ExtraFeaTables {
-    fn read(from: &mut dyn Read) -> Self {
-        fn read_table<'a, T: FontRead<'a>>(bytes: Option<&'a Vec<u8>>) -> Option<T> {
-            let bytes = bytes?.as_slice();
-            Some(T::read(bytes.into()).unwrap())
-        }
-
-        let [head, hhea, vhea, os2, base, stat, name]: [Option<Vec<u8>>; 7] =
-            bincode::deserialize_from(from).unwrap();
-
-        Self {
-            head: read_table(head.as_ref()),
-            hhea: read_table(hhea.as_ref()),
-            vhea: read_table(vhea.as_ref()),
-            os2: read_table(os2.as_ref()),
-            base: read_table(base.as_ref()),
-            stat: read_table(stat.as_ref()),
-            name: read_table(name.as_ref()),
-        }
-    }
-
-    fn write(&self, to: &mut dyn Write) {
-        fn dump<T: Validate + FontWrite>(table: Option<&T>) -> Option<Vec<u8>> {
-            table.map(write_fonts::dump_table).transpose().unwrap()
-        }
-        let ExtraFeaTables {
-            head,
-            hhea,
-            vhea,
-            os2,
-            base,
-            stat,
-            name,
-        } = self;
-
-        let out = [
-            dump(head.as_ref()),
-            dump(hhea.as_ref()),
-            dump(vhea.as_ref()),
-            dump(os2.as_ref()),
-            dump(base.as_ref()),
-            dump(stat.as_ref()),
-            dump(name.as_ref()),
-        ];
-
-        bincode::serialize_into(to, &out).unwrap()
-    }
-}
-
 /// A glyph and its associated name
 ///
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
@@ -357,20 +306,6 @@ impl Glyph {
 impl IdAware<AnyWorkId> for Glyph {
     fn id(&self) -> AnyWorkId {
         AnyWorkId::Be(WorkId::GlyfFragment(self.name.clone()))
-    }
-}
-
-impl Persistable for Glyph {
-    fn read(from: &mut dyn Read) -> Self {
-        let (name, bytes): (GlyphName, Vec<u8>) = bincode::deserialize_from(from).unwrap();
-        let glyph = FontRead::read(bytes.as_slice().into()).unwrap();
-        Glyph { name, data: glyph }
-    }
-
-    fn write(&self, to: &mut dyn Write) {
-        let glyph_bytes = dump_table(&self.data).unwrap();
-        let to_write = (&self.name, glyph_bytes);
-        bincode::serialize_into(to, &to_write).unwrap();
     }
 }
 
@@ -416,16 +351,6 @@ impl IdAware<AnyWorkId> for GvarFragment {
     }
 }
 
-impl Persistable for GvarFragment {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, &self).unwrap();
-    }
-}
-
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MarkLookups {
     pub(crate) mark_base: Vec<PendingLookup<MarkToBaseBuilder>>,
@@ -441,16 +366,6 @@ pub struct FeaRsMarks {
     pub(crate) blwm: MarkLookups,
     pub(crate) curs: Vec<PendingLookup<CursivePosBuilder>>,
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValueBuilder>>,
-}
-
-impl Persistable for FeaRsMarks {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
 }
 
 /// Kerns, ready to feed to fea-rs in the form it expects
@@ -546,26 +461,6 @@ impl FeaRsKerns {
     }
 }
 
-impl Persistable for FeaRsKerns {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
-}
-
-impl Persistable for FeaFirstPassOutput {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
-}
-
 /// Kerning adjustments at various locations
 pub type KernAdjustments = BTreeMap<NormalizedLocation, OrderedFloat<f64>>;
 
@@ -579,16 +474,6 @@ pub struct AllKerningPairs {
     /// A mapping from named kern groups to the appropriate set of glyphs
     pub groups: BTreeMap<KernGroup, GlyphSet>,
     pub adjustments: Vec<(ir::KernPair, KernAdjustments)>,
-}
-
-impl Persistable for AllKerningPairs {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
 }
 
 /// One side of a kerning pair, represented as glyph ids
@@ -773,16 +658,6 @@ impl IdAware<AnyWorkId> for KernFragment {
     }
 }
 
-impl Persistable for KernFragment {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
-}
-
 // work around orphan rules.
 //
 // FIXME: Clarify if there's a good reason not to treat glyf/loca as a single
@@ -806,16 +681,6 @@ impl From<LocaFormatWrapper> for LocaFormat {
         } else {
             LocaFormat::Long
         }
-    }
-}
-
-impl Persistable for LocaFormatWrapper {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
     }
 }
 
@@ -1063,18 +928,6 @@ impl Bytes {
 impl From<Vec<u8>> for Bytes {
     fn from(buf: Vec<u8>) -> Self {
         Bytes { buf }
-    }
-}
-
-impl Persistable for Bytes {
-    fn read(from: &mut dyn Read) -> Self {
-        let mut buf = Vec::new();
-        from.read_to_end(&mut buf).unwrap();
-        buf.into()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        to.write_all(&self.buf).unwrap();
     }
 }
 

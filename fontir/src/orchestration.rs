@@ -5,7 +5,7 @@ use std::{
     fmt::Debug,
     fs::File,
     hash::Hash,
-    io::{self, BufReader, BufWriter, Read, Write},
+    io::{BufReader, BufWriter, Read, Write},
     sync::Arc,
 };
 
@@ -17,7 +17,6 @@ use fontdrasil::{
     types::GlyphName,
 };
 use parking_lot::RwLock;
-use write_fonts::{FontWrite, read::FontRead, validate::Validate};
 
 bitflags! {
     #[derive(Clone, Copy, Debug)]
@@ -69,7 +68,6 @@ impl<I, T, P> ContextItem<I, T, P>
 where
     I: Identifier,
     P: PersistentStorage<I>,
-    T: Persistable,
 {
     pub fn new(id: I, acl: Arc<AccessControlList<I>>, persistent_storage: Arc<P>) -> Self {
         ContextItem {
@@ -95,19 +93,6 @@ where
     /// [Work::read_access]. If these are missing something is horribly
     /// wrong and we should kerplode.
     pub fn get(&self) -> Arc<T> {
-        if let Some(in_memory) = self.try_get() {
-            return in_memory;
-        }
-
-        // it's *not* in memory but perhaps it's written down?
-        if self.persistent_storage.active()
-            && let Some(mut reader) = self.persistent_storage.reader(&self.id)
-        {
-            let restored = T::read(&mut reader);
-            *self.value.write() = Some(Arc::from(restored));
-        }
-
-        // if we still don't have an answer just give up
         self.try_get()
             .unwrap_or_else(|| panic!("{:?} is not available", self.id))
     }
@@ -122,7 +107,7 @@ where
 impl<I, T, P> ContextItem<I, T, P>
 where
     I: Identifier,
-    T: PartialEq + Persistable,
+    T: PartialEq,
     P: PersistentStorage<I>,
 {
     /// Update the value if it has changed.
@@ -140,11 +125,6 @@ where
             .unwrap_or(false)
         {
             return;
-        }
-
-        if self.persistent_storage.active() {
-            let mut writer = self.persistent_storage.writer(&self.id);
-            value.write(&mut writer);
         }
 
         *self.value.write() = Some(Arc::from(value));
@@ -169,7 +149,7 @@ where
 impl<I, T, P> ContextMap<I, T, P>
 where
     I: Identifier,
-    T: IdAware<I> + Persistable,
+    T: IdAware<I>,
     P: PersistentStorage<I>,
 {
     pub fn new(acl: Arc<AccessControlList<I>>, persistent_storage: Arc<P>) -> Self {
@@ -212,18 +192,6 @@ where
     /// [Work::read_access]. If these are missing something is horribly
     /// wrong and we should kerplode.
     pub fn get(&self, id: &I) -> Arc<T> {
-        if let Some(in_memory) = self.try_get(id) {
-            return in_memory;
-        }
-
-        // it's *not* in memory but perhaps it's written down?
-        if self.persistent_storage.active()
-            && let Some(mut reader) = self.persistent_storage.reader(id)
-        {
-            let restored = T::read(&mut reader);
-            self.value.write().insert(id.clone(), Arc::from(restored));
-        }
-
         // if we still don't have an answer just give up
         self.try_get(id)
             .unwrap_or_else(|| panic!("{id:?} is not available"))
@@ -233,17 +201,12 @@ where
 impl<I, T, Ir> ContextMap<I, T, Ir>
 where
     I: Identifier,
-    T: IdAware<I> + Persistable,
+    T: IdAware<I>,
     Ir: PersistentStorage<I>,
 {
     pub fn set_unconditionally(&self, value: T) {
         let key = value.id();
         self.acl.assert_write_access(&key);
-
-        if self.persistent_storage.active() {
-            let mut writer = self.persistent_storage.writer(&key);
-            value.write(&mut writer);
-        }
 
         self.value.write().insert(key, Arc::from(value));
     }
@@ -252,7 +215,7 @@ where
 impl<I, T, Ir> ContextMap<I, T, Ir>
 where
     I: Identifier,
-    T: IdAware<I> + PartialEq + Persistable,
+    T: IdAware<I> + PartialEq,
     Ir: PersistentStorage<I>,
 {
     pub fn set(&self, value: T) {
@@ -276,11 +239,6 @@ where
 
 pub trait IdAware<I> {
     fn id(&self) -> I;
-}
-
-pub trait Persistable {
-    fn read(from: &mut dyn Read) -> Self;
-    fn write(&self, to: &mut dyn Write);
 }
 
 /// Reads and writes to somewhere that lives longer than processes.
@@ -378,22 +336,6 @@ impl PersistentStorage<WorkId> for IrPersistentStorage {
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
         Box::from(BufWriter::new(raw_file))
-    }
-}
-
-impl<T> Persistable for T
-where
-    for<'a> T: FontRead<'a> + FontWrite + Validate,
-{
-    fn read(from: &mut dyn Read) -> Self {
-        let mut buf = Vec::new();
-        from.read_to_end(&mut buf).unwrap();
-        T::read(buf.as_slice().into()).expect("if we wrote it we can read it")
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        let bytes = write_fonts::dump_table(self).unwrap();
-        to.write_all(&bytes).unwrap();
     }
 }
 
