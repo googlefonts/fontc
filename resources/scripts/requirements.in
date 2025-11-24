@@ -8,3 +8,7 @@ fontmake[repacker]==3.11.0
 # keep gftools pinned as well to ensure ttx-diff output is stable.
 # 0.9.74 is when experimental support for fontc was added to gftools.
 gftools==0.9.93
+# Some COLR fonts like Kalnia-Glaze require an (undeclared) optional dependency
+# of gftools builder, which is run as a post-process step, see:
+# https://github.com/googlefonts/gftools/issues/1159
+paintcompiler
