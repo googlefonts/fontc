@@ -133,6 +133,9 @@ pub struct CustomParameters {
     pub vhea_caret_offset: Option<i64>,
     pub meta_table: Option<MetaTableValues>,
     pub dont_use_production_names: Option<bool>,
+    // Master-level parameters for linking metrics to another master
+    pub link_metrics_with_first_master: Option<bool>,
+    pub link_metrics_with_master: Option<SmolStr>,
     // these fields are parsed via the config, but are stored
     // in the top-level `Font` struct
     pub virtual_masters: Option<Vec<BTreeMap<String, OrderedFloat<f64>>>>,
@@ -1146,6 +1149,12 @@ impl RawCustomParameters {
                 "Don't use Production Names" => {
                     add_and_report_issues!(dont_use_production_names, Plist::as_bool)
                 }
+                "Link Metrics With First Master" => {
+                    add_and_report_issues!(link_metrics_with_first_master, Plist::as_bool)
+                }
+                "Link Metrics With Master" => {
+                    add_and_report_issues!(link_metrics_with_master, Plist::as_str, into)
+                }
                 // these might need to be handled? they're in the same list as
                 // the items above:
                 // https://github.com/googlefonts/glyphsLib/blob/74c63244fdb/Lib/glyphsLib/builder/custom_params.py#L429
@@ -1610,6 +1619,34 @@ impl FontMaster {
 
     pub fn italic_angle(&self) -> Option<f64> {
         self.read_metric("italic angle")
+    }
+
+    /// Returns the master ID to use for glyph metrics and kerning, if this master
+    /// has linked metrics via the "Link Metrics With First Master" or
+    /// "Link Metrics With Master" custom parameters.
+    ///
+    /// Returns None if no linking is configured, meaning this master uses its own metrics.
+    ///
+    /// See <https://github.com/googlefonts/glyphsLib/blob/a045b48/Lib/glyphsLib/classes.py#L1641-L1665>
+    pub fn metrics_source_id<'a>(&'a self, font: &'a Font) -> Option<&'a str> {
+        // "Link Metrics With First Master" takes precedence
+        if self.custom_parameters.link_metrics_with_first_master == Some(true) {
+            return font.masters.first().map(|m| m.id.as_str());
+        }
+
+        if let Some(ref source_ref) = self.custom_parameters.link_metrics_with_master {
+            // Try by master ID first
+            if font.masters.iter().any(|m| m.id == source_ref.as_str()) {
+                return Some(source_ref.as_str());
+            }
+            // Try by master name
+            if let Some(master) = font.masters.iter().find(|m| m.name == source_ref.as_str()) {
+                return Some(master.id.as_str());
+            }
+            log::warn!("Source master for metrics not found: '{source_ref}'");
+        }
+
+        None
     }
 }
 
@@ -5784,5 +5821,92 @@ name = _corner.hi;
         let hint = RawHint::parse_plist(hint_plist).unwrap().to_hint().unwrap();
         assert_eq!(hint.scale.x, 0.7);
         assert_eq!(hint.scale.y, 1.0);
+    }
+
+    #[test]
+    fn link_metrics_with_first_master_parsing() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithFirstMaster.glyphs")).unwrap();
+        assert_eq!(font.masters.len(), 2);
+
+        // First master should NOT have linked metrics
+        assert_eq!(
+            font.masters[0]
+                .custom_parameters
+                .link_metrics_with_first_master,
+            None
+        );
+        // Second master should have "Link Metrics With First Master" set to true
+        assert_eq!(
+            font.masters[1]
+                .custom_parameters
+                .link_metrics_with_first_master,
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn link_metrics_with_master_parsing() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithMaster.glyphs")).unwrap();
+        assert_eq!(font.masters.len(), 3);
+
+        // First two masters should NOT have linked metrics
+        assert_eq!(
+            font.masters[0].custom_parameters.link_metrics_with_master,
+            None
+        );
+        assert_eq!(
+            font.masters[1].custom_parameters.link_metrics_with_master,
+            None
+        );
+        // Third master (Black) should link to Bold's master ID
+        let link_target = font.masters[2]
+            .custom_parameters
+            .link_metrics_with_master
+            .as_deref();
+        assert_eq!(link_target, Some("m02"));
+        assert_eq!(font.masters[1].id, "m02");
+        assert_eq!(font.masters[1].name, "Bold");
+    }
+
+    #[test]
+    fn metrics_source_id_with_first_master() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithFirstMaster.glyphs")).unwrap();
+
+        // First master should return None (uses its own metrics)
+        assert_eq!(font.masters[0].metrics_source_id(&font), None);
+        // Second master should return first master's ID
+        assert_eq!(
+            font.masters[1].metrics_source_id(&font),
+            Some(font.masters[0].id.as_str())
+        );
+    }
+
+    #[test]
+    fn metrics_source_id_with_master_by_id() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithMaster.glyphs")).unwrap();
+
+        assert_eq!(font.masters[0].metrics_source_id(&font), None);
+        assert_eq!(font.masters[1].metrics_source_id(&font), None);
+        // Third master (Black) should return second master's ID (Bold)
+        assert_eq!(
+            font.masters[2].metrics_source_id(&font),
+            Some(font.masters[1].id.as_str())
+        );
+    }
+
+    #[test]
+    fn metrics_source_id_with_missing_master() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithMissingMaster.glyphs")).unwrap();
+
+        // Second master links to "NonExistent" which doesn't exist
+        assert_eq!(
+            font.masters[1]
+                .custom_parameters
+                .link_metrics_with_master
+                .as_deref(),
+            Some("NonExistent")
+        );
+        // it should return None and log a warning like glyphsLib does
+        assert_eq!(font.masters[1].metrics_source_id(&font), None);
     }
 }
