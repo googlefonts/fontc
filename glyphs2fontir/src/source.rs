@@ -1193,8 +1193,20 @@ fn kerning_at_location<'a>(
         .master_positions
         .iter()
         .find_map(|(id, pos)| (pos == location).then_some(id))?;
-    let ltr = font_info.font.kerning_ltr.get(our_id);
-    let rtl = font_info.font.kerning_rtl.get(our_id);
+
+    // Check if this master has linked metrics via "Link Metrics With Master" or
+    // "Link Metrics With First Master" custom parameters.
+    // See https://github.com/googlefonts/glyphsLib/blob/682ff4b1/Lib/glyphsLib/builder/kerning.py#L33-L35
+    let metrics_source_id = font_info
+        .font
+        .masters
+        .iter()
+        .find(|m| m.id == *our_id)
+        .and_then(|m| m.metrics_source_id(&font_info.font))
+        .unwrap_or(our_id);
+
+    let ltr = font_info.font.kerning_ltr.get(metrics_source_id);
+    let rtl = font_info.font.kerning_rtl.get(metrics_source_id);
     // if there's no RTL, just return LTR, unchanged.
     let Some(rtl) = rtl else {
         // if there's no rtl we can just return ltr,
@@ -1515,14 +1527,33 @@ fn process_layer(
         }
     }
 
+    // Check if this master has linked metrics via "Link Metrics With Master" or
+    // "Link Metrics With First Master" custom parameters.
+    // See https://github.com/googlefonts/glyphsLib/blob/a045b482/Lib/glyphsLib/builder/glyph.py#L261-L278
+    let metrics_layer = master
+        .metrics_source_id(&font_info.font)
+        .and_then(|source_id| {
+            font_info
+                .font
+                .glyphs
+                .get(&glyph.name)
+                .and_then(|g| g.layers.iter().find(|l| l.layer_id == source_id))
+        });
+    // Use metrics from the source layer if linked, otherwise from the instance's own layer
+    let horiz_width = metrics_layer.map(|l| l.width).unwrap_or(instance.width);
+    let vert_width = metrics_layer
+        .and_then(|l| l.vert_width)
+        .or(instance.vert_width);
+    let vert_origin = metrics_layer
+        .and_then(|l| l.vert_origin)
+        .or(instance.vert_origin);
+
     // See https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/glyph.py#L359-L389
     let local_metrics = global_metrics.at(master_location);
-    let height = instance
-        .vert_width
+    let height = vert_width
         .unwrap_or_else(|| local_metrics.os2_typo_ascender - local_metrics.os2_typo_descender)
         .into_inner();
-    let vertical_origin = instance
-        .vert_origin
+    let vertical_origin = vert_origin
         .map(|origin| local_metrics.os2_typo_ascender - origin)
         .unwrap_or(local_metrics.os2_typo_ascender)
         .into_inner();
@@ -1538,7 +1569,7 @@ fn process_layer(
         width: if glyph.is_nonspacing_mark() {
             0.0
         } else {
-            instance.width.into_inner()
+            horiz_width.into_inner()
         },
         height: Some(height),
         vertical_origin: Some(vertical_origin),
@@ -1795,6 +1826,16 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    // TODO: Consider moving to fontdrasil if this becomes useful elsewhere
+    /// Create a [`NormalizedLocation`] with a single tag/coord pair.
+    macro_rules! norm_loc {
+        ($tag:expr, $value:expr) => {{
+            let mut loc = NormalizedLocation::new();
+            loc.insert(Tag::new($tag), NormalizedCoord::new($value));
+            loc
+        }};
+    }
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -3506,6 +3547,196 @@ mod tests {
                 }
             ]],
             colors.palettes
+        );
+    }
+
+    #[test]
+    fn link_metrics_width_with_first_master() {
+        // Test that "Link Metrics With First Master" correctly overrides glyph widths
+        // https://github.com/googlefonts/fontc/issues/1716
+        //
+        // The test file defines two masters along a wght axis: min=400 [default], max=700:
+        // - Master m01 (Regular, wght=400, normalized=0.0): A.width=600, B.width=650
+        // - Master m02 (Bold, wght=700, normalized=1.0): A.width=800, B.width=850
+        // BUT m02 also has "Link Metrics With First Master", so glyphs in both masters
+        // should have the same widths (from Regular).
+
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("LinkMetricsWithFirstMaster.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+
+        let glyph_a = context.get_glyph("A");
+        let sources_a = glyph_a.sources();
+
+        assert_eq!(sources_a.len(), 2);
+
+        let regular = norm_loc!(b"wght", 0.0);
+        let bold = norm_loc!(b"wght", 1.0);
+
+        assert_eq!(
+            sources_a[&regular].width, 600.0,
+            "Regular should have width 600"
+        );
+        assert_eq!(
+            sources_a[&bold].width, 600.0,
+            "Bold should have width 600 from Regular (first master)"
+        );
+
+        let glyph_b = context.get_glyph("B");
+        let sources_b = glyph_b.sources();
+
+        assert_eq!(
+            sources_b[&regular].width, 650.0,
+            "Regular should have width 650"
+        );
+        assert_eq!(
+            sources_b[&bold].width, 650.0,
+            "Bold should have width 650 from Regular (first master)"
+        );
+    }
+
+    #[test]
+    fn link_metrics_width_with_master_by_id() {
+        // Test that "Link Metrics With Master" (by ID) correctly overrides glyph widths
+        // https://github.com/googlefonts/fontc/issues/1716
+        //
+        // The test file defines three masters along a wght axis: min=400 [default], max=1000:
+        // - Master m01 (Regular, wght=400, normalized=0.0): A.width=600
+        // - Master m02 (Bold, wght=700, normalized=0.5): A.width=800
+        // - Master m03 (Black, wght=1000, normalized=1.0): A.width=1000
+        // The latter has "Link Metrics With Master" = "Bold".
+        // Therefore, A.width for Black should be 800 (same as Bold), not 1000.
+
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("LinkMetricsWithMaster.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+
+        let glyph = context.get_glyph("A");
+        let sources = glyph.sources();
+
+        assert_eq!(sources.len(), 3);
+
+        let regular = norm_loc!(b"wght", 0.0);
+        let bold = norm_loc!(b"wght", 0.5);
+        let black = norm_loc!(b"wght", 1.0);
+
+        assert_eq!(
+            sources[&regular].width, 600.0,
+            "Regular 'A' should have width 600"
+        );
+
+        assert_eq!(
+            sources[&bold].width, 800.0,
+            "Bold 'A' should have width 800"
+        );
+
+        assert_eq!(
+            sources[&black].width, 800.0,
+            "Black 'A' should have width from Bold master (800), not its own (1000)"
+        );
+    }
+
+    #[test]
+    fn link_metrics_with_missing_master_fallback() {
+        // Test that when linking to a missing master, the original metrics are used.
+        //
+        // Test file defines two masters along a wght axis: min=400 (default), max=700:
+        // - Master m01 (Regular, wght=400, normalized=0.0): A.width=600
+        // - Master m02 (Bold, wght=700, normalized=1.0): A.width=800
+        // The latter has "Link Metrics With Master" = "NonExistent" pointing to a missing master,
+        // so glyph 'A' should use its own metrics for Bold (800).
+
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("LinkMetricsWithMissingMaster.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+
+        let glyph = context.get_glyph("A");
+        let sources = glyph.sources();
+
+        assert_eq!(sources.len(), 2);
+
+        let regular_loc = norm_loc!(b"wght", 0.0);
+        let bold_loc = norm_loc!(b"wght", 1.0);
+
+        assert_eq!(sources[&regular_loc].width, 600.0);
+        assert_eq!(
+            sources[&bold_loc].width, 800.0,
+            "Bold master should use its own width when linked master doesn't exist"
+        );
+    }
+
+    #[test]
+    fn link_metrics_kerning_with_first_master() {
+        // Test that "Link Metrics With First Master" correctly uses kerning from first master
+        //
+        // Test file defines two masters along the wght axis:
+        // - Master m01 (default) has kerning @MMK_L_A / @MMK_R_B = 10
+        // - Master m02 has kerning @MMK_L_A / @MMK_R_B = 20 BUT also has "Link Metrics With First Master"
+        // So both locations should have the same kerning value (10, from first master)
+        let (_, context) = build_kerning(glyphs3_dir().join("LinkMetricsWithFirstMaster.glyphs"));
+        let kerns = context.kerning_at.all();
+
+        assert_eq!(kerns.len(), 2, "Should have exactly 2 kerning instances");
+        // Check that the kerning value is 10 for all, not 20
+        for (_, kerning_instance) in &kerns {
+            for ((left, right), value) in &kerning_instance.kerns {
+                if left.is_group() && right.is_group() {
+                    assert_eq!(
+                        value.into_inner(),
+                        10.0,
+                        "Kerning should be from first master (10), got {:?}",
+                        value
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn link_metrics_kerning_with_master() {
+        // Test that "Link Metrics With Master" correctly uses kerning from the specified master
+        //
+        // The test file defines three masters along a wght axis:
+        // - Regular (m01): wght=400 (normalized 0.0), kerning @MMK_L_A / @MMK_R_B = 10
+        // - Bold (m02): wght=700 (normalized 0.5), kerning @MMK_L_A / @MMK_R_B = 20
+        // - Black (m03): wght=1000 (normalized 1.0), kerning @MMK_L_A / @MMK_R_B = 30
+        // The latter has "Link Metrics With Master" = "Bold", so Black should use kerning
+        // from Bold (20), not its own (30)
+        let (_, context) = build_kerning(glyphs3_dir().join("LinkMetricsWithMaster.glyphs"));
+
+        let regular = norm_loc!(b"wght", 0.0);
+        let bold = norm_loc!(b"wght", 0.5);
+        let black = norm_loc!(b"wght", 1.0);
+
+        let regular_kerns = context
+            .kerning_at
+            .get(&WorkId::KernInstance(regular.clone()));
+        let bold_kerns = context.kerning_at.get(&WorkId::KernInstance(bold.clone()));
+        let black_kerns = context.kerning_at.get(&WorkId::KernInstance(black.clone()));
+
+        let get_first_group_kern = |kerning_instance: &fontir::ir::KerningInstance| -> f64 {
+            for ((left, right), value) in &kerning_instance.kerns {
+                if left.is_group() && right.is_group() {
+                    return value.into_inner();
+                }
+            }
+            panic!("No group-to-group kerning found");
+        };
+
+        assert_eq!(
+            get_first_group_kern(&regular_kerns),
+            10.0,
+            "Regular should have its own kerning (10)"
+        );
+        assert_eq!(
+            get_first_group_kern(&bold_kerns),
+            20.0,
+            "Bold should have its own kerning (20)"
+        );
+        assert_eq!(
+            get_first_group_kern(&black_kerns),
+            20.0,
+            "Black should use kerning from Bold (20), not its own (30)"
         );
     }
 }
