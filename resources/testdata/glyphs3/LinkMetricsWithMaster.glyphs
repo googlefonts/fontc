@@ -1,0 +1,128 @@
+{
+.appVersion = "3506";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+id = m02;
+name = Bold;
+},
+{
+axesValues = (
+1000
+);
+customParameters = (
+{
+name = "Link Metrics With Master";
+value = m02;
+}
+);
+id = m03;
+name = Black;
+}
+);
+glyphs = (
+{
+glyphname = A;
+kernRight = A;
+layers = (
+{
+layerId = m01;
+width = 600;
+},
+{
+layerId = m02;
+width = 800;
+},
+{
+layerId = m03;
+width = 1000;
+}
+);
+unicode = 65;
+},
+{
+glyphname = B;
+kernLeft = B;
+layers = (
+{
+layerId = m01;
+width = 650;
+},
+{
+layerId = m02;
+width = 850;
+},
+{
+layerId = m03;
+width = 1050;
+}
+);
+unicode = 66;
+}
+);
+instances = (
+{
+axesValues = (
+400
+);
+instanceInterpolations = {
+m01 = 1;
+};
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+instanceInterpolations = {
+m02 = 1;
+};
+name = Bold;
+},
+{
+axesValues = (
+1000
+);
+instanceInterpolations = {
+m03 = 1;
+};
+name = Black;
+}
+);
+kerningLTR = {
+m01 = {
+"@MMK_L_A" = {
+"@MMK_R_B" = 10;
+};
+};
+m02 = {
+"@MMK_L_A" = {
+"@MMK_R_B" = 20;
+};
+};
+m03 = {
+"@MMK_L_A" = {
+"@MMK_R_B" = 30;
+};
+};
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
