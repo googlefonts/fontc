@@ -673,7 +673,7 @@ impl<'a> MarkLookupBuilder<'a> {
         // https://github.com/googlefonts/ufo2ft/blob/16ed156bd6a8b9bc/Lib/ufo2ft/util.py#L360
         let unicode_is_abvm = |uv: u32| -> Option<bool> {
             let mut saw_abvm = false;
-            for script in super::properties::scripts_for_codepoint(uv) {
+            for script in super::properties::unicode_script_extensions(uv) {
                 if script == super::properties::COMMON_SCRIPT {
                     return None;
                 }
@@ -686,7 +686,7 @@ impl<'a> MarkLookupBuilder<'a> {
         // note that it's possible for a glyph to pass both these tests!
         let unicode_is_non_abvm = |uv: u32| -> Option<bool> {
             Some(
-                super::properties::scripts_for_codepoint(uv)
+                super::properties::unicode_script_extensions(uv)
                     // but this uses the unfiltered ones!
                     .any(|script| !scripts_using_abvm.contains(&script)),
             )
@@ -1738,7 +1738,7 @@ mod tests {
     fn glyph_in_abvm_but_not_if_no_abvm_lang() {
         let dotbelowcomb_char = char_for_glyph(&GlyphName::new("dotbelowcomb")).unwrap();
         let dotbelow_scripts =
-            super::super::properties::scripts_for_codepoint(dotbelowcomb_char as _)
+            super::super::properties::unicode_script_extensions(dotbelowcomb_char as _)
                 .collect::<Vec<_>>();
         let abvm_scripts = super::scripts_using_abvm();
 
@@ -1768,7 +1768,7 @@ mod tests {
     fn abvm_closure_excludes_glyphs_with_common_script() {
         let uni25cc = char_for_glyph(&GlyphName::new("uni25CC")).unwrap();
         assert_eq!(
-            super::super::properties::scripts_for_codepoint(uni25cc as _).collect::<Vec<_>>(),
+            super::super::properties::unicode_script_extensions(uni25cc as _).collect::<Vec<_>>(),
             [super::super::properties::COMMON_SCRIPT]
         );
         let _ = MarksInput::default()
