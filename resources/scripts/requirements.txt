@@ -112,6 +112,7 @@ fonttools[lxml,repacker,ufo,unicode,woff]==4.60.1
     #   glyphslib
     #   mutatormath
     #   nanoemoji
+    #   paintcompiler
     #   statmake
     #   ttx-diff
     #   ufo2ft
@@ -169,7 +170,7 @@ mutatormath==3.0.1
     # via ufoprocessor
 nanoemoji==0.15.9
     # via gftools
-networkx==3.5
+networkx==3.6
     # via gftools
 ninja==1.13.0
     # via
@@ -188,6 +189,8 @@ orjson==3.11.4
     #   ufolib2
 packaging==25.0
     # via gftools
+paintcompiler==0.3.4
+    # via -r resources/scripts/requirements.in
 picosvg==0.22.3
     # via nanoemoji
 pillow==12.0.0
