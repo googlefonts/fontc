@@ -1928,6 +1928,46 @@ mod tests {
         assert!(features.contains_key(&dflt_mah));
     }
 
+    //https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1531
+    #[test]
+    fn kern_split_and_drop() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        const ALPHA: char = 'α';
+        const A_ORYA: char = '\u{B05}';
+
+        const FOO: [char; 3] = ['a', ALPHA, A_ORYA];
+        const BAR: [char; 3] = [A_CY, ALEF_AR, '.'];
+
+        let builder = KernInput::new(&['a', ALPHA, A_ORYA, A_CY, ALEF_AR, '.'])
+            .with_rule(FOO, BAR, 20)
+            .with_rule(BAR, FOO, 20);
+
+        let (_, normalized) = builder.build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # dist: ory2/dflt, orya/dflt
+            # 5 PairPos rules
+            # lookupflag LookupFlag(8)
+            a 20 [a-cy,period]
+            alpha 20 [a-cy,period]
+            a-orya 20 [a-cy, period]
+            a-cy 20 [a,alpha,a-orya]
+            period 20 [a, alpha,a-orya]
+
+            # kern: DFLT/dflt, cyrl/dflt, grek/dflt, latn/dflt
+            # 5 PairPos rules
+            # lookupflag LookupFlag(8)
+            a 20 [a-cy,period]
+            alpha 20 [a-cy, period]
+            a-orya 20 [a-cy, period]
+            a-cy 20 [a, alpha, a-orya]
+            period 20 [a, alpha, a-orya]
+            "#
+        );
+    }
+
     const GBA_NKO: char = '\u{07DC}';
     /// Test that mixed script pairs don't go anywhere.
     // https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1609
