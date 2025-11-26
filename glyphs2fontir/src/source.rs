@@ -1837,16 +1837,6 @@ mod tests {
 
     use super::*;
 
-    // TODO: Consider moving to fontdrasil if this becomes useful elsewhere
-    /// Create a [`NormalizedLocation`] with a single tag/coord pair.
-    macro_rules! norm_loc {
-        ($tag:expr, $value:expr) => {{
-            let mut loc = NormalizedLocation::new();
-            loc.insert(Tag::new($tag), NormalizedCoord::new($value));
-            loc
-        }};
-    }
-
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
         assert!(dir.is_dir());
@@ -3580,8 +3570,8 @@ mod tests {
 
         assert_eq!(sources_a.len(), 2);
 
-        let regular = norm_loc!(b"wght", 0.0);
-        let bold = norm_loc!(b"wght", 1.0);
+        let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
 
         assert_eq!(
             sources_a[&regular].width, 600.0,
@@ -3626,9 +3616,9 @@ mod tests {
 
         assert_eq!(sources.len(), 3);
 
-        let regular = norm_loc!(b"wght", 0.0);
-        let bold = norm_loc!(b"wght", 0.5);
-        let black = norm_loc!(b"wght", 1.0);
+        let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let bold = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let black = NormalizedLocation::for_pos(&[("wght", 1.0)]);
 
         assert_eq!(
             sources[&regular].width, 600.0,
@@ -3665,8 +3655,8 @@ mod tests {
 
         assert_eq!(sources.len(), 2);
 
-        let regular_loc = norm_loc!(b"wght", 0.0);
-        let bold_loc = norm_loc!(b"wght", 1.0);
+        let regular_loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let bold_loc = NormalizedLocation::for_pos(&[("wght", 1.0)]);
 
         assert_eq!(sources[&regular_loc].width, 600.0);
         assert_eq!(
@@ -3714,9 +3704,9 @@ mod tests {
         // from Bold (20), not its own (30)
         let (_, context) = build_kerning(glyphs3_dir().join("LinkMetricsWithMaster.glyphs"));
 
-        let regular = norm_loc!(b"wght", 0.0);
-        let bold = norm_loc!(b"wght", 0.5);
-        let black = norm_loc!(b"wght", 1.0);
+        let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let bold = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let black = NormalizedLocation::for_pos(&[("wght", 1.0)]);
 
         let regular_kerns = context
             .kerning_at
@@ -3779,10 +3769,10 @@ mod tests {
             "Should have 3 sources (2 masters + 1 intermediate)"
         );
 
-        let regular = norm_loc!(b"wght", 0.0);
-        let bold = norm_loc!(b"wght", 1.0);
+        let regular = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         // Intermediate is at wght=550, normalized = (550-400)/(700-400) = 0.5
-        let intermediate = norm_loc!(b"wght", 0.5);
+        let intermediate = NormalizedLocation::for_pos(&[("wght", 0.5)]);
 
         assert_eq!(
             sources_a[&regular].width, 600.0,
