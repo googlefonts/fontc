@@ -1020,6 +1020,32 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         let font = &font_info.font;
 
         let mut groups = KerningGroups::default();
+        let mut recovered = HashSet::new();
+        for (group, glyphs) in &font.user_data.original_kerning_groups {
+            let Some(group) = KernGroup::from_ufo_group_name(group) else {
+                log::info!("unknown kern group '{group}'");
+                continue;
+            };
+
+            for glyph_name in glyphs {
+                //https://github.com/googlefonts/glyphsLib/blob/f90e4060/Lib/glyphsLib/builder/groups.py#L100
+                let condition = match font.glyphs.get(glyph_name) {
+                    None => true,
+                    Some(glyph) => match &group {
+                        KernGroup::Side1(name) => glyph.right_kern.as_ref() == Some(name),
+                        KernGroup::Side2(name) => glyph.left_kern.as_ref() == Some(name),
+                    },
+                };
+                if condition {
+                    groups
+                        .groups
+                        .entry(group.clone())
+                        .or_default()
+                        .insert(glyph_name.clone().into());
+                    recovered.insert((glyph_name, group.side_integer()));
+                }
+            }
+        }
 
         //https://github.com/googlefonts/glyphsLib/blob/682ff4b177/Lib/glyphsLib/builder/groups.py#L114
         let rtl_glyphs = get_glyphs_with_rtl_kerning(font);
@@ -1045,6 +1071,9 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
                 (right, left)
             };
             for group in [side1, side2].into_iter().flatten() {
+                if recovered.contains(&(name, group.side_integer())) {
+                    continue;
+                }
                 groups.groups.entry(group).or_default().extend(
                     bracket_names
                         .iter()
@@ -2808,6 +2837,20 @@ mod tests {
                 ("@side1.bet", "@side2.alef", 29)
             ])
         )
+    }
+
+    #[test]
+    fn respect_original_groups_lib_key() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let (_, ctx) = build_kerning(glyphs3_dir().join("FontcIssue1728.glyphs"));
+        let groups = ctx.kerning_groups.get();
+        assert!(
+            !groups
+                .groups
+                .get(&KernGroup::Side1("A".into()))
+                .unwrap()
+                .contains("AE")
+        );
     }
 
     #[test]

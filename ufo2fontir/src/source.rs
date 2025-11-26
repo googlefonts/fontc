@@ -1522,7 +1522,7 @@ fn kerning_groups_for(
         .groups
         .into_iter()
         .filter_map(|(group_name, entries)| {
-            KernGroup::from_group_name(group_name.as_str())
+            KernGroup::from_ufo_group_name(group_name.as_str())
                 .filter(|_| !entries.is_empty())
                 .map(|name| (name, entries))
         })
@@ -1549,32 +1549,6 @@ fn kerning_groups_for(
             }
         })
         .collect())
-}
-
-/// UFO specific behaviour for kern groups
-trait KernGroupExt {
-    fn from_group_name(name: &str) -> Option<KernGroup>;
-
-    // used when computing the 'reverse groups'
-    fn side_ord(&self) -> u8;
-}
-
-impl KernGroupExt for KernGroup {
-    fn from_group_name(name: &str) -> Option<KernGroup> {
-        name.strip_prefix(UFO_KERN1_PREFIX)
-            .map(|name| Self::Side1(name.into()))
-            .or_else(|| {
-                name.strip_prefix(UFO_KERN2_PREFIX)
-                    .map(|name| Self::Side2(name.into()))
-            })
-    }
-
-    fn side_ord(&self) -> u8 {
-        match self {
-            KernGroup::Side1(_) => 1,
-            KernGroup::Side2(_) => 2,
-        }
-    }
 }
 
 /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
@@ -1618,7 +1592,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         let reverse_groups: HashMap<_, _> = kerning_groups
             .groups
             .iter()
-            .map(|(k, v)| ((k.side_ord(), v), k))
+            .map(|(k, v)| ((k.side_integer(), v), k))
             .collect();
 
         // https://gist.github.com/madig/76567a9650de639bbff51ce010783790#file-align-groups-py-L21
@@ -1638,7 +1612,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             .filter(|(idx, source)| !is_glyph_only(source) && *idx != default_master_idx)
         {
             for (name, entries) in &kerning_groups.groups {
-                let Some(real_name) = reverse_groups.get(&(name.side_ord(), entries)) else {
+                let Some(real_name) = reverse_groups.get(&(name.side_integer(), entries)) else {
                     warn!(
                         "{name} exists only in {} and will be ignored",
                         source.name.as_ref().unwrap()
@@ -1718,7 +1692,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
             .map_err(|e| BadSource::custom(ufo_dir, e))?;
 
         let resolve = |name: &norad::Name, group_prefix: &str| {
-            if let Some(group_name) = KernGroup::from_group_name(name.as_str()) {
+            if let Some(group_name) = KernGroup::from_ufo_group_name(name.as_str()) {
                 if !name.starts_with(group_prefix) {
                     warn!("'{name}' should have prefix {group_prefix}; ignored");
                     return None;
