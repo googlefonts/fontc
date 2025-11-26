@@ -17,7 +17,7 @@ use crate::glyphdata::{Category, GlyphData, Subcategory};
 use ascii_plist_derive::FromPlist;
 use fontdrasil::types::WidthClass;
 use indexmap::{IndexMap, IndexSet};
-use kurbo::{Affine, Point, Vec2};
+use kurbo::{Affine, CubicBez, Line, PathSeg, Point, QuadBez, Vec2};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
 use regex::Regex;
@@ -325,6 +325,159 @@ pub enum AxisPole {
     Max,
 }
 
+/// A hint in a Glyphs layer (e.g., corner component, stem hint, etc.)
+#[derive(Clone, Debug, Default, PartialEq, FromPlist)]
+pub struct RawHint {
+    #[fromplist(alt_name = "type")]
+    hint_type: SmolStr,
+    name: SmolStr,
+    origin: RawHint2Tuple, // (shape_index, node_index)
+    scale: Option<RawHint2Tuple>,
+    options: i64, // Alignment option for corner components
+}
+
+// we use a custom type because the data has a different shape between
+// glyphs formats
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RawHint2Tuple {
+    x: f64,
+    y: f64,
+}
+
+impl FromPlist for RawHint2Tuple {
+    fn parse(tokenizer: &mut Tokenizer) -> Result<Self, crate::plist::Error> {
+        if matches!(tokenizer.peek(), Ok(Token::String(_))) {
+            let s = tokenizer.parse::<SmolStr>().unwrap();
+            // format2 is a string, like "{0, 3}"
+            let s = s.trim_matches(['{', '}']);
+            let Some((x, y)) = s.split_once(',') else {
+                return Err(crate::plist::Error::ExpectedComma);
+            };
+            let x = x
+                .trim()
+                .parse()
+                .map_err(|_| crate::plist::Error::ExpectedNumber)?;
+            let y = y
+                .trim()
+                .parse()
+                .map_err(|_| crate::plist::Error::ExpectedNumber)?;
+            return Ok(RawHint2Tuple { x, y });
+        }
+
+        let origin: Vec<f64> = tokenizer.parse()?;
+        Ok(RawHint2Tuple {
+            x: origin.first().copied().unwrap_or_default(),
+            y: origin.get(1).copied().unwrap_or_default(),
+        })
+    }
+}
+
+impl RawHint {
+    fn to_hint(&self) -> Result<Hint, Error> {
+        let type_ = match self.hint_type.as_str() {
+            "Corner" => HintType::Corner,
+            "Cap" => HintType::Cap,
+            "Stem" => HintType::Stem,
+            "TTStem" => HintType::TTStem,
+            _other => {
+                log::info!("unhandled hint type '{_other}'");
+                HintType::Unknown
+            }
+        };
+
+        let shape_index = self.origin.x as usize;
+        let node_index = self.origin.y as usize;
+
+        let scale = self
+            .scale
+            .map(|RawHint2Tuple { x, y }| Scale::new(x, y))
+            .unwrap_or_default();
+
+        let alignment = match self.options {
+            0 => Alignment::OutStroke,
+            1 => Alignment::InStroke,
+            2 => Alignment::Middle,
+            3 => Alignment::Unused,
+            4 => Alignment::Unaligned,
+            _other => {
+                // doesn't seem worth it to fail for this, easy to imagine
+                // new variants added in the future
+                log::info!("unexpected hint option '{_other}'");
+                Default::default()
+            }
+        };
+
+        Ok(Hint {
+            type_,
+            name: self.name.clone(),
+            shape_index,
+            node_index,
+            scale,
+            alignment,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub struct Hint {
+    pub type_: HintType,
+    pub name: SmolStr,
+    pub shape_index: usize,
+    pub node_index: usize,
+    pub scale: Scale,
+    pub alignment: Alignment,
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub struct Scale {
+    pub x: OrderedFloat<f64>,
+    pub y: OrderedFloat<f64>,
+}
+
+impl Default for Scale {
+    fn default() -> Self {
+        Self {
+            x: 1.0.into(),
+            y: 1.0.into(),
+        }
+    }
+}
+
+impl Scale {
+    fn new(x: f64, y: f64) -> Self {
+        Self {
+            x: x.into(),
+            y: y.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
+#[non_exhaustive]
+pub enum HintType {
+    Corner,
+    // other hint types are currently unused
+    Stem,
+    Cap,
+    TTStem,
+    // catch all, we don't want to fail parsing unknwon variants,
+    Unknown,
+}
+
+/// How to align a corner component to the attaching node
+#[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
+#[non_exhaustive]
+pub enum Alignment {
+    // glyphs calls this 'left'
+    #[default]
+    OutStroke,
+    // glyphs calls this 'right'
+    InStroke,
+    Middle,
+    Unused,
+    Unaligned,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Hash)]
 pub struct Layer {
     pub layer_id: String,
@@ -340,6 +493,8 @@ pub struct Layer {
     /// Smart component layers can only be defined at the min or max of a given
     /// axis.
     pub smart_component_positions: BTreeMap<SmolStr, AxisPole>,
+    /// Hints for this layer (e.g., corner components, stem hints, etc.)
+    pub hints: Vec<Hint>,
 }
 
 impl Layer {
@@ -387,6 +542,12 @@ impl Layer {
             .collect()
     }
 
+    pub(crate) fn get_anchor_pt(&self, anchor_name: &str) -> Option<Point> {
+        self.anchors
+            .iter()
+            .find(|a| a.name == anchor_name)
+            .map(|a| a.pos)
+    }
     // TODO add is_alternate, is_color, etc.
 }
 
@@ -1200,6 +1361,7 @@ struct RawLayer {
     paths: Vec<Path>,
     components: Vec<Component>,
     anchors: Vec<RawAnchor>,
+    hints: Vec<RawHint>,
     #[fromplist(alt_name = "attr")]
     attributes: LayerAttributes,
     // if this layer is part of a smart component; values should be 1 or 2
@@ -1343,7 +1505,7 @@ impl Hash for Component {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Node {
     pub pt: Point,
     pub node_type: NodeType,
@@ -1758,6 +1920,69 @@ impl Path {
 
     pub fn reverse(&mut self) {
         self.nodes.reverse();
+    }
+
+    /// get the segment ending at `idx`
+    pub(crate) fn get_previous_segment(&self, idx: usize) -> Option<PathSeg> {
+        if self.nodes.len() < 2 {
+            return None;
+        }
+        let end = self.nodes.get(idx)?.pt;
+        let mut idx = self.prev_idx(idx);
+        let prev = self.nodes.get(idx)?;
+        if prev.node_type == NodeType::OffCurve {
+            idx = self.prev_idx(idx);
+            let control1 = self.nodes.get(idx)?;
+            if control1.node_type != NodeType::OffCurve {
+                // seems extremely unlikely but not exactly impossible, let's at least log?
+                log::info!("path for corner component contains unexpected quadratic");
+                return Some(QuadBez::new(control1.pt, prev.pt, end).into());
+            }
+            let start = self.nodes.get(self.prev_idx(idx))?;
+            Some(CubicBez::new(start.pt, control1.pt, prev.pt, end).into())
+        } else {
+            Some(Line::new(prev.pt, end).into())
+        }
+    }
+
+    /// get the segment beginning at `idx`
+    pub(crate) fn get_next_segment(&self, idx: usize) -> Option<PathSeg> {
+        if self.nodes.len() < 2 {
+            return None;
+        }
+        let start = self.nodes.get(idx)?.pt;
+        let mut idx = self.next_idx(idx);
+        let next = self.nodes.get(idx)?;
+        if next.node_type == NodeType::OffCurve {
+            idx = self.next_idx(idx);
+            let control2 = self.nodes.get(idx)?;
+            if control2.node_type != NodeType::OffCurve {
+                // seems extremely unlikely but not exactly impossible, let's at least log?
+                log::info!("path for corner component contains unexpected quadratic");
+                return Some(QuadBez::new(start, next.pt, control2.pt).into());
+            }
+            let end = self.nodes.get(self.next_idx(idx))?;
+            Some(CubicBez::new(start, next.pt, control2.pt, end.pt).into())
+        } else {
+            Some(Line::new(start, next.pt).into())
+        }
+    }
+
+    pub(crate) fn prev_idx(&self, idx: usize) -> usize {
+        if idx == 0 {
+            self.nodes.len().saturating_sub(1)
+        } else {
+            idx - 1
+        }
+    }
+
+    pub(crate) fn next_idx(&self, idx: usize) -> usize {
+        (idx + 1) % self.nodes.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn to_points(&self) -> Vec<Point> {
+        self.nodes.iter().map(|n| n.pt).collect()
     }
 }
 
@@ -2630,6 +2855,11 @@ impl RawLayer {
             ))),
         })
         .collect::<Result<_, _>>()?;
+        let hints = self
+            .hints
+            .iter()
+            .map(RawHint::to_hint)
+            .collect::<Result<_, _>>()?;
         Ok(Layer {
             layer_id: self.layer_id,
             associated_master_id: self.associated_master_id,
@@ -2640,6 +2870,7 @@ impl RawLayer {
             anchors,
             attributes,
             smart_component_positions,
+            hints,
         })
     }
 }
@@ -3316,7 +3547,10 @@ impl Font {
         }
         // if any glyphs reference smart components, convert them to outlines.
         // (see https://glyphsapp.com/learn/smart-components)
-        self.instantiate_all_smart_components()
+        self.instantiate_all_smart_components()?;
+
+        // if any glyphs have corner component hints, insert them into the paths
+        self.insert_all_corner_components()
     }
 
     /// if a glyph has components that have alternate layers, copy the layer
@@ -3470,6 +3704,50 @@ impl Font {
             // replace the old glyph with the new, component-free glyph
             self.glyphs.insert(glyph.name.clone(), glyph);
         }
+        Ok(())
+    }
+
+    // insert corner components into glyphs that have them
+    fn insert_all_corner_components(&mut self) -> Result<(), Error> {
+        // Find all glyphs that have corner component hints
+        let glyphs_with_corners: Vec<_> = self
+            .glyphs
+            .values()
+            .filter(|glyph| {
+                glyph
+                    .layers
+                    .iter()
+                    .chain(glyph.bracket_layers.iter())
+                    .any(|layer| {
+                        layer
+                            .hints
+                            .iter()
+                            .any(|hint| hint.type_ == HintType::Corner)
+                    })
+            })
+            .cloned()
+            .collect();
+
+        if glyphs_with_corners.is_empty() {
+            return Ok(());
+        }
+
+        for mut glyph in glyphs_with_corners {
+            for layer in glyph
+                .layers
+                .iter_mut()
+                .chain(glyph.bracket_layers.iter_mut())
+            {
+                crate::corner_components::insert_corner_components_for_layer(layer, &self.glyphs)
+                    .map_err(|issue| Error::BadCornerComponent {
+                    glyph: glyph.name.clone(),
+                    issue,
+                })?;
+            }
+
+            self.glyphs.insert(glyph.name.clone(), glyph);
+        }
+
         Ok(())
     }
 
@@ -5389,9 +5667,6 @@ etc;
     }
 
     impl crate::Path {
-        fn to_points(&self) -> Vec<Point> {
-            self.nodes.iter().map(|n| n.pt).collect()
-        }
         fn bbox(&self) -> Option<Rect> {
             let points = self.to_points();
             let (head, rest) = points.as_slice().split_first()?;
@@ -5445,5 +5720,69 @@ etc;
                 Rect::new(500., 0., 550., 100.),
             ]
         );
+    }
+
+    #[test]
+    fn parse_basic_corner_component_hint() {
+        let font = Font::load_raw(glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+
+        let glyph = font.glyphs.get("aa_simple_angleinstroke").unwrap();
+        let hints = &glyph.layers[0].hints;
+
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].name, "_corner.one");
+        assert_eq!(hints[0].shape_index, 0);
+        assert_eq!(hints[0].node_index, 0);
+        assert_eq!(hints[0].type_, HintType::Corner);
+        assert_eq!(hints[0].scale, Default::default());
+        assert_eq!(hints[0].alignment, Alignment::OutStroke);
+    }
+
+    #[test]
+    fn parse_corner_component_hint_with_scale() {
+        let font = Font::load_raw(glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+
+        let glyph = font.glyphs.get("ac_scale").unwrap();
+        let hints = &glyph.layers[0].hints;
+
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].name, "_corner.one");
+        assert_eq!(hints[0].shape_index, 0);
+        assert_eq!(hints[0].node_index, 0);
+        assert_eq!(hints[0].type_, HintType::Corner);
+        assert_eq!(hints[0].scale, (Scale::new(1.2, 1.5)));
+        assert_eq!(hints[0].alignment, Alignment::OutStroke);
+    }
+
+    #[test]
+    fn parse_corner_component_hint_with_alignment() {
+        let font = Font::load_raw(glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+
+        let glyph = font.glyphs.get("aj_right_alignment").unwrap();
+        let hints = &glyph.layers[0].hints;
+
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].name, "_corner.one");
+        assert_eq!(hints[0].shape_index, 0);
+        assert_eq!(hints[0].node_index, 1);
+        assert_eq!(hints[0].type_, HintType::Corner);
+        assert_eq!(hints[0].scale, Default::default());
+        assert_eq!(hints[0].alignment, Alignment::InStroke);
+    }
+
+    #[test]
+    fn parse_v2_corner_component() {
+        let hint_plist = r#"
+{
+origin = "{0, 0}";
+scale = "{0.7, 1}";
+type = Corner;
+name = _corner.hi;
+}
+        "#;
+
+        let hint = RawHint::parse_plist(hint_plist).unwrap().to_hint().unwrap();
+        assert_eq!(hint.scale.x, 0.7);
+        assert_eq!(hint.scale.y, 1.0);
     }
 }
