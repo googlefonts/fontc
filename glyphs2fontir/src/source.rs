@@ -1530,15 +1530,25 @@ fn process_layer(
     // Check if this master has linked metrics via "Link Metrics With Master" or
     // "Link Metrics With First Master" custom parameters.
     // See https://github.com/googlefonts/glyphsLib/blob/a045b482/Lib/glyphsLib/builder/glyph.py#L261-L278
-    let metrics_layer = master
-        .metrics_source_id(&font_info.font)
-        .and_then(|source_id| {
-            font_info
-                .font
-                .glyphs
-                .get(&glyph.name)
-                .and_then(|g| g.layers.iter().find(|l| l.layer_id == source_id))
-        });
+    //
+    // Important: only apply Link Metrics for master layers, NOT intermediate layers.
+    // glyphsLib's effective_width() uses layer.layerId to look up the master, which
+    // returns None for special (e.g. intermediate) layers since their layerId is not
+    // a master ID, so Link Metrics should not be applied to them.
+    let is_master_layer = instance.layer_id == master.id;
+    let metrics_layer = if is_master_layer {
+        master
+            .metrics_source_id(&font_info.font)
+            .and_then(|source_id| {
+                font_info
+                    .font
+                    .glyphs
+                    .get(&glyph.name)
+                    .and_then(|g| g.layers.iter().find(|l| l.layer_id == source_id))
+            })
+    } else {
+        None
+    };
     // Use metrics from the source layer if linked, otherwise from the instance's own layer
     let horiz_width = metrics_layer.map(|l| l.width).unwrap_or(instance.width);
     let vert_width = metrics_layer
@@ -3737,6 +3747,54 @@ mod tests {
             get_first_group_kern(&black_kerns),
             20.0,
             "Black should use kerning from Bold (20), not its own (30)"
+        );
+    }
+
+    #[test]
+    fn link_metrics_not_applied_to_intermediate_layers() {
+        // Test that "Link Metrics With First Master" does NOT apply to intermediate layers.
+        // This matches glyphsLib's behavior where effective_width() uses layer.layerId to
+        // look up the master, which returns None for intermediate layers (their layerId
+        // is not a master ID).
+        // https://github.com/googlefonts/glyphsLib/blob/a045b482/Lib/glyphsLib/builder/glyph.py#L261-L278
+        //
+        // The test file defines:
+        // - Master m01 (Regular, wght=400): A.width=600
+        // - Master m02 (Bold, wght=700): A.width=800, with "Link Metrics With First Master"
+        // - Intermediate layer at wght=550, associated with m02: A.width=750
+        //
+        // The intermediate layer should use its own width (750), NOT the linked master's (600).
+
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("LinkMetricsWithIntermediateLayer.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+
+        let glyph_a = context.get_glyph("A");
+        let sources_a = glyph_a.sources();
+
+        // Should have 3 sources: Regular, Bold, and the intermediate layer
+        assert_eq!(
+            sources_a.len(),
+            3,
+            "Should have 3 sources (2 masters + 1 intermediate)"
+        );
+
+        let regular = norm_loc!(b"wght", 0.0);
+        let bold = norm_loc!(b"wght", 1.0);
+        // Intermediate is at wght=550, normalized = (550-400)/(700-400) = 0.5
+        let intermediate = norm_loc!(b"wght", 0.5);
+
+        assert_eq!(
+            sources_a[&regular].width, 600.0,
+            "Regular should have width 600"
+        );
+        assert_eq!(
+            sources_a[&bold].width, 600.0,
+            "Bold should have width 600 from Regular (first master) due to Link Metrics"
+        );
+        assert_eq!(
+            sources_a[&intermediate].width, 750.0,
+            "Intermediate layer should use its own width (750), NOT the linked master's width (600)"
         );
     }
 }
