@@ -1066,10 +1066,17 @@ impl RawCustomParameters {
                     if value.is_none() {
                         log::warn!("failed to parse param for '{}'", stringify!($field));
                     }
-                    if params.$field.is_some() {
-                        log::warn!("duplicate param value for field '{}'", stringify!($field));
+                    // Only set if not already set - glyphsLib uses the first occurrence
+                    // for duplicate params, not the last:
+                    // <https://github.com/googlefonts/glyphsLib/blob/a5b99adc/Lib/glyphsLib/classes.py#L517-L520>
+                    if params.$field.is_none() {
+                        params.$field = value;
+                    } else {
+                        log::warn!(
+                            "ignoring duplicate param value for field '{}'",
+                            stringify!($field)
+                        );
                     }
-                    params.$field = value;
                 }};
             }
 
@@ -5908,5 +5915,32 @@ name = _corner.hi;
         );
         // it should return None and log a warning like glyphsLib does
         assert_eq!(font.masters[1].metrics_source_id(&font), None);
+    }
+
+    #[test]
+    fn duplicate_custom_params_uses_first_value() {
+        // Test that when duplicate custom parameters exist, the first value is used.
+        // This matches glyphsLib's behavior where customParameters["key"] returns the
+        // first matching item via a simple for-loop iteration.
+        let raw_params = RawCustomParameters(vec![
+            RawCustomParameterValue {
+                name: "Link Metrics With Master".into(),
+                value: Plist::String("first_master_id".into()),
+                disabled: None,
+            },
+            RawCustomParameterValue {
+                name: "Link Metrics With Master".into(),
+                value: Plist::String("second_master_id".into()),
+                disabled: None,
+            },
+        ]);
+
+        let params = raw_params.to_custom_params().unwrap();
+
+        // The first value should win, not the second
+        assert_eq!(
+            params.link_metrics_with_master.as_deref(),
+            Some("first_master_id")
+        );
     }
 }
