@@ -21,6 +21,10 @@ use super::ot_tags::{DFLT_SCRIPT, INDIC_SCRIPTS, NEW_SCRIPT_TAGS, SCRIPT_EXCEPTI
 pub const COMMON_SCRIPT: UnicodeShortName = tinystr!(4, "Zyyy");
 pub const INHERITED_SCRIPT: UnicodeShortName = tinystr!(4, "Zinh");
 
+pub const HIRA: UnicodeShortName = tinystr!(4, "Hira");
+pub const KANA: UnicodeShortName = tinystr!(4, "Kana");
+pub const HRKT: UnicodeShortName = tinystr!(4, "Hrkt");
+
 /// The type used by icu4x for script names
 pub type UnicodeShortName = tinystr::TinyAsciiStr<4>;
 
@@ -79,16 +83,6 @@ impl ScriptDirection {
                 | (ScriptDirection::LeftToRight, ScriptDirection::LeftToRight)
                 | (ScriptDirection::RightToLeft, ScriptDirection::RightToLeft)
         )
-    }
-}
-
-/// Iff a codepoint belongs to a single script, return it.
-pub(crate) fn single_script_for_codepoint(cp: u32) -> Option<UnicodeShortName> {
-    let mut scripts = scripts_for_codepoint(cp);
-
-    match (scripts.next(), scripts.next()) {
-        (Some(script), None) => Some(script),
-        _ => None,
     }
 }
 
@@ -166,7 +160,34 @@ pub(crate) fn glyphs_matching_predicate(
     .map(|mut items| items.remove(&true).unwrap_or_default())
 }
 
-/// Returns a map of gids to their scripts
+// the specific logic from
+// https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/util.py#L591
+pub(crate) fn unicode_script_extensions(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
+    let mut seen_hrkt = false;
+    icu_properties::script::ScriptWithExtensions::new()
+        .get_script_extensions_val32(cp)
+        .iter()
+        .flat_map(get_script_short_name)
+        .filter_map(move |script| {
+            if script == HIRA || script == KANA {
+                if seen_hrkt {
+                    None
+                } else {
+                    seen_hrkt = true;
+                    Some(HRKT)
+                }
+            } else {
+                Some(script)
+            }
+        })
+}
+
+/// Returns a map of gids to their scripts.
+///
+/// NOTE:
+/// This precisely matches the logic in the ufo2ft kernFeatureWriter (<https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L632>)
+///
+/// and may not be suited to other purposes
 pub(crate) fn scripts_by_glyph(
     glyphs: &impl CharMap,
     known_scripts: &HashSet<UnicodeShortName>,
@@ -179,7 +200,7 @@ pub(crate) fn scripts_by_glyph(
             if known_scripts.is_empty() {
                 buf.push(COMMON_SCRIPT);
             } else {
-                buf.extend(scripts_for_codepoint(cp).filter(|script| {
+                buf.extend(unicode_script_extensions(cp).filter(|script| {
                     *script == COMMON_SCRIPT
                         || *script == INHERITED_SCRIPT
                         || known_scripts.contains(script)
@@ -264,15 +285,7 @@ fn script_for_codepoint(cp: u32) -> Option<UnicodeShortName> {
     get_script_short_name(icu_properties::script::ScriptWithExtensions::new().get_script_val32(cp))
 }
 
-/// Iterate over unicode scripts for the given codepoint (including script extensions)
-pub(crate) fn scripts_for_codepoint(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
-    icu_properties::script::ScriptWithExtensions::new()
-        .get_script_extensions_val32(cp)
-        .iter()
-        .flat_map(get_script_short_name)
-}
-
-fn get_script_short_name(script: Script) -> Option<UnicodeShortName> {
+pub(crate) fn get_script_short_name(script: Script) -> Option<UnicodeShortName> {
     let lookup = PropertyNamesShort::<Script>::new();
     lookup
         .get(script)
@@ -380,7 +393,7 @@ mod tests {
     fn expected_unicode_script_overrides() {
         // this codepoint did not have scriptext property in unicode 15 but does
         // in unicode 16, so we need to manually override
-        let mut apostrophemod: Vec<_> = scripts_for_codepoint(0x2bc).collect();
+        let mut apostrophemod: Vec<_> = unicode_script_extensions(0x2bc).collect();
         apostrophemod.sort();
         assert_eq!(
             apostrophemod,
@@ -389,7 +402,7 @@ mod tests {
 
         // this codepoint's scriptex property changed in unicode16, but shouldn't
         // need an override because it existed in unicode 16
-        let other = scripts_for_codepoint(0x0ce6);
+        let other = unicode_script_extensions(0x0ce6);
         assert_eq!(other.collect::<Vec<_>>(), ["Knda", "Nand", "Tutg"]);
     }
 
@@ -448,5 +461,14 @@ mod tests {
             Some(ScriptDirection::RightToLeft)
         );
         assert_eq!(unicode_script_direction(' ' as u32), None)
+    }
+
+    #[test]
+    fn aliases_for_hira_kata() {
+        let cp = '\u{30a0}';
+        assert_eq!(
+            unicode_script_extensions(cp as _).collect::<Vec<_>>(),
+            [HRKT]
+        );
     }
 }

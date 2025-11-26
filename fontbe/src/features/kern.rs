@@ -1033,10 +1033,17 @@ fn guess_font_scripts(
 }
 
 /// return the set of scripts (based on unicode data) that use this set of glyphs
+// see https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/featureWriters/baseFeatureWriter.py#L404
 fn scripts_for_chars(glyphs: &HashMap<u32, GlyphId16>) -> HashSet<UnicodeShortName> {
     glyphs
         .iter_glyphs()
-        .filter_map(|(_, codepoint)| super::properties::single_script_for_codepoint(codepoint))
+        .filter_map(|(_, codepoint)| {
+            let mut iter = super::properties::unicode_script_extensions(codepoint);
+            match (iter.next(), iter.next()) {
+                (Some(script), None) => Some(script),
+                _ => None,
+            }
+        })
         .collect()
 }
 
@@ -2103,6 +2110,201 @@ mod tests {
             alef-ar <5 0 5 0> comma-ar
             comma-ar <6 0 6 0> alef-ar
             one-ar 9 one-ar
+            "#
+        );
+    }
+
+    // based on the helper at,
+    //https://github.com/googlefonts/ufo2ft/blob/01d3faee6b/tests/featureWriters/kernFeatureWriter_test.py#L1828
+    fn unicode_script(cp: u32) -> UnicodeShortName {
+        use super::super::properties;
+        let s = icu_properties::script::ScriptWithExtensions::new().get_script_val32(cp);
+        let name = properties::get_script_short_name(s).unwrap();
+        if name == properties::HIRA || name == properties::KANA {
+            properties::HRKT
+        } else {
+            name
+        }
+    }
+
+    /// Test that a sampling of glyphs with a common or inherited script, but a
+    /// disjoint set of explicit script extensions end up in the correct lookups
+    //https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1840
+    #[test]
+    fn kern_zyyy_zinh() {
+        use super::super::properties;
+        // Find glyphs where script is not in script_extensions
+        let mut glyphs = Vec::new();
+        for i in (0..0x110000).step_by(0x10) {
+            if let Some(c) = char::from_u32(i) {
+                let script = unicode_script(i);
+                let script_extensions =
+                    super::super::properties::unicode_script_extensions(i).collect::<HashSet<_>>();
+
+                // Check if script is Common or Inherited and not in extensions
+                if (script == properties::COMMON_SCRIPT || script == properties::INHERITED_SCRIPT)
+                    && !script_extensions.contains(&script)
+                {
+                    glyphs.push(c);
+                }
+            }
+        }
+
+        // Build the test with all the found glyphs
+        let mut input = KernInput::new(&glyphs);
+        for (idx, glyph) in glyphs.iter().enumerate() {
+            input = input.with_rule(*glyph, *glyph, idx as i16);
+        }
+
+        let (_kerns, normalized) = input.build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # dist: dev2/dflt, deva/dflt
+            # 18 PairPos rules
+            # lookupflag LookupFlag(8)
+            uni0310 1 uni0310
+            uni0320 2 uni0320
+            uni0330 3 uni0330
+            uni0640 4 uni0640
+            uni0650 5 uni0650
+            uni0670 6 uni0670
+            uni1CD0 7 uni1CD0
+            uni1CE0 8 uni1CE0
+            uni1CF0 9 uni1CF0
+            uni20F0 11 uni20F0
+            uni2E30 12 uni2E30
+            uniA830 34 uniA830
+            uni10100 36 uni10100
+            uni10110 37 uni10110
+            uni10120 38 uni10120
+            uni10130 39 uni10130
+            uni102E0 40 uni102E0
+            uni102F0 41 uni102F0
+
+            # dist: dupl/dflt
+            # 14 PairPos rules
+            # lookupflag LookupFlag(8)
+            uni0310 1 uni0310
+            uni0320 2 uni0320
+            uni0330 3 uni0330
+            uni0640 4 uni0640
+            uni0650 5 uni0650
+            uni0670 6 uni0670
+            uni2E30 12 uni2E30
+            uni10100 36 uni10100
+            uni10110 37 uni10110
+            uni10120 38 uni10120
+            uni10130 39 uni10130
+            uni102E0 40 uni102E0
+            uni102F0 41 uni102F0
+            uni1BCA0 42 uni1BCA0
+
+            # kern: DFLT/dflt
+            # 40 PairPos rules
+            # lookupflag LookupFlag(8)
+            gravecomb  gravecomb
+            uni0310 1 uni0310
+            uni0320 2 uni0320
+            uni0330 3 uni0330
+            uni0640 4 uni0640
+            uni0650 5 uni0650
+            uni0670 6 uni0670
+            uni1DC0 10 uni1DC0
+            uni2E30 12 uni2E30
+            uni2FF0 13 uni2FF0
+            uni3010 14 uni3010
+            uni3030 15 uni3030
+            uni30A0 16 uni30A0
+            uni3190 17 uni3190
+            uni31C0 18 uni31C0
+            uni31D0 19 uni31D0
+            uni31E0 20 uni31E0
+            uni3220 21 uni3220
+            uni3230 22 uni3230
+            uni3240 23 uni3240
+            uni3280 24 uni3280
+            uni3290 25 uni3290
+            uni32A0 26 uni32A0
+            uni32B0 27 uni32B0
+            uni32C0 28 uni32C0
+            uni3360 29 uni3360
+            uni3370 30 uni3370
+            uni33E0 31 uni33E0
+            uni33F0 32 uni33F0
+            uniA700 33 uniA700
+            uniFF70 35 uniFF70
+            uni10100 36 uni10100
+            uni10110 37 uni10110
+            uni10120 38 uni10120
+            uni10130 39 uni10130
+            uni102E0 40 uni102E0
+            uni102F0 41 uni102F0
+            uni1D360 43 uni1D360
+            uni1D370 44 uni1D370
+            uni1F250 45 uni1F250
+
+            # kern: grek/dflt
+            # 15 PairPos rules
+            # lookupflag LookupFlag(8)
+            gravecomb  gravecomb
+            uni0310 1 uni0310
+            uni0320 2 uni0320
+            uni0330 3 uni0330
+            uni0640 4 uni0640
+            uni0650 5 uni0650
+            uni0670 6 uni0670
+            uni1DC0 10 uni1DC0
+            uni2E30 12 uni2E30
+            uni10100 36 uni10100
+            uni10110 37 uni10110
+            uni10120 38 uni10120
+            uni10130 39 uni10130
+            uni102E0 40 uni102E0
+            uni102F0 41 uni102F0
+
+            # kern: hani/dflt, kana/dflt
+            # 38 PairPos rules
+            # lookupflag LookupFlag(8)
+            uni0310 1 uni0310
+            uni0320 2 uni0320
+            uni0330 3 uni0330
+            uni0640 4 uni0640
+            uni0650 5 uni0650
+            uni0670 6 uni0670
+            uni2E30 12 uni2E30
+            uni2FF0 13 uni2FF0
+            uni3010 14 uni3010
+            uni3030 15 uni3030
+            uni30A0 16 uni30A0
+            uni3190 17 uni3190
+            uni31C0 18 uni31C0
+            uni31D0 19 uni31D0
+            uni31E0 20 uni31E0
+            uni3220 21 uni3220
+            uni3230 22 uni3230
+            uni3240 23 uni3240
+            uni3280 24 uni3280
+            uni3290 25 uni3290
+            uni32A0 26 uni32A0
+            uni32B0 27 uni32B0
+            uni32C0 28 uni32C0
+            uni3360 29 uni3360
+            uni3370 30 uni3370
+            uni33E0 31 uni33E0
+            uni33F0 32 uni33F0
+            uniA700 33 uniA700
+            uniFF70 35 uniFF70
+            uni10100 36 uni10100
+            uni10110 37 uni10110
+            uni10120 38 uni10120
+            uni10130 39 uni10130
+            uni102E0 40 uni102E0
+            uni102F0 41 uni102F0
+            uni1D360 43 uni1D360
+            uni1D370 44 uni1D370
+            uni1F250 45 uni1F250
             "#
         );
     }
