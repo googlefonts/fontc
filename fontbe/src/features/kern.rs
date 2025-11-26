@@ -2,7 +2,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, btree_map},
 };
 
 use fea_rs::{
@@ -509,7 +509,6 @@ fn split_lookups_by_script(
 /// this based on
 /// <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L772>
 fn assign_lookups_to_scripts(
-    //lookups: BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>>,
     mut lookups_by_script: BTreeMap<UnicodeShortName, Vec<usize>>,
     ast: &ParseTree,
     // one of 'kern' or 'dist'
@@ -567,6 +566,7 @@ fn assign_lookups_to_scripts(
     }
 
     // remove these, which need to get added to all other languagesystems
+    // in python this is handled by skipping these keys during iteration.
     let common_lookups = lookups_by_script.remove(&COMMON_SCRIPT);
     let inherited_lookups = lookups_by_script.remove(&INHERITED_SCRIPT);
 
@@ -592,10 +592,15 @@ fn assign_lookups_to_scripts(
         for tag in super::properties::script_to_ot_tags(&script) {
             let languages = fea_langs_by_script.get(&tag).unwrap_or(&dflt_langs);
             for lang in languages {
-                features.insert(
-                    FeatureKey::new(current_feature, *lang, tag),
-                    lookups.clone(),
-                );
+                let key = FeatureKey::new(current_feature, *lang, tag);
+                match features.entry(key) {
+                    btree_map::Entry::Vacant(entry) => {
+                        entry.insert(lookups.clone());
+                    }
+                    btree_map::Entry::Occupied(entry) => {
+                        entry.into_mut().extend_from_slice(&lookups)
+                    }
+                }
             }
         }
     }
@@ -1102,6 +1107,7 @@ mod tests {
 
     use super::*;
 
+    const IJ_ACUTE: char = '\u{E132}';
     // just a helper so we can use the same names as fonttools does in their tests
     fn glyph_name_for_char(c: char) -> GlyphName {
         static EXTRA_GLYPH_NAMES: &[(char, &str)] = &[
@@ -1126,6 +1132,7 @@ mod tests {
             ('\u{CD6}', "ailength_kannada"),
             ('\u{3042}', "a-hira"),
             ('\u{30A2}', "a-kana"),
+            (IJ_ACUTE, "ijacute"),
             ('\u{10A06}', "u10A06"),
             ('\u{10A1E}', "u10A1E"),
         ];
@@ -2416,6 +2423,44 @@ mod tests {
             # lookupflag LookupFlag(8)
             a 1 a
             comma 2 comma
+            "#
+        );
+    }
+
+    #[test]
+    fn an_especially_inscrutable_test() {
+        // this is reduced from a real issue encountered in AndadaPro.
+        // hitting this requires us to end up with pairs assigned to both the
+        // Common ('Zyyy') and the 'unknown' category Zzzz; both of these
+        // categories are mapped to the DFLT opentype tag. The bug was that
+        // the lookups from one of these categories would end up overwriting
+        // the lookups from the other category. Now we make sure that the lookups
+        // are combined.
+        let (_, normalized) = KernInput::new(&[ACUTE_COMB, IJ_ACUTE, 'c'])
+            .with_unmapped_glyphs(["W.i", "ijdotless"])
+            .with_nonspacing_glyphs(&[ACUTE_COMB])
+            .with_opentype_category_marks(&[ACUTE_COMB])
+            .with_rule(["W.i"], [ACUTE_COMB], -30)
+            .with_rule(["W.i"], ["W.i"], -40)
+            .with_rule(["W.i"], ["ijacute", "ijdotless"], -40)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt
+            # 2 PairPos rules
+            # lookupflag LookupFlag(0)
+            W.i -30 acutecomb
+            # lookupflag LookupFlag(8)
+            W.i -40 [ijacute,W.i,ijdotless]
+
+            # kern: latn/dflt
+            # 2 PairPos rules
+            # lookupflag LookupFlag(0)
+            W.i -30 acutecomb
+            # lookupflag LookupFlag(8)
+            W.i -40 [W.i,ijdotless]
             "#
         );
     }
