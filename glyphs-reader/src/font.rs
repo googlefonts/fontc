@@ -5914,6 +5914,27 @@ name = _corner.hi;
     }
 
     #[test]
+    fn metrics_source_id_with_master_by_name() {
+        // Glyphs 2 format uses master names instead of IDs for "Link Metrics With Master"
+        let font = Font::load(&glyphs2_dir().join("LinkMetricsWithMasterByName.glyphs")).unwrap();
+
+        assert_eq!(font.masters[0].metrics_source_id, None);
+        assert_eq!(font.masters[1].metrics_source_id, None);
+        // Third master (Black) links by name "Bold", should resolve to second master's ID
+        assert_eq!(
+            font.masters[2]
+                .custom_parameters
+                .link_metrics_with_master
+                .as_deref(),
+            Some("Bold")
+        );
+        assert_eq!(
+            font.masters[2].metrics_source_id.as_ref(),
+            Some(&font.masters[1].id)
+        );
+    }
+
+    #[test]
     fn metrics_source_id_with_missing_master() {
         let font = Font::load(&glyphs3_dir().join("LinkMetricsWithMissingMaster.glyphs")).unwrap();
 
