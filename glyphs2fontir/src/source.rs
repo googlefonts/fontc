@@ -1202,7 +1202,7 @@ fn kerning_at_location<'a>(
         .masters
         .iter()
         .find(|m| m.id == *our_id)
-        .and_then(|m| m.metrics_source_id(&font_info.font))
+        .and_then(|m| m.metrics_source_id.as_deref())
         .unwrap_or(our_id);
 
     let ltr = font_info.font.kerning_ltr.get(metrics_source_id);
@@ -1537,15 +1537,13 @@ fn process_layer(
     // a master ID, so Link Metrics should not be applied to them.
     let is_master_layer = instance.layer_id == master.id;
     let metrics_layer = if is_master_layer {
-        master
-            .metrics_source_id(&font_info.font)
-            .and_then(|source_id| {
-                font_info
-                    .font
-                    .glyphs
-                    .get(&glyph.name)
-                    .and_then(|g| g.layers.iter().find(|l| l.layer_id == source_id))
-            })
+        master.metrics_source_id.as_deref().and_then(|source_id| {
+            font_info
+                .font
+                .glyphs
+                .get(&glyph.name)
+                .and_then(|g| g.layers.iter().find(|l| l.layer_id == source_id))
+        })
     } else {
         None
     };
