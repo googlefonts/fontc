@@ -133,6 +133,9 @@ pub struct CustomParameters {
     pub vhea_caret_offset: Option<i64>,
     pub meta_table: Option<MetaTableValues>,
     pub dont_use_production_names: Option<bool>,
+    // Master-level parameters for linking metrics to another master
+    pub link_metrics_with_first_master: Option<bool>,
+    pub link_metrics_with_master: Option<SmolStr>,
     // these fields are parsed via the config, but are stored
     // in the top-level `Font` struct
     pub virtual_masters: Option<Vec<BTreeMap<String, OrderedFloat<f64>>>>,
@@ -1063,10 +1066,17 @@ impl RawCustomParameters {
                     if value.is_none() {
                         log::warn!("failed to parse param for '{}'", stringify!($field));
                     }
-                    if params.$field.is_some() {
-                        log::warn!("duplicate param value for field '{}'", stringify!($field));
+                    // Only set if not already set - glyphsLib uses the first occurrence
+                    // for duplicate params, not the last:
+                    // <https://github.com/googlefonts/glyphsLib/blob/a5b99adc/Lib/glyphsLib/classes.py#L517-L520>
+                    if params.$field.is_none() {
+                        params.$field = value;
+                    } else {
+                        log::warn!(
+                            "ignoring duplicate param value for field '{}'",
+                            stringify!($field)
+                        );
                     }
-                    params.$field = value;
                 }};
             }
 
@@ -1145,6 +1155,12 @@ impl RawCustomParameters {
                 }
                 "Don't use Production Names" => {
                     add_and_report_issues!(dont_use_production_names, Plist::as_bool)
+                }
+                "Link Metrics With First Master" => {
+                    add_and_report_issues!(link_metrics_with_first_master, Plist::as_bool)
+                }
+                "Link Metrics With Master" => {
+                    add_and_report_issues!(link_metrics_with_master, Plist::as_str, into)
                 }
                 // these might need to be handled? they're in the same list as
                 // the items above:
@@ -1583,6 +1599,7 @@ pub struct FontMaster {
     pub number_values: BTreeMap<SmolStr, OrderedFloat<f64>>,
     pub custom_parameters: CustomParameters,
     pub user_data: BTreeMap<SmolStr, Plist>,
+    pub metrics_source_id: Option<String>,
 }
 
 impl FontMaster {
@@ -1611,6 +1628,36 @@ impl FontMaster {
     pub fn italic_angle(&self) -> Option<f64> {
         self.read_metric("italic angle")
     }
+}
+
+/// Resolves the linked metrics master ID from "Link Metrics..." custom parameters.
+///
+/// See <https://github.com/googlefonts/glyphsLib/blob/a045b48/Lib/glyphsLib/classes.py#L1641-L1665>
+fn resolve_metrics_source_id(
+    custom_params: &CustomParameters,
+    master_ids_to_names: &IndexMap<String, Option<String>>,
+) -> Option<String> {
+    // "Link Metrics With First Master" takes precedence over "Link Metrics With Master"
+    if custom_params.link_metrics_with_first_master == Some(true) {
+        return master_ids_to_names.first().map(|(id, _)| id.clone());
+    }
+
+    if let Some(ref source_ref) = custom_params.link_metrics_with_master {
+        // Try by master ID first
+        if master_ids_to_names.contains_key(source_ref.as_str()) {
+            return Some(source_ref.to_string());
+        }
+        // Try by master name
+        if let Some((id, _)) = master_ids_to_names
+            .iter()
+            .find(|(_, name)| name.as_deref() == Some(source_ref.as_str()))
+        {
+            return Some(id.clone());
+        }
+        log::warn!("Source master for metrics not found: '{source_ref}'");
+    }
+
+    None
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
@@ -3437,11 +3484,19 @@ impl TryFrom<RawFont> for Font {
             .map(|(idx, metric)| (idx, metric.type_))
             .collect();
 
+        let master_ids_to_names: IndexMap<_, _> = from
+            .font_master
+            .iter()
+            .map(|m| (m.id.clone(), m.name.clone()))
+            .collect();
+
         let masters = from
             .font_master
             .into_iter()
             .map(|m| {
                 let custom_parameters = m.custom_parameters.to_custom_params()?;
+                let metrics_source_id =
+                    resolve_metrics_source_id(&custom_parameters, &master_ids_to_names);
                 Ok(FontMaster {
                     id: m.id,
                     name: m.name.unwrap_or_default(),
@@ -3468,6 +3523,7 @@ impl TryFrom<RawFont> for Font {
                         .collect(),
                     custom_parameters,
                     user_data: m.user_data,
+                    metrics_source_id,
                 })
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -5784,5 +5840,140 @@ name = _corner.hi;
         let hint = RawHint::parse_plist(hint_plist).unwrap().to_hint().unwrap();
         assert_eq!(hint.scale.x, 0.7);
         assert_eq!(hint.scale.y, 1.0);
+    }
+
+    #[test]
+    fn link_metrics_with_first_master_parsing() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithFirstMaster.glyphs")).unwrap();
+        assert_eq!(font.masters.len(), 2);
+
+        // First master should NOT have linked metrics
+        assert_eq!(
+            font.masters[0]
+                .custom_parameters
+                .link_metrics_with_first_master,
+            None
+        );
+        // Second master should have "Link Metrics With First Master" set to true
+        assert_eq!(
+            font.masters[1]
+                .custom_parameters
+                .link_metrics_with_first_master,
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn link_metrics_with_master_parsing() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithMaster.glyphs")).unwrap();
+        assert_eq!(font.masters.len(), 3);
+
+        // First two masters should NOT have linked metrics
+        assert_eq!(
+            font.masters[0].custom_parameters.link_metrics_with_master,
+            None
+        );
+        assert_eq!(
+            font.masters[1].custom_parameters.link_metrics_with_master,
+            None
+        );
+        // Third master (Black) should link to Bold's master ID
+        let link_target = font.masters[2]
+            .custom_parameters
+            .link_metrics_with_master
+            .as_deref();
+        assert_eq!(link_target, Some("m02"));
+        assert_eq!(font.masters[1].id, "m02");
+        assert_eq!(font.masters[1].name, "Bold");
+    }
+
+    #[test]
+    fn metrics_source_id_with_first_master() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithFirstMaster.glyphs")).unwrap();
+
+        // First master should return None (uses its own metrics)
+        assert_eq!(font.masters[0].metrics_source_id, None);
+        // Second master should return first master's ID
+        assert_eq!(
+            font.masters[1].metrics_source_id.as_ref(),
+            Some(&font.masters[0].id)
+        );
+    }
+
+    #[test]
+    fn metrics_source_id_with_master_by_id() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithMaster.glyphs")).unwrap();
+
+        assert_eq!(font.masters[0].metrics_source_id, None);
+        assert_eq!(font.masters[1].metrics_source_id, None);
+        // Third master (Black) should return second master's ID (Bold)
+        assert_eq!(
+            font.masters[2].metrics_source_id.as_ref(),
+            Some(&font.masters[1].id)
+        );
+    }
+
+    #[test]
+    fn metrics_source_id_with_master_by_name() {
+        // Glyphs 2 format uses master names instead of IDs for "Link Metrics With Master"
+        let font = Font::load(&glyphs2_dir().join("LinkMetricsWithMasterByName.glyphs")).unwrap();
+
+        assert_eq!(font.masters[0].metrics_source_id, None);
+        assert_eq!(font.masters[1].metrics_source_id, None);
+        // Third master (Black) links by name "Bold", should resolve to second master's ID
+        assert_eq!(
+            font.masters[2]
+                .custom_parameters
+                .link_metrics_with_master
+                .as_deref(),
+            Some("Bold")
+        );
+        assert_eq!(
+            font.masters[2].metrics_source_id.as_ref(),
+            Some(&font.masters[1].id)
+        );
+    }
+
+    #[test]
+    fn metrics_source_id_with_missing_master() {
+        let font = Font::load(&glyphs3_dir().join("LinkMetricsWithMissingMaster.glyphs")).unwrap();
+
+        // Second master links to "NonExistent" which doesn't exist
+        assert_eq!(
+            font.masters[1]
+                .custom_parameters
+                .link_metrics_with_master
+                .as_deref(),
+            Some("NonExistent")
+        );
+        // it should return None and log a warning like glyphsLib does
+        assert_eq!(font.masters[1].metrics_source_id, None);
+    }
+
+    #[test]
+    fn duplicate_custom_params_uses_first_value() {
+        // Test that when duplicate custom parameters exist, the first value is used.
+        // This matches glyphsLib's behavior where customParameters["key"] returns the
+        // first matching item via a simple for-loop iteration.
+        let raw_params = RawCustomParameters(vec![
+            RawCustomParameterValue {
+                name: "Link Metrics With Master".into(),
+                value: Plist::String("first_master_id".into()),
+                disabled: None,
+            },
+            RawCustomParameterValue {
+                name: "Link Metrics With Master".into(),
+                value: Plist::String("second_master_id".into()),
+                disabled: None,
+            },
+        ]);
+
+        let params = raw_params.to_custom_params().unwrap();
+
+        // The first value should win, not the second
+        assert_eq!(
+            params.link_metrics_with_master.as_deref(),
+            Some("first_master_id")
+        );
     }
 }

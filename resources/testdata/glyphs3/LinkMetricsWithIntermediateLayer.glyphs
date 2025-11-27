@@ -1,0 +1,82 @@
+{
+.appVersion = "3506";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+customParameters = (
+{
+name = "Link Metrics With First Master";
+value = 1;
+}
+);
+id = m02;
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+width = 600;
+},
+{
+layerId = m02;
+width = 800;
+},
+{
+associatedMasterId = m02;
+attr = {
+coordinates = (
+550
+);
+};
+layerId = "intermediate-layer-id";
+name = "Intermediate at wght=550";
+width = 750;
+}
+);
+unicode = 65;
+}
+);
+instances = (
+{
+axesValues = (
+400
+);
+instanceInterpolations = {
+m01 = 1;
+};
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+instanceInterpolations = {
+m02 = 1;
+};
+name = Bold;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

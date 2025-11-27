@@ -1,0 +1,85 @@
+{
+.appVersion = "3506";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+fontMaster = (
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = master01;
+weightValue = 400;
+xHeight = 500;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = master02;
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+},
+{
+ascender = 800;
+capHeight = 700;
+custom = Black;
+customParameters = (
+{
+name = "Link Metrics With Master";
+value = Bold;
+}
+);
+descender = -200;
+id = master03;
+weightValue = 1000;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = master01;
+width = 600;
+},
+{
+layerId = master02;
+width = 800;
+},
+{
+layerId = master03;
+width = 1000;
+}
+);
+unicode = 0041;
+}
+);
+instances = (
+{
+interpolationWeight = 400;
+name = Regular;
+},
+{
+interpolationWeight = 700;
+name = Bold;
+},
+{
+interpolationWeight = 1000;
+name = Black;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 1;
+}
