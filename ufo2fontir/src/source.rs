@@ -1887,7 +1887,6 @@ mod tests {
             test_helpers::Round2,
         },
         orchestration::{Context, Flags, WorkId},
-        paths::Paths,
         source::Source,
     };
     use norad::designspace;
@@ -1958,7 +1957,7 @@ mod tests {
     fn build_static_metadata(name: &str, flags: Flags) -> (impl Source + use<>, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let source = load_designspace(name);
-        let context = Context::new_root(flags, Paths::new(Path::new("/nothing/should/write/here")));
+        let context = Context::new_root(flags);
         let task_context = context.copy_for_work(
             Access::None,
             AccessBuilder::new()

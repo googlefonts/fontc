@@ -3,8 +3,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::Display,
-    fs::File,
-    io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -22,8 +20,7 @@ use fontdrasil::{
 use fontir::{
     ir::{self, GlyphOrder, KernGroup},
     orchestration::{
-        Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
-        PersistentStorage, WorkId as FeWorkIdentifier,
+        Context as FeContext, ContextItem, ContextMap, Flags, IdAware, WorkId as FeWorkIdentifier,
     },
 };
 
@@ -273,57 +270,6 @@ impl ExtraFeaTables {
     }
 }
 
-// we could use serde here but it produces really big outputs; so instead
-// we can use fontwrite on each table, and then serialize an array of Option<Vec<u8>>
-impl Persistable for ExtraFeaTables {
-    fn read(from: &mut dyn Read) -> Self {
-        fn read_table<'a, T: FontRead<'a>>(bytes: Option<&'a Vec<u8>>) -> Option<T> {
-            let bytes = bytes?.as_slice();
-            Some(T::read(bytes.into()).unwrap())
-        }
-
-        let [head, hhea, vhea, os2, base, stat, name]: [Option<Vec<u8>>; 7] =
-            bincode::deserialize_from(from).unwrap();
-
-        Self {
-            head: read_table(head.as_ref()),
-            hhea: read_table(hhea.as_ref()),
-            vhea: read_table(vhea.as_ref()),
-            os2: read_table(os2.as_ref()),
-            base: read_table(base.as_ref()),
-            stat: read_table(stat.as_ref()),
-            name: read_table(name.as_ref()),
-        }
-    }
-
-    fn write(&self, to: &mut dyn Write) {
-        fn dump<T: Validate + FontWrite>(table: Option<&T>) -> Option<Vec<u8>> {
-            table.map(write_fonts::dump_table).transpose().unwrap()
-        }
-        let ExtraFeaTables {
-            head,
-            hhea,
-            vhea,
-            os2,
-            base,
-            stat,
-            name,
-        } = self;
-
-        let out = [
-            dump(head.as_ref()),
-            dump(hhea.as_ref()),
-            dump(vhea.as_ref()),
-            dump(os2.as_ref()),
-            dump(base.as_ref()),
-            dump(stat.as_ref()),
-            dump(name.as_ref()),
-        ];
-
-        bincode::serialize_into(to, &out).unwrap()
-    }
-}
-
 /// A glyph and its associated name
 ///
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
@@ -357,20 +303,6 @@ impl Glyph {
 impl IdAware<AnyWorkId> for Glyph {
     fn id(&self) -> AnyWorkId {
         AnyWorkId::Be(WorkId::GlyfFragment(self.name.clone()))
-    }
-}
-
-impl Persistable for Glyph {
-    fn read(from: &mut dyn Read) -> Self {
-        let (name, bytes): (GlyphName, Vec<u8>) = bincode::deserialize_from(from).unwrap();
-        let glyph = FontRead::read(bytes.as_slice().into()).unwrap();
-        Glyph { name, data: glyph }
-    }
-
-    fn write(&self, to: &mut dyn Write) {
-        let glyph_bytes = dump_table(&self.data).unwrap();
-        let to_write = (&self.name, glyph_bytes);
-        bincode::serialize_into(to, &to_write).unwrap();
     }
 }
 
@@ -416,16 +348,6 @@ impl IdAware<AnyWorkId> for GvarFragment {
     }
 }
 
-impl Persistable for GvarFragment {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, &self).unwrap();
-    }
-}
-
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MarkLookups {
     pub(crate) mark_base: Vec<PendingLookup<MarkToBaseBuilder>>,
@@ -441,16 +363,6 @@ pub struct FeaRsMarks {
     pub(crate) blwm: MarkLookups,
     pub(crate) curs: Vec<PendingLookup<CursivePosBuilder>>,
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValueBuilder>>,
-}
-
-impl Persistable for FeaRsMarks {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
 }
 
 /// Kerns, ready to feed to fea-rs in the form it expects
@@ -546,26 +458,6 @@ impl FeaRsKerns {
     }
 }
 
-impl Persistable for FeaRsKerns {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
-}
-
-impl Persistable for FeaFirstPassOutput {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
-}
-
 /// Kerning adjustments at various locations
 pub type KernAdjustments = BTreeMap<NormalizedLocation, OrderedFloat<f64>>;
 
@@ -579,16 +471,6 @@ pub struct AllKerningPairs {
     /// A mapping from named kern groups to the appropriate set of glyphs
     pub groups: BTreeMap<KernGroup, GlyphSet>,
     pub adjustments: Vec<(ir::KernPair, KernAdjustments)>,
-}
-
-impl Persistable for AllKerningPairs {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
 }
 
 /// One side of a kerning pair, represented as glyph ids
@@ -773,16 +655,6 @@ impl IdAware<AnyWorkId> for KernFragment {
     }
 }
 
-impl Persistable for KernFragment {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
-}
-
 // work around orphan rules.
 //
 // FIXME: Clarify if there's a good reason not to treat glyf/loca as a single
@@ -809,50 +681,10 @@ impl From<LocaFormatWrapper> for LocaFormat {
     }
 }
 
-impl Persistable for LocaFormatWrapper {
-    fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        bincode::serialize_into(to, self).unwrap()
-    }
-}
-
 pub type BeWork = dyn Work<Context, AnyWorkId, Error> + Send;
 
-pub struct BePersistentStorage {
-    active: bool,
-    pub(crate) paths: Paths,
-}
-
-impl PersistentStorage<AnyWorkId> for BePersistentStorage {
-    fn active(&self) -> bool {
-        self.active
-    }
-
-    fn reader(&self, id: &AnyWorkId) -> Option<Box<dyn Read>> {
-        let file = self.paths.target_file(id.unwrap_be());
-        if !file.exists() {
-            return None;
-        }
-        let raw_file = File::open(file.clone())
-            .map_err(|e| panic!("Unable to write {file:?} {e}"))
-            .unwrap();
-        Some(Box::from(BufReader::new(raw_file)))
-    }
-
-    fn writer(&self, id: &AnyWorkId) -> Box<dyn io::Write> {
-        let file = self.paths.target_file(id.unwrap_be());
-        let raw_file = File::create(file.clone())
-            .map_err(|e| panic!("Unable to write {file:?} {e}"))
-            .unwrap();
-        Box::from(BufWriter::new(raw_file))
-    }
-}
-
-type BeContextItem<T> = ContextItem<AnyWorkId, T, BePersistentStorage>;
-type BeContextMap<T> = ContextMap<AnyWorkId, T, BePersistentStorage>;
+type BeContextItem<T> = ContextItem<AnyWorkId, T>;
+type BeContextMap<T> = ContextMap<AnyWorkId, T>;
 
 /// Read/write access to data for async work.
 ///
@@ -861,8 +693,7 @@ type BeContextMap<T> = ContextMap<AnyWorkId, T, BePersistentStorage>;
 /// execution order / mistakes, not to block actual bad actors.
 pub struct Context {
     pub flags: Flags,
-
-    pub persistent_storage: Arc<BePersistentStorage>,
+    pub paths: Paths,
 
     // The final, fully populated, read-only FE context
     pub ir: Arc<FeContext>,
@@ -912,8 +743,8 @@ impl Context {
     fn copy(&self, acl: AccessControlList<AnyWorkId>) -> Context {
         let acl = Arc::from(acl);
         Context {
+            paths: self.paths.clone(),
             flags: self.flags,
-            persistent_storage: self.persistent_storage.clone(),
             ir: self.ir.clone(),
             glyphs: self.glyphs.clone_with_acl(acl.clone()),
             gvar_fragments: self.gvar_fragments.clone_with_acl(acl.clone()),
@@ -956,74 +787,46 @@ impl Context {
 
     pub fn new_root(flags: Flags, paths: Paths, ir: &fontir::orchestration::Context) -> Context {
         let acl = Arc::from(AccessControlList::read_only());
-        let persistent_storage = Arc::from(BePersistentStorage {
-            active: flags.contains(Flags::EMIT_IR),
-            paths,
-        });
         Context {
+            paths,
             flags,
-            persistent_storage: persistent_storage.clone(),
             ir: Arc::from(ir.read_only()),
-            glyphs: ContextMap::new(acl.clone(), persistent_storage.clone()),
-            gvar_fragments: ContextMap::new(acl.clone(), persistent_storage.clone()),
-            avar: ContextItem::new(WorkId::Avar.into(), acl.clone(), persistent_storage.clone()),
-            cmap: ContextItem::new(WorkId::Cmap.into(), acl.clone(), persistent_storage.clone()),
-            colr: ContextItem::new(WorkId::Colr.into(), acl.clone(), persistent_storage.clone()),
-            cpal: ContextItem::new(WorkId::Cpal.into(), acl.clone(), persistent_storage.clone()),
-            fvar: ContextItem::new(WorkId::Fvar.into(), acl.clone(), persistent_storage.clone()),
-            gasp: ContextItem::new(WorkId::Gasp.into(), acl.clone(), persistent_storage.clone()),
-            glyf: ContextItem::new(WorkId::Glyf.into(), acl.clone(), persistent_storage.clone()),
-            gpos: ContextItem::new(WorkId::Gpos.into(), acl.clone(), persistent_storage.clone()),
-            gsub: ContextItem::new(WorkId::Gsub.into(), acl.clone(), persistent_storage.clone()),
-            gdef: ContextItem::new(WorkId::Gdef.into(), acl.clone(), persistent_storage.clone()),
-            gvar: ContextItem::new(WorkId::Gvar.into(), acl.clone(), persistent_storage.clone()),
-            post: ContextItem::new(WorkId::Post.into(), acl.clone(), persistent_storage.clone()),
-            loca: ContextItem::new(WorkId::Loca.into(), acl.clone(), persistent_storage.clone()),
-            loca_format: ContextItem::new(
-                WorkId::LocaFormat.into(),
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            maxp: ContextItem::new(WorkId::Maxp.into(), acl.clone(), persistent_storage.clone()),
-            name: ContextItem::new(WorkId::Name.into(), acl.clone(), persistent_storage.clone()),
-            os2: ContextItem::new(WorkId::Os2.into(), acl.clone(), persistent_storage.clone()),
-            head: ContextItem::new(WorkId::Head.into(), acl.clone(), persistent_storage.clone()),
-            hhea: ContextItem::new(WorkId::Hhea.into(), acl.clone(), persistent_storage.clone()),
-            hmtx: ContextItem::new(WorkId::Hmtx.into(), acl.clone(), persistent_storage.clone()),
-            hvar: ContextItem::new(WorkId::Hvar.into(), acl.clone(), persistent_storage.clone()),
-            mvar: ContextItem::new(WorkId::Mvar.into(), acl.clone(), persistent_storage.clone()),
-            meta: ContextItem::new(WorkId::Meta.into(), acl.clone(), persistent_storage.clone()),
-            vhea: ContextItem::new(WorkId::Vhea.into(), acl.clone(), persistent_storage.clone()),
-            vmtx: ContextItem::new(WorkId::Vmtx.into(), acl.clone(), persistent_storage.clone()),
-            vvar: ContextItem::new(WorkId::Vvar.into(), acl.clone(), persistent_storage.clone()),
-            all_kerning_pairs: ContextItem::new(
-                WorkId::GatherIrKerning.into(),
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            kern_fragments: ContextMap::new(acl.clone(), persistent_storage.clone()),
-            fea_rs_kerns: ContextItem::new(
-                WorkId::GatherBeKerning.into(),
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            fea_rs_marks: ContextItem::new(
-                WorkId::Marks.into(),
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            fea_ast: ContextItem::new(
-                WorkId::FeaturesAst.into(),
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            stat: ContextItem::new(WorkId::Stat.into(), acl.clone(), persistent_storage.clone()),
-            extra_fea_tables: ContextItem::new(
-                WorkId::ExtraFeaTables.into(),
-                acl.clone(),
-                persistent_storage.clone(),
-            ),
-            font: ContextItem::new(WorkId::Font.into(), acl, persistent_storage),
+            glyphs: ContextMap::new(acl.clone()),
+            gvar_fragments: ContextMap::new(acl.clone()),
+            avar: ContextItem::new(WorkId::Avar.into(), acl.clone()),
+            cmap: ContextItem::new(WorkId::Cmap.into(), acl.clone()),
+            colr: ContextItem::new(WorkId::Colr.into(), acl.clone()),
+            cpal: ContextItem::new(WorkId::Cpal.into(), acl.clone()),
+            fvar: ContextItem::new(WorkId::Fvar.into(), acl.clone()),
+            gasp: ContextItem::new(WorkId::Gasp.into(), acl.clone()),
+            glyf: ContextItem::new(WorkId::Glyf.into(), acl.clone()),
+            gpos: ContextItem::new(WorkId::Gpos.into(), acl.clone()),
+            gsub: ContextItem::new(WorkId::Gsub.into(), acl.clone()),
+            gdef: ContextItem::new(WorkId::Gdef.into(), acl.clone()),
+            gvar: ContextItem::new(WorkId::Gvar.into(), acl.clone()),
+            post: ContextItem::new(WorkId::Post.into(), acl.clone()),
+            loca: ContextItem::new(WorkId::Loca.into(), acl.clone()),
+            loca_format: ContextItem::new(WorkId::LocaFormat.into(), acl.clone()),
+            maxp: ContextItem::new(WorkId::Maxp.into(), acl.clone()),
+            name: ContextItem::new(WorkId::Name.into(), acl.clone()),
+            os2: ContextItem::new(WorkId::Os2.into(), acl.clone()),
+            head: ContextItem::new(WorkId::Head.into(), acl.clone()),
+            hhea: ContextItem::new(WorkId::Hhea.into(), acl.clone()),
+            hmtx: ContextItem::new(WorkId::Hmtx.into(), acl.clone()),
+            hvar: ContextItem::new(WorkId::Hvar.into(), acl.clone()),
+            mvar: ContextItem::new(WorkId::Mvar.into(), acl.clone()),
+            meta: ContextItem::new(WorkId::Meta.into(), acl.clone()),
+            vhea: ContextItem::new(WorkId::Vhea.into(), acl.clone()),
+            vmtx: ContextItem::new(WorkId::Vmtx.into(), acl.clone()),
+            vvar: ContextItem::new(WorkId::Vvar.into(), acl.clone()),
+            all_kerning_pairs: ContextItem::new(WorkId::GatherIrKerning.into(), acl.clone()),
+            kern_fragments: ContextMap::new(acl.clone()),
+            fea_rs_kerns: ContextItem::new(WorkId::GatherBeKerning.into(), acl.clone()),
+            fea_rs_marks: ContextItem::new(WorkId::Marks.into(), acl.clone()),
+            fea_ast: ContextItem::new(WorkId::FeaturesAst.into(), acl.clone()),
+            stat: ContextItem::new(WorkId::Stat.into(), acl.clone()),
+            extra_fea_tables: ContextItem::new(WorkId::ExtraFeaTables.into(), acl.clone()),
+            font: ContextItem::new(WorkId::Font.into(), acl),
         }
     }
 
@@ -1041,11 +844,11 @@ impl Context {
 
     /// A reasonable place to write extra files to help someone debugging
     pub fn debug_dir(&self) -> &Path {
-        self.persistent_storage.paths.debug_dir()
+        self.paths.debug_dir()
     }
 
     pub fn font_file(&self) -> PathBuf {
-        self.persistent_storage.paths.target_file(&WorkId::Font)
+        self.paths.target_file(&WorkId::Font)
     }
 }
 
@@ -1063,18 +866,6 @@ impl Bytes {
 impl From<Vec<u8>> for Bytes {
     fn from(buf: Vec<u8>) -> Self {
         Bytes { buf }
-    }
-}
-
-impl Persistable for Bytes {
-    fn read(from: &mut dyn Read) -> Self {
-        let mut buf = Vec::new();
-        from.read_to_end(&mut buf).unwrap();
-        buf.into()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        to.write_all(&self.buf).unwrap();
     }
 }
 

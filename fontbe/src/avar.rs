@@ -5,10 +5,9 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::Axis,
 };
-use fontir::orchestration::{Persistable, WorkId as FeWorkId};
+use fontir::orchestration::WorkId as FeWorkId;
 use log::debug;
 use write_fonts::{
-    read::FontRead,
     tables::avar::{Avar, AxisValueMap, SegmentMaps},
     types::F2Dot14,
 };
@@ -26,26 +25,6 @@ use crate::{
 pub enum PossiblyEmptyAvar {
     NonEmpty(Avar),
     Empty,
-}
-
-impl Persistable for PossiblyEmptyAvar {
-    fn read(from: &mut dyn std::io::Read) -> Self {
-        let mut bytes = Vec::new();
-        from.read_to_end(&mut bytes).unwrap();
-        if bytes.is_empty() {
-            Self::Empty
-        } else {
-            let table =
-                FontRead::read(bytes.as_slice().into()).expect("we wrote it, we can write it");
-            Self::NonEmpty(table)
-        }
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        if let Self::NonEmpty(table) = self {
-            table.write(to);
-        }
-    }
 }
 
 impl PossiblyEmptyAvar {
