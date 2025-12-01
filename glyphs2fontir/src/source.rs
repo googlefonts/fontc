@@ -629,9 +629,16 @@ fn condset_to_nbox(condset: ConditionSet, axes: &Axes) -> NBox {
         .iter()
         .filter_map(|cond| {
             let axis = axes.get(&cond.axis)?;
-            // we can filter out conditions with no min/max; missing axes are
-            // treated as being fully included in the box.
-            if cond.min.is_none() && cond.max.is_none() {
+            let axis_min = axis.min.to_design(&axis.converter);
+            let axis_max = axis.max.to_design(&axis.converter);
+            // we can filter out conditions with no min/max, or when min/max are
+            // equal to the axis defaults: these are equivalent and lead to us
+            // generating unnecessary conditions (since by default a missing
+            // axis is treated as fully matching)
+            let cond_min = cond.min.as_ref().unwrap_or(&axis_min);
+            let cond_max = cond.max.as_ref().unwrap_or(&axis_max);
+
+            if (cond_min, cond_max) == (&axis_min, &axis_max) {
                 return None;
             }
             Some((
