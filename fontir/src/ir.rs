@@ -38,7 +38,8 @@ pub use erase_open_corners::erase_open_corners;
 pub use path_builder::GlyphPathBuilder;
 pub use static_metadata::{
     Condition, ConditionSet, GdefCategories, MetaTableValues, MiscMetadata, NameKey, NamedInstance,
-    Panose, PostscriptNames, Rule, StaticMetadata, Substitution, VariableFeature,
+    Panose, PostscriptNames, PreliminaryGdefCategories, Rule, StaticMetadata, Substitution,
+    VariableFeature,
 };
 
 pub const DEFAULT_VENDOR_ID: &str = "NONE";
