@@ -30,7 +30,7 @@ pub struct Args {
     pub emit_ir: bool,
 
     /// Output file name (default: build/font.ttf)
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "build/font.ttf")]
     pub output_file: Option<PathBuf>,
 
     /// Whether to write additional debug files to disk.
@@ -70,8 +70,8 @@ pub struct Args {
     pub emit_timing: bool,
 
     /// Working directory for the build process. If emit-ir is on, written here.
-    #[arg(short, long, default_value = "build")]
-    pub build_dir: PathBuf,
+    #[arg(short, long)]
+    pub build_dir: Option<PathBuf>,
 
     /// Glyph names must match this regex to be processed
     #[arg(short, long, default_value = None, value_parser = ValidatedRegex::parse)]
@@ -148,7 +148,7 @@ impl Args {
             output_file: None,
             emit_debug: false, // they get destroyed by test cleanup
             emit_timing: false,
-            build_dir: build_dir.to_path_buf(),
+            build_dir: Some(build_dir.to_path_buf()),
             prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
             flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
             erase_open_corners: Flags::default().contains(Flags::ERASE_OPEN_CORNERS),
@@ -171,6 +171,7 @@ impl Args {
         let input_source = testdata_dir().join(source).canonicalize().unwrap();
         let mut result = Self::new(build_dir, input_source);
         result.emit_ir = true;
+        result.output_file = Some(build_dir.join("font.ttf"));
         result
     }
 

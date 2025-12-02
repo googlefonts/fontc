@@ -434,7 +434,10 @@ impl FeatureCompilationWork {
 }
 
 fn write_debug_glyph_order(context: &Context, glyphs: &GlyphOrder) {
-    let glyph_order_file = context.debug_dir().join("glyph_order.txt");
+    let Some(debug_dir) = context.debug_dir() else {
+        return;
+    };
+    let glyph_order_file = debug_dir.join("glyph_order.txt");
     let glyph_order = glyphs.names().map(|g| g.as_str()).collect::<Vec<_>>();
     let glyph_order = glyph_order.join("\n");
     if let Err(e) = fs::write(glyph_order_file, glyph_order) {
@@ -450,7 +453,10 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
         return;
     }
 
-    let debug_file = context.debug_dir().join("features.fea");
+    let Some(debug_dir) = context.debug_dir() else {
+        return;
+    };
+    let debug_file = debug_dir.join("features.fea");
     match fs::write(&debug_file, fea_content) {
         Ok(_) if is_error => warn!("{why}; fea written to {debug_file:?}"),
         Ok(_) => debug!("fea written to {debug_file:?}"),
@@ -665,15 +671,11 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
         }
 
         // Enables the assumption that if the file exists features were compiled
-        if context.flags.contains(Flags::EMIT_IR) {
-            fs::write(
-                context
-                    .persistent_storage
-                    .paths
-                    .target_file(&WorkId::Features),
-                "1",
-            )
-            .map_err(Error::IoError)?;
+        if context.flags.contains(Flags::EMIT_IR)
+            && let Some(persistent_storage) = &context.persistent_storage
+        {
+            fs::write(persistent_storage.paths.target_file(&WorkId::Features), "1")
+                .map_err(Error::IoError)?;
         }
         Ok(())
     }

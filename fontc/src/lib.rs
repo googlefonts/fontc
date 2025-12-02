@@ -88,6 +88,10 @@ impl TryFrom<&Path> for Input {
     }
 }
 
+fn default_build_dir() -> PathBuf {
+    PathBuf::from("build")
+}
+
 /// Run the compiler with the provided arguments
 ///
 /// This is the main entry point for the fontc command line utility.
@@ -103,15 +107,18 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
 
     let (be_root, mut timing) = _generate_font(
         source,
-        &args.build_dir,
-        args.output_file.as_ref(),
+        args.build_dir.as_deref(),
         args.flags(),
         args.skip_features,
         timer,
     )?;
 
     if args.flags().contains(Flags::EMIT_TIMING) {
-        let path = args.build_dir.join("threads.svg");
+        let path = args
+            .build_dir
+            .clone()
+            .unwrap_or_else(default_build_dir)
+            .join("threads.svg");
         let out_file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -144,26 +151,17 @@ fn merge_compilation_flags(cli_flags: Flags, source: &dyn Source) -> Flags {
 /// This is the library entry point to fontc.
 pub fn generate_font(
     source: Box<dyn Source>,
-    build_dir: &Path,
-    output_file: Option<&PathBuf>,
+    build_dir: Option<&Path>,
     flags: Flags,
     skip_features: bool,
 ) -> Result<Vec<u8>, Error> {
-    _generate_font(
-        source,
-        build_dir,
-        output_file,
-        flags,
-        skip_features,
-        JobTimer::default(),
-    )
-    .map(|(be_root, _timing)| be_root.font.get().get().to_vec())
+    _generate_font(source, build_dir, flags, skip_features, JobTimer::default())
+        .map(|(be_root, _timing)| be_root.font.get().get().to_vec())
 }
 
 fn _generate_font(
     source: Box<dyn Source>,
-    build_dir: &Path,
-    output_file: Option<&PathBuf>,
+    build_dir: Option<&Path>,
     flags: Flags,
     skip_features: bool,
     mut timer: JobTimer,
@@ -173,7 +171,16 @@ fn _generate_font(
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
-    let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
+    let build_dir = if flags.intersects(Flags::EMIT_IR | Flags::EMIT_DEBUG) && build_dir.is_none() {
+        Some(default_build_dir())
+    } else {
+        build_dir.map(|p| p.to_path_buf())
+    };
+    let (ir_paths, be_paths) = if let Some(build_dir) = build_dir {
+        init_paths(&build_dir, flags)?
+    } else {
+        (None, None)
+    };
     timer.add(time.complete());
     let workload = Workload::new(source, timer, skip_features)?;
     let fe_root = FeContext::new_root(flags, ir_paths);
@@ -201,10 +208,9 @@ pub fn require_dir(dir: &Path) -> Result<(), Error> {
 }
 
 pub fn init_paths(
-    output_file: Option<&PathBuf>,
     build_dir: &Path,
     flags: Flags,
-) -> Result<(IrPaths, BePaths), Error> {
+) -> Result<(Option<IrPaths>, Option<BePaths>), Error> {
     let ir_paths = IrPaths::new(build_dir);
     let be_paths = BePaths::new(build_dir);
 
@@ -225,7 +231,7 @@ pub fn init_paths(
     if flags.contains(Flags::EMIT_DEBUG) {
         require_dir(be_paths.debug_dir())?;
     }
-    Ok((ir_paths, be_paths))
+    Ok((Some(ir_paths), Some(be_paths)))
 }
 
 #[cfg(feature = "cli")]
@@ -238,12 +244,12 @@ pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error>
         require_dir(parent)?;
     }
     if !args.emit_ir {
-        fs::write(&font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
-            path: font_file,
+        fs::write(font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
+            path: font_file.to_path_buf(),
             source,
         })?;
     } else if !font_file.exists() {
-        return Err(Error::FileExpected(font_file));
+        return Err(Error::FileExpected(font_file.to_path_buf()));
     }
     Ok(())
 }
@@ -347,18 +353,19 @@ mod tests {
             let _ = env_logger::builder().is_test(true).try_init();
 
             let temp_dir = tempdir().unwrap();
-            let build_dir = temp_dir.path();
-            let args = adjust_args(Args::for_test(build_dir, source));
+            let build_dir = temp_dir.path().to_path_buf();
+            let args = adjust_args(Args::for_test(&build_dir, source));
 
             info!("Compile {args:?}");
 
             let input = args.source().unwrap().create_source().unwrap();
             let flags = merge_compilation_flags(args.flags(), &*input);
 
-            let (ir_paths, be_paths) =
-                init_paths(args.output_file.as_ref(), &args.build_dir, flags).unwrap();
-
-            let build_dir = be_paths.build_dir().to_path_buf();
+            let (ir_paths, be_paths) = if flags.intersects(Flags::EMIT_IR | Flags::EMIT_DEBUG) {
+                init_paths(&args.build_dir.clone().unwrap(), flags).unwrap()
+            } else {
+                (None, None)
+            };
 
             let fe_context = FeContext::new_root(flags, ir_paths);
             let be_context = BeContext::new_root(flags, be_paths, &fe_context.read_only());
@@ -366,7 +373,7 @@ mod tests {
 
             TestCompile {
                 _temp_dir: temp_dir,
-                build_dir,
+                build_dir: build_dir.to_path_buf(),
                 work_executed: HashSet::new(),
                 fe_context,
                 be_context,
