@@ -5,6 +5,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fmt::Debug,
+    ops::{BitOr, BitOrAssign},
 };
 
 use crate::ir::StaticMetadata;
@@ -186,6 +187,70 @@ impl Region {
     }
 }
 
+/// For emulating the behaviour of a python int, which has arbitrary precision.
+///
+/// This is necessary because the python code we are emulating does some bit
+/// fiddling, and the required number of bits may be larger than a standard word.
+///
+/// This solution doesn't handle all eventualities; it can count 511 items,
+/// and so will fail if there are more than 511 unique positions assigned
+/// to bracket layers.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+struct Rank([u128; 4]);
+
+impl Rank {
+    const ZERO: Self = Self([0, 0, 0, 0]);
+    const MAX: usize = 128 * 4 - 1;
+
+    fn new(val: usize) -> Self {
+        let val = val.min(Self::MAX);
+        let mut this = Self::default();
+        let column = val / 128;
+        let bit = val % 128;
+        this.0[3 - column] = 1 << bit;
+        this
+    }
+
+    fn count_zeros(&self) -> u32 {
+        self.0.into_iter().map(u128::count_zeros).sum()
+    }
+
+    fn first_bit_is_set(&self) -> bool {
+        (self.0[3] & 1) > 0
+    }
+
+    // we don't need the general case, so just handle this.
+    fn right_shift_one(&mut self) {
+        let mut carry_bit = 0;
+        for val in &mut self.0 {
+            let next_carry = *val & 1;
+            *val >>= 1;
+            *val |= carry_bit << 127;
+            carry_bit = next_carry;
+        }
+    }
+}
+
+impl BitOr for Rank {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        let [a1, b1, c1, d1] = self.0;
+        let [a2, b2, c2, d2] = rhs.0;
+        Self([a1 | a2, b1 | b2, c1 | c2, d1 | d2])
+    }
+}
+
+impl BitOrAssign for Rank {
+    fn bitor_assign(&mut self, rhs: Self) {
+        let [a2, b2, c2, d2] = rhs.0;
+        self.0[0] |= a2;
+        self.0[1] |= b2;
+        self.0[2] |= c2;
+        self.0[3] |= d2;
+    }
+}
+
 /// <https://github.com/fonttools/fonttools/blob/08962727756/Lib/fontTools/varLib/featureVars.py#L122>
 pub fn overlay_feature_variations(
     conditional_subs: Vec<(Region, BTreeMap<GlyphName, GlyphName>)>,
@@ -197,21 +262,33 @@ pub fn overlay_feature_variations(
     // overlay logic
     // Rank is the bit-set of the index of all contributing layers:
     // https://github.com/fonttools/fonttools/blob/1c2704dfc7/Lib/fontTools/varLib/featureVars.py#L201
-    fn init_map() -> IndexMap<NBox, u64> {
-        IndexMap::from([(NBox::default(), 0)])
+    fn init_map() -> IndexMap<NBox, Rank> {
+        IndexMap::from([(NBox::default(), Default::default())])
     }
+
+    if conditional_subs.len() > Rank::MAX {
+        log::warn!(
+            "number of unique feature variation regions exceeds what can\n\
+            be represented, output may be incorrect"
+        );
+    }
+    // still worth crashing in debug I think?
+    debug_assert!(
+        conditional_subs.len() <= Rank::MAX,
+        "Maximum number of unique substitution regions exceeded"
+    );
 
     let mut boxmap = init_map();
     for (i, (cur_region, _)) in conditional_subs.iter().enumerate() {
-        let cur_rank = 1u64 << i;
+        let cur_rank = Rank::new(i);
         for (box_, rank) in std::mem::replace(&mut boxmap, init_map()) {
             for cur_box in &cur_region.0 {
                 let (intersection, remainder) = cur_box.overlay_onto(&box_);
                 if let Some(intersection) = intersection {
-                    *boxmap.entry(intersection).or_insert(0) |= rank | cur_rank;
+                    *boxmap.entry(intersection).or_default() |= rank | cur_rank;
                 }
                 if let Some(remainder) = remainder {
-                    *boxmap.entry(remainder).or_insert(0) |= rank;
+                    *boxmap.entry(remainder).or_default() |= rank;
                 }
             }
         }
@@ -221,17 +298,17 @@ pub fn overlay_feature_variations(
     let mut sorted = boxmap.into_iter().collect::<Vec<_>>();
     sorted.sort_by_key(|(_, rank)| rank.count_zeros());
     for (box_, mut rank) in sorted {
-        if rank == 0 {
+        if rank == Rank::ZERO {
             continue;
         }
 
         let mut substs_list = Vec::new();
         let mut i = 0;
-        while rank != 0 {
-            if (rank & 1) != 0 {
+        while rank != Rank::ZERO {
+            if rank.first_bit_is_set() {
                 substs_list.push(conditional_subs[i].1.clone())
             }
-            rank >>= 1;
+            rank.right_shift_one();
             i += 1;
         }
         items.push((box_, substs_list))
@@ -373,7 +450,6 @@ mod tests {
         ];
 
         let overlaps = overlay_feature_variations(conds);
-        //dbg!(&overlaps);
         assert_eq!(match_condition(&[("abcd", 0.)], &overlaps), [("2", "2")]);
         assert_eq!(match_condition(&[("abcd", 0.1)], &overlaps), [("2", "2")]);
         assert_eq!(
@@ -516,5 +592,54 @@ mod tests {
         );
 
         assert_eq!(nbox, NBox::for_test(&[("derp", (-1.0, 1.0))]))
+    }
+
+    #[test]
+    fn rank_new() {
+        assert_eq!(Rank::new(0).0, [0, 0, 0, 1]);
+        assert_eq!(Rank::new(1).0, [0, 0, 0, 2]);
+        assert_eq!(Rank::new(2).0, [0, 0, 0, 4]);
+        assert_eq!(Rank::new(5).0, [0, 0, 0, 1 << 5]);
+        assert_eq!(Rank::new(127).0, [0, 0, 0, 1 << 127]);
+        assert_eq!(Rank::new(128).0, [0, 0, 1, 0]);
+        assert_eq!(Rank::new(129).0, [0, 0, 2, 0]);
+        assert_eq!(Rank::new(255).0, [0, 0, 1 << 127, 0]);
+        assert_eq!(Rank::new(256).0, [0, 1, 0, 0]);
+        assert_eq!(Rank::new(257).0, [0, 2, 0, 0]);
+        assert_eq!(Rank::new(510).0, [1 << 126, 0, 0, 0]);
+        assert_eq!(Rank::new(511).0, [1 << 127, 0, 0, 0]);
+        assert_eq!(Rank::new(512).0, [1 << 127, 0, 0, 0]); // saturating
+        assert_eq!(Rank::new(3000).0, [1 << 127, 0, 0, 0]);
+    }
+
+    #[test]
+    fn rank_shr_one() {
+        fn shr_one(init: usize) -> [u128; 4] {
+            let mut r = Rank::new(init);
+            r.right_shift_one();
+            r.0
+        }
+
+        assert_eq!(shr_one(0), [0, 0, 0, 0]);
+        assert_eq!(shr_one(1), [0, 0, 0, 1]);
+        assert_eq!(shr_one(2), [0, 0, 0, 2]);
+        assert_eq!(shr_one(5), [0, 0, 0, 1 << 4]);
+        assert_eq!(shr_one(127), [0, 0, 0, 1 << 126]);
+        assert_eq!(shr_one(128), [0, 0, 0, 1 << 127]);
+        assert_eq!(shr_one(129), [0, 0, 1, 0]);
+        assert_eq!(shr_one(256), [0, 0, 1 << 127, 0]);
+        assert_eq!(shr_one(257), [0, 1, 0, 0]);
+        assert_eq!(shr_one(258), [0, 2, 0, 0]);
+        assert_eq!(shr_one(511), [1 << 126, 0, 0, 0]);
+        assert_eq!(shr_one(512), [1 << 126, 0, 0, 0]);
+        assert_eq!(shr_one(513), [1 << 126, 0, 0, 0]); // saturating
+        assert_eq!(shr_one(3000), [1 << 126, 0, 0, 0]);
+    }
+
+    #[test]
+    fn rank_bitor() {
+        let mut thing = Rank::new(1);
+        thing |= Rank::new(5);
+        assert_eq!(thing.0, [0, 0, 0, 0b100010]);
     }
 }
