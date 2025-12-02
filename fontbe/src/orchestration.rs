@@ -822,15 +822,10 @@ impl Persistable for LocaFormatWrapper {
 pub type BeWork = dyn Work<Context, AnyWorkId, Error> + Send;
 
 pub struct BePersistentStorage {
-    active: bool,
     pub(crate) paths: Paths,
 }
 
 impl PersistentStorage<AnyWorkId> for BePersistentStorage {
-    fn active(&self) -> bool {
-        self.active
-    }
-
     fn reader(&self, id: &AnyWorkId) -> Option<Box<dyn Read>> {
         let file = self.paths.target_file(id.unwrap_be());
         if !file.exists() {
@@ -862,7 +857,7 @@ type BeContextMap<T> = ContextMap<AnyWorkId, T, BePersistentStorage>;
 pub struct Context {
     pub flags: Flags,
 
-    pub persistent_storage: Arc<BePersistentStorage>,
+    pub persistent_storage: Option<Arc<BePersistentStorage>>,
 
     // The final, fully populated, read-only FE context
     pub ir: Arc<FeContext>,
@@ -954,12 +949,19 @@ impl Context {
         }
     }
 
-    pub fn new_root(flags: Flags, paths: Paths, ir: &fontir::orchestration::Context) -> Context {
-        let acl = Arc::from(AccessControlList::read_only());
-        let persistent_storage = Arc::from(BePersistentStorage {
-            active: flags.contains(Flags::EMIT_IR),
-            paths,
+    pub fn new_root(
+        flags: Flags,
+        paths: Option<Paths>,
+        ir: &fontir::orchestration::Context,
+    ) -> Context {
+        assert!(if flags.intersects(Flags::EMIT_IR | Flags::EMIT_DEBUG) {
+            paths.is_some()
+        } else {
+            paths.is_none()
         });
+        let acl = Arc::from(AccessControlList::read_only());
+        let persistent_storage: Option<Arc<BePersistentStorage>> =
+            paths.map(|paths| Arc::from(BePersistentStorage { paths }));
         Context {
             flags,
             persistent_storage: persistent_storage.clone(),
@@ -1040,12 +1042,16 @@ impl Context {
     }
 
     /// A reasonable place to write extra files to help someone debugging
-    pub fn debug_dir(&self) -> &Path {
-        self.persistent_storage.paths.debug_dir()
+    pub fn debug_dir(&self) -> Option<&Path> {
+        self.persistent_storage
+            .as_ref()
+            .map(|ps| ps.paths.debug_dir())
     }
 
-    pub fn font_file(&self) -> PathBuf {
-        self.persistent_storage.paths.target_file(&WorkId::Font)
+    pub fn font_file(&self) -> Option<PathBuf> {
+        self.persistent_storage
+            .as_ref()
+            .map(|ps| ps.paths.target_file(&WorkId::Font))
     }
 }
 

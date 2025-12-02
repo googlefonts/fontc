@@ -61,7 +61,7 @@ where
 {
     id: I,
     acl: Arc<AccessControlList<I>>,
-    persistent_storage: Arc<P>,
+    persistent_storage: Option<Arc<P>>,
     value: Arc<RwLock<Option<Arc<T>>>>,
 }
 
@@ -71,7 +71,7 @@ where
     P: PersistentStorage<I>,
     T: Persistable,
 {
-    pub fn new(id: I, acl: Arc<AccessControlList<I>>, persistent_storage: Arc<P>) -> Self {
+    pub fn new(id: I, acl: Arc<AccessControlList<I>>, persistent_storage: Option<Arc<P>>) -> Self {
         ContextItem {
             id,
             acl,
@@ -100,8 +100,8 @@ where
         }
 
         // it's *not* in memory but perhaps it's written down?
-        if self.persistent_storage.active()
-            && let Some(mut reader) = self.persistent_storage.reader(&self.id)
+        if let Some(persistent_storage) = &self.persistent_storage
+            && let Some(mut reader) = persistent_storage.reader(&self.id)
         {
             let restored = T::read(&mut reader);
             *self.value.write() = Some(Arc::from(restored));
@@ -142,8 +142,8 @@ where
             return;
         }
 
-        if self.persistent_storage.active() {
-            let mut writer = self.persistent_storage.writer(&self.id);
+        if let Some(persistent_storage) = &self.persistent_storage {
+            let mut writer = persistent_storage.writer(&self.id);
             value.write(&mut writer);
         }
 
@@ -162,7 +162,7 @@ where
     P: PersistentStorage<I>,
 {
     acl: Arc<AccessControlList<I>>,
-    persistent_storage: Arc<P>,
+    persistent_storage: Option<Arc<P>>,
     value: Arc<RwLock<HashMap<I, Arc<T>>>>,
 }
 
@@ -172,7 +172,7 @@ where
     T: IdAware<I> + Persistable,
     P: PersistentStorage<I>,
 {
-    pub fn new(acl: Arc<AccessControlList<I>>, persistent_storage: Arc<P>) -> Self {
+    pub fn new(acl: Arc<AccessControlList<I>>, persistent_storage: Option<Arc<P>>) -> Self {
         ContextMap {
             acl,
             persistent_storage,
@@ -217,8 +217,8 @@ where
         }
 
         // it's *not* in memory but perhaps it's written down?
-        if self.persistent_storage.active()
-            && let Some(mut reader) = self.persistent_storage.reader(id)
+        if let Some(persistent_storage) = &self.persistent_storage
+            && let Some(mut reader) = persistent_storage.reader(id)
         {
             let restored = T::read(&mut reader);
             self.value.write().insert(id.clone(), Arc::from(restored));
@@ -240,8 +240,8 @@ where
         let key = value.id();
         self.acl.assert_write_access(&key);
 
-        if self.persistent_storage.active() {
-            let mut writer = self.persistent_storage.writer(&key);
+        if let Some(persistent_storage) = &self.persistent_storage {
+            let mut writer = persistent_storage.writer(&key);
             value.write(&mut writer);
         }
 
@@ -288,7 +288,6 @@ pub trait Persistable {
 /// This enables the compiler to restore state from prior executions which is
 /// crucial to incremental operation.
 pub trait PersistentStorage<I> {
-    fn active(&self) -> bool;
     /// None if there is nothing written down for id
     fn reader(&self, id: &I) -> Option<Box<dyn Read>>;
     fn writer(&self, id: &I) -> Box<dyn Write>;
@@ -352,15 +351,10 @@ impl Identifier for WorkId {
 pub type IrWork = dyn Work<Context, WorkId, Error> + Send;
 
 pub struct IrPersistentStorage {
-    active: bool,
     pub(crate) paths: Paths,
 }
 
 impl PersistentStorage<WorkId> for IrPersistentStorage {
-    fn active(&self) -> bool {
-        self.active
-    }
-
     fn reader(&self, id: &WorkId) -> Option<Box<dyn Read>> {
         let file = self.paths.target_file(id);
         if !file.exists() {
@@ -408,7 +402,7 @@ type FeContextMap<T> = ContextMap<WorkId, T, IrPersistentStorage>;
 pub struct Context {
     pub flags: Flags,
 
-    pub(crate) persistent_storage: Arc<IrPersistentStorage>,
+    pub(crate) persistent_storage: Option<Arc<IrPersistentStorage>>,
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
@@ -450,12 +444,14 @@ impl Context {
         }
     }
 
-    pub fn new_root(flags: Flags, paths: Paths) -> Context {
-        let acl = Arc::from(AccessControlList::read_only());
-        let persistent_storage = Arc::from(IrPersistentStorage {
-            active: flags.contains(Flags::EMIT_IR),
-            paths,
+    pub fn new_root(flags: Flags, paths: Option<Paths>) -> Context {
+        assert!(if flags.intersects(Flags::EMIT_IR | Flags::EMIT_DEBUG) {
+            paths.is_some()
+        } else {
+            paths.is_none()
         });
+        let acl = Arc::from(AccessControlList::read_only());
+        let persistent_storage = paths.map(|paths| Arc::from(IrPersistentStorage { paths }));
         Context {
             flags,
             persistent_storage: persistent_storage.clone(),
