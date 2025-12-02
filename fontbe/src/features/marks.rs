@@ -35,7 +35,7 @@ use crate::{
     },
 };
 use fontir::{
-    ir::{self, Anchor, AnchorKind, GlyphAnchors, GlyphOrder, StaticMetadata},
+    ir::{self, Anchor, AnchorKind, GdefCategories, GlyphAnchors, GlyphOrder, StaticMetadata},
     orchestration::WorkId as FeWorkId,
 };
 
@@ -199,11 +199,12 @@ impl<'a> MarkLookupBuilder<'a> {
     fn new(
         anchors: Vec<&'a GlyphAnchors>,
         glyph_order: &'a GlyphOrder,
+        gdef_categories: &'a GdefCategories,
         static_metadata: &'a StaticMetadata,
         fea_first_pass: &'a FeaFirstPassOutput,
         char_map: HashMap<u32, GlyphId16>,
     ) -> Result<Self, Error> {
-        let gdef_classes = super::get_gdef_classes(static_metadata, fea_first_pass, glyph_order);
+        let gdef_classes = super::get_gdef_classes(gdef_categories, fea_first_pass, glyph_order);
         let lig_carets = get_ligature_carets(glyph_order, static_metadata, &anchors)?;
         // first we want to narrow our input down to only anchors that are participating.
         // in pythonland this is https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L380
@@ -750,6 +751,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         AccessBuilder::new()
             .variant(FeWorkId::StaticMetadata)
             .variant(FeWorkId::GlyphOrder)
+            .variant(FeWorkId::GdefCategories)
             .variant(WorkId::FeaturesAst)
             .variant(FeWorkId::ALL_ANCHORS)
             .build()
@@ -759,6 +761,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
+        let gdef_categories = context.ir.gdef_categories.get();
         let raw_anchors = context.ir.anchors.all();
         let fea_first_pass = context.fea_ast.get();
 
@@ -785,6 +788,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         let ctx = MarkLookupBuilder::new(
             anchors,
             &glyph_order,
+            &gdef_categories,
             &static_metadata,
             &fea_first_pass,
             char_map,
@@ -1283,6 +1287,7 @@ mod tests {
             let ctx = MarkLookupBuilder::new(
                 anchorsref,
                 &layout_output.glyph_order,
+                &layout_output.gdef_categories,
                 &layout_output.static_metadata,
                 &layout_output.first_pass_fea,
                 char_map,

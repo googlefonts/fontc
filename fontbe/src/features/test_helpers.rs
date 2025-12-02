@@ -23,6 +23,7 @@ pub(crate) struct LayoutOutputBuilder {
 /// A helper for compiling layout tables (including with user-provided features)
 pub(crate) struct LayoutOutput {
     pub(crate) static_metadata: StaticMetadata,
+    pub(crate) gdef_categories: GdefCategories,
     pub(crate) glyph_order: GlyphOrder,
     pub(crate) first_pass_fea: FeaFirstPassOutput,
 }
@@ -71,11 +72,12 @@ impl LayoutOutputBuilder {
             self.glyph_locations.clone(),
             Default::default(),
             42.0,
-            self.categories.clone().unwrap_or_default(),
             None,
             false,
         )
         .unwrap();
+
+        let gdef_categories = self.categories.clone().unwrap_or_default();
 
         let glyph_map = self.glyph_order.names().cloned().collect();
         // first get the AST, which we need to use as input
@@ -96,6 +98,7 @@ impl LayoutOutputBuilder {
         let first_pass_fea = FeaFirstPassOutput::for_test(ast, &glyph_map).unwrap();
         LayoutOutput {
             static_metadata,
+            gdef_categories,
             glyph_order: self.glyph_order.clone(),
             first_pass_fea,
         }
