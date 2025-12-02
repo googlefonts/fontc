@@ -217,6 +217,7 @@ pub fn init_paths(
     // the build dir stores the IR (for incremental builds) so we don't need
     // to create one unless we're writing to it
     if flags.contains(Flags::EMIT_IR) {
+        require_dir(build_dir)?;
         require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
         require_dir(be_paths.glyph_dir())?;
