@@ -578,6 +578,7 @@ impl Workload {
             Vec<Arc<AtomicUsize>>,
         )>::with_capacity(512)));
 
+        // In non-rayon mode, calling the runner needs a mutable borrow for update_launchable.
         #[cfg_attr(feature = "rayon", allow(unused_mut))]
         let mut runner = |scope: &Scope| {
             // Whenever a task completes see if it was the last incomplete dependency of other task(s)
