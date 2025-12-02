@@ -3,6 +3,8 @@
 #[cfg(feature = "cli")]
 mod args;
 mod error;
+#[cfg(not(feature = "rayon"))]
+mod norayon;
 mod timing;
 pub mod work;
 mod workload;
