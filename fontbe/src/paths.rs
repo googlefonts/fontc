@@ -28,12 +28,6 @@ impl Paths {
         }
     }
 
-    pub fn with_output_file(build_dir: &Path, output_file: &Path) -> Paths {
-        let mut paths = Paths::new(build_dir);
-        paths.output_file = output_file.to_path_buf();
-        paths
-    }
-
     pub fn build_dir(&self) -> &Path {
         &self.build_dir
     }
