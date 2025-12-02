@@ -16,7 +16,7 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [features]
-default = ["cli"]
+default = ["cli", "rayon"]
 cli = ["clap"]
 
 [dependencies]
@@ -40,7 +40,7 @@ indexmap.workspace = true
 regex.workspace = true
 
 write-fonts.workspace = true
-rayon.workspace = true
+rayon = { workspace = true, optional = true }
 
 # just for fontc!
 crossbeam-channel = "0.5.6"

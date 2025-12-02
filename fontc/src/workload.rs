@@ -49,6 +49,11 @@ use fontir::{
 };
 use log::{debug, trace, warn};
 
+#[cfg(not(feature = "rayon"))]
+use crate::norayon::SequentialScope as Scope;
+#[cfg(feature = "rayon")]
+use rayon::Scope;
+
 use crate::{
     Error,
     timing::{JobTime, JobTimer},
@@ -573,7 +578,8 @@ impl Workload {
             Vec<Arc<AtomicUsize>>,
         )>::with_capacity(512)));
 
-        let runner = |scope: &rayon::Scope| {
+        #[cfg_attr(feature = "rayon", allow(unused_mut))]
+        let mut runner = |scope: &Scope| {
             // Whenever a task completes see if it was the last incomplete dependency of other task(s)
             // and spawn them if it was
             // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
@@ -731,18 +737,20 @@ impl Workload {
             Ok::<(), Error>(())
         };
 
-        // use an explicit threadpool to avoid possible congestion if another
-        // library we use is using the global threadpool
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(feature = "rayon")]
         {
+            // use an explicit threadpool to avoid possible congestion if another
+            // library we use is using the global threadpool
             let tp = rayon::ThreadPoolBuilder::new()
                 .build()
                 .expect("couldn't build threadpool");
             tp.in_place_scope(runner)?;
         }
-        // WASM rayon uses a fall-back single threaded implementation
-        #[cfg(target_family = "wasm")]
-        rayon::in_place_scope(runner)?;
+        #[cfg(not(feature = "rayon"))]
+        {
+            let scope = Scope;
+            runner(&scope)?;
+        }
 
         // If ^ exited due to error the scope awaited any live tasks; capture their results
         self.read_completions(&mut Vec::new(), &recv, RecvType::NonBlocking)?;
