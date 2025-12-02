@@ -177,7 +177,8 @@ fn _generate_font(
         build_dir.map(|p| p.to_path_buf())
     };
     let (ir_paths, be_paths) = if let Some(build_dir) = build_dir {
-        init_paths(&build_dir, flags)?
+        let (ir_paths, be_paths) = init_paths(&build_dir, flags)?;
+        (Some(ir_paths), Some(be_paths))
     } else {
         (None, None)
     };
@@ -207,10 +208,7 @@ pub fn require_dir(dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn init_paths(
-    build_dir: &Path,
-    flags: Flags,
-) -> Result<(Option<IrPaths>, Option<BePaths>), Error> {
+pub fn init_paths(build_dir: &Path, flags: Flags) -> Result<(IrPaths, BePaths), Error> {
     let ir_paths = IrPaths::new(build_dir);
     let be_paths = BePaths::new(build_dir);
 
@@ -232,7 +230,7 @@ pub fn init_paths(
     if flags.contains(Flags::EMIT_DEBUG) {
         require_dir(be_paths.debug_dir())?;
     }
-    Ok((Some(ir_paths), Some(be_paths)))
+    Ok((ir_paths, be_paths))
 }
 
 #[cfg(feature = "cli")]
@@ -363,7 +361,8 @@ mod tests {
             let flags = merge_compilation_flags(args.flags(), &*input);
 
             let (ir_paths, be_paths) = if flags.intersects(Flags::EMIT_IR | Flags::EMIT_DEBUG) {
-                init_paths(&args.build_dir.clone().unwrap(), flags).unwrap()
+                let (ir_paths, be_paths) = init_paths(&build_dir, flags).unwrap();
+                (Some(ir_paths), Some(be_paths))
             } else {
                 (None, None)
             };
