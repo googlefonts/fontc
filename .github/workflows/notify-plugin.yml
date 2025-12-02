@@ -1,21 +1,28 @@
 name: Notify googlefonts/fontc-export-plugin of fontc release
 
+# Trigger when the release.yml workflow completes successfully.
+# https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 jobs:
   notify-plugin:
     runs-on: ubuntu-latest
     environment: fontc-plugin-notifications
-    # Only run for fontc releases (not other packages in the repo)
-    if: startsWith(github.event.release.tag_name, 'fontc-v')
+    # Only run if Release succeeded AND was triggered by a fontc tag.
+    # The `head_branch` property contains the tag name in case of a tag-triggered workflow.
+    # https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_run
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'fontc-v')
 
     steps:
       - name: Extract version from tag
         id: version
         run: |
-          TAG_NAME="${{ github.event.release.tag_name }}"
+          TAG_NAME="${{ github.event.workflow_run.head_branch }}"
           # Remove 'fontc-v' prefix to get just the version number
           VERSION="${TAG_NAME#fontc-v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -24,7 +31,7 @@ jobs:
       - name: Validate version format (X.Y.Z)
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          TAG_NAME="${{ github.event.release.tag_name }}"
+          TAG_NAME="${{ github.event.workflow_run.head_branch }}"
           if [ "$VERSION" = "$TAG_NAME" ]; then
             echo "ERROR: Failed to extract version from tag: $TAG_NAME"
             echo "Expected tag format: fontc-vX.Y.Z"
