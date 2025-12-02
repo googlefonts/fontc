@@ -398,7 +398,7 @@ impl Source for DesignSpaceIrSource {
                 match name {
                     "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
                     "eraseOpenCorners" => flags.set(Flags::ERASE_OPEN_CORNERS, true),
-                    // Note: propagateAnchors will be handled in future work
+                    "propagateAnchors" => flags.set(Flags::PROPAGATE_ANCHORS, true),
                     other => log::info!("unhandled ufo2ft filter '{other}'"),
                 }
             }
