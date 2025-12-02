@@ -24,6 +24,7 @@ use crate::{
     error::{BadGlyph, Error},
     ir::{Component, GlobalMetric, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
+    propagate_anchors::propagate_all_anchors,
 };
 
 pub fn create_glyph_order_work() -> Box<IrWork> {
@@ -720,15 +721,20 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         AccessBuilder::new()
             .variant(WorkId::StaticMetadata)
             .variant(WorkId::PreliminaryGlyphOrder)
+            .variant(WorkId::PreliminaryGdefCategories)
             .variant(WorkId::GlobalMetrics)
             .variant(WorkId::ALL_GLYPHS)
+            .variant(WorkId::ALL_ANCHORS)
             .build()
     }
 
     fn write_access(&self) -> Access<WorkId> {
         AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
             .variant(WorkId::GlyphOrder)
+            .variant(WorkId::GdefCategories)
             .variant(WorkId::ALL_GLYPHS)
+            .variant(WorkId::ALL_ANCHORS)
             .build()
     }
 
@@ -742,6 +748,16 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/util.py#L112)
 
         flatten_all_non_export_components(context)?;
+
+        // Propagate anchors from components to composites (if enabled)
+        if context.flags.contains(Flags::PROPAGATE_ANCHORS) {
+            propagate_all_anchors(context)?;
+        }
+
+        // Compute final GDEF categories. When infer_from_anchors=true (glyphsLib), this
+        // infers Base from anchors and prunes Ligature without anchors. When false (ufo2ft),
+        // it just copies preliminary categories as-is.
+        recompute_gdef_categories(context)?;
 
         // then generate the final glyph order and do final glyph processing
         let arc_current = context.preliminary_glyph_order.get();
@@ -844,6 +860,83 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
     }
 }
 
+/// Recompute GDEF categories after anchor propagation.
+///
+/// Takes preliminary categories (Mark/Ligature/Base from source) and optionally
+/// infers Base or prunes Ligature by inspecting propagated anchors, depending on
+/// the source type (controlled by `infer_from_anchors` flag):
+///
+/// - **glyphsLib behavior** (`infer_from_anchors=true`): Infer Base from attaching
+///   anchors; require attaching anchors for Ligature to be kept.
+/// - **ufo2ft behavior** (`infer_from_anchors=false`): Use source categories as-is;
+///   don't infer or prune based on anchors.
+///
+/// This breaks the circular dependency:
+/// - Preliminary categories for ligatures and marks don't need anchors, and are used
+///   by the anchor propagation algorithm;
+/// - Final categories may include Base inferred from propagated anchors (glyphsLib).
+fn recompute_gdef_categories(context: &Context) -> Result<(), Error> {
+    use crate::ir::{AnchorKind, GdefCategories};
+    use std::collections::BTreeMap;
+    use write_fonts::tables::gdef::GlyphClassDef;
+
+    let preliminary = context.preliminary_gdef_categories.get();
+
+    // For sources that don't infer from anchors (e.g. DS+UFO), just clone
+    // preliminary->final categories directly
+    if !preliminary.infer_from_anchors {
+        context.gdef_categories.set(GdefCategories {
+            categories: preliminary.categories.clone(),
+            prefer_gdef_categories_in_fea: preliminary.prefer_gdef_categories_in_fea,
+        });
+        return Ok(());
+    }
+
+    let mut final_categories = BTreeMap::new();
+
+    for (_work_id, glyph) in context.glyphs.all() {
+        let glyph_name = glyph.name.clone();
+
+        // Check if this glyph has attaching anchors (non-underscore) in any location.
+        // Attaching anchors are anything that is not Mark (e.g. Base, Ligature,
+        // CursiveEntry/Exit, even Caret). AnchorKind is parsed from name where
+        // underscore prefix indicates marks.
+        let has_attaching_anchor = context
+            .anchors
+            .try_get(&WorkId::Anchor(glyph_name.clone()))
+            .is_some_and(|glyph_anchors| {
+                glyph_anchors
+                    .anchors
+                    .iter()
+                    .any(|anchor| !matches!(&anchor.kind, AnchorKind::Mark(_)))
+            });
+
+        // glyphsLib behavior: infer Base from anchors, require anchors for Ligature
+        // <https://github.com/googlefonts/glyphsLib/blob/de5b4e34/Lib/glyphsLib/builder/features.py#L260-L270>
+        let final_cat = match preliminary.categories.get(&glyph_name) {
+            Some(GlyphClassDef::Mark) => Some(GlyphClassDef::Mark),
+            Some(GlyphClassDef::Ligature) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
+            Some(GlyphClassDef::Ligature) => None, // Ligature without anchors is dropped
+            Some(GlyphClassDef::Base) => Some(GlyphClassDef::Base),
+            Some(GlyphClassDef::Component) => Some(GlyphClassDef::Component),
+            _ if has_attaching_anchor => Some(GlyphClassDef::Base), // Infer Base from anchors
+            _ => None,
+        };
+
+        if let Some(cat) = final_cat {
+            final_categories.insert(glyph_name, cat);
+        }
+    }
+
+    // Write final categories directly to context (no StaticMetadata cloning!)
+    context.gdef_categories.set(GdefCategories {
+        categories: final_categories,
+        prefer_gdef_categories_in_fea: preliminary.prefer_gdef_categories_in_fea,
+    });
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeSet, HashSet};
@@ -857,11 +950,12 @@ mod tests {
 
     use crate::{
         ir::{
-            Component, GlobalMetricsBuilder, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
-            StaticMetadata,
+            AnchorBuilder, Component, GdefCategories, GlobalMetricsBuilder, Glyph, GlyphBuilder,
+            GlyphInstance, GlyphOrder, PreliminaryGdefCategories, StaticMetadata,
         },
         orchestration::{Context, Flags, WorkId},
     };
+    use write_fonts::tables::gdef::GlyphClassDef;
 
     use super::*;
 
@@ -923,7 +1017,6 @@ mod tests {
             locations.into_iter().collect(),
             None,
             1.0,
-            Default::default(),
             None,
             false,
         )
@@ -2150,6 +2243,68 @@ mod tests {
         assert_eq!(
             glyph.has_overflowing_component_transforms(),
             expected_overflow
+        );
+    }
+
+    /// Test that recompute_gdef_categories assigns Base to glyphs with pre-existing anchors
+    /// even when anchor propagation is disabled.
+    ///
+    /// Before the fix, recompute_gdef_categories was only called when PROPAGATE_ANCHORS was set.
+    /// This test ensures that glyphs with pre-existing attaching anchors (like "top") get
+    /// classified as Base regardless of the propagation flag.
+    #[test]
+    fn base_category_from_preexisting_anchor_without_propagation() {
+        let ctx = test_context();
+
+        // Create a simple glyph "A" with a pre-existing attaching anchor
+        let loc = ctx
+            .static_metadata
+            .get()
+            .variation_model
+            .locations()
+            .next()
+            .unwrap()
+            .clone();
+
+        let glyph = Glyph::new(
+            "A".into(),
+            true,
+            Default::default(),
+            [(loc.clone(), GlyphInstance::default())].into(),
+        )
+        .unwrap();
+        ctx.glyphs.set(glyph);
+
+        // Create an attaching anchor "top" (no underscore = not a mark anchor)
+        let mut anchor_builder = AnchorBuilder::new("A".into());
+        anchor_builder
+            .add("top".into(), loc, kurbo::Point::new(100.0, 500.0))
+            .unwrap();
+        let anchors = anchor_builder.build().unwrap();
+        ctx.anchors.set(anchors);
+
+        // Set preliminary GDEF categories with infer_from_anchors=true (glyphsLib behavior)
+        // The glyph has NO explicit category - it should be inferred from anchors
+        ctx.preliminary_gdef_categories
+            .set(PreliminaryGdefCategories {
+                categories: Default::default(),
+                prefer_gdef_categories_in_fea: false,
+                infer_from_anchors: true,
+            });
+        ctx.gdef_categories.set(GdefCategories::default());
+
+        // Call recompute_gdef_categories directly (NOT propagate_all_anchors)
+        // This simulates what happens when PROPAGATE_ANCHORS is OFF but we still
+        // want to infer GDEF categories from existing anchors
+        recompute_gdef_categories(&ctx).unwrap();
+
+        // The glyph should be classified as Base because it has an attaching anchor
+        let final_categories = ctx.gdef_categories.get();
+        let glyph_name: GlyphName = "A".into();
+        assert_eq!(
+            final_categories.categories.get(&glyph_name),
+            Some(&GlyphClassDef::Base),
+            "Glyph with pre-existing attaching anchor should be classified as Base"
         );
     }
 }
