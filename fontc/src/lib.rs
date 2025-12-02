@@ -206,23 +206,10 @@ pub fn init_paths(
     flags: Flags,
 ) -> Result<(IrPaths, BePaths), Error> {
     let ir_paths = IrPaths::new(build_dir);
-    let be_paths = if let Some(output_file) = output_file {
-        BePaths::with_output_file(build_dir, output_file)
-    } else {
-        BePaths::new(build_dir)
-    };
-    // create the output file's parent directory if it doesn't exist
-    if let Some(output_file) = output_file
-        && let Some(parent) = output_file.parent()
-    {
-        require_dir(parent)?;
-    }
+    let be_paths = BePaths::new(build_dir);
 
-    // the build dir stores the IR (for incremental builds) and the default output
-    // file ('font.ttf') so we don't need to create one unless we're writing to it
-    if output_file.is_none() || flags.contains(Flags::EMIT_IR) {
-        require_dir(build_dir)?;
-    }
+    // the build dir stores the IR (for incremental builds) so we don't need
+    // to create one unless we're writing to it
     if flags.contains(Flags::EMIT_IR) {
         require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
@@ -244,7 +231,12 @@ pub fn init_paths(
 #[cfg(feature = "cli")]
 pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
     // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
-    let font_file = be_context.font_file();
+    let Some(font_file) = &args.output_file else {
+        return Ok(());
+    };
+    if let Some(parent) = font_file.parent() {
+        require_dir(parent)?;
+    }
     if !args.emit_ir {
         fs::write(&font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
             path: font_file,
