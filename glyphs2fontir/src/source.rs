@@ -168,14 +168,23 @@ impl Source for GlyphsIrSource {
                 match name {
                     "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
                     "eraseOpenCorners" => flags.set(Flags::ERASE_OPEN_CORNERS, true),
-                    // Note: propagateAnchors will be handled in future work
+                    "propagateAnchors" => flags.set(Flags::PROPAGATE_ANCHORS, true),
                     other => log::info!("unhandled ufo2ft filter '{other}'"),
                 }
             }
         } else {
-            // No ufo2ft filters defined - eraseOpenCorners is a Glyphs-native feature,
-            // which should be enabled by default.
+            // No ufo2ft filters defined - use Glyphs native defaults
             flags.set(Flags::ERASE_OPEN_CORNERS, true);
+            // Check custom parameter to allow opt-out while defaulting to true
+            if self
+                .font_info
+                .font
+                .custom_parameters
+                .propagate_anchors
+                .unwrap_or(true)
+            {
+                flags.set(Flags::PROPAGATE_ANCHORS, true);
+            }
         }
         flags
     }
