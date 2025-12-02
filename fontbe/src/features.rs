@@ -434,9 +434,9 @@ impl FeatureCompilationWork {
 }
 
 fn write_debug_glyph_order(context: &Context, glyphs: &GlyphOrder) {
-    let Some(debug_dir) = context.debug_dir() else {
-        return;
-    };
+    let debug_dir = context
+        .debug_dir()
+        .expect("EMIT_DEBUG is set but paths are empty");
     let glyph_order_file = debug_dir.join("glyph_order.txt");
     let glyph_order = glyphs.names().map(|g| g.as_str()).collect::<Vec<_>>();
     let glyph_order = glyph_order.join("\n");
@@ -453,9 +453,9 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
         return;
     }
 
-    let Some(debug_dir) = context.debug_dir() else {
-        return;
-    };
+    let debug_dir = context
+        .debug_dir()
+        .expect("EMIT_DEBUG is set but paths are empty");
     let debug_file = debug_dir.join("features.fea");
     match fs::write(&debug_file, fea_content) {
         Ok(_) if is_error => warn!("{why}; fea written to {debug_file:?}"),
