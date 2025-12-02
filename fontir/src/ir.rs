@@ -12,7 +12,7 @@ use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize, de::Error as _};
-use smol_str::SmolStr;
+use smol_str::{SmolStr, format_smolstr};
 use write_fonts::{
     OtRound,
     types::{GlyphId16, NameId, Tag},
@@ -1254,6 +1254,22 @@ impl AnchorKind {
     pub fn is_attaching(&self) -> bool {
         matches!(self, AnchorKind::Base(_) | AnchorKind::Ligature { .. })
     }
+
+    /// Convert AnchorKind back to its original string name representation
+    pub fn to_name(&self) -> SmolStr {
+        match self {
+            AnchorKind::Base(name) => name.clone(),
+            AnchorKind::Mark(name) => format_smolstr!("_{name}"),
+            AnchorKind::Ligature { group_name, index } => {
+                format_smolstr!("{group_name}_{index}")
+            }
+            AnchorKind::ComponentMarker(index) => format_smolstr!("_{index}"),
+            AnchorKind::Caret(index) => format_smolstr!("caret_{index}"),
+            AnchorKind::VCaret(index) => format_smolstr!("vcaret_{index}"),
+            AnchorKind::CursiveEntry => "entry".into(),
+            AnchorKind::CursiveExit => "exit".into(),
+        }
+    }
 }
 
 /// A variable definition of an anchor.
@@ -1310,7 +1326,8 @@ impl Anchor {
 #[derive(Debug, Clone)]
 pub struct AnchorBuilder {
     glyph_name: GlyphName,
-    anchors: HashMap<SmolStr, HashMap<NormalizedLocation, Point>>,
+    // IndexMap preserves insertion order, for deterministic anchor propagation
+    anchors: IndexMap<SmolStr, HashMap<NormalizedLocation, Point>>,
 }
 
 impl AnchorBuilder {
@@ -1514,6 +1531,13 @@ impl Glyph {
         self.sources
             .values()
             .flat_map(|inst| inst.components.iter().map(|comp| &comp.base))
+    }
+
+    /// `true` if any instance has components.
+    pub(crate) fn has_components(&self) -> bool {
+        self.sources
+            .values()
+            .any(|inst| !inst.components.is_empty())
     }
 
     /// `true` if any instance has both components and contours.
@@ -2159,6 +2183,25 @@ mod tests {
         );
         assert_eq!(AnchorKind::new("_"), Err(BadAnchorReason::NilMarkGroup));
         assert_eq!(AnchorKind::new("top_0"), Err(BadAnchorReason::ZeroIndex));
+    }
+
+    #[test]
+    fn anchor_kind_to_name() {
+        assert_eq!(AnchorKind::Base("top".into()).to_name(), "top");
+        assert_eq!(AnchorKind::Mark("top".into()).to_name(), "_top");
+        assert_eq!(
+            AnchorKind::Ligature {
+                group_name: "top".into(),
+                index: 2
+            }
+            .to_name(),
+            "top_2"
+        );
+        assert_eq!(AnchorKind::ComponentMarker(3).to_name(), "_3");
+        assert_eq!(AnchorKind::Caret(1).to_name(), "caret_1");
+        assert_eq!(AnchorKind::VCaret(2).to_name(), "vcaret_2");
+        assert_eq!(AnchorKind::CursiveEntry.to_name(), "entry");
+        assert_eq!(AnchorKind::CursiveExit.to_name(), "exit");
     }
 
     fn assert_names(expected: &[(NameId, &str)], actual: HashMap<NameKey, String>) {
