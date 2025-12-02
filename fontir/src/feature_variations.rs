@@ -436,6 +436,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn overlaps_many() {
+        // we had an issue where we were using a u64 to store the 'rank' in
+        // this computation, and that meant we would overflow when handling more
+        // than 63 distinct regions.
+        static DUMB_OLE_STRING: &str = "abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()_+=-<>?:\";'/.,";
+
+        let conds = (0..70usize)
+            .map(|i| {
+                let f = (i as f64) / 100.0;
+                let c = &DUMB_OLE_STRING[i..i + 1];
+                make_overlay_input(&[&[("derp", (f, f + 0.5))]], &[(c, c)])
+            })
+            .collect::<Vec<_>>();
+
+        let _yay_i_dont_panic = overlay_feature_variations(conds);
+    }
+
     //https://github.com/fonttools/fonttools/blob/1c2704dfc79d753fe822dc7699b067495c0edede/Tests/varLib/featureVars_test.py#L269
     #[test]
     fn overlay_box() {
