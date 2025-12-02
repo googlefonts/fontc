@@ -56,6 +56,12 @@ pub struct Args {
     #[arg(long, num_args = 0..=1, default_missing_value = "true")]
     pub erase_open_corners: Option<bool>,
 
+    /// Propagate anchors from components to composites.
+    ///
+    /// Omit to use source default; use =true or =false to override.
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    pub propagate_anchors: Option<bool>,
+
     /// Whether all components with a non-identity 2x2 transform will be converted to outlines.
     // Named to match the ufo2ft flag as suggested in <https://github.com/googlefonts/fontc/pull/480#discussion_r1343801553>
     #[arg(long, default_value = "false")]
@@ -133,7 +139,9 @@ impl Args {
         if self.erase_open_corners == Some(true) {
             flags.set(Flags::ERASE_OPEN_CORNERS, true);
         }
-        // TODO: add PROPAGATE_ANCHORS flag when we have that implemented
+        if self.propagate_anchors == Some(true) {
+            flags.set(Flags::PROPAGATE_ANCHORS, true);
+        }
 
         flags.set(
             Flags::DECOMPOSE_TRANSFORMED_COMPONENTS,
@@ -160,7 +168,9 @@ impl Args {
         if self.erase_open_corners == Some(false) {
             disable.set(Flags::ERASE_OPEN_CORNERS, true);
         }
-        // TODO: add PROPAGATE_ANCHORS flag when we have that implemented
+        if self.propagate_anchors == Some(false) {
+            disable.set(Flags::PROPAGATE_ANCHORS, true);
+        }
         disable.into()
     }
 
