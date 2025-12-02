@@ -43,6 +43,8 @@ impl Paths {
             WorkId::StaticMetadata => dir.join("static_metadata.yml"),
             WorkId::PreliminaryGlyphOrder => dir.join("glyph_order.preliminary.yml"),
             WorkId::GlyphOrder => dir.join("glyph_order.yml"),
+            WorkId::PreliminaryGdefCategories => dir.join("gdef_categories.preliminary.yml"),
+            WorkId::GdefCategories => dir.join("gdef_categories.yml"),
             WorkId::GlobalMetrics => dir.join("global_metrics.yml"),
             WorkId::Glyph(name) => Paths::glyph_ir_file(dir, name.as_str()),
             WorkId::Features => dir.join("features.yml"),

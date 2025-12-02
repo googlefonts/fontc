@@ -1659,6 +1659,9 @@ mod tests {
         );
         assert_eq!(categories.get("f_a"), Some(&GlyphClassDef::Ligature));
         assert_eq!(categories.get(".notdef"), None);
+        // U1C82 has no source category but gets Base from propagated anchors
+        // (see also: glyphs2fontir category_can_be_none test for preliminary category)
+        assert_eq!(categories.get("U1C82"), Some(&GlyphClassDef::Base));
     }
 
     #[test]

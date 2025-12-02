@@ -15,10 +15,10 @@ use fontdrasil::{
 use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
-        AnchorBuilder, Condition, ConditionSet, DEFAULT_VENDOR_ID, FeaturesSource, GdefCategories,
-        GlobalMetric, GlobalMetricsBuilder, GlyphOrder, KernGroup, KernSide, KerningGroups,
-        KerningInstance, MetaTableValues, NameBuilder, NameKey, NamedInstance, Panose,
-        PostscriptNames, Rule, StaticMetadata, Substitution, VariableFeature,
+        AnchorBuilder, Condition, ConditionSet, DEFAULT_VENDOR_ID, FeaturesSource, GlobalMetric,
+        GlobalMetricsBuilder, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        MetaTableValues, NameBuilder, NameKey, NamedInstance, Panose, PostscriptNames,
+        PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -816,7 +816,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::PreliminaryGlyphOrder]
+        vec![
+            WorkId::PreliminaryGlyphOrder,
+            WorkId::PreliminaryGdefCategories,
+        ]
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
@@ -898,10 +901,15 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 Err(e) => return Err(e)?,
             };
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
-        let glyph_categories = glyph_categories(&lib_plist).map(|categories| GdefCategories {
-            categories,
-            prefer_gdef_categories_in_fea: true,
-        })?;
+
+        // for DS+UFO, infer_from_anchors=false thus "preliminary" GDEF categories will
+        // simply be copied over to final ones (and potentially overridden by feature code)
+        let preliminary_gdef_categories =
+            glyph_categories(&lib_plist).map(|categories| PreliminaryGdefCategories {
+                categories,
+                prefer_gdef_categories_in_fea: true,
+                infer_from_anchors: false,
+            })?;
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
         // Start with the bits from selection flags
@@ -950,7 +958,6 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             global_locations,
             postscript_names,
             italic_angle,
-            glyph_categories,
             None,
             build_vertical,
         )
@@ -1063,6 +1070,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         context.preliminary_glyph_order.set(glyph_order);
         context.static_metadata.set(static_metadata);
+        context
+            .preliminary_gdef_categories
+            .set(preliminary_gdef_categories);
         Ok(())
     }
 }
@@ -1960,6 +1970,7 @@ mod tests {
             AccessBuilder::new()
                 .variant(WorkId::StaticMetadata)
                 .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
                 .build(),
         );
         source
