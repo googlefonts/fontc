@@ -18,7 +18,7 @@ use crate::glyphdata::{Category, GlyphData, Subcategory};
 use ascii_plist_derive::FromPlist;
 use fontdrasil::types::WidthClass;
 use indexmap::{IndexMap, IndexSet};
-use kurbo::{Affine, CubicBez, Line, PathSeg, Point, QuadBez, Vec2};
+use kurbo::{Affine, CubicBez, Line, PathSeg, Point, QuadBez};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
 use regex::Regex;
@@ -311,13 +311,34 @@ impl Glyph {
         )
     }
 
-    pub(crate) fn has_components(&self) -> bool {
+    pub fn has_components(&self) -> bool {
         self.layers
             .iter()
             .chain(self.bracket_layers.iter())
             .flat_map(Layer::components)
             .next()
             .is_some()
+    }
+}
+
+impl fontdrasil::util::CompositeLike for Glyph {
+    fn name(&self) -> SmolStr {
+        self.name.clone()
+    }
+
+    fn has_components(&self) -> bool {
+        Glyph::has_components(self)
+    }
+
+    fn component_names(&self) -> impl Iterator<Item = SmolStr> {
+        self.layers
+            .iter()
+            .chain(self.bracket_layers.iter())
+            .flat_map(|layer| layer.shapes.iter())
+            .filter_map(|shape| match shape {
+                Shape::Path(..) => None,
+                Shape::Component(c) => Some(c.name.clone()),
+            })
     }
 }
 
@@ -512,12 +533,6 @@ impl Layer {
         self.associated_master_id
             .as_deref()
             .unwrap_or(&self.layer_id)
-    }
-
-    /// A key used to identify a bracket layer during anchor propagation
-    pub(crate) fn axis_rules_key(&self) -> Option<String> {
-        (!self.attributes.axis_rules.is_empty())
-            .then(|| format!("{:?} {}", self.attributes.axis_rules, self.master_id()))
     }
 
     pub fn is_intermediate(&self) -> bool {
@@ -1654,16 +1669,6 @@ struct RawAnchor {
 pub struct Anchor {
     pub name: SmolStr,
     pub pos: Point,
-}
-
-impl Anchor {
-    pub(crate) fn is_origin(&self) -> bool {
-        self.name == "*origin"
-    }
-
-    pub(crate) fn origin_delta(&self) -> Option<Vec2> {
-        self.is_origin().then_some(self.pos.to_vec2())
-    }
 }
 
 impl Hash for Anchor {
@@ -3681,16 +3686,27 @@ impl Font {
         // also have bracket layers.
         self.align_bracket_layers();
 
-        // propagate anchors by default unless explicitly set to false
-        if self.custom_parameters.propagate_anchors.unwrap_or(true) {
-            self.propagate_all_anchors();
-        }
+        // Anchor propagation now happens in fontir as a compilation flag.
+        // Preprocessing disabled - anchor propagation now happens in IR.
+        // The PROPAGATE_ANCHORS flag controls this behavior.
+        // See fontir/src/propagate_anchors.rs and fontir/src/glyph.rs
+        //
+        // The two-phase GDEF categories approach breaks the circular dependency:
+        // - Preliminary categories (computed WITHOUT anchor inspection) are used for propagation
+        // - Final categories (computed AFTER propagation WITH anchor inspection) are used for GDEF table
         // if any glyphs reference smart components, convert them to outlines.
         // (see https://glyphsapp.com/learn/smart-components)
         self.instantiate_all_smart_components()?;
 
         // if any glyphs have corner component hints, insert them into the paths
         self.insert_all_corner_components()
+    }
+
+    /// Returns a list of all glyphs, sorted by component depth.
+    ///
+    /// This is also used for bracket layers.
+    pub(crate) fn depth_sorted_composite_glyphs(&self) -> Vec<SmolStr> {
+        fontdrasil::util::depth_sorted_composite_glyphs(&self.glyphs)
     }
 
     /// if a glyph has components that have alternate layers, copy the layer
@@ -4040,7 +4056,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use kurbo::{Affine, Point, Rect};
+    use kurbo::{Affine, Point, Rect, Vec2};
 
     use rstest::rstest;
     use smol_str::ToSmolStr;
@@ -5582,19 +5598,6 @@ etc;
                 .iter()
                 .all(|l| !l.attributes.axis_rules.is_empty())
         );
-    }
-
-    #[test]
-    fn bracket_layers_where_only_brackets_have_a_component_and_it_has_anchors() {
-        let font = Font::load(&glyphs2_dir().join("AlumniSans-wononly.glyphs")).unwrap();
-        let glyph = font.glyphs.get("won").unwrap();
-
-        assert_eq!(glyph.layers.len(), 2);
-        assert_eq!(glyph.bracket_layers.len(), 2);
-
-        for layer in glyph.layers.iter().chain(glyph.bracket_layers.iter()) {
-            assert_eq!(layer.anchors.len(), 2, "{}", layer.layer_id);
-        }
     }
 
     #[test]
