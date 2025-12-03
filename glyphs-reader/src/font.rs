@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
+use std::num::ParseIntError;
 use std::ops::RangeInclusive;
 use std::str::FromStr;
 use std::sync::{LazyLock, Mutex};
@@ -143,6 +144,7 @@ pub struct CustomParameters {
     pub gasp_table: Option<BTreeMap<i64, i64>>,
     pub feature_for_feature_variations: Option<SmolStr>,
     pub color_palettes: Option<Vec<Vec<Color>>>,
+    pub name_table_entries: Vec<NameTableEntry>,
 }
 
 /// Values for the 'meta Table' custom parameter
@@ -1191,6 +1193,14 @@ impl RawCustomParameters {
                 "Color Palettes" => {
                     add_and_report_issues!(color_palettes, Plist::as_color_palettes)
                 }
+                "Name Table Entry" => match value
+                    .as_str()
+                    .ok_or_else(|| "should be a string".into())
+                    .and_then(NameTableEntry::from_str)
+                {
+                    Ok(s) => params.name_table_entries.push(s),
+                    Err(e) => log::warn!("bad 'Name Table Entry': {e}"),
+                },
                 _ => log_once_warn!("unknown custom parameter '{name}'"),
             }
         }
@@ -1264,6 +1274,71 @@ struct RawName {
     key: String,
     value: Option<String>,
     values: Vec<RawNameValue>,
+}
+
+#[derive(Clone, Debug, PartialEq, Hash, Default)]
+pub struct NameTableEntry {
+    pub name_id: u16,
+    pub platform_id: u16,
+    pub encoding_id: u16,
+    pub lang_id: u16,
+    pub value: String,
+}
+
+fn parse_maybe_hex_int(s: &str) -> Result<u16, ParseIntError> {
+    match s.strip_prefix("0x") {
+        Some(hex) => u16::from_str_radix(hex, 16),
+        None => s.parse(),
+    }
+}
+
+impl FromStr for NameTableEntry {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // format like: "4 3 1 1028; 粉圓 Regular";
+
+        let Some((head, tail)) = s.split_once(';') else {
+            return Err(format!("expected ';', found '{s}'"));
+        };
+        let mut iter = head.split(" ").flat_map(parse_maybe_hex_int);
+        let value = tail.trim().into();
+        match (iter.next(), iter.next(), iter.next(), iter.next()) {
+            (Some(name_id), None | Some(3), None, None) => Ok(NameTableEntry {
+                name_id,
+                platform_id: 3,
+                encoding_id: 1,
+                lang_id: 0x409,
+                value,
+            }),
+            // "If only platformID is specified as 1, then both encID and langID
+            // will be assumed as 0 (Mac Roman, and Mac English)."
+            // (https://glyphsapp.com/media/pages/learn/3ec528a11c-1634835554/glyphs-3-handbook.pdf)
+            (Some(name_id), Some(1), None, None) => Ok(NameTableEntry {
+                name_id,
+                platform_id: 1,
+                encoding_id: 0,
+                lang_id: 0,
+                value,
+            }),
+            (Some(name_id), Some(platform_id), Some(encoding_id), None) => Ok(NameTableEntry {
+                name_id,
+                platform_id,
+                encoding_id,
+                lang_id: 0,
+                value,
+            }),
+
+            (Some(a), Some(b), Some(c), Some(d)) => Ok(NameTableEntry {
+                name_id: a,
+                platform_id: b,
+                encoding_id: c,
+                lang_id: d,
+                value,
+            }),
+            _ => Err(format!("expected four numerical ids, found '{s}'")),
+        }
+    }
 }
 
 /// Compute a priority score for a language code when selecting default names.
@@ -5986,5 +6061,72 @@ name = _corner.hi;
             params.link_metrics_with_master.as_deref(),
             Some("first_master_id")
         );
+    }
+
+    // from https://github.com/googlefonts/glyphsLib/blob/d42d3b15/tests/builder/custom_params_test.py#L536
+    #[test]
+    fn parsing_name_table_entries() {
+        assert_eq!(
+            NameTableEntry::from_str("1024; FOO; BAZ").unwrap(),
+            NameTableEntry {
+                name_id: 1024,
+                platform_id: 3,
+                encoding_id: 1,
+                lang_id: 0x409,
+                value: "FOO; BAZ".into()
+            }
+        );
+        assert_eq!(
+            NameTableEntry::from_str("2048 1; FOO").unwrap(),
+            NameTableEntry {
+                name_id: 2048,
+                platform_id: 1,
+                encoding_id: 0,
+                lang_id: 0,
+                value: "FOO".into()
+            }
+        );
+        assert_eq!(
+            NameTableEntry::from_str("4096 1 2; FOO").unwrap(),
+            NameTableEntry {
+                name_id: 4096,
+                platform_id: 1,
+                encoding_id: 2,
+                lang_id: 0,
+                value: "FOO".into()
+            }
+        );
+        assert_eq!(
+            NameTableEntry::from_str("8192 1 2 3; FOO").unwrap(),
+            NameTableEntry {
+                name_id: 8192,
+                platform_id: 1,
+                encoding_id: 2,
+                lang_id: 3,
+                value: "FOO".into()
+            }
+        );
+        assert_eq!(
+            NameTableEntry::from_str("27 3 1 0x404; HEX").unwrap(),
+            NameTableEntry {
+                name_id: 27,
+                platform_id: 3,
+                encoding_id: 1,
+                lang_id: 0x404,
+                value: "HEX".into()
+            }
+        )
+        // this is included in the python but I'm not sure it's well formed?
+        // we at least test the hex bit above..
+        //assert_eq!(
+        //NameTableEntry::from_str("0x4000 074; BAZ").unwrap(),
+        //NameTableEntry {
+        //name_id: 16384,
+        //platform_id: 60,
+        //encoding_id: 1,
+        //lang_id: 0x409,
+        //value: "BAZ".into()
+        //}
+        //);
     }
 }

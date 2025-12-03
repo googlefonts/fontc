@@ -1,0 +1,22 @@
+{
+.formatVersion = 3;
+
+customParameters = (
+{
+name = "Name Table Entry";
+value = "16 3 1 0x404; 粉圓";
+},
+{
+name = "Name Table Entry";
+value = "16 3 1 1033; Derp";
+},
+);
+familyName = NameTableEntry;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+unitsPerEm = 1000;
+}
