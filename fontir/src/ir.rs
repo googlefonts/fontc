@@ -820,6 +820,10 @@ impl NameBuilder {
     }
 
     pub fn add(&mut self, name_id: NameId, value: String) {
+        // skip empty strings: https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/outlineCompiler.py#L446
+        if value.is_empty() {
+            return;
+        }
         let key = NameKey::new(name_id, &value);
         self.names.insert(key, value);
         self.name_to_key.insert(name_id, key);
