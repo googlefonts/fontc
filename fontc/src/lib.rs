@@ -212,10 +212,9 @@ pub fn init_paths(build_dir: &Path, flags: Flags) -> Result<(IrPaths, BePaths), 
     let ir_paths = IrPaths::new(build_dir);
     let be_paths = BePaths::new(build_dir);
 
-    // the build dir stores the IR (for incremental builds) so we don't need
-    // to create one unless we're writing to it
+    // The build dir is needed for IR and/or debug output
+    require_dir(build_dir)?;
     if flags.contains(Flags::EMIT_IR) {
-        require_dir(build_dir)?;
         require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
         require_dir(be_paths.glyph_dir())?;
@@ -235,21 +234,16 @@ pub fn init_paths(build_dir: &Path, flags: Flags) -> Result<(IrPaths, BePaths), 
 
 #[cfg(feature = "cli")]
 pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
-    // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
     let Some(font_file) = &args.output_file else {
         return Ok(());
     };
     if let Some(parent) = font_file.parent() {
         require_dir(parent)?;
     }
-    if !args.emit_ir {
-        fs::write(font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
-            path: font_file.to_path_buf(),
-            source,
-        })?;
-    } else if !font_file.exists() {
-        return Err(Error::FileExpected(font_file.to_path_buf()));
-    }
+    fs::write(font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
+        path: font_file.to_path_buf(),
+        source,
+    })?;
     Ok(())
 }
 

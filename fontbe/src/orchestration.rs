@@ -5,7 +5,7 @@ use std::{
     fmt::Display,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
 };
 
@@ -1023,9 +1023,10 @@ impl Context {
             extra_fea_tables: ContextItem::new(
                 WorkId::ExtraFeaTables.into(),
                 acl.clone(),
-                persistent_storage.clone(),
+                persistent_storage,
             ),
-            font: ContextItem::new(WorkId::Font.into(), acl, persistent_storage),
+            // Font is not persisted to IR; it's written via write_font_file()
+            font: ContextItem::new(WorkId::Font.into(), acl, None),
         }
     }
 
@@ -1046,12 +1047,6 @@ impl Context {
         self.persistent_storage
             .as_ref()
             .map(|ps| ps.paths.debug_dir())
-    }
-
-    pub fn font_file(&self) -> Option<PathBuf> {
-        self.persistent_storage
-            .as_ref()
-            .map(|ps| ps.paths.target_file(&WorkId::Font))
     }
 }
 

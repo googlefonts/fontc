@@ -11,7 +11,6 @@ pub struct Paths {
     build_dir: PathBuf,
     glyph_dir: PathBuf,
     debug_dir: PathBuf,
-    output_file: PathBuf,
 }
 
 impl Paths {
@@ -19,12 +18,10 @@ impl Paths {
         let glyph_dir = build_dir.join("glyphs");
         let debug_dir = build_dir.join("debug");
         let build_dir = build_dir.to_path_buf();
-        let output_file = build_dir.join("font.ttf");
         Paths {
             build_dir,
             glyph_dir,
             debug_dir,
-            output_file,
         }
     }
 
@@ -38,10 +35,6 @@ impl Paths {
 
     pub fn glyph_dir(&self) -> &Path {
         &self.glyph_dir
-    }
-
-    pub fn output_file(&self) -> &Path {
-        &self.output_file
     }
 
     fn glyph_glyf_file(&self, name: &str) -> PathBuf {
@@ -97,7 +90,7 @@ impl Paths {
             WorkId::Vmtx => self.build_dir.join("vmtx.table"),
             WorkId::Vvar => self.build_dir.join("vvar.table"),
             WorkId::ExtraFeaTables => self.build_dir.join("extra_tables.bin"),
-            WorkId::Font => self.output_file.clone(),
+            WorkId::Font => unreachable!("Font is not persisted to IR; use write_font_file()"),
         }
     }
 }
