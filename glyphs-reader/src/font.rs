@@ -545,6 +545,14 @@ impl Layer {
             .collect()
     }
 
+    fn axis_rules_sort_key(&self) -> Vec<(i64, i64)> {
+        self.attributes
+            .axis_rules
+            .iter()
+            .map(|ax| (ax.min.unwrap_or(i64::MIN), ax.max.unwrap_or(i64::MAX)))
+            .collect()
+    }
+
     pub(crate) fn get_anchor_pt(&self, anchor_name: &str) -> Option<Point> {
         self.anchors
             .iter()
@@ -3672,6 +3680,9 @@ impl Font {
                     new_layers.push(new_layer);
                 }
             }
+
+            // match glyphsLib sorting: https://github.com/googlefonts/glyphsLib/blob/d42d3b15/Lib/glyphsLib/builder/transformations/align_alternate_layers.py#L79
+            new_layers.sort_by_cached_key(|l| l.axis_rules_sort_key());
 
             self.glyphs
                 .get_mut(name)
