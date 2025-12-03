@@ -1,0 +1,23 @@
+{
+.formatVersion = 3;
+
+properties = (
+{
+key = trademarks;
+values = (
+{
+language = dflt;
+value = "";
+}
+);
+}
+);
+familyName = EmptyName;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+unitsPerEm = 1000;
+}

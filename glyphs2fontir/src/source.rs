@@ -2670,6 +2670,14 @@ mod tests {
     }
 
     #[test]
+    fn ignore_empty_name() {
+        let font = Font::load(&glyphs3_dir().join("EmptyName.glyphs")).unwrap();
+
+        let names = names(&font, SelectionFlags::empty());
+        assert!(!names.contains_key(&NameKey::new_bmp_only(NameId::TRADEMARK)));
+    }
+
+    #[test]
     fn captures_global_metrics() {
         let (_, context) = build_global_metrics(glyphs3_dir().join("WghtVar.glyphs"));
         let static_metadata = &context.static_metadata.get();
