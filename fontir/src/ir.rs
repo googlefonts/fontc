@@ -820,10 +820,6 @@ impl NameBuilder {
     }
 
     pub fn add(&mut self, name_id: NameId, value: String) {
-        // skip empty strings: https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/outlineCompiler.py#L446
-        if value.is_empty() {
-            return;
-        }
         let key = NameKey::new(name_id, &value);
         self.names.insert(key, value);
         self.name_to_key.insert(name_id, key);
@@ -860,10 +856,6 @@ impl NameBuilder {
             .and_then(|key| self.names.get(key).map(|s| s.as_str()))
     }
 
-    pub fn into_inner(self) -> HashMap<NameKey, String> {
-        self.names
-    }
-
     pub fn get_fallback_or_default(&self, name_id: NameId, fallbacks: &[NameId]) -> Option<&str> {
         fallbacks
             .iter()
@@ -884,7 +876,7 @@ impl NameBuilder {
             .to_string()
     }
 
-    pub fn apply_default_fallbacks(&mut self, vendor_id: &str) {
+    pub fn build(mut self, vendor_id: &str) -> HashMap<NameKey, String> {
         // If the legacy subfamily isn't set, we fall back to the typographic subfamily;
         // but because the spec recommends the former to only contain "Regular",
         // "Bold", "Italic", or "Bold Italic", if this fallback isn't RIBBI already,
@@ -996,6 +988,12 @@ impl NameBuilder {
             self.remove(NameId::TYPOGRAPHIC_FAMILY_NAME);
             self.remove(NameId::TYPOGRAPHIC_SUBFAMILY_NAME);
         }
+
+        // finally, remove any empty strings (we do this after handling fallback
+        // so that an explicit empty string prevents fallback: see
+        // https://github.com/googlefonts/ufo2ft/issues/958
+        self.names.retain(|_k, v| !v.is_empty());
+        self.names
     }
 
     pub fn set_version(&mut self, major: i32, minor: u32) {
@@ -2146,9 +2144,8 @@ mod tests {
 
     #[test]
     fn empty_name_builder_default_fallbacks() {
-        let mut builder = NameBuilder::default();
-        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
-        let names = builder.into_inner();
+        let builder = NameBuilder::default();
+        let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_names(
             &[
@@ -2167,8 +2164,7 @@ mod tests {
     fn fallback_version_and_unique_id() {
         let mut builder = NameBuilder::default();
         builder.set_version(1, 2);
-        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
-        let names = builder.into_inner();
+        let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_name(&names, "Version 1.002", NameId::VERSION_STRING);
         assert_name(&names, "1.002;NONE;NewFont-Regular", NameId::UNIQUE_ID);
@@ -2179,8 +2175,7 @@ mod tests {
         let mut builder = NameBuilder::default();
         builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Family".into());
         builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Bold Italic".into());
-        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
-        let names = builder.into_inner();
+        let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_names(
             &[
@@ -2200,8 +2195,7 @@ mod tests {
         let mut builder = NameBuilder::default();
         builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Family".into());
         builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Subfamily".into());
-        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
-        let names = builder.into_inner();
+        let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_names(
             &[
@@ -2225,8 +2219,7 @@ mod tests {
         builder.add(NameId::SUBFAMILY_NAME, "Regular".into());
         builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Family".into());
         builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Subfamily".into());
-        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
-        let names = builder.into_inner();
+        let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_names(
             &[
@@ -2250,8 +2243,7 @@ mod tests {
         builder.add(NameId::SUBFAMILY_NAME, "Subfamily".into());
         builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Family".into());
         builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Subfamily".into());
-        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
-        let names = builder.into_inner();
+        let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_names(
             &[
@@ -2272,8 +2264,7 @@ mod tests {
         let mut builder = NameBuilder::default();
         builder.add(NameId::FAMILY_NAME, "Family".into());
         builder.add(NameId::SUBFAMILY_NAME, "Italic".into());
-        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
-        let names = builder.into_inner();
+        let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_names(
             &[
@@ -2306,13 +2297,12 @@ mod tests {
 
     #[test]
     fn only_clear_preferred_names_if_both_identical() {
-        fn make_builder(names: &[(NameId, &str)]) -> NameBuilder {
+        fn make_builder(names: &[(NameId, &str)]) -> HashMap<NameKey, String> {
             let mut builder = NameBuilder::default();
             for (id, name) in names {
                 builder.add(*id, name.to_string());
             }
-            builder.apply_default_fallbacks("cmyr");
-            builder
+            builder.build("cmyr")
         }
 
         let identical = make_builder(&[
@@ -2322,8 +2312,10 @@ mod tests {
             (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Regular"),
         ]);
 
-        assert!(identical.get(NameId::TYPOGRAPHIC_FAMILY_NAME).is_none());
-        assert!(identical.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME).is_none());
+        assert!(!identical.contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME)));
+        assert!(
+            !identical.contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
+        );
 
         let different_subfamily = make_builder(&[
             (NameId::FAMILY_NAME, "Derp"),
@@ -2334,14 +2326,21 @@ mod tests {
 
         assert!(
             different_subfamily
-                .get(NameId::TYPOGRAPHIC_FAMILY_NAME)
-                .is_some()
+                .contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME))
         );
         assert!(
             different_subfamily
-                .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
-                .is_some()
+                .contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
         );
+    }
+
+    #[test]
+    // https://github.com/googlefonts/ufo2ft/issues/958
+    fn empty_name_prevents_fallback() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::UNIQUE_ID, "".into());
+        let names = builder.build("derp");
+        assert!(!names.contains_key(&NameKey::new_bmp_only(NameId::UNIQUE_ID)));
     }
 
     // If x-height is undefined, ufo2ft derives the strikeout position from its

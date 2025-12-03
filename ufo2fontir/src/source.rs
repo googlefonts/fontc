@@ -787,7 +787,6 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
         .open_type_os2_vendor_id
         .as_deref()
         .unwrap_or(DEFAULT_VENDOR_ID);
-    builder.apply_default_fallbacks(vendor);
 
     // Name's that don't get individual fields
     if let Some(name_records) = font_info.open_type_name_records.as_ref() {
@@ -797,7 +796,7 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
         }
     }
 
-    builder.into_inner()
+    builder.build(vendor)
 }
 
 /// <https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-head-table-fields>
