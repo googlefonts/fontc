@@ -1828,7 +1828,6 @@ mod tests {
         error::Error,
         ir::{AnchorKind, Color, GlobalMetricsInstance, Glyph, GlyphOrder, NameKey},
         orchestration::{Context, Flags, WorkId},
-        paths::Paths,
         source::Source,
     };
     use glyphs_reader::{AxisRule, Font, glyphdata::Category};
@@ -1888,10 +1887,7 @@ mod tests {
         let source = GlyphsIrSource::new(glyphs_file).unwrap();
         let mut flags = Flags::default();
         flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
-        (
-            source,
-            Context::new_root(flags, Paths::new(Path::new("/nothing/should/write/here"))),
-        )
+        (source, Context::new_root(flags))
     }
 
     #[test]

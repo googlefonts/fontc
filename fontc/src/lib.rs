@@ -173,10 +173,10 @@ fn _generate_font(
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
-    let (ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
+    let (_ir_paths, be_paths) = init_paths(output_file, build_dir, flags)?;
     timer.add(time.complete());
     let workload = Workload::new(source, timer, skip_features)?;
-    let fe_root = FeContext::new_root(flags, ir_paths);
+    let fe_root = FeContext::new_root(flags);
     let be_root = BeContext::new_root(flags, be_paths, &fe_root);
     let timing = workload.exec(&fe_root, &be_root)?;
     Ok((be_root, timing))
@@ -242,18 +242,12 @@ pub fn init_paths(
 }
 
 #[cfg(feature = "cli")]
-pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
-    // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
+pub fn write_font_file(_args: &Args, be_context: &BeContext) -> Result<(), Error> {
     let font_file = be_context.font_file();
-    if !args.emit_ir {
-        fs::write(&font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
-            path: font_file,
-            source,
-        })?;
-    } else if !font_file.exists() {
-        return Err(Error::FileExpected(font_file));
-    }
-    Ok(())
+    fs::write(&font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
+        path: font_file,
+        source,
+    })
 }
 
 #[cfg(test)]
@@ -273,27 +267,23 @@ pub fn testdata_dir() -> std::path::PathBuf {
 mod tests {
 
     use std::{
-        collections::{HashMap, HashSet, VecDeque},
-        fs::{self, File},
-        io::Read,
+        collections::{HashMap, HashSet},
+        fs::{self},
         path::{Path, PathBuf},
         sync::Arc,
     };
 
     use chrono::{Duration, TimeZone, Utc};
-    use fontbe::orchestration::{
-        AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
-    };
+    use fontbe::orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier};
     use fontdrasil::{
         coords::{NormalizedCoord, NormalizedLocation},
         orchestration::Access,
-        paths::string_to_filename,
         types::{GlyphName, WidthClass},
         variations::{Tent, VariationRegion},
     };
     use fontir::{
         ir::{self, GlobalMetric, GlyphOrder, KernGroup, KernPair, KernSide},
-        orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
+        orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     };
     use kurbo::{Point, Rect};
     use log::info;
@@ -304,6 +294,7 @@ mod tests {
     use tempfile::{TempDir, tempdir};
     use write_fonts::{
         dump_table,
+        from_obj::FromTableRef,
         read::{
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider, TableRef,
             tables::{
@@ -327,7 +318,6 @@ mod tests {
             gdef::GlyphClassDef,
             glyf::{Bbox, Glyph as RawGlyph},
             head,
-            loca::LocaFormat,
             meta::{DataMapRecord, Metadata, ScriptLangTag},
         },
         types::{F2Dot14, GlyphId, GlyphId16, NameId, Tag},
@@ -347,6 +337,7 @@ mod tests {
         raw_font: Vec<u8>,
         args: Args,
         workload: Workload,
+        compiled_glyphs: Vec<Option<RawGlyph>>,
     }
 
     impl TestCompile {
@@ -363,12 +354,12 @@ mod tests {
             let input = args.source().unwrap().create_source().unwrap();
             let flags = merge_compilation_flags(args.flags(), &*input);
 
-            let (ir_paths, be_paths) =
+            let (_ir_paths, be_paths) =
                 init_paths(args.output_file.as_ref(), &args.build_dir, flags).unwrap();
 
             let build_dir = be_paths.build_dir().to_path_buf();
 
-            let fe_context = FeContext::new_root(flags, ir_paths);
+            let fe_context = FeContext::new_root(flags);
             let be_context = BeContext::new_root(flags, be_paths, &fe_context.read_only());
             let workload = Workload::new(input, timer, args.skip_features).unwrap();
 
@@ -381,6 +372,7 @@ mod tests {
                 raw_font: Vec::new(),
                 args,
                 workload,
+                compiled_glyphs: Vec::new(),
             }
         }
 
@@ -394,6 +386,14 @@ mod tests {
             write_font_file(&self.args, &self.be_context).unwrap();
 
             self.raw_font = fs::read(self.build_dir.join("font.ttf")).unwrap();
+            let font = FontRef::new(&self.raw_font).unwrap();
+            let loca = font.loca(None).unwrap();
+            let glyf = font.glyf().unwrap();
+
+            self.compiled_glyphs = (0..loca.len())
+                .map(|id| loca.get_glyf(GlyphId::new(id as _), &glyf).unwrap())
+                .map(|rglyph| rglyph.as_ref().map(RawGlyph::from_table_ref))
+                .collect();
         }
 
         fn compile_source(source: &str) -> TestCompile {
@@ -422,6 +422,17 @@ mod tests {
                 .cloned()
         }
 
+        fn ir_glyph(&self, name: &str) -> Option<Arc<ir::Glyph>> {
+            self.fe_context.try_get_glyph(name)
+        }
+
+        fn raw_glyph(&self, name: &str) -> Option<&RawGlyph> {
+            let gid = self.get_gid(name);
+            self.compiled_glyphs
+                .get(gid.to_u32() as usize)
+                .and_then(|x| x.as_ref())
+        }
+
         fn contains_glyph(&self, name: &str) -> bool {
             self.get_glyph_index(name).is_some()
         }
@@ -432,8 +443,12 @@ mod tests {
             GlyphId16::new(raw as u16)
         }
 
-        fn glyphs(&self) -> Glyphs {
-            Glyphs::new(&self.build_dir)
+        fn glyphs(&self) -> Glyphs<'_> {
+            let font = self.font();
+            Glyphs {
+                glyf: font.glyf().unwrap(),
+                loca: font.loca(None).unwrap(),
+            }
         }
 
         fn font(&self) -> FontRef<'_> {
@@ -441,33 +456,18 @@ mod tests {
         }
     }
 
-    struct Glyphs {
-        loca_format: LocaFormat,
-        raw_glyf: Vec<u8>,
-        raw_loca: Vec<u8>,
+    struct Glyphs<'a> {
+        glyf: Glyf<'a>,
+        loca: Loca<'a>,
     }
 
-    impl Glyphs {
-        fn new(build_dir: &Path) -> Self {
-            Glyphs {
-                loca_format: LocaFormatWrapper::read(
-                    &mut File::open(build_dir.join("loca.format")).unwrap(),
-                )
-                .into(),
-                raw_glyf: read_file(build_dir, Path::new("glyf.table")),
-                raw_loca: read_file(build_dir, Path::new("loca.table")),
-            }
-        }
-
+    impl<'a> Glyphs<'a> {
         fn read(&self) -> Vec<Option<glyf::Glyph<'_>>> {
-            let glyf = Glyf::read(FontData::new(&self.raw_glyf)).unwrap();
-            let loca = Loca::read(
-                FontData::new(&self.raw_loca),
-                self.loca_format == LocaFormat::Long,
-            )
-            .unwrap();
-            (0..loca.len())
-                .map(|gid| loca.get_glyf(GlyphId16::new(gid as u16).into(), &glyf))
+            (0..self.loca.len())
+                .map(|gid| {
+                    self.loca
+                        .get_glyf(GlyphId16::new(gid as u16).into(), &self.glyf)
+                })
                 .map(|r| r.unwrap())
                 .collect()
         }
@@ -627,57 +627,16 @@ mod tests {
         (result, (*glyph).clone())
     }
 
-    fn read_file(build_dir: &Path, path: &Path) -> Vec<u8> {
-        assert!(build_dir.is_dir(), "{build_dir:?} isn't a directory?!");
-        let path = build_dir.join(path);
-        if !path.exists() {
-            // When a path is missing it's very helpful to know what's present
-            use std::io::Write;
-            let mut stderr = std::io::stderr().lock();
-            writeln!(stderr, "Build dir tree").unwrap();
-            let mut pending = VecDeque::new();
-            pending.push_back(build_dir);
-            while let Some(pending_dir) = pending.pop_front() {
-                for entry in fs::read_dir(pending_dir).unwrap() {
-                    let entry = entry.unwrap();
-                    writeln!(stderr, "{}", entry.path().to_str().unwrap()).unwrap();
-                }
-            }
-        }
-        assert!(path.exists(), "{path:?} not found");
-        let mut buf = Vec::new();
-        File::open(path).unwrap().read_to_end(&mut buf).unwrap();
-        buf
-    }
-
-    fn read_ir_glyph(build_dir: &Path, name: &str) -> ir::Glyph {
-        let raw_glyph = read_file(
-            build_dir,
-            &Path::new("glyph_ir").join(string_to_filename(name, ".yml")),
-        );
-        ir::Glyph::read(&mut raw_glyph.as_slice())
-    }
-
-    fn read_be_glyph(build_dir: &Path, name: &str) -> RawGlyph {
-        let raw_glyph = read_file(
-            build_dir,
-            &Path::new("glyphs").join(string_to_filename(name, ".glyf")),
-        );
-        let read: &mut dyn Read = &mut raw_glyph.as_slice();
-        Glyph::read(read).data
-    }
-
     #[test]
     fn resolve_contour_and_composite_glyph_in_non_legacy_mode() {
         let (result, glyph) = build_contour_and_composite_glyph(false);
         assert!(glyph.default_instance().contours.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().components.len(), "{glyph:?}");
 
-        let RawGlyph::Composite(glyph) = read_be_glyph(&result.build_dir, glyph.name.as_str())
-        else {
+        let Some(RawGlyph::Composite(glyph)) = result.raw_glyph(glyph.name.as_str()) else {
             panic!("Expected a simple glyph");
         };
-        let raw_glyph = dump_table(&glyph).unwrap();
+        let raw_glyph = dump_table(glyph).unwrap();
         let glyph = CompositeGlyph::read(FontData::new(&raw_glyph)).unwrap();
         // -1: composite, per https://learn.microsoft.com/en-us/typography/opentype/spec/glyf
         assert_eq!(-1, glyph.number_of_contours());
@@ -689,7 +648,7 @@ mod tests {
         assert!(glyph.default_instance().components.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().contours.len(), "{glyph:?}");
 
-        let RawGlyph::Simple(glyph) = read_be_glyph(&result.build_dir, glyph.name.as_str()) else {
+        let Some(RawGlyph::Simple(glyph)) = result.raw_glyph(glyph.name.as_str()) else {
             panic!("Expected a simple glyph");
         };
         assert_eq!(2, glyph.contours.len());
@@ -699,7 +658,7 @@ mod tests {
     fn compile_simple_binary_glyph() {
         let result = TestCompile::compile_source("static.designspace");
 
-        let RawGlyph::Simple(glyph) = read_be_glyph(&result.build_dir, "bar") else {
+        let Some(RawGlyph::Simple(glyph)) = result.raw_glyph("bar") else {
             panic!("Expected a simple glyph");
         };
 
@@ -2041,15 +2000,15 @@ mod tests {
 
         // first compile with default args (keep_direction=false)
         let default_result = TestCompile::compile_source(source);
+        let ir_glyph = default_result.ir_glyph("hyphen").unwrap();
 
-        let ir_glyph = read_ir_glyph(&default_result.build_dir, "hyphen");
         let ir_default_instance = ir_glyph.default_instance();
         assert_eq!(
             &ir_default_instance.contours[0].to_svg(),
             "M131,330 L131,250 L470,250 L470,330 L131,330 Z"
         );
 
-        let RawGlyph::Simple(glyph) = read_be_glyph(&default_result.build_dir, "hyphen") else {
+        let Some(RawGlyph::Simple(glyph)) = default_result.raw_glyph("hyphen") else {
             panic!("Expected a simple glyph");
         };
 
@@ -2077,8 +2036,7 @@ mod tests {
             args
         });
 
-        let RawGlyph::Simple(glyph) = read_be_glyph(&keep_direction_result.build_dir, "hyphen")
-        else {
+        let Some(RawGlyph::Simple(glyph)) = keep_direction_result.raw_glyph("hyphen") else {
             panic!("Expected a simple glyph");
         };
 
