@@ -7,7 +7,8 @@ use fontc::{Args, Error, JobTimer};
 use log::{error, warn};
 
 fn main() {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    args.resolve_output_file();
 
     // catch and print errors manually, to avoid just seeing the Debug impls
     // The default log level is error so the user will see it unless they specifically turned off logging

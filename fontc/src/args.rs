@@ -29,8 +29,8 @@ pub struct Args {
     #[arg(short, long, default_value = "false")]
     pub emit_ir: bool,
 
-    /// Output file name (default: build/font.ttf)
-    #[arg(short, long, default_value = "build/font.ttf")]
+    /// Output file name (default: {build_dir}/font.ttf, or build/font.ttf if no build_dir)
+    #[arg(short, long)]
     pub output_file: Option<PathBuf>,
 
     /// Whether to write additional debug files to disk.
@@ -173,6 +173,19 @@ impl Args {
         result.emit_ir = true;
         result.output_file = Some(build_dir.join("font.ttf"));
         result
+    }
+
+    /// Sets default output_file based on build_dir if not explicitly provided.
+    /// Should be called after parsing CLI args.
+    pub fn resolve_output_file(&mut self) {
+        if self.output_file.is_none() {
+            self.output_file = Some(
+                self.build_dir
+                    .clone()
+                    .unwrap_or_else(|| std::path::PathBuf::from("build"))
+                    .join("font.ttf"),
+            );
+        }
     }
 
     /// The input source to compile.
