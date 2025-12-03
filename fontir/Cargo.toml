@@ -17,6 +17,7 @@ bitflags.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
+smallvec.workspace = true
 
 kurbo.workspace = true
 ordered-float.workspace = true

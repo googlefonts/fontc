@@ -11,6 +11,7 @@ use std::{
 use crate::ir::StaticMetadata;
 use fontdrasil::{coords::NormalizedCoord, types::GlyphName};
 use indexmap::IndexMap;
+use smallvec::SmallVec;
 use write_fonts::{
     tables::layout::{ConditionFormat1, ConditionSet},
     types::{F2Dot14, Tag},
@@ -191,32 +192,42 @@ impl Region {
 ///
 /// This is necessary because the python code we are emulating does some bit
 /// fiddling, and the required number of bits may be larger than a standard word.
-///
-/// This solution doesn't handle all eventualities; it can count 511 items,
-/// and so will fail if there are more than 511 unique positions assigned
-/// to bracket layers.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-struct Rank([u128; 4]);
+#[derive(Clone, Debug, Default)]
+struct Rank(SmallVec<[u64; 4]>);
+
+impl PartialEq for Rank {
+    fn eq(&self, other: &Self) -> bool {
+        // we need to account for the fact that leading zeros are not significant
+        let lhs_pad = other.0.len().saturating_sub(self.0.len());
+        let rhs_pad = self.0.len().saturating_sub(other.0.len());
+
+        std::iter::repeat_n(0u64, lhs_pad)
+            .chain(self.0.iter().copied())
+            .zip(std::iter::repeat_n(0u64, rhs_pad).chain(other.0.iter().copied()))
+            .all(|(l, r)| l == r)
+    }
+}
 
 impl Rank {
-    const ZERO: Self = Self([0, 0, 0, 0]);
-    const MAX: usize = 128 * 4 - 1;
-
     fn new(val: usize) -> Self {
-        let val = val.min(Self::MAX);
-        let mut this = Self::default();
-        let column = val / 128;
-        let bit = val % 128;
-        this.0[3 - column] = 1 << bit;
-        this
+        let column = val / 64;
+        let bit = val % 64;
+        let mut buf = SmallVec::from_elem(0, column + 1);
+        let idx = buf.len() - column - 1;
+        buf[idx] = 1 << bit;
+        Self(buf)
     }
 
     fn count_zeros(&self) -> u32 {
-        self.0.into_iter().map(u128::count_zeros).sum()
+        self.0.iter().copied().map(u64::count_zeros).sum()
+    }
+
+    fn is_all_zeros(&self) -> bool {
+        self.0.iter().all(|i| *i == 0)
     }
 
     fn first_bit_is_set(&self) -> bool {
-        (self.0[3] & 1) > 0
+        (self.0.last().copied().unwrap_or_default() & 1) > 0
     }
 
     // we don't need the general case, so just handle this.
@@ -225,29 +236,38 @@ impl Rank {
         for val in &mut self.0 {
             let next_carry = *val & 1;
             *val >>= 1;
-            *val |= carry_bit << 127;
+            *val |= carry_bit << 63;
             carry_bit = next_carry;
         }
     }
 }
 
-impl BitOr for Rank {
-    type Output = Self;
+impl<'a> BitOr<&'a Rank> for &'a Rank {
+    type Output = Rank;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        let [a1, b1, c1, d1] = self.0;
-        let [a2, b2, c2, d2] = rhs.0;
-        Self([a1 | a2, b1 | b2, c1 | c2, d1 | d2])
+        // OR the shorter sequence onto the longer
+        let (mut out, other) = if self.0.len() > rhs.0.len() {
+            (self.0.clone(), &rhs.0)
+        } else {
+            (rhs.0.clone(), &self.0)
+        };
+
+        for (base, to_or) in out.iter_mut().rev().zip(other.iter().rev()) {
+            *base |= *to_or;
+        }
+        Rank(out)
     }
 }
 
-impl BitOrAssign for Rank {
-    fn bitor_assign(&mut self, rhs: Self) {
-        let [a2, b2, c2, d2] = rhs.0;
-        self.0[0] |= a2;
-        self.0[1] |= b2;
-        self.0[2] |= c2;
-        self.0[3] |= d2;
+impl BitOrAssign<&Rank> for Rank {
+    fn bitor_assign(&mut self, rhs: &Self) {
+        let missing = rhs.0.len().saturating_sub(self.0.len());
+        self.0.insert_from_slice(0, &rhs.0.as_slice()[..missing]);
+        self.0
+            .iter_mut()
+            .zip(rhs.0.iter())
+            .for_each(|(base, val)| *base |= *val);
     }
 }
 
@@ -266,18 +286,6 @@ pub fn overlay_feature_variations(
         IndexMap::from([(NBox::default(), Default::default())])
     }
 
-    if conditional_subs.len() > Rank::MAX {
-        log::warn!(
-            "number of unique feature variation regions exceeds what can\n\
-            be represented, output may be incorrect"
-        );
-    }
-    // still worth crashing in debug I think?
-    debug_assert!(
-        conditional_subs.len() <= Rank::MAX,
-        "Maximum number of unique substitution regions exceeded"
-    );
-
     let mut boxmap = init_map();
     for (i, (cur_region, _)) in conditional_subs.iter().enumerate() {
         let cur_rank = Rank::new(i);
@@ -285,10 +293,10 @@ pub fn overlay_feature_variations(
             for cur_box in &cur_region.0 {
                 let (intersection, remainder) = cur_box.overlay_onto(&box_);
                 if let Some(intersection) = intersection {
-                    *boxmap.entry(intersection).or_default() |= rank | cur_rank;
+                    *boxmap.entry(intersection).or_default() |= &(&rank | &cur_rank);
                 }
                 if let Some(remainder) = remainder {
-                    *boxmap.entry(remainder).or_default() |= rank;
+                    *boxmap.entry(remainder).or_default() |= &rank;
                 }
             }
         }
@@ -298,13 +306,13 @@ pub fn overlay_feature_variations(
     let mut sorted = boxmap.into_iter().collect::<Vec<_>>();
     sorted.sort_by_key(|(_, rank)| rank.count_zeros());
     for (box_, mut rank) in sorted {
-        if rank == Rank::ZERO {
+        if rank.is_all_zeros() {
             continue;
         }
 
         let mut substs_list = Vec::new();
         let mut i = 0;
-        while rank != Rank::ZERO {
+        while !rank.is_all_zeros() {
             if rank.first_bit_is_set() {
                 substs_list.push(conditional_subs[i].1.clone())
             }
@@ -596,50 +604,72 @@ mod tests {
 
     #[test]
     fn rank_new() {
-        assert_eq!(Rank::new(0).0, [0, 0, 0, 1]);
-        assert_eq!(Rank::new(1).0, [0, 0, 0, 2]);
-        assert_eq!(Rank::new(2).0, [0, 0, 0, 4]);
-        assert_eq!(Rank::new(5).0, [0, 0, 0, 1 << 5]);
-        assert_eq!(Rank::new(127).0, [0, 0, 0, 1 << 127]);
-        assert_eq!(Rank::new(128).0, [0, 0, 1, 0]);
-        assert_eq!(Rank::new(129).0, [0, 0, 2, 0]);
-        assert_eq!(Rank::new(255).0, [0, 0, 1 << 127, 0]);
-        assert_eq!(Rank::new(256).0, [0, 1, 0, 0]);
-        assert_eq!(Rank::new(257).0, [0, 2, 0, 0]);
-        assert_eq!(Rank::new(510).0, [1 << 126, 0, 0, 0]);
-        assert_eq!(Rank::new(511).0, [1 << 127, 0, 0, 0]);
-        assert_eq!(Rank::new(512).0, [1 << 127, 0, 0, 0]); // saturating
-        assert_eq!(Rank::new(3000).0, [1 << 127, 0, 0, 0]);
+        assert_eq!(Rank::new(0).0.as_slice(), [1]);
+        assert_eq!(Rank::new(1).0.as_slice(), [2]);
+        assert_eq!(Rank::new(2).0.as_slice(), [4]);
+        assert_eq!(Rank::new(5).0.as_slice(), [1 << 5]);
+        assert_eq!(Rank::new(63).0.as_slice(), [1 << 63]);
+        assert_eq!(Rank::new(64).0.as_slice(), [1, 0]);
+        assert_eq!(Rank::new(65).0.as_slice(), [2, 0]);
+        assert_eq!(Rank::new(127).0.as_slice(), [1 << 63, 0]);
+        assert_eq!(Rank::new(128).0.as_slice(), [1, 0, 0]);
+        assert_eq!(Rank::new(129).0.as_slice(), [2, 0, 0]);
+        assert_eq!(Rank::new(254).0.as_slice(), [1 << 62, 0, 0, 0]);
+        assert_eq!(Rank::new(255).0.as_slice(), [1 << 63, 0, 0, 0]);
+        assert_eq!(Rank::new(256).0.as_slice(), [1, 0, 0, 0, 0]);
     }
 
     #[test]
     fn rank_shr_one() {
-        fn shr_one(init: usize) -> [u128; 4] {
+        fn shr_one(init: usize) -> SmallVec<[u64; 4]> {
             let mut r = Rank::new(init);
             r.right_shift_one();
             r.0
         }
 
-        assert_eq!(shr_one(0), [0, 0, 0, 0]);
-        assert_eq!(shr_one(1), [0, 0, 0, 1]);
-        assert_eq!(shr_one(2), [0, 0, 0, 2]);
-        assert_eq!(shr_one(5), [0, 0, 0, 1 << 4]);
-        assert_eq!(shr_one(127), [0, 0, 0, 1 << 126]);
-        assert_eq!(shr_one(128), [0, 0, 0, 1 << 127]);
-        assert_eq!(shr_one(129), [0, 0, 1, 0]);
-        assert_eq!(shr_one(256), [0, 0, 1 << 127, 0]);
-        assert_eq!(shr_one(257), [0, 1, 0, 0]);
-        assert_eq!(shr_one(258), [0, 2, 0, 0]);
-        assert_eq!(shr_one(511), [1 << 126, 0, 0, 0]);
-        assert_eq!(shr_one(512), [1 << 126, 0, 0, 0]);
-        assert_eq!(shr_one(513), [1 << 126, 0, 0, 0]); // saturating
-        assert_eq!(shr_one(3000), [1 << 126, 0, 0, 0]);
+        assert_eq!(shr_one(0).as_slice(), [0]);
+        assert_eq!(shr_one(1).as_slice(), [1]);
+        assert_eq!(shr_one(2).as_slice(), [2]);
+        assert_eq!(shr_one(5).as_slice(), [1 << 4]);
+        assert_eq!(shr_one(63).as_slice(), [1 << 62]);
+        assert_eq!(shr_one(64).as_slice(), [0, 1 << 63]);
+        assert_eq!(shr_one(65).as_slice(), [1, 0]);
+        assert_eq!(shr_one(128).as_slice(), [0, 1 << 63, 0]);
+        assert_eq!(shr_one(129).as_slice(), [1, 0, 0]);
+        assert_eq!(shr_one(130).as_slice(), [2, 0, 0]);
+        assert_eq!(shr_one(255).as_slice(), [1 << 62, 0, 0, 0]);
+        assert_eq!(shr_one(256).as_slice(), [0, 1 << 63, 0, 0, 0]);
     }
 
     #[test]
     fn rank_bitor() {
         let mut thing = Rank::new(1);
-        thing |= Rank::new(5);
-        assert_eq!(thing.0, [0, 0, 0, 0b100010]);
+        thing |= &Rank::new(5);
+        assert_eq!(thing.0.as_slice(), [0b100010]);
+    }
+
+    #[test]
+    fn rank_bitor_diff_lengths() {
+        let small = Rank::new(1);
+        let big = Rank::new(129);
+
+        let left_first = &small | &big;
+        let right_first = &big | &small;
+
+        assert_eq!(left_first, right_first);
+        assert_eq!(left_first.0.as_slice(), [2, 0, 2]);
+    }
+
+    #[test]
+    fn rank_equality() {
+        let more_zeros = Rank(SmallVec::from_elem(0, 4));
+        let less_zeros = Rank::default();
+
+        assert_ne!(more_zeros.0, less_zeros.0);
+        assert_eq!(more_zeros, less_zeros);
+
+        let one = Rank::new(1);
+        assert_ne!(more_zeros.0, less_zeros.0);
+        assert_eq!(&more_zeros | &one, &less_zeros | &one);
     }
 }
