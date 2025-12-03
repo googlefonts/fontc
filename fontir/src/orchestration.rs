@@ -6,6 +6,8 @@ use std::{
     fs::File,
     hash::Hash,
     io::{self, BufReader, BufWriter, Read, Write},
+    ops::{BitOr, Sub},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -19,13 +21,19 @@ use fontdrasil::{
 use parking_lot::RwLock;
 use write_fonts::{FontWrite, read::FontRead, validate::Validate};
 
+#[derive(Clone, Debug)]
+pub struct Flags {
+    // If set IR will be emitted to disk when written into Context
+    pub ir_dir: Option<PathBuf>,
+    // If set additional debug files will be emitted to disk
+    pub debug_dir: Option<PathBuf>,
+    // Bitfield of additional flags
+    other_flags: FlagsInternal,
+}
 bitflags! {
     #[derive(Clone, Copy, Debug)]
-    pub struct Flags: u32 {
-        // If set IR will be emitted to disk when written into Context
-        const EMIT_IR = 0b00000001;
-        // If set additional debug files will be emitted to disk
-        const EMIT_DEBUG = 0b00000010;
+    pub struct FlagsInternal: u32 { // This is private-in-pub. We want everyone to go through Flags but the type of this field leaks.
+        // First two bits are reserved. IR_PATHS and DEBUG_DIR used to live here.
         // If set, a glyph with contours and components will be converted to a simple (contour) glyph
         const PREFER_SIMPLE_GLYPHS = 0b00000100;
         // If set, a composite that references another composite will replace that composite with the
@@ -47,7 +55,74 @@ bitflags! {
 
 impl Default for Flags {
     fn default() -> Self {
-        Flags::PREFER_SIMPLE_GLYPHS | Flags::PRODUCTION_NAMES
+        Self {
+            ir_dir: None,
+            debug_dir: None,
+            other_flags: FlagsInternal::PREFER_SIMPLE_GLYPHS | FlagsInternal::PRODUCTION_NAMES,
+        }
+    }
+}
+
+impl Flags {
+    pub fn empty() -> Self {
+        Self {
+            ir_dir: None,
+            debug_dir: None,
+            other_flags: FlagsInternal::empty(),
+        }
+    }
+    // Expose bitfield values as associated consts
+    pub const PREFER_SIMPLE_GLYPHS: FlagsInternal = FlagsInternal::PREFER_SIMPLE_GLYPHS;
+    pub const FLATTEN_COMPONENTS: FlagsInternal = FlagsInternal::FLATTEN_COMPONENTS;
+    pub const DECOMPOSE_TRANSFORMED_COMPONENTS: FlagsInternal =
+        FlagsInternal::DECOMPOSE_TRANSFORMED_COMPONENTS;
+    pub const EMIT_TIMING: FlagsInternal = FlagsInternal::EMIT_TIMING;
+    pub const KEEP_DIRECTION: FlagsInternal = FlagsInternal::KEEP_DIRECTION;
+    pub const PRODUCTION_NAMES: FlagsInternal = FlagsInternal::PRODUCTION_NAMES;
+    pub const DECOMPOSE_COMPONENTS: FlagsInternal = FlagsInternal::DECOMPOSE_COMPONENTS;
+    pub const ERASE_OPEN_CORNERS: FlagsInternal = FlagsInternal::ERASE_OPEN_CORNERS;
+    // Expose bitfield methods as associated methods
+    pub fn contains(&self, other: FlagsInternal) -> bool {
+        self.other_flags.contains(other)
+    }
+    pub fn insert(&mut self, other: FlagsInternal) {
+        self.other_flags.insert(other);
+    }
+    pub fn remove(&mut self, other: FlagsInternal) {
+        self.other_flags.remove(other);
+    }
+    pub fn set(&mut self, other: FlagsInternal, value: bool) {
+        self.other_flags.set(other, value);
+    }
+    pub fn bits(&self) -> u32 {
+        self.other_flags.bits()
+            | if self.ir_dir.is_some() { 1 } else { 0 }
+            | if self.debug_dir.is_some() { 2 } else { 0 }
+    }
+}
+
+impl BitOr for Flags {
+    type Output = Flags;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Flags {
+            ir_dir: self.ir_dir.or(rhs.ir_dir),
+            debug_dir: self.debug_dir.or(rhs.debug_dir),
+            other_flags: self.other_flags | rhs.other_flags,
+        }
+    }
+}
+impl Sub for Flags {
+    type Output = Flags;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut other_flags = self.other_flags;
+        other_flags.remove(rhs.other_flags);
+        Flags {
+            ir_dir: self.ir_dir,
+            debug_dir: self.debug_dir,
+            other_flags,
+        }
     }
 }
 
@@ -428,7 +503,7 @@ impl Context {
     fn copy(&self, acl: AccessControlList<WorkId>) -> Context {
         let acl = Arc::from(acl);
         Context {
-            flags: self.flags,
+            flags: self.flags.clone(),
             persistent_storage: self.persistent_storage.clone(),
             static_metadata: self.static_metadata.clone_with_acl(acl.clone()),
             preliminary_glyph_order: self.preliminary_glyph_order.clone_with_acl(acl.clone()),
@@ -444,14 +519,13 @@ impl Context {
         }
     }
 
-    pub fn new_root(flags: Flags, paths: Option<Paths>) -> Context {
-        assert!(if flags.intersects(Flags::EMIT_IR | Flags::EMIT_DEBUG) {
-            paths.is_some()
-        } else {
-            paths.is_none()
-        });
+    pub fn new_root(flags: Flags) -> Context {
         let acl = Arc::from(AccessControlList::read_only());
-        let persistent_storage = paths.map(|paths| Arc::from(IrPersistentStorage { paths }));
+        let persistent_storage = flags.ir_dir.as_ref().map(|build_dir| {
+            Arc::from(IrPersistentStorage {
+                paths: Paths::new(build_dir),
+            })
+        });
         Context {
             flags,
             persistent_storage: persistent_storage.clone(),

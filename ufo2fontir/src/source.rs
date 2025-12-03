@@ -1951,13 +1951,13 @@ mod tests {
     }
 
     fn default_test_flags() -> Flags {
-        Flags::default() - Flags::EMIT_IR
+        Flags::default()
     }
 
     fn build_static_metadata(name: &str, flags: Flags) -> (impl Source + use<>, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let source = load_designspace(name);
-        let context = Context::new_root(flags, None);
+        let context = Context::new_root(flags);
         let task_context = context.copy_for_work(
             Access::None,
             AccessBuilder::new()
@@ -2593,7 +2593,8 @@ mod tests {
 
     #[test]
     fn static_metadata_disable_postscript_names() {
-        let no_production_names = default_test_flags() - Flags::PRODUCTION_NAMES;
+        let mut no_production_names = default_test_flags();
+        no_production_names.set(Flags::PRODUCTION_NAMES, false);
         let (_, context) = build_static_metadata(
             "designspace_from_glyphs/WghtVar.designspace",
             no_production_names,

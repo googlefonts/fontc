@@ -1879,8 +1879,8 @@ mod tests {
     fn context_for(glyphs_file: &Path) -> (impl Source + use<>, Context) {
         let source = GlyphsIrSource::new(glyphs_file).unwrap();
         let mut flags = Flags::default();
-        flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
-        (source, Context::new_root(flags, None))
+        flags.ir_dir = None; // we don't want to write anything down
+        (source, Context::new_root(flags))
     }
 
     #[test]

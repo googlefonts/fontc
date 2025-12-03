@@ -929,8 +929,8 @@ mod tests {
         )
         .unwrap();
         let mut flags = Flags::default();
-        flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
-        let ctx = Context::new_root(flags, None).copy_for_work(Access::All, Access::All);
+        flags.ir_dir = None; // we don't want to write anything down
+        let ctx = Context::new_root(flags).copy_for_work(Access::All, Access::All);
         ctx.static_metadata.set(meta);
         ctx
     }

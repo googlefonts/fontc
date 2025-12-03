@@ -907,7 +907,7 @@ impl Context {
     fn copy(&self, acl: AccessControlList<AnyWorkId>) -> Context {
         let acl = Arc::from(acl);
         Context {
-            flags: self.flags,
+            flags: self.flags.clone(),
             persistent_storage: self.persistent_storage.clone(),
             ir: self.ir.clone(),
             glyphs: self.glyphs.clone_with_acl(acl.clone()),
@@ -949,19 +949,13 @@ impl Context {
         }
     }
 
-    pub fn new_root(
-        flags: Flags,
-        paths: Option<Paths>,
-        ir: &fontir::orchestration::Context,
-    ) -> Context {
-        assert!(if flags.intersects(Flags::EMIT_IR | Flags::EMIT_DEBUG) {
-            paths.is_some()
-        } else {
-            paths.is_none()
-        });
+    pub fn new_root(flags: Flags, ir: &fontir::orchestration::Context) -> Context {
         let acl = Arc::from(AccessControlList::read_only());
-        let persistent_storage: Option<Arc<BePersistentStorage>> =
-            paths.map(|paths| Arc::from(BePersistentStorage { paths }));
+        let persistent_storage = flags.ir_dir.as_ref().map(|build_dir| {
+            Arc::from(BePersistentStorage {
+                paths: Paths::new(build_dir),
+            })
+        });
         Context {
             flags,
             persistent_storage: persistent_storage.clone(),
@@ -1043,9 +1037,7 @@ impl Context {
 
     /// A reasonable place to write extra files to help someone debugging
     pub fn debug_dir(&self) -> Option<&Path> {
-        self.persistent_storage
-            .as_ref()
-            .map(|ps| ps.paths.debug_dir())
+        self.flags.debug_dir.as_deref()
     }
 
     pub fn font_file(&self) -> Option<PathBuf> {

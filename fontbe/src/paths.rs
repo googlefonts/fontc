@@ -10,21 +10,15 @@ use crate::orchestration::WorkId;
 pub struct Paths {
     build_dir: PathBuf,
     glyph_dir: PathBuf,
-    debug_dir: PathBuf,
-    output_file: PathBuf,
 }
 
 impl Paths {
     pub fn new(build_dir: &Path) -> Paths {
         let glyph_dir = build_dir.join("glyphs");
-        let debug_dir = build_dir.join("debug");
         let build_dir = build_dir.to_path_buf();
-        let output_file = build_dir.join("font.ttf");
         Paths {
             build_dir,
             glyph_dir,
-            debug_dir,
-            output_file,
         }
     }
 
@@ -32,16 +26,8 @@ impl Paths {
         &self.build_dir
     }
 
-    pub fn debug_dir(&self) -> &Path {
-        &self.debug_dir
-    }
-
     pub fn glyph_dir(&self) -> &Path {
         &self.glyph_dir
-    }
-
-    pub fn output_file(&self) -> &Path {
-        &self.output_file
     }
 
     fn glyph_glyf_file(&self, name: &str) -> PathBuf {
@@ -97,7 +83,10 @@ impl Paths {
             WorkId::Vmtx => self.build_dir.join("vmtx.table"),
             WorkId::Vvar => self.build_dir.join("vvar.table"),
             WorkId::ExtraFeaTables => self.build_dir.join("extra_tables.bin"),
-            WorkId::Font => self.output_file.clone(),
+            // This will be written out when we're emimtting IR, because while it isn't
+            // *intermediate* work, it is work none the less. But the "official"
+            // output file is written by write_font_file.
+            WorkId::Font => self.build_dir.join("font.ttf"),
         }
     }
 }

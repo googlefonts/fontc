@@ -122,8 +122,8 @@ impl Args {
     pub fn flags(&self) -> Flags {
         let mut flags = Flags::default();
 
-        flags.set(Flags::EMIT_IR, self.emit_ir);
-        flags.set(Flags::EMIT_DEBUG, self.emit_debug);
+        flags.ir_dir = self.emit_ir.then(|| self.build_dir.clone()).flatten();
+        flags.debug_dir = self.emit_debug.then(|| self.build_dir.clone()).flatten();
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
         flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
         flags.set(Flags::ERASE_OPEN_CORNERS, self.erase_open_corners);

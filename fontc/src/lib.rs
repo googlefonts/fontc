@@ -105,13 +105,7 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
 
     timer.add(time.complete());
 
-    let (be_root, mut timing) = _generate_font(
-        source,
-        args.build_dir.as_deref(),
-        args.flags(),
-        args.skip_features,
-        timer,
-    )?;
+    let (be_root, mut timing) = _generate_font(source, args.flags(), args.skip_features, timer)?;
 
     if args.flags().contains(Flags::EMIT_TIMING) {
         let path = args
@@ -151,17 +145,15 @@ fn merge_compilation_flags(cli_flags: Flags, source: &dyn Source) -> Flags {
 /// This is the library entry point to fontc.
 pub fn generate_font(
     source: Box<dyn Source>,
-    build_dir: Option<&Path>,
     flags: Flags,
     skip_features: bool,
 ) -> Result<Vec<u8>, Error> {
-    _generate_font(source, build_dir, flags, skip_features, JobTimer::default())
+    _generate_font(source, flags, skip_features, JobTimer::default())
         .map(|(be_root, _timing)| be_root.font.get().get().to_vec())
 }
 
 fn _generate_font(
     source: Box<dyn Source>,
-    build_dir: Option<&Path>,
     flags: Flags,
     skip_features: bool,
     mut timer: JobTimer,
@@ -171,21 +163,11 @@ fn _generate_font(
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
-    let build_dir = if flags.intersects(Flags::EMIT_IR | Flags::EMIT_DEBUG) && build_dir.is_none() {
-        Some(default_build_dir())
-    } else {
-        build_dir.map(|p| p.to_path_buf())
-    };
-    let (ir_paths, be_paths) = if let Some(build_dir) = build_dir {
-        let (ir_paths, be_paths) = init_paths(&build_dir, flags)?;
-        (Some(ir_paths), Some(be_paths))
-    } else {
-        (None, None)
-    };
+    init_paths(&flags)?;
     timer.add(time.complete());
     let workload = Workload::new(source, timer, skip_features)?;
-    let fe_root = FeContext::new_root(flags, ir_paths);
-    let be_root = BeContext::new_root(flags, be_paths, &fe_root);
+    let fe_root = FeContext::new_root(flags.clone());
+    let be_root = BeContext::new_root(flags, &fe_root);
     let timing = workload.exec(&fe_root, &be_root)?;
     Ok((be_root, timing))
 }
@@ -208,48 +190,41 @@ pub fn require_dir(dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn init_paths(build_dir: &Path, flags: Flags) -> Result<(IrPaths, BePaths), Error> {
-    let ir_paths = IrPaths::new(build_dir);
-    let be_paths = BePaths::new(build_dir);
-
-    // the build dir stores the IR (for incremental builds) so we don't need
-    // to create one unless we're writing to it
-    if flags.contains(Flags::EMIT_IR) {
-        require_dir(build_dir)?;
+// the build dir stores the IR (for incremental builds) and debug files
+pub fn init_paths(flags: &Flags) -> Result<(), Error> {
+    if let Some(ir_dir) = flags.ir_dir.as_deref() {
+        let ir_paths = IrPaths::new(ir_dir);
+        let be_paths = BePaths::new(ir_dir);
+        require_dir(ir_dir)?;
         require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
         require_dir(be_paths.glyph_dir())?;
     }
-    // It's confusing to have leftover debug files
-    if be_paths.debug_dir().is_dir() {
-        fs::remove_dir_all(be_paths.debug_dir()).map_err(|source| Error::FileIo {
-            path: be_paths.debug_dir().to_owned(),
-            source,
-        })?;
+    if let Some(debug_dir) = flags.debug_dir.as_deref() {
+        // It's confusing to have leftover debug files
+        if debug_dir.is_dir() {
+            fs::remove_dir_all(debug_dir).map_err(|source| Error::FileIo {
+                path: debug_dir.to_owned(),
+                source,
+            })?;
+        }
+        require_dir(debug_dir)?;
     }
-    if flags.contains(Flags::EMIT_DEBUG) {
-        require_dir(be_paths.debug_dir())?;
-    }
-    Ok((ir_paths, be_paths))
+    Ok(())
 }
 
 #[cfg(feature = "cli")]
 pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
-    // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
     let Some(font_file) = &args.output_file else {
         return Ok(());
     };
     if let Some(parent) = font_file.parent() {
         require_dir(parent)?;
     }
-    if !args.emit_ir {
-        fs::write(font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
-            path: font_file.to_path_buf(),
-            source,
-        })?;
-    } else if !font_file.exists() {
-        return Err(Error::FileExpected(font_file.to_path_buf()));
-    }
+    fs::write(font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
+        path: font_file.to_path_buf(),
+        source,
+    })?;
     Ok(())
 }
 
@@ -360,15 +335,10 @@ mod tests {
             let input = args.source().unwrap().create_source().unwrap();
             let flags = merge_compilation_flags(args.flags(), &*input);
 
-            let (ir_paths, be_paths) = if flags.intersects(Flags::EMIT_IR | Flags::EMIT_DEBUG) {
-                let (ir_paths, be_paths) = init_paths(&build_dir, flags).unwrap();
-                (Some(ir_paths), Some(be_paths))
-            } else {
-                (None, None)
-            };
+            init_paths(&flags).unwrap();
 
-            let fe_context = FeContext::new_root(flags, ir_paths);
-            let be_context = BeContext::new_root(flags, be_paths, &fe_context.read_only());
+            let fe_context = FeContext::new_root(flags.clone());
+            let be_context = BeContext::new_root(flags, &fe_context.read_only());
             let workload = Workload::new(input, timer, args.skip_features).unwrap();
 
             TestCompile {

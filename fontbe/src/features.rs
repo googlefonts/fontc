@@ -25,7 +25,7 @@ use fea_rs::{
 
 use fontir::{
     ir::{FeaturesSource, GlyphOrder, StaticMetadata},
-    orchestration::{Flags, WorkId as FeWorkId},
+    orchestration::WorkId as FeWorkId,
 };
 
 use fontdrasil::{
@@ -433,10 +433,7 @@ impl FeatureCompilationWork {
     }
 }
 
-fn write_debug_glyph_order(context: &Context, glyphs: &GlyphOrder) {
-    let debug_dir = context
-        .debug_dir()
-        .expect("EMIT_DEBUG is set but paths are empty");
+fn write_debug_glyph_order(debug_dir: &Path, glyphs: &GlyphOrder) {
     let glyph_order_file = debug_dir.join("glyph_order.txt");
     let glyph_order = glyphs.names().map(|g| g.as_str()).collect::<Vec<_>>();
     let glyph_order = glyph_order.join("\n");
@@ -445,17 +442,7 @@ fn write_debug_glyph_order(context: &Context, glyphs: &GlyphOrder) {
     }
 }
 
-fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &str) {
-    if !context.flags.contains(Flags::EMIT_DEBUG) {
-        if is_error {
-            warn!("Debug fea not written for '{why}' because --emit-debug is off");
-        }
-        return;
-    }
-
-    let debug_dir = context
-        .debug_dir()
-        .expect("EMIT_DEBUG is set but paths are empty");
+fn write_debug_fea(debug_dir: &Path, is_error: bool, why: &str, fea_content: &str) {
     let debug_file = debug_dir.join("features.fea");
     match fs::write(&debug_file, fea_content) {
         Ok(_) if is_error => warn!("{why}; fea written to {debug_file:?}"),
@@ -485,11 +472,11 @@ impl Work<Context, AnyWorkId, Error> for FeatureFirstPassWork {
 
         let result = self.parse(&features, &glyph_map);
 
-        if context.flags.contains(Flags::EMIT_DEBUG) {
-            write_debug_glyph_order(context, &glyph_order);
-        }
-        if let FeaturesSource::Memory { fea_content, .. } = features.as_ref() {
-            write_debug_fea(context, result.is_err(), "compile failed", fea_content);
+        if let Some(debug_dir) = context.flags.debug_dir.as_deref() {
+            write_debug_glyph_order(debug_dir, &glyph_order);
+            if let FeaturesSource::Memory { fea_content, .. } = features.as_ref() {
+                write_debug_fea(debug_dir, result.is_err(), "compile failed", fea_content);
+            }
         }
 
         let ast = result?;
@@ -671,9 +658,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
         }
 
         // Enables the assumption that if the file exists features were compiled
-        if context.flags.contains(Flags::EMIT_IR)
-            && let Some(persistent_storage) = &context.persistent_storage
-        {
+        if let Some(persistent_storage) = &context.persistent_storage {
             fs::write(persistent_storage.paths.target_file(&WorkId::Features), "1")
                 .map_err(Error::IoError)?;
         }
