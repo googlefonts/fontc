@@ -2,8 +2,11 @@ use std::io::Write;
 
 use clap::Parser;
 
+mod cli_args;
+
+use cli_args::Args;
 use fontbe::orchestration::AnyWorkId;
-use fontc::{Args, Error, JobTimer};
+use fontc::{Error, JobTimer};
 use log::{error, warn};
 
 fn main() {
@@ -62,7 +65,7 @@ fn run(args: Args) -> Result<(), Error> {
     log_cfg.init();
     timer.add(time.complete());
 
-    fontc::run(args, timer)
+    fontc::run(args.try_into()?, timer)
 }
 
 fn print_verbose_version() -> Result<(), std::io::Error> {

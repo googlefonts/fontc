@@ -1,7 +1,6 @@
 //! A font compiler with aspirations of being fast and safe.
 
-#[cfg(feature = "cli")]
-mod args;
+mod compile_args;
 mod error;
 #[cfg(not(feature = "rayon"))]
 mod norayon;
@@ -9,8 +8,7 @@ mod timing;
 pub mod work;
 mod workload;
 
-#[cfg(feature = "cli")]
-pub use args::Args;
+pub use compile_args::Args;
 pub use error::Error;
 
 pub use fontir::orchestration::Flags; // Re-export for library users
@@ -38,6 +36,7 @@ use log::debug;
 ///
 /// This allows us to load a font source in a variety of formats, and also
 /// from a variety of sources (on disk or in memory).
+#[derive(Debug, Clone)]
 pub enum Input {
     DesignSpacePath(PathBuf),
     GlyphsPath(PathBuf),
@@ -93,11 +92,10 @@ impl TryFrom<&Path> for Input {
 /// This is the main entry point for the fontc command line utility.
 #[cfg(feature = "cli")]
 pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
-    let input = args.source()?;
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
         .run();
-    let source = input.create_source()?;
+    let source = args.input.create_source()?;
 
     timer.add(time.complete());
 
@@ -105,12 +103,12 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
         source,
         &args.build_dir,
         args.output_file.as_ref(),
-        args.flags(),
+        args.flags,
         args.skip_features,
         timer,
     )?;
 
-    if args.flags().contains(Flags::EMIT_TIMING) {
+    if args.flags.contains(Flags::EMIT_TIMING) {
         let path = args.build_dir.join("threads.svg");
         let out_file = std::fs::OpenOptions::new()
             .write(true)
@@ -244,8 +242,9 @@ pub fn init_paths(
 #[cfg(feature = "cli")]
 pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
     // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
+    // TODO: THIS MAKES NO SENSE
     let font_file = be_context.font_file();
-    if !args.emit_ir {
+    if !args.flags.contains(Flags::EMIT_IR) {
         fs::write(&font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
             path: font_file,
             source,
@@ -360,8 +359,8 @@ mod tests {
 
             info!("Compile {args:?}");
 
-            let input = args.source().unwrap().create_source().unwrap();
-            let flags = merge_compilation_flags(args.flags(), &*input);
+            let input = args.input.create_source().unwrap();
+            let flags = merge_compilation_flags(args.flags, &*input);
 
             let (ir_paths, be_paths) =
                 init_paths(args.output_file.as_ref(), &args.build_dir, flags).unwrap();
@@ -606,15 +605,16 @@ mod tests {
     #[test]
     fn compile_fea_with_includes_no_ir() {
         assert_compiles_with_gpos_and_gsub("fea_include.designspace", |mut args| {
-            args.emit_debug = false;
-            args.emit_ir = false;
+            args.flags.set(Flags::EMIT_DEBUG, false);
+            args.flags.set(Flags::EMIT_IR, false);
             args
         });
     }
 
     fn build_contour_and_composite_glyph(prefer_simple_glyphs: bool) -> (TestCompile, ir::Glyph) {
         let result = TestCompile::compile("glyphs2/MixedContourComponent.glyphs", |mut args| {
-            args.prefer_simple_glyphs = prefer_simple_glyphs; // <-- important :)
+            args.flags
+                .set(Flags::PREFER_SIMPLE_GLYPHS, prefer_simple_glyphs); // <-- important :)
             args
         });
 
@@ -968,7 +968,8 @@ mod tests {
     #[test]
     fn eliminate_2x2_transforms() {
         let result = TestCompile::compile("glyphs2/Component.glyphs", |mut args| {
-            args.decompose_transformed_components = true;
+            args.flags
+                .set(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS, true);
             args
         });
 
@@ -993,7 +994,7 @@ mod tests {
     #[test]
     fn decompose_all_components() {
         let result = TestCompile::compile("glyphs2/Component.glyphs", |mut args| {
-            args.decompose_components = true;
+            args.flags.set(Flags::DECOMPOSE_COMPONENTS, true);
             args
         });
 
@@ -1350,7 +1351,7 @@ mod tests {
     #[test]
     fn compile_without_ir() {
         let result = TestCompile::compile("glyphs2/WghtVar.glyphs", |mut args| {
-            args.emit_ir = false;
+            args.flags.set(Flags::EMIT_IR, false);
             args
         });
 
@@ -2073,7 +2074,7 @@ mod tests {
 
         // recompile with --keep-direction
         let keep_direction_result = TestCompile::compile(source, |mut args| {
-            args.keep_direction = true;
+            args.flags |= Flags::KEEP_DIRECTION;
             args
         });
 
@@ -2177,10 +2178,9 @@ mod tests {
 
         // Compile and observe we are not vertical
         src.push("SingleModelDirect.designspace");
-        let mut result = TestCompile::new(src.to_str().unwrap(), |args| {
-            let mut new_args = args.clone();
-            new_args.input_source = Some(src.clone());
-            new_args
+        let mut result = TestCompile::new(src.to_str().unwrap(), |mut args| {
+            args.input = Input::DesignSpacePath(src.clone());
+            args
         });
         result.run();
 
@@ -2883,7 +2883,7 @@ mod tests {
     #[test]
     fn compile_do_not_decompose_nested_no_export_glyphs() {
         let result = TestCompile::compile("glyphs3/NestedNoExportComponent.glyphs", |mut args| {
-            args.flatten_components = true;
+            args.flags.set(Flags::FLATTEN_COMPONENTS, true);
             args
         });
 
@@ -4513,7 +4513,8 @@ mod tests {
     #[case::no(false)]
     fn rename_glyphs_to_production_names(#[case] use_adobe_style_post_names: bool) {
         let result = TestCompile::compile("glyphs3/ProductionNames.glyphs", |mut args| {
-            args.no_production_names = !use_adobe_style_post_names;
+            args.flags
+                .set(Flags::PRODUCTION_NAMES, use_adobe_style_post_names);
             args
         });
 
@@ -4862,5 +4863,14 @@ mod tests {
                 .iter()
                 .count()
         );
+    }
+
+    #[test]
+    fn compile_like_wasm() {
+        // In memory and no paths
+        let result = TestCompile::compile("glyphs3/WghtVar.glyphs", |mut args| {
+            // TODO: build_dir = none, no emits, etc
+            args
+        });
     }
 }
