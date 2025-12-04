@@ -1886,7 +1886,6 @@ mod tests {
             test_helpers::Round2,
         },
         orchestration::{Context, Flags, WorkId},
-        paths::Paths,
         source::Source,
     };
     use norad::designspace;
@@ -1950,14 +1949,10 @@ mod tests {
         DesignSpaceIrSource::new(&testdata_dir().join(name)).unwrap()
     }
 
-    fn default_test_flags() -> Flags {
-        Flags::default() - Flags::EMIT_IR
-    }
-
     fn build_static_metadata(name: &str, flags: Flags) -> (impl Source + use<>, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let source = load_designspace(name);
-        let context = Context::new_root(flags, Paths::new(Path::new("/nothing/should/write/here")));
+        let context = Context::new_root(flags, None);
         let task_context = context.copy_for_work(
             Access::None,
             AccessBuilder::new()
@@ -1984,7 +1979,7 @@ mod tests {
     }
 
     fn build_global_metrics(name: &str) -> (impl Source + use<>, Context) {
-        let (source, context) = build_static_metadata(name, default_test_flags());
+        let (source, context) = build_static_metadata(name, Flags::default());
         let task_context = context.copy_for_work(
             Access::Variant(WorkId::StaticMetadata),
             Access::Variant(WorkId::GlobalMetrics),
@@ -1998,7 +1993,7 @@ mod tests {
     }
 
     fn build_kerning(name: &str) -> (impl Source + use<>, Context) {
-        let (source, context) = build_static_metadata(name, default_test_flags());
+        let (source, context) = build_static_metadata(name, Flags::default());
 
         // static metadata includes preliminary glyph order; just copy it to be the final one
         context
@@ -2025,7 +2020,7 @@ mod tests {
     }
 
     fn build_glyphs(name: &str) -> (impl Source + use<>, Context) {
-        let (source, context) = build_static_metadata(name, default_test_flags());
+        let (source, context) = build_static_metadata(name, Flags::default());
         build_glyph_order(&context);
 
         let task_context = context.copy_for_work(Access::All, Access::All);
@@ -2274,7 +2269,7 @@ mod tests {
 
     #[test]
     fn captures_os2_properties() {
-        let (_, context) = build_static_metadata("fontinfo.designspace", default_test_flags());
+        let (_, context) = build_static_metadata("fontinfo.designspace", Flags::default());
         assert_eq!(
             Tag::new(b"RODS"),
             context.static_metadata.get().misc.vendor_id
@@ -2330,7 +2325,7 @@ mod tests {
     // Was tripping up on wght_var having two <source> with the same filename, different name and xvalue
     #[test]
     fn global_locations() {
-        let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
+        let (_, context) = build_static_metadata("wght_var.designspace", Flags::default());
         let static_metadata = &context.static_metadata.get();
         let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
 
@@ -2578,7 +2573,7 @@ mod tests {
     fn static_metadata_loads_postscript_names() {
         let (_, context) = build_static_metadata(
             "designspace_from_glyphs/WghtVar.designspace",
-            default_test_flags(),
+            Flags::default(),
         );
         let static_metadata = context.static_metadata.get();
 
@@ -2593,7 +2588,7 @@ mod tests {
 
     #[test]
     fn static_metadata_disable_postscript_names() {
-        let no_production_names = default_test_flags() - Flags::PRODUCTION_NAMES;
+        let no_production_names = Flags::default() - Flags::PRODUCTION_NAMES;
         let (_, context) = build_static_metadata(
             "designspace_from_glyphs/WghtVar.designspace",
             no_production_names,
@@ -2623,7 +2618,7 @@ mod tests {
     }
 
     fn assert_fs_type(src: &str, expected: u16) {
-        let (_, context) = build_static_metadata(src, default_test_flags());
+        let (_, context) = build_static_metadata(src, Flags::default());
         let static_metadata = context.static_metadata.get();
         assert_eq!(Some(expected), static_metadata.misc.fs_type);
     }
@@ -2640,7 +2635,7 @@ mod tests {
 
     #[test]
     fn default_panose() {
-        let (_, context) = build_static_metadata("static.designspace", default_test_flags());
+        let (_, context) = build_static_metadata("static.designspace", Flags::default());
 
         let static_metadata = context.static_metadata.get();
         assert_eq!(None, static_metadata.misc.panose);
@@ -2649,7 +2644,7 @@ mod tests {
     // <https://github.com/googlefonts/fontc/issues/1026>
     #[test]
     fn obeys_explicit_panose() {
-        let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
+        let (_, context) = build_static_metadata("wght_var.designspace", Flags::default());
 
         let static_metadata = context.static_metadata.get();
         let expected: Panose = [2_u8, 11, 5, 2, 4, 5, 4, 2, 2, 4].into();
@@ -2658,7 +2653,7 @@ mod tests {
 
     #[test]
     fn parse_meta_table_values() {
-        let (_, context) = build_static_metadata("MetaTable.ufo", default_test_flags());
+        let (_, context) = build_static_metadata("MetaTable.ufo", Flags::default());
         let static_meta = context.static_metadata.get();
         let meta_table = static_meta.misc.meta_table.as_ref().unwrap();
         assert_eq!(meta_table.dlng, ["en-latn", "fr-latn", "nl-Latn"]);
@@ -2677,14 +2672,14 @@ mod tests {
     }
 
     fn fixed_pitch_of(name: &str) -> Option<bool> {
-        let (_, context) = build_static_metadata(name, default_test_flags());
+        let (_, context) = build_static_metadata(name, Flags::default());
         let static_metadata = context.static_metadata.get();
         static_metadata.misc.is_fixed_pitch
     }
 
     #[test]
     fn allow_four_spaces_for_vendor_id() {
-        let (_, context) = build_static_metadata("empty-vendorid.ufo", default_test_flags());
+        let (_, context) = build_static_metadata("empty-vendorid.ufo", Flags::default());
         let static_meta = context.static_metadata.get();
         assert_eq!(
             static_meta.misc.vendor_id.as_ref(),
@@ -2705,7 +2700,7 @@ mod tests {
     #[test]
     fn basic_feature_variations() {
         let (_, context) =
-            build_static_metadata("dspace_rules/Basic.designspace", default_test_flags());
+            build_static_metadata("dspace_rules/Basic.designspace", Flags::default());
         let variations = context.static_metadata.get().variations.clone().unwrap();
         assert_eq!(variations.features, [Tag::new(b"rvrn")]);
         assert_eq!(variations.rules.len(), 2);
@@ -2717,18 +2712,15 @@ mod tests {
 
     #[test]
     fn rclt_feature_variations() {
-        let (_, context) =
-            build_static_metadata("dspace_rules/Last.designspace", default_test_flags());
+        let (_, context) = build_static_metadata("dspace_rules/Last.designspace", Flags::default());
         let variations = context.static_metadata.get().variations.clone().unwrap();
         assert_eq!(variations.features, [Tag::new(b"rclt")]);
     }
 
     #[test]
     fn custom_feature_variations() {
-        let (_, context) = build_static_metadata(
-            "dspace_rules/CustomFeatures.designspace",
-            default_test_flags(),
-        );
+        let (_, context) =
+            build_static_metadata("dspace_rules/CustomFeatures.designspace", Flags::default());
         let variations = context.static_metadata.get().variations.clone().unwrap();
         assert_eq!(
             variations.features,

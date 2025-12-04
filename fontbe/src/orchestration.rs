@@ -5,7 +5,7 @@ use std::{
     fmt::Display,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -822,28 +822,32 @@ impl Persistable for LocaFormatWrapper {
 pub type BeWork = dyn Work<Context, AnyWorkId, Error> + Send;
 
 pub struct BePersistentStorage {
-    active: bool,
-    pub(crate) paths: Paths,
+    dir: Option<PathBuf>,
 }
 
 impl PersistentStorage<AnyWorkId> for BePersistentStorage {
     fn active(&self) -> bool {
-        self.active
+        self.dir.is_some()
     }
 
     fn reader(&self, id: &AnyWorkId) -> Option<Box<dyn Read>> {
-        let file = self.paths.target_file(id.unwrap_be());
+        let dir = self.dir.as_ref()?;
+        let file = Paths::target_file(dir, id.unwrap_be());
         if !file.exists() {
             return None;
         }
         let raw_file = File::open(file.clone())
-            .map_err(|e| panic!("Unable to write {file:?} {e}"))
+            .map_err(|e| panic!("Unable to read {file:?} {e}"))
             .unwrap();
         Some(Box::from(BufReader::new(raw_file)))
     }
 
     fn writer(&self, id: &AnyWorkId) -> Box<dyn io::Write> {
-        let file = self.paths.target_file(id.unwrap_be());
+        let dir = self
+            .dir
+            .as_ref()
+            .expect("Write requested with no output dir");
+        let file = Paths::target_file(dir, id.unwrap_be());
         let raw_file = File::create(file.clone())
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
@@ -861,6 +865,9 @@ type BeContextMap<T> = ContextMap<AnyWorkId, T, BePersistentStorage>;
 /// execution order / mistakes, not to block actual bad actors.
 pub struct Context {
     pub flags: Flags,
+
+    pub debug_dir: Option<PathBuf>,
+    pub ir_dir: Option<PathBuf>,
 
     pub persistent_storage: Arc<BePersistentStorage>,
 
@@ -913,6 +920,8 @@ impl Context {
         let acl = Arc::from(acl);
         Context {
             flags: self.flags,
+            debug_dir: self.debug_dir.clone(),
+            ir_dir: self.ir_dir.clone(),
             persistent_storage: self.persistent_storage.clone(),
             ir: self.ir.clone(),
             glyphs: self.glyphs.clone_with_acl(acl.clone()),
@@ -954,14 +963,20 @@ impl Context {
         }
     }
 
-    pub fn new_root(flags: Flags, paths: Paths, ir: &fontir::orchestration::Context) -> Context {
+    pub fn new_root(
+        flags: Flags,
+        ir_dir: Option<PathBuf>,
+        debug_dir: Option<PathBuf>,
+        ir: &fontir::orchestration::Context,
+    ) -> Context {
         let acl = Arc::from(AccessControlList::read_only());
         let persistent_storage = Arc::from(BePersistentStorage {
-            active: flags.contains(Flags::EMIT_IR),
-            paths,
+            dir: ir_dir.clone(),
         });
         Context {
             flags,
+            debug_dir,
+            ir_dir,
             persistent_storage: persistent_storage.clone(),
             ir: Arc::from(ir.read_only()),
             glyphs: ContextMap::new(acl.clone(), persistent_storage.clone()),
@@ -1037,15 +1052,6 @@ impl Context {
 
     pub fn copy_read_only(&self) -> Context {
         self.copy(AccessControlList::read_only())
-    }
-
-    /// A reasonable place to write extra files to help someone debugging
-    pub fn debug_dir(&self) -> &Path {
-        self.persistent_storage.paths.debug_dir()
-    }
-
-    pub fn font_file(&self) -> PathBuf {
-        self.persistent_storage.paths.target_file(&WorkId::Font)
     }
 }
 

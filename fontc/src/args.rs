@@ -3,11 +3,13 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser};
+use fontc::{Input, Options};
 use fontir::orchestration::Flags;
+
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{Error, Input};
+use crate::Error;
 
 /// What font can we build for you today?
 #[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
@@ -122,8 +124,6 @@ impl Args {
     pub fn flags(&self) -> Flags {
         let mut flags = Flags::default();
 
-        flags.set(Flags::EMIT_IR, self.emit_ir);
-        flags.set(Flags::EMIT_DEBUG, self.emit_debug);
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
         flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
         flags.set(Flags::ERASE_OPEN_CORNERS, self.erase_open_corners);
@@ -132,46 +132,10 @@ impl Args {
             self.decompose_transformed_components,
         );
         flags.set(Flags::DECOMPOSE_COMPONENTS, self.decompose_components);
-        flags.set(Flags::EMIT_TIMING, self.emit_timing);
         flags.set(Flags::KEEP_DIRECTION, self.keep_direction);
         flags.set(Flags::PRODUCTION_NAMES, !self.no_production_names);
 
         flags
-    }
-
-    pub fn new(build_dir: &std::path::Path, input_source: PathBuf) -> Args {
-        Args {
-            glyph_name_filter: None,
-            input_source: Some(input_source),
-            source: None,
-            emit_ir: false,
-            output_file: None,
-            emit_debug: false, // they get destroyed by test cleanup
-            emit_timing: false,
-            build_dir: build_dir.to_path_buf(),
-            prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
-            flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
-            erase_open_corners: Flags::default().contains(Flags::ERASE_OPEN_CORNERS),
-            decompose_transformed_components: Flags::default()
-                .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
-            decompose_components: Flags::default().contains(Flags::DECOMPOSE_COMPONENTS),
-            skip_features: false,
-            keep_direction: false,
-            no_production_names: false,
-            verbose_version: false,
-            log: None,
-        }
-    }
-
-    /// Manually create args for testing
-    #[cfg(test)]
-    pub fn for_test(build_dir: &std::path::Path, source: &str) -> Args {
-        use crate::testdata_dir;
-
-        let input_source = testdata_dir().join(source).canonicalize().unwrap();
-        let mut result = Self::new(build_dir, input_source);
-        result.emit_ir = true;
-        result
     }
 
     /// The input source to compile.
@@ -193,11 +157,6 @@ impl ValidatedRegex {
     /// designed to be used with clap.
     pub fn parse(s: &str) -> Result<Self, String> {
         Regex::new(s).map_err(|e| e.to_string()).map(ValidatedRegex)
-    }
-
-    /// Return the inner [`Regex`].
-    pub fn into_inner(self) -> Regex {
-        self.0
     }
 }
 
@@ -227,12 +186,34 @@ impl Serialize for ValidatedRegex {
         self.0.as_str().serialize(serializer)
     }
 }
+
+impl TryInto<Options> for Args {
+    type Error = Error;
+
+    fn try_into(self) -> Result<Options, Self::Error> {
+        let flags = self.flags();
+        let timing_file = self.emit_timing.then(|| self.build_dir.join("threads.svg"));
+        let debug_dir = self.emit_debug.then(|| self.build_dir.clone());
+        let ir_dir = self.emit_ir.then(|| self.build_dir.clone());
+        Ok(Options {
+            flags,
+            skip_features: self.skip_features,
+            output_file: self
+                .output_file
+                .or_else(|| Some(self.build_dir.join("font.ttf"))),
+            timing_file,
+            debug_dir,
+            ir_dir,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser;
     use fontir::orchestration::Flags;
 
-    use crate::Args;
+    use crate::args::Args;
 
     // It's awkward to get the Flags::default values into #[arg] so test for consistency
     #[test]

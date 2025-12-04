@@ -26,6 +26,8 @@ pub enum Error {
     FileExpected(PathBuf),
     #[error("Unable to proceed; {0} jobs stuck pending")]
     UnableToProceed(usize),
+    #[error("No output file specified")]
+    NoOutputFile,
     #[error("A task panicked: '{0}'")]
     Panic(String),
 }

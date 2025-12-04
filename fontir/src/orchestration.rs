@@ -6,6 +6,7 @@ use std::{
     fs::File,
     hash::Hash,
     io::{self, BufReader, BufWriter, Read, Write},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -22,18 +23,12 @@ use write_fonts::{FontWrite, read::FontRead, validate::Validate};
 bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub struct Flags: u32 {
-        // If set IR will be emitted to disk when written into Context
-        const EMIT_IR = 0b00000001;
-        // If set additional debug files will be emitted to disk
-        const EMIT_DEBUG = 0b00000010;
         // If set, a glyph with contours and components will be converted to a simple (contour) glyph
         const PREFER_SIMPLE_GLYPHS = 0b00000100;
         // If set, a composite that references another composite will replace that composite with the
         // glyph(s) it references until only simple (contour) glyphs are referenced
         const FLATTEN_COMPONENTS = 0b00001000;
         const DECOMPOSE_TRANSFORMED_COMPONENTS = 0b00010000;
-        // If set a files reporting on timing will be emitted to disk
-        const EMIT_TIMING = 0b00100000;
         // If set, the direction of contours will NOT be reversed
         const KEEP_DIRECTION = 0b01000000;
         // If set, production names are read & used
@@ -352,17 +347,17 @@ impl Identifier for WorkId {
 pub type IrWork = dyn Work<Context, WorkId, Error> + Send;
 
 pub struct IrPersistentStorage {
-    active: bool,
-    pub(crate) paths: Paths,
+    ir_dir: Option<PathBuf>,
 }
 
 impl PersistentStorage<WorkId> for IrPersistentStorage {
     fn active(&self) -> bool {
-        self.active
+        self.ir_dir.is_some()
     }
 
     fn reader(&self, id: &WorkId) -> Option<Box<dyn Read>> {
-        let file = self.paths.target_file(id);
+        let ir_dir = self.ir_dir.as_ref()?;
+        let file = Paths::target_file(ir_dir, id);
         if !file.exists() {
             return None;
         }
@@ -373,7 +368,10 @@ impl PersistentStorage<WorkId> for IrPersistentStorage {
     }
 
     fn writer(&self, id: &WorkId) -> Box<dyn Write> {
-        let file = self.paths.target_file(id);
+        let Some(ir_dir) = self.ir_dir.as_ref() else {
+            panic!("Write requested while inactive");
+        };
+        let file = Paths::target_file(ir_dir, id);
         let raw_file = File::create(file.clone())
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
@@ -450,12 +448,9 @@ impl Context {
         }
     }
 
-    pub fn new_root(flags: Flags, paths: Paths) -> Context {
+    pub fn new_root(flags: Flags, ir_dir: Option<PathBuf>) -> Context {
         let acl = Arc::from(AccessControlList::read_only());
-        let persistent_storage = Arc::from(IrPersistentStorage {
-            active: flags.contains(Flags::EMIT_IR),
-            paths,
-        });
+        let persistent_storage = Arc::from(IrPersistentStorage { ir_dir });
         Context {
             flags,
             persistent_storage: persistent_storage.clone(),
