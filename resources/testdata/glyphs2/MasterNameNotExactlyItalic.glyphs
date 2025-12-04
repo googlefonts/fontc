@@ -1,0 +1,11 @@
+{
+familyName = SpecialItalicName;
+fontMaster = (
+{
+id = m01;
+custom = ThinItalic;
+italicAngle = 10;
+}
+);
+unitsPerEm = 1000;
+}
