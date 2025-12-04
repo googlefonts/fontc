@@ -589,6 +589,32 @@ pub struct VariationRegion {
     active_axes: HashSet<Tag>,
 }
 
+fn merge_join<'a, K: Ord, V1, V2>(
+    tree_a: &'a BTreeMap<K, V1>,
+    tree_b: &'a BTreeMap<K, V2>,
+) -> impl Iterator<Item = (&'a K, &'a V1, Option<&'a V2>)> {
+    let mut iter_a = tree_a.iter();
+    let mut iter_b = tree_b.iter().peekable();
+    std::iter::from_fn(move || -> Option<(&'a K, &'a V1, Option<&'a V2>)> {
+        let (k, v1) = iter_a.next()?;
+        while let Some(next_b) = iter_b.peek() {
+            match k.cmp(&next_b.0) {
+                Ordering::Less => {
+                    break;
+                }
+                Ordering::Equal => {
+                    let (_, v2) = iter_b.next()?;
+                    return Some((k, v1, Some(v2)));
+                }
+                Ordering::Greater => {
+                    iter_b.next();
+                }
+            }
+        }
+        Some((k, v1, None))
+    })
+}
+
 impl VariationRegion {
     fn new() -> Self {
         Self::default()
@@ -615,14 +641,10 @@ impl VariationRegion {
         location: &NormalizedLocation,
         axis_ranges: Option<&HashMap<Tag, RangeInclusive<OrderedFloat<f64>>>>,
     ) -> OrderedFloat<f64> {
-        self.axis_tents
-            .iter()
-            .filter(|(_, ar)| ar.validate())
-            .fold(ONE, |scalar, (tag, tent)| {
-                let v = location
-                    .get(*tag)
-                    .map(|v| v.into_inner())
-                    .unwrap_or_default();
+        merge_join(&self.axis_tents, location.btree())
+            .filter(|(_, ar, _)| ar.validate())
+            .fold(ONE, |scalar, (tag, tent, v)| {
+                let v = v.map(|x| x.into_inner()).unwrap_or_default();
                 let min = tent.min.into_inner();
                 let peak = tent.peak.into_inner();
                 let max = tent.max.into_inner();

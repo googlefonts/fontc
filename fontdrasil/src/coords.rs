@@ -383,6 +383,10 @@ impl<Space> Location<Space> {
             .map(|(tag, coord)| (*tag, coord.convert(&axes.get(tag).unwrap().converter)))
             .collect()
     }
+
+    pub(crate) fn btree(&self) -> &BTreeMap<Tag, Coord<Space>> {
+        &self.0
+    }
 }
 
 // methods we only want available on NormalizedSpace
