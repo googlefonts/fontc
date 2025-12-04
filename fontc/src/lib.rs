@@ -356,12 +356,9 @@ mod tests {
         /// Create test options with default settings
         fn for_test(build_dir: &Path) -> Options {
             Options {
-                flags: Flags::default(),
-                skip_features: false,
                 output_file: Some(build_dir.join("font.ttf")),
                 ir_dir: Some(build_dir.to_path_buf()),
-                debug_dir: None,
-                timing_file: None,
+                ..Default::default()
             }
         }
     }
