@@ -193,7 +193,7 @@ pub fn require_dir(dir: &Path) -> Result<(), Error> {
     }
     if !dir.exists() {
         debug!("require_dir {dir:?}, creating");
-        fs::create_dir(dir).map_err(|source| Error::FileIo {
+        fs::create_dir_all(dir).map_err(|source| Error::FileIo {
             path: dir.to_owned(),
             source,
         })?;
