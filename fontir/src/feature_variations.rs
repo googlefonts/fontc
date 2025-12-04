@@ -5,11 +5,13 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fmt::Debug,
+    ops::{BitOr, BitOrAssign},
 };
 
 use crate::ir::StaticMetadata;
 use fontdrasil::{coords::NormalizedCoord, types::GlyphName};
 use indexmap::IndexMap;
+use smallvec::SmallVec;
 use write_fonts::{
     tables::layout::{ConditionFormat1, ConditionSet},
     types::{F2Dot14, Tag},
@@ -186,6 +188,89 @@ impl Region {
     }
 }
 
+/// For emulating the behaviour of a python int, which has arbitrary precision.
+///
+/// This is necessary because the python code we are emulating does some bit
+/// fiddling, and the required number of bits may be larger than a standard word.
+#[derive(Clone, Debug, Default)]
+struct Rank(SmallVec<[u64; 4]>);
+
+impl PartialEq for Rank {
+    fn eq(&self, other: &Self) -> bool {
+        // we need to account for the fact that leading zeros are not significant
+        let lhs_pad = other.0.len().saturating_sub(self.0.len());
+        let rhs_pad = self.0.len().saturating_sub(other.0.len());
+
+        std::iter::repeat_n(0u64, lhs_pad)
+            .chain(self.0.iter().copied())
+            .zip(std::iter::repeat_n(0u64, rhs_pad).chain(other.0.iter().copied()))
+            .all(|(l, r)| l == r)
+    }
+}
+
+impl Rank {
+    fn new(val: usize) -> Self {
+        let column = val / 64;
+        let bit = val % 64;
+        let mut buf = SmallVec::from_elem(0, column + 1);
+        let idx = buf.len() - column - 1;
+        buf[idx] = 1 << bit;
+        Self(buf)
+    }
+
+    fn count_zeros(&self) -> u32 {
+        self.0.iter().copied().map(u64::count_zeros).sum()
+    }
+
+    fn is_all_zeros(&self) -> bool {
+        self.0.iter().all(|i| *i == 0)
+    }
+
+    fn first_bit_is_set(&self) -> bool {
+        (self.0.last().copied().unwrap_or_default() & 1) > 0
+    }
+
+    // we don't need the general case, so just handle this.
+    fn right_shift_one(&mut self) {
+        let mut carry_bit = 0;
+        for val in &mut self.0 {
+            let next_carry = *val & 1;
+            *val >>= 1;
+            *val |= carry_bit << 63;
+            carry_bit = next_carry;
+        }
+    }
+}
+
+impl<'a> BitOr<&'a Rank> for &'a Rank {
+    type Output = Rank;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        // OR the shorter sequence onto the longer
+        let (mut out, other) = if self.0.len() > rhs.0.len() {
+            (self.0.clone(), &rhs.0)
+        } else {
+            (rhs.0.clone(), &self.0)
+        };
+
+        for (base, to_or) in out.iter_mut().rev().zip(other.iter().rev()) {
+            *base |= *to_or;
+        }
+        Rank(out)
+    }
+}
+
+impl BitOrAssign<&Rank> for Rank {
+    fn bitor_assign(&mut self, rhs: &Self) {
+        let missing = rhs.0.len().saturating_sub(self.0.len());
+        self.0.insert_from_slice(0, &rhs.0.as_slice()[..missing]);
+        self.0
+            .iter_mut()
+            .zip(rhs.0.iter())
+            .for_each(|(base, val)| *base |= *val);
+    }
+}
+
 /// <https://github.com/fonttools/fonttools/blob/08962727756/Lib/fontTools/varLib/featureVars.py#L122>
 pub fn overlay_feature_variations(
     conditional_subs: Vec<(Region, BTreeMap<GlyphName, GlyphName>)>,
@@ -197,21 +282,21 @@ pub fn overlay_feature_variations(
     // overlay logic
     // Rank is the bit-set of the index of all contributing layers:
     // https://github.com/fonttools/fonttools/blob/1c2704dfc7/Lib/fontTools/varLib/featureVars.py#L201
-    fn init_map() -> IndexMap<NBox, u64> {
-        IndexMap::from([(NBox::default(), 0)])
+    fn init_map() -> IndexMap<NBox, Rank> {
+        IndexMap::from([(NBox::default(), Default::default())])
     }
 
     let mut boxmap = init_map();
     for (i, (cur_region, _)) in conditional_subs.iter().enumerate() {
-        let cur_rank = 1u64 << i;
+        let cur_rank = Rank::new(i);
         for (box_, rank) in std::mem::replace(&mut boxmap, init_map()) {
             for cur_box in &cur_region.0 {
                 let (intersection, remainder) = cur_box.overlay_onto(&box_);
                 if let Some(intersection) = intersection {
-                    *boxmap.entry(intersection).or_insert(0) |= rank | cur_rank;
+                    *boxmap.entry(intersection).or_default() |= &(&rank | &cur_rank);
                 }
                 if let Some(remainder) = remainder {
-                    *boxmap.entry(remainder).or_insert(0) |= rank;
+                    *boxmap.entry(remainder).or_default() |= &rank;
                 }
             }
         }
@@ -221,17 +306,17 @@ pub fn overlay_feature_variations(
     let mut sorted = boxmap.into_iter().collect::<Vec<_>>();
     sorted.sort_by_key(|(_, rank)| rank.count_zeros());
     for (box_, mut rank) in sorted {
-        if rank == 0 {
+        if rank.is_all_zeros() {
             continue;
         }
 
         let mut substs_list = Vec::new();
         let mut i = 0;
-        while rank != 0 {
-            if (rank & 1) != 0 {
+        while !rank.is_all_zeros() {
+            if rank.first_bit_is_set() {
                 substs_list.push(conditional_subs[i].1.clone())
             }
-            rank >>= 1;
+            rank.right_shift_one();
             i += 1;
         }
         items.push((box_, substs_list))
@@ -373,7 +458,6 @@ mod tests {
         ];
 
         let overlaps = overlay_feature_variations(conds);
-        //dbg!(&overlaps);
         assert_eq!(match_condition(&[("abcd", 0.)], &overlaps), [("2", "2")]);
         assert_eq!(match_condition(&[("abcd", 0.1)], &overlaps), [("2", "2")]);
         assert_eq!(
@@ -434,6 +518,24 @@ mod tests {
             match_condition(&[("abcd", 1.0)], &overlaps),
             [("1", "1"), ("3", "3")]
         );
+    }
+
+    #[test]
+    fn overlaps_many() {
+        // we had an issue where we were using a u64 to store the 'rank' in
+        // this computation, and that meant we would overflow when handling more
+        // than 63 distinct regions.
+        static DUMB_OLE_STRING: &str = "abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()_+=-<>?:\";'/.,";
+
+        let conds = (0..70usize)
+            .map(|i| {
+                let f = (i as f64) / 100.0;
+                let c = &DUMB_OLE_STRING[i..i + 1];
+                make_overlay_input(&[&[("derp", (f, f + 0.5))]], &[(c, c)])
+            })
+            .collect::<Vec<_>>();
+
+        let _yay_i_dont_panic = overlay_feature_variations(conds);
     }
 
     //https://github.com/fonttools/fonttools/blob/1c2704dfc79d753fe822dc7699b067495c0edede/Tests/varLib/featureVars_test.py#L269
@@ -498,5 +600,76 @@ mod tests {
         );
 
         assert_eq!(nbox, NBox::for_test(&[("derp", (-1.0, 1.0))]))
+    }
+
+    #[test]
+    fn rank_new() {
+        assert_eq!(Rank::new(0).0.as_slice(), [1]);
+        assert_eq!(Rank::new(1).0.as_slice(), [2]);
+        assert_eq!(Rank::new(2).0.as_slice(), [4]);
+        assert_eq!(Rank::new(5).0.as_slice(), [1 << 5]);
+        assert_eq!(Rank::new(63).0.as_slice(), [1 << 63]);
+        assert_eq!(Rank::new(64).0.as_slice(), [1, 0]);
+        assert_eq!(Rank::new(65).0.as_slice(), [2, 0]);
+        assert_eq!(Rank::new(127).0.as_slice(), [1 << 63, 0]);
+        assert_eq!(Rank::new(128).0.as_slice(), [1, 0, 0]);
+        assert_eq!(Rank::new(129).0.as_slice(), [2, 0, 0]);
+        assert_eq!(Rank::new(254).0.as_slice(), [1 << 62, 0, 0, 0]);
+        assert_eq!(Rank::new(255).0.as_slice(), [1 << 63, 0, 0, 0]);
+        assert_eq!(Rank::new(256).0.as_slice(), [1, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn rank_shr_one() {
+        fn shr_one(init: usize) -> SmallVec<[u64; 4]> {
+            let mut r = Rank::new(init);
+            r.right_shift_one();
+            r.0
+        }
+
+        assert_eq!(shr_one(0).as_slice(), [0]);
+        assert_eq!(shr_one(1).as_slice(), [1]);
+        assert_eq!(shr_one(2).as_slice(), [2]);
+        assert_eq!(shr_one(5).as_slice(), [1 << 4]);
+        assert_eq!(shr_one(63).as_slice(), [1 << 62]);
+        assert_eq!(shr_one(64).as_slice(), [0, 1 << 63]);
+        assert_eq!(shr_one(65).as_slice(), [1, 0]);
+        assert_eq!(shr_one(128).as_slice(), [0, 1 << 63, 0]);
+        assert_eq!(shr_one(129).as_slice(), [1, 0, 0]);
+        assert_eq!(shr_one(130).as_slice(), [2, 0, 0]);
+        assert_eq!(shr_one(255).as_slice(), [1 << 62, 0, 0, 0]);
+        assert_eq!(shr_one(256).as_slice(), [0, 1 << 63, 0, 0, 0]);
+    }
+
+    #[test]
+    fn rank_bitor() {
+        let mut thing = Rank::new(1);
+        thing |= &Rank::new(5);
+        assert_eq!(thing.0.as_slice(), [0b100010]);
+    }
+
+    #[test]
+    fn rank_bitor_diff_lengths() {
+        let small = Rank::new(1);
+        let big = Rank::new(129);
+
+        let left_first = &small | &big;
+        let right_first = &big | &small;
+
+        assert_eq!(left_first, right_first);
+        assert_eq!(left_first.0.as_slice(), [2, 0, 2]);
+    }
+
+    #[test]
+    fn rank_equality() {
+        let more_zeros = Rank(SmallVec::from_elem(0, 4));
+        let less_zeros = Rank::default();
+
+        assert_ne!(more_zeros.0, less_zeros.0);
+        assert_eq!(more_zeros, less_zeros);
+
+        let one = Rank::new(1);
+        assert_ne!(more_zeros.0, less_zeros.0);
+        assert_eq!(&more_zeros | &one, &less_zeros | &one);
     }
 }
