@@ -2442,7 +2442,8 @@ impl RawFont {
                 && (names.is_empty()
                     || !names
                         .iter()
-                        .any(|name| *name == "Italic" || *name == "Oblique"))
+                        // https://github.com/googlefonts/glyphsLib/blob/d42d3b15/Lib/glyphsLib/classes.py#L1710
+                        .any(|name| name.contains("Italic") || name.contains("Oblique")))
             {
                 names.push("Italic");
             }
@@ -5223,6 +5224,16 @@ etc;
                 );
             }
         }
+    }
+
+    #[test]
+    fn master_name_contains_italic() {
+        // ensure that we don't add 'Italic' to a name like 'ThinItalic' (that contains
+        // the word italic, but not as a standalone word)
+
+        let font = Font::load(&glyphs2_dir().join("MasterNameNotExactlyItalic.glyphs")).unwrap();
+
+        assert_eq!(font.default_master().name, "ThinItalic");
     }
 
     // We had a bug where if a master wasn't at a mapping point the Axis Mapping was modified
