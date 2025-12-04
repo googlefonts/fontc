@@ -7,52 +7,26 @@ use fontdrasil::{coords::NormalizedLocation, paths::string_to_filename};
 use crate::orchestration::WorkId;
 
 #[derive(Debug, Clone)]
-pub struct Paths {
-    build_dir: PathBuf,
-    anchor_ir_dir: PathBuf,
-    glyph_ir_dir: PathBuf,
-    ir_input_file: PathBuf,
-}
+pub struct Paths;
 
 impl Paths {
-    pub fn new(build_dir: &Path) -> Paths {
-        let build_dir = build_dir.to_path_buf();
-        let anchor_ir_dir = build_dir.join("anchor_ir");
-        let glyph_ir_dir = build_dir.join("glyph_ir");
-        let ir_input_file = build_dir.join("irinput.yml");
-        Paths {
-            build_dir,
-            anchor_ir_dir,
-            glyph_ir_dir,
-            ir_input_file,
-        }
+    pub fn anchor_ir_dir(dir: &Path) -> PathBuf {
+        dir.join("anchor_ir/")
     }
 
-    pub fn build_dir(&self) -> &Path {
-        &self.build_dir
+    fn anchor_ir_file(dir: &Path, name: &str) -> PathBuf {
+        Paths::anchor_ir_dir(dir).join(string_to_filename(name, ".yml"))
     }
 
-    pub fn anchor_ir_dir(&self) -> &Path {
-        &self.anchor_ir_dir
+    pub fn glyph_ir_dir(dir: &Path) -> PathBuf {
+        dir.join("glyph_ir/")
     }
 
-    pub fn glyph_ir_dir(&self) -> &Path {
-        &self.glyph_ir_dir
+    fn glyph_ir_file(dir: &Path, name: &str) -> PathBuf {
+        Paths::glyph_ir_dir(dir).join(string_to_filename(name, ".yml"))
     }
 
-    pub fn ir_input_file(&self) -> &Path {
-        &self.ir_input_file
-    }
-
-    fn anchor_ir_file(&self, name: &str) -> PathBuf {
-        self.anchor_ir_dir.join(string_to_filename(name, ".yml"))
-    }
-
-    fn glyph_ir_file(&self, name: &str) -> PathBuf {
-        self.glyph_ir_dir.join(string_to_filename(name, ".yml"))
-    }
-
-    fn kern_ir_file(&self, location: &NormalizedLocation) -> PathBuf {
+    fn kern_ir_file(dir: &Path, location: &NormalizedLocation) -> PathBuf {
         let filename = "kern_".to_string()
             + &location
                 .iter()
@@ -60,22 +34,22 @@ impl Paths {
                 .collect::<Vec<_>>()
                 .join("_")
             + ".yml";
-        self.build_dir.join(filename)
+        dir.join(filename)
     }
 
-    pub fn target_file(&self, id: &WorkId) -> PathBuf {
+    pub fn target_file(dir: &Path, id: &WorkId) -> PathBuf {
         match id {
-            WorkId::Anchor(name) => self.anchor_ir_file(name.as_str()),
-            WorkId::StaticMetadata => self.build_dir.join("static_metadata.yml"),
-            WorkId::PreliminaryGlyphOrder => self.build_dir.join("glyph_order.preliminary.yml"),
-            WorkId::GlyphOrder => self.build_dir.join("glyph_order.yml"),
-            WorkId::GlobalMetrics => self.build_dir.join("global_metrics.yml"),
-            WorkId::Glyph(name) => self.glyph_ir_file(name.as_str()),
-            WorkId::Features => self.build_dir.join("features.yml"),
-            WorkId::KerningGroups => self.build_dir.join("kern_groups.yml"),
-            WorkId::KernInstance(location) => self.kern_ir_file(location),
-            WorkId::ColorPalettes => self.build_dir.join("colors.yml"),
-            WorkId::PaintGraph => self.build_dir.join("paint_graph.yml"),
+            WorkId::Anchor(name) => Paths::anchor_ir_file(dir, name.as_str()),
+            WorkId::StaticMetadata => dir.join("static_metadata.yml"),
+            WorkId::PreliminaryGlyphOrder => dir.join("glyph_order.preliminary.yml"),
+            WorkId::GlyphOrder => dir.join("glyph_order.yml"),
+            WorkId::GlobalMetrics => dir.join("global_metrics.yml"),
+            WorkId::Glyph(name) => Paths::glyph_ir_file(dir, name.as_str()),
+            WorkId::Features => dir.join("features.yml"),
+            WorkId::KerningGroups => dir.join("kern_groups.yml"),
+            WorkId::KernInstance(location) => Paths::kern_ir_file(dir, location),
+            WorkId::ColorPalettes => dir.join("colors.yml"),
+            WorkId::PaintGraph => dir.join("paint_graph.yml"),
         }
     }
 }

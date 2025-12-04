@@ -124,8 +124,6 @@ impl Args {
     pub fn flags(&self) -> Flags {
         let mut flags = Flags::default();
 
-        flags.set(Flags::EMIT_IR, self.emit_ir);
-        flags.set(Flags::EMIT_DEBUG, self.emit_debug);
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
         flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
         flags.set(Flags::ERASE_OPEN_CORNERS, self.erase_open_corners);
@@ -134,7 +132,6 @@ impl Args {
             self.decompose_transformed_components,
         );
         flags.set(Flags::DECOMPOSE_COMPONENTS, self.decompose_components);
-        flags.set(Flags::EMIT_TIMING, self.emit_timing);
         flags.set(Flags::KEEP_DIRECTION, self.keep_direction);
         flags.set(Flags::PRODUCTION_NAMES, !self.no_production_names);
 
@@ -196,12 +193,19 @@ impl TryInto<fontc::Args> for Args {
     fn try_into(self) -> Result<fontc::Args, Self::Error> {
         let flags = self.flags();
         let input = self.source()?;
+        let timing_file = self.emit_timing.then(|| self.build_dir.join("threads.svg"));
+        let debug_dir = self.emit_debug.then(|| self.build_dir.clone());
+        let ir_dir = self.emit_ir.then(|| self.build_dir.clone());
         Ok(fontc::Args {
-            build_dir: self.build_dir,
             flags,
             skip_features: self.skip_features,
-            output_file: self.output_file,
+            output_file: self
+                .output_file
+                .or_else(|| Some(self.build_dir.join("font.ttf"))),
             input,
+            timing_file,
+            debug_dir,
+            ir_dir,
         })
     }
 }

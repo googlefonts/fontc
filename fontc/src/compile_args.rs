@@ -10,8 +10,10 @@ use crate::Input;
 pub struct Args {
     pub flags: Flags,
     pub skip_features: bool,
-    pub build_dir: PathBuf,
     pub output_file: Option<PathBuf>,
+    pub timing_file: Option<PathBuf>,
+    pub ir_dir: Option<PathBuf>,
+    pub debug_dir: Option<PathBuf>,
     pub input: Input,
 }
 
@@ -19,15 +21,14 @@ impl Args {
     /// Manually create args for testing
     #[cfg(test)]
     pub fn for_test(build_dir: &std::path::Path, source: &str) -> Args {
-        let input_source = crate::testdata_dir()
-            .join(source)
-            .canonicalize()
-            .unwrap();
+        let input_source = crate::testdata_dir().join(source).canonicalize().unwrap();
         Self {
-            build_dir: build_dir.to_path_buf(),
-            flags: Flags::default() | Flags::EMIT_IR,
+            flags: Flags::default(),
             skip_features: false,
             output_file: Some(build_dir.join("font.ttf")),
+            ir_dir: Some(build_dir.to_path_buf()),
+            debug_dir: None,
+            timing_file: None,
             input: Input::new(&input_source)
                 .unwrap_or_else(|e| panic!("Unable to create input for {input_source:?}: {e}")),
         }
