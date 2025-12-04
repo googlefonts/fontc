@@ -287,9 +287,7 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     }
 
     let vendor = font.vendor_id().unwrap_or(DEFAULT_VENDOR_ID);
-    builder.apply_default_fallbacks(vendor);
-
-    let mut names = builder.into_inner();
+    let mut names = builder.build(vendor);
 
     for (key, lang, value) in font.localized_names() {
         let Some(name_id) = try_name_id(key) else {
