@@ -438,8 +438,8 @@ fn write_debug_glyph_order(debug_dir: &Path, glyphs: &GlyphOrder) {
     let glyph_order_file = debug_dir.join("glyph_order.txt");
     let glyph_order = glyphs.names().map(|g| g.as_str()).collect::<Vec<_>>();
     let glyph_order = glyph_order.join("\n");
-    if let Err(e) = fs::write(glyph_order_file, glyph_order) {
-        log::error!("failed to write glyph order to debug/glyph_order.txt: '{e}'");
+    if let Err(e) = fs::write(&glyph_order_file, glyph_order) {
+        log::error!("failed to write glyph order to {glyph_order_file:?}: '{e}'");
     }
 }
 

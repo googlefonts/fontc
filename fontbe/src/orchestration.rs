@@ -837,15 +837,16 @@ impl PersistentStorage<AnyWorkId> for BePersistentStorage {
             return None;
         }
         let raw_file = File::open(file.clone())
-            .map_err(|e| panic!("Unable to write {file:?} {e}"))
+            .map_err(|e| panic!("Unable to read {file:?} {e}"))
             .unwrap();
         Some(Box::from(BufReader::new(raw_file)))
     }
 
     fn writer(&self, id: &AnyWorkId) -> Box<dyn io::Write> {
-        let Some(dir) = self.dir.as_ref() else {
-            panic!("Write requested with no output dir");
-        };
+        let dir = self
+            .dir
+            .as_ref()
+            .expect("Write requested with no output dir");
         let file = Paths::target_file(dir, id.unwrap_be());
         let raw_file = File::create(file.clone())
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
