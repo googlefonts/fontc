@@ -234,15 +234,28 @@ pub fn write_font_file(options: &Options, be_context: &BeContext) -> Result<(), 
     let Some(output_file) = options.output_file.as_ref() else {
         return Ok(());
     };
-    // The IR for the Font work is the font so we might have already done this
-    // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
-    if options.ir_dir.is_none() {
-        fs::write(output_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
-            path: output_file.clone(),
-            source,
-        })?;
-    } else if !output_file.exists() {
-        return Err(Error::FileExpected(output_file.clone()));
+    let ir_font_path = options
+        .ir_dir
+        .as_ref()
+        .map(|d| fontbe::paths::Paths::target_file(d, &fontbe::orchestration::WorkId::Font));
+    match ir_font_path {
+        Some(ref ir_path) if ir_path != output_file => {
+            // IR enabled with custom output path: move from IR location
+            fs::rename(ir_path, output_file).map_err(|source| Error::FileIo {
+                path: output_file.clone(),
+                source,
+            })?;
+        }
+        None => {
+            // No IR: write from memory
+            fs::write(output_file, be_context.font.get().get()).map_err(|source| {
+                Error::FileIo {
+                    path: output_file.clone(),
+                    source,
+                }
+            })?;
+        }
+        _ => {} // IR path == output_file, already written by persistence
     }
     Ok(())
 }
