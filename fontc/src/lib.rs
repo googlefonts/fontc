@@ -1,6 +1,5 @@
 //! A font compiler with aspirations of being fast and safe.
 
-mod compile_args;
 mod error;
 #[cfg(not(feature = "rayon"))]
 mod norayon;
@@ -8,7 +7,6 @@ mod timing;
 pub mod work;
 mod workload;
 
-pub use compile_args::Args;
 pub use error::Error;
 
 pub use fontir::orchestration::Flags; // Re-export for library users
@@ -86,20 +84,42 @@ impl TryFrom<&Path> for Input {
     }
 }
 
-/// Run the compiler with the provided arguments
+/// Options for font compilation.
+///
+/// Configures how the font is compiled (flags, output paths, etc.)
+/// but not *what* is compiled (that's the [`Input`] or [`Source`]).
+#[derive(Debug, Default)]
+pub struct Options {
+    pub flags: Flags,
+    pub skip_features: bool,
+    pub output_file: Option<PathBuf>,
+    pub timing_file: Option<PathBuf>,
+    pub ir_dir: Option<PathBuf>,
+    pub debug_dir: Option<PathBuf>,
+}
+
+/// Run the compiler with the provided input and options.
 ///
 /// This is the main entry point for the fontc command line utility.
+///
+/// # Errors
+///
+/// Returns [`Error::NoOutputFile`] if `options.output_file` is `None`.
 #[cfg(feature = "cli")]
-pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
+pub fn run(input: Input, options: Options, mut timer: JobTimer) -> Result<(), Error> {
+    if options.output_file.is_none() {
+        return Err(Error::NoOutputFile);
+    }
+
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
         .run();
-
+    let source = input.create_source()?;
     timer.add(time.complete());
 
-    let (_fe_root, be_root, mut timer) = generate_font_internal(&args, timer)?;
+    let (_fe_root, be_root, mut timer) = generate_font_internal(source, &options, timer)?;
 
-    if let Some(timing_file) = args.timing_file.as_ref() {
+    if let Some(timing_file) = options.timing_file.as_ref() {
         let out_file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -117,7 +137,7 @@ pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
     }
 
     // At long last!
-    write_font_file(&args, &be_root)
+    write_font_file(&options, &be_root)
 }
 
 /// Merges CLI flags with source-derived compilation flags.
@@ -131,27 +151,34 @@ fn merge_compilation_flags(cli_flags: Flags, source: &dyn Source) -> Flags {
 /// Run and return an OpenType font
 ///
 /// This is the library entry point to fontc.
-pub fn generate_font(args: Args) -> Result<Vec<u8>, Error> {
-    let (_fe_root, be_root, _timer) = generate_font_internal(&args, JobTimer::default())?;
+/// The font is returned as bytes and `output_file` is ignored.
+pub fn generate_font(source: Box<dyn Source>, options: Options) -> Result<Vec<u8>, Error> {
+    let (_fe_root, be_root, _timer) =
+        generate_font_internal(source, &options, JobTimer::default())?;
     Ok(be_root.font.get().get().to_vec())
 }
 
 fn generate_font_internal(
-    args: &Args,
+    source: Box<dyn Source>,
+    options: &Options,
     mut timer: JobTimer,
 ) -> Result<(FeContext, BeContext, JobTimer), Error> {
-    debug!("Running with args {args:#?}");
+    debug!("Running with options {options:#?}");
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .run();
-    init_paths(args)?;
+    init_paths(options)?;
     timer.add(time.complete());
 
-    let source = args.input.create_source()?;
-    let flags = merge_compilation_flags(args.flags, &*source);
-    let workload = Workload::new(source, timer, args.skip_features)?;
-    let fe_root = FeContext::new_root(flags, args.ir_dir.clone());
-    let be_root = BeContext::new_root(flags, args.ir_dir.clone(), args.debug_dir.clone(), &fe_root);
+    let flags = merge_compilation_flags(options.flags, &*source);
+    let workload = Workload::new(source, timer, options.skip_features)?;
+    let fe_root = FeContext::new_root(flags, options.ir_dir.clone());
+    let be_root = BeContext::new_root(
+        flags,
+        options.ir_dir.clone(),
+        options.debug_dir.clone(),
+        &fe_root,
+    );
     let timer = workload.exec(&fe_root, &be_root)?;
     Ok((fe_root, be_root, timer))
 }
@@ -176,40 +203,40 @@ pub fn require_dir(dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn init_paths(args: &Args) -> Result<(), Error> {
+pub fn init_paths(options: &Options) -> Result<(), Error> {
     // create the output file's parent directory if it doesn't exist
-    if let Some(output_file) = args.output_file.as_ref()
+    if let Some(output_file) = options.output_file.as_ref()
         && let Some(parent) = output_file.parent()
     {
         require_dir(parent)?;
     }
 
-    if let Some(ir_dir) = args.ir_dir.as_ref() {
+    if let Some(ir_dir) = options.ir_dir.as_ref() {
         require_dir(&fontir::paths::Paths::anchor_ir_dir(ir_dir))?;
         require_dir(&fontir::paths::Paths::glyph_ir_dir(ir_dir))?;
         require_dir(&fontbe::paths::Paths::glyph_dir(ir_dir))?;
     }
     // It's confusing to have leftover debug files
-    if let Some(debug_dir) = args.debug_dir.as_ref() {
+    if let Some(debug_dir) = options.debug_dir.as_ref() {
         fs::remove_dir_all(debug_dir).map_err(|source| Error::FileIo {
             path: debug_dir.clone(),
             source,
         })?;
     }
-    if let Some(debug_dir) = args.debug_dir.as_ref() {
+    if let Some(debug_dir) = options.debug_dir.as_ref() {
         require_dir(debug_dir)?;
     }
     Ok(())
 }
 
-pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
+pub fn write_font_file(options: &Options, be_context: &BeContext) -> Result<(), Error> {
     // Not much to do if no output file is desired
-    let Some(output_file) = args.output_file.as_ref() else {
+    let Some(output_file) = options.output_file.as_ref() else {
         return Ok(());
     };
     // The IR for the Font work is the font so we might have already done this
     // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
-    if args.ir_dir.is_none() {
+    if options.ir_dir.is_none() {
         fs::write(output_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
             path: output_file.clone(),
             source,
@@ -308,33 +335,48 @@ mod tests {
         fe_context: FeContext,
         be_context: BeContext,
         raw_font: Vec<u8>,
-        args: Args,
+        options: Options,
         workload: Workload,
     }
 
+    impl Options {
+        /// Create test options with default settings
+        fn for_test(build_dir: &Path) -> Options {
+            Options {
+                flags: Flags::default(),
+                skip_features: false,
+                output_file: Some(build_dir.join("font.ttf")),
+                ir_dir: Some(build_dir.to_path_buf()),
+                debug_dir: None,
+                timing_file: None,
+            }
+        }
+    }
+
     impl TestCompile {
-        fn new(source: &str, adjust_args: impl Fn(Args) -> Args) -> TestCompile {
+        fn new(source_file: &str, adjust_options: impl Fn(Options) -> Options) -> TestCompile {
             let timer = JobTimer::new();
             let _ = env_logger::builder().is_test(true).try_init();
 
             let temp_dir = tempdir().unwrap();
-            let args = adjust_args(Args::for_test(temp_dir.path(), source));
+            let options = adjust_options(Options::for_test(temp_dir.path()));
 
-            info!("Compile {args:?}");
+            info!("Compile {options:?}");
 
-            let input = args.input.create_source().unwrap();
-            let flags = merge_compilation_flags(args.flags, &*input);
+            let input = Input::new(&testdata_dir().join(source_file)).unwrap();
+            let source = input.create_source().unwrap();
+            let flags = merge_compilation_flags(options.flags, &*source);
 
-            init_paths(&args).unwrap();
+            init_paths(&options).unwrap();
 
-            let fe_context = FeContext::new_root(flags, args.ir_dir.clone());
+            let fe_context = FeContext::new_root(flags, options.ir_dir.clone());
             let be_context = BeContext::new_root(
                 flags,
-                args.ir_dir.clone(),
-                args.debug_dir.clone(),
+                options.ir_dir.clone(),
+                options.debug_dir.clone(),
                 &fe_context.read_only(),
             );
-            let workload = Workload::new(input, timer, args.skip_features).unwrap();
+            let workload = Workload::new(source, timer, options.skip_features).unwrap();
 
             TestCompile {
                 temp: temp_dir,
@@ -342,7 +384,7 @@ mod tests {
                 fe_context,
                 be_context,
                 raw_font: Vec::new(),
-                args,
+                options,
                 workload,
             }
         }
@@ -354,17 +396,17 @@ mod tests {
 
             self.work_executed = completed;
 
-            write_font_file(&self.args, &self.be_context).unwrap();
+            write_font_file(&self.options, &self.be_context).unwrap();
 
             self.raw_font = self.be_context.font.get().get().to_vec();
         }
 
         fn compile_source(source: &str) -> TestCompile {
-            TestCompile::compile(source, |args| args)
+            TestCompile::compile(source, |options| options)
         }
 
-        fn compile(source: &str, adjust_args: impl Fn(Args) -> Args) -> TestCompile {
-            let mut result = Self::new(source, adjust_args);
+        fn compile(source: &str, adjust_options: impl Fn(Options) -> Options) -> TestCompile {
+            let mut result = Self::new(source, adjust_options);
             result.run();
             result
         }
@@ -558,9 +600,9 @@ mod tests {
 
     fn assert_compiles_with_gpos_and_gsub(
         source: &str,
-        adjust_args: impl Fn(Args) -> Args,
+        adjust_options: impl Fn(Options) -> Options,
     ) -> TestCompile {
-        let result = TestCompile::compile(source, adjust_args);
+        let result = TestCompile::compile(source, adjust_options);
 
         let font = result.font();
 
@@ -575,12 +617,12 @@ mod tests {
     }
     #[test]
     fn compile_fea() {
-        assert_compiles_with_gpos_and_gsub("static.designspace", |a| a);
+        assert_compiles_with_gpos_and_gsub("static.designspace", |o| o);
     }
 
     #[test]
     fn compile_fea_with_includes() {
-        assert_compiles_with_gpos_and_gsub("fea_include.designspace", |a| a);
+        assert_compiles_with_gpos_and_gsub("fea_include.designspace", |o| o);
     }
 
     #[test]
@@ -2140,10 +2182,7 @@ mod tests {
 
         // Compile and observe we are not vertical
         src.push("SingleModelDirect.designspace");
-        let mut result = TestCompile::new(src.to_str().unwrap(), |mut args| {
-            args.input = Input::DesignSpacePath(src.clone());
-            args
-        });
+        let mut result = TestCompile::new(src.to_str().unwrap(), |o| o);
         result.run();
 
         assert!(
@@ -4682,7 +4721,7 @@ mod tests {
     #[test]
     fn glyf_loca_work_waits_for_dynamic_notdef() {
         // https://github.com/googlefonts/fontc/issues/1436
-        let mut test = TestCompile::new("static.designspace", |args| args);
+        let mut test = TestCompile::new("static.designspace", |options| options);
 
         // Check that GlyfLocaWork starts with an unknown dependency, blocking it from running.
         let glyf_loca_job = test

@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser};
-use fontc::Input;
+use fontc::{Input, Options};
 use fontir::orchestration::Flags;
 
 use regex::Regex;
@@ -187,22 +187,20 @@ impl Serialize for ValidatedRegex {
     }
 }
 
-impl TryInto<fontc::Args> for Args {
+impl TryInto<Options> for Args {
     type Error = Error;
 
-    fn try_into(self) -> Result<fontc::Args, Self::Error> {
+    fn try_into(self) -> Result<Options, Self::Error> {
         let flags = self.flags();
-        let input = self.source()?;
         let timing_file = self.emit_timing.then(|| self.build_dir.join("threads.svg"));
         let debug_dir = self.emit_debug.then(|| self.build_dir.clone());
         let ir_dir = self.emit_ir.then(|| self.build_dir.clone());
-        Ok(fontc::Args {
+        Ok(Options {
             flags,
             skip_features: self.skip_features,
             output_file: self
                 .output_file
                 .or_else(|| Some(self.build_dir.join("font.ttf"))),
-            input,
             timing_file,
             debug_dir,
             ir_dir,
@@ -215,7 +213,7 @@ mod tests {
     use clap::Parser;
     use fontir::orchestration::Flags;
 
-    use crate::cli_args::Args;
+    use crate::args::Args;
 
     // It's awkward to get the Flags::default values into #[arg] so test for consistency
     #[test]
