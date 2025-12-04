@@ -216,14 +216,7 @@ pub fn init_paths(options: &Options) -> Result<(), Error> {
         require_dir(&fontir::paths::Paths::glyph_ir_dir(ir_dir))?;
         require_dir(&fontbe::paths::Paths::glyph_dir(ir_dir))?;
     }
-    // It's confusing to have leftover debug files
     if let Some(debug_dir) = options.debug_dir.as_ref() {
-        if debug_dir.is_dir() {
-            fs::remove_dir_all(debug_dir).map_err(|source| Error::FileIo {
-                path: debug_dir.clone(),
-                source,
-            })?;
-        }
         require_dir(debug_dir)?;
     }
     Ok(())
