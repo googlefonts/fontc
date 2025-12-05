@@ -193,7 +193,7 @@ impl TryInto<Options> for Args {
     fn try_into(self) -> Result<Options, Self::Error> {
         let flags = self.flags();
         let timing_file = self.emit_timing.then(|| self.build_dir.join("threads.svg"));
-        let debug_dir = self.emit_debug.then(|| self.build_dir.clone());
+        let debug_dir = self.emit_debug.then(|| self.build_dir.join("debug/"));
         let ir_dir = self.emit_ir.then(|| self.build_dir.clone());
         Ok(Options {
             flags,
