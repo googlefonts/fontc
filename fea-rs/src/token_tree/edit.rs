@@ -1,6 +1,4 @@
 //! facilities for editing the AST.
-//!
-//! This is currently unused.
 
 #![allow(dead_code)]
 use std::ops::Range;
@@ -19,7 +17,9 @@ pub(crate) fn apply_edits(
     let mut builder = TreeBuilder::default();
     let mut cursor = base.cursor();
     apply_edits_recurse(&mut cursor, &mut builder, &mut edits, skip_parent);
-    builder.finish()
+    let mut new_tree = builder.finish();
+    new_tree.update_positions_from_root();
+    new_tree
 }
 
 fn apply_edits_recurse(
