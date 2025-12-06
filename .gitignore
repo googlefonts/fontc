@@ -4,6 +4,8 @@ Cargo.lock
 .venv/
 venv/
 .vscode/
-
 .DS_Store
 
+flamegraph.svg
+perf.data
+perf.data.old
