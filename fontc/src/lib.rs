@@ -88,7 +88,7 @@ impl TryFrom<&Path> for Input {
 ///
 /// Configures how the font is compiled (flags, output paths, etc.)
 /// but not *what* is compiled (that's the [`Input`] or [`Source`]).
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Options {
     pub flags: Flags,
     /// Flags to explicitly disable, overriding source defaults (tri-state).
@@ -98,6 +98,20 @@ pub struct Options {
     pub timing_file: Option<PathBuf>,
     pub ir_dir: Option<PathBuf>,
     pub debug_dir: Option<PathBuf>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            flags: Flags::default(),
+            flags_to_disable: Flags::empty(), // Must be empty, not default!
+            skip_features: false,
+            output_file: None,
+            timing_file: None,
+            ir_dir: None,
+            debug_dir: None,
+        }
+    }
 }
 
 /// Run the compiler with the provided input and options.
