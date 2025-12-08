@@ -84,34 +84,58 @@ impl TryFrom<&Path> for Input {
     }
 }
 
+/// Flags to explicitly disable, overriding source defaults.
+///
+/// Defaults to empty (no flags disabled).
+#[derive(Debug, Clone, Copy)]
+pub struct DisableFlags(Flags);
+
+impl Default for DisableFlags {
+    fn default() -> Self {
+        DisableFlags(Flags::empty())
+    }
+}
+
+impl DisableFlags {
+    /// Returns an empty set of flags to disable.
+    pub fn empty() -> Self {
+        DisableFlags(Flags::empty())
+    }
+
+    /// Returns true if no flags are set to be disabled.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl From<Flags> for DisableFlags {
+    fn from(flags: Flags) -> Self {
+        DisableFlags(flags)
+    }
+}
+
+impl std::ops::Not for DisableFlags {
+    type Output = Flags;
+
+    fn not(self) -> Flags {
+        !self.0
+    }
+}
+
 /// Options for font compilation.
 ///
 /// Configures how the font is compiled (flags, output paths, etc.)
 /// but not *what* is compiled (that's the [`Input`] or [`Source`]).
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Options {
     pub flags: Flags,
     /// Flags to explicitly disable, overriding source defaults (tri-state).
-    pub flags_to_disable: Flags,
+    pub flags_to_disable: DisableFlags,
     pub skip_features: bool,
     pub output_file: Option<PathBuf>,
     pub timing_file: Option<PathBuf>,
     pub ir_dir: Option<PathBuf>,
     pub debug_dir: Option<PathBuf>,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            flags: Flags::default(),
-            flags_to_disable: Flags::empty(), // Must be empty, not default!
-            skip_features: false,
-            output_file: None,
-            timing_file: None,
-            ir_dir: None,
-            debug_dir: None,
-        }
-    }
 }
 
 /// Run the compiler with the provided input and options.

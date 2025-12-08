@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser};
-use fontc::{Input, Options};
+use fontc::{DisableFlags, Input, Options};
 use fontir::orchestration::Flags;
 
 use regex::Regex;
@@ -152,7 +152,7 @@ impl Args {
     /// - `None` = use source default
     /// - `Some(true)` = force enable (handled in `flags()`)
     /// - `Some(false)` = force disable (returned here)
-    pub fn flags_to_disable(&self) -> Flags {
+    pub fn flags_to_disable(&self) -> DisableFlags {
         let mut disable = Flags::empty();
         if self.flatten_components == Some(false) {
             disable.set(Flags::FLATTEN_COMPONENTS, true);
@@ -161,7 +161,7 @@ impl Args {
             disable.set(Flags::ERASE_OPEN_CORNERS, true);
         }
         // TODO: add PROPAGATE_ANCHORS flag when we have that implemented
-        disable
+        disable.into()
     }
 
     /// The input source to compile.
