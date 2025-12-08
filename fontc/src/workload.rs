@@ -2,6 +2,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    num::NonZeroUsize,
     panic::AssertUnwindSafe,
     sync::{
         Arc, Mutex,
@@ -563,7 +564,12 @@ impl Workload {
         counters
     }
 
-    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
+    pub fn exec(
+        mut self,
+        num_threads: Option<NonZeroUsize>,
+        fe_root: &FeContext,
+        be_root: &BeContext,
+    ) -> Result<JobTimer, Error> {
         // Async work will send us it's ID on completion
         let (send, recv) =
             crossbeam_channel::unbounded::<(AnyWorkId, Result<(), Error>, JobTime)>();
@@ -742,13 +748,25 @@ impl Workload {
         {
             // use an explicit threadpool to avoid possible congestion if another
             // library we use is using the global threadpool
+
             let tp = rayon::ThreadPoolBuilder::new()
+                .num_threads(
+                    num_threads
+                        .map(NonZeroUsize::get)
+                        .unwrap_or(num_cpus::get_physical()),
+                )
                 .build()
                 .expect("couldn't build threadpool");
+            log::info!("Executing with {} threads.", tp.current_num_threads());
             tp.in_place_scope(runner)?;
         }
         #[cfg(not(feature = "rayon"))]
         {
+            if let Some(n) = num_threads {
+                log::warn!(
+                    "Ignoring request for {n} threads. fontc was not compiled with multithreading support."
+                );
+            }
             let scope = Scope;
             runner(&scope)?;
         }

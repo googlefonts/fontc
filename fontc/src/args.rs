@@ -1,6 +1,6 @@
 //! Command line arguments
 
-use std::path::PathBuf;
+use std::{num::NonZeroUsize, path::PathBuf};
 
 use clap::{ArgAction, Parser};
 use fontc::{Input, Options};
@@ -110,6 +110,10 @@ pub struct Args {
     /// See <https://docs.rs/env_logger/latest/env_logger/#enabling-logging> for format.
     #[arg(long)]
     pub log: Option<String>,
+
+    /// The number of threads to use for processing or 0 to use the number of physical CPU cores.
+    #[arg(long, default_value = "0")]
+    pub num_threads: usize,
 }
 
 /// A wrapper around a validated regex string
@@ -195,6 +199,7 @@ impl TryInto<Options> for Args {
         let timing_file = self.emit_timing.then(|| self.build_dir.join("threads.svg"));
         let debug_dir = self.emit_debug.then(|| self.build_dir.join("debug/"));
         let ir_dir = self.emit_ir.then(|| self.build_dir.clone());
+        let num_threads = NonZeroUsize::new(self.num_threads);
         Ok(Options {
             flags,
             skip_features: self.skip_features,
@@ -204,6 +209,7 @@ impl TryInto<Options> for Args {
             timing_file,
             debug_dir,
             ir_dir,
+            num_threads,
         })
     }
 }

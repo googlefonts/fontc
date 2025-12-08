@@ -18,6 +18,7 @@ required-features = ["cli"]
 [features]
 default = ["cli", "rayon"]
 cli = ["clap"]
+rayon = ["dep:rayon", "num_cpus"]
 
 [dependencies]
 fontdrasil = { version = "0.4.0", path = "../fontdrasil" }
@@ -41,6 +42,7 @@ regex.workspace = true
 
 write-fonts.workspace = true
 rayon = { workspace = true, optional = true }
+num_cpus = { version = ">=1.17.0", optional = true }
 
 # just for fontc!
 crossbeam-channel = "0.5.6"

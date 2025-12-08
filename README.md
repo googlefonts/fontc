@@ -27,7 +27,7 @@ Two main reasons:
 1. A key part of Google Fonts technical strategy is to get off both Python and C++, consolidating on Rust
    * Rust enables us to write fast code that integrates well with our serving stack
    * See https://github.com/googlefonts/oxidize
-  
+
 So, Rust compiler time!
 
 ![image](https://github.com/googlefonts/fontc/assets/6466432/669778a7-5efa-43f8-8380-2f71bfc49f3f)
@@ -202,7 +202,7 @@ $ rm -rf build/ perf.data flamegraph.svg && cargo flamegraph -p fontc -- ../Oswa
 
 # On macOS you might have to pass `--root` to cargo flamegraph, e.g. cargo flamegraph --root ...as above...
 
-# If you are losing samples you might want to dial down the rayon threadcount
+# If you are losing samples you might want to dial down the threadcount
 # You'll see a perf error similar to:
 Warning:
 Processed 5114 events and lost 159 chunks!
@@ -213,7 +213,7 @@ Warning:
 Processed 5116 samples and lost 35.01%!
 
 # Fix is to lower the threadcount:
-$ export RAYON_NUM_THREADS=16
+$ <cmd...> --num-threads=16
 ```
 
 ### Focused flames

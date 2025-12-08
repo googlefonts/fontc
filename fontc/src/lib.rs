@@ -20,6 +20,7 @@ use fontbe::orchestration::AnyWorkId;
 use std::{
     ffi::OsStr,
     fs,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
 };
 
@@ -96,6 +97,7 @@ pub struct Options {
     pub timing_file: Option<PathBuf>,
     pub ir_dir: Option<PathBuf>,
     pub debug_dir: Option<PathBuf>,
+    pub num_threads: Option<NonZeroUsize>,
 }
 
 /// Run the compiler with the provided input and options.
@@ -179,7 +181,7 @@ fn generate_font_internal(
         options.debug_dir.clone(),
         &fe_root,
     );
-    let timer = workload.exec(&fe_root, &be_root)?;
+    let timer = workload.exec(options.num_threads, &fe_root, &be_root)?;
     Ok((fe_root, be_root, timer))
 }
 
