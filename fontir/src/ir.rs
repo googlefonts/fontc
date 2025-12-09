@@ -1916,6 +1916,7 @@ impl GlyphInstance {
             .map(|(comp, coeffs)| Component {
                 base: comp.base.clone(),
                 transform: Affine::new(coeffs.try_into().unwrap()),
+                anchor: comp.anchor.clone(),
             })
             .collect();
 
@@ -1994,9 +1995,48 @@ pub struct Component {
     pub base: GlyphName,
     /// Affine transformation to apply to the referenced glyph.
     pub transform: Affine,
+    /// Explicit anchor for mark component attachment.
+    ///
+    /// In Glyphs.app, when a base glyph has multiple anchors with the same
+    /// prefix (e.g., `top`, `top_1`, `top_alt`), users can select which one
+    /// a component with matching mark anchor (e.g. `_top`) should attach to.
+    /// Two common scenarios are:
+    ///
+    /// 1. **Ligature numbered anchors**: A ligature like `f_i` has `top_1` and
+    ///    `top_2`. Setting `component.anchor = "top_2"` attaches to the second letter.
+    ///
+    /// 2. **Alternative anchors**: A base may have `top` and `top_alt` (e.g.,
+    ///    for Vietnamese diacritics). Setting `anchor = "top_alt"` uses that.
+    ///
+    /// **Note**: This field is only used during anchor propagation to rename
+    /// the mark's stacking anchor (e.g., `top` → `top_2`). We do *not* use it
+    /// for automatic component alignment, as that positioning is already baked into
+    /// the [`transform`](Self::transform) by the font editor.
+    ///
+    /// See: <https://handbook.glyphsapp.com/components/#reusing-shapes/anchors>
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<SmolStr>,
 }
 
 impl Component {
+    /// Create a regular component (no specific attachment anchor).
+    pub fn new(base: GlyphName, transform: Affine) -> Self {
+        Self {
+            base,
+            transform,
+            anchor: None,
+        }
+    }
+
+    /// Create a component with an explicit attachment anchor.
+    pub fn with_anchor(base: GlyphName, transform: Affine, anchor: SmolStr) -> Self {
+        Self {
+            base,
+            transform,
+            anchor: Some(anchor),
+        }
+    }
+
     pub(crate) fn has_nonidentity_2x2(&self) -> bool {
         self.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0]
     }
@@ -2513,10 +2553,7 @@ mod tests {
         path2.close_path();
 
         let contours = vec![path1, path2];
-        let components = vec![Component {
-            base: "derp".into(),
-            transform: Affine::IDENTITY,
-        }];
+        let components = vec![Component::new("derp".into(), Affine::IDENTITY)];
 
         let instance = GlyphInstance {
             width: 600.,

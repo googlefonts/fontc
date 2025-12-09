@@ -63,10 +63,8 @@ fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Gly
     let mut composite_glyph = GlyphBuilder::from(original.clone());
     composite_glyph.sources.iter_mut().for_each(|(_, inst)| {
         inst.contours.clear();
-        inst.components.push(Component {
-            base: simple_glyph_name.clone(),
-            transform: Affine::IDENTITY,
-        });
+        inst.components
+            .push(Component::new(simple_glyph_name.clone(), Affine::IDENTITY));
     });
 
     Ok((simple_glyph.build()?, composite_glyph.build()?))
@@ -550,6 +548,7 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
                     frontier.push_front(Component {
                         base: ref_component.base.clone(),
                         transform: component.transform * ref_component.transform,
+                        anchor: ref_component.anchor.clone(),
                     });
                 }
             }
@@ -961,10 +960,10 @@ mod tests {
 
     fn component_instance() -> GlyphInstance {
         GlyphInstance {
-            components: vec![Component {
-                base: "component".into(),
-                transform: Affine::translate((3.0, 3.0)),
-            }],
+            components: vec![Component::new(
+                "component".into(),
+                Affine::translate((3.0, 3.0)),
+            )],
             ..Default::default()
         }
     }
@@ -1539,11 +1538,9 @@ mod tests {
 
         fn add_component(&mut self, name: &str, xform: impl AffineLike) -> &mut Self {
             assert_eq!(self.0.sources().len(), 1, "expects non-variable glyph");
-            let component = Component {
-                base: name.into(),
-                transform: xform.to_affine(),
-            };
-            self.default_instance_mut().components.push(component);
+            self.default_instance_mut()
+                .components
+                .push(Component::new(name.into(), xform.to_affine()));
             self
         }
 
@@ -1571,10 +1568,7 @@ mod tests {
                     .entry((*loc).clone())
                     .or_default()
                     .components
-                    .push(Component {
-                        base: name.into(),
-                        transform: *xform,
-                    });
+                    .push(Component::new(name.into(), *xform));
             }
             self
         }
@@ -1585,10 +1579,7 @@ mod tests {
             let instance = GlyphInstance {
                 components: components
                     .into_iter()
-                    .map(|name| Component {
-                        base: name.into(),
-                        transform: Default::default(),
-                    })
+                    .map(|name| Component::new(name.into(), Default::default()))
                     .collect(),
                 ..Default::default()
             };
@@ -2231,10 +2222,9 @@ mod tests {
     #[case::negative_under_minus_2(-2.5, true)]
     fn glyph_has_overflowing_transforms(#[case] scale: f64, #[case] expected_overflow: bool) {
         let mut instance = GlyphInstance::default();
-        instance.components.push(Component {
-            base: "base".into(),
-            transform: Affine::scale(scale),
-        });
+        instance
+            .components
+            .push(Component::new("base".into(), Affine::scale(scale)));
         let mut sources = HashMap::new();
         sources.insert(NormalizedLocation::default(), instance);
 
