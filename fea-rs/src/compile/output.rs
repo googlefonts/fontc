@@ -104,26 +104,30 @@ impl Compilation {
                 .collect();
         }
 
-        if let Some(gsub) = self.gsub.as_mut() {
-            gsub.feature_list
-                .as_mut()
-                .feature_records
-                .iter_mut()
-                .for_each(|rec| match rec.feature.as_mut().feature_params.as_mut() {
-                    Some(FeatureParams::StylisticSet(params)) => {
-                        params.ui_name_id = adjust_id(params.ui_name_id);
-                    }
-                    Some(FeatureParams::CharacterVariant(params)) => {
-                        params.feat_ui_label_name_id = adjust_id(params.feat_ui_label_name_id);
-                        params.feat_ui_tooltip_text_name_id =
-                            adjust_id(params.feat_ui_tooltip_text_name_id);
-                        params.sample_text_name_id = adjust_id(params.sample_text_name_id);
-                        params.first_param_ui_label_name_id =
-                            adjust_id(params.first_param_ui_label_name_id);
-                    }
-                    _ => (),
-                });
-        }
+        self.gsub
+            .as_mut()
+            .into_iter()
+            .flat_map(|t| t.feature_list.feature_records.iter_mut())
+            .chain(
+                self.gpos
+                    .as_mut()
+                    .into_iter()
+                    .flat_map(|t| t.feature_list.feature_records.iter_mut()),
+            )
+            .for_each(|rec| match rec.feature.as_mut().feature_params.as_mut() {
+                Some(FeatureParams::StylisticSet(params)) => {
+                    params.ui_name_id = adjust_id(params.ui_name_id);
+                }
+                Some(FeatureParams::CharacterVariant(params)) => {
+                    params.feat_ui_label_name_id = adjust_id(params.feat_ui_label_name_id);
+                    params.feat_ui_tooltip_text_name_id =
+                        adjust_id(params.feat_ui_tooltip_text_name_id);
+                    params.sample_text_name_id = adjust_id(params.sample_text_name_id);
+                    params.first_param_ui_label_name_id =
+                        adjust_id(params.first_param_ui_label_name_id);
+                }
+                _ => (),
+            });
         if let Some(stat) = self.stat.as_mut() {
             stat.elided_fallback_name_id = stat
                 .elided_fallback_name_id

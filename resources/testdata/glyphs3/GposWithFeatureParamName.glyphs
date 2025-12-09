@@ -1,0 +1,51 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+familyName = GposWithFeatureParamName;
+customParameters = (
+{
+name = "Name Table Entry";
+value = "256 3 1 0x409; this should collide with first assigned name value";
+},
+);
+
+features = (
+{
+code = "pos a b 420;";
+labels = (
+{
+language = dflt;
+value = "An extremely stylish set";
+}
+);
+tag = ss01;
+},
+);
+fontMaster = (
+{
+id = master01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+layerId = master01;
+}
+);
+unicode = 97;
+},
+{
+glyphname = b;
+layers = (
+{
+layerId = master01;
+}
+);
+unicode = 98;
+}
+);
+unitsPerEm = 1000;
+}
