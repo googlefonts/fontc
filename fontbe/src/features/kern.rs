@@ -47,7 +47,7 @@ use super::{DFLT_LANG, DFLT_SCRIPT, PendingLookup, properties::CharMap};
 
 /// On Linux it took ~0.01 ms per loop, try to get enough to make fan out worthwhile
 /// based on empirical testing
-const KERNS_PER_BLOCK: usize = 2048;
+const KERNS_PER_BLOCK: usize = 256;
 const KERN: Tag = Tag::new(b"kern");
 // we don't currently compile this feature, but we will, and it is referenced
 // in places because our impl is based on fonttools.
