@@ -187,7 +187,7 @@ fn anchors_traversing_components(
         // Get the anchors for this component at this location.
         // Because we process dependencies first we know that all components
         // referenced have already been propagated.
-        let Some(anchors) = done_anchors
+        let Some(mut anchors) = done_anchors
             .get(&(component.base.clone(), location.clone()))
             .cloned()
         else {
@@ -204,6 +204,11 @@ fn anchors_traversing_components(
             continue;
         };
 
+        // If this component has an explicitly set attachment anchor, use it.
+        // Only applies to non-first components (component_idx > 0).
+        if let Some(comp_anchor) = component.anchor.as_ref().filter(|_| component_idx > 0) {
+            maybe_rename_component_anchor(comp_anchor, &mut anchors);
+        }
 
         // Get the number of base glyphs in this component (for ligature anchor numbering)
         let component_number_of_base_glyphs = base_glyph_counts
@@ -414,6 +419,33 @@ fn rename_anchor_for_scale(name: &SmolStr, scale: Vec2) -> SmolStr {
     SmolStr::from(name)
 }
 
+/// Rename a component's stacking anchor to match an explicit attachment anchor.
+///
+/// When `comp_anchor` is e.g. "top_2" or "top_alt", this renames the component's
+/// "top" anchor to match (if the component has both "top" and "_top" anchors).
+/// This ensures proper stacking when a mark is attached to a specific anchor.
+///
+/// Two common scenarios:
+/// - **Ligature**: `comp_anchor = "top_2"` => rename `top` to `top_2`
+/// - **Alternative**: `comp_anchor = "top_alt"` => rename `top` to `top_alt`
+///
+/// See: <https://handbook.glyphsapp.com/components/#reusing-shapes/anchors>
+fn maybe_rename_component_anchor(comp_anchor: &SmolStr, anchors: &mut [RawAnchor]) {
+    // e.g., comp_anchor = "top_2" or "top_alt" => sub_name = "top"
+    let Some((sub_name, _)) = comp_anchor.as_str().split_once('_') else {
+        return;
+    };
+    let mark_name = format_smolstr!("_{sub_name}");
+
+    // Only rename if the component has both the base anchor (e.g., "top")
+    // and the mark anchor (e.g., "_top"): i.e., it can both attach and stack
+    if anchors.iter().any(|a| a.name == sub_name)
+        && anchors.iter().any(|a| a.name == mark_name)
+        && let Some(anchor) = anchors.iter_mut().find(|a| a.name == sub_name)
+    {
+        anchor.name = comp_anchor.clone();
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -521,7 +553,7 @@ mod tests {
                 for (base, x, y) in components {
                     instance
                         .components
-                        .push(Component { base: (*base).into(), transform: Affine::translate((*x, *y)) });
+                        .push(Component::new((*base).into(), Affine::translate((*x, *y))));
                 }
                 sources.insert(loc.clone(), instance);
             }
@@ -591,10 +623,11 @@ mod tests {
 
             // Create glyph instance with components
             let mut instance = GlyphInstance::default();
-            for (base, transform) in &glyph.components {
+            for (base, transform, anchor) in &glyph.components {
                 instance.components.push(Component {
                     base: base.clone(),
                     transform: *transform,
+                    anchor: anchor.clone(),
                 });
             }
 
@@ -630,8 +663,8 @@ mod tests {
     struct GlyphBuilder {
         name: GlyphName,
         anchors: Vec<(SmolStr, Point)>,
-        /// Components: (base_name, transform)
-        components: Vec<(GlyphName, Affine)>,
+        /// Components: (base_name, transform, component_anchor)
+        components: Vec<(GlyphName, Affine, Option<SmolStr>)>,
         category: Option<GlyphClassDef>,
     }
 
@@ -642,15 +675,23 @@ mod tests {
         }
 
         fn add_component(&mut self, base: &str, transform: Affine) -> &mut Self {
-            self.components.push((base.into(), transform));
+            self.components.push((base.into(), transform, None));
             self
         }
 
         fn add_component_at(&mut self, base: &str, pos: (f64, f64)) -> &mut Self {
-            self.components.push((base.into(), Affine::translate(pos)));
+            self.components
+                .push((base.into(), Affine::translate(pos), None));
             self
         }
 
+        /// Set component.anchor for the last added component
+        fn set_component_anchor(&mut self, anchor: &str) -> &mut Self {
+            if let Some(last) = self.components.last_mut() {
+                last.2 = Some(anchor.into());
+            }
+            self
+        }
 
         fn set_category(&mut self, category: GlyphClassDef) -> &mut Self {
             self.category = Some(category);
@@ -1236,4 +1277,118 @@ mod tests {
         assert_anchor_at_loc(&ctx, "Aacute", "top", &loc1, Point::new(300.0, 965.0));
     }
 
+    /// Test explicit component attachment anchors (component.anchor in Glyphs)
+    ///
+    /// When a mark component has an explicit anchor like "top_2", it should:
+    /// 1. Attach to that specific ligature anchor position
+    /// 2. Have its "top" anchor renamed to "top_2" for proper stacking
+    #[test]
+    fn component_anchor() {
+        // Derived from the observed behaviour of glyphs 3.2.2 (3259)
+        let mut builder = GlyphSetBuilder::new(test_context());
+
+        // acutecomb: a mark with both _top (for attachment) and top (for stacking)
+        builder.add_glyph("acutecomb", |glyph| {
+            glyph
+                .add_anchor("_top", (150.0, 580.0))
+                .add_anchor("top", (170.0, 792.0))
+                .set_category(GlyphClassDef::Mark);
+        });
+
+        // aa: a ligature with numbered anchors
+        builder.add_glyph("aa", |glyph| {
+            glyph
+                .add_anchor("bottom_1", (218.0, 8.0))
+                .add_anchor("bottom_2", (742.0, 7.0))
+                .add_anchor("ogonek_1", (398.0, 9.0))
+                .add_anchor("ogonek_2", (902.0, 9.0))
+                .add_anchor("top_1", (227.0, 548.0))
+                .add_anchor("top_2", (746.0, 548.0))
+                .set_category(GlyphClassDef::Ligature);
+        });
+
+        // a_a: simple composite referencing aa
+        builder.add_glyph("a_a", |glyph| {
+            glyph
+                .add_component_at("aa", (0.0, 0.0))
+                .set_category(GlyphClassDef::Ligature);
+        });
+
+        // a_aacute: composite with acutecomb attached to top_2 (second letter)
+        builder.add_glyph("a_aacute", |glyph| {
+            glyph
+                .add_component_at("a_a", (0.0, 0.0))
+                .add_component_at("acutecomb", (596.0, -32.0))
+                .set_component_anchor("top_2") // Attach to top_2, not top_1
+                .set_category(GlyphClassDef::Ligature);
+        });
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        // Expected anchors for a_aacute:
+        // - bottom_1, bottom_2, ogonek_1, ogonek_2, top_1 from aa (via a_a)
+        // - top_2 should be the acutecomb's "top" renamed and transformed
+        //   acutecomb.top (170, 792) + offset (596, -32) = (766, 760)
+        assert_anchor(&ctx, "a_aacute", "bottom_1", Point::new(218.0, 8.0));
+        assert_anchor(&ctx, "a_aacute", "bottom_2", Point::new(742.0, 7.0));
+        assert_anchor(&ctx, "a_aacute", "ogonek_1", Point::new(398.0, 9.0));
+        assert_anchor(&ctx, "a_aacute", "ogonek_2", Point::new(902.0, 9.0));
+        assert_anchor(&ctx, "a_aacute", "top_1", Point::new(227.0, 548.0));
+        // top_2 is replaced by acutecomb's stacking anchor
+        assert_anchor(&ctx, "a_aacute", "top_2", Point::new(766.0, 760.0));
+    }
+
+    /// Test alternative anchor attachment (Vietnamese diacritics scenario)
+    ///
+    /// When a base has multiple anchors like `top` and `top_alt`, a mark can
+    /// be explicitly attached to `top_alt`. The mark's `top` anchor should
+    /// be renamed to `top_alt` for proper stacking.
+    ///
+    /// See: https://handbook.glyphsapp.com/components/#reusing-shapes/anchors
+    #[test]
+    fn component_anchor_alternative() {
+        let mut builder = GlyphSetBuilder::new(test_context());
+
+        // acutecomb: a mark with _top (attachment) and top (stacking)
+        builder.add_glyph("acutecomb", |glyph| {
+            glyph
+                .add_anchor("_top", (150.0, 580.0))
+                .add_anchor("top", (170.0, 792.0))
+                .set_category(GlyphClassDef::Mark);
+        });
+
+        // Acircumflex: base with top (normal) and top_alt (alternative, for Vietnamese)
+        builder.add_glyph("Acircumflex", |glyph| {
+            glyph
+                .add_anchor("top", (300.0, 700.0))
+                .add_anchor("top_alt", (320.0, 720.0))
+                .set_category(GlyphClassDef::Base);
+        });
+
+        // Acircumflexacute: composite using top_alt for the acute
+        // This is U+1EA4, common in Vietnamese
+        builder.add_glyph("Acircumflexacute", |glyph| {
+            glyph
+                .add_component_at("Acircumflex", (0.0, 0.0))
+                .add_component_at("acutecomb", (170.0, 140.0)) // offset to position
+                .set_component_anchor("top_alt")
+                .set_category(GlyphClassDef::Base);
+        });
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        // Expected anchors for Acircumflexacute:
+        // - top from Acircumflex (unchanged, for normal marks)
+        // - top_alt renamed from acutecomb's top, at transformed position
+        //   acutecomb.top (170, 792) + offset (170, 140) = (340, 932)
+        assert_anchor(&ctx, "Acircumflexacute", "top", Point::new(300.0, 700.0));
+        assert_anchor(
+            &ctx,
+            "Acircumflexacute",
+            "top_alt",
+            Point::new(340.0, 932.0),
+        );
+    }
 }
