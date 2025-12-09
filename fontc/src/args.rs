@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser};
-use fontc::{Input, Options};
+use fontc::{DisableFlags, Input, Options};
 use fontir::orchestration::Flags;
 
 use regex::Regex;
@@ -44,17 +44,17 @@ pub struct Args {
     #[arg(long, default_value = "true", action = ArgAction::Set)]
     pub prefer_simple_glyphs: bool,
 
-    /// Eliminate component references to other glyphs using components (that is, nested components),
-    /// emitting only component references to simple (contour) glyphs.
-    #[arg(long, default_value = "false")]
-    pub flatten_components: bool,
-
-    /// Whether to erase open corners (Glyphs-native feature).
+    /// Flatten nested components to reference only simple (contour) glyphs.
     ///
-    /// This is enabled by default for Glyphs sources or when the eraseOpenCorners
-    /// ufo2ft filter is present. This flag can force it on even when not set in the source.
-    #[arg(long, default_value = "false")]
-    pub erase_open_corners: bool,
+    /// Omit to use source default; use =true or =false to override.
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    pub flatten_components: Option<bool>,
+
+    /// Erase open corners (Glyphs-native feature).
+    ///
+    /// Omit to use source default; use =true or =false to override.
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    pub erase_open_corners: Option<bool>,
 
     /// Whether all components with a non-identity 2x2 transform will be converted to outlines.
     // Named to match the ufo2ft flag as suggested in <https://github.com/googlefonts/fontc/pull/480#discussion_r1343801553>
@@ -125,8 +125,16 @@ impl Args {
         let mut flags = Flags::default();
 
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
-        flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
-        flags.set(Flags::ERASE_OPEN_CORNERS, self.erase_open_corners);
+
+        // Tri-state flags: Some(true) enables here; Some(false) handled by flags_to_disable()
+        if self.flatten_components == Some(true) {
+            flags.set(Flags::FLATTEN_COMPONENTS, true);
+        }
+        if self.erase_open_corners == Some(true) {
+            flags.set(Flags::ERASE_OPEN_CORNERS, true);
+        }
+        // TODO: add PROPAGATE_ANCHORS flag when we have that implemented
+
         flags.set(
             Flags::DECOMPOSE_TRANSFORMED_COMPONENTS,
             self.decompose_transformed_components,
@@ -136,6 +144,24 @@ impl Args {
         flags.set(Flags::PRODUCTION_NAMES, !self.no_production_names);
 
         flags
+    }
+
+    /// Returns flags that should be explicitly disabled, overriding source defaults.
+    ///
+    /// Tri-state flags use this logic:
+    /// - `None` = use source default
+    /// - `Some(true)` = force enable (handled in `flags()`)
+    /// - `Some(false)` = force disable (returned here)
+    pub fn flags_to_disable(&self) -> DisableFlags {
+        let mut disable = Flags::empty();
+        if self.flatten_components == Some(false) {
+            disable.set(Flags::FLATTEN_COMPONENTS, true);
+        }
+        if self.erase_open_corners == Some(false) {
+            disable.set(Flags::ERASE_OPEN_CORNERS, true);
+        }
+        // TODO: add PROPAGATE_ANCHORS flag when we have that implemented
+        disable.into()
     }
 
     /// The input source to compile.
@@ -192,11 +218,13 @@ impl TryInto<Options> for Args {
 
     fn try_into(self) -> Result<Options, Self::Error> {
         let flags = self.flags();
+        let flags_to_disable = self.flags_to_disable();
         let timing_file = self.emit_timing.then(|| self.build_dir.join("threads.svg"));
         let debug_dir = self.emit_debug.then(|| self.build_dir.join("debug/"));
         let ir_dir = self.emit_ir.then(|| self.build_dir.clone());
         Ok(Options {
             flags,
+            flags_to_disable,
             skip_features: self.skip_features,
             output_file: self
                 .output_file

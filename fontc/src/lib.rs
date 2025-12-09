@@ -84,6 +84,44 @@ impl TryFrom<&Path> for Input {
     }
 }
 
+/// Flags to explicitly disable, overriding source defaults.
+///
+/// Defaults to empty (no flags disabled).
+#[derive(Debug, Clone, Copy)]
+pub struct DisableFlags(Flags);
+
+impl Default for DisableFlags {
+    fn default() -> Self {
+        DisableFlags(Flags::empty())
+    }
+}
+
+impl DisableFlags {
+    /// Returns an empty set of flags to disable.
+    pub fn empty() -> Self {
+        DisableFlags(Flags::empty())
+    }
+
+    /// Returns true if no flags are set to be disabled.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl From<Flags> for DisableFlags {
+    fn from(flags: Flags) -> Self {
+        DisableFlags(flags)
+    }
+}
+
+impl std::ops::Not for DisableFlags {
+    type Output = Flags;
+
+    fn not(self) -> Flags {
+        !self.0
+    }
+}
+
 /// Options for font compilation.
 ///
 /// Configures how the font is compiled (flags, output paths, etc.)
@@ -91,6 +129,8 @@ impl TryFrom<&Path> for Input {
 #[derive(Debug, Default)]
 pub struct Options {
     pub flags: Flags,
+    /// Flags to explicitly disable, overriding source defaults (tri-state).
+    pub flags_to_disable: DisableFlags,
     pub skip_features: bool,
     pub output_file: Option<PathBuf>,
     pub timing_file: Option<PathBuf>,
@@ -142,10 +182,12 @@ pub fn run(input: Input, options: Options, mut timer: JobTimer) -> Result<(), Er
 
 /// Merges CLI flags with source-derived compilation flags.
 ///
-/// A flag is enabled if EITHER the CLI or source enables it.
+/// Flags are enabled if set in `options.flags` OR in `source.compilation_flags()`,
+/// then explicitly disabled flags are removed.
+///
 /// See <https://github.com/googlefonts/fontc/issues/1701>
-fn merge_compilation_flags(cli_flags: Flags, source: &dyn Source) -> Flags {
-    cli_flags | source.compilation_flags()
+fn merge_compilation_flags(options: &Options, source: &dyn Source) -> Flags {
+    (options.flags | source.compilation_flags()) & !options.flags_to_disable
 }
 
 /// Run and return an OpenType font
@@ -170,7 +212,8 @@ fn generate_font_internal(
     init_paths(options)?;
     timer.add(time.complete());
 
-    let flags = merge_compilation_flags(options.flags, &*source);
+    let flags = merge_compilation_flags(options, &*source);
+
     let workload = Workload::new(source, timer, options.skip_features)?;
     let fe_root = FeContext::new_root(flags, options.ir_dir.clone());
     let be_root = BeContext::new_root(
@@ -368,7 +411,7 @@ mod tests {
 
             let input = Input::new(&testdata_dir().join(source_file)).unwrap();
             let source = input.create_source().unwrap();
-            let flags = merge_compilation_flags(options.flags, &*source);
+            let flags = merge_compilation_flags(&options, &*source);
 
             init_paths(&options).unwrap();
 
