@@ -3617,6 +3617,37 @@ mod tests {
     }
 
     #[test]
+    fn remap_nameids_for_gpos_featureparam() {
+        let result = TestCompile::compile_source("glyphs3/GposWithFeatureParamName.glyphs");
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        let name = font.name().unwrap();
+        let features = gpos.feature_list().unwrap();
+        assert_eq!(features.feature_count(), 1);
+        let feat = features
+            .feature_records()
+            .first()
+            .unwrap()
+            .feature(features.offset_data())
+            .unwrap();
+        let FeatureParams::StylisticSet(params) = feat.feature_params().unwrap().unwrap() else {
+            panic!("not a stylistic set");
+        };
+
+        let name_id = params.ui_name_id();
+
+        let matching_ids = name
+            .name_record()
+            .iter()
+            .filter(|rec| rec.name_id() == name_id)
+            .collect::<Vec<_>>();
+        assert_eq!(matching_ids.len(), 1);
+
+        let name = matching_ids[0].string(name.string_data()).unwrap();
+        assert_eq!(name.to_string(), "An extremely stylish set");
+    }
+
+    #[test]
     fn use_base_table_from_fea() {
         let _ = env_logger::builder().is_test(true).try_init();
         let result = TestCompile::compile_source("CustomBaseTableInFea.ufo");
