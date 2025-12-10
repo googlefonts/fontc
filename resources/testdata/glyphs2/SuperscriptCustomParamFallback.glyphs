@@ -1,0 +1,31 @@
+{
+familyName = SuperDuperScript;
+fontMaster = (
+{
+id = master01;
+name = Regular;
+customParameters = (
+{
+name = subscriptXSize;
+value = 701;
+},
+{
+name = subscriptYSize;
+value = 659;
+},
+);
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = master01;
+}
+);
+unicode = 32;
+}
+);
+unitsPerEm = 1000;
+}
