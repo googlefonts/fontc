@@ -268,3 +268,29 @@ jobs:
 
       - name: run tidy_glyphs.py
         run: python3 ./resources/scripts/tidy_glyphs.py just_check
+
+  benchmark-fontc:
+    runs-on: ubuntu-latest
+    name: Run benchmarks.
+
+    steps:
+      - name: Check out fontc source repository
+        uses: actions/checkout@v4
+
+      - name: Install cargo criterion
+        run: cargo install cargo-criterion
+
+      - name: Checkout test font - Google Sans Flex
+        uses: actions/checkout@v4
+        with:
+          repository: 'googlefonts/googlesans-flex'
+          path: 'bench-fonts'
+
+      - name: Checkout test font - Oswald
+        uses: actions/checkout@v4
+        with:
+          repository: 'googlefonts/OswaldFont'
+          path: 'bench-fonts'
+
+      - name: Run benchmarks
+        run: cargo criterion -p fontc
