@@ -66,7 +66,7 @@ impl Input {
     }
 
     /// Creates the implementation of [`Source`] to feed to fontir.
-    fn create_source(&self) -> Result<Box<dyn Source>, Error> {
+    pub fn create_source(&self) -> Result<Box<dyn Source>, Error> {
         match self {
             Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path)?)),
             Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(path)?)),

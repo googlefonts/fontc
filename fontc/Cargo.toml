@@ -15,6 +15,10 @@ name = "fontc"
 path = "src/main.rs"
 required-features = ["cli"]
 
+[[bench]]
+name = "compile"
+harness = false
+
 [features]
 default = ["cli", "rayon"]
 cli = ["clap"]
@@ -56,6 +60,8 @@ kurbo.workspace = true
 chrono.workspace = true
 ordered-float.workspace = true
 rstest.workspace = true
+criterion.workspace = true
+
 
 [build-dependencies]
 vergen-gitcl = { version = "1.0", features = ["build", "cargo", "rustc"] }
