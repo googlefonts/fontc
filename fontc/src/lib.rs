@@ -1632,6 +1632,20 @@ mod tests {
     }
 
     #[test]
+    fn os2_superscript_reuses_explicit_subscript() {
+        // if a font has explicitly stated a value for the subscriptXSize and related
+        // metrics, but not the superscript equivalents, we should reuse the
+        // subscript values.
+
+        let result = TestCompile::compile_source("glyphs2/SuperscriptCustomParamFallback.glyphs");
+        let font = result.font();
+        let os2 = font.os2().unwrap();
+        assert_eq!(os2.y_superscript_x_size(), 701);
+        assert_eq!(os2.y_superscript_y_size(), 659);
+        assert_eq!(os2.y_superscript_y_offset(), 350); // default: ppem * 0.35
+    }
+
+    #[test]
     fn glyphs_app_ir_categories() {
         let result = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
         let staticmeta = result.fe_context.static_metadata.get();

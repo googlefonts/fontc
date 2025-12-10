@@ -120,6 +120,12 @@ pub type UserLocation = Location<UserSpace>;
 /// A location in [`NormalizedSpace`].
 pub type NormalizedLocation = Location<NormalizedSpace>;
 
+impl<T: Clone> From<&Location<T>> for Location<T> {
+    fn from(value: &Location<T>) -> Self {
+        value.clone()
+    }
+}
+
 // a little helper to generate methods on coord/location for specific conversions
 macro_rules! convert_convenience_methods {
     ($space:ident, $fn_name:ident) => {
