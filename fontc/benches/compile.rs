@@ -36,8 +36,9 @@ fn compile(c: &mut Criterion) {
 fn resolve_path(relative_path: impl AsRef<Path>) -> PathBuf {
     let base_path = std::env::var("FONTC_BENCH_DIR")
         .map(|x| Cow::Owned(x))
-        .unwrap_or(Cow::Borrowed("../../"));
-    PathBuf::from_iter([Path::new(base_path.as_ref()), relative_path.as_ref()])
+        .unwrap_or(Cow::Borrowed("../../"))
+        .into_owned();
+    PathBuf::from_iter([Path::new(&base_path), relative_path.as_ref()])
 }
 
 fn make_source(path: &Path) -> Result<Box<dyn fontir::source::Source>, fontc::Error> {
