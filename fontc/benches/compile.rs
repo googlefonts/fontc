@@ -10,19 +10,8 @@ criterion_main!(benches);
 
 fn compile(c: &mut Criterion) {
     c.benchmark_group("fontc-compile")
-        .bench_function("oswald", |b| {
-            let path = resolve_path("OswaldFont/sources/Oswald.glyphs");
-            b.iter(move || run_compile(&path).unwrap());
-        })
-        // Run slow benchmarks. Criterion requires at least 10
-        // samples.
-        .sample_size(10)
-        .bench_function("google-sans", |b| {
-            let path = resolve_path("googlesans/source/GoogleSans/GoogleSans.designspace");
-            b.iter(move || run_compile(&path).unwrap());
-        })
-        .bench_function("google-sans-flex", |b| {
-            let path = resolve_path("googlesans-flex/sources/GoogleSansFlex.designspace");
+        .bench_function("google-sans-code", |b| {
+            let path = resolve_path("googlesans-code/sources/GoogleSansCode.glyphspackage");
             b.iter(move || run_compile(&path).unwrap());
         });
 }
