@@ -149,87 +149,9 @@ graph
     ufo2fontir --> fontir
 ```
 
-## Comparing branch performance with hyperfine
+## Profiling
 
-Only relatively large changes are effectively detected this way:
-
-```shell
-To compare current branch to main when building Oswald:
-
-$ hyperfine \
-  --parameter-list branch main,$(git rev-parse --abbrev-ref HEAD) \
-  --setup "git checkout {branch} && cargo build --release" \
-   --warmup 5 --runs 250 \
-   --prepare 'rm -rf build/' \
-   "target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs"
-
-...noise...
-
-Summary
-  target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs (branch = nocs) ran
-    1.09 ± 0.09 times faster than target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs (branch = main)
-
-# Yay, it seems to be faster!
-```
-
-## Running samply
-
-https://github.com/mstange/samply gives a nice call tree, flame graph, etc. Sample usage:
-
-```shell
-# Assuming current directory is the root of fontc
-$ (cd .. && git clone https://github.com/mstange/samply)
-$ (cd ../samply && cargo build --release)
-$ ../samply/target/release/samply record target/release/fontc ../OswaldFont/sources/Oswald.glyphs
-```
-
-## Running flamegraph
-
-[flamegraphs](https://www.brendangregg.com/flamegraphs.html) of fontc are very handy. They are most
-easily created using `cargo flamegraph`:
-
-```shell
-
-# Minimize the impact of logging
-$ export RUST_LOG=error
-# Symbols are nice, https://github.com/flamegraph-rs/flamegraph#improving-output-when-running-with---release
-$ export CARGO_PROFILE_RELEASE_DEBUG=true
-
-# Build something and capture a flamegraph of it
-$ rm -rf build/ perf.data flamegraph.svg && cargo flamegraph -p fontc -- ../OswaldFont/sources/Oswald.glyphs
-
-# TIPS
-
-# On macOS you might have to pass `--root` to cargo flamegraph, e.g. cargo flamegraph --root ...as above...
-
-# If you are losing samples you might want to dial down the rayon threadcount
-# You'll see a perf error similar to:
-Warning:
-Processed 5114 events and lost 159 chunks!
-
-Check IO/CPU overload!
-
-Warning:
-Processed 5116 samples and lost 35.01%!
-
-# Fix is to lower the threadcount:
-$ export RAYON_NUM_THREADS=16
-```
-
-### Focused flames
-
-https://blog.anp.lol/rust/2016/07/24/profiling-rust-perf-flamegraph/ offers examples of filtering flamegraphs. This
-is very useful when you want to zoom in on a specific operation. For example, to dig into fea-rs:
-
-```shell
-# Generate a perf.data
-# You can also use perf record but cargo flamegraph seems to have nice capture settings for Rust rigged
-$ rm -rf build/ perf.data flamegraph.svg && cargo flamegraph -p fontc -- ../OswaldFont/sources/Oswald.glyphs
-
-# ^ produced flamegraph.svg but it's very noisy, lets narrow our focus
-# Example assumes https://github.com/brendangregg/FlameGraph is cloned in a sibling directory to fontc
-$ perf script | ../FlameGraph/stackcollapse-perf.pl | grep fea_rs | ../FlameGraph/flamegraph.pl > fea-flame.svg
-```
+For tips on profiling, see [docs/performance.md](docs/performance.md).
 
 ## Contributing
 
