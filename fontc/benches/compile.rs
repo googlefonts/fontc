@@ -16,9 +16,11 @@ fn compile(c: &mut Criterion) {
     // samples is enough to get an idea of acceptable performance.
     bench_group.sample_size(10);
 
+    // The default fonts to use. The default should be available for the `benchmark-fontc` job in
+    // .github/workflows/rust.yml.
     let default_fonts_path =
         "OswaldFont/sources/Oswald.glyphs,Playfair/sources/Playfair.glyphspackage";
-    let source_paths = std::env::var("FONTC_BENCH_SOURCES")
+    let source_paths = std::env::var("FONTC_BENCH_SRCS")
         .ok()
         .map(|x| x.to_string())
         .unwrap_or(default_fonts_path.to_string());
@@ -38,7 +40,7 @@ fn compile(c: &mut Criterion) {
 fn resolve_path(relative_path: impl AsRef<Path>) -> PathBuf {
     let base_path = std::env::var("FONTC_BENCH_DIR")
         .map(|x| Cow::Owned(x))
-        .unwrap_or(Cow::Borrowed("../"));
+        .unwrap_or(Cow::Borrowed("../../"));
     PathBuf::from_iter([Path::new(base_path.as_ref()), relative_path.as_ref()])
 }
 
