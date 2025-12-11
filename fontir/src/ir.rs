@@ -10,6 +10,7 @@ use indexmap::{IndexMap, IndexSet};
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize, de::Error as _};
 use smol_str::SmolStr;
 use write_fonts::{
@@ -304,8 +305,18 @@ pub struct GlobalMetricsBuilder(
 /// cap height, etc.
 ///
 /// This type is constructed by [GlobalMetricsBuilder].
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct GlobalMetrics(HashMap<GlobalMetric, ModelDeltas<f64>>);
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GlobalMetrics(
+    HashMap<GlobalMetric, ModelDeltas<f64>>,
+    #[serde(skip)] RwLock<HashMap<NormalizedLocation, GlobalMetricsInstance>>,
+);
+
+impl PartialEq for GlobalMetrics {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+        // Ignore cache
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GlobalMetric {
@@ -606,7 +617,7 @@ impl GlobalMetricsBuilder {
             })
             .collect::<Result<HashMap<_, _>, _>>()?;
 
-        Ok(GlobalMetrics(deltas))
+        Ok(GlobalMetrics(deltas, RwLock::new(Default::default())))
     }
 }
 
@@ -637,7 +648,11 @@ impl GlobalMetrics {
     /// Get the explicit or interpolated value of every metric at a given
     /// location.
     pub fn at(&self, pos: &NormalizedLocation) -> GlobalMetricsInstance {
-        GlobalMetricsInstance {
+        if let Some(cached) = self.1.read().get(pos) {
+            return cached.clone();
+        }
+
+        let result = GlobalMetricsInstance {
             pos: pos.clone(),
             ascender: self.get(GlobalMetric::Ascender, pos),
             descender: self.get(GlobalMetric::Descender, pos),
@@ -672,7 +687,11 @@ impl GlobalMetrics {
             vhea_caret_offset: self.get(GlobalMetric::VheaCaretOffset, pos),
             underline_thickness: self.get(GlobalMetric::UnderlineThickness, pos),
             underline_position: self.get(GlobalMetric::UnderlinePosition, pos),
-        }
+        };
+
+        self.1.write().insert(pos.clone(), result.clone());
+
+        result
     }
 
     /// Access the raw deltas for every metric.
