@@ -8,11 +8,13 @@ fontc uses [criterion](https://crates.io/crates/criterion) for benchmarking. To 
 cargo bench -p fontc --bench compile
 ```
 
-This will run the benchmarks on a default set of fonts. You can customize the benchmark execution using the following environment variables:
+By default, no benchmarks will be run. You must set `FONTC_BENCH_SRCS` to
+run the benchmarks on your desired set of fonts. You can customize the
+benchmark execution using the following environment variables:
 
 - `FONTC_BENCH_DIR`: Specifies the directory where the font sources are
   located. This path is relative to the `fontc` crate directory. The default
-  value is `../`.
+  value is `../..`.
 - `FONTC_BENCH_SRCS`: A comma-separated list of font sources to compile. For
   example:
   `FONTC_BENCH_SRCS=OswaldFont/sources/Oswald.glyphs,Playfair/sources/Playfair.glyphspackage`

@@ -278,13 +278,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: 'googlefonts/OswaldFont'
-          path: '/tmp/bench-fonts'
+          path: 'bench-fonts'
 
       - name: Checkout test font - Playfair
         uses: actions/checkout@v4
         with:
           repository: 'googlefonts/Playfair'
-          path: '/tmp/bench-fonts'
+          path: 'bench-fonts'
 
       - name: Check out main fontc source repository
         uses: actions/checkout@v4
@@ -294,7 +294,7 @@ jobs:
       - name: Run benchmarks
         run: cargo bench -p fontc --bench compile -- --save-baseline main
         env:
-          FONTC_BENCH_DIR: "/tmp/bench-fonts"
+          FONTC_BENCH_DIR: "bench-fonts"
 
       - name: Check out branch fontc source repository
         uses: actions/checkout@v4
@@ -302,4 +302,5 @@ jobs:
       - name: Run benchmarks
         run: cargo bench -p fontc --bench compile -- --baseline main
         env:
-          FONTC_BENCH_DIR: "/tmp/bench-fonts"
+          FONTC_BENCH_DIR: "../bench-fonts"
+          FONTC_BENCH_SRCS: "OswaldFont/sources/Oswald.glyphs,Playfair/sources/Playfair.glyphspackage"
