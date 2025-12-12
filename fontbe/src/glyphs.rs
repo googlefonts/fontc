@@ -1141,14 +1141,11 @@ mod tests {
                 GlyphType::Composite => (
                     vec![],
                     vec![
-                        ir::Component {
-                            base: "base".into(),
-                            transform: kurbo::Affine::translate((100.0, 0.0)),
-                        },
-                        ir::Component {
-                            base: "accent".into(),
-                            transform: kurbo::Affine::translate((100.0, 600.0)),
-                        },
+                        ir::Component::new("base".into(), kurbo::Affine::translate((100.0, 0.0))),
+                        ir::Component::new(
+                            "accent".into(),
+                            kurbo::Affine::translate((100.0, 600.0)),
+                        ),
                     ],
                 ),
             };

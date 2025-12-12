@@ -17,6 +17,7 @@ fontir = { version = "0.5.0", path = "../fontir" }
 kurbo.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
+smol_str.workspace = true
 
 log.workspace = true
 env_logger.workspace = true
