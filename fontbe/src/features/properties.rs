@@ -162,7 +162,7 @@ pub(crate) fn glyphs_matching_predicate(
 
 // the specific logic from
 // https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/util.py#L591
-pub(crate) fn unicode_script_extensions(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
+pub fn unicode_script_extensions(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
     let mut seen_hrkt = false;
     icu_properties::script::ScriptWithExtensions::new()
         .get_script_extensions_val32(cp)

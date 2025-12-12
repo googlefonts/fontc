@@ -54,7 +54,7 @@ mod feature_variations;
 mod kern;
 mod marks;
 mod ot_tags;
-mod properties;
+pub mod properties;
 #[cfg(test)]
 mod test_helpers;
 

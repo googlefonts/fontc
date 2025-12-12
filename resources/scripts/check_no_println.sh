@@ -96,6 +96,7 @@ allowlist+=("fontdrasil/build.rs")
 allowlist+=("fontc_crater/src/main.rs")
 allowlist+=("fontc_crater/src/ttx_diff_runner.rs")
 allowlist+=("fontc_crater/src/ci.rs")
+allowlist+=("fontbe/src/bin/check_unicode_props.rs")
 
 allowlist=$(join "|" "${allowlist[@]}")
 echo grep -v "($allowlist)"
