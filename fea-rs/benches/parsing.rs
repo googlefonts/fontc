@@ -16,15 +16,16 @@ fn parsing(c: &mut Criterion) {
     let deva: Arc<str> = DEVA.into();
     let latn: Arc<str> = LATN.into();
     let arab: Arc<str> = ARAB.into();
-    c.bench_function("parse plex-devenagari", |b| {
-        b.iter(|| parse_source(black_box(deva.clone())))
-    });
-    c.bench_function("parse roboto-regular", |b| {
-        b.iter(|| parse_source(black_box(latn.clone())))
-    });
-    c.bench_function("parse tajawal-regular", |b| {
-        b.iter(|| parse_source(black_box(arab.clone())))
-    });
+    c.benchmark_group("fea-parse")
+        .bench_function("plex-devenagari", |b| {
+            b.iter(|| parse_source(black_box(deva.clone())))
+        })
+        .bench_function("roboto-regular", |b| {
+            b.iter(|| parse_source(black_box(latn.clone())))
+        })
+        .bench_function("tajawal-regular", |b| {
+            b.iter(|| parse_source(black_box(arab.clone())))
+        });
 }
 
 criterion_group!(benches, parsing);
