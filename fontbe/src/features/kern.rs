@@ -2169,149 +2169,144 @@ mod tests {
             normalized,
             r#"
             # dist: dev2/dflt, deva/dflt
-            # 18 PairPos rules
+            # 17 PairPos rules
             # lookupflag LookupFlag(8)
             uni0310 1 uni0310
-            uni0320 2 uni0320
-            uni0330 3 uni0330
-            uni0640 4 uni0640
-            uni0650 5 uni0650
-            uni0670 6 uni0670
-            uni1CD0 7 uni1CD0
-            uni1CE0 8 uni1CE0
-            uni1CF0 9 uni1CF0
-            uni20F0 11 uni20F0
-            uni2E30 12 uni2E30
-            uniA830 34 uniA830
-            uni10100 36 uni10100
-            uni10110 37 uni10110
-            uni10120 38 uni10120
-            uni10130 39 uni10130
-            uni102E0 40 uni102E0
-            uni102F0 41 uni102F0
+            uni0330 2 uni0330
+            uni0640 3 uni0640
+            uni0650 4 uni0650
+            uni0670 5 uni0670
+            uni1CD0 6 uni1CD0
+            uni1CE0 7 uni1CE0
+            uni1CF0 8 uni1CF0
+            uni20F0 10 uni20F0
+            uni2E30 11 uni2E30
+            uniA830 33 uniA830
+            uni10100 35 uni10100
+            uni10110 36 uni10110
+            uni10120 37 uni10120
+            uni10130 38 uni10130
+            uni102E0 39 uni102E0
+            uni102F0 40 uni102F0
 
             # dist: dupl/dflt
-            # 14 PairPos rules
+            # 13 PairPos rules
             # lookupflag LookupFlag(8)
             uni0310 1 uni0310
-            uni0320 2 uni0320
-            uni0330 3 uni0330
-            uni0640 4 uni0640
-            uni0650 5 uni0650
-            uni0670 6 uni0670
-            uni2E30 12 uni2E30
-            uni10100 36 uni10100
-            uni10110 37 uni10110
-            uni10120 38 uni10120
-            uni10130 39 uni10130
-            uni102E0 40 uni102E0
-            uni102F0 41 uni102F0
-            uni1BCA0 42 uni1BCA0
+            uni0330 2 uni0330
+            uni0640 3 uni0640
+            uni0650 4 uni0650
+            uni0670 5 uni0670
+            uni2E30 11 uni2E30
+            uni10100 35 uni10100
+            uni10110 36 uni10110
+            uni10120 37 uni10120
+            uni10130 38 uni10130
+            uni102E0 39 uni102E0
+            uni102F0 40 uni102F0
+            uni1BCA0 41 uni1BCA0
 
             # kern: DFLT/dflt
-            # 40 PairPos rules
+            # 39 PairPos rules
             # lookupflag LookupFlag(8)
             gravecomb  gravecomb
             uni0310 1 uni0310
-            uni0320 2 uni0320
-            uni0330 3 uni0330
-            uni0640 4 uni0640
-            uni0650 5 uni0650
-            uni0670 6 uni0670
-            uni1DC0 10 uni1DC0
-            uni2E30 12 uni2E30
-            uni2FF0 13 uni2FF0
-            uni3010 14 uni3010
-            uni3030 15 uni3030
-            uni30A0 16 uni30A0
-            uni3190 17 uni3190
-            uni31C0 18 uni31C0
-            uni31D0 19 uni31D0
-            uni31E0 20 uni31E0
-            uni3220 21 uni3220
-            uni3230 22 uni3230
-            uni3240 23 uni3240
-            uni3280 24 uni3280
-            uni3290 25 uni3290
-            uni32A0 26 uni32A0
-            uni32B0 27 uni32B0
-            uni32C0 28 uni32C0
-            uni3360 29 uni3360
-            uni3370 30 uni3370
-            uni33E0 31 uni33E0
-            uni33F0 32 uni33F0
-            uniA700 33 uniA700
-            uniFF70 35 uniFF70
-            uni10100 36 uni10100
-            uni10110 37 uni10110
-            uni10120 38 uni10120
-            uni10130 39 uni10130
-            uni102E0 40 uni102E0
-            uni102F0 41 uni102F0
-            uni1D360 43 uni1D360
-            uni1D370 44 uni1D370
-            uni1F250 45 uni1F250
+            uni0330 2 uni0330
+            uni0640 3 uni0640
+            uni0650 4 uni0650
+            uni0670 5 uni0670
+            uni1DC0 9 uni1DC0
+            uni2E30 11 uni2E30
+            uni2FF0 12 uni2FF0
+            uni3010 13 uni3010
+            uni3030 14 uni3030
+            uni30A0 15 uni30A0
+            uni3190 16 uni3190
+            uni31C0 17 uni31C0
+            uni31D0 18 uni31D0
+            uni31E0 19 uni31E0
+            uni3220 20 uni3220
+            uni3230 21 uni3230
+            uni3240 22 uni3240
+            uni3280 23 uni3280
+            uni3290 24 uni3290
+            uni32A0 25 uni32A0
+            uni32B0 26 uni32B0
+            uni32C0 27 uni32C0
+            uni3360 28 uni3360
+            uni3370 29 uni3370
+            uni33E0 30 uni33E0
+            uni33F0 31 uni33F0
+            uniA700 32 uniA700
+            uniFF70 34 uniFF70
+            uni10100 35 uni10100
+            uni10110 36 uni10110
+            uni10120 37 uni10120
+            uni10130 38 uni10130
+            uni102E0 39 uni102E0
+            uni102F0 40 uni102F0
+            uni1D360 42 uni1D360
+            uni1D370 43 uni1D370
+            uni1F250 44 uni1F250
 
             # kern: grek/dflt
-            # 15 PairPos rules
+            # 14 PairPos rules
             # lookupflag LookupFlag(8)
             gravecomb  gravecomb
             uni0310 1 uni0310
-            uni0320 2 uni0320
-            uni0330 3 uni0330
-            uni0640 4 uni0640
-            uni0650 5 uni0650
-            uni0670 6 uni0670
-            uni1DC0 10 uni1DC0
-            uni2E30 12 uni2E30
-            uni10100 36 uni10100
-            uni10110 37 uni10110
-            uni10120 38 uni10120
-            uni10130 39 uni10130
-            uni102E0 40 uni102E0
-            uni102F0 41 uni102F0
+            uni0330 2 uni0330
+            uni0640 3 uni0640
+            uni0650 4 uni0650
+            uni0670 5 uni0670
+            uni1DC0 9 uni1DC0
+            uni2E30 11 uni2E30
+            uni10100 35 uni10100
+            uni10110 36 uni10110
+            uni10120 37 uni10120
+            uni10130 38 uni10130
+            uni102E0 39 uni102E0
+            uni102F0 40 uni102F0
 
             # kern: hani/dflt, kana/dflt
-            # 38 PairPos rules
+            # 37 PairPos rules
             # lookupflag LookupFlag(8)
             uni0310 1 uni0310
-            uni0320 2 uni0320
-            uni0330 3 uni0330
-            uni0640 4 uni0640
-            uni0650 5 uni0650
-            uni0670 6 uni0670
-            uni2E30 12 uni2E30
-            uni2FF0 13 uni2FF0
-            uni3010 14 uni3010
-            uni3030 15 uni3030
-            uni30A0 16 uni30A0
-            uni3190 17 uni3190
-            uni31C0 18 uni31C0
-            uni31D0 19 uni31D0
-            uni31E0 20 uni31E0
-            uni3220 21 uni3220
-            uni3230 22 uni3230
-            uni3240 23 uni3240
-            uni3280 24 uni3280
-            uni3290 25 uni3290
-            uni32A0 26 uni32A0
-            uni32B0 27 uni32B0
-            uni32C0 28 uni32C0
-            uni3360 29 uni3360
-            uni3370 30 uni3370
-            uni33E0 31 uni33E0
-            uni33F0 32 uni33F0
-            uniA700 33 uniA700
-            uniFF70 35 uniFF70
-            uni10100 36 uni10100
-            uni10110 37 uni10110
-            uni10120 38 uni10120
-            uni10130 39 uni10130
-            uni102E0 40 uni102E0
-            uni102F0 41 uni102F0
-            uni1D360 43 uni1D360
-            uni1D370 44 uni1D370
-            uni1F250 45 uni1F250
+            uni0330 2 uni0330
+            uni0640 3 uni0640
+            uni0650 4 uni0650
+            uni0670 5 uni0670
+            uni2E30 11 uni2E30
+            uni2FF0 12 uni2FF0
+            uni3010 13 uni3010
+            uni3030 14 uni3030
+            uni30A0 15 uni30A0
+            uni3190 16 uni3190
+            uni31C0 17 uni31C0
+            uni31D0 18 uni31D0
+            uni31E0 19 uni31E0
+            uni3220 20 uni3220
+            uni3230 21 uni3230
+            uni3240 22 uni3240
+            uni3280 23 uni3280
+            uni3290 24 uni3290
+            uni32A0 25 uni32A0
+            uni32B0 26 uni32B0
+            uni32C0 27 uni32C0
+            uni3360 28 uni3360
+            uni3370 29 uni3370
+            uni33E0 30 uni33E0
+            uni33F0 31 uni33F0
+            uniA700 32 uniA700
+            uniFF70 34 uniFF70
+            uni10100 35 uni10100
+            uni10110 36 uni10110
+            uni10120 37 uni10120
+            uni10130 38 uni10130
+            uni102E0 39 uni102E0
+            uni102F0 40 uni102F0
+            uni1D360 42 uni1D360
+            uni1D370 43 uni1D370
+            uni1F250 44 uni1F250
             "#
         );
     }

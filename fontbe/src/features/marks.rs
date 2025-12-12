@@ -1465,10 +1465,12 @@ mod tests {
             // this gets an abvm feature because we don't specify any languagesystems
             r#"
             # abvm: DFLT/dflt
-            # 2 MarkToMark rules
+            # 3 MarkToMark rules
             # lookupflag LookupFlag(16)
-            # filter glyphs: [acutecomb,macroncomb]
+            # filter glyphs: [acutecomb,brevecomb,macroncomb]
             acutecomb @(x: 0, y: 810)
+              @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
+            brevecomb @(x: 0, y: 810)
               @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
             macroncomb @(x: 0, y: 810)
               @(x: 0, y: 578) [acutecomb,brevecomb,macroncomb,tildecomb]
