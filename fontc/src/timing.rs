@@ -4,6 +4,7 @@
 
 use fontbe::orchestration::{AnyWorkId, WorkId as BeWorkIdentifier};
 use fontir::orchestration::WorkId as FeWorkIdentifier;
+use std::time::Duration;
 use std::{collections::HashMap, thread::ThreadId};
 
 #[cfg(target_family = "wasm")]
@@ -73,6 +74,11 @@ impl Default for JobTimer {
     }
 }
 
+struct SvgThread<'a> {
+    timings: &'a [JobTimeState],
+    active_duration: Duration,
+}
+
 impl JobTimer {
     /// Prepare to time things using the provided time zero.
     pub fn new() -> Self {
@@ -115,50 +121,125 @@ impl JobTimer {
     }
 
     #[cfg(feature = "cli")]
-    pub fn write_svg(&mut self, out: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-        let names: HashMap<_, _> = self
+    fn make_svg_thread(&mut self) -> Vec<SvgThread<'_>> {
+        let mut threads: Vec<_> = self
             .job_times
-            .keys()
-            .enumerate()
-            .map(|(i, tid)| (*tid, format!("t{i}")))
+            .values_mut()
+            .map(|timings| {
+                timings.sort_by_key(|t| (t.run - self.t0).as_nanos());
+                let active_duration = timings
+                    .iter()
+                    .map(|t| t.complete.duration_since(t.run))
+                    .sum();
+                SvgThread {
+                    timings,
+                    active_duration,
+                }
+            })
             .collect();
-        for timings in self.job_times.values_mut() {
-            timings.sort_by_key(|t| (t.run - self.t0).as_nanos());
-        }
-        let mut names: Vec<_> = names.into_iter().map(|(k, v)| (v, k)).collect();
-        names.sort_by(|(n1, _), (n2, _)| n1.cmp(n2));
+        threads.sort_by_key(|t| std::cmp::Reverse(t.active_duration));
+        threads
+    }
 
-        let end_time = self
-            .job_times
-            .values()
-            .flat_map(|ts| ts.iter())
-            .map(|t| t.complete - self.t0)
+    /// Writes an SVG timeline visualization of job execution across threads.
+    ///
+    /// Each row represents a thread, each rectangle a job. Hover for timing details.
+    #[cfg(feature = "cli")]
+    pub fn write_svg(&mut self, out: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+        let start = self.t0;
+        let threads = self.make_svg_thread();
+        let end_time = threads
+            .iter()
+            .flat_map(|t| t.timings.iter())
+            .map(|t| t.complete - start)
             .max()
             .unwrap_or_default();
 
-        let prefix = r#"
-            <svg xmlns="http://www.w3.org/2000/svg">
+        let line_height = 15;
+        let num_threads = threads.len();
+        let margin_top = 20;
+        let margin_bottom = 40;
+        let margin_left = 80; // Increased to make room for thread labels
+        let margin_right = 20;
+        let graph_width = 1000;
+        let axis_height = 30;
+        let graph_height = line_height * num_threads + axis_height;
+
+        let prefix = format!(
+            r#"
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {total_width} {total_height}">
             <style type="text/css">
-                text {
+                text {{
                 font-family: monospace;
                 font-size: 12pt;
-                }
-            </style>"#;
+                }}
+            </style>"#,
+            total_width = graph_width + margin_left + margin_right,
+            total_height = graph_height + margin_top + margin_bottom,
+        );
 
         writeln!(out, "{prefix}")?;
-        for (i, (_, tid)) in names.iter().enumerate() {
-            let timings = self.job_times.get(tid).unwrap();
-            let line_height = 15;
+
+        // Draw x-axis
+        let axis_y = margin_top + line_height * num_threads;
+        writeln!(
+            out,
+            "  <line x1=\"{margin_left}\" y1=\"{axis_y}\" x2=\"{}\" y2=\"{axis_y}\" stroke=\"black\" />",
+            margin_left + graph_width
+        )?;
+        // Add time markers and grid lines
+        let end_ms = end_time.as_secs_f64() * 1000.0;
+        let num_markers = 10;
+        for i in 0..=num_markers {
+            let pct = i as f64 / num_markers as f64;
+            let time_ms = pct * end_ms;
+            let x = margin_left + (pct * graph_width as f64) as i32;
+            // Draw vertical grid line from top to axis
+            writeln!(
+                out,
+                "  <line x1=\"{x}\" y1=\"{margin_top}\" x2=\"{x}\" y2=\"{axis_y}\" stroke=\"lightgray\" stroke-width=\"1\" />"
+            )?;
+            // Draw axis tick mark
+            writeln!(
+                out,
+                "  <line x1=\"{x}\" y1=\"{axis_y}\" x2=\"{x}\" y2=\"{}\" stroke=\"black\" />",
+                axis_y + 5
+            )?;
+            // Draw time label
+            writeln!(
+                out,
+                "  <text x=\"{x}\" y=\"{}\" font-size=\"10\" text-anchor=\"middle\">{:.0}ms</text>",
+                axis_y + 20,
+                time_ms
+            )?;
+        }
+
+        for (i, thread) in threads.iter().enumerate() {
             let text_height = 12;
-            let box_top = line_height * i;
+            let box_top = margin_top + line_height * i;
             let text_y = box_top + text_height;
-            for timing in timings {
-                let job_start = (timing.run - self.t0).as_secs_f64();
-                let job_end = (timing.complete - self.t0).as_secs_f64();
-                let job_queued = (timing.queued - self.t0).as_secs_f64();
-                let begin_pct = 100.0 * job_start / end_time.as_secs_f64();
+
+            // Draw thread ID label
+            let num_jobs = thread.timings.len();
+
+            writeln!(
+                out,
+                "  <text x=\"{}\" y=\"{text_y}\" font-size=\"10\" text-anchor=\"end\">",
+                margin_left - 10
+            )?;
+            writeln!(out, "    <title>Thread {i}\n{num_jobs} jobs</title>")?;
+            writeln!(out, "    t{i}")?;
+            writeln!(out, "  </text>")?;
+
+            for timing in thread.timings {
+                let job_start = (timing.run - start).as_secs_f64();
+                let job_end = (timing.complete - start).as_secs_f64();
+                let job_queued = (timing.queued - start).as_secs_f64();
+                let begin_pct = job_start / end_time.as_secs_f64();
                 let exec_pct =
-                    100.0 * (timing.complete - timing.run).as_secs_f64() / end_time.as_secs_f64();
+                    (timing.complete - timing.run).as_secs_f64() / end_time.as_secs_f64();
+                let x = margin_left + (begin_pct * graph_width as f64) as i32;
+                let width = (exec_pct * graph_width as f64) as i32;
                 let fill = color(&timing.id);
                 // enables use of browser console, e.g. $('g[work='something'])
                 writeln!(
@@ -169,14 +250,14 @@ impl JobTimer {
                 .unwrap();
                 writeln!(
                     out,
-                    "    <rect x=\"{begin_pct:.2}%\" y=\"{box_top}\" width=\"{exec_pct:.2}%\" height=\"{line_height}\"  fill=\"{fill}\" stroke=\"black\" />"
+                    "    <rect x=\"{x}\" y=\"{box_top}\" width=\"{width}\" height=\"{line_height}\"  fill=\"{fill}\" stroke=\"black\" />"
                 )
                 .unwrap();
                 if fill == "gray" {
                     let text = short_name(&timing.id);
                     writeln!(
                         out,
-                        "    <text x=\"{begin_pct:.2}%\" y=\"{text_y}\" width=\"{exec_pct:.2}%\" height=\"{text_height}\" >{text}</text>",
+                        "    <text x=\"{x}\" y=\"{text_y}\" width=\"{width}\" height=\"{text_height}\" >{text}</text>",
                     )
                     .unwrap();
                 }
@@ -195,6 +276,7 @@ impl JobTimer {
                 writeln!(out, "  </g>").unwrap();
             }
         }
+
         writeln!(out, "</svg>")
     }
 }
