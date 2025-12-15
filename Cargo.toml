@@ -27,6 +27,7 @@ skrifa = { version = "0.39.0", features = ["traversal"] }
 norad = { version = "0.17.0", default-features = false }
 
 # dev dependencies
+criterion = "0.7"
 diff = "0.1.12"
 tempfile = "3.3.0"
 more-asserts = "0.3.1"

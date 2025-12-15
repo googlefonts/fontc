@@ -7,3 +7,6 @@ venv/
 
 .DS_Store
 
+flamegraph.svg
+perf.data
+perf.data.old
