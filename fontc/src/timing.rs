@@ -116,25 +116,40 @@ impl JobTimer {
 
     #[cfg(feature = "cli")]
     pub fn write_svg(&mut self, out: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-        let names: HashMap<_, _> = self
-            .job_times
-            .keys()
-            .enumerate()
-            .map(|(i, tid)| (*tid, format!("t{i}")))
-            .collect();
-        for timings in self.job_times.values_mut() {
-            timings.sort_by_key(|t| (t.run - self.t0).as_nanos());
-        }
-        let mut names: Vec<_> = names.into_iter().map(|(k, v)| (v, k)).collect();
-        names.sort_by(|(n1, _), (n2, _)| n1.cmp(n2));
+        use std::cmp::Ordering;
 
+        for timings in self.job_times.values_mut() {
+            timings.sort_by_key(|t| t.run);
+        }
         let end_time = self
             .job_times
             .values()
-            .flat_map(|ts| ts.iter())
+            .flat_map(|timings| timings.iter())
             .map(|t| t.complete - self.t0)
             .max()
             .unwrap_or_default();
+
+        struct ThreadTimings<'a> {
+            timings: &'a [JobTimeState],
+            active_duration: f64,
+        }
+        let mut threads: Vec<_> = self
+            .job_times
+            .values()
+            .map(|thread| ThreadTimings {
+                timings: thread.as_slice(),
+                active_duration: thread
+                    .iter()
+                    .map(|t| (t.complete - t.run).as_secs_f64())
+                    .sum(),
+            })
+            .collect();
+        threads.sort_unstable_by(|a, b| {
+            a.active_duration
+                .partial_cmp(&b.active_duration)
+                .unwrap_or(Ordering::Equal)
+                .reverse()
+        });
 
         let prefix = r#"
             <svg xmlns="http://www.w3.org/2000/svg">
@@ -146,13 +161,12 @@ impl JobTimer {
             </style>"#;
 
         writeln!(out, "{prefix}")?;
-        for (i, (_, tid)) in names.iter().enumerate() {
-            let timings = self.job_times.get(tid).unwrap();
+        for (i, thread) in threads.iter().enumerate() {
             let line_height = 15;
             let text_height = 12;
             let box_top = line_height * i;
             let text_y = box_top + text_height;
-            for timing in timings {
+            for timing in thread.timings {
                 let job_start = (timing.run - self.t0).as_secs_f64();
                 let job_end = (timing.complete - self.t0).as_secs_f64();
                 let job_queued = (timing.queued - self.t0).as_secs_f64();
