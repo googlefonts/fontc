@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, hash_map};
 use smol_str::SmolStr;
 use write_fonts::{
     tables::layout::{ConditionSet, FeatureParams, SizeParams, StylisticSetParams},
-    types::{GlyphId16, Tag, Uint24},
+    types::{GlyphId16, NameId, Tag, Uint24},
 };
 
 use super::{
@@ -557,6 +557,15 @@ impl CvParams {
         names: &mut NameBuilder,
     ) -> write_fonts::tables::layout::CharacterVariantParams {
         let mut out = write_fonts::tables::layout::CharacterVariantParams::default();
+
+        // funnyness: name id 0 is assigned a meaning, but in this particular case
+        // it seems that the spec wants us to also use it to indicate 'no value':
+        // TODO: fix this when https://github.com/googlefonts/fontations/pull/1704 lands
+        const NULL: NameId = NameId::new(0);
+        out.feat_ui_label_name_id = NULL;
+        out.feat_ui_tooltip_text_name_id = NULL;
+        out.first_param_ui_label_name_id = NULL;
+        out.sample_text_name_id = NULL;
         if !self.feat_ui_label_name.is_empty() {
             out.feat_ui_label_name_id = names.add_anon_group(&self.feat_ui_label_name);
         }
