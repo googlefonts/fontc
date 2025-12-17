@@ -22,9 +22,7 @@ fn compile(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("fontc-compile");
     // Criterion requires at least 10 samples. The compile time of fonts is large enough that 10
     // samples is enough to get an idea of acceptable performance.
-    bench_group
-        .sample_size(10)
-        .sampling_mode(SamplingMode::Flat);
+    bench_group.sample_size(50);
 
     let source_paths = std::env::var("FONTC_BENCH_SRCS")
         .ok()
