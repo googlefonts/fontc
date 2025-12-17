@@ -207,11 +207,16 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let mut ivs = VariationStoreBuilder::new(axis_count);
 
         let (mut gsub, mut gpos) = self.lookups.build(&self.features, &mut ivs, &self.opts);
+        // if ivs hasn't been used, we don't want to create a GDEF table just for it.
         if !ivs.is_empty() {
             self.tables
                 .gdef
                 .get_or_insert_with(Default::default)
                 .var_store = Some(ivs);
+        // but if we _do_ have a gdef table, always add the var store,
+        // since we might still add ligature carets to it
+        } else if let Some(gdef) = self.tables.gdef.as_mut() {
+            gdef.var_store = Some(ivs);
         }
 
         let (gdef, key_map) = match self.tables.gdef.as_ref().map(|raw| raw.build()) {
