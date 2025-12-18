@@ -960,10 +960,7 @@ mod tests {
 
     fn component_instance() -> GlyphInstance {
         GlyphInstance {
-            components: vec![Component::new(
-                "component".into(),
-                Affine::translate((3.0, 3.0)),
-            )],
+            components: vec![Component::new("component", Affine::translate((3.0, 3.0)))],
             ..Default::default()
         }
     }
@@ -1540,7 +1537,7 @@ mod tests {
             assert_eq!(self.0.sources().len(), 1, "expects non-variable glyph");
             self.default_instance_mut()
                 .components
-                .push(Component::new(name.into(), xform.to_affine()));
+                .push(Component::new(name, xform.to_affine()));
             self
         }
 
@@ -1568,7 +1565,7 @@ mod tests {
                     .entry((*loc).clone())
                     .or_default()
                     .components
-                    .push(Component::new(name.into(), *xform));
+                    .push(Component::new(name, *xform));
             }
             self
         }
@@ -1579,7 +1576,7 @@ mod tests {
             let instance = GlyphInstance {
                 components: components
                     .into_iter()
-                    .map(|name| Component::new(name.into(), Default::default()))
+                    .map(|name| Component::new(name, Default::default()))
                     .collect(),
                 ..Default::default()
             };
@@ -2224,7 +2221,7 @@ mod tests {
         let mut instance = GlyphInstance::default();
         instance
             .components
-            .push(Component::new("base".into(), Affine::scale(scale)));
+            .push(Component::new("base", Affine::scale(scale)));
         let mut sources = HashMap::new();
         sources.insert(NormalizedLocation::default(), instance);
 
