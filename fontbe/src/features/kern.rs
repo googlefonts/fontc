@@ -14,9 +14,8 @@ use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
 };
-use fontir::ir::GdefCategories;
 use fontir::{
-    ir::{self, GlyphOrder, KernGroup, KerningGroups, KerningInstance},
+    ir::{self, GdefCategories, GlyphOrder, KernGroup, KerningGroups, KerningInstance},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::props::BidiClass;
@@ -1100,8 +1099,6 @@ fn merge_scripts(
 
 #[cfg(test)]
 mod tests {
-
-    use fontir::ir::GdefCategories;
     use write_fonts::read::FontRead;
 
     use crate::features::test_helpers::LayoutOutputBuilder;

@@ -553,7 +553,7 @@ mod tests {
                 for (base, x, y) in components {
                     instance
                         .components
-                        .push(Component::new((*base).into(), Affine::translate((*x, *y))));
+                        .push(Component::new(*base, Affine::translate((*x, *y))));
                 }
                 sources.insert(loc.clone(), instance);
             }

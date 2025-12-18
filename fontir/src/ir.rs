@@ -2020,18 +2020,18 @@ pub struct Component {
 
 impl Component {
     /// Create a regular component (no specific attachment anchor).
-    pub fn new(base: GlyphName, transform: Affine) -> Self {
+    pub fn new(base: impl Into<GlyphName>, transform: Affine) -> Self {
         Self {
-            base,
+            base: base.into(),
             transform,
             anchor: None,
         }
     }
 
     /// Create a component with an explicit attachment anchor.
-    pub fn with_anchor(base: GlyphName, transform: Affine, anchor: SmolStr) -> Self {
+    pub fn with_anchor(base: impl Into<GlyphName>, transform: Affine, anchor: SmolStr) -> Self {
         Self {
-            base,
+            base: base.into(),
             transform,
             anchor: Some(anchor),
         }
@@ -2553,7 +2553,7 @@ mod tests {
         path2.close_path();
 
         let contours = vec![path1, path2];
-        let components = vec![Component::new("derp".into(), Affine::IDENTITY)];
+        let components = vec![Component::new("derp", Affine::IDENTITY)];
 
         let instance = GlyphInstance {
             width: 600.,
