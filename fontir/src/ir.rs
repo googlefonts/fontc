@@ -488,13 +488,18 @@ impl GlobalMetricsBuilder {
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
         // NOTE: These defaults depend on other metrics' _resolved_ values.
+        // Where they will be further processed, we need to round them early
+        // too, to match ufo2ft's precision loss.
         let subscript_x_size = set_if_absent(GlobalMetric::SubscriptXSize, units_per_em * 0.65);
         let subscript_y_size = set_if_absent(GlobalMetric::SubscriptYSize, units_per_em * 0.60);
         let subscript_y_offset =
             set_if_absent(GlobalMetric::SubscriptYOffset, units_per_em * 0.075);
         set_if_absent(
             GlobalMetric::SubscriptXOffset,
-            adjust_offset(-subscript_y_offset.0, italic_angle),
+            adjust_offset(
+                -OtRound::<f64>::ot_round(subscript_y_offset.0),
+                italic_angle,
+            ),
         );
 
         set_if_absent(GlobalMetric::SuperscriptXSize, subscript_x_size.0);
@@ -503,7 +508,10 @@ impl GlobalMetricsBuilder {
             set_if_absent(GlobalMetric::SuperscriptYOffset, units_per_em * 0.35);
         set_if_absent(
             GlobalMetric::SuperscriptXOffset,
-            adjust_offset(superscript_y_offset.0, italic_angle),
+            adjust_offset(
+                OtRound::<f64>::ot_round(superscript_y_offset.0),
+                italic_angle,
+            ),
         );
 
         // ufo2ft and Glyphs.app have different defaults for the post.underlinePosition:
