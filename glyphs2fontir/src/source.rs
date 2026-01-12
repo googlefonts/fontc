@@ -18,9 +18,9 @@ use fontir::{
     feature_variations::{NBox, overlay_feature_variations},
     ir::{
         self, AnchorBuilder, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
-        DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphInstance,
-        GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues,
-        NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames,
+        DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphAnchors,
+        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        MetaTableValues, NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames,
         PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
@@ -1449,11 +1449,21 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 )
             })?;
 
-            // we only care about anchors from exportable glyphs
-            // https://github.com/googlefonts/fontc/issues/1397
-            if glyph.export {
-                for anchor in layer.anchors.iter() {
-                    ir_anchors.add(anchor.name.clone(), location.clone(), anchor.pos)?;
+            // Collect anchors from all glyphs (including non-exporting) so that
+            // anchor propagation can copy them into composites. Non-exporting glyphs
+            // may have invalid anchors (issue #1397) so we handle errors gracefully.
+            for anchor in layer.anchors.iter() {
+                if let Err(e) = ir_anchors.add(anchor.name.clone(), location.clone(), anchor.pos) {
+                    if glyph.export {
+                        return Err(e.into());
+                    }
+                    // Non-exporting glyph with invalid anchor - skip it
+                    log::debug!(
+                        "Skipping invalid anchor '{}' on non-exporting glyph '{}': {}",
+                        anchor.name,
+                        glyph.name,
+                        e
+                    );
                 }
             }
         }
@@ -1490,10 +1500,19 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                     for (tag, coord) in loc.iter() {
                         axis_positions.entry(*tag).or_default().insert(*coord);
                     }
-                    if glyph.export {
-                        // we only care about anchors from exportable glyphs (see ref above)
-                        for anchor in layer.anchors.iter() {
-                            ir_anchors.add(anchor.name.clone(), loc.clone(), anchor.pos)?;
+                    // See comment above about handling non-exporting glyphs
+                    for anchor in layer.anchors.iter() {
+                        if let Err(e) = ir_anchors.add(anchor.name.clone(), loc.clone(), anchor.pos)
+                        {
+                            if glyph.export {
+                                return Err(e.into());
+                            }
+                            log::debug!(
+                                "Skipping invalid anchor '{}' on non-exporting glyph '{}': {}",
+                                anchor.name,
+                                glyph.name,
+                                e
+                            );
                         }
                     }
                 }
@@ -1508,7 +1527,20 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             update_bracket_glyph_components(&mut ir_glyph, font, axes, &box_);
         }
 
-        let anchors = ir_anchors.build()?;
+        // Build anchors. For non-exporting glyphs, handle build errors gracefully
+        // (they may have anchors missing at default location, see issue #1397).
+        let anchors = match ir_anchors.build() {
+            Ok(a) => a,
+            Err(e) if !glyph.export => {
+                log::debug!(
+                    "Using empty anchors for non-exporting glyph '{}': {}",
+                    glyph.name,
+                    e
+                );
+                GlyphAnchors::new(self.glyph_name.clone(), Vec::new())
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         // It's helpful if glyphs are defined at default
         for axis in axes.iter() {
