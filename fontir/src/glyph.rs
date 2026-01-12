@@ -746,12 +746,14 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/preProcessor.py#L92)
         // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/util.py#L112)
 
-        flatten_all_non_export_components(context)?;
-
         // Propagate anchors from components to composites (if enabled)
+        // This must happen BEFORE flattening non-export components, because after
+        // flattening the component references are gone and we can't propagate from them.
         if context.flags.contains(Flags::PROPAGATE_ANCHORS) {
             propagate_all_anchors(context)?;
         }
+
+        flatten_all_non_export_components(context)?;
 
         // Compute final GDEF categories. When infer_from_anchors=true (glyphsLib), this
         // infers Base from anchors and prunes Ligature without anchors. When false (ufo2ft),
