@@ -904,36 +904,53 @@ def reorder_contextual_class_based_rules(
     ttx: etree.ElementTree, tag: str, glyph_map: Dict[str, int]
 ):
     if tag == "GSUB":
-        chain_name = "ChainContextSubst"
-        class_set_name = "ChainSubClassSet"
-        class_rule_name = "ChainSubClassRule"
+        context_name = "ContextSubst"
+        class_set_name = "SubClassSet"
+        class_rule_name = "SubClassRule"
 
     elif tag == "GPOS":
-        chain_name = "ChainContextPos"
-        class_set_name = "ChainPosClassSet"
-        class_rule_name = "ChainPosClassRule"
+        context_name = "ContextPos"
+        class_set_name = "PosClassSet"
+        class_rule_name = "PosClassRule"
     else:
         raise ValueError("must be one of 'GPOS' or 'GSUB'")
+
+    chain_name = f"Chain{context_name}"
+    chain_class_set_name = f"Chain{class_set_name}"
+    chain_class_rule_name = f"Chain{class_rule_name}"
 
     table = ttx.find(tag)
     if table is None:
         return
     for lookup in table.xpath(".//Lookup"):
+        # first hanld the non-chaining case,  then handle the chaining case
+        for ctx in lookup.findall(context_name):
+            if ctx is None or int(ctx.attrib["Format"]) != 2:
+                continue
+
+            input_class_order = remap_class_def_ids_like_fontc(
+                ctx.find("ClassDef"), glyph_map
+            )
+            reorder_rules(ctx, input_class_order, class_set_name)
+            for class_set in ctx.findall(class_set_name):
+                for class_rule in class_set.findall(class_rule_name):
+                    remap_values(class_rule, input_class_order, "Class")
+
         for chain_ctx in lookup.findall(chain_name):
             if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
                 continue
             input_class_order = remap_class_def_ids_like_fontc(
                 chain_ctx.find("InputClassDef"), glyph_map
             )
-            reorder_rules(chain_ctx, input_class_order, class_set_name)
+            reorder_rules(chain_ctx, input_class_order, chain_class_set_name)
             backtrack_class_order = remap_class_def_ids_like_fontc(
                 chain_ctx.find("BacktrackClassDef"), glyph_map
             )
             lookahead_class_order = remap_class_def_ids_like_fontc(
                 chain_ctx.find("LookAheadClassDef"), glyph_map
             )
-            for class_set in chain_ctx.findall(class_set_name):
-                for class_rule in class_set.findall(class_rule_name):
+            for class_set in chain_ctx.findall(chain_class_set_name):
+                for class_rule in class_set.findall(chain_class_rule_name):
                     remap_values(class_rule, input_class_order, "Input")
                     remap_values(class_rule, backtrack_class_order, "Backtrack")
                     remap_values(class_rule, lookahead_class_order, "LookAhead")

@@ -391,6 +391,60 @@ impl ContextBuilder {
 
         Some(write_layout::SequenceContext::format_1(coverage, rule_sets))
     }
+
+    fn format_2_class_def(&self) -> Option<ClassDefBuilder> {
+        let mut builder = ClassDefBuilder::new();
+        for rule in &self.rules {
+            for (glyphs, _) in &rule.context {
+                let class = glyphs.iter().collect();
+                if !builder.checked_add(class) {
+                    return None;
+                }
+            }
+        }
+        Some(builder)
+    }
+
+    fn build_format_2(&self, in_gpos: bool) -> Option<write_layout::SequenceContext> {
+        let classdef = self.format_2_class_def()?;
+        let (input_class_def, input_map) = classdef.build_with_mapping();
+
+        let coverage = self
+            .rules
+            .iter()
+            .flat_map(|rule| rule.context.first().unwrap().0.iter())
+            .collect::<CoverageTableBuilder>()
+            .build();
+
+        let mut rule_sets = vec![Vec::new(); input_map.len() + 1];
+        for rule in &self.rules {
+            let first_item = rule.first_input_sequence_item().to_class().unwrap();
+            let cls_idx = *input_map.get(&first_item.into()).unwrap();
+            let input = rule
+                .context
+                .iter()
+                // first class in context is implicit, based on order of rules (class is index)
+                .skip(1)
+                .map(|(cls, _)| input_map.get(&cls.to_class().unwrap().into()).unwrap())
+                .copied()
+                .collect();
+            rule_sets.get_mut(cls_idx as usize).unwrap().push(
+                write_layout::ClassSequenceRule::new(input, rule.lookup_records(in_gpos)),
+            );
+        }
+
+        let rule_sets = rule_sets
+            .into_iter()
+            .map(|rules| {
+                (!rules.is_empty()).then_some(write_layout::ClassSequenceRuleSet::new(rules))
+            })
+            .collect();
+        Some(write_layout::SequenceContext::format_2(
+            coverage,
+            input_class_def,
+            rule_sets,
+        ))
+    }
 }
 
 impl SubContextBuilder {
@@ -488,9 +542,8 @@ impl ContextBuilder {
     ) -> Vec<write_layout::SequenceContext> {
         let in_gpos = var_store.is_some();
         assert!(self.rules.iter().all(|rule| !rule.is_chain_rule()));
-        let format_1 = self.build_format_1(in_gpos);
-        //NOTE: I'm skipping format_2 because it seems consistently larger
-        // than format 3? but I have no verified this.
+        let format_1 = self.build_format_1(in_gpos).map(|x| vec![x]);
+        let format_2 = self.build_format_2(in_gpos).map(|x| vec![x]);
         let format_3 = self
             .rules
             .into_iter()
@@ -506,7 +559,7 @@ impl ContextBuilder {
             })
             .collect();
 
-        pick_best_format([format_1.map(|x| vec![x]), None, Some(format_3)])
+        pick_best_format([format_1, format_2, Some(format_3)])
     }
 }
 
