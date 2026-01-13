@@ -1,0 +1,23 @@
+languagesystem DFLT dflt;
+
+lookup swapperoo {
+    sub a by A;
+    sub b by B;
+    sub c by C;
+    sub d by D;
+    sub e by E;
+    sub f by F;
+    sub g by G;
+} swapperoo;
+
+# manually constructed such that format 2 is best
+lookup rups {
+    sub [a b]' lookup swapperoo [c d]' lookup swapperoo;
+    sub [a b]' lookup swapperoo [e f g]' lookup swapperoo;
+    sub [a b]' lookup swapperoo [h i]' lookup swapperoo;
+    sub [one two three]' lookup swapperoo [h i]' lookup swapperoo;
+} rups;
+
+feature derp {
+    lookup rups;
+} derp;
