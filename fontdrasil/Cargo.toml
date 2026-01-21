@@ -24,3 +24,8 @@ kurbo.workspace = true
 diff.workspace = true
 tempfile.workspace = true
 pretty_assertions.workspace = true
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
