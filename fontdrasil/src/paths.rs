@@ -182,13 +182,11 @@ pub fn safe_filename(name: &str, suffix: &str) -> String {
     }
     filename.extend(suffix.chars());
 
-    #[allow(clippy::indexing_slicing)] // We check that filename is non-empty before indexing
-    if let Some(ch) = filename.first()
+    if let Some(ch) = filename.first_mut()
         && *ch == '.'
     {
-        filename[0] = '_';
+        *ch = '_';
     }
-
     let filename: String = filename.into_iter().collect();
 
     // Windows fears no _
