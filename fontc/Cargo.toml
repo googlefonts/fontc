@@ -64,7 +64,7 @@ criterion.workspace = true
 
 
 [build-dependencies]
-vergen-gitcl = { version = "1.0", features = ["build", "cargo", "rustc"] }
+vergen-gitcl = { version = "9.0", features = ["build", "cargo", "rustc"] }
 
 # Support for `cargo binstall fontc`.
 # The default Github download URL template used by cargo-binstall doesn't work
