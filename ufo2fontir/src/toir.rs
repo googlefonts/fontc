@@ -127,7 +127,9 @@ pub fn master_locations<'a>(
         .map(|s| {
             (
                 s.name.clone().unwrap(),
-                to_design_location(&tags_by_name, &s.location).to_normalized(axes),
+                to_design_location(&tags_by_name, &s.location)
+                    .to_normalized(axes)
+                    .unwrap(),
             )
         })
         .collect()
@@ -171,7 +173,7 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
             // error if we don't have all of min/max/default
             .filter(|_| has_min_max)
             .ok_or(Error::MissingAxisMapping(tag))?;
-        CoordConverter::new(examples, default_idx)
+        CoordConverter::new(examples, default_idx)?
     } else {
         CoordConverter::unmapped(min, default, max)
     };

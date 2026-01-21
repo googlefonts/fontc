@@ -149,6 +149,7 @@ pub fn string_to_filename(string: &str, suffix: &str) -> String {
         filename.push(SEPARATOR_CHAR);
         for d in code_digits {
             assert!(d < 32, "We've made a terrible mistake");
+            #[allow(clippy::indexing_slicing)] // We already panicked
             filename.push(BASE_32_CHARS[d]);
         }
     }
@@ -181,12 +182,11 @@ pub fn safe_filename(name: &str, suffix: &str) -> String {
     }
     filename.extend(suffix.chars());
 
-    if let Some(ch) = filename.first()
+    if let Some(ch) = filename.first_mut()
         && *ch == '.'
     {
-        filename[0] = '_';
+        *ch = '_';
     }
-
     let filename: String = filename.into_iter().collect();
 
     // Windows fears no _

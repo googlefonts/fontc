@@ -128,7 +128,8 @@ fn simple_axis(tag: Tag, min: i16, default: i16, max: i16) -> Axis {
                 (max, DesignCoord::new(max.into_inner())),
             ],
             1,
-        ),
+        )
+        .unwrap(),
         localized_names: Default::default(),
     }
 }

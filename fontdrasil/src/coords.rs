@@ -13,7 +13,7 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Deserializer, Serialize, ser::SerializeSeq};
 use write_fonts::types::{F2Dot14, Fixed, Tag};
 
-use crate::{piecewise_linear_map::PiecewiseLinearMap, types::Axes};
+use crate::{error::Error, piecewise_linear_map::PiecewiseLinearMap, types::Axes};
 
 /// A trait for converting coordinates between coordinate spaces.
 ///
@@ -136,7 +136,7 @@ macro_rules! convert_convenience_methods {
         where
             Space: ConvertSpace<$space>,
         {
-            pub fn $fn_name(&self, axes: &Axes) -> Location<$space> {
+            pub fn $fn_name(&self, axes: &Axes) -> Result<Location<$space>, Error> {
                 self.convert(axes)
             }
         }
@@ -178,7 +178,10 @@ pub struct CoordConverter {
 
 impl CoordConverter {
     /// Initialize a converter from the User:Design examples source files typically provide.
-    pub fn new(mut mappings: Vec<(UserCoord, DesignCoord)>, default_idx: usize) -> CoordConverter {
+    pub fn new(
+        mut mappings: Vec<(UserCoord, DesignCoord)>,
+        default_idx: usize,
+    ) -> Result<CoordConverter, Error> {
         if mappings.is_empty() {
             mappings.push((UserCoord::new(0.0), DesignCoord::new(0.0)));
         }
@@ -190,9 +193,13 @@ impl CoordConverter {
         );
 
         let design_coords: Vec<_> = mappings.iter().map(|(_, d)| d).collect();
+        #[allow(clippy::unwrap_used)] // We checked above that mappings is not empty
         let design_min = design_coords.iter().min().unwrap();
+        #[allow(clippy::unwrap_used)] // We checked above that mappings is not empty
         let design_max = design_coords.iter().max().unwrap();
-        let design_default = design_coords[default_idx];
+        let design_default = design_coords
+            .get(default_idx)
+            .ok_or(Error::DefaultOutOfBounds(default_idx, mappings.len()))?;
 
         let mut examples = Vec::new();
         if *design_min < design_default {
@@ -207,13 +214,13 @@ impl CoordConverter {
         let design_to_user = user_to_design.reverse();
         let normalized_to_design = design_to_normalized.reverse();
 
-        CoordConverter {
+        Ok(CoordConverter {
             default_idx,
             user_to_design,
             design_to_user,
             design_to_normalized,
             normalized_to_design,
-        }
+        })
     }
 
     /// Initialize default converter from user to predefined -1.0/0.0/1.0 normalized coords.
@@ -235,7 +242,8 @@ impl CoordConverter {
         if max > default {
             default_mappings.push((max, DesignCoord::new(1.0)));
         }
-        CoordConverter::new(default_mappings, default_idx)
+        #[allow(clippy::unwrap_used)] // we know default_idx is in bounds
+        CoordConverter::new(default_mappings, default_idx).unwrap()
     }
 
     /// Initialize a converter from just min/default/max user coords, e.g. a source with no mapping
@@ -246,8 +254,10 @@ impl CoordConverter {
             (max, DesignCoord::new(max.into_inner())),
         ];
         mappings.dedup();
+        #[allow(clippy::unwrap_used)] // We know default is in mappings, we put it there
         let default_idx = mappings.iter().position(|(u, _)| *u == default).unwrap();
-        CoordConverter::new(mappings, default_idx)
+        #[allow(clippy::unwrap_used)] // And therefore we know default_idx is in bounds
+        CoordConverter::new(mappings, default_idx).unwrap()
     }
 
     /// Walk the vertices of the mappings, viewing the user/design/normalized value at each stop.
@@ -310,6 +320,7 @@ impl<Space> Location<Space> {
     /// For testing only, make a location from raw tags + values
     #[doc(hidden)]
     pub fn for_pos(positions: &[(&str, f64)]) -> Self {
+        #[allow(clippy::unwrap_used)] // test code
         positions
             .iter()
             .map(|(tag, value)| {
@@ -374,14 +385,18 @@ impl<Space> Location<Space> {
         )
     }
 
-    pub fn convert<ToSpace>(&self, axes: &Axes) -> Location<ToSpace>
+    pub fn convert<ToSpace>(&self, axes: &Axes) -> Result<Location<ToSpace>, Error>
     where
         Space: ConvertSpace<ToSpace>,
     {
         self.0
             .iter()
-            .map(|(tag, coord)| (*tag, coord.convert(&axes.get(tag).unwrap().converter)))
-            .collect()
+            .map(|(tag, coord)| {
+                axes.get(tag)
+                    .map(|ax| (*tag, coord.convert(&ax.converter)))
+                    .ok_or(Error::UnknownAxis(*tag))
+            })
+            .collect::<Result<Location<ToSpace>, Error>>()
     }
 }
 
@@ -538,6 +553,7 @@ impl Debug for NormalizedLocation {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)] // test code
 
     use super::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord};
 
@@ -576,7 +592,7 @@ mod tests {
     #[test]
     pub fn lexend_weight_internal_basics() {
         let (examples, default_idx) = lexend_weight_mapping();
-        let converter = CoordConverter::new(examples, default_idx);
+        let converter = CoordConverter::new(examples, default_idx).unwrap();
         assert_eq!(-1.0, DesignCoord::new(26.0).to_normalized(&converter));
         assert_eq!(0.0, DesignCoord::new(90.0).to_normalized(&converter));
         assert_eq!(1.0, DesignCoord::new(190.0).to_normalized(&converter));
@@ -585,7 +601,7 @@ mod tests {
     #[test]
     pub fn design_to_normalized_does_not_bend() {
         let (examples, default_idx) = bendy_mapping();
-        let converter = CoordConverter::new(examples, default_idx);
+        let converter = CoordConverter::new(examples, default_idx).unwrap();
 
         // 200 and 500 (user) are pushed way toward the left/right respectively
         // But design:normalized doesn't care, it's linear from default=>max and default=>min
@@ -599,7 +615,7 @@ mod tests {
     #[test]
     pub fn user_to_design_or_normalized_does_bend() {
         let (examples, default_idx) = bendy_mapping();
-        let converter = CoordConverter::new(examples, default_idx);
+        let converter = CoordConverter::new(examples, default_idx).unwrap();
 
         // 200 and 500 (user) are pushed way toward the left/right respectively
 

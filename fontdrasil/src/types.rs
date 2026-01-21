@@ -187,6 +187,7 @@ impl Axis {
         let min = UserCoord::new(min as f64);
         let default = UserCoord::new(default as f64);
         let max = UserCoord::new(max as f64);
+        #[allow(clippy::unwrap_used)] // test code
         Axis {
             name: name.to_string(),
             tag: std::str::FromStr::from_str(tag).unwrap(),
@@ -204,7 +205,8 @@ impl Axis {
                     (max, crate::coords::DesignCoord::new(max.into_inner())),
                 ],
                 1,
-            ),
+            )
+            .unwrap(),
             localized_names: HashMap::new(),
         }
     }
@@ -310,11 +312,14 @@ impl WidthClass {
     }
 
     pub fn to_percent(&self) -> f64 {
+        #[allow(clippy::indexing_slicing)] // We can't generate a WidthClass with invalid value
         Self::_PERCENT_LUT[*self as usize]
     }
 
     /// Returns the WidthClass with the nearest percent width
     pub fn nearest(percent: f64) -> Self {
+        #[allow(clippy::unwrap_used)]
+        // We always start with some value, so we must end the reduce with one
         Self::all_values()
             .iter()
             .map(|v| (*v, (v.to_percent() - percent).abs()))

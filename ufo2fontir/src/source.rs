@@ -871,7 +871,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                         }
                     }),
                     postscript_name: inst.postscriptfontname.clone(),
-                    location: to_design_location(&tags_by_name, &inst.location).to_user(&axes),
+                    location: to_design_location(&tags_by_name, &inst.location)
+                        .to_user(&axes)
+                        .unwrap(),
                 }
             })
             .collect();
@@ -1807,7 +1809,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         for (path, design_locations) in self.glif_files.iter() {
             let normalized_locations: Vec<NormalizedLocation> = design_locations
                 .iter()
-                .map(|dl| dl.to_normalized(&static_metadata.all_source_axes))
+                .map(|dl| dl.to_normalized(&static_metadata.all_source_axes).unwrap())
                 .collect();
             glif_files.insert(path, normalized_locations);
         }
