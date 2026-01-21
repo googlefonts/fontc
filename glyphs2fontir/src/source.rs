@@ -349,7 +349,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                     location: font_info
                         .locations
                         .get(&inst.axes_values)
-                        .map(|nc| nc.to_user(&axes))
+                        .map(|nc| nc.to_user(&axes).unwrap())
                         .unwrap(),
                 })
             })
@@ -1426,6 +1426,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                         layer.layer_id,
                         location
                             .to_design(&font_info.axes)
+                            .unwrap()
                             .iter()
                             .map(|(t, v)| format!("{}={}", t, v.to_f64()))
                             .collect::<Vec<_>>()
@@ -1536,6 +1537,7 @@ fn process_layer(
     if !instance.attributes.coordinates.is_empty() {
         for (tag, coord) in design_location(&font_info.axes, &instance.attributes.coordinates)
             .to_normalized(&font_info.axes)
+            .unwrap()
             .iter()
         {
             location.insert(*tag, *coord);
@@ -1993,7 +1995,8 @@ mod tests {
                             (UserCoord::new(700.0), DesignCoord::new(73.0)),
                         ],
                         5
-                    ),
+                    )
+                    .unwrap(),
                     localized_names: Default::default(),
                 },
                 fontdrasil::types::Axis {
@@ -2009,7 +2012,8 @@ mod tests {
                             (UserCoord::new(72.0), DesignCoord::new(72.0)),
                         ],
                         0
-                    ),
+                    )
+                    .unwrap(),
                     localized_names: Default::default(),
                 },
             ],
@@ -2127,7 +2131,7 @@ mod tests {
             .get_glyph(glyph_name)
             .sources()
             .keys()
-            .map(|c| c.to_user(&static_metadata.axes))
+            .map(|c| c.to_user(&static_metadata.axes).unwrap())
             .collect::<HashSet<_>>();
 
         assert_eq!(expected_locations, actual_locations);

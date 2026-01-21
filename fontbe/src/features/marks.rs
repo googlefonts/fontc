@@ -1246,7 +1246,7 @@ mod tests {
                 .map(|(i, loc)| NamedInstance {
                     name: format!("instance{i}"),
                     postscript_name: None,
-                    location: loc.to_user(&axes),
+                    location: loc.to_user(&axes).unwrap(),
                 })
                 .collect();
             let glyph_locations = self.locations.iter().cloned().collect();

@@ -209,7 +209,7 @@ fn to_ir_axis(
         // Make sure we have min and max mappings
         find_by_design_coord(&mappings, min, axis.name.as_str(), "min")?;
         find_by_design_coord(&mappings, max, axis.name.as_str(), "max")?;
-        CoordConverter::new(mappings, default_idx)
+        CoordConverter::new(mappings, default_idx)?
     } else {
         // There is no meaningful mapping; design == user
         let min = UserCoord::new(min.into_inner());
@@ -305,13 +305,17 @@ impl TryFrom<Font> for FontInfo {
             .map(|m| {
                 (
                     m.axes_values.clone(),
-                    design_location(&axes, &m.axes_values).to_normalized(&axes),
+                    design_location(&axes, &m.axes_values)
+                        .to_normalized(&axes)
+                        .unwrap(),
                 )
             })
             .chain(font.instances.iter().map(|i| {
                 (
                     i.axes_values.clone(),
-                    design_location(&axes, &i.axes_values).to_normalized(&axes),
+                    design_location(&axes, &i.axes_values)
+                        .to_normalized(&axes)
+                        .unwrap(),
                 )
             }))
             .collect();

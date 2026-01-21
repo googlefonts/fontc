@@ -26,7 +26,7 @@ pub(crate) fn axis(tag: &str, min: f64, default: f64, max: f64) -> Axis {
         default: UserCoord::new(default),
         max: UserCoord::new(max),
         hidden: false,
-        converter: CoordConverter::new(mappings, default_idx),
+        converter: CoordConverter::new(mappings, default_idx).unwrap(),
         localized_names: Default::default(),
     }
 }
