@@ -487,26 +487,32 @@ impl GlobalMetricsBuilder {
         set_if_absent(GlobalMetric::CaretOffset, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
-        let subscript_x_size = units_per_em * 0.65;
-        let subscript_y_size = units_per_em * 0.60;
-        let subscript_y_offset = units_per_em * 0.075;
-        let superscript_y_offset = units_per_em * 0.35;
-
-        set_if_absent(GlobalMetric::SubscriptXSize, subscript_x_size);
-        set_if_absent(GlobalMetric::SubscriptYSize, subscript_y_size);
+        // NOTE: These defaults depend on other metrics' _resolved_ values.
+        // Where they will be further processed, we need to round them early
+        // too, to match ufo2ft's precision loss.
+        let subscript_x_size = set_if_absent(GlobalMetric::SubscriptXSize, units_per_em * 0.65);
+        let subscript_y_size = set_if_absent(GlobalMetric::SubscriptYSize, units_per_em * 0.60);
+        let subscript_y_offset =
+            set_if_absent(GlobalMetric::SubscriptYOffset, units_per_em * 0.075);
         set_if_absent(
             GlobalMetric::SubscriptXOffset,
-            adjust_offset(-subscript_y_offset, italic_angle),
+            adjust_offset(
+                -OtRound::<f64>::ot_round(subscript_y_offset.0),
+                italic_angle,
+            ),
         );
-        set_if_absent(GlobalMetric::SubscriptYOffset, subscript_y_offset);
 
-        set_if_absent(GlobalMetric::SuperscriptXSize, subscript_x_size);
-        set_if_absent(GlobalMetric::SuperscriptYSize, subscript_y_size);
+        set_if_absent(GlobalMetric::SuperscriptXSize, subscript_x_size.0);
+        set_if_absent(GlobalMetric::SuperscriptYSize, subscript_y_size.0);
+        let superscript_y_offset =
+            set_if_absent(GlobalMetric::SuperscriptYOffset, units_per_em * 0.35);
         set_if_absent(
             GlobalMetric::SuperscriptXOffset,
-            adjust_offset(superscript_y_offset, italic_angle),
+            adjust_offset(
+                OtRound::<f64>::ot_round(superscript_y_offset.0),
+                italic_angle,
+            ),
         );
-        set_if_absent(GlobalMetric::SuperscriptYOffset, superscript_y_offset);
 
         // ufo2ft and Glyphs.app have different defaults for the post.underlinePosition:
         // the former uses 0.075*UPEM whereas the latter 0.1*UPEM (both use the same
@@ -2082,6 +2088,7 @@ mod tests {
     use std::collections::HashMap;
 
     use fontdrasil::types::Axis;
+    use rstest::rstest;
     use write_fonts::{OtRound, types::NameId};
 
     use pretty_assertions::assert_eq;
@@ -2496,5 +2503,24 @@ mod tests {
         }
 
         assert_eq!(new_instance.components[0].transform.as_coeffs(), [-1.; 6]);
+    }
+
+    // ufo2ft's default value for superscript varies depending on whether the
+    // equivalent subscript value is defined.
+    #[rstest]
+    #[case(None, 600.)] // = upm * 0.6
+    #[case(Some(1234.), 1234.)] // = same as subscript
+    fn superscript_uses_resolved_subscript(#[case] subscript: Option<f64>, #[case] expected: f64) {
+        let pos = NormalizedLocation::default();
+
+        let mut metrics = GlobalMetricsBuilder::new();
+        metrics.set_if_some(GlobalMetric::SubscriptYSize, pos.clone(), subscript);
+        metrics.populate_defaults(&pos, 1000, None, None, None, None);
+
+        let default = metrics
+            .build(&Axes::default())
+            .unwrap()
+            .get(GlobalMetric::SuperscriptYSize, &pos);
+        assert_eq!(default.into_inner(), expected);
     }
 }
