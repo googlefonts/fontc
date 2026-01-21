@@ -93,6 +93,8 @@ pub enum Error {
     MetricVariationError(GlobalMetric, #[source] VariationModelError),
     #[error("Delta error when variating {0:?}: {1}")]
     MetricDeltaError(GlobalMetric, #[source] DeltaError),
+    #[error("Coordinate conversion error: {0}")]
+    CoordinateConversionError(#[from] fontdrasil::error::Error),
 }
 
 /// An error related to loading source input files
