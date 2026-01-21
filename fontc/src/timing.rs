@@ -225,6 +225,8 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Fe(FeWorkIdentifier::KernInstance(..)) => "kernat",
         AnyWorkId::Fe(FeWorkIdentifier::PaintGraph) => "colr",
         AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => "pre-go",
+        AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGdefCategories) => "pre-gdef",
+        AnyWorkId::Fe(FeWorkIdentifier::GdefCategories) => "gdef-cat",
         AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => "static-meta",
         AnyWorkId::Be(BeWorkIdentifier::Avar) => "avar",
         AnyWorkId::Be(BeWorkIdentifier::Cmap) => "cmap",

@@ -15,7 +15,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, GlyphOrder, KernGroup, KerningGroups, KerningInstance, StaticMetadata},
+    ir::{self, GdefCategories, GlyphOrder, KernGroup, KerningGroups, KerningInstance},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::props::BidiClass;
@@ -383,7 +383,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
         let arc_fragments = context.kern_fragments.all();
         let ast = context.fea_ast.get();
         let glyph_order = context.ir.glyph_order.get();
-        let meta = context.ir.static_metadata.get();
+        let gdef_categories = context.ir.gdef_categories.get();
         let mut pairs: Vec<_> = arc_fragments
             .iter()
             .flat_map(|(_, fragment)| fragment.kerns.iter())
@@ -411,7 +411,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
         let lookups = finalize_kerning(
             &pairs,
             &ast,
-            &meta,
+            &gdef_categories,
             &glyph_order,
             char_map,
             non_spacing_glyphs,
@@ -427,7 +427,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
 fn finalize_kerning(
     pairs: &[&KernPair],
     ast: &FeaFirstPassOutput,
-    meta: &StaticMetadata,
+    gdef_categories: &GdefCategories,
     glyph_order: &GlyphOrder,
     char_map: HashMap<u32, GlyphId16>,
     non_spacing_glyphs: HashSet<GlyphId16>,
@@ -438,7 +438,7 @@ fn finalize_kerning(
         return Ok(Default::default());
     }
     let known_scripts = guess_font_scripts(&ast.ast, &char_map);
-    let glyph_classes = super::get_gdef_classes(meta, ast, glyph_order);
+    let glyph_classes = super::get_gdef_classes(gdef_categories, ast, glyph_order);
 
     let mark_glyphs = glyph_order
         .iter()
@@ -1099,8 +1099,6 @@ fn merge_scripts(
 
 #[cfg(test)]
 mod tests {
-
-    use fontir::ir::GdefCategories;
     use write_fonts::read::FontRead;
 
     use crate::features::test_helpers::LayoutOutputBuilder;
@@ -1285,7 +1283,7 @@ mod tests {
             let kerns = finalize_kerning(
                 &pairs,
                 &layout_output.first_pass_fea,
-                &layout_output.static_metadata,
+                &layout_output.gdef_categories,
                 &self.glyph_order,
                 self.charmap,
                 self.non_spacing,

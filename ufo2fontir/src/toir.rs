@@ -11,9 +11,15 @@ use fontir::{
 use kurbo::{Affine, BezPath};
 use log::trace;
 use norad::designspace::{self, Dimension};
+use smol_str::SmolStr;
 use write_fonts::types::Tag;
 
 use crate::source::vertical_origin;
+
+/// Key for glyphsLib's component info storage in UFO glyph lib.
+///
+/// See: <https://github.com/googlefonts/glyphsLib/blob/de5b4e34/Lib/glyphsLib/builder/constants.py#L27>
+const COMPONENT_INFO_KEY: &str = "com.schriftgestaltung.Glyphs.ComponentInfo";
 
 pub(crate) fn to_design_location(
     tags_by_name: &HashMap<&str, Tag>,
@@ -71,7 +77,7 @@ fn to_ir_contour(
     Ok(path)
 }
 
-fn to_ir_component(component: &norad::Component) -> ir::Component {
+fn to_ir_component(component: &norad::Component, anchor: Option<SmolStr>) -> ir::Component {
     ir::Component {
         base: component.base.as_str().into(),
         transform: Affine::new([
@@ -88,7 +94,29 @@ fn to_ir_component(component: &norad::Component) -> ir::Component {
             component.transform.x_offset,
             component.transform.y_offset,
         ]),
+        anchor,
     }
+}
+
+/// Extract component anchors from glyphsLib's `ComponentInfo` in glyph lib.
+///
+/// Returns a map from component index to anchor name.
+fn component_anchors(glyph: &norad::Glyph) -> HashMap<usize, SmolStr> {
+    // ComponentInfo is an array of dictionaries with "index" and "anchor" keys.
+    // See <https://github.com/googlefonts/glyphsLib/blob/de5b4e34/Lib/glyphsLib/builder/components.py#L85-L93>
+    let Some(plist::Value::Array(info_list)) = glyph.lib.get(COMPONENT_INFO_KEY) else {
+        return HashMap::new();
+    };
+
+    info_list
+        .iter()
+        .filter_map(|entry| {
+            let dict = entry.as_dictionary()?;
+            let index = dict.get("index")?.as_unsigned_integer()? as usize;
+            let anchor = dict.get("anchor")?.as_string()?;
+            Some((index, SmolStr::from(anchor)))
+        })
+        .collect()
 }
 
 fn to_ir_glyph_instance(
@@ -107,12 +135,21 @@ fn to_ir_glyph_instance(
 
     let vertical_origin = vertical_origin(glyph, path)?;
 
+    // Look up explicit component anchors from glyphsLib's ComponentInfo
+    let anchors = component_anchors(glyph);
+    let components = glyph
+        .components
+        .iter()
+        .enumerate()
+        .map(|(i, comp)| to_ir_component(comp, anchors.get(&i).cloned()))
+        .collect();
+
     Ok(ir::GlyphInstance {
         width: glyph.width,
         height: Some(glyph.height),
         vertical_origin,
         contours,
-        components: glyph.components.iter().map(to_ir_component).collect(),
+        components,
     })
 }
 
@@ -324,7 +361,7 @@ mod tests {
             None,
         );
         assert_eq!(
-            to_ir_component(&c).transform,
+            to_ir_component(&c, None).transform,
             Affine::new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
         );
 
@@ -337,7 +374,7 @@ mod tests {
             y_offset: 10.0,
         };
         assert_eq!(
-            to_ir_component(&c).transform,
+            to_ir_component(&c, None).transform,
             Affine::new([1.0, 0.0, 0.0, 1.0, 10.0, 10.0])
         );
 
@@ -352,8 +389,53 @@ mod tests {
         };
         // Switchy switchy!
         assert_eq!(
-            to_ir_component(&c).transform,
+            to_ir_component(&c, None).transform,
             Affine::new([0.4366, -0.4366, 0.4415, 0.4425, 282.0, 5.0])
         );
+    }
+
+    /// Test parsing component anchors from glyphsLib's ComponentInfo in glyph lib.
+    ///
+    /// This tests that UFO files exported by glyphsLib with explicit component
+    /// anchors (e.g., for ligature attachment) are correctly parsed.
+    #[test]
+    fn component_anchors_from_lib() {
+        use plist::Value;
+
+        // Create a glyph with ComponentInfo in its lib
+        let mut glyph = norad::Glyph::new("test");
+
+        // Simulate glyphsLib's ComponentInfo structure:
+        // [{"name": "aa", "index": 0}, {"name": "acutecomb", "index": 1, "anchor": "top_2"}]
+        // See: <https://github.com/googlefonts/glyphsLib/blob/de5b4e34/Lib/glyphsLib/builder/components.py#L85-L93>
+        let component_info = Value::Array(vec![
+            Value::Dictionary(
+                [
+                    ("name".to_string(), Value::String("aa".to_string())),
+                    ("index".to_string(), Value::Integer(0.into())),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            Value::Dictionary(
+                [
+                    ("name".to_string(), Value::String("acutecomb".to_string())),
+                    ("index".to_string(), Value::Integer(1.into())),
+                    ("anchor".to_string(), Value::String("top_2".to_string())),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        ]);
+        glyph
+            .lib
+            .insert(COMPONENT_INFO_KEY.to_string(), component_info);
+
+        let anchors = component_anchors(&glyph);
+
+        // Only component at index 1 has an anchor
+        assert_eq!(anchors.len(), 1);
+        assert_eq!(anchors.get(&1), Some(&SmolStr::from("top_2")));
+        assert_eq!(anchors.get(&0), None);
     }
 }
