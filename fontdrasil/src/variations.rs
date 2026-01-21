@@ -292,7 +292,7 @@ impl VariationModel {
 
         let point_seqs = self.fit_to_axes(point_seqs)?;
 
-        // we know point_seqs is non-empty
+        #[allow(clippy::unwrap_used)] // we know point_seqs is non-empty
         let point_seq_len = point_seqs.values().next().unwrap().len();
         if point_seqs.values().any(|pts| pts.len() != point_seq_len) {
             return Err(DeltaError::InconsistentNumbersOfPoints);
@@ -312,6 +312,8 @@ impl VariationModel {
                 point_seqs.get(loc).map(|points| (idx, region, points))
             })
         {
+            #[allow(clippy::indexing_slicing)]
+            // delta_weights is generated from the influence, so we know they are in sync
             let master_influences = &self.delta_weights[model_idx];
             let mut deltas = Vec::with_capacity(points.len());
 
@@ -832,6 +834,11 @@ fn regions_for(axis_order: &[Tag], locations: &[NormalizedLocation]) -> Vec<Vari
         .map(|location| {
             let mut region = VariationRegion::new();
             for tag in axis_order {
+                assert!(
+                    minmax.contains_key(tag),
+                    "axis_order contained axes not in locations"
+                );
+                #[allow(clippy::unwrap_used)]
                 // We expand locations to cover all axes so this is safe
                 let value = location.get(*tag).unwrap();
 
@@ -839,6 +846,7 @@ fn regions_for(axis_order: &[Tag], locations: &[NormalizedLocation]) -> Vec<Vari
                 let (min, max) = if value.into_inner() == ZERO {
                     (NormalizedCoord::new(ZERO), NormalizedCoord::new(ZERO))
                 } else {
+                    #[allow(clippy::unwrap_used)] // We asserted above
                     *minmax.get(tag).unwrap()
                 };
                 region.insert(*tag, Tent::new(min, value, max));
@@ -871,6 +879,9 @@ fn master_influence(axis_order: &[Tag], regions: &[VariationRegion]) -> Vec<Vari
             }
             // If prev doesn't overlap current we aren't interested
             let overlap = region.iter().all(|(axis_name, tent)| {
+                // Regions are derived from locations and axis_order in regions_for,
+                // we can be sure all regions have tents for all axes in axis_order
+                #[allow(clippy::indexing_slicing)]
                 let prev_peak = prev_region.axis_tents[axis_name].peak;
                 prev_peak == tent.peak || (tent.min < prev_peak && prev_peak < tent.max)
             });
@@ -887,7 +898,9 @@ fn master_influence(axis_order: &[Tag], regions: &[VariationRegion]) -> Vec<Vari
                 if !region.active_axes.contains(tag) {
                     continue;
                 }
+                #[allow(clippy::indexing_slicing)] // See logic above
                 let prev_peak = prev_region.axis_tents[tag].peak;
+                #[allow(clippy::indexing_slicing)]
                 let mut axis_region = region.axis_tents[tag];
                 let ratio;
                 match prev_peak.cmp(&axis_region.peak) {
@@ -928,6 +941,11 @@ fn delta_weights(
     locations: &[NormalizedLocation],
     influencers: &[VariationRegion],
 ) -> Vec<Vec<(usize, OrderedFloat<f64>)>> {
+    assert_eq!(
+        locations.len(),
+        influencers.len(),
+        "locations and influencers length must match"
+    );
     if log_enabled!(log::Level::Trace) {
         for (l, i) in locations.iter().zip(influencers) {
             trace!("{l:?}");
@@ -939,6 +957,7 @@ fn delta_weights(
     trace!("Delta Weights");
     let mut weights = Vec::new();
     for (loc_idx, location) in locations.iter().enumerate() {
+        #[allow(clippy::indexing_slicing)] // we checked lengths above
         weights.push(
             influencers[..loc_idx]
                 .iter()
@@ -953,13 +972,18 @@ fn delta_weights(
                 })
                 .collect(),
         );
-        trace!("  {} {:?}", loc_idx, weights.last().unwrap());
+        // We *don't* know weights is non-empty
+        if let Some(weight) = weights.last() {
+            trace!("  {} {:?}", loc_idx, weight);
+        }
     }
     weights
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::indexing_slicing)] // test code, knock yourself out
+
     use super::*;
     use std::{
         collections::{HashMap, HashSet},

@@ -75,8 +75,9 @@ fn uni_to_unicode(component: &str) -> Option<Vec<char>> {
     }
     let n_values = digits.len() / 4;
 
+    #[allow(clippy::unwrap_used)] // checked above
     (0..n_values)
-        .map(|i| u32::from_str_radix(&digits[i * 4..i * 4 + 4], 16).expect("checked above"))
+        .map(|i| u32::from_str_radix(&digits[i * 4..i * 4 + 4], 16).unwrap())
         .map(|uv| {
             if (0xD800..=0xDFFF).contains(&uv) {
                 None

@@ -26,6 +26,10 @@ impl PiecewiseLinearMap {
         self.from.len()
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.from.is_empty()
+    }
+
     pub fn reverse(&self) -> PiecewiseLinearMap {
         let mappings = self
             .to
@@ -46,6 +50,11 @@ impl PiecewiseLinearMap {
 
     /// Based on <https://github.com/fonttools/fonttools/blob/5a0dc4bc8dfaa0c7da146cf902395f748b3cebe5/Lib/fontTools/varLib/models.py#L502>
     pub fn map(&self, value: OrderedFloat<f64>) -> OrderedFloat<f64> {
+        if self.is_empty() {
+            return value;
+        }
+        #[allow(clippy::indexing_slicing)]
+        // Either the binary_search found it, or it's within 0..len
         match self.from.binary_search(&value) {
             Ok(idx) => self.to[idx], // This value is just right
             Err(idx) => {

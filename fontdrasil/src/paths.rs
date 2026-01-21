@@ -149,6 +149,7 @@ pub fn string_to_filename(string: &str, suffix: &str) -> String {
         filename.push(SEPARATOR_CHAR);
         for d in code_digits {
             assert!(d < 32, "We've made a terrible mistake");
+            #[allow(clippy::indexing_slicing)] // We already panicked
             filename.push(BASE_32_CHARS[d]);
         }
     }
@@ -181,6 +182,7 @@ pub fn safe_filename(name: &str, suffix: &str) -> String {
     }
     filename.extend(suffix.chars());
 
+    #[allow(clippy::indexing_slicing)] // We check that filename is non-empty before indexing
     if let Some(ch) = filename.first()
         && *ch == '.'
     {

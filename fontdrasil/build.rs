@@ -1,5 +1,5 @@
 //! Generate static arrays with data from the Adobe Glyph Lists
-
+#![allow(clippy::unwrap_used)] // We're a build script, unwrap with gay abandon
 use std::{env, fs::File, io::BufWriter, path::Path, str::FromStr};
 
 const OUT_FILE: &str = "agl_codegen.rs";
