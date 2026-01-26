@@ -3838,4 +3838,11 @@ mod tests {
             "Intermediate layer should use its own width (750), NOT the linked master's width (600)"
         );
     }
+
+    #[test]
+    fn vhea_params_trigger_build_vertical() {
+        // https://github.com/googlefonts/fontc/issues/1859
+        let (_, context) = build_static_metadata(glyphs3_dir().join("VheaParams.glyphs"));
+        assert!(context.static_metadata.get().build_vertical);
+    }
 }
