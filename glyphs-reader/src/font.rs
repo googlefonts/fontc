@@ -3824,20 +3824,27 @@ impl Font {
                             comp.name,
                             glyph.name
                         );
-                        new_shapes.extend(
-                            crate::smart_components::instantiate_for_layer(
-                                layer.master_id(),
-                                comp,
-                                ref_glyph,
-                            )
-                            .map_err(|issue| {
-                                Error::BadSmartComponent {
-                                    glyph: glyph.name.clone(),
-                                    component: comp.name.clone(),
-                                    issue,
-                                }
-                            })?,
-                        );
+                        let instance = crate::smart_components::instantiate_for_layer(
+                            layer.master_id(),
+                            comp,
+                            ref_glyph,
+                        )
+                        .map_err(|issue| Error::BadSmartComponent {
+                            glyph: glyph.name.clone(),
+                            component: comp.name.clone(),
+                            issue,
+                        })?;
+                        new_shapes.extend(instance.shapes);
+                        // Add anchors from smart component
+                        for anchor in instance.anchors {
+                            // Filter out 'mark' anchors used for internal part-to-part connections
+                            if anchor.name.starts_with('_') {
+                                continue;
+                            }
+                            // When duplicates exist, only keep the last one (matching Glyphs.app).
+                            layer.anchors.retain(|a| a.name != anchor.name);
+                            layer.anchors.push(anchor);
+                        }
                     } else {
                         layer.shapes.push(shape);
                     }
@@ -5787,10 +5794,10 @@ etc;
             ..Default::default()
         };
 
-        let shapes =
+        let instance =
             smart_components::instantiate_for_layer("m01", &default_pos, smart_comp).unwrap();
-        assert_eq!(shapes.len(), 1);
-        shapes[0].clone()
+        assert_eq!(instance.shapes.len(), 1);
+        instance.shapes[0].clone()
     }
 
     #[test]
