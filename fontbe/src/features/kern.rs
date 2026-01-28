@@ -38,8 +38,8 @@ use crate::{
         resolve_variable_metric,
     },
     orchestration::{
-        AllKerningPairs, AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsKerns,
-        KernAdjustments, KernFragment, KernPair, KernSide, WorkId,
+        AllKerningPairs, AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsKerns, KernFragment,
+        KernPair, KernSide, WorkId,
     },
 };
 
@@ -145,54 +145,57 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
             })
             .collect::<BTreeMap<_, _>>();
 
-        // Add IR kerns to builder. IR kerns are split by location so put them back together again.
-        let mut kern_by_pos: HashMap<_, _> = ir_kerns
+        // Add IR kerns to builder.
+        let mut kerns: Vec<_> = ir_kerns
             .iter()
-            .map(|(_, ki)| (ki.location.clone(), ki.as_ref().to_owned()))
+            .map(|(_, ki)| ki.as_ref().to_owned())
             .collect();
 
-        align_kerning(&ir_groups, &mut kern_by_pos);
-        let mut adjustments: HashMap<ir::KernPair, KernAdjustments> = Default::default();
+        align_kerning(&ir_groups, &mut kerns);
+        let mut raw_adjustments: Vec<(&ir::KernPair, &NormalizedLocation, OrderedFloat<f64>)> =
+            Default::default();
+
+        let pair_is_good = |(pair, _): &(&ir::KernPair, _)| {
+            for side in [&pair.0, &pair.1] {
+                match side {
+                    ir::KernSide::Group(name) if !groups.contains_key(name) => {
+                        log::warn!("Unknown kern class '{name}' will be skipped");
+                        return false;
+                    }
+                    ir::KernSide::Glyph(name) if glyph_order.glyph_id(name).is_none() => {
+                        log::warn!("Unknown kern glyph '{name}' will be skipped");
+                        return false;
+                    }
+                    _ => (),
+                }
+            }
+            true
+        };
 
         // We want to add items to locations in the same order as the group locations
         // so start with group locations and then find the matching kerning.
-        ir_groups
-            .locations
-            .iter()
-            .filter_map(|pos| kern_by_pos.get(pos))
-            .flat_map(|instance| {
-                instance
-                    .kerns
-                    .iter()
-                    .map(|(pair, adjustment)| (pair, (instance.location.clone(), *adjustment)))
-            })
-            .for_each(|(pair, (location, adjustment))| {
-                adjustments
-                    .entry(pair.clone())
-                    .or_default()
-                    .insert(location, adjustment);
-            });
+        for instance in kerns.iter() {
+            if !ir_groups.locations.contains(&instance.location) {
+                continue;
+            }
+            for (pair, adjustment) in instance.kerns.iter().filter(pair_is_good) {
+                raw_adjustments.push((pair, &instance.location, *adjustment));
+            }
+        }
+        raw_adjustments.sort_unstable_by_key(|(k, _, _)| *k);
+        let mut raw_adjustments = raw_adjustments.as_slice();
+        let mut adjustments: Vec<(ir::KernPair, _)> = Vec::new();
+        while let Some((pair, _, _)) = raw_adjustments.first().copied() {
+            let partition_idx = raw_adjustments.partition_point(|(p, _, _)| *p == pair);
+            let btree_map = raw_adjustments[0..partition_idx]
+                .iter()
+                .copied()
+                .map(|(_, k, v)| (k.clone(), v))
+                .collect();
+            adjustments.push((pair.clone(), btree_map));
+            raw_adjustments = &raw_adjustments[partition_idx..];
+        }
 
-        let adjustments: Vec<_> = adjustments
-            .into_iter()
-            // drop any rule that references a non-existent group or glyph:
-            .filter(|((left, right), _)| {
-                for side in [left, right] {
-                    match side {
-                        ir::KernSide::Group(name) if !groups.contains_key(name) => {
-                            log::warn!("Unknown kern class '{name}' will be skipped");
-                            return false;
-                        }
-                        ir::KernSide::Glyph(name) if glyph_order.glyph_id(name).is_none() => {
-                            log::warn!("Unknown kern glyph '{name}' will be skipped");
-                            return false;
-                        }
-                        _ => (),
-                    }
-                }
-                true
-            })
-            .collect();
         debug!(
             "{} ir kerns became {} classes and {} adjustments",
             ir_kerns.len(),
@@ -215,13 +218,10 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
 ///
 /// in pythonland this happens in ufo2ft, here:
 /// <https://github.com/googlefonts/ufo2ft/blob/5fd168e65a0b0a/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L442>
-fn align_kerning(
-    groups: &KerningGroups,
-    instances: &mut HashMap<NormalizedLocation, KerningInstance>,
-) {
+fn align_kerning(groups: &KerningGroups, instances: &mut [KerningInstance]) {
     // all pairs defined in at least one instance
     let all_known_pairs = instances
-        .values()
+        .iter()
         .flat_map(|instance| instance.kerns.keys())
         .cloned()
         .collect::<HashSet<_>>();
@@ -239,7 +239,7 @@ fn align_kerning(
         .flat_map(|(group, glyphs)| glyphs.iter().map(move |glyph| (glyph, group)))
         .collect::<HashMap<_, _>>();
 
-    for instance in instances.values_mut() {
+    for instance in instances.iter_mut() {
         align_instance(
             &all_known_pairs,
             &mut instance.kerns,
@@ -388,7 +388,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
             .iter()
             .flat_map(|(_, fragment)| fragment.kerns.iter())
             .collect();
-        pairs.sort();
+        pairs.sort_unstable();
 
         let glyphs = glyph_order
             .names()
