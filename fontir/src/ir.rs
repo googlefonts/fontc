@@ -437,13 +437,11 @@ impl GlobalMetricsBuilder {
     ) {
         let units_per_em = units_per_em as f64;
 
-        let mut set_if_absent = |metric, value| self.set_if_absent(metric, pos.clone(), value);
-
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
         let ascender = ascender.unwrap_or(0.8 * units_per_em);
         let descender = descender.unwrap_or(-0.2 * units_per_em);
-        set_if_absent(GlobalMetric::Ascender, ascender);
-        set_if_absent(GlobalMetric::Descender, descender);
+        self.set_if_absent(GlobalMetric::Ascender, pos, ascender);
+        self.set_if_absent(GlobalMetric::Descender, pos, descender);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L229-L238
         let typo_line_gap = units_per_em * 1.2 + descender - ascender;
@@ -452,61 +450,72 @@ impl GlobalMetricsBuilder {
         } else {
             0.0
         };
-        set_if_absent(GlobalMetric::Os2TypoLineGap, typo_line_gap);
+        self.set_if_absent(GlobalMetric::Os2TypoLineGap, pos, typo_line_gap);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L215-L226
-        set_if_absent(GlobalMetric::Os2TypoAscender, ascender);
-        set_if_absent(GlobalMetric::Os2TypoDescender, descender);
+        self.set_if_absent(GlobalMetric::Os2TypoAscender, pos, ascender);
+        self.set_if_absent(GlobalMetric::Os2TypoDescender, pos, descender);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L126-L130
-        set_if_absent(GlobalMetric::HheaAscender, ascender + typo_line_gap);
-        set_if_absent(GlobalMetric::HheaDescender, descender);
+        self.set_if_absent(GlobalMetric::HheaAscender, pos, ascender + typo_line_gap);
+        self.set_if_absent(GlobalMetric::HheaDescender, pos, descender);
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L366
-        set_if_absent(GlobalMetric::HheaLineGap, 0.0);
+        self.set_if_absent(GlobalMetric::HheaLineGap, pos, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L241-L254
-        set_if_absent(GlobalMetric::Os2WinAscent, ascender + typo_line_gap);
-        set_if_absent(GlobalMetric::Os2WinDescent, descender.abs());
+        self.set_if_absent(GlobalMetric::Os2WinAscent, pos, ascender + typo_line_gap);
+        self.set_if_absent(GlobalMetric::Os2WinDescent, pos, descender.abs());
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
-        set_if_absent(GlobalMetric::CapHeight, 0.7 * units_per_em);
+        self.set_if_absent(GlobalMetric::CapHeight, pos, 0.7 * units_per_em);
 
         let x_height = x_height.unwrap_or(0.5 * units_per_em);
-        set_if_absent(GlobalMetric::XHeight, x_height);
+        self.set_if_absent(GlobalMetric::XHeight, pos, x_height);
 
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L133-L148
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L151-L161
         let italic_angle = italic_angle.unwrap_or(0.0);
-        set_if_absent(GlobalMetric::CaretSlopeRise, units_per_em);
-        set_if_absent(
+        self.set_if_absent(GlobalMetric::CaretSlopeRise, pos, units_per_em);
+        self.set_if_absent(
             GlobalMetric::CaretSlopeRun,
+            pos,
             adjust_offset(units_per_em, italic_angle),
         );
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L367
-        set_if_absent(GlobalMetric::CaretOffset, 0.0);
+        self.set_if_absent(GlobalMetric::CaretOffset, pos, 0.0);
 
-        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
-        let subscript_x_size = units_per_em * 0.65;
-        let subscript_y_size = units_per_em * 0.60;
-        let subscript_y_offset = units_per_em * 0.075;
-        let superscript_y_offset = units_per_em * 0.35;
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd/Lib/ufo2ft/outlineCompiler.py#L575-L616
+        let subscript_x_size = self
+            .get(GlobalMetric::SubscriptXSize, pos)
+            .unwrap_or_else(|| (units_per_em * 0.65).into());
+        let subscript_y_size = self
+            .get(GlobalMetric::SubscriptYSize, pos)
+            .unwrap_or_else(|| (units_per_em * 0.60).into());
+        let subscript_y_offset = self
+            .get(GlobalMetric::SubscriptYOffset, pos)
+            .unwrap_or_else(|| (units_per_em * 0.075).into());
+        let superscript_y_offset = self
+            .get(GlobalMetric::SuperscriptYOffset, pos)
+            .unwrap_or_else(|| (units_per_em * 0.35).into());
 
-        set_if_absent(GlobalMetric::SubscriptXSize, subscript_x_size);
-        set_if_absent(GlobalMetric::SubscriptYSize, subscript_y_size);
-        set_if_absent(
+        self.set_if_absent(GlobalMetric::SubscriptXSize, pos, subscript_x_size);
+        self.set_if_absent(GlobalMetric::SubscriptYSize, pos, subscript_y_size);
+        self.set_if_absent(
             GlobalMetric::SubscriptXOffset,
-            adjust_offset(-subscript_y_offset, italic_angle),
+            pos,
+            adjust_offset(-subscript_y_offset.0, italic_angle),
         );
-        set_if_absent(GlobalMetric::SubscriptYOffset, subscript_y_offset);
+        self.set_if_absent(GlobalMetric::SubscriptYOffset, pos, subscript_y_offset);
 
-        set_if_absent(GlobalMetric::SuperscriptXSize, subscript_x_size);
-        set_if_absent(GlobalMetric::SuperscriptYSize, subscript_y_size);
-        set_if_absent(
+        self.set_if_absent(GlobalMetric::SuperscriptXSize, pos, subscript_x_size);
+        self.set_if_absent(GlobalMetric::SuperscriptYSize, pos, subscript_y_size);
+        self.set_if_absent(
             GlobalMetric::SuperscriptXOffset,
-            adjust_offset(superscript_y_offset, italic_angle),
+            pos,
+            adjust_offset(superscript_y_offset.0, italic_angle),
         );
-        set_if_absent(GlobalMetric::SuperscriptYOffset, superscript_y_offset);
+        self.set_if_absent(GlobalMetric::SuperscriptYOffset, pos, superscript_y_offset);
 
         // ufo2ft and Glyphs.app have different defaults for the post.underlinePosition:
         // the former uses 0.075*UPEM whereas the latter 0.1*UPEM (both use the same
@@ -514,13 +523,14 @@ impl GlobalMetricsBuilder {
         // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L313-L322
         // https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125
         let underline_thickness =
-            set_if_absent(GlobalMetric::UnderlineThickness, 0.05 * units_per_em);
-        set_if_absent(GlobalMetric::UnderlinePosition, -0.1 * units_per_em);
+            self.set_if_absent(GlobalMetric::UnderlineThickness, pos, 0.05 * units_per_em);
+        self.set_if_absent(GlobalMetric::UnderlinePosition, pos, -0.1 * units_per_em);
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3/Lib/ufo2ft/outlineCompiler.py#L609-L616
-        set_if_absent(GlobalMetric::StrikeoutSize, underline_thickness.0);
-        set_if_absent(
+        self.set_if_absent(GlobalMetric::StrikeoutSize, pos, underline_thickness.0);
+        self.set_if_absent(
             GlobalMetric::StrikeoutPosition,
+            pos,
             if x_height != 0. {
                 x_height * 0.6
             } else {
@@ -529,16 +539,16 @@ impl GlobalMetricsBuilder {
         );
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L403-L408
-        set_if_absent(GlobalMetric::VheaCaretSlopeRise, 0.0);
-        set_if_absent(GlobalMetric::VheaCaretSlopeRun, 1.0);
-        set_if_absent(GlobalMetric::VheaCaretOffset, 0.0);
+        self.set_if_absent(GlobalMetric::VheaCaretSlopeRise, pos, 0.0);
+        self.set_if_absent(GlobalMetric::VheaCaretSlopeRun, pos, 1.0);
+        self.set_if_absent(GlobalMetric::VheaCaretOffset, pos, 0.0);
 
         // XXX: These should _always_ be overwritten if the static metadata
         // indicates that there is vertical data to build.
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L397-L402
-        set_if_absent(GlobalMetric::VheaAscender, 0.0);
-        set_if_absent(GlobalMetric::VheaDescender, 0.0);
-        set_if_absent(GlobalMetric::VheaLineGap, 0.0);
+        self.set_if_absent(GlobalMetric::VheaAscender, pos, 0.0);
+        self.set_if_absent(GlobalMetric::VheaDescender, pos, 0.0);
+        self.set_if_absent(GlobalMetric::VheaLineGap, pos, 0.0);
     }
 
     fn values_mut(
@@ -546,6 +556,10 @@ impl GlobalMetricsBuilder {
         metric: GlobalMetric,
     ) -> &mut HashMap<NormalizedLocation, OrderedFloat<f64>> {
         self.0.entry(metric).or_default()
+    }
+
+    fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> Option<OrderedFloat<f64>> {
+        self.0.get(&metric)?.get(pos).copied()
     }
 
     /// Set the value of a metric at a specific location.
@@ -568,10 +582,13 @@ impl GlobalMetricsBuilder {
     pub fn set_if_absent(
         &mut self,
         metric: GlobalMetric,
-        pos: NormalizedLocation,
+        pos: impl Into<NormalizedLocation>,
         value: impl Into<OrderedFloat<f64>>,
     ) -> OrderedFloat<f64> {
-        *self.values_mut(metric).entry(pos).or_insert(value.into())
+        *self
+            .values_mut(metric)
+            .entry(pos.into())
+            .or_insert(value.into())
     }
 
     /// A helper method for setting possibly missing values.
