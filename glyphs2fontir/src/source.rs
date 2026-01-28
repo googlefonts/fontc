@@ -399,14 +399,27 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         let categories = make_glyph_categories(font, &axes);
 
-        // Only build vertical metrics if at least one glyph defines a vertical
-        // attribute.
-        // https://github.com/googlefonts/glyphsLib/blob/c4db6b98/Lib/glyphsLib/builder/builders.py#L191-L199
-        let build_vertical = font
+        // Build vertical metrics if:
+        // 1. At least one glyph defines a vertical attribute (vertWidth/vertOrigin), OR
+        // 2. All three vhea custom parameters are explicitly defined (at font or master level)
+        //
+        // To match ufo2ft, require all three vhea params (ascender, descender, lineGap):
+        // https://github.com/googlefonts/ufo2ft/blob/28acf8870487/Lib/ufo2ft/outlineCompiler.py#L154-L163
+        // https://github.com/googlefonts/fontc/issues/1859
+        let has_all_vhea_params = |cp: &glyphs_reader::CustomParameters| {
+            cp.vhea_ascender.is_some() && cp.vhea_descender.is_some() && cp.vhea_line_gap.is_some()
+        };
+        let has_vhea_params = has_all_vhea_params(&font.custom_parameters)
+            || font
+                .masters
+                .iter()
+                .any(|m| has_all_vhea_params(&m.custom_parameters));
+        let has_glyph_vertical_attrs = font
             .glyphs
             .values()
             .flat_map(|glyph| glyph.layers.iter())
             .any(|layer| layer.vert_width.is_some() || layer.vert_origin.is_some());
+        let build_vertical = has_vhea_params || has_glyph_vertical_attrs;
 
         let dont_use_prod_names = font
             .custom_parameters
@@ -3824,5 +3837,12 @@ mod tests {
             sources_a[&intermediate].width, 750.0,
             "Intermediate layer should use its own width (750), NOT the linked master's width (600)"
         );
+    }
+
+    #[test]
+    fn vhea_params_trigger_build_vertical() {
+        // https://github.com/googlefonts/fontc/issues/1859
+        let (_, context) = build_static_metadata(glyphs3_dir().join("VheaParams.glyphs"));
+        assert!(context.static_metadata.get().build_vertical);
     }
 }
