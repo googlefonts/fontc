@@ -86,7 +86,8 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
     ) || (parser.matches(0, Kind::LAngle)
         && parser.matches(
             1,
-            TokenSet::new(&[Kind::Number, Kind::NullKw, Kind::Dollar]).union(TokenSet::IDENT_LIKE),
+            TokenSet::new(&[Kind::Number, Kind::LParen, Kind::NullKw, Kind::Dollar])
+                .union(TokenSet::IDENT_LIKE),
         ));
 
     if !looks_like_record {
