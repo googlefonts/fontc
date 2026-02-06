@@ -1,4 +1,4 @@
-FILE@[0; 204)
+FILE@[0; 373)
     FeatureNode@[0; 129)
       FeatureKw@0 "feature"
       WS@7 " "
@@ -91,49 +91,129 @@ FILE@[0; 204)
       Tag@124 "kern"
       ;@128 ";"
   WS@129 "\n\n"
-    Os2TableNode@[131; 203)
-      TableKw@131 "table"
-      WS@136 " "
-      Tag@137 "OS/2"
-      WS@141 " "
-      {@142 "{"
-      WS@143 "\n    "
-        MetricValueNode@[148; 195)
-          TypoAscender@148 "TypoAscender"
-          WS@160 " "
-            VariableMetricNode@[161; 194)
-              (@161 "("
-                LocationValueNode@[162; 172)
-                    LocationSpecNode@[162; 170)
-                        LocationSpecItemNode@[162; 170)
-                          Tag@162 "blah"
-                          =@166 "="
-                            AxisLocationNode@[167; 170)
-                              NUM@167 "100"
-                  :@170 ":"
-                  NUM@171 "5"
-              WS@172 " "
-                LocationValueNode@[173; 193)
-                    LocationSpecNode@[173; 189)
-                        LocationSpecItemNode@[173; 181)
-                          Tag@173 "blah"
-                          =@177 "="
-                            AxisLocationNode@[178; 181)
-                              NUM@178 "400"
-                      ,@181 ","
-                        LocationSpecItemNode@[182; 189)
-                          Tag@182 "rah"
-                          =@185 "="
-                            AxisLocationNode@[186; 189)
-                              NUM@186 "300"
-                  :@189 ":"
-                  WS@190 " "
-                  NUM@191 "-9"
-              )@193 ")"
-          ;@194 ";"
-      WS@195 "\n"
-      }@196 "}"
-      WS@197 " "
-      Tag@198 "OS/2"
-      ;@202 ";"
-  WS@203 "\n"
+    FeatureNode@[131; 298)
+      FeatureKw@131 "feature"
+      WS@138 " "
+      Tag@139 "kern"
+      WS@143 " "
+      {@144 "{"
+      WS@145 "\n    "
+      #@150 "# variable scalars inside angle-bracket value records (#1882)"
+      WS@211 "\n    "
+        GposType1@[216; 245)
+          PosKw@216 "pos"
+          WS@219 " "
+          GlyphName@220 "A"
+          WS@221 " "
+            ValueRecordNode@[222; 244)
+              <@222 "<"
+                VariableMetricNode@[223; 237)
+                  (@223 "("
+                    LocationValueNode@[224; 236)
+                        LocationSpecNode@[224; 232)
+                            LocationSpecItemNode@[224; 232)
+                              Tag@224 "wght"
+                              =@228 "="
+                                AxisLocationNode@[229; 232)
+                                  NUM@229 "200"
+                      :@232 ":"
+                      NUM@233 "-10"
+                  )@236 ")"
+              WS@237 " "
+              NUM@238 "0"
+              WS@239 " "
+              NUM@240 "0"
+              WS@241 " "
+              NUM@242 "0"
+              >@243 ">"
+          ;@244 ";"
+      WS@245 "\n    "
+        GposType1@[250; 290)
+          PosKw@250 "pos"
+          WS@253 " "
+          GlyphName@254 "B"
+          WS@255 " "
+            ValueRecordNode@[256; 289)
+              <@256 "<"
+              NUM@257 "0"
+              WS@258 " "
+                VariableMetricNode@[259; 284)
+                  (@259 "("
+                    LocationValueNode@[260; 271)
+                        LocationSpecNode@[260; 268)
+                            LocationSpecItemNode@[260; 268)
+                              Tag@260 "wght"
+                              =@264 "="
+                                AxisLocationNode@[265; 268)
+                                  NUM@265 "200"
+                      :@268 ":"
+                      NUM@269 "10"
+                  WS@271 " "
+                    LocationValueNode@[272; 283)
+                        LocationSpecNode@[272; 280)
+                            LocationSpecItemNode@[272; 280)
+                              Tag@272 "wght"
+                              =@276 "="
+                                AxisLocationNode@[277; 280)
+                                  NUM@277 "900"
+                      :@280 ":"
+                      NUM@281 "20"
+                  )@283 ")"
+              WS@284 " "
+              NUM@285 "0"
+              WS@286 " "
+              NUM@287 "0"
+              >@288 ">"
+          ;@289 ";"
+      WS@290 "\n"
+      }@291 "}"
+      WS@292 " "
+      Tag@293 "kern"
+      ;@297 ";"
+  WS@298 "\n\n"
+    Os2TableNode@[300; 372)
+      TableKw@300 "table"
+      WS@305 " "
+      Tag@306 "OS/2"
+      WS@310 " "
+      {@311 "{"
+      WS@312 "\n    "
+        MetricValueNode@[317; 364)
+          TypoAscender@317 "TypoAscender"
+          WS@329 " "
+            VariableMetricNode@[330; 363)
+              (@330 "("
+                LocationValueNode@[331; 341)
+                    LocationSpecNode@[331; 339)
+                        LocationSpecItemNode@[331; 339)
+                          Tag@331 "blah"
+                          =@335 "="
+                            AxisLocationNode@[336; 339)
+                              NUM@336 "100"
+                  :@339 ":"
+                  NUM@340 "5"
+              WS@341 " "
+                LocationValueNode@[342; 362)
+                    LocationSpecNode@[342; 358)
+                        LocationSpecItemNode@[342; 350)
+                          Tag@342 "blah"
+                          =@346 "="
+                            AxisLocationNode@[347; 350)
+                              NUM@347 "400"
+                      ,@350 ","
+                        LocationSpecItemNode@[351; 358)
+                          Tag@351 "rah"
+                          =@354 "="
+                            AxisLocationNode@[355; 358)
+                              NUM@355 "300"
+                  :@358 ":"
+                  WS@359 " "
+                  NUM@360 "-9"
+              )@362 ")"
+          ;@363 ";"
+      WS@364 "\n"
+      }@365 "}"
+      WS@366 " "
+      Tag@367 "OS/2"
+      ;@371 ";"
+  WS@372 "\n"
