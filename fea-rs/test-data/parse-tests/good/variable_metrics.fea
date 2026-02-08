@@ -3,6 +3,12 @@ feature kern {
     pos x y (wght=200:-100 wght=900:-150 wdth=150,wght=900:-120);
 } kern;
 
+feature kern {
+    # variable scalars inside angle-bracket value records (#1882)
+    pos A <(wght=200:-10) 0 0 0>;
+    pos B <0 (wght=200:10 wght=900:20) 0 0>;
+} kern;
+
 table OS/2 {
     TypoAscender (blah=100:5 blah=400,rah=300: -9);
 } OS/2;
