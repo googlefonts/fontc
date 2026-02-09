@@ -5,14 +5,15 @@
 //! This implementation works at the IR level, processing each NormalizedLocation
 //! independently and then aggregating into variable anchors.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use indexmap::IndexMap;
 use kurbo::{Affine, Point, Vec2};
 use smol_str::{SmolStr, format_smolstr};
 use write_fonts::tables::gdef::GlyphClassDef;
+use write_fonts::types::Tag;
 
-use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
+use fontdrasil::{coords::NormalizedLocation, types::GlyphName, variations::VariationModel};
 
 use crate::{
     error::{BadGlyph, Error},
@@ -32,6 +33,8 @@ struct RawAnchor {
 /// This is the main entry point for anchor propagation.
 pub fn propagate_all_anchors(context: &Context) -> Result<(), Error> {
     let gdef_categories = &*context.preliminary_gdef_categories.get();
+    let meta = context.static_metadata.get();
+    let axis_order = meta.axes.axis_order();
 
     // 1. Depth-sort glyphs (process components before composites).
     // The reference implementation (Glyphs.app) does this recursively, but we opt to
@@ -51,6 +54,10 @@ pub fn propagate_all_anchors(context: &Context) -> Result<(), Error> {
     let mut done_anchors: HashMap<(GlyphName, NormalizedLocation), Vec<RawAnchor>> = HashMap::new();
     // Track number of base glyphs for ligature anchor numbering
     let mut base_glyph_counts: HashMap<(GlyphName, NormalizedLocation), usize> = HashMap::new();
+    // Cache of variation models keyed by location set, for interpolating component
+    // anchors at missing locations.
+    let mut variation_models: HashMap<BTreeSet<NormalizedLocation>, VariationModel> =
+        HashMap::new();
 
     for glyph_name_smol in &todo {
         let glyph_name: GlyphName = glyph_name_smol.as_str().into();
@@ -95,6 +102,8 @@ pub fn propagate_all_anchors(context: &Context) -> Result<(), Error> {
                 location,
                 &done_anchors,
                 &mut base_glyph_counts,
+                &axis_order,
+                &mut variation_models,
             );
 
             done_anchors.insert((glyph_name.clone(), location.clone()), anchors);
@@ -138,6 +147,103 @@ fn build_variable_anchors(
     builder.build()
 }
 
+/// Interpolate a component's anchors at a location where it has no explicit source.
+///
+/// The canonical set of anchor names comes from the default source. Each anchor is
+/// interpolated independently from its own set of source locations, so anchors
+/// missing at some non-default locations are treated as sparse (those locations are
+/// simply omitted from the interpolation for that anchor). Anchors absent from the
+/// default but present at non-default locations are ignored.
+///
+/// Returns `None` if the component has no entries in `done_anchors`, most likely
+/// because the referenced component glyph doesn't exist in the font. Individual
+/// anchors that fail interpolation are skipped with a warning.
+fn interpolate_component_anchors(
+    component_name: &GlyphName,
+    target_location: &NormalizedLocation,
+    done_anchors: &HashMap<(GlyphName, NormalizedLocation), Vec<RawAnchor>>,
+    axis_order: &[Tag],
+    variation_models: &mut HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
+) -> Option<Vec<RawAnchor>> {
+    // Collect all (location, anchors) pairs for this component
+    let per_location: Vec<_> = done_anchors
+        .iter()
+        .filter(|((name, _), _)| name == component_name)
+        .map(|((_, loc), anchors)| (loc.clone(), anchors.clone()))
+        .collect();
+
+    if per_location.is_empty() {
+        return None;
+    }
+
+    // Get canonical anchor names from the default source location.
+    let default_anchors = &per_location
+        .iter()
+        .find(|(loc, _)| loc.is_default())
+        .expect("component should have a default source")
+        .1;
+    let anchor_names: Vec<SmolStr> = default_anchors.iter().map(|a| a.name.clone()).collect();
+    if anchor_names.is_empty() {
+        return Some(Vec::new());
+    }
+
+    // Build a per-anchor map: anchor_name -> {location -> position}
+    // Each anchor tracks only the locations where it's present.
+    let mut per_anchor: HashMap<&SmolStr, HashMap<NormalizedLocation, Point>> = HashMap::new();
+    for (loc, anchors) in &per_location {
+        for anchor in anchors {
+            if anchor_names.contains(&anchor.name) {
+                per_anchor
+                    .entry(&anchor.name)
+                    .or_default()
+                    .insert(loc.clone(), anchor.pos);
+            }
+        }
+    }
+
+    // Interpolate each anchor independently from its own set of source locations
+    let mut result = Vec::with_capacity(anchor_names.len());
+    for name in &anchor_names {
+        let Some(positions) = per_anchor.get(name) else {
+            continue;
+        };
+        let locations: BTreeSet<NormalizedLocation> = positions.keys().cloned().collect();
+        let point_seqs: HashMap<NormalizedLocation, Vec<Point>> = positions
+            .iter()
+            .map(|(loc, &pos)| (loc.clone(), vec![pos]))
+            .collect();
+
+        let model = variation_models
+            .entry(locations.clone())
+            .or_insert_with(|| {
+                VariationModel::new(
+                    locations.into_iter().collect::<HashSet<_>>(),
+                    axis_order.to_vec(),
+                )
+            });
+        let deltasets = match model.deltas(&point_seqs) {
+            Ok(d) => d,
+            Err(e) => {
+                log::warn!(
+                    "failed to compute deltas for anchor '{}' on component '{}': {e}",
+                    name,
+                    component_name
+                );
+                continue;
+            }
+        };
+        let interpolated = model.interpolate_from_deltas(target_location, &deltasets);
+        if let Some(&pos) = interpolated.first() {
+            result.push(RawAnchor {
+                name: name.clone(),
+                pos: pos.to_point(),
+            });
+        }
+    }
+
+    Some(result)
+}
+
 /// Return the anchors for a glyph at a specific location, including anchors from components.
 ///
 /// This is a reimplementation of a similarly named function in Glyphs.app.
@@ -164,6 +270,10 @@ fn anchors_traversing_components(
     done_anchors: &HashMap<(GlyphName, NormalizedLocation), Vec<RawAnchor>>,
     // each (glyph, location) writes its number of base glyphs into this map during traversal
     base_glyph_counts: &mut HashMap<(GlyphName, NormalizedLocation), usize>,
+    // axis order for building VariationModel when interpolating missing component anchors
+    axis_order: &[Tag],
+    // cache of variation models keyed by location set
+    variation_models: &mut HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
 ) -> Vec<RawAnchor> {
     if existing_anchors.is_empty() && components.is_empty() {
         return Vec::new();
@@ -187,21 +297,36 @@ fn anchors_traversing_components(
         // Get the anchors for this component at this location.
         // Because we process dependencies first we know that all components
         // referenced have already been propagated.
-        let Some(mut anchors) = done_anchors
+        let mut anchors = match done_anchors
             .get(&(component.base.clone(), location.clone()))
             .cloned()
-        else {
-            // Unless composite defines more locations than its components, in which case
-            // the right thing to do would be to interpolate anchors for missing locations
-            // but we don't support that yet, see:
-            // https://github.com/googlefonts/fontc/issues/1661
-            log::warn!(
-                "could not get anchors for component '{}' at location {:?} in glyph '{}'",
-                component.base,
-                location,
-                glyph_name
-            );
-            continue;
+        {
+            Some(a) => a,
+            None => {
+                // Component doesn't have an explicit source at this location (e.g. the
+                // composite has an intermediate/brace layer that its component doesn't).
+                // Interpolate the component's anchors from its available locations.
+                // See: https://github.com/googlefonts/fontc/issues/1661
+                match interpolate_component_anchors(
+                    &component.base,
+                    location,
+                    done_anchors,
+                    axis_order,
+                    variation_models,
+                ) {
+                    Some(a) => a,
+                    None => {
+                        log::warn!(
+                            "could not get or interpolate anchors for component '{}' \
+                             at location {:?} in glyph '{}'",
+                            component.base,
+                            location,
+                            glyph_name
+                        );
+                        continue;
+                    }
+                }
+            }
         };
 
         // If this component has an explicitly set attachment anchor, use it.
@@ -1456,6 +1581,310 @@ mod tests {
         assert!(
             names.contains(&"exit.1".to_string()),
             "exit.1 should be propagated on ligature"
+        );
+    }
+
+    /// Test that component anchors are interpolated at locations where a composite glyph
+    /// has an intermediate ("brace") layer but its component does not.
+    ///
+    /// See: <https://github.com/googlefonts/fontc/issues/1661>
+    #[test]
+    fn interpolate_missing_component_anchors() {
+        let loc_light = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc_medium = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let loc_bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+
+        let mut builder = GlyphSetBuilder::new(test_context_with_locations(vec![
+            loc_light.clone(),
+            loc_medium.clone(),
+            loc_bold.clone(),
+        ]));
+
+        // 'ae': base glyph with 3 masters (has intermediate layer)
+        builder.add_variable_glyph(
+            "ae",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![("top", 300.0, 600.0), ("bottom", 300.0, 0.0)],
+                    vec![],
+                ),
+                (
+                    loc_medium.clone(),
+                    vec![("top", 340.0, 650.0), ("bottom", 340.0, 0.0)],
+                    vec![],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![("top", 380.0, 700.0), ("bottom", 380.0, 0.0)],
+                    vec![],
+                ),
+            ],
+            None,
+        );
+
+        // 'acutecomb': only has 2 masters (light and bold), NO intermediate layer
+        builder.add_variable_glyph(
+            "acutecomb",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![("_top", 100.0, 500.0), ("top", 120.0, 700.0)],
+                    vec![],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![("_top", 140.0, 520.0), ("top", 160.0, 740.0)],
+                    vec![],
+                ),
+            ],
+            Some(GlyphClassDef::Mark),
+        );
+
+        // 'gravecomb': also only 2 masters (same locations as acutecomb),
+        // so its variation model should be reused from the cache
+        builder.add_variable_glyph(
+            "gravecomb",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![("_top", 90.0, 500.0), ("top", 110.0, 680.0)],
+                    vec![],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![("_top", 130.0, 520.0), ("top", 150.0, 720.0)],
+                    vec![],
+                ),
+            ],
+            Some(GlyphClassDef::Mark),
+        );
+
+        // 'aeacute': composite with 3 locations (including the intermediate)
+        builder.add_variable_glyph(
+            "aeacute",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![],
+                    vec![("ae", 0.0, 0.0), ("acutecomb", 200.0, 100.0)],
+                ),
+                (
+                    loc_medium.clone(),
+                    vec![],
+                    vec![("ae", 0.0, 0.0), ("acutecomb", 220.0, 110.0)],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![],
+                    vec![("ae", 0.0, 0.0), ("acutecomb", 240.0, 120.0)],
+                ),
+            ],
+            None,
+        );
+
+        // 'aegrave': second composite, also needs interpolation for gravecomb at medium.
+        builder.add_variable_glyph(
+            "aegrave",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![],
+                    vec![("ae", 0.0, 0.0), ("gravecomb", 180.0, 100.0)],
+                ),
+                (
+                    loc_medium.clone(),
+                    vec![],
+                    vec![("ae", 0.0, 0.0), ("gravecomb", 200.0, 110.0)],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![],
+                    vec![("ae", 0.0, 0.0), ("gravecomb", 220.0, 120.0)],
+                ),
+            ],
+            None,
+        );
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        // --- aeacute ---
+        // Light master: component anchors from explicit sources
+        // bottom from ae, top from acutecomb.top (120, 700) + offset (200, 100) = (320, 800)
+        assert_anchor_at_loc(
+            &ctx,
+            "aeacute",
+            "bottom",
+            &loc_light,
+            Point::new(300.0, 0.0),
+        );
+        assert_anchor_at_loc(&ctx, "aeacute", "top", &loc_light, Point::new(320.0, 800.0));
+
+        // Bold master: component anchors from explicit sources
+        // bottom from ae, top from acutecomb.top (160, 740) + offset (240, 120) = (400, 860)
+        assert_anchor_at_loc(&ctx, "aeacute", "bottom", &loc_bold, Point::new(380.0, 0.0));
+        assert_anchor_at_loc(&ctx, "aeacute", "top", &loc_bold, Point::new(400.0, 860.0));
+
+        // Medium master: acutecomb should be INTERPOLATED at wght=0.5
+        // Interpolated acutecomb anchors:
+        //   _top: (100, 500) + 0.5 * ((140, 520) - (100, 500)) = (120, 510)
+        //   top:  (120, 700) + 0.5 * ((160, 740) - (120, 700)) = (140, 720)
+        // Then component offset at medium is (220, 110):
+        //   top = (140, 720) + (220, 110) = (360, 830)
+        // ae's bottom at medium is (340, 0)
+        assert_anchor_at_loc(
+            &ctx,
+            "aeacute",
+            "bottom",
+            &loc_medium,
+            Point::new(340.0, 0.0),
+        );
+        assert_anchor_at_loc(
+            &ctx,
+            "aeacute",
+            "top",
+            &loc_medium,
+            Point::new(360.0, 830.0),
+        );
+
+        // --- aegrave ---
+        // Exercises cache reuse: gravecomb has the same {light, bold} location set
+        // as acutecomb, so the VariationModel built for acutecomb is reused.
+
+        // Light: top from gravecomb.top (110, 680) + offset (180, 100) = (290, 780)
+        assert_anchor_at_loc(
+            &ctx,
+            "aegrave",
+            "bottom",
+            &loc_light,
+            Point::new(300.0, 0.0),
+        );
+        assert_anchor_at_loc(&ctx, "aegrave", "top", &loc_light, Point::new(290.0, 780.0));
+
+        // Bold: top from gravecomb.top (150, 720) + offset (220, 120) = (370, 840)
+        assert_anchor_at_loc(&ctx, "aegrave", "bottom", &loc_bold, Point::new(380.0, 0.0));
+        assert_anchor_at_loc(&ctx, "aegrave", "top", &loc_bold, Point::new(370.0, 840.0));
+
+        // Medium: gravecomb INTERPOLATED at wght=0.5
+        //   top:  (110, 680) + 0.5 * ((150, 720) - (110, 680)) = (130, 700)
+        // Component offset at medium is (200, 110):
+        //   top = (130, 700) + (200, 110) = (330, 810)
+        assert_anchor_at_loc(
+            &ctx,
+            "aegrave",
+            "bottom",
+            &loc_medium,
+            Point::new(340.0, 0.0),
+        );
+        assert_anchor_at_loc(
+            &ctx,
+            "aegrave",
+            "top",
+            &loc_medium,
+            Point::new(330.0, 810.0),
+        );
+    }
+
+    /// Test that `interpolate_component_anchors` handles sparse anchors correctly:
+    /// when different anchors have different sets of source locations, each is
+    /// interpolated independently from its own locations.
+    #[test]
+    fn interpolate_sparse_component_anchors() {
+        let loc_light = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc_medium = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let loc_semibold = NormalizedLocation::for_pos(&[("wght", 0.75)]);
+        let loc_bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+
+        let axis_order = vec![Tag::new(b"wght")];
+
+        let component_name: GlyphName = "acutecomb".into();
+
+        // The component has sources at light, semibold, and bold (not medium).
+        // The composite has a source at medium, which is why we need interpolation.
+        // "top" is present at all 3 component locations, "_top" only at light
+        // and bold (missing at semibold), so each anchor uses a different
+        // VariationModel.
+        let mut done_anchors: HashMap<(GlyphName, NormalizedLocation), Vec<RawAnchor>> =
+            HashMap::new();
+        done_anchors.insert(
+            (component_name.clone(), loc_light.clone()),
+            vec![
+                RawAnchor {
+                    name: "_top".into(),
+                    pos: Point::new(100.0, 500.0),
+                },
+                RawAnchor {
+                    name: "top".into(),
+                    pos: Point::new(120.0, 700.0),
+                },
+            ],
+        );
+        done_anchors.insert(
+            (component_name.clone(), loc_semibold.clone()),
+            vec![
+                // _top is MISSING at semibold (sparse)
+                RawAnchor {
+                    name: "top".into(),
+                    pos: Point::new(155.0, 738.0),
+                },
+            ],
+        );
+        done_anchors.insert(
+            (component_name.clone(), loc_bold.clone()),
+            vec![
+                RawAnchor {
+                    name: "_top".into(),
+                    pos: Point::new(140.0, 520.0),
+                },
+                RawAnchor {
+                    name: "top".into(),
+                    pos: Point::new(160.0, 740.0),
+                },
+            ],
+        );
+
+        let mut variation_models = HashMap::new();
+        let result = interpolate_component_anchors(
+            &component_name,
+            &loc_medium,
+            &done_anchors,
+            &axis_order,
+            &mut variation_models,
+        )
+        .expect("interpolation should succeed");
+
+        // "top" has sources at {light, semibold, bold}, interpolated at medium (wght=0.5).
+        // The semibold value (155, 738) is off the linear path between light (120, 700)
+        // and bold (160, 740), so the 3-source model produces a different result than
+        // a simple light+bold lerp (which would give (140, 720)).
+        let top = result
+            .iter()
+            .find(|a| a.name == "top")
+            .expect("should have top");
+        assert!(
+            (top.pos.x - 143.33).abs() < 0.01 && (top.pos.y - 725.33).abs() < 0.01,
+            "top should be ~(143.33, 725.33), got {:?}",
+            top.pos
+        );
+
+        // "_top" has sources at {light, bold} only, interpolated at medium (wght=0.5):
+        //   (100, 500) + 0.5 * ((140, 520) - (100, 500)) = (120, 510)
+        let _top = result
+            .iter()
+            .find(|a| a.name == "_top")
+            .expect("should have _top");
+        assert_eq!(
+            _top.pos,
+            Point::new(120.0, 510.0),
+            "_top should be interpolated from light+bold"
+        );
+
+        // "top" uses a 3-location model, "_top" uses a 2-location model
+        assert_eq!(
+            variation_models.len(),
+            2,
+            "should have 2 cached models for different location sets"
         );
     }
 }
