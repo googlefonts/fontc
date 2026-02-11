@@ -219,12 +219,12 @@ fn anchors_traversing_components(
         let comb_has_underscore = anchors
             .iter()
             .any(|a| a.name.len() >= 2 && a.name.starts_with('_'));
-        let comb_has_exit = anchors.iter().any(|a| a.name.ends_with("exit"));
+        let comb_has_exit = anchors.iter().any(|a| a.name.starts_with("exit"));
 
         if !(comb_has_underscore | comb_has_exit) {
             // delete exit anchors we may have taken from earlier components
             // (since a glyph should only have one exit anchor, and logically its at the end)
-            all_anchors.retain(|name: &SmolStr, _| !name.ends_with("exit"));
+            all_anchors.retain(|name: &SmolStr, _| !name.starts_with("exit"));
         }
 
         let scale = get_xy_rotation(component.transform);
@@ -234,7 +234,7 @@ fn anchors_traversing_components(
                 continue;
             }
             // skip entry anchors on non-first glyphs
-            if component_idx > 0 && anchor.name.ends_with("entry") {
+            if component_idx > 0 && anchor.name.starts_with("entry") {
                 continue;
             }
 
@@ -242,7 +242,7 @@ fn anchors_traversing_components(
             if is_ligature
                 && component_number_of_base_glyphs > 0
                 && !new_has_underscore
-                && !(new_anchor_name.ends_with("exit") || new_anchor_name.ends_with("entry"))
+                && !(new_anchor_name.starts_with("exit") || new_anchor_name.starts_with("entry"))
             {
                 // dealing with marks like top_1 on a ligature
                 new_anchor_name = make_liga_anchor_name(new_anchor_name, number_of_base_glyphs);
@@ -274,8 +274,8 @@ fn anchors_traversing_components(
             !is_ligature
                 && number_of_base_glyphs == 0
                 && !name.starts_with('_')
-                && !name.ends_with("entry")
-                && !name.ends_with("exit")
+                && !name.starts_with("entry")
+                && !name.starts_with("exit")
         }) {
             // Carets count space between components, so the last caret is n_components - 1
             let maybe_add_one = if name.starts_with("caret") { 1 } else { 0 };
@@ -1389,6 +1389,73 @@ mod tests {
             "Acircumflexacute",
             "top_alt",
             Point::new(340.0, 932.0),
+        );
+    }
+
+    /// Test that suffixed entry anchors (e.g. "entry.2") on non-first components are skipped.
+    ///
+    /// Mirrors glyphsLib test: entry anchors start with "entry", not end with it.
+    /// Before the fix, "entry.2" would not match `ends_with("entry")` and would
+    /// leak through from the second component.
+    #[test]
+    fn entry_anchor_with_suffix_on_non_first_component() {
+        let mut builder = GlyphSetBuilder::new(test_context());
+
+        builder.add_glyph("part1", |glyph| {
+            glyph.add_anchor("top", (10.0, 700.0));
+        });
+
+        builder.add_glyph("part2", |glyph| {
+            glyph.add_anchor("entry.2", (10.0, 0.0));
+        });
+
+        builder.add_glyph("combo", |glyph| {
+            glyph
+                .add_component_at("part1", (0.0, 0.0))
+                .add_component_at("part2", (100.0, 0.0));
+        });
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        // "entry.2" from the second component should be skipped
+        let names = get_anchor_names(&ctx, "combo");
+        assert!(names.contains(&"top".to_string()), "Should have 'top'");
+        assert!(
+            !names.contains(&"entry.2".to_string()),
+            "entry.2 from non-first component should be skipped"
+        );
+    }
+
+    /// Test that suffixed exit anchors (e.g. "exit.1") are removed when the next
+    /// component lacks cursive anchors, and that cursive anchors survive on ligatures.
+    #[test]
+    fn cursive_anchors_with_suffix_on_ligature() {
+        let mut builder = GlyphSetBuilder::new(test_context());
+
+        builder.add_glyph("part1_part2", |glyph| {
+            glyph
+                .add_anchor("entry.1", (10.0, 0.0))
+                .add_anchor("exit.1", (100.0, 0.0));
+        });
+
+        builder.add_glyph("combo_liga", |glyph| {
+            glyph
+                .set_category(GlyphClassDef::Ligature)
+                .add_component_at("part1_part2", (0.0, 0.0));
+        });
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        let names = get_anchor_names(&ctx, "combo_liga");
+        assert!(
+            names.contains(&"entry.1".to_string()),
+            "entry.1 should be propagated on ligature"
+        );
+        assert!(
+            names.contains(&"exit.1".to_string()),
+            "exit.1 should be propagated on ligature"
         );
     }
 }
