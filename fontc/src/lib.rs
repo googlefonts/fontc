@@ -1699,7 +1699,9 @@ mod tests {
                         (tag, DesignCoord::new(value.into_inner()))
                     })
                     .collect();
-                let normalized = design_loc.to_normalized(&static_metadata.all_source_axes);
+                let normalized = design_loc
+                    .to_normalized(&static_metadata.all_source_axes)
+                    .expect("test coordinates should be valid");
                 (master.id.as_str(), normalized)
             })
             .collect()
