@@ -24,7 +24,7 @@ use fea_rs::{
 };
 
 use fontir::{
-    ir::{FeaturesSource, GlyphOrder, StaticMetadata},
+    ir::{FeaturesSource, GdefCategories, GlyphOrder, StaticMetadata},
     orchestration::WorkId as FeWorkId,
 };
 
@@ -163,16 +163,16 @@ impl<'a> FeaVariationInfo<'a> {
 /// and those exist, return those; otherwise return computed classes (from
 /// public.openTypeCatgories or from Glyphs.xml, depending on the source type)
 pub(crate) fn get_gdef_classes(
-    meta: &StaticMetadata,
+    gdef_categories: &GdefCategories,
     ast: &FeaFirstPassOutput,
     glyph_order: &GlyphOrder,
 ) -> HashMap<GlyphId16, GlyphClassDef> {
     ast.gdef_classes
         .as_ref()
-        .filter(|_| meta.gdef_categories.prefer_gdef_categories_in_fea)
+        .filter(|_| gdef_categories.prefer_gdef_categories_in_fea)
         .cloned()
         .unwrap_or_else(|| {
-            meta.gdef_categories
+            gdef_categories
                 .categories
                 .iter()
                 .filter_map(|(name, category)| {
@@ -596,6 +596,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
+        let gdef_categories = context.ir.gdef_categories.get();
         let ast = context.fea_ast.get();
         let glyph_order = context.ir.glyph_order.get();
         let kerns = context.fea_rs_kerns.get();
@@ -608,14 +609,13 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
             kerns.as_ref(),
             marks.as_ref(),
         )?;
-        if result.gdef_classes.is_none() && !static_metadata.gdef_categories.categories.is_empty() {
+        if result.gdef_classes.is_none() && !gdef_categories.categories.is_empty() {
             // the FEA did not contain an explicit GDEF block with glyph categories,
             // so let's use the ones from the source, if present (i.e. from
             // `public.openTypeCatgories` or computed from GlyphData.xml
 
             let gdef = result.gdef.get_or_insert_with(Default::default);
-            let class_def: ClassDef = static_metadata
-                .gdef_categories
+            let class_def: ClassDef = gdef_categories
                 .categories
                 .iter()
                 .filter_map(|(name, cls)| glyph_order.glyph_id(name).map(|id| (id, *cls as u16)))
@@ -788,7 +788,6 @@ mod tests {
             ],
             Default::default(),
             HashSet::from([min_wght, def_wght, max_wght]),
-            Default::default(),
             Default::default(),
             Default::default(),
             None,

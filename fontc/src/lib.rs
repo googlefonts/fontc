@@ -552,6 +552,7 @@ mod tests {
             FeWorkIdentifier::PaintGraph.into(),
             FeWorkIdentifier::PreliminaryGlyphOrder.into(),
             FeWorkIdentifier::GlyphOrder.into(),
+            FeWorkIdentifier::PreliminaryGdefCategories.into(),
             FeWorkIdentifier::Features.into(),
             FeWorkIdentifier::KerningGroups.into(),
             FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 0.0)])).into(),
@@ -1648,8 +1649,7 @@ mod tests {
     #[test]
     fn glyphs_app_ir_categories() {
         let result = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
-        let staticmeta = result.fe_context.static_metadata.get();
-        let categories = &staticmeta.gdef_categories.categories;
+        let categories = &result.fe_context.gdef_categories.get().categories;
         assert_eq!(categories.get("a"), Some(&GlyphClassDef::Base));
         assert_eq!(categories.get("acutecomb"), Some(&GlyphClassDef::Mark));
         assert_eq!(categories.get("brevecomb"), Some(&GlyphClassDef::Mark));
@@ -1659,13 +1659,15 @@ mod tests {
         );
         assert_eq!(categories.get("f_a"), Some(&GlyphClassDef::Ligature));
         assert_eq!(categories.get(".notdef"), None);
+        // U1C82 has no source category but gets Base from propagated anchors
+        // (see also: glyphs2fontir category_can_be_none test for preliminary category)
+        assert_eq!(categories.get("U1C82"), Some(&GlyphClassDef::Base));
     }
 
     #[test]
     fn glyphs_app_bracket_glyph_categories() {
         let result = TestCompile::compile_source("glyphs3/PropagateAnchorsTest.glyphs");
-        let staticmeta = result.fe_context.static_metadata.get();
-        let categories = &staticmeta.gdef_categories.categories;
+        let categories = &result.fe_context.gdef_categories.get().categories;
         assert_eq!(
             categories.get("A.BRACKET.varAlt01"),
             Some(&GlyphClassDef::Base)
@@ -1677,17 +1679,241 @@ mod tests {
         assert_eq!(categories.get(".notdef"), None);
     }
 
+    /// Build mapping from glyphs-reader master id to normalized location.
+    fn build_master_id_to_location<'a>(
+        expected: &'a glyphs_reader::Font,
+        static_metadata: &ir::StaticMetadata,
+    ) -> std::collections::HashMap<&'a str, NormalizedLocation> {
+        use fontdrasil::coords::{DesignCoord, DesignLocation};
+
+        expected
+            .masters
+            .iter()
+            .map(|master| {
+                let design_loc: DesignLocation = expected
+                    .axes
+                    .iter()
+                    .zip(&master.axes_values)
+                    .map(|(axis, &value)| {
+                        let tag: fontdrasil::types::Tag = axis.tag.parse().expect("valid tag");
+                        (tag, DesignCoord::new(value.into_inner()))
+                    })
+                    .collect();
+                let normalized = design_loc
+                    .to_normalized(&static_metadata.all_source_axes)
+                    .expect("test coordinates should be valid");
+                (master.id.as_str(), normalized)
+            })
+            .collect()
+    }
+
+    /// Helper to compare IR anchors against expected glyphs-reader anchors at a specific location.
+    fn assert_anchors_match(
+        our_anchors: &ir::GlyphAnchors,
+        expected_anchors: &[glyphs_reader::Anchor],
+        glyph_name: &str,
+        location: &NormalizedLocation,
+    ) {
+        assert_eq!(
+            our_anchors.anchors.len(),
+            expected_anchors.len(),
+            "Anchor count mismatch for glyph '{glyph_name}'"
+        );
+
+        for (our_anchor, expected_anchor) in our_anchors.anchors.iter().zip(expected_anchors) {
+            assert_eq!(
+                our_anchor.kind.to_name(),
+                expected_anchor.name,
+                "Anchor name mismatch for glyph '{glyph_name}'"
+            );
+            assert_eq!(
+                our_anchor.positions.get(location),
+                Some(&expected_anchor.pos),
+                "Anchor '{}' position mismatch for glyph '{glyph_name}'",
+                expected_anchor.name
+            );
+        }
+    }
+
+    /// Verify anchor propagation produces correct positions.
+    ///
+    /// Loads PropagateAnchorsTest-propagated.glyphs (produced by Glyphs.app) as reference
+    /// and compares our propagated anchor positions against it at all master locations.
+    #[test]
+    fn propagate_anchors_real_files() {
+        use glyphs_reader::Font;
+
+        let result = TestCompile::compile_source("glyphs3/PropagateAnchorsTest.glyphs");
+
+        // Load the reference file with expected anchor values from Glyphs.app
+        let expected = Font::load(
+            &crate::testdata_dir().join("glyphs3/PropagateAnchorsTest-propagated.glyphs"),
+        )
+        .expect("Failed to load reference file");
+
+        let static_metadata = result.fe_context.static_metadata.get();
+        let master_id_to_location = build_master_id_to_location(&expected, &static_metadata);
+
+        // Compare anchors for all composite glyphs at all master locations
+        for (glyph_name, expected_glyph) in &expected.glyphs {
+            // Skip glyphs without components (simple glyphs don't get propagated anchors)
+            if !expected_glyph.has_components() {
+                continue;
+            }
+
+            // Does this glyph have anchors in at least one master layer?
+            // (Bracket layers are excluded - they become separate IR glyphs)
+            let has_expected_anchors = expected_glyph.layers.iter().any(|l| {
+                master_id_to_location.contains_key(l.layer_id.as_str()) && !l.anchors.is_empty()
+            });
+
+            // Get our propagated anchors
+            let our_anchors = result
+                .fe_context
+                .anchors
+                .try_get(&FeWorkIdentifier::Anchor(glyph_name.as_str().into()));
+
+            if has_expected_anchors && our_anchors.is_none() {
+                panic!(
+                    "Missing anchors for composite '{glyph_name}' which has expected anchors in reference"
+                );
+            }
+
+            let Some(our_anchors) = our_anchors else {
+                continue; // Composite with no expected anchors (components have none)
+            };
+
+            // Check each layer (master)
+            for expected_layer in &expected_glyph.layers {
+                if expected_layer.anchors.is_empty() {
+                    continue;
+                }
+
+                let Some(location) = master_id_to_location.get(expected_layer.layer_id.as_str())
+                else {
+                    continue; // Skip non-master layers (e.g., bracket layers)
+                };
+
+                assert_anchors_match(&our_anchors, &expected_layer.anchors, glyph_name, location);
+            }
+        }
+    }
+
+    /// Verify anchor propagation can be disabled via custom parameter.
+    #[test]
+    fn dont_propagate_anchors() {
+        let result = TestCompile::compile_source("glyphs2/DontPropagateAnchors.glyphs");
+
+        // The source has propagateAnchors = false, so Aacute (a composite) should have no anchors
+        let anchors = result
+            .fe_context
+            .anchors
+            .try_get(&FeWorkIdentifier::Anchor("Aacute".into()));
+        assert!(
+            anchors.is_none() || anchors.unwrap().anchors.is_empty(),
+            "Aacute should have no anchors when propagateAnchors is disabled"
+        );
+
+        // Also verify the flag is not set
+        assert!(
+            !result.fe_context.flags.contains(Flags::PROPAGATE_ANCHORS),
+            "PROPAGATE_ANCHORS flag should not be set"
+        );
+    }
+
+    /// Verify anchor propagation works correctly for bracket layers.
+    ///
+    /// Bracket layers become separate glyphs in IR (e.g., A.BRACKET.varAlt01).
+    /// These should also get propagated anchors at all master locations.
+    #[test]
+    fn propagate_anchors_bracket_layers() {
+        use glyphs_reader::Font;
+
+        let result = TestCompile::compile_source("glyphs3/PropagateAnchorsTest.glyphs");
+
+        // Load the reference file
+        let expected = Font::load(
+            &crate::testdata_dir().join("glyphs3/PropagateAnchorsTest-propagated.glyphs"),
+        )
+        .expect("Failed to load reference file");
+
+        let static_metadata = result.fe_context.static_metadata.get();
+        let master_id_to_location = build_master_id_to_location(&expected, &static_metadata);
+
+        // Check Aacute's bracket layers specifically
+        // In the source, Aacute has bracket layers with axisRules min=500
+        // These become separate glyphs in IR: Aacute.BRACKET.varAlt01
+        let expected_glyph = expected.glyphs.get("Aacute").expect("Aacute should exist");
+        assert_eq!(
+            expected_glyph.bracket_layers.len(),
+            2,
+            "Aacute should have 2 bracket layers (one per master)"
+        );
+
+        let our_anchors = result
+            .fe_context
+            .anchors
+            .try_get(&FeWorkIdentifier::Anchor("Aacute.BRACKET.varAlt01".into()))
+            .expect("Aacute.BRACKET.varAlt01 should have anchors");
+
+        // Check each bracket layer at its corresponding master location
+        for bracket_layer in &expected_glyph.bracket_layers {
+            let master_id = bracket_layer
+                .associated_master_id
+                .as_deref()
+                .expect("bracket layer should have associated master");
+            let location = master_id_to_location
+                .get(master_id)
+                .expect("master id should map to a location");
+
+            assert_anchors_match(
+                &our_anchors,
+                &bracket_layer.anchors,
+                "Aacute.BRACKET.varAlt01",
+                location,
+            );
+        }
+    }
+
+    // Tests AlumniSans-wononly.glyphs where only bracket layers have components.
+    ///
+    /// "won" regular layers are simple outlines (no components), but bracket layers
+    /// are composites referencing W. This verifies that "won.BRACKET.varAlt01" gets
+    /// its anchors propagated from the W component.
+    #[test]
+    fn propagate_anchors_bracket_only_components() {
+        let result = TestCompile::compile_source("glyphs2/AlumniSans-wononly.glyphs");
+        let static_metadata = result.fe_context.static_metadata.get();
+
+        let anchors = result
+            .fe_context
+            .anchors
+            .try_get(&FeWorkIdentifier::Anchor("won.BRACKET.varAlt01".into()))
+            .expect("won.BRACKET.varAlt01 should have anchors");
+
+        assert_eq!(
+            anchors.anchors.len(),
+            2,
+            "won.BRACKET.varAlt01 should have exactly 2 anchors"
+        );
+        for anchor in &anchors.anchors {
+            assert_eq!(
+                anchor.positions.len(),
+                static_metadata.variation_model.locations().count(),
+                "anchor '{}' should have position at each master",
+                anchor.kind.to_name()
+            );
+        }
+    }
+
     #[test]
     fn ufo_app_ir_categories_matches_glyphs() {
         let glyphs = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
         let ufo = TestCompile::compile_source("Oswald-glyph-categories/Oswald-Regular.designspace");
 
-        let gmeta = glyphs.fe_context.static_metadata.get();
-        let ufometa = ufo.fe_context.static_metadata.get();
-
         assert_eq!(
-            gmeta.gdef_categories.categories,
-            ufometa.gdef_categories.categories
+            glyphs.fe_context.gdef_categories.get().categories,
+            ufo.fe_context.gdef_categories.get().categories
         )
     }
 
@@ -1696,10 +1922,19 @@ mod tests {
         let glyphs = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
         let ufo = TestCompile::compile_source("Oswald-glyph-categories/Oswald-Regular.designspace");
 
-        let gmeta = glyphs.fe_context.static_metadata.get();
-        let ufometa = ufo.fe_context.static_metadata.get();
-        assert!(!gmeta.gdef_categories.prefer_gdef_categories_in_fea);
-        assert!(ufometa.gdef_categories.prefer_gdef_categories_in_fea);
+        assert!(
+            !glyphs
+                .fe_context
+                .gdef_categories
+                .get()
+                .prefer_gdef_categories_in_fea
+        );
+        assert!(
+            ufo.fe_context
+                .gdef_categories
+                .get()
+                .prefer_gdef_categories_in_fea
+        );
     }
 
     #[test]
@@ -4939,7 +5174,7 @@ mod tests {
         // Flags should be set from source filters
         assert!(result.fe_context.flags.contains(Flags::FLATTEN_COMPONENTS));
         assert!(!result.fe_context.flags.contains(Flags::ERASE_OPEN_CORNERS));
-        // Note: propagate_anchors test removed as that flag doesn't exist yet
+        assert!(result.fe_context.flags.contains(Flags::PROPAGATE_ANCHORS));
     }
 
     #[test]

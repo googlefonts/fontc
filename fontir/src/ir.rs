@@ -12,7 +12,7 @@ use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize, de::Error as _};
-use smol_str::SmolStr;
+use smol_str::{SmolStr, format_smolstr};
 use write_fonts::{
     OtRound,
     types::{GlyphId16, NameId, Tag},
@@ -38,7 +38,8 @@ pub use erase_open_corners::erase_open_corners;
 pub use path_builder::GlyphPathBuilder;
 pub use static_metadata::{
     Condition, ConditionSet, GdefCategories, MetaTableValues, MiscMetadata, NameKey, NamedInstance,
-    Panose, PostscriptNames, Rule, StaticMetadata, Substitution, VariableFeature,
+    Panose, PostscriptNames, PreliminaryGdefCategories, Rule, StaticMetadata, Substitution,
+    VariableFeature,
 };
 
 pub const DEFAULT_VENDOR_ID: &str = "NONE";
@@ -1253,6 +1254,22 @@ impl AnchorKind {
     pub fn is_attaching(&self) -> bool {
         matches!(self, AnchorKind::Base(_) | AnchorKind::Ligature { .. })
     }
+
+    /// Convert AnchorKind back to its original string name representation
+    pub fn to_name(&self) -> SmolStr {
+        match self {
+            AnchorKind::Base(name) => name.clone(),
+            AnchorKind::Mark(name) => format_smolstr!("_{name}"),
+            AnchorKind::Ligature { group_name, index } => {
+                format_smolstr!("{group_name}_{index}")
+            }
+            AnchorKind::ComponentMarker(index) => format_smolstr!("_{index}"),
+            AnchorKind::Caret(index) => format_smolstr!("caret_{index}"),
+            AnchorKind::VCaret(index) => format_smolstr!("vcaret_{index}"),
+            AnchorKind::CursiveEntry => "entry".into(),
+            AnchorKind::CursiveExit => "exit".into(),
+        }
+    }
 }
 
 /// A variable definition of an anchor.
@@ -1309,7 +1326,8 @@ impl Anchor {
 #[derive(Debug, Clone)]
 pub struct AnchorBuilder {
     glyph_name: GlyphName,
-    anchors: HashMap<SmolStr, HashMap<NormalizedLocation, Point>>,
+    // IndexMap preserves insertion order, for deterministic anchor propagation
+    anchors: IndexMap<SmolStr, HashMap<NormalizedLocation, Point>>,
 }
 
 impl AnchorBuilder {
@@ -1513,6 +1531,13 @@ impl Glyph {
         self.sources
             .values()
             .flat_map(|inst| inst.components.iter().map(|comp| &comp.base))
+    }
+
+    /// `true` if any instance has components.
+    pub(crate) fn has_components(&self) -> bool {
+        self.sources
+            .values()
+            .any(|inst| !inst.components.is_empty())
     }
 
     /// `true` if any instance has both components and contours.
@@ -1891,6 +1916,7 @@ impl GlyphInstance {
             .map(|(comp, coeffs)| Component {
                 base: comp.base.clone(),
                 transform: Affine::new(coeffs.try_into().unwrap()),
+                anchor: comp.anchor.clone(),
             })
             .collect();
 
@@ -1969,9 +1995,48 @@ pub struct Component {
     pub base: GlyphName,
     /// Affine transformation to apply to the referenced glyph.
     pub transform: Affine,
+    /// Explicit anchor for mark component attachment.
+    ///
+    /// In Glyphs.app, when a base glyph has multiple anchors with the same
+    /// prefix (e.g., `top`, `top_1`, `top_alt`), users can select which one
+    /// a component with matching mark anchor (e.g. `_top`) should attach to.
+    /// Two common scenarios are:
+    ///
+    /// 1. **Ligature numbered anchors**: A ligature like `f_i` has `top_1` and
+    ///    `top_2`. Setting `component.anchor = "top_2"` attaches to the second letter.
+    ///
+    /// 2. **Alternative anchors**: A base may have `top` and `top_alt` (e.g.,
+    ///    for Vietnamese diacritics). Setting `anchor = "top_alt"` uses that.
+    ///
+    /// **Note**: This field is only used during anchor propagation to rename
+    /// the mark's stacking anchor (e.g., `top` → `top_2`). We do *not* use it
+    /// for automatic component alignment, as that positioning is already baked into
+    /// the [`transform`](Self::transform) by the font editor.
+    ///
+    /// See: <https://handbook.glyphsapp.com/components/#reusing-shapes/anchors>
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<SmolStr>,
 }
 
 impl Component {
+    /// Create a regular component (no specific attachment anchor).
+    pub fn new(base: impl Into<GlyphName>, transform: Affine) -> Self {
+        Self {
+            base: base.into(),
+            transform,
+            anchor: None,
+        }
+    }
+
+    /// Create a component with an explicit attachment anchor.
+    pub fn with_anchor(base: impl Into<GlyphName>, transform: Affine, anchor: SmolStr) -> Self {
+        Self {
+            base: base.into(),
+            transform,
+            anchor: Some(anchor),
+        }
+    }
+
     pub(crate) fn has_nonidentity_2x2(&self) -> bool {
         self.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0]
     }
@@ -2158,6 +2223,25 @@ mod tests {
         );
         assert_eq!(AnchorKind::new("_"), Err(BadAnchorReason::NilMarkGroup));
         assert_eq!(AnchorKind::new("top_0"), Err(BadAnchorReason::ZeroIndex));
+    }
+
+    #[test]
+    fn anchor_kind_to_name() {
+        assert_eq!(AnchorKind::Base("top".into()).to_name(), "top");
+        assert_eq!(AnchorKind::Mark("top".into()).to_name(), "_top");
+        assert_eq!(
+            AnchorKind::Ligature {
+                group_name: "top".into(),
+                index: 2
+            }
+            .to_name(),
+            "top_2"
+        );
+        assert_eq!(AnchorKind::ComponentMarker(3).to_name(), "_3");
+        assert_eq!(AnchorKind::Caret(1).to_name(), "caret_1");
+        assert_eq!(AnchorKind::VCaret(2).to_name(), "vcaret_2");
+        assert_eq!(AnchorKind::CursiveEntry.to_name(), "entry");
+        assert_eq!(AnchorKind::CursiveExit.to_name(), "exit");
     }
 
     fn assert_names(expected: &[(NameId, &str)], actual: HashMap<NameKey, String>) {
@@ -2469,10 +2553,7 @@ mod tests {
         path2.close_path();
 
         let contours = vec![path1, path2];
-        let components = vec![Component {
-            base: "derp".into(),
-            transform: Affine::IDENTITY,
-        }];
+        let components = vec![Component::new("derp", Affine::IDENTITY)];
 
         let instance = GlyphInstance {
             width: 600.,

@@ -78,7 +78,7 @@ pub struct StaticMetadata {
 
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
-    pub gdef_categories: GdefCategories,
+
     /// Feature variation rules
     pub variations: Option<VariableFeature>,
 }
@@ -142,11 +142,25 @@ impl NameKey {
     }
 }
 
+/// GDEF categories derived from source before anchor propagation.
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+pub struct PreliminaryGdefCategories {
+    /// A map of glyphs to categories from source.
+    pub categories: BTreeMap<GlyphName, GlyphClassDef>,
+    /// If set, we should prefer categories defined in FEA source to ones here.
+    ///
+    /// This is set for UFO/DS sources, but not for glyphs sources.
+    pub prefer_gdef_categories_in_fea: bool,
+    /// Controls whether final GDEF categories should be inferred from the presence
+    /// of anchors (similarly to how glyphsLib does) or used as-is as defined in
+    /// the source (as standard in DS+UFO workflows).
+    pub infer_from_anchors: bool,
+}
+
+/// Final GDEF categories after anchor propagation has been applied.
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct GdefCategories {
     /// A map of glyphs to categories.
-    ///
-    /// If this is empty, classes should be inferred.
     pub categories: BTreeMap<GlyphName, GlyphClassDef>,
     /// If set, we should prefer categories defined in FEA source to ones here.
     ///
@@ -367,7 +381,6 @@ impl StaticMetadata {
         global_locations: HashSet<NormalizedLocation>,
         postscript_names: Option<PostscriptNames>,
         italic_angle: f64,
-        gdef_categories: GdefCategories,
         glyphsapp_number_values: Option<
             HashMap<NormalizedLocation, BTreeMap<SmolStr, OrderedFloat<f64>>>,
         >,
@@ -458,7 +471,6 @@ impl StaticMetadata {
             default_location,
             postscript_names,
             italic_angle: italic_angle.into(),
-            gdef_categories,
             number_values: glyphsapp_number_values.unwrap_or_default(),
             build_vertical,
             misc: MiscMetadata {
@@ -552,6 +564,26 @@ impl Persistable for StaticMetadata {
     }
 }
 
+impl Persistable for GdefCategories {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
+impl Persistable for PreliminaryGdefCategories {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use fontdrasil::coords::UserCoord;
@@ -602,17 +634,6 @@ mod tests {
             ]),
             postscript_names: Some(HashMap::from([("lhs".into(), "rhs".into())])),
             italic_angle: 0.0.into(),
-            gdef_categories: GdefCategories {
-                categories: [
-                    ("a", GlyphClassDef::Base),
-                    ("f_f", GlyphClassDef::Ligature),
-                    ("acutecomb", GlyphClassDef::Mark),
-                ]
-                .into_iter()
-                .map(|(name, cls)| (GlyphName::new(name), cls))
-                .collect(),
-                prefer_gdef_categories_in_fea: false,
-            },
             misc: MiscMetadata {
                 fs_type: None,
                 is_fixed_pitch: None,

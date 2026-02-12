@@ -37,6 +37,8 @@ bitflags! {
         const DECOMPOSE_COMPONENTS = 0b100000000;
         // If set, open corners will be erased (Glyphs-native feature)
         const ERASE_OPEN_CORNERS = 0b1000000000;
+        // If set, anchors will be propagated from components to composites
+        const PROPAGATE_ANCHORS = 0b10000000000;
     }
 }
 
@@ -309,6 +311,14 @@ pub enum WorkId {
     PreliminaryGlyphOrder,
     /// The final glyph order. Most things that need glyph order should rely on this.
     GlyphOrder,
+    /// GDEF categories from source, without anchor inspection.
+    ///
+    /// Can be used by anchor propagation to determine is_mark/is_ligature flags.
+    PreliminaryGdefCategories,
+    /// The final GDEF categories. Most things that need GDEF categories should rely on this.
+    ///
+    /// Computed after anchor propagation, entries updated based on anchor presence.
+    GdefCategories,
     Features,
     KerningGroups,
     KernInstance(NormalizedLocation),
@@ -334,6 +344,8 @@ impl Identifier for WorkId {
             WorkId::Glyph(..) => "IrGlyph",
             WorkId::PreliminaryGlyphOrder => "IrPreliminaryGlyphOrder",
             WorkId::GlyphOrder => "IrGlyphOrder",
+            WorkId::PreliminaryGdefCategories => "IrPreliminaryGdefCategories",
+            WorkId::GdefCategories => "IrGdefCategories",
             WorkId::Features => "IrFeatures",
             WorkId::KerningGroups => "IrKerningGroups",
             WorkId::KernInstance(..) => "IrKernInstance",
@@ -413,6 +425,8 @@ pub struct Context {
     pub static_metadata: FeContextItem<ir::StaticMetadata>,
     pub preliminary_glyph_order: FeContextItem<ir::GlyphOrder>,
     pub glyph_order: FeContextItem<ir::GlyphOrder>,
+    pub preliminary_gdef_categories: FeContextItem<ir::PreliminaryGdefCategories>,
+    pub gdef_categories: FeContextItem<ir::GdefCategories>,
     pub global_metrics: FeContextItem<ir::GlobalMetrics>,
     pub glyphs: FeContextMap<ir::Glyph>,
     pub features: FeContextItem<ir::FeaturesSource>,
@@ -437,6 +451,10 @@ impl Context {
             static_metadata: self.static_metadata.clone_with_acl(acl.clone()),
             preliminary_glyph_order: self.preliminary_glyph_order.clone_with_acl(acl.clone()),
             glyph_order: self.glyph_order.clone_with_acl(acl.clone()),
+            preliminary_gdef_categories: self
+                .preliminary_gdef_categories
+                .clone_with_acl(acl.clone()),
+            gdef_categories: self.gdef_categories.clone_with_acl(acl.clone()),
             global_metrics: self.global_metrics.clone_with_acl(acl.clone()),
             glyphs: self.glyphs.clone_with_acl(acl.clone()),
             features: self.features.clone_with_acl(acl.clone()),
@@ -466,6 +484,16 @@ impl Context {
             ),
             glyph_order: ContextItem::new(
                 WorkId::GlyphOrder,
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
+            preliminary_gdef_categories: ContextItem::new(
+                WorkId::PreliminaryGdefCategories,
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
+            gdef_categories: ContextItem::new(
+                WorkId::GdefCategories,
                 acl.clone(),
                 persistent_storage.clone(),
             ),

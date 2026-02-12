@@ -77,7 +77,6 @@ pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<Static
         Default::default(), // TODO: glyph locations we really do need
         Default::default(),
         Default::default(),
-        Default::default(),
         None,
         false, // TODO: Determine this properly.
     )

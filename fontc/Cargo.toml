@@ -61,7 +61,7 @@ chrono.workspace = true
 ordered-float.workspace = true
 rstest.workspace = true
 criterion.workspace = true
-
+glyphs-reader = { path = "../glyphs-reader" }
 
 [build-dependencies]
 vergen-gitcl = { version = "9.0", features = ["build", "cargo", "rustc"] }

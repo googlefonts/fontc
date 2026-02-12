@@ -18,10 +18,10 @@ use fontir::{
     feature_variations::{NBox, overlay_feature_variations},
     ir::{
         self, AnchorBuilder, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
-        DEFAULT_VENDOR_ID, GdefCategories, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder,
+        DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphAnchors,
         GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
         MetaTableValues, NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames,
-        Rule, StaticMetadata, Substitution, VariableFeature,
+        PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -168,14 +168,23 @@ impl Source for GlyphsIrSource {
                 match name {
                     "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
                     "eraseOpenCorners" => flags.set(Flags::ERASE_OPEN_CORNERS, true),
-                    // Note: propagateAnchors will be handled in future work
+                    "propagateAnchors" => flags.set(Flags::PROPAGATE_ANCHORS, true),
                     other => log::info!("unhandled ufo2ft filter '{other}'"),
                 }
             }
         } else {
-            // No ufo2ft filters defined - eraseOpenCorners is a Glyphs-native feature,
-            // which should be enabled by default.
+            // No ufo2ft filters defined - use Glyphs native defaults
             flags.set(Flags::ERASE_OPEN_CORNERS, true);
+            // Check custom parameter to allow opt-out while defaulting to true
+            if self
+                .font_info
+                .font
+                .custom_parameters
+                .propagate_anchors
+                .unwrap_or(true)
+            {
+                flags.set(Flags::PROPAGATE_ANCHORS, true);
+            }
         }
         flags
     }
@@ -324,7 +333,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::PreliminaryGlyphOrder]
+        vec![
+            WorkId::PreliminaryGlyphOrder,
+            WorkId::PreliminaryGdefCategories,
+        ]
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
@@ -397,7 +409,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             selection_flags |= SelectionFlags::REGULAR;
         }
 
-        let categories = make_glyph_categories(font, &axes);
+        // GDEF categories for .glyphs sources are now computed using a two-phase approach:
+        // - Preliminary categories (without anchor inspection) computed here.
+        // - Final categories (with anchor inspection) computed after anchor propagation
+        //   in fontir/src/glyph.rs
+        let preliminary_gdef_categories = make_preliminary_glyph_categories(font, &axes);
 
         // Build vertical metrics if:
         // 1. At least one glyph defines a vertical attribute (vertWidth/vertOrigin), OR
@@ -459,7 +475,6 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             global_locations,
             postscript_names,
             italic_angle,
-            categories,
             number_values,
             build_vertical,
         )
@@ -575,6 +590,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         context.static_metadata.set(static_metadata);
         context.preliminary_glyph_order.set(glyph_order);
+        context
+            .preliminary_gdef_categories
+            .set(preliminary_gdef_categories);
         Ok(())
     }
 }
@@ -731,29 +749,31 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
         .collect()
 }
 
-fn make_glyph_categories(font: &Font, axes: &Axes) -> GdefCategories {
+/// Compute GDEF glyph categories using only category and subcategory, no anchor inspection.
+fn make_preliminary_glyph_categories(font: &Font, axes: &Axes) -> PreliminaryGdefCategories {
     let categories = font
         .glyphs
         .values()
-        .flat_map(|glyph| categories_for_glyph_and_any_bracket_glyphs(glyph, axes))
+        .flat_map(|glyph| {
+            let main = category_for_glyph_preliminary(glyph.category, glyph.sub_category)
+                .map(|cat| (glyph.name.clone().into(), cat));
+
+            // Also handle bracket glyphs
+            main.into_iter()
+                .chain(
+                    bracket_glyph_names(glyph, axes).filter_map(|(name, _layers)| {
+                        category_for_glyph_preliminary(glyph.category, glyph.sub_category)
+                            .map(|cat| (name, cat))
+                    }),
+                )
+        })
         .collect();
-    GdefCategories {
+
+    PreliminaryGdefCategories {
         categories,
         prefer_gdef_categories_in_fea: false,
+        infer_from_anchors: true,
     }
-}
-
-fn categories_for_glyph_and_any_bracket_glyphs<'a>(
-    glyph: &'a glyphs_reader::Glyph,
-    axes: &'a Axes,
-) -> impl Iterator<Item = (GlyphName, GlyphClassDef)> + use<'a> {
-    let main = category_for_glyph(&glyph.layers, glyph.category, glyph.sub_category)
-        .map(|cat| (glyph.name.clone().into(), cat));
-    main.into_iter().chain(
-        bracket_glyph_names(glyph, axes).filter_map(|(name, layers)| {
-            category_for_glyph(layers, glyph.category, glyph.sub_category).map(|cat| (name, cat))
-        }),
-    )
 }
 
 fn get_number_values(
@@ -774,27 +794,21 @@ fn get_number_values(
     Some(values)
 }
 
-/// determine the GDEF category for this glyph, if appropriate
-// see
-// <https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517/Lib/glyphsLib/builder/features.py#L205>
-fn category_for_glyph<'a>(
-    layers: impl IntoIterator<Item = &'a Layer>,
+/// Compute preliminary GDEF glyph category WITHOUT anchor inspection.
+///
+/// Returns only Mark and Ligature; Base entries will be added later after anchor propagation.
+fn category_for_glyph_preliminary(
     category: Option<Category>,
     sub_category: Option<Subcategory>,
 ) -> Option<GlyphClassDef> {
-    let has_attaching_anchor = layers
-        .into_iter()
-        .flat_map(|layer| layer.anchors.iter())
-        // glyphsLib considers any anchor that does not start with '_' as an
-        // 'attaching anchor'; see https://github.com/googlefonts/glyphsLib/issues/1024
-        .any(|anchor| !anchor.name.starts_with('_'));
     match (category, sub_category) {
-        (_, Some(Subcategory::Ligature)) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
         (
             Some(Category::Mark),
             Some(Subcategory::Nonspacing) | Some(Subcategory::SpacingCombining),
         ) => Some(GlyphClassDef::Mark),
-        _ if has_attaching_anchor => Some(GlyphClassDef::Base),
+        (_, Some(Subcategory::Ligature)) => Some(GlyphClassDef::Ligature),
+        // Don't determine Base yet, requires anchor inspection.
+        // GlyphClassDef::Component is unused
         _ => None,
     }
 }
@@ -1448,11 +1462,21 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 )
             })?;
 
-            // we only care about anchors from exportable glyphs
-            // https://github.com/googlefonts/fontc/issues/1397
-            if glyph.export {
-                for anchor in layer.anchors.iter() {
-                    ir_anchors.add(anchor.name.clone(), location.clone(), anchor.pos)?;
+            // Collect anchors from all glyphs (including non-exporting) so that
+            // anchor propagation can copy them into composites. Non-exporting glyphs
+            // may have invalid anchors (issue #1397) so we handle errors gracefully.
+            for anchor in layer.anchors.iter() {
+                if let Err(e) = ir_anchors.add(anchor.name.clone(), location.clone(), anchor.pos) {
+                    if glyph.export {
+                        return Err(e.into());
+                    }
+                    // Non-exporting glyph with invalid anchor - skip it
+                    log::debug!(
+                        "Skipping invalid anchor '{}' on non-exporting glyph '{}': {}",
+                        anchor.name,
+                        glyph.name,
+                        e
+                    );
                 }
             }
         }
@@ -1489,10 +1513,19 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                     for (tag, coord) in loc.iter() {
                         axis_positions.entry(*tag).or_default().insert(*coord);
                     }
-                    if glyph.export {
-                        // we only care about anchors from exportable glyphs (see ref above)
-                        for anchor in layer.anchors.iter() {
-                            ir_anchors.add(anchor.name.clone(), loc.clone(), anchor.pos)?;
+                    // See comment above about handling non-exporting glyphs
+                    for anchor in layer.anchors.iter() {
+                        if let Err(e) = ir_anchors.add(anchor.name.clone(), loc.clone(), anchor.pos)
+                        {
+                            if glyph.export {
+                                return Err(e.into());
+                            }
+                            log::debug!(
+                                "Skipping invalid anchor '{}' on non-exporting glyph '{}': {}",
+                                anchor.name,
+                                glyph.name,
+                                e
+                            );
                         }
                     }
                 }
@@ -1507,7 +1540,20 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             update_bracket_glyph_components(&mut ir_glyph, font, axes, &box_);
         }
 
-        let anchors = ir_anchors.build()?;
+        // Build anchors. For non-exporting glyphs, handle build errors gracefully
+        // (they may have anchors missing at default location, see issue #1397).
+        let anchors = match ir_anchors.build() {
+            Ok(a) => a,
+            Err(e) if !glyph.export => {
+                log::debug!(
+                    "Using empty anchors for non-exporting glyph '{}': {}",
+                    glyph.name,
+                    e
+                );
+                GlyphAnchors::new(self.glyph_name.clone(), Vec::new())
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         // It's helpful if glyphs are defined at default
         for axis in axes.iter() {
@@ -1919,6 +1965,7 @@ mod tests {
             AccessBuilder::new()
                 .variant(WorkId::StaticMetadata)
                 .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
                 .build(),
         );
         source
@@ -1960,6 +2007,7 @@ mod tests {
             AccessBuilder::new()
                 .variant(WorkId::StaticMetadata)
                 .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
                 .build(),
         );
         source
@@ -1977,6 +2025,7 @@ mod tests {
             AccessBuilder::new()
                 .variant(WorkId::StaticMetadata)
                 .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
                 .build(),
         );
         source
@@ -2042,6 +2091,7 @@ mod tests {
             AccessBuilder::new()
                 .variant(WorkId::StaticMetadata)
                 .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
                 .build(),
         );
         source
@@ -2244,11 +2294,12 @@ mod tests {
         let glyph = &font.glyphs["U1C82"];
         assert!(glyph.category.is_none());
 
-        // even though glyphs does not assign this a category, we still determine
-        // it is a base based on the presence of base anchors.
+        // With the two-phase approach, a glyph with no source category will have None in
+        // preliminary categories, but will get classified as Base in final categories after
+        // anchor propagation: see fontc::tests::glyphs_app_ir_categories.
         assert_eq!(
-            category_for_glyph(&glyph.layers, glyph.category, glyph.sub_category),
-            Some(GlyphClassDef::Base)
+            category_for_glyph_preliminary(glyph.category, glyph.sub_category),
+            None
         );
     }
 
