@@ -3835,16 +3835,19 @@ impl Font {
                             issue,
                         })?;
                         new_shapes.extend(instance.shapes);
-                        // Add anchors from smart component
-                        for anchor in instance.anchors {
-                            // Filter out 'mark' anchors used for internal part-to-part connections
-                            if anchor.name.starts_with('_') {
-                                continue;
-                            }
-                            // When duplicates exist, only keep the last one (matching Glyphs.app).
-                            layer.anchors.retain(|a| a.name != anchor.name);
-                            layer.anchors.push(anchor);
-                        }
+                        // Add anchors from smart component, filtering out
+                        // 'mark' anchors used for internal part-to-part connections.
+                        let new_anchors: Vec<_> = instance
+                            .anchors
+                            .into_iter()
+                            .filter(|a| !a.name.starts_with('_'))
+                            .collect();
+                        // Remove existing anchors that will be replaced by new ones.
+                        // When duplicates exist, keep the last one (matching Glyphs.app).
+                        let new_names: HashSet<&SmolStr> =
+                            new_anchors.iter().map(|a| &a.name).collect();
+                        layer.anchors.retain(|a| !new_names.contains(&a.name));
+                        layer.anchors.extend(new_anchors);
                     } else {
                         layer.shapes.push(shape);
                     }
