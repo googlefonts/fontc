@@ -9,10 +9,18 @@ use fontdrasil::{
     types::Tag,
     variations::{RoundingBehaviour, VariationModel},
 };
-use kurbo::{Affine, Vec2};
+use kurbo::{Affine, Point, Vec2};
 use smol_str::SmolStr;
 
-use crate::{Component, Glyph, Layer, Node, Shape, font::AxisPole};
+use crate::{Anchor, Component, Glyph, Layer, Node, Shape, font::AxisPole};
+
+/// Result of instantiating a smart component.
+///
+/// Contains both the interpolated shapes and anchors from the smart component.
+pub(crate) struct SmartComponentInstance {
+    pub shapes: Vec<Shape>,
+    pub anchors: Vec<Anchor>,
+}
 
 /// Things that can go wrong when instantiating a smart component
 #[derive(Debug, Error)]
@@ -46,7 +54,7 @@ pub(crate) fn instantiate_for_layer(
     layer_master_id: &str,
     component: &Component,
     ref_glyph: &Glyph,
-) -> Result<Vec<Shape>, BadSmartComponent> {
+) -> Result<SmartComponentInstance, BadSmartComponent> {
     assert!(!component.smart_component_values.is_empty());
     assert!(!ref_glyph.smart_component_axes.is_empty());
     let (axis_order, name_to_tag_map) = axes_for_glyph(ref_glyph);
@@ -80,7 +88,15 @@ pub(crate) fn instantiate_for_layer(
         shapes
             .iter_mut()
             .for_each(|shape| shape.apply_affine(component.transform));
-        return Ok(shapes);
+        let anchors = relevant_layers[0]
+            .anchors
+            .iter()
+            .map(|a| Anchor {
+                name: a.name.clone(),
+                pos: component.transform * a.pos,
+            })
+            .collect();
+        return Ok(SmartComponentInstance { shapes, anchors });
     }
 
     validate_relevant_layers(&relevant_layers)?;
@@ -159,7 +175,16 @@ pub(crate) fn instantiate_for_layer(
         }
     });
 
-    Ok(shapes)
+    // Interpolate anchors from the smart component layers
+    let anchors = interpolate_anchors(
+        &model,
+        &location,
+        &relevant_layers,
+        &name_to_tag_map,
+        component.transform,
+    )?;
+
+    Ok(SmartComponentInstance { shapes, anchors })
 }
 
 fn validate_relevant_layers(layers: &[&Layer]) -> Result<(), BadSmartComponent> {
@@ -222,6 +247,77 @@ fn shapes_with_new_points(layer: &Layer, points: &[Vec2]) -> Vec<Shape> {
             Shape::Component(_) => shape.clone(),
         })
         .collect()
+}
+
+/// Interpolate anchor positions from smart component layers.
+///
+/// Uses the same variation model as shape interpolation to compute anchor
+/// positions at the target location in the smart component's axis space.
+fn interpolate_anchors(
+    model: &VariationModel,
+    location: &NormalizedLocation,
+    layers: &[&Layer],
+    name_to_tag_map: &BTreeMap<SmolStr, Tag>,
+    transform: Affine,
+) -> Result<Vec<Anchor>, BadSmartComponent> {
+    // Get anchor names from the default layer (first layer), preserving order
+    let anchor_names: Vec<_> = layers[0].anchors.iter().map(|a| a.name.clone()).collect();
+
+    if anchor_names.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Build position sequences for all anchors at each location,
+    // similar to how point_seqs works for shapes
+    let anchor_seqs: HashMap<NormalizedLocation, Vec<Point>> = layers
+        .iter()
+        .filter_map(|layer| {
+            let loc = normalized_location(layer, layers[0], name_to_tag_map).ok()?;
+            // None if any anchor is missing from non-default layer; the variation model
+            // treats missing locations as 'sparse' sources. Better than fail altogether.
+            let positions: Option<Vec<Point>> = anchor_names
+                .iter()
+                .map(|name| {
+                    layer
+                        .anchors
+                        .iter()
+                        .find(|a| &a.name == name)
+                        .map(|a| a.pos)
+                })
+                .collect();
+            if positions.is_none() {
+                log::warn!(
+                    "smart component layer '{}' missing some anchors, \
+                     dropping from anchor interpolation",
+                    layer.layer_id
+                );
+            }
+            Some((loc, positions?))
+        })
+        .collect();
+
+    // Interpolate all anchor positions at once
+    let deltas = model
+        .deltas_with_rounding(&anchor_seqs, RoundingBehaviour::None)
+        .map_err(|_| BadSmartComponent::IncoherentLayers)?;
+    let interpolated_positions = model.interpolate_from_deltas(location, &deltas);
+
+    // Build result anchors with transformed positions
+    // interpolate_from_deltas returns Vec<Vec2>, convert to Point and apply transform
+    let result = anchor_names
+        .into_iter()
+        .zip(interpolated_positions)
+        .map(|(name, pos)| {
+            let point = Point::new(pos.x, pos.y);
+            let transformed = transform * point;
+            Anchor {
+                name,
+                pos: transformed,
+            }
+        })
+        .collect();
+
+    Ok(result)
 }
 
 //https://github.com/fonttools/fonttools/blob/03a3c8ed9e/Lib/fontTools/varLib/models.py#L47
@@ -515,10 +611,10 @@ mod tests {
                 .collect();
 
             let rectangle = glyphs.get(&SmolStr::new("_part.rectangle")).unwrap();
-            let shapes = instantiate_for_layer(master_id, &modified_component, rectangle)
+            let instance = instantiate_for_layer(master_id, &modified_component, rectangle)
                 .expect("instantiate should succeed");
 
-            let (rect, dir) = get_rectangle_data(&shapes[0]);
+            let (rect, dir) = get_rectangle_data(&instance.shapes[0]);
             let (x, y, w, h) = expected;
             let expected = Rect::new(x, y, x + w, y + h);
 
@@ -598,10 +694,10 @@ mod tests {
                 .collect();
 
             let rectangle = glyphs.get(&SmolStr::new("_part.rectangle")).unwrap();
-            let shapes = instantiate_for_layer(master_id, &modified_component, rectangle)
+            let instance = instantiate_for_layer(master_id, &modified_component, rectangle)
                 .expect("instantiate should succeed");
 
-            let (rect, dir) = get_rectangle_data(&shapes[0]);
+            let (rect, dir) = get_rectangle_data(&instance.shapes[0]);
             let (x, y, w, h) = expected;
             let expected = Rect::new(x, y, x + w, y + h);
 
@@ -613,5 +709,142 @@ mod tests {
                 location
             );
         }
+    }
+
+    /// Helper to create a smart component with anchors for testing.
+    /// Test data adapted from glyphsLib's test_smart_component_anchors
+    /// (googlefonts/glyphsLib#1131, credit: @khaledhosny).
+    fn smart_glyph_with_anchors(master_id: &str) -> Glyph {
+        use crate::Anchor;
+
+        let mut base = Glyph {
+            name: "base".into(),
+            ..Default::default()
+        };
+
+        base.smart_component_axes
+            .insert(SmolStr::new("TEST"), -100..=100);
+
+        // Default layer (pole Min = -100)
+        let default_layer = Layer {
+            layer_id: master_id.into(),
+            width: 200.0.into(),
+            shapes: vec![],
+            anchors: vec![
+                Anchor {
+                    name: "top".into(),
+                    pos: (23.0, 103.0).into(),
+                },
+                Anchor {
+                    name: "bottom".into(),
+                    pos: (36.0, -51.0).into(),
+                },
+            ],
+            smart_component_positions: [(SmolStr::new("TEST"), AxisPole::Min)]
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        };
+
+        // Max layer (pole Max = 100)
+        let max_layer = Layer {
+            layer_id: "max".into(),
+            associated_master_id: Some(master_id.into()),
+            width: 200.0.into(),
+            shapes: vec![],
+            anchors: vec![
+                Anchor {
+                    name: "top".into(),
+                    pos: (33.0, 123.0).into(),
+                },
+                Anchor {
+                    name: "bottom".into(),
+                    pos: (36.0, -51.0).into(),
+                },
+            ],
+            smart_component_positions: [(SmolStr::new("TEST"), AxisPole::Max)]
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        };
+
+        base.layers.extend([default_layer, max_layer]);
+        base
+    }
+
+    #[test]
+    fn test_anchor_interpolation() {
+        let master_id = "master01";
+        let smart_comp = smart_glyph_with_anchors(master_id);
+
+        // At min (TEST=-100): anchors unchanged from default layer
+        let component = Component {
+            name: "base".into(),
+            smart_component_values: [("TEST".into(), -100.0)].into_iter().collect(),
+            ..Default::default()
+        };
+        let instance = instantiate_for_layer(master_id, &component, &smart_comp)
+            .expect("instantiate should succeed");
+        assert_eq!(instance.anchors.len(), 2);
+        let top = instance.anchors.iter().find(|a| a.name == "top").unwrap();
+        let bottom = instance
+            .anchors
+            .iter()
+            .find(|a| a.name == "bottom")
+            .unwrap();
+        assert_eq!((top.pos.x, top.pos.y), (23.0, 103.0));
+        assert_eq!((bottom.pos.x, bottom.pos.y), (36.0, -51.0));
+
+        // At max (TEST=100): anchors from max layer
+        let component = Component {
+            name: "base".into(),
+            smart_component_values: [("TEST".into(), 100.0)].into_iter().collect(),
+            ..Default::default()
+        };
+        let instance = instantiate_for_layer(master_id, &component, &smart_comp)
+            .expect("instantiate should succeed");
+        let top = instance.anchors.iter().find(|a| a.name == "top").unwrap();
+        let bottom = instance
+            .anchors
+            .iter()
+            .find(|a| a.name == "bottom")
+            .unwrap();
+        assert_eq!((top.pos.x, top.pos.y), (33.0, 123.0));
+        assert_eq!((bottom.pos.x, bottom.pos.y), (36.0, -51.0));
+
+        // At midpoint (TEST=0): interpolated
+        let component = Component {
+            name: "base".into(),
+            smart_component_values: [("TEST".into(), 0.0)].into_iter().collect(),
+            ..Default::default()
+        };
+        let instance = instantiate_for_layer(master_id, &component, &smart_comp)
+            .expect("instantiate should succeed");
+        let top = instance.anchors.iter().find(|a| a.name == "top").unwrap();
+        let bottom = instance
+            .anchors
+            .iter()
+            .find(|a| a.name == "bottom")
+            .unwrap();
+        assert_eq!((top.pos.x, top.pos.y), (28.0, 113.0));
+        assert_eq!((bottom.pos.x, bottom.pos.y), (36.0, -51.0));
+
+        // At midpoint (TEST=0) with component offset (20, 10)
+        let component = Component {
+            name: "base".into(),
+            smart_component_values: [("TEST".into(), 0.0)].into_iter().collect(),
+            transform: Affine::translate((20.0, 10.0)),
+            ..Default::default()
+        };
+        let instance = instantiate_for_layer(master_id, &component, &smart_comp)
+            .expect("instantiate should succeed");
+        let top = instance.anchors.iter().find(|a| a.name == "top").unwrap();
+        let bottom = instance
+            .anchors
+            .iter()
+            .find(|a| a.name == "bottom")
+            .unwrap();
+        assert_eq!((top.pos.x, top.pos.y), (48.0, 123.0));
+        assert_eq!((bottom.pos.x, bottom.pos.y), (56.0, -41.0));
     }
 }
