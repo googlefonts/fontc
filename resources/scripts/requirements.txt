@@ -6,7 +6,7 @@
 #
 -e file:./ttx_diff
     # via -r resources/scripts/requirements.in
-absl-py==2.3.1
+absl-py==2.4.0
     # via
     #   gftools
     #   nanoemoji
@@ -25,7 +25,7 @@ babelfont==3.1.3
     # via gftools
 beautifulsoup4==4.14.3
     # via gftools
-booleanoperations==0.9.0
+booleanoperations==0.10.0
     # via
     #   afdko
     #   fontparts
@@ -44,7 +44,7 @@ cattrs==25.3.0
     #   ufolib2
 cdifflib==1.2.9
     # via ttx-diff
-certifi==2025.11.12
+certifi==2026.1.4
     # via requests
 cffi==2.0.0
     # via
@@ -57,7 +57,7 @@ charset-normalizer==3.4.4
     # via requests
 compreffor==0.6.0
     # via ufo2ft
-cryptography==46.0.3
+cryptography==46.0.5
     # via pyjwt
 defcon[lxml,pens]==0.12.2
     # via
@@ -68,7 +68,7 @@ defcon[lxml,pens]==0.12.2
     #   ufoprocessor
 ffmpeg-python==0.2.0
     # via gftools
-filelock==3.20.0
+filelock==3.21.0
     # via youseedee
 font-v==2.1.0
     # via gftools
@@ -79,7 +79,7 @@ fontmake[json,repacker]==3.11.0
     #   -r resources/scripts/requirements.in
     #   gftools
     #   ttx-diff
-fontmath==0.9.4
+fontmath==0.10.0
     # via
     #   afdko
     #   fontmake
@@ -87,7 +87,7 @@ fontmath==0.9.4
     #   mutatormath
     #   ufo2ft
     #   ufoprocessor
-fontparts==0.13.3
+fontparts==0.14.0
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
@@ -135,11 +135,11 @@ gftools==0.9.93
     #   ttx-diff
 gitdb==4.0.12
     # via gitpython
-gitpython==3.1.45
+gitpython==3.1.46
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.12.6
+glyphslib==6.12.7
     # via
     #   bumpfontversion
     #   fontmake
@@ -183,21 +183,21 @@ openstep-plist==0.5.1
     #   glyphslib
 opentype-sanitizer==9.2.0
     # via gftools
-orjson==3.11.5
+orjson==3.11.7
     # via
     #   babelfont
     #   ufolib2
-packaging==25.0
+packaging==26.0
     # via gftools
 paintcompiler==0.3.4
     # via -r resources/scripts/requirements.in
 picosvg==0.22.3
     # via nanoemoji
-pillow==12.0.0
+pillow==12.1.1
     # via
     #   gftools
     #   nanoemoji
-platformdirs==4.5.1
+platformdirs==4.6.0
     # via youseedee
 pngquant-cli==3.0.3
     # via nanoemoji
@@ -208,7 +208,7 @@ protobuf==3.20.3
     #   gftools
 pyclipper==1.4.0
     # via booleanoperations
-pycparser==2.23
+pycparser==3.0
     # via cffi
 pygit2==1.16.0
     # via gftools
@@ -216,11 +216,11 @@ pygithub==2.8.1
     # via gftools
 pygments==2.19.2
     # via rich
-pyjwt[crypto]==2.10.1
+pyjwt[crypto]==2.11.0
     # via pygithub
-pynacl==1.6.1
+pynacl==1.6.2
     # via pygithub
-pyparsing==3.2.5
+pyparsing==3.3.2
     # via vttlib
 python-dateutil==2.9.0.post0
     # via strictyaml
@@ -229,7 +229,7 @@ pyyaml==6.0.3
     #   gftools
     #   glyphsets
     #   ttx-diff
-regex==2025.11.3
+regex==2026.1.15
     # via nanoemoji
 requests==2.32.5
     # via
@@ -239,12 +239,10 @@ requests==2.32.5
     #   youseedee
 resvg-cli==0.44.0
     # via nanoemoji
-rich==14.2.0
+rich==14.3.2
     # via gftools
-ruamel-yaml==0.18.16
+ruamel-yaml==0.19.1
     # via gftools
-ruamel-yaml-clib==0.2.15
-    # via ruamel-yaml
 six==1.17.0
     # via python-dateutil
 skia-pathops==0.9.1
@@ -253,9 +251,9 @@ skia-pathops==0.9.1
     #   picosvg
 smmap==5.0.2
     # via gitdb
-soupsieve==2.8
+soupsieve==2.8.3
     # via beautifulsoup4
-statmake==2.0.0
+statmake==2.0.1
     # via gftools
 strictyaml==1.7.3
     # via gftools
@@ -265,7 +263,7 @@ tabulate==0.9.0
     #   glyphsets
 toml==0.10.2
     # via nanoemoji
-tqdm==4.67.1
+tqdm==4.67.3
     # via afdko
 ttfautohint-py==0.6.0
     # via gftools
@@ -274,7 +272,7 @@ typing-extensions==4.15.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.6.9
+ufo2ft[cffsubr,compreffor]==3.7.0
     # via
     #   fontmake
     #   nanoemoji
@@ -295,17 +293,17 @@ ufonormalizer==0.6.3
     # via afdko
 ufoprocessor==1.14.1
     # via afdko
-uharfbuzz==0.53.0
+uharfbuzz==0.53.3
     # via
     #   fonttools
     #   vharfbuzz
-unicodedata2==17.0.0
+unicodedata2==17.0.1
     # via
     #   fonttools
     #   glyphsets
 unidecode==1.4.0
     # via gftools
-urllib3==2.6.2
+urllib3==2.6.3
     # via
     #   pygithub
     #   requests
