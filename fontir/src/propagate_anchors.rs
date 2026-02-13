@@ -84,7 +84,7 @@ pub fn propagate_all_anchors(context: &Context) -> Result<(), Error> {
                         .iter()
                         .filter_map(|anchor| {
                             anchor.positions.get(location).map(|pos| RawAnchor {
-                                name: anchor.kind.to_name(),
+                                name: anchor.original_name.clone(),
                                 pos: *pos,
                             })
                         })
@@ -917,7 +917,7 @@ mod tests {
                 let mut names: Vec<String> = ga
                     .anchors
                     .iter()
-                    .map(|a| a.kind.to_name().to_string())
+                    .map(|a| a.original_name.to_string())
                     .collect();
                 names.sort();
                 names

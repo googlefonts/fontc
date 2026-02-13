@@ -1148,7 +1148,11 @@ mod tests {
                 })
                 .collect();
             let kind = AnchorKind::new(anchor_name).unwrap();
-            self.anchors.push(Anchor { kind, positions });
+            self.anchors.push(Anchor {
+                kind,
+                original_name: anchor_name.into(),
+                positions,
+            });
             self
         }
     }
