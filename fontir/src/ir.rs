@@ -1255,7 +1255,10 @@ impl AnchorKind {
         matches!(self, AnchorKind::Base(_) | AnchorKind::Ligature { .. })
     }
 
-    /// Convert AnchorKind back to its original string name representation
+    /// Convert AnchorKind back to its canonical string name representation.
+    ///
+    /// Note: this is lossy for non-standard names (e.g. `caret_1_` becomes `caret_1`).
+    /// Prefer `Anchor::original_name` when the original source name must be preserved.
     pub fn to_name(&self) -> SmolStr {
         match self {
             AnchorKind::Base(name) => name.clone(),
@@ -1278,6 +1281,8 @@ impl AnchorKind {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Anchor {
     pub kind: AnchorKind,
+    /// The original source name, preserved for round-tripping.
+    pub original_name: SmolStr,
     pub positions: HashMap<NormalizedLocation, Point>,
 }
 
@@ -1375,8 +1380,9 @@ impl AnchorBuilder {
             .into_iter()
             .map(|(name, positions)| {
                 AnchorKind::new(&name)
-                    .map(|type_| Anchor {
-                        kind: type_,
+                    .map(|kind| Anchor {
+                        kind,
+                        original_name: name.clone(),
                         positions,
                     })
                     .map_err(|reason| BadAnchor::new(name, reason))
