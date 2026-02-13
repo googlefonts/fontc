@@ -276,12 +276,14 @@ fn anchors_traversing_components(
     variation_models: &mut HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
 ) -> Vec<RawAnchor> {
     if existing_anchors.is_empty() && components.is_empty() {
+        base_glyph_counts.insert((glyph_name.clone(), location.clone()), 0);
         return Vec::new();
     }
 
     // If this is a mark and it has anchors, just return them
     // (as in, don't even look at the components)
     if !existing_anchors.is_empty() && is_mark {
+        base_glyph_counts.insert((glyph_name.clone(), location.clone()), 0); // marks have 0 base glyphs
         return origin_adjusted_anchors(existing_anchors).collect();
     }
 
@@ -335,11 +337,23 @@ fn anchors_traversing_components(
             maybe_rename_component_anchor(comp_anchor, &mut anchors);
         }
 
-        // Get the number of base glyphs in this component (for ligature anchor numbering)
+        // Get the number of base glyphs in this component (for ligature anchor numbering).
+        // If the component doesn't have a source at this exact location (e.g. the composite
+        // has an intermediate layer that the component doesn't), fall back to the default
+        // location's count; it should be a structural property consistent across locations.
+        // The default entry is guaranteed to exist because depth-sorting ensures all of the
+        // component's locations are fully processed before the current glyph, and
+        // Glyph invariants require a source at the default location.
         let component_number_of_base_glyphs = base_glyph_counts
             .get(&(component.base.clone(), location.clone()))
+            .or_else(|| {
+                base_glyph_counts
+                    .iter()
+                    .find(|((name, loc), _)| name == &component.base && loc.is_default())
+                    .map(|(_, count)| count)
+            })
             .copied()
-            .unwrap_or(0);
+            .expect("base_glyph_counts should have a default-location entry for every component");
 
         let comb_has_underscore = anchors
             .iter()
@@ -1885,6 +1899,135 @@ mod tests {
             variation_models.len(),
             2,
             "should have 2 cached models for different location sets"
+        );
+    }
+
+    /// Test that a ligature composite with an intermediate layer where its
+    /// component doesn't have that layer still produces consistent anchor names.
+    ///
+    /// Previously, `base_glyph_counts` was only populated at locations where the
+    /// component had explicit sources. At missing locations, the count defaulted to 0,
+    /// causing ligature anchor renumbering to be skipped (e.g. producing `bottom` instead
+    /// of `bottom_2`). This mismatch between master and intermediate locations caused
+    /// `AnchorBuilder::build()` to fail with "no value at default location".
+    #[test]
+    fn ligature_anchor_numbering_at_missing_component_location() {
+        let loc_light = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc_medium = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let loc_bold = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+
+        let mut builder = GlyphSetBuilder::new(test_context_with_locations(vec![
+            loc_light.clone(),
+            loc_medium.clone(),
+            loc_bold.clone(),
+        ]));
+
+        // 'f': simple glyph at all 3 locations
+        builder.add_variable_glyph(
+            "f",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![("bottom", 195.0, 0.0), ("top", 300.0, 800.0)],
+                    vec![],
+                ),
+                (
+                    loc_medium.clone(),
+                    vec![("bottom", 230.0, 0.0), ("top", 340.0, 800.0)],
+                    vec![],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![("bottom", 270.0, 0.0), ("top", 380.0, 800.0)],
+                    vec![],
+                ),
+            ],
+            None,
+        );
+
+        // 'i': composite at 2 locations only (NO intermediate)
+        // composed of 'idotless' + 'dotaccentcomb'
+        builder.add_variable_glyph(
+            "idotless",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![("bottom", 97.0, 0.0), ("top", 200.0, 600.0)],
+                    vec![],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![("bottom", 150.0, 0.0), ("top", 250.0, 620.0)],
+                    vec![],
+                ),
+            ],
+            None,
+        );
+        builder.add_variable_glyph(
+            "dotaccentcomb",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![("_top", 100.0, 600.0), ("top", 120.0, 800.0)],
+                    vec![],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![("_top", 130.0, 620.0), ("top", 160.0, 840.0)],
+                    vec![],
+                ),
+            ],
+            Some(GlyphClassDef::Mark),
+        );
+        builder.add_variable_glyph(
+            "i",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![],
+                    vec![("idotless", 0.0, 0.0), ("dotaccentcomb", 0.0, 0.0)],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![],
+                    vec![("idotless", 0.0, 0.0), ("dotaccentcomb", 0.0, 0.0)],
+                ),
+            ],
+            None,
+        );
+
+        // 'fi': ligature with 3 locations (including intermediate where 'i' is missing)
+        builder.add_variable_glyph(
+            "fi",
+            vec![
+                (
+                    loc_light.clone(),
+                    vec![],
+                    vec![("f", 0.0, 0.0), ("i", 400.0, 0.0)],
+                ),
+                (
+                    loc_medium.clone(),
+                    vec![],
+                    vec![("f", 0.0, 0.0), ("i", 450.0, 0.0)],
+                ),
+                (
+                    loc_bold.clone(),
+                    vec![],
+                    vec![("f", 0.0, 0.0), ("i", 500.0, 0.0)],
+                ),
+            ],
+            Some(GlyphClassDef::Ligature),
+        );
+
+        let ctx = builder.build();
+        // This should not panic with "no value at default location"
+        propagate_all_anchors(&ctx).unwrap();
+
+        // 'fi' is a ligature of 'f' (1 base) + 'i' (1 base), so anchors should
+        // be consistently numbered _1 / _2 at all locations including intermediate.
+        assert_eq!(
+            get_anchor_names(&ctx, "fi"),
+            vec!["bottom_1", "bottom_2", "top_1", "top_2"],
         );
     }
 }
