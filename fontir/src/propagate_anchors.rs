@@ -276,12 +276,14 @@ fn anchors_traversing_components(
     variation_models: &mut HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
 ) -> Vec<RawAnchor> {
     if existing_anchors.is_empty() && components.is_empty() {
+        base_glyph_counts.insert((glyph_name.clone(), location.clone()), 0);
         return Vec::new();
     }
 
     // If this is a mark and it has anchors, just return them
     // (as in, don't even look at the components)
     if !existing_anchors.is_empty() && is_mark {
+        base_glyph_counts.insert((glyph_name.clone(), location.clone()), 0); // marks have 0 base glyphs
         return origin_adjusted_anchors(existing_anchors).collect();
     }
 
@@ -335,11 +337,23 @@ fn anchors_traversing_components(
             maybe_rename_component_anchor(comp_anchor, &mut anchors);
         }
 
-        // Get the number of base glyphs in this component (for ligature anchor numbering)
+        // Get the number of base glyphs in this component (for ligature anchor numbering).
+        // If the component doesn't have a source at this exact location (e.g. the composite
+        // has an intermediate layer that the component doesn't), fall back to the default
+        // location's count; it should be a structural property consistent across locations.
+        // The default entry is guaranteed to exist because depth-sorting ensures all of the
+        // component's locations are fully processed before the current glyph, and
+        // Glyph invariants require a source at the default location.
         let component_number_of_base_glyphs = base_glyph_counts
             .get(&(component.base.clone(), location.clone()))
+            .or_else(|| {
+                base_glyph_counts
+                    .iter()
+                    .find(|((name, loc), _)| name == &component.base && loc.is_default())
+                    .map(|(_, count)| count)
+            })
             .copied()
-            .unwrap_or(0);
+            .expect("base_glyph_counts should have a default-location entry for every component");
 
         let comb_has_underscore = anchors
             .iter()
