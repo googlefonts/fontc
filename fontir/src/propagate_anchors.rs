@@ -2030,4 +2030,38 @@ mod tests {
             vec!["bottom_1", "bottom_2", "top_1", "top_2"],
         );
     }
+
+    /// Regression test for ComforterBrush ffi/ffl: non-standard caret anchor names
+    /// like "caret_1_" must survive propagation. Previously, `AnchorKind::to_name()`
+    /// mapped both "caret_1" and "caret_1_" to "caret_1", losing one caret position.
+    #[test]
+    fn caret_anchor_names_preserved_through_propagation() {
+        let mut builder = GlyphSetBuilder::new(test_context());
+
+        builder.add_glyph("f", |glyph| {
+            glyph.add_anchor("top", (300.0, 800.0));
+        });
+        builder.add_glyph("i", |glyph| {
+            glyph.add_anchor("top", (150.0, 800.0));
+        });
+
+        // Composite with explicit caret anchors using non-standard naming
+        builder.add_glyph("ffi", |glyph| {
+            glyph
+                .add_component_at("f", (0.0, 0.0))
+                .add_component_at("f", (242.0, 0.0))
+                .add_component_at("i", (588.0, 0.0))
+                .add_anchor("caret_1", (242.0, 0.0))
+                .add_anchor("caret_1_", (588.0, 0.0))
+                .set_category(GlyphClassDef::Ligature);
+        });
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        assert_eq!(
+            get_anchor_names(&ctx, "ffi"),
+            vec!["caret_1", "caret_1_", "top_1", "top_2", "top_3"],
+        );
+    }
 }
