@@ -5888,6 +5888,36 @@ etc;
         );
     }
 
+    /// Explicit anchors on a composite glyph must not be overridden by
+    /// interpolated smart component anchors.
+    /// Regression test for <https://github.com/googlefonts/fontc/pull/1892>
+    #[test]
+    fn smart_component_preserves_explicit_anchors() {
+        let font = Font::load(&glyphs3_dir().join("SmartComponentExplicitAnchors.glyphs")).unwrap();
+        let glyph = font.glyphs.get("composite").unwrap();
+        let layer = &glyph.layers[0];
+
+        // The glyph's explicit anchors should survive smart component instantiation
+        let anchor_map: std::collections::HashMap<&str, (f64, f64)> = layer
+            .anchors
+            .iter()
+            .map(|a| (a.name.as_str(), (a.pos.x, a.pos.y)))
+            .collect();
+
+        // These are the glyph's own explicit anchor positions, NOT the smart
+        // component's interpolated values (which would be (250,600) / (250,0)).
+        assert_eq!(
+            anchor_map.get("top"),
+            Some(&(300.0, 700.0)),
+            "explicit 'top' anchor was overridden by smart component"
+        );
+        assert_eq!(
+            anchor_map.get("bottom"),
+            Some(&(300.0, 0.0)),
+            "explicit 'bottom' anchor was overridden by smart component"
+        );
+    }
+
     #[test]
     fn parse_basic_corner_component_hint() {
         let font = Font::load_raw(glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
