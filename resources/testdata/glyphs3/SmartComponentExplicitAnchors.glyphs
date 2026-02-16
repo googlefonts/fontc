@@ -1,0 +1,131 @@
+{
+.appVersion = "3515";
+.formatVersion = 3;
+familyName = SmartComponentExplicitAnchorsTest;
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = -200;
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = composite;
+layers = (
+{
+anchors = (
+{
+name = bottom;
+pos = (300,0);
+},
+{
+name = top;
+pos = (300,700);
+}
+);
+layerId = m01;
+shapes = (
+{
+piece = {
+height = 0;
+};
+ref = _part.base;
+}
+);
+width = 500;
+}
+);
+unicode = 65;
+},
+{
+export = 0;
+glyphname = _part.base;
+layers = (
+{
+anchors = (
+{
+name = bottom;
+pos = (250,0);
+},
+{
+name = top;
+pos = (250,600);
+}
+);
+layerId = m01;
+partSelection = {
+height = 2;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(500,0,l),
+(500,600,l),
+(0,600,l)
+);
+}
+);
+width = 500;
+},
+{
+anchors = (
+{
+name = bottom;
+pos = (250,0);
+},
+{
+name = top;
+pos = (250,400);
+}
+);
+associatedMasterId = m01;
+layerId = "short-layer-id";
+name = Short;
+partSelection = {
+height = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(500,0,l),
+(500,400,l),
+(0,400,l)
+);
+}
+);
+width = 500;
+}
+);
+partsSettings = (
+{
+bottomValue = -100;
+name = height;
+topValue = 0;
+}
+);
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = descender;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

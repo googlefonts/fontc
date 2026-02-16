@@ -3826,6 +3826,10 @@ impl Font {
         // convert the smart components to normal outlines, per-glyph
         for mut glyph in glyphs_with_smart_components {
             for layer in glyph.layers.iter_mut() {
+                // Snapshot the glyph's own explicit anchors which represent the designer's
+                // intent and must not be overridden by interpolated smart component anchors.
+                let explicit_anchor_names: HashSet<SmolStr> =
+                    layer.anchors.iter().map(|a| a.name.clone()).collect();
                 let old_shapes = std::mem::take(&mut layer.shapes);
                 let mut new_shapes = Vec::new();
                 for shape in old_shapes {
@@ -3852,14 +3856,17 @@ impl Font {
                         })?;
                         new_shapes.extend(instance.shapes);
                         // Add anchors from smart component, filtering out
-                        // 'mark' anchors used for internal part-to-part connections.
+                        // 'mark' anchors used for internal part-to-part connections
+                        // and any that would override the glyph's explicit anchors.
                         let new_anchors: Vec<_> = instance
                             .anchors
                             .into_iter()
-                            .filter(|a| !a.name.starts_with('_'))
+                            .filter(|a| {
+                                !a.name.starts_with('_') && !explicit_anchor_names.contains(&a.name)
+                            })
                             .collect();
-                        // Remove existing anchors that will be replaced by new ones.
-                        // When duplicates exist, keep the last one (matching Glyphs.app).
+                        // When duplicates exist among smart component anchors,
+                        // keep the last one (matching Glyphs.app).
                         let new_names: HashSet<&SmolStr> =
                             new_anchors.iter().map(|a| &a.name).collect();
                         layer.anchors.retain(|a| !new_names.contains(&a.name));
@@ -5885,6 +5892,36 @@ etc;
                 Rect::new(500., 200., 550., 400.),
                 Rect::new(500., 0., 550., 100.),
             ]
+        );
+    }
+
+    /// Explicit anchors on a composite glyph must not be overridden by
+    /// interpolated smart component anchors.
+    /// Regression test for <https://github.com/googlefonts/fontc/pull/1892>
+    #[test]
+    fn smart_component_preserves_explicit_anchors() {
+        let font = Font::load(&glyphs3_dir().join("SmartComponentExplicitAnchors.glyphs")).unwrap();
+        let glyph = font.glyphs.get("composite").unwrap();
+        let layer = &glyph.layers[0];
+
+        // The glyph's explicit anchors should survive smart component instantiation
+        let anchor_map: std::collections::HashMap<&str, (f64, f64)> = layer
+            .anchors
+            .iter()
+            .map(|a| (a.name.as_str(), (a.pos.x, a.pos.y)))
+            .collect();
+
+        // These are the glyph's own explicit anchor positions, NOT the smart
+        // component's interpolated values (which would be (250,600) / (250,0)).
+        assert_eq!(
+            anchor_map.get("top"),
+            Some(&(300.0, 700.0)),
+            "explicit 'top' anchor was overridden by smart component"
+        );
+        assert_eq!(
+            anchor_map.get("bottom"),
+            Some(&(300.0, 0.0)),
+            "explicit 'bottom' anchor was overridden by smart component"
         );
     }
 
