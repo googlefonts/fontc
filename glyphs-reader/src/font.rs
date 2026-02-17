@@ -768,11 +768,9 @@ impl Shape {
         }
     }
 
-    pub(crate) fn as_smart_component(&self) -> Option<&Component> {
+    pub(crate) fn as_component(&self) -> Option<&Component> {
         match self {
-            Shape::Component(component) if !component.smart_component_values.is_empty() => {
-                Some(component)
-            }
+            Shape::Component(component) => Some(component),
             _ => None,
         }
     }
@@ -3797,13 +3795,13 @@ impl Font {
                     .iter()
                     .flat_map(|layer| layer.components())
                     .any(|comp| {
-                        //https://github.com/googlefonts/glyphsLib/blob/52c982399b/Lib/glyphsLib/builder/components.py#L77
-                        !comp.smart_component_values.is_empty()
-                            && self
-                                .glyphs
-                                .get(&comp.name)
-                                .map(|ref_glyph| !ref_glyph.smart_component_axes.is_empty())
-                                .unwrap_or(false)
+                        // Check the referenced glyph's axes, not the component's
+                        // values. Glyphs.app omits 'piece' when a smart component
+                        // is newly placed without adjusting any slider (glyphsLib#1134).
+                        self.glyphs
+                            .get(&comp.name)
+                            .map(|ref_glyph| !ref_glyph.smart_component_axes.is_empty())
+                            .unwrap_or(false)
                     })
             })
             .cloned()
@@ -3833,7 +3831,7 @@ impl Font {
                 let old_shapes = std::mem::take(&mut layer.shapes);
                 let mut new_shapes = Vec::new();
                 for shape in old_shapes {
-                    if let Some(comp) = shape.as_smart_component()
+                    if let Some(comp) = shape.as_component()
                         && let Some(ref_glyph) = self
                             .glyphs
                             .get(&comp.name)
@@ -5829,8 +5827,8 @@ etc;
         let font = Font::load(&glyphs3_dir().join("SmartComponents.glyphs")).unwrap();
         let smart_comp = font.glyphs.get("_part.shoulder").unwrap();
 
-        // When Glyphs.app places a smart component at its default location,
-        // it omits the 'piece' attribute, so smart_component_values is empty.
+        // When a smart component is newly placed without adjusting any slider,
+        // Glyphs.app omits the 'piece' attribute, so smart_component_values is empty.
         let component = Component {
             name: "_part.shoulder".into(),
             smart_component_values: BTreeMap::new(),
