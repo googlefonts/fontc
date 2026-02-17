@@ -5823,6 +5823,30 @@ etc;
         assert_eq!(shape, smart_comp.layers[1].shapes[0]);
     }
 
+    // https://github.com/googlefonts/glyphsLib/issues/1134
+    #[test]
+    fn instantiate_smart_component_at_default_empty_values() {
+        let font = Font::load(&glyphs3_dir().join("SmartComponents.glyphs")).unwrap();
+        let smart_comp = font.glyphs.get("_part.shoulder").unwrap();
+
+        // When Glyphs.app places a smart component at its default location,
+        // it omits the 'piece' attribute, so smart_component_values is empty.
+        let component = Component {
+            name: "_part.shoulder".into(),
+            smart_component_values: BTreeMap::new(),
+            ..Default::default()
+        };
+
+        let instance =
+            smart_components::instantiate_for_layer("m01", &component, smart_comp).unwrap();
+        assert_eq!(instance.shapes.len(), 1);
+
+        // Should produce the same result as explicit default values
+        let shape_with_explicit_defaults =
+            instantiate_shoulder_at(&[("shoulderWidth", 100.), ("crotchDepth", 0.)]);
+        assert_eq!(instance.shapes[0], shape_with_explicit_defaults);
+    }
+
     #[test]
     fn instantiate_smart_component_at_not_default() {
         let Shape::Path(path) =
