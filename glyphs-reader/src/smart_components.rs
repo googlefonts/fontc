@@ -55,7 +55,6 @@ pub(crate) fn instantiate_for_layer(
     component: &Component,
     ref_glyph: &Glyph,
 ) -> Result<SmartComponentInstance, BadSmartComponent> {
-    assert!(!component.smart_component_values.is_empty());
     assert!(!ref_glyph.smart_component_axes.is_empty());
     let (axis_order, name_to_tag_map) = axes_for_glyph(ref_glyph);
 
@@ -134,13 +133,17 @@ pub(crate) fn instantiate_for_layer(
         })
         .collect::<HashMap<_, _>>();
 
-    let location: NormalizedLocation = component
-        .smart_component_values
+    let location: NormalizedLocation = axis_tuples
         .iter()
-        .map(|(name, value)| {
+        .map(|(name, &(min, default, max))| {
+            let value = component
+                .smart_component_values
+                .get(*name)
+                .copied()
+                .unwrap_or(default as f64);
             (
-                *name_to_tag_map.get(name).unwrap(),
-                normalize_value_with_extrapolation(*value, *axis_tuples.get(name).unwrap()),
+                *name_to_tag_map.get(*name).unwrap(),
+                normalize_value_with_extrapolation(value, (min, default, max)),
             )
         })
         .collect();
@@ -600,7 +603,7 @@ mod tests {
         let glyphs = smart_glyphs(master_id);
         let a_glyph = glyphs.get(&SmolStr::new("a")).unwrap();
         let a_layer = &a_glyph.layers[0];
-        let component = a_layer.shapes[0].as_smart_component().unwrap();
+        let component = a_layer.shapes[0].as_component().unwrap();
 
         for (location, expected) in test_cases {
             // Set smart component values
@@ -681,7 +684,7 @@ mod tests {
         let glyphs = smart_glyphs(master_id);
         let a_glyph = glyphs.get(&SmolStr::new("a")).unwrap();
         let a_layer = &a_glyph.layers[0];
-        let component = a_layer.shapes[0].as_smart_component().unwrap();
+        let component = a_layer.shapes[0].as_component().unwrap();
 
         for (location, expected) in test_cases {
             // Set smart component values and flip x transform
