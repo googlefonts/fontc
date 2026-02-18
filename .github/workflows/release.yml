@@ -59,13 +59,13 @@ jobs:
           if [[ -n "${{ inputs.tool }}" ]]; then
             TOOL="${{ inputs.tool }}"
           # Otherwise detect from tag
-          elif [[ "${{ github.ref }}" == refs/tags/fontc-v* ]]; then
+          elif [[ "${GITHUB_REF}" == refs/tags/fontc-v* ]]; then
             TOOL="fontc"
-          elif [[ "${{ github.ref }}" == refs/tags/otl-normalizer-v* ]]; then
+          elif [[ "${GITHUB_REF}" == refs/tags/otl-normalizer-v* ]]; then
             TOOL="otl-normalizer"
           else
             echo "Error: Could not detect tool from tag or manual input"
-            echo "Tag was: ${{ github.ref }}"
+            echo "Tag was: ${GITHUB_REF}"
             exit 1
           fi
 
@@ -139,9 +139,9 @@ jobs:
         shell: bash
         working-directory: ${{ needs.detect.outputs.working-directory }}
         run: |
-          pip install --no-index --find-links dist/ --force-reinstall ${{ env.TOOL }}
-          which ${{ env.TOOL }}
-          ${{ env.TOOL }} --version
+          pip install --no-index --find-links dist/ --force-reinstall ${TOOL}
+          which ${TOOL}
+          ${TOOL} --version
 
       - name: Check sdist metadata
         if: matrix.platform.target == 'x86_64-apple-darwin'
@@ -212,12 +212,12 @@ jobs:
         if: startsWith(matrix.platform.target, 'x86_64')
         working-directory: ${{ needs.detect.outputs.working-directory }}
         run: |
-          pip install --no-index --find-links dist/ --force-reinstall ${{ env.TOOL }}
-          which ${{ env.TOOL }}
-          ${{ env.TOOL }} --version
+          pip install --no-index --find-links dist/ --force-reinstall ${TOOL}
+          which ${TOOL}
+          ${TOOL} --version
 
       - name: Archive binary
-        run: tar czvf target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${{ env.TOOL }}
+        run: tar czvf target/release/${TOOL}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${TOOL}
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
@@ -264,7 +264,7 @@ jobs:
           working-directory: ${{ needs.detect.outputs.working-directory }}
 
       - name: Archive binary
-        run: tar czvf target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${{ env.TOOL }}
+        run: tar czvf target/release/${TOOL}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${TOOL}
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
@@ -330,7 +330,7 @@ jobs:
         run: |
           pipx install pip-tools
           pipx runpip pip-tools install 'pip==25.0.1'
-          echo ${{ env.TOOL }} | pip-compile - --no-index --find-links wheels/ --no-emit-find-links --generate-hashes --pip-args '--only-binary=:all:' --no-annotate --no-header --output-file requirements.txt
+          echo ${TOOL} | pip-compile - --no-index --find-links wheels/ --no-emit-find-links --generate-hashes --pip-args '--only-binary=:all:' --no-annotate --no-header --output-file requirements.txt
 
       - name: Compute checksums of release assets
         run: |
