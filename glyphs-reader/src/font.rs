@@ -639,7 +639,19 @@ impl FromPlist for LayerAttributes {
                 "coordinates" => coordinates = tokenizer.parse()?,
                 "color" => color = tokenizer.parse()?,
                 "axisRules" => axis_rules = tokenizer.parse()?,
-                "colorPalette" => color_palette = Some(tokenizer.parse()?),
+                "colorPalette" => {
+                    // colorPalette can be a palette index or the string "*"
+                    // which should be parsed as the special palette index
+                    // 0xFFFF (foreground color)
+                    let value = match tokenizer.peek()?.as_str() {
+                        Some("*") => {
+                            tokenizer.lex()?;
+                            0xFFFF
+                        }
+                        _ => tokenizer.parse()?,
+                    };
+                    color_palette = Some(value);
+                }
                 // skip unsupported attributes for now
                 // TODO: match the others
                 _ => tokenizer.skip_rec()?,
@@ -6211,5 +6223,19 @@ name = _corner.hi;
         //value: "BAZ".into()
         //}
         //);
+    }
+
+    #[test]
+    fn parse_color_palette_numeric() {
+        let plist = r#"{ colorPalette = 2; }"#;
+        let attrs = LayerAttributes::parse_plist(plist).unwrap();
+        assert_eq!(attrs.color_palette, Some(2));
+    }
+
+    #[test]
+    fn parse_color_palette_star() {
+        let plist = r#"{ colorPalette = "*"; }"#;
+        let attrs = LayerAttributes::parse_plist(plist).unwrap();
+        assert_eq!(attrs.color_palette, Some(0xFFFF));
     }
 }
