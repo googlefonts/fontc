@@ -2139,7 +2139,9 @@ pub struct PaintGlyph {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintSolid {
-    pub color: Color,
+    /// The color to use. `None` means the text foreground color
+    /// (COLR palette index 0xFFFF).
+    pub color: Option<Color>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

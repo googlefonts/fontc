@@ -171,12 +171,12 @@ fn to_colr_paint(
             }))
         }
         ir::Paint::Solid(paint) => Ok(Paint::Solid(PaintSolid {
-            palette_index: palette.index_of(paint.color).ok_or_else(|| {
-                Error::GlyphError(
-                    glyph_name.clone(),
-                    GlyphProblem::NotInColorPalette(paint.color),
-                )
-            })? as u16,
+            palette_index: match paint.color {
+                None => 0xFFFF,
+                Some(color) => palette.index_of(color).ok_or_else(|| {
+                    Error::GlyphError(glyph_name.clone(), GlyphProblem::NotInColorPalette(color))
+                })? as u16,
+            },
             alpha: OPAQUE,
         })),
         ir::Paint::LinearGradient(linear) => {
@@ -311,10 +311,13 @@ fn new_colr0(
             let ir::Paint::Solid(solid) = &p.paint else {
                 unreachable!("We prevalidated, what is {p:?}?!");
             };
-            let palette_idx = palette.index_of(solid.color).expect("Prevalidated");
+            let palette_idx = match solid.color {
+                None => 0xFFFF,
+                Some(color) => palette.index_of(color).expect("Prevalidated") as u16,
+            };
             Layer::new(
                 glyph_order.glyph_id(&p.name).expect("Prevalidated"),
-                palette_idx as u16,
+                palette_idx,
             )
         })
         .collect::<Vec<_>>();
@@ -451,5 +454,74 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
         // All done, claim victory!
         context.colr.set(colr);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fontdrasil::types::GlyphName;
+
+    #[test]
+    fn v0_palette_index_0xffff() {
+        let palette = ColorPalettes::default();
+        let mut glyph_order = GlyphOrder::new();
+        let glyph_name = GlyphName::new("test");
+        glyph_order.insert(glyph_name.clone());
+
+        let paints = [ir::PaintGlyph {
+            name: glyph_name.clone(),
+            paint: ir::Paint::Solid(ir::PaintSolid { color: None }.into()),
+        }];
+
+        let refs: Vec<&ir::PaintGlyph> = paints.iter().collect();
+
+        let mut layers = Vec::new();
+        let _base_glyph =
+            new_colr0(&palette, &glyph_order, &glyph_name, &refs, &mut layers).unwrap();
+
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].palette_index, 0xFFFF);
+    }
+
+    #[test]
+    fn v1_palette_index_0xffff() {
+        use fontir::orchestration::Context as IrContext;
+
+        let ir_ctx = IrContext::new_root(Default::default(), None);
+        let context = Context::new_root(Default::default(), None, None, &ir_ctx);
+
+        let palette = ColorPalettes::default();
+        let mut glyph_order = GlyphOrder::new();
+        let glyph_name = GlyphName::new("test");
+        glyph_order.insert(glyph_name.clone());
+
+        let bbox = Bbox {
+            x_min: 0,
+            y_min: 0,
+            x_max: 100,
+            y_max: 100,
+        };
+        let mut layer_list = LayerList::default();
+
+        let ir_paint = ir::Paint::Solid(ir::PaintSolid { color: None }.into());
+
+        let paint = to_colr_paint(
+            &context,
+            &glyph_order,
+            &palette,
+            &glyph_name,
+            &bbox,
+            &mut layer_list,
+            &ir_paint,
+        )
+        .unwrap();
+
+        match paint {
+            Paint::Solid(solid) => {
+                assert_eq!(solid.palette_index, 0xFFFF);
+            }
+            _ => panic!("Expected Paint::Solid"),
+        }
     }
 }
