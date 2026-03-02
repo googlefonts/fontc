@@ -211,7 +211,17 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         if !ivs.is_empty() {
             self.tables
                 .gdef
-                .get_or_insert_with(Default::default)
+                .get_or_insert_with(|| {
+                    // If we're creating a new GdefBuilder here, it means
+                    // finalize_gdef_table() discarded the previous one because
+                    // it was empty. That means no explicit glyph classes were
+                    // declared in the FEA, so mark the classes as inferred.
+                    // https://github.com/googlefonts/fontc/issues/1847
+                    super::tables::GdefBuilder {
+                        glyph_classes_were_inferred: true,
+                        ..Default::default()
+                    }
+                })
                 .var_store = Some(ivs);
         // but if we _do_ have a gdef table, always add the var store,
         // since we might still add ligature carets to it
