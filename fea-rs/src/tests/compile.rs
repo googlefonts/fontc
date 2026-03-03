@@ -107,6 +107,57 @@ fn run_bad_test(
     }
 }
 
+// Regression test for https://github.com/googlefonts/fontc/issues/1847
+//
+// When a variable font has no mark attachment lookups, finalize_gdef_table()
+// correctly sets glyph_classes_were_inferred=true but then discards the empty
+// GdefBuilder. build() later creates a new GdefBuilder for the IVS with the
+// default glyph_classes_were_inferred=false, causing Compilation::gdef_classes
+// to be Some({}) instead of None. This prevents fontbe from injecting
+// source-derived GDEF categories.
+#[test]
+fn variable_font_no_marks_gdef_classes_is_none() {
+    let fea = "\
+languagesystem DFLT dflt;
+feature kern {
+    pos A <0 (wght=200:12 wght=900:22) 0 0>;
+} kern;
+";
+
+    let dir = std::env::temp_dir().join("fea_rs_test_issue_1847");
+    std::fs::create_dir_all(&dir).unwrap();
+    let fea_path = dir.join("variable_no_marks.fea");
+    std::fs::write(&fea_path, fea).unwrap();
+
+    let glyph_order_path = Path::new(ROOT_TEST_DIR)
+        .join("mini-latin")
+        .join(GLYPH_ORDER);
+    let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
+    let glyph_map: GlyphMap = glyph_order.lines().map(GlyphName::new).collect();
+    let var_info = test_utils::make_var_info();
+
+    let compilation =
+        Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
+            .with_variable_info(&var_info)
+            .compile()
+            .expect("compilation should succeed");
+
+    // The GDEF table should exist (it holds the IVS for variable GPOS values)
+    assert!(
+        compilation.gdef.is_some(),
+        "expected GDEF table for variable font"
+    );
+
+    // But gdef_classes should be None: no explicit GlyphClassDef was declared in FEA,
+    // so the caller (fontbe) should be free to inject source-derived categories.
+    assert!(
+        compilation.gdef_classes.is_none(),
+        "expected gdef_classes to be None (no explicit classes), \
+         got Some with {} entries",
+        compilation.gdef_classes.as_ref().map_or(0, |m| m.len())
+    );
+}
+
 fn bad_test_body(
     path: &Path,
     glyph_map: &GlyphMap,
