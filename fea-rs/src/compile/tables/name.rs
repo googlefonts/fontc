@@ -126,6 +126,7 @@ fn parse_win(s: &str) -> String {
             work = &work[pos + 5..];
         } else {
             out_u16.extend(work.encode_utf16());
+            break;
         }
     }
     String::from_utf16(&out_u16).unwrap()
@@ -200,6 +201,12 @@ mod tests {
     fn parse_mac_str() {
         let inp = "M\\9fller";
         assert_eq!(parse_mac(inp), "Müller");
+    }
+
+    #[test]
+    fn parse_win_str() {
+        let inp = "Square Cyrilic \\0430lternates";
+        assert_eq!(parse_win(inp), "Square Cyrilic \u{0430}lternates");
     }
 
     #[test]
