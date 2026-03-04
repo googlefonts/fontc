@@ -15,9 +15,10 @@ use fontdrasil::{
 use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
-        AnchorBuilder, Condition, ConditionSet, DEFAULT_VENDOR_ID, FeaturesSource, GlobalMetric,
-        GlobalMetricsBuilder, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
-        MetaTableValues, NameBuilder, NameKey, NamedInstance, Panose, PostscriptNames,
+        AnchorBuilder, Color, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
+        DEFAULT_VENDOR_ID, FeaturesSource, GlobalMetric, GlobalMetricsBuilder, GlyphOrder,
+        KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey,
+        NamedInstance, Paint, PaintGlyph, PaintSolid, Panose, PostscriptNames,
         PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
@@ -42,6 +43,12 @@ use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph}
 const UFO_KERN1_PREFIX: &str = "public.kern1.";
 const UFO_KERN2_PREFIX: &str = "public.kern2.";
 const UFO2FT_FILTERS: &str = "com.github.googlei18n.ufo2ft.filters";
+const UFO2FT_COLOR_PALETTES: &str = "com.github.googlei18n.ufo2ft.colorPalettes";
+const UFO2FT_COLOR_LAYERS: &str = "com.github.googlei18n.ufo2ft.colorLayers";
+// TODO: Implement colorLayerMapping (requires exploding composites).
+// See https://github.com/googlefonts/fontc/issues/1903
+#[allow(dead_code)]
+const UFO2FT_COLOR_LAYER_MAPPING: &str = "com.github.googlei18n.ufo2ft.colorLayerMapping";
 
 #[derive(Clone, Debug)]
 pub struct DesignSpaceIrSource {
@@ -369,13 +376,17 @@ impl Source for DesignSpaceIrSource {
     fn create_color_palette_work(
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        Ok(Box::new(ColorPaletteWork {}))
+        Ok(Box::new(ColorPaletteWork {
+            lib: self.designspace.lib.clone(),
+        }))
     }
 
     fn create_color_glyphs_work(
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        Ok(Box::new(PaintGraphWork {}))
+        Ok(Box::new(PaintGraphWork {
+            lib: self.designspace.lib.clone(),
+        }))
     }
 
     fn compilation_flags(&self) -> Flags {
@@ -479,10 +490,14 @@ struct KerningInstanceWork {
 }
 
 #[derive(Debug)]
-struct ColorPaletteWork {}
+struct ColorPaletteWork {
+    lib: plist::Dictionary,
+}
 
 #[derive(Debug)]
-struct PaintGraphWork {}
+struct PaintGraphWork {
+    lib: plist::Dictionary,
+}
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
     let ds_axes = to_ir_axes(&designspace.axes).ok()?;
@@ -1841,6 +1856,192 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
     }
 }
 
+/// Convert a float color component (0.0–1.0) to u8 (0–255).
+///
+/// Uses banker's rounding (round half to even) to match Python's `round(v * 255)`
+/// used in fontTools' [`buildCPAL`](https://github.com/fonttools/fonttools/blob/cf08265cd5b780cb1a5113335d3da78a2093caa9/Lib/fontTools/colorLib/builder.py#L365).
+fn color_float_to_u8(v: f64) -> u8 {
+    (v * 255.0).round_ties_even().clamp(0.0, 255.0) as u8
+}
+
+/// Parse `com.github.googlei18n.ufo2ft.colorPalettes` from a plist Value.
+///
+/// Expected format: array of palettes, each an array of colors, each an array of 4 floats [R, G, B, A].
+fn parse_color_palettes(value: &plist::Value) -> Result<Vec<Vec<Color>>, Error> {
+    let palettes_array = value.as_array().ok_or_else(|| {
+        Error::InvalidEntry("color", format!("{UFO2FT_COLOR_PALETTES} must be an array"))
+    })?;
+
+    let mut palettes = Vec::with_capacity(palettes_array.len());
+    for raw_palette in palettes_array {
+        let palette_array = raw_palette.as_array().ok_or_else(|| {
+            Error::InvalidEntry(
+                "color",
+                format!("{UFO2FT_COLOR_PALETTES}: each palette must be an array"),
+            )
+        })?;
+        let mut colors = Vec::with_capacity(palette_array.len());
+        for raw_color in palette_array {
+            let rgba = raw_color.as_array().ok_or_else(|| {
+                Error::InvalidEntry(
+                    "color",
+                    format!("{UFO2FT_COLOR_PALETTES}: each color must be an array of [R, G, B, A]"),
+                )
+            })?;
+            if rgba.len() != 4 {
+                return Err(Error::InvalidEntry(
+                    "color",
+                    format!(
+                        "{UFO2FT_COLOR_PALETTES}: expected 4 color components, got {}",
+                        rgba.len()
+                    ),
+                ));
+            }
+            let components: Vec<f64> = rgba
+                .iter()
+                .map(|v| {
+                    plist_to_f64(v).ok_or_else(|| {
+                        Error::InvalidEntry(
+                            "color",
+                            format!("{UFO2FT_COLOR_PALETTES}: color component must be a number"),
+                        )
+                    })
+                })
+                .collect::<Result<_, _>>()?;
+            colors.push(Color {
+                r: color_float_to_u8(components[0]),
+                g: color_float_to_u8(components[1]),
+                b: color_float_to_u8(components[2]),
+                a: color_float_to_u8(components[3]),
+            });
+        }
+        palettes.push(colors);
+    }
+    Ok(palettes)
+}
+
+/// Extract a number from a plist Value (handles both Integer and Real).
+fn plist_to_f64(value: &plist::Value) -> Option<f64> {
+    value
+        .as_real()
+        .or_else(|| value.as_signed_integer().map(|i| i as f64))
+}
+
+/// Parse `com.github.googlei18n.ufo2ft.colorLayers` from a plist Value.
+///
+/// For now, expects COLRv0 format: dict mapping base glyph name -> array of [layerGlyphName, paletteIndex] pairs.
+/// COLRv1 paint definitions (dict values instead of arrays) are detected and rejected.
+fn parse_color_layers(
+    value: &plist::Value,
+    palettes: &ColorPalettes,
+) -> Result<ColorGlyphs, Error> {
+    let layers_dict = value.as_dictionary().ok_or_else(|| {
+        Error::InvalidEntry(
+            "color",
+            format!("{UFO2FT_COLOR_LAYERS} must be a dictionary"),
+        )
+    })?;
+
+    let mut base_glyphs = indexmap::IndexMap::with_capacity(layers_dict.len());
+    for (base_glyph_name, raw_layers) in layers_dict {
+        // COLRv1 paint definitions use dicts (with "Format", "Layers" keys)
+        // instead of arrays of [glyphName, paletteIndex] pairs.
+        if raw_layers.as_dictionary().is_some() {
+            return Err(Error::UnsupportedConstruct(format!(
+                "{UFO2FT_COLOR_LAYERS}: glyph '{base_glyph_name}' uses COLRv1 paint format"
+            )));
+        }
+        let layers_array = raw_layers.as_array().ok_or_else(|| {
+            Error::InvalidEntry(
+                "color",
+                format!("{UFO2FT_COLOR_LAYERS}: layers for '{base_glyph_name}' must be an array"),
+            )
+        })?;
+
+        if layers_array.is_empty() {
+            return Err(Error::InvalidEntry(
+                "color",
+                format!(
+                    "{UFO2FT_COLOR_LAYERS}: base glyph '{base_glyph_name}' has no color layers"
+                ),
+            ));
+        }
+
+        let mut paints = Vec::with_capacity(layers_array.len());
+        for raw_layer in layers_array {
+            let pair = raw_layer.as_array().ok_or_else(|| {
+                Error::InvalidEntry(
+                    "color",
+                    format!("{UFO2FT_COLOR_LAYERS}: each layer must be [glyphName, paletteIndex]"),
+                )
+            })?;
+            if pair.len() != 2 {
+                return Err(Error::InvalidEntry(
+                    "color",
+                    format!(
+                        "{UFO2FT_COLOR_LAYERS}: expected [glyphName, paletteIndex], got {} elements",
+                        pair.len()
+                    ),
+                ));
+            }
+            let layer_glyph_name = pair[0].as_string().ok_or_else(|| {
+                Error::InvalidEntry(
+                    "color",
+                    format!("{UFO2FT_COLOR_LAYERS}: layer glyph name must be a string"),
+                )
+            })?;
+            let raw_index = pair[1].as_signed_integer().ok_or_else(|| {
+                Error::InvalidEntry(
+                    "color",
+                    format!("{UFO2FT_COLOR_LAYERS}: palette index must be an integer"),
+                )
+            })?;
+            let palette_index: u16 = raw_index.try_into().map_err(|_| {
+                Error::InvalidEntry("color", format!(
+                    "{UFO2FT_COLOR_LAYERS}: palette index {raw_index} out of u16 range for glyph '{base_glyph_name}'"
+                ))
+            })?;
+
+            // Look up the actual color from the palette
+            // Resolve palette index to a Color from palette 0. The backend
+            // reconstructs the index via color matching (ColorPalettes::index_of).
+            // This is lossy if palette 0 has duplicate colors; see
+            // https://github.com/googlefonts/fontc/issues/1905
+            let color = if palette_index == 0xFFFF {
+                // Special foreground color (0xFFFF)
+                None
+            } else if let Some(&color) = palettes
+                .palettes
+                .first()
+                .and_then(|pal| pal.get(palette_index as usize))
+            {
+                Some(color)
+            } else {
+                return Err(Error::InvalidEntry(
+                    "color",
+                    format!(
+                        "{UFO2FT_COLOR_LAYERS}: palette index {palette_index} out of range for glyph '{base_glyph_name}'"
+                    ),
+                ));
+            };
+
+            paints.push(Paint::Glyph(Box::new(PaintGlyph {
+                name: layer_glyph_name.into(),
+                paint: Paint::Solid(Box::new(PaintSolid { color })),
+            })));
+        }
+
+        let paint = if paints.len() == 1 {
+            paints.into_iter().next().unwrap()
+        } else {
+            Paint::Layers(paints.into())
+        };
+        base_glyphs.insert(GlyphName::from(base_glyph_name.as_str()), paint);
+    }
+
+    Ok(ColorGlyphs { base_glyphs })
+}
+
 impl Work<Context, WorkId, Error> for ColorPaletteWork {
     fn id(&self) -> WorkId {
         WorkId::ColorPalettes
@@ -1854,9 +2055,19 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
         Access::Variant(WorkId::ColorPalettes)
     }
 
-    fn exec(&self, _context: &Context) -> Result<(), Error> {
-        debug!("Color palettes not implemented for UFO");
-        Ok(())
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let Some(raw_palettes) = self.lib.get(UFO2FT_COLOR_PALETTES) else {
+            return Ok(());
+        };
+        let palettes = parse_color_palettes(raw_palettes)?;
+        match ColorPalettes::new(palettes) {
+            Ok(Some(palettes)) => {
+                context.colors.set(palettes);
+                Ok(())
+            }
+            Ok(None) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -1866,15 +2077,26 @@ impl Work<Context, WorkId, Error> for PaintGraphWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::None
+        AccessBuilder::new().variant(WorkId::ColorPalettes).build()
     }
 
     fn write_access(&self) -> Access<WorkId> {
         Access::Variant(WorkId::PaintGraph)
     }
 
-    fn exec(&self, _context: &Context) -> Result<(), Error> {
-        debug!("Paint graph not implemented for UFO");
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let Some(raw_layers) = self.lib.get(UFO2FT_COLOR_LAYERS) else {
+            return Ok(());
+        };
+        let Some(palettes) = context.colors.try_get() else {
+            warn!("colorLayers found but no colorPalettes; skipping COLR");
+            return Ok(());
+        };
+
+        let color_layers = parse_color_layers(raw_layers, &palettes)?;
+        if !color_layers.base_glyphs.is_empty() {
+            context.paint_graph.set(color_layers);
+        }
         Ok(())
     }
 }
@@ -2812,5 +3034,299 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(selection_flags_implicit(&font_info), expected_flags);
+    }
+
+    fn build_color(name: &str) -> (impl Source + use<>, Context) {
+        let (source, context) = build_static_metadata(name, Flags::default());
+
+        // Run color palette work
+        let work = source.create_color_palette_work().unwrap();
+        work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
+            .unwrap();
+
+        // Run paint graph work
+        let work = source.create_color_glyphs_work().unwrap();
+        work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
+            .unwrap();
+
+        (source, context)
+    }
+
+    #[test]
+    fn colrv0_from_ufo() {
+        let (_, context) = build_color("COLRv0-var/COLRv0-Regular.ufo");
+
+        // Verify palettes were parsed
+        let palettes = context
+            .colors
+            .try_get()
+            .expect("should have color palettes");
+        assert_eq!(palettes.palettes.len(), 1, "expected 1 palette");
+        assert_eq!(palettes.palettes[0].len(), 2, "expected 2 colors");
+        // Red: (1.0, 0.0, 0.0, 1.0) => (255, 0, 0, 255)
+        assert_eq!(
+            palettes.palettes[0][0],
+            Color {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255
+            },
+        );
+        // Blue: (0.0, 0.0, 1.0, 1.0) => (0, 0, 255, 255)
+        assert_eq!(
+            palettes.palettes[0][1],
+            Color {
+                r: 0,
+                g: 0,
+                b: 255,
+                a: 255
+            },
+        );
+
+        // Verify paint graph was created
+        let paint_graph = context
+            .paint_graph
+            .try_get()
+            .expect("should have paint graph");
+        assert_eq!(paint_graph.base_glyphs.len(), 1, "expected 1 base glyph");
+        assert!(
+            paint_graph.base_glyphs.contains_key(&GlyphName::from("a")),
+            "expected base glyph 'a'"
+        );
+
+        // Verify the paint structure: Layers([Glyph(a.color0, Solid(red)), Glyph(a.color1, Solid(blue))])
+        let paint = &paint_graph.base_glyphs[&GlyphName::from("a")];
+        match paint {
+            Paint::Layers(layers) => {
+                assert_eq!(layers.len(), 2, "expected 2 layers");
+                match &layers[0] {
+                    Paint::Glyph(g) => {
+                        assert_eq!(g.name, GlyphName::from("a.color0"));
+                        match &g.paint {
+                            Paint::Solid(s) => {
+                                assert_eq!(
+                                    s.color,
+                                    Some(Color {
+                                        r: 255,
+                                        g: 0,
+                                        b: 0,
+                                        a: 255
+                                    })
+                                );
+                            }
+                            other => panic!("expected Solid paint, got {other:?}"),
+                        }
+                    }
+                    other => panic!("expected Glyph paint, got {other:?}"),
+                }
+                match &layers[1] {
+                    Paint::Glyph(g) => {
+                        assert_eq!(g.name, GlyphName::from("a.color1"));
+                        match &g.paint {
+                            Paint::Solid(s) => {
+                                assert_eq!(
+                                    s.color,
+                                    Some(Color {
+                                        r: 0,
+                                        g: 0,
+                                        b: 255,
+                                        a: 255
+                                    })
+                                );
+                            }
+                            other => panic!("expected Solid paint, got {other:?}"),
+                        }
+                    }
+                    other => panic!("expected Glyph paint, got {other:?}"),
+                }
+            }
+            other => panic!("expected Layers paint, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_color_from_ufo_without_color_data() {
+        let (_, context) = build_color("FixedPitch.ufo");
+
+        // No color data should be produced
+        assert!(
+            context.colors.try_get().is_none(),
+            "should not have palettes"
+        );
+        assert!(
+            context.paint_graph.try_get().is_none(),
+            "should not have paint graph"
+        );
+    }
+
+    #[test]
+    fn colrv0_multi_palette() {
+        let (_, context) = build_color("COLRv0-multi-palette.ufo");
+
+        let palettes = context
+            .colors
+            .try_get()
+            .expect("should have color palettes");
+        assert_eq!(palettes.palettes.len(), 2, "expected 2 palettes");
+        // Palette 0: red, blue
+        assert_eq!(palettes.palettes[0].len(), 2);
+        assert_eq!(
+            palettes.palettes[0][0],
+            Color {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255
+            }
+        );
+        assert_eq!(
+            palettes.palettes[0][1],
+            Color {
+                r: 0,
+                g: 0,
+                b: 255,
+                a: 255
+            }
+        );
+        // Palette 1: green, yellow
+        assert_eq!(palettes.palettes[1].len(), 2);
+        assert_eq!(
+            palettes.palettes[1][0],
+            Color {
+                r: 0,
+                g: 255,
+                b: 0,
+                a: 255
+            }
+        );
+        assert_eq!(
+            palettes.palettes[1][1],
+            Color {
+                r: 255,
+                g: 255,
+                b: 0,
+                a: 255
+            }
+        );
+
+        let paint_graph = context
+            .paint_graph
+            .try_get()
+            .expect("should have paint graph");
+        assert_eq!(paint_graph.base_glyphs.len(), 2, "expected 2 base glyphs");
+
+        // "a" has 2 layers -> Paint::Layers
+        let paint_a = &paint_graph.base_glyphs[&GlyphName::from("a")];
+        assert!(
+            matches!(paint_a, Paint::Layers(_)),
+            "expected Layers for 'a'"
+        );
+
+        // "b" has 1 layer -> Paint::Glyph (not wrapped in Layers)
+        let paint_b = &paint_graph.base_glyphs[&GlyphName::from("b")];
+        match paint_b {
+            Paint::Glyph(g) => {
+                assert_eq!(g.name, GlyphName::from("b.color0"));
+                match &g.paint {
+                    Paint::Solid(s) => {
+                        // Color resolved from palette 0, index 0 = red
+                        assert_eq!(
+                            s.color,
+                            Some(Color {
+                                r: 255,
+                                g: 0,
+                                b: 0,
+                                a: 255
+                            })
+                        );
+                    }
+                    other => panic!("expected Solid paint, got {other:?}"),
+                }
+            }
+            other => panic!("expected Glyph paint for single-layer 'b', got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_color_layers_rejects_empty_layers() {
+        let plist_str = r#"
+        <dict>
+            <key>a</key>
+            <array/>
+        </dict>
+        "#;
+        let value: plist::Value = plist::from_bytes(plist_str.as_bytes()).unwrap();
+        let palettes = ColorPalettes::new(vec![vec![Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 255,
+        }]])
+        .unwrap()
+        .unwrap();
+        let err = parse_color_layers(&value, &palettes).unwrap_err();
+        assert!(
+            format!("{err}").contains("no color layers"),
+            "expected 'no color layers' error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_color_layers_rejects_out_of_range_palette_index() {
+        let plist_str = r#"
+        <dict>
+            <key>a</key>
+            <array>
+                <array>
+                    <string>a.color0</string>
+                    <integer>65536</integer>
+                </array>
+            </array>
+        </dict>
+        "#;
+        let value: plist::Value = plist::from_bytes(plist_str.as_bytes()).unwrap();
+        let palettes = ColorPalettes::new(vec![vec![Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 255,
+        }]])
+        .unwrap()
+        .unwrap();
+        let err = parse_color_layers(&value, &palettes).unwrap_err();
+        assert!(
+            format!("{err}").contains("out of u16 range"),
+            "expected 'out of u16 range' error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_color_layers_rejects_negative_palette_index() {
+        let plist_str = r#"
+        <dict>
+            <key>a</key>
+            <array>
+                <array>
+                    <string>a.color0</string>
+                    <integer>-1</integer>
+                </array>
+            </array>
+        </dict>
+        "#;
+        let value: plist::Value = plist::from_bytes(plist_str.as_bytes()).unwrap();
+        let palettes = ColorPalettes::new(vec![vec![Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 255,
+        }]])
+        .unwrap()
+        .unwrap();
+        let err = parse_color_layers(&value, &palettes).unwrap_err();
+        assert!(
+            format!("{err}").contains("out of u16 range"),
+            "expected 'out of u16 range' error, got: {err}"
+        );
     }
 }
