@@ -61,6 +61,7 @@ chrono.workspace = true
 ordered-float.workspace = true
 rstest.workspace = true
 criterion.workspace = true
+rayon.workspace = true
 glyphs-reader = { path = "../glyphs-reader" }
 
 [build-dependencies]

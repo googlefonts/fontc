@@ -84,6 +84,12 @@ jobs:
   test-stable-fontc:
     name: fontc tests
     runs-on: ubuntu-latest
+    env:
+      # Disables the built-in benchmarks since:
+      # 1. The benchmark is slow to run on CI
+      # 2. The CI environment doesn't have access to git clone the benchmark's
+      #    default set of font sources.
+      FONTC_BENCH_SRCS: ""
     steps:
       - uses: actions/checkout@v3
 
