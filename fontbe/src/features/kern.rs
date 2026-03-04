@@ -15,7 +15,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, GdefCategories, GlyphOrder, KernGroup, KerningGroups, KerningInstance},
+    ir::{self, GdefCategories, GlyphOrder, KernGroup, KerningGroups},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::props::BidiClass;
@@ -148,27 +148,34 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
         // Add IR kerns to builder. IR kerns are split by location so put them back together again.
         let mut kern_by_pos: HashMap<_, _> = ir_kerns
             .iter()
-            .map(|(_, ki)| (ki.location.clone(), ki.as_ref().to_owned()))
+            .map(|(_, ki)| (&ki.location, ki.kerns.clone()))
             .collect();
 
         align_kerning(&ir_groups, &mut kern_by_pos);
-        let mut adjustments: HashMap<ir::KernPair, KernAdjustments> = Default::default();
+        let mut adjustments: HashMap<&ir::KernPair, KernAdjustments> = Default::default();
 
         // We want to add items to locations in the same order as the group locations
         // so start with group locations and then find the matching kerning.
         ir_groups
             .locations
             .iter()
-            .filter_map(|pos| kern_by_pos.get(pos))
-            .flat_map(|instance| {
-                instance
-                    .kerns
+            .filter_map(
+                |pos| -> Option<(
+                    &NormalizedLocation,
+                    &BTreeMap<ir::KernPair, OrderedFloat<f64>>,
+                )> {
+                    let kern = kern_by_pos.get(pos)?;
+                    Some((pos, kern))
+                },
+            )
+            .flat_map(|(pos, kerns)| {
+                kerns
                     .iter()
-                    .map(|(pair, adjustment)| (pair, (instance.location.clone(), *adjustment)))
+                    .map(|(pair, adjustment)| (pair, (pos.clone(), *adjustment)))
             })
             .for_each(|(pair, (location, adjustment))| {
                 adjustments
-                    .entry(pair.clone())
+                    .entry(pair)
                     .or_default()
                     .insert(location, adjustment);
             });
@@ -192,6 +199,7 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
                 }
                 true
             })
+            .map(|(k, v)| (k.clone(), v))
             .collect();
         debug!(
             "{} ir kerns became {} classes and {} adjustments",
@@ -217,12 +225,12 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
 /// <https://github.com/googlefonts/ufo2ft/blob/5fd168e65a0b0a/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L442>
 fn align_kerning(
     groups: &KerningGroups,
-    instances: &mut HashMap<NormalizedLocation, KerningInstance>,
+    instances: &mut HashMap<&NormalizedLocation, BTreeMap<ir::KernPair, OrderedFloat<f64>>>,
 ) {
     // all pairs defined in at least one instance
     let all_known_pairs = instances
         .values()
-        .flat_map(|instance| instance.kerns.keys())
+        .flat_map(|instance| instance.keys())
         .cloned()
         .collect::<HashSet<_>>();
 
@@ -239,10 +247,10 @@ fn align_kerning(
         .flat_map(|(group, glyphs)| glyphs.iter().map(move |glyph| (glyph, group)))
         .collect::<HashMap<_, _>>();
 
-    for instance in instances.values_mut() {
+    for kerns in instances.values_mut() {
         align_instance(
             &all_known_pairs,
-            &mut instance.kerns,
+            kerns,
             &side1_glyph_to_group_map,
             &side2_glyph_to_group_map,
         )
