@@ -4541,83 +4541,74 @@ mod tests {
         );
     }
 
-    fn assert_colr0(compile: &TestCompile, expected: Vec<(String, Vec<(String, u16)>)>) {
+    fn assert_colr0(compile: &TestCompile, expected: &[(&str, &[(&str, u16)])]) {
         let colr = compile.font().colr().unwrap();
         let layers = colr
             .layer_records()
             .expect("A layer list")
             .expect("A valid layer list");
         assert_eq!(0, colr.version());
-        assert_eq!(
-            expected,
-            colr.base_glyph_records()
-                .expect("v0 records")
-                .expect("Valid v0 records")
-                .iter()
-                .map(|g| (
+        let actual: Vec<(String, Vec<(String, u16)>)> = colr
+            .base_glyph_records()
+            .expect("v0 records")
+            .expect("Valid v0 records")
+            .iter()
+            .map(|g| {
+                (
                     compile
                         .get_glyph_name(g.glyph_id())
                         .expect("Valid gids")
                         .to_string(),
                     (g.first_layer_index()..(g.first_layer_index() + g.num_layers()))
                         .map(|i| layers[i as usize])
-                        .map(|l| (
-                            compile
-                                .get_glyph_name(l.glyph_id())
-                                .expect("Valid gids")
-                                .to_string(),
-                            l.palette_index()
-                        ))
-                        .collect::<Vec<_>>()
-                ))
-                .collect::<Vec<_>>()
-        )
+                        .map(|l| {
+                            (
+                                compile
+                                    .get_glyph_name(l.glyph_id())
+                                    .expect("Valid gids")
+                                    .to_string(),
+                                l.palette_index(),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        let expected: Vec<(String, Vec<(String, u16)>)> = expected
+            .iter()
+            .map(|(name, layers)| {
+                (
+                    name.to_string(),
+                    layers.iter().map(|(n, i)| (n.to_string(), *i)).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(expected, actual);
     }
 
     #[test]
     fn colr0_1layer() {
         let result = TestCompile::compile_source("glyphs3/COLRv0-1layer.glyphs");
-        assert_colr0(
-            &result,
-            vec![("A".to_string(), vec![("A.color0".to_string(), 1)])],
-        );
+        assert_colr0(&result, &[("A", &[("A.color0", 1)])]);
     }
 
     #[test]
     fn colr0_2layers() {
         let result = TestCompile::compile_source("glyphs3/COLRv0-2layers.glyphs");
-        assert_colr0(
-            &result,
-            vec![(
-                "A".to_string(),
-                vec![("A.color0".to_string(), 1), ("A.color1".to_string(), 0)],
-            )],
-        );
+        assert_colr0(&result, &[("A", &[("A.color0", 1), ("A.color1", 0)])]);
     }
 
     #[test]
     fn colr0_from_ufo() {
         let result = TestCompile::compile_source("COLRv0-var/COLRv0-Regular.ufo");
-        assert_colr0(
-            &result,
-            vec![(
-                "a".to_string(),
-                vec![("a.color0".to_string(), 0), ("a.color1".to_string(), 1)],
-            )],
-        );
+        assert_colr0(&result, &[("a", &[("a.color0", 0), ("a.color1", 1)])]);
     }
 
     #[test]
     fn colr0_from_variable_designspace() {
         let result = TestCompile::compile_source("COLRv0-var/COLRv0-var.designspace");
         // Same COLR structure as the static UFO — COLRv0 is not variable
-        assert_colr0(
-            &result,
-            vec![(
-                "a".to_string(),
-                vec![("a.color0".to_string(), 0), ("a.color1".to_string(), 1)],
-            )],
-        );
+        assert_colr0(&result, &[("a", &[("a.color0", 0), ("a.color1", 1)])]);
         // Should be a variable font with fvar and gvar
         let font = result.font();
         font.fvar().expect("fvar table for variable font");
@@ -4630,12 +4621,9 @@ mod tests {
         // Two base glyphs: "a" with 2 layers, "b" with 1 layer
         assert_colr0(
             &result,
-            vec![
-                (
-                    "a".to_string(),
-                    vec![("a.color0".to_string(), 0), ("a.color1".to_string(), 1)],
-                ),
-                ("b".to_string(), vec![("b.color0".to_string(), 0)]),
+            &[
+                ("a", &[("a.color0", 0), ("a.color1", 1)]),
+                ("b", &[("b.color0", 0)]),
             ],
         );
         // Verify CPAL has 2 palettes

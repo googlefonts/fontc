@@ -1859,7 +1859,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 /// Convert a float color component (0.0–1.0) to u8 (0–255).
 ///
 /// Uses banker's rounding (round half to even) to match Python's `round(v * 255)`
-/// used in fontTools' `buildCPAL`.
+/// used in fontTools' [`buildCPAL`](https://github.com/fonttools/fonttools/blob/cf08265cd5b780cb1a5113335d3da78a2093caa9/Lib/fontTools/colorLib/builder.py#L365).
 fn color_float_to_u8(v: f64) -> u8 {
     (v * 255.0).round_ties_even().clamp(0.0, 255.0) as u8
 }
