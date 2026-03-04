@@ -629,6 +629,10 @@ pub(crate) fn to_ir_paint(
     attr: &ShapeAttributes,
 ) -> Result<Paint, Error> {
     if let Some(palette_idx) = layer.attributes.color_palette {
+        // 0xFFFF is a special COLR palette index meaning "use the text foreground color"
+        if palette_idx == 0xFFFF {
+            return Ok(Paint::Solid(PaintSolid { color: None }.into()));
+        }
         let Some(palette) = palette else {
             return Err(Error::BadGlyph(BadGlyph::new(
                 glyph_name,
@@ -645,7 +649,7 @@ pub(crate) fn to_ir_paint(
         };
         return Ok(Paint::Solid(
             PaintSolid {
-                color: to_ir_color(*color),
+                color: Some(to_ir_color(*color)),
             }
             .into(),
         ));
@@ -653,7 +657,7 @@ pub(crate) fn to_ir_paint(
     if let Some(color) = attr.fill_color {
         return Ok(Paint::Solid(
             PaintSolid {
-                color: to_ir_color(color),
+                color: Some(to_ir_color(color)),
             }
             .into(),
         ));
@@ -867,5 +871,29 @@ mod tests {
             !color_glyphs.contains_key("empty_color"),
             "COLRv1 glyph with empty color layer should not be added to color_glyphs"
         );
+    }
+
+    /// Test that a layer with palette index 0xFFFF produces a PaintSolid with color `None`.
+    #[test]
+    fn palette_index_0xffff() {
+        use super::to_ir_paint;
+        use fontir::ir::Paint;
+        use glyphs_reader::ShapeAttributes;
+
+        let layer = Layer {
+            attributes: LayerAttributes {
+                color_palette: Some(0xFFFF),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let attr = ShapeAttributes::default();
+        let paint = to_ir_paint(None, "test", &layer, &attr).unwrap();
+        match paint {
+            Paint::Solid(solid) => {
+                assert_eq!(solid.color, None, "expected foreground paint (color: None)");
+            }
+            other => panic!("expected Paint::Solid, got {other:?}"),
+        }
     }
 }
