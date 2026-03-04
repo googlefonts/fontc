@@ -4595,6 +4595,54 @@ mod tests {
         );
     }
 
+    #[test]
+    fn colr0_from_ufo() {
+        let result = TestCompile::compile_source("COLRv0-var/COLRv0-Regular.ufo");
+        assert_colr0(
+            &result,
+            vec![(
+                "a".to_string(),
+                vec![("a.color0".to_string(), 0), ("a.color1".to_string(), 1)],
+            )],
+        );
+    }
+
+    #[test]
+    fn colr0_from_variable_designspace() {
+        let result = TestCompile::compile_source("COLRv0-var/COLRv0-var.designspace");
+        // Same COLR structure as the static UFO — COLRv0 is not variable
+        assert_colr0(
+            &result,
+            vec![(
+                "a".to_string(),
+                vec![("a.color0".to_string(), 0), ("a.color1".to_string(), 1)],
+            )],
+        );
+        // Should be a variable font with fvar and gvar
+        let font = result.font();
+        font.fvar().expect("fvar table for variable font");
+        font.gvar().expect("gvar table for outline variations");
+    }
+
+    #[test]
+    fn colr0_from_ufo_multi_palette() {
+        let result = TestCompile::compile_source("COLRv0-multi-palette.ufo");
+        // Two base glyphs: "a" with 2 layers, "b" with 1 layer
+        assert_colr0(
+            &result,
+            vec![
+                (
+                    "a".to_string(),
+                    vec![("a.color0".to_string(), 0), ("a.color1".to_string(), 1)],
+                ),
+                ("b".to_string(), vec![("b.color0".to_string(), 0)]),
+            ],
+        );
+        // Verify CPAL has 2 palettes
+        let cpal = result.font().cpal().expect("CPAL table");
+        assert_eq!(cpal.num_palettes(), 2);
+    }
+
     #[rstest]
     #[case("glyphs2/IncompatibleUnexported.glyphs")]
     #[case("glyphs3/IncompatibleUnexported.glyphs")]
