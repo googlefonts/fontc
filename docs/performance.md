@@ -5,8 +5,7 @@
 
 Only relatively large improvements or regressions are effectively detected this
 way: fontc uses [criterion](https://crates.io/crates/criterion) for
-benchmarking. To run the benchmarks, use the following command to run
-`fontc/benches/compile.rs`:
+benchmarking. Use the following command to run `fontc/benches/compile.rs`:
 
 ```shell
 cargo bench -p fontc --bench compile

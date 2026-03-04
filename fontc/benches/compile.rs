@@ -19,20 +19,18 @@ struct FontSource<'a> {
 }
 
 const DEFAULT_FONT_SOURCES: &[FontSource<'static>] = &[
+    // Compiles quickly.
     FontSource {
         dir: "/tmp/fontc-bench/oswald",
         git_url: Some("https://github.com/googlefonts/OswaldFont.git"),
         source_path: "sources/Oswald.glyphs",
     },
+    // May take a few seconds. Based on threads.svg from --emit-timing, bottlenecked on kern-be,
+    // kern-gather-be, fea, and font.
     FontSource {
-        dir: "/tmp/fontc-bench/googlesans",
-        git_url: Some("git@github.com:googlefonts/googlesans.git"),
-        source_path: "source/GoogleSans/GoogleSans.designspace",
-    },
-    FontSource {
-        dir: "/tmp/fontc-bench/googlesans-flex",
-        git_url: Some("git@github.com:googlefonts/googlesans-flex.git"),
-        source_path: "sources/GoogleSansFlex.designspace",
+        dir: "/tmp/fontc-bench/merriweather4",
+        git_url: Some("https://github.com/EbenSorkin/Merriweather4.git"),
+        source_path: "sources/Merriweather.glyphspackage",
     },
 ];
 
