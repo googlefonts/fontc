@@ -83,6 +83,29 @@ fn load_json_if_exists_else_default<T: DeserializeOwned + Default>(
     }
 }
 
+fn get_inputs_applying_denylist(input_path: &Path) -> Result<SourceSet, Error> {
+    // we can move this to a file and/or make it fancier at some point, if needed
+    fn deny(url: &str) -> bool {
+        static DENY_REPOS: &[&str] = &[
+            "chiron-fonts/chiron-hei-hk", // these repos are huge and we can't build them anyway
+            "chiron-fonts/chiron-go-round-tc",
+            "chiron-fonts/chiron-sung-hk",
+        ];
+
+        // this is quadratic. I'm sorry.
+        for deny in DENY_REPOS {
+            if url.contains(deny) {
+                log::debug!("'{url}' is on denylist, skipping");
+                return true;
+            }
+        }
+        false
+    }
+    let mut inputs: SourceSet = super::try_read_json(input_path)?;
+    inputs.sources.retain(|src| !deny(&src.repo_url));
+    Ok(inputs)
+}
+
 fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     if !args.out_dir.exists() {
         super::try_create_dir(&args.out_dir)?;
@@ -90,7 +113,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
 
     log_if_auth_or_not();
     // do this now so we error if the input file doesn't exist
-    let inputs: SourceSet = super::try_read_json(&args.to_run)?;
+    let inputs = get_inputs_applying_denylist(&args.to_run)?;
 
     let summary_file = args.out_dir.join(SUMMARY_FILE);
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
