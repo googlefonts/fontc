@@ -3,45 +3,45 @@
 ## Benchmarking with Criterion
 
 
-Only relatively large changes are effectively detected this way: fontc uses
-[criterion](https://crates.io/crates/criterion) for benchmarking. To run the
-benchmarks, use the following command:
+Only relatively large improvements or regressions are effectively detected this
+way: fontc uses [criterion](https://crates.io/crates/criterion) for
+benchmarking. Use the following command to run `fontc/benches/compile.rs`:
 
 ```shell
 cargo bench -p fontc --bench compile
 ```
 
-By default, no benchmarks will be run. You must set `FONTC_BENCH_SRCS` to
-run the benchmarks on your desired set of fonts. You can customize the
-benchmark execution using the following environment variables:
+By default, benchmarks will run on a set of pre-defined fonts sources that will
+be automatically cloned into `/tmp/fontc-bench` if they are not already present.
 
-- `FONTC_BENCH_DIR`: Specifies the directory where the font sources are
-  located. This path is relative to the `fontc` crate directory. The default
-  value is `../..`.
-- `FONTC_BENCH_SRCS`: A comma-separated list of font sources to compile. For
-  example:
-  `FONTC_BENCH_SRCS=OswaldFont/sources/Oswald.glyphs,Playfair/sources/Playfair.glyphspackage`
+It takes roughly 3 minutes to run the benchmark suite.
 
-Example usage with custom fonts:
-
-```shell
-export FONTC_BENCH_DIR=../..
-export FONTC_BENCH_SRCS=OswaldFont/sources/Oswald.glyphs,googlesans-flex/sources/GoogleSansFlex.designspace
-cargo bench -p fontc --bench compile
-```
+Example output:
 
 ```
     Finished `bench` profile [optimized] target(s) in 0.14s
-     Running benches/compile.rs (target/release/deps/compile-f43e0fcecf20fc96)
-Benchmarking fontc-compile/Oswald.glyphs: Warming up for 3.0000 s
-fontc-compile/Oswald.glyphs
-                        time:   [90.392 ms 92.002 ms 93.544 ms]
-                        change: [−1.2468% +0.8230% +2.7741%] (p = 0.46 > 0.05)
-                        No change in performance detected.
-Benchmarking fontc-compile/GoogleSansFlex.designspace: Warming up for 3.0000 s
-Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 132.4s.
-fontc-compile/GoogleSansFlex.designspace
-                        time:   [12.762 s 12.903 s 13.056 s]
+     Running benches/compile.rs (target/release/deps/compile-23dad87041a7d0fa)
+Benchmarking fontc-compile//tmp/fontc-bench/oswald/sources/Oswald.glyphs: Warming up for 3.0000 s
+fontc-compile//tmp/fontc-bench/oswald/sources/Oswald.glyphs
+                        time:   [85.787 ms 86.311 ms 86.864 ms]
+                        change: [+1.4202% +2.2889% +3.2090%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking fontc-compile//tmp/fontc-bench/googlesans/source/GoogleSans/GoogleSans.designspace: Warming up for 3.0000 s
+fontc-compile//tmp/fontc-bench/googlesans/source/GoogleSans/GoogleSans.designspace
+                        time:   [4.2918 s 4.3509 s 4.3988 s]
+                        change: [+0.1788% +1.8077% +3.1613%] (p = 0.03 < 0.05)
+                        Change within noise threshold.
+Benchmarking fontc-compile//tmp/fontc-bench/googlesans-flex/sources/GoogleSansFlex.designspace: Warming up for 3.0000 s
+Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 120.0s.
+fontc-compile//tmp/fontc-bench/googlesans-flex/sources/GoogleSansFlex.designspace
+                        time:   [12.072 s 12.211 s 12.329 s]
+```
+
+To run benchmarks on your own set of fonts, you can set `FONTC_BENCH_SRCS` to a
+comma-separated list of paths:
+
+```shell
+FONTC_BENCH_SRCS=OswaldFont/sources/Oswald.glyphs cargo bench -p fontc --bench compile
 ```
 
 Criterion also generates a report with detailed performance data, which can be
@@ -53,9 +53,6 @@ To compare the performance between `main` and your feature branch you can use
 baselines.
 
 ```shell
-export FONTC_BENCH_DIR=../..
-export FONTC_BENCH_SRCS=OswaldFont/sources/Oswald.glyphs,googlesans-flex/sources/GoogleSansFlex.designspace
-
 # On main, establish a baseline.
 git checkout main
 cargo bench -p fontc --bench compile -- --save-baseline main
