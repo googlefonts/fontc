@@ -3,7 +3,6 @@
 //! See <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
 
 use std::{
-    collections::BTreeMap,
     fmt::{Debug, Write},
     marker::PhantomData,
     ops::Sub,
@@ -111,7 +110,7 @@ impl<Space> Coord<Space> {
 /// E.g. a user location is a `Location<UserSpace>`. Hashable so it can do things like be
 /// the key for a map of sources by location.
 #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Location<Space>(BTreeMap<Tag, Coord<Space>>);
+pub struct Location<Space>(Vec<(Tag, Coord<Space>)>);
 
 /// A location in [`DesignSpace`].
 pub type DesignLocation = Location<DesignSpace>;
@@ -308,7 +307,9 @@ impl<Space> Sub<Coord<Space>> for Coord<Space> {
 
 impl<Space> FromIterator<(Tag, Coord<Space>)> for Location<Space> {
     fn from_iter<I: IntoIterator<Item = (Tag, Coord<Space>)>>(iter: I) -> Self {
-        Location(iter.into_iter().collect())
+        let mut v: Vec<_> = iter.into_iter().collect();
+        v.sort_by_key(|(tag, _)| *tag);
+        Location(v)
     }
 }
 
@@ -343,36 +344,49 @@ impl<Space> Location<Space> {
     ///
     /// [`VariationModel::axis_order`]: crate::variations::VariationModel::axis_order
     pub(crate) fn has_exact_axes(&self, axes: &[Tag]) -> bool {
-        axes.len() == self.0.len() && axes.iter().all(|tag| self.0.contains_key(tag))
+        axes.len() == self.0.len() && axes.iter().all(|tag| self.contains(*tag))
     }
 
     pub fn insert(&mut self, tag: Tag, pos: Coord<Space>) -> &mut Location<Space> {
-        self.0.insert(tag, pos);
+        match self.0.binary_search_by_key(&tag, |(t, _)| *t) {
+            Ok(i) => {
+                if let Some(entry) = self.0.get_mut(i) {
+                    entry.1 = pos
+                }
+            }
+            Err(i) => self.0.insert(i, (tag, pos)),
+        }
         self
     }
 
     pub fn remove(&mut self, tag: Tag) {
-        self.0.remove(&tag);
+        if let Ok(i) = self.0.binary_search_by_key(&tag, |(t, _)| *t) {
+            self.0.remove(i);
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Tag, &Coord<Space>)> {
-        self.0.iter()
+        self.0.iter().map(|(t, c)| (t, c))
     }
 
     pub fn axis_tags(&self) -> impl Iterator<Item = &Tag> {
-        self.0.keys()
+        self.0.iter().map(|(t, _)| t)
     }
 
     pub fn contains(&self, tag: Tag) -> bool {
-        self.0.contains_key(&tag)
+        self.0.binary_search_by_key(&tag, |(t, _)| *t).is_ok()
     }
 
     pub fn get(&self, tag: Tag) -> Option<Coord<Space>> {
-        self.0.get(&tag).copied()
+        self.0
+            .binary_search_by_key(&tag, |(t, _)| *t)
+            .ok()
+            .and_then(|i| self.0.get(i))
+            .map(|(_, v)| *v)
     }
 
     pub fn retain(&mut self, pred: impl Fn(&Tag, &mut Coord<Space>) -> bool) {
-        self.0.retain(pred);
+        self.0.retain_mut(|(tag, coord)| pred(tag, coord));
     }
 
     /// Creates a new `Location` containing only the axis tags contained in the given set.
@@ -412,9 +426,11 @@ impl Location<NormalizedSpace> {
     ///
     /// Missing axes are added at position `0.0`. Axes not in the list are removed.
     pub fn fit_to_axes(&mut self, axes: &[Tag]) {
-        self.0.retain(|k, _| axes.contains(k));
+        self.0.retain(|(k, _)| axes.contains(k));
         for ax in axes {
-            self.0.entry(*ax).or_default();
+            if !self.contains(*ax) {
+                self.insert(*ax, Default::default());
+            }
         }
     }
 
@@ -423,7 +439,7 @@ impl Location<NormalizedSpace> {
     }
 
     pub fn has_any_non_zero(&self) -> bool {
-        self.0.values().any(|v| v.to_f64() != 0.0)
+        self.0.iter().any(|(_, v)| v.to_f64() != 0.0)
     }
 
     /// Returns true if all normalized coordinates are zero

@@ -404,7 +404,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                             .join("\n"),
                     })?;
                 let mut instances = HashMap::new();
-                for (loc, glyph) in locations.into_iter().zip(simple_glyphs.into_iter()) {
+                for (loc, glyph) in locations.into_iter().zip(simple_glyphs) {
                     instances.insert(loc, glyph);
                 }
 
