@@ -981,9 +981,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         if let Some(vendor_id) = font_info_at_default
             .open_type_os2_vendor_id
             .as_ref()
-            // treat "    " (four spaces) as equivalent to no value; it means
+            // treat empty string or all spaces equivalent to no value; it means
             // 'null', per the spec
-            .filter(|id| *id != "    ")
+            .filter(|id| !id.trim().is_empty())
         {
             static_metadata.misc.vendor_id =
                 Tag::from_str(vendor_id).map_err(|cause| Error::InvalidTag {
