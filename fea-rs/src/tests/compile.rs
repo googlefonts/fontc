@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     GlyphMap,
-    compile::{Compiler, MockVariationInfo, NopFeatureProvider, Opts, error::CompilerError},
+    compile::{
+        Compilation, Compiler, MockVariationInfo, NopFeatureProvider, Opts, error::CompilerError,
+    },
     util::ttx::{self as test_utils, Filter, Report, TestCase, TestResult},
 };
 use fontdrasil::types::GlyphName;
@@ -107,6 +109,44 @@ fn run_bad_test(
     }
 }
 
+/// Compile a FEA string using the mini-latin glyph order.
+fn compile_fea(fea: &str, test_name: &str) -> Compilation {
+    let dir = std::env::temp_dir().join(format!("fea_rs_test_{test_name}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let fea_path = dir.join(format!("{test_name}.fea"));
+    std::fs::write(&fea_path, fea).unwrap();
+
+    let glyph_order_path = Path::new(ROOT_TEST_DIR)
+        .join("mini-latin")
+        .join(GLYPH_ORDER);
+    let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
+    let glyph_map: GlyphMap = glyph_order.lines().map(GlyphName::new).collect();
+
+    Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
+        .compile()
+        .expect("compilation should succeed")
+}
+
+/// Like [`compile_fea`], but with variable font info.
+fn compile_fea_variable(fea: &str, test_name: &str) -> Compilation {
+    let dir = std::env::temp_dir().join(format!("fea_rs_test_{test_name}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let fea_path = dir.join(format!("{test_name}.fea"));
+    std::fs::write(&fea_path, fea).unwrap();
+
+    let glyph_order_path = Path::new(ROOT_TEST_DIR)
+        .join("mini-latin")
+        .join(GLYPH_ORDER);
+    let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
+    let glyph_map: GlyphMap = glyph_order.lines().map(GlyphName::new).collect();
+    let var_info = test_utils::make_var_info();
+
+    Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
+        .with_variable_info(&var_info)
+        .compile()
+        .expect("compilation should succeed")
+}
+
 // Regression test for https://github.com/googlefonts/fontc/issues/1847
 //
 // When a variable font has no mark attachment lookups, finalize_gdef_table()
@@ -117,44 +157,116 @@ fn run_bad_test(
 // source-derived GDEF categories.
 #[test]
 fn variable_font_no_marks_gdef_classes_is_none() {
-    let fea = "\
+    let compilation = compile_fea_variable(
+        "\
 languagesystem DFLT dflt;
 feature kern {
     pos A <0 (wght=200:12 wght=900:22) 0 0>;
 } kern;
-";
+",
+        "issue_1847",
+    );
 
-    let dir = std::env::temp_dir().join("fea_rs_test_issue_1847");
-    std::fs::create_dir_all(&dir).unwrap();
-    let fea_path = dir.join("variable_no_marks.fea");
-    std::fs::write(&fea_path, fea).unwrap();
-
-    let glyph_order_path = Path::new(ROOT_TEST_DIR)
-        .join("mini-latin")
-        .join(GLYPH_ORDER);
-    let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
-    let glyph_map: GlyphMap = glyph_order.lines().map(GlyphName::new).collect();
-    let var_info = test_utils::make_var_info();
-
-    let compilation =
-        Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
-            .with_variable_info(&var_info)
-            .compile()
-            .expect("compilation should succeed");
-
-    // The GDEF table should exist (it holds the IVS for variable GPOS values)
     assert!(
         compilation.gdef.is_some(),
         "expected GDEF table for variable font"
     );
-
-    // But gdef_classes should be None: no explicit GlyphClassDef was declared in FEA,
-    // so the caller (fontbe) should be free to inject source-derived categories.
     assert!(
         compilation.gdef_classes.is_none(),
         "expected gdef_classes to be None (no explicit classes), \
          got Some with {} entries",
         compilation.gdef_classes.as_ref().map_or(0, |m| m.len())
+    );
+}
+
+// Verify that `# Automatic Code` comments in feature blocks produce
+// insert_markers entries in the Compilation result.
+#[test]
+fn insert_markers_exposed_on_compilation() {
+    use write_fonts::types::Tag;
+
+    let compilation = compile_fea(
+        "\
+languagesystem DFLT dflt;
+
+feature kern {
+    pos A B 10;
+    # Automatic Code
+} kern;
+
+feature mark {
+    # Automatic Code
+    pos X Y 5;
+} mark;
+",
+        "insert_markers",
+    );
+
+    let kern_tag = Tag::new(b"kern");
+    let mark_tag = Tag::new(b"mark");
+
+    assert!(
+        compilation.insert_markers.contains_key(&kern_tag),
+        "expected insert marker for 'kern' feature"
+    );
+    assert!(
+        compilation.insert_markers.contains_key(&mark_tag),
+        "expected insert marker for 'mark' feature"
+    );
+
+    // kern has one lookup (pos A B 10) before the marker, so its insertion
+    // point should be at lookup index 1
+    let kern_marker = &compilation.insert_markers[&kern_tag];
+    assert_eq!(
+        kern_marker.lookup_id.to_raw(),
+        1,
+        "kern marker should point after the first lookup"
+    );
+
+    // mark's marker is at the start of the block, before any lookups in that
+    // feature, so it should have the same lookup index as kern's (the next
+    // GPOS id at that point is still 1)
+    let mark_marker = &compilation.insert_markers[&mark_tag];
+    assert_eq!(
+        mark_marker.lookup_id.to_raw(),
+        1,
+        "mark marker should also be at lookup index 1"
+    );
+
+    // kern's marker appears first in source, so it should have lower priority
+    assert!(
+        kern_marker.priority < mark_marker.priority,
+        "kern marker (priority {}) should have lower priority than mark (priority {})",
+        kern_marker.priority,
+        mark_marker.priority,
+    );
+
+    assert_eq!(
+        compilation.insert_markers.len(),
+        2,
+        "expected exactly 2 insert markers, got {}",
+        compilation.insert_markers.len()
+    );
+}
+
+// Verify that features without `# Automatic Code` produce no insert markers.
+#[test]
+fn no_insert_markers_without_automatic_code() {
+    let compilation = compile_fea(
+        "\
+languagesystem DFLT dflt;
+
+feature kern {
+    pos A B 10;
+} kern;
+",
+        "no_insert_markers",
+    );
+
+    assert!(
+        compilation.insert_markers.is_empty(),
+        "expected no insert markers when no `# Automatic Code` comments present, got {}",
+        compilation.insert_markers.len()
     );
 }
 

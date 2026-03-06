@@ -299,16 +299,23 @@ pub(crate) struct ExternalFeatures {
     pub(crate) feature_variations: Option<RawFeatureVariations>,
 }
 
+/// A position in a feature where generated code should be inserted.
+///
+/// When a feature block contains a `# Automatic Code` comment, this records
+/// the logical position in the lookup list where generated lookups should be
+/// merged in. This information is useful for consumers that need to emulate
+/// generated features (e.g. kern, mark) while preserving the correct ordering
+/// relative to hand-written feature code.
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
-pub(crate) struct InsertionPoint {
-    /// The position in the lookuplist to insert a set of new lookups
-    pub(crate) lookup_id: LookupId,
-    /// if multiple sets are inserted at the same lookup index, this breaks ties
+pub struct InsertionPoint {
+    /// The position in the lookup list to insert a set of new lookups.
+    pub lookup_id: LookupId,
+    /// If multiple sets are inserted at the same lookup index, this breaks ties.
     ///
-    /// This is common! for instance if you have FEA with two feature blocks
+    /// This is common! For instance if you have FEA with two feature blocks
     /// that contain `# Automatic Code` comments and nothing else, this is used
     /// to order them.
-    pub(crate) priority: usize,
+    pub priority: usize,
 }
 
 struct MergeCtx<'a> {

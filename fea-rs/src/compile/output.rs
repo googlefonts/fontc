@@ -7,10 +7,11 @@ use write_fonts::{
     tables::{
         self as wtables, gdef::GlyphClassDef, layout::FeatureParams, maxp::Maxp, stat::AxisValue,
     },
-    types::{GlyphId16, NameId},
+    types::{GlyphId16, NameId, Tag},
 };
 
 use super::Opts;
+use super::feature_writer::InsertionPoint;
 
 use crate::GlyphMap;
 
@@ -53,6 +54,14 @@ pub struct Compilation {
     /// This is provided so that the user can reference them if they are going
     /// to manually generate kerning or markpos lookups.
     pub gdef_classes: Option<HashMap<GlyphId16, GlyphClassDef>>,
+    /// Insertion points for generated lookups, keyed by feature tag.
+    ///
+    /// When a feature block in the FEA source contains a `# Automatic Code`
+    /// comment, this records where in the lookup list the generated lookups
+    /// should be inserted. This is useful for consumers that emulate generated
+    /// features (e.g. kern, mark) and need to know the correct ordering
+    /// relative to hand-written feature code.
+    pub insert_markers: HashMap<Tag, InsertionPoint>,
 }
 
 impl Compilation {

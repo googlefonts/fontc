@@ -286,6 +286,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 gpos,
                 opts: self.opts.clone(),
                 gdef_classes,
+                insert_markers: std::mem::take(&mut self.insert_markers),
             },
             self.errors.clone(),
         ))
