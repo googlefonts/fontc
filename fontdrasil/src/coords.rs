@@ -110,6 +110,8 @@ impl<Space> Coord<Space> {
 /// E.g. a user location is a `Location<UserSpace>`. Hashable so it can do things like be
 /// the key for a map of sources by location.
 #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+// Performance: using a Vec instead of BTreeMap is about 7% faster. See:
+// https://github.com/googlefonts/fontc/pull/1908
 pub struct Location<Space>(Vec<(Tag, Coord<Space>)>);
 
 /// A location in [`DesignSpace`].
@@ -355,14 +357,12 @@ impl<Space> Location<Space> {
         axes.len() == self.0.len() && axes.iter().all(|tag| self.contains(*tag))
     }
 
+    // Safety: index returned by binary_search is guaranteed to be within bounds.
+    #[allow(clippy::indexing_slicing)]
     pub fn insert(&mut self, tag: Tag, pos: Coord<Space>) -> &mut Location<Space> {
         match self.0.binary_search_by_key(&tag, |(t, _)| *t) {
-            Ok(i) => {
-                if let Some(entry) = self.0.get_mut(i) {
-                    entry.1 = pos
-                }
-            }
-            Err(i) => self.0.insert(i, (tag, pos)),
+            Ok(idx) => self.0[idx].1 = pos,
+            Err(idx) => self.0.insert(idx, (tag, pos)),
         }
         self
     }
@@ -385,12 +385,13 @@ impl<Space> Location<Space> {
         self.0.binary_search_by_key(&tag, |(t, _)| *t).is_ok()
     }
 
+    // Safety: index returned by binary_search is guaranteed to be within bounds.
+    #[allow(clippy::indexing_slicing)]
     pub fn get(&self, tag: Tag) -> Option<Coord<Space>> {
         self.0
             .binary_search_by_key(&tag, |(t, _)| *t)
             .ok()
-            .and_then(|i| self.0.get(i))
-            .map(|(_, v)| *v)
+            .map(|idx| self.0[idx].1)
     }
 
     pub fn retain(&mut self, pred: impl Fn(&Tag, &mut Coord<Space>) -> bool) {
