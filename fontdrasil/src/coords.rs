@@ -3,7 +3,6 @@
 //! See <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
 
 use std::{
-    collections::BTreeMap,
     fmt::{Debug, Write},
     marker::PhantomData,
     ops::Sub,
@@ -111,7 +110,9 @@ impl<Space> Coord<Space> {
 /// E.g. a user location is a `Location<UserSpace>`. Hashable so it can do things like be
 /// the key for a map of sources by location.
 #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Location<Space>(BTreeMap<Tag, Coord<Space>>);
+// Performance: using a Vec instead of BTreeMap is about 7% faster. See:
+// https://github.com/googlefonts/fontc/pull/1908
+pub struct Location<Space>(Vec<(Tag, Coord<Space>)>);
 
 /// A location in [`DesignSpace`].
 pub type DesignLocation = Location<DesignSpace>;
@@ -308,13 +309,23 @@ impl<Space> Sub<Coord<Space>> for Coord<Space> {
 
 impl<Space> FromIterator<(Tag, Coord<Space>)> for Location<Space> {
     fn from_iter<I: IntoIterator<Item = (Tag, Coord<Space>)>>(iter: I) -> Self {
-        Location(iter.into_iter().collect())
+        let v: Vec<_> = iter.into_iter().collect();
+        Self::from(v)
     }
 }
 
 impl<Space> From<Vec<(Tag, Coord<Space>)>> for Location<Space> {
-    fn from(value: Vec<(Tag, Coord<Space>)>) -> Self {
-        value.into_iter().collect()
+    fn from(mut value: Vec<(Tag, Coord<Space>)>) -> Self {
+        value.sort_by_key(|(tag, _)| *tag);
+        value.dedup_by(|(a_tag, a_val), (b_tag, b_val)| {
+            if a_tag == b_tag {
+                *b_val = *a_val;
+                true
+            } else {
+                false
+            }
+        });
+        Location(value)
     }
 }
 
@@ -343,36 +354,48 @@ impl<Space> Location<Space> {
     ///
     /// [`VariationModel::axis_order`]: crate::variations::VariationModel::axis_order
     pub(crate) fn has_exact_axes(&self, axes: &[Tag]) -> bool {
-        axes.len() == self.0.len() && axes.iter().all(|tag| self.0.contains_key(tag))
+        axes.len() == self.0.len() && axes.iter().all(|tag| self.contains(*tag))
     }
 
+    // Safety: index returned by binary_search is guaranteed to be within bounds.
+    #[allow(clippy::indexing_slicing)]
     pub fn insert(&mut self, tag: Tag, pos: Coord<Space>) -> &mut Location<Space> {
-        self.0.insert(tag, pos);
+        match self.0.binary_search_by_key(&tag, |(t, _)| *t) {
+            Ok(idx) => self.0[idx].1 = pos,
+            Err(idx) => self.0.insert(idx, (tag, pos)),
+        }
         self
     }
 
     pub fn remove(&mut self, tag: Tag) {
-        self.0.remove(&tag);
+        if let Ok(i) = self.0.binary_search_by_key(&tag, |(t, _)| *t) {
+            self.0.remove(i);
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Tag, &Coord<Space>)> {
-        self.0.iter()
+        self.0.iter().map(|(t, c)| (t, c))
     }
 
     pub fn axis_tags(&self) -> impl Iterator<Item = &Tag> {
-        self.0.keys()
+        self.0.iter().map(|(t, _)| t)
     }
 
     pub fn contains(&self, tag: Tag) -> bool {
-        self.0.contains_key(&tag)
+        self.0.binary_search_by_key(&tag, |(t, _)| *t).is_ok()
     }
 
+    // Safety: index returned by binary_search is guaranteed to be within bounds.
+    #[allow(clippy::indexing_slicing)]
     pub fn get(&self, tag: Tag) -> Option<Coord<Space>> {
-        self.0.get(&tag).copied()
+        self.0
+            .binary_search_by_key(&tag, |(t, _)| *t)
+            .ok()
+            .map(|idx| self.0[idx].1)
     }
 
     pub fn retain(&mut self, pred: impl Fn(&Tag, &mut Coord<Space>) -> bool) {
-        self.0.retain(pred);
+        self.0.retain_mut(|(tag, coord)| pred(tag, coord));
     }
 
     /// Creates a new `Location` containing only the axis tags contained in the given set.
@@ -412,9 +435,11 @@ impl Location<NormalizedSpace> {
     ///
     /// Missing axes are added at position `0.0`. Axes not in the list are removed.
     pub fn fit_to_axes(&mut self, axes: &[Tag]) {
-        self.0.retain(|k, _| axes.contains(k));
+        self.0.retain(|(k, _)| axes.contains(k));
         for ax in axes {
-            self.0.entry(*ax).or_default();
+            if !self.contains(*ax) {
+                self.insert(*ax, Default::default());
+            }
         }
     }
 
@@ -423,7 +448,7 @@ impl Location<NormalizedSpace> {
     }
 
     pub fn has_any_non_zero(&self) -> bool {
-        self.0.values().any(|v| v.to_f64() != 0.0)
+        self.0.iter().any(|(_, v)| v.to_f64() != 0.0)
     }
 
     /// Returns true if all normalized coordinates are zero
@@ -561,7 +586,8 @@ impl Debug for NormalizedLocation {
 mod tests {
     #![allow(clippy::unwrap_used)] // test code
 
-    use super::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord};
+    use super::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord};
+    use write_fonts::types::Tag;
 
     // From <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
     fn lexend_weight_mapping() -> (Vec<(UserCoord, DesignCoord)>, usize) {
@@ -735,6 +761,119 @@ mod tests {
             UserCoord::new(100.0).to_normalized(&converter),
             NormalizedCoord::new(1.0)
         );
+    }
+
+    #[test]
+    fn from_iter_last_value_wins_for_duplicate_tags() {
+        let wght = Tag::new(b"wght");
+        let ital = Tag::new(b"ital");
+        let loc = NormalizedLocation::from_iter([
+            (wght, NormalizedCoord::new(100.0)),
+            (ital, NormalizedCoord::new(0.0)),
+            (wght, NormalizedCoord::new(200.0)), // duplicate; should win
+        ]);
+
+        let entries: Vec<_> = loc.iter().map(|(t, c)| (*t, *c)).collect();
+        assert_eq!(
+            entries,
+            vec![
+                (ital, NormalizedCoord::new(0.0)),
+                (wght, NormalizedCoord::new(200.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn location_insert_then_get_roundtrip() {
+        let wght = Tag::new(b"wght");
+        let wdth = Tag::new(b"wdth");
+        let ital = Tag::new(b"ital");
+
+        let mut loc = NormalizedLocation::new();
+        loc.insert(wght, NormalizedCoord::new(1.0));
+        loc.insert(wdth, NormalizedCoord::new(0.5));
+
+        assert_eq!(loc.get(wght), Some(NormalizedCoord::new(1.0)));
+        assert_eq!(loc.get(wdth), Some(NormalizedCoord::new(0.5)));
+        assert_eq!(loc.get(ital), None);
+
+        // Overwrite existing key
+        loc.insert(wght, NormalizedCoord::new(-1.0));
+        assert_eq!(loc.get(wght), Some(NormalizedCoord::new(-1.0)));
+
+        assert!(loc.contains(wght));
+        assert!(loc.contains(wdth));
+        assert!(!loc.contains(ital));
+    }
+
+    #[test]
+    fn location_insert_maintains_sorted_iter_order() {
+        // Insert in reverse tag order
+        let tags = [
+            Tag::new(b"zzzz"),
+            Tag::new(b"wght"),
+            Tag::new(b"ital"),
+            Tag::new(b"aaaa"),
+        ];
+        let mut loc = NormalizedLocation::new();
+        for (i, tag) in tags.iter().enumerate() {
+            loc.insert(*tag, NormalizedCoord::new(i as f64));
+        }
+
+        let collected: Vec<Tag> = loc.axis_tags().copied().collect();
+        let mut expected = tags.to_vec();
+        expected.sort();
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
+    fn location_hash_eq_consistent() {
+        use std::hash::{Hash, Hasher};
+
+        let wght = Tag::new(b"wght");
+        let ital = Tag::new(b"ital");
+        let wdth = Tag::new(b"wdth");
+
+        // construct from_iter
+        let from_iter = NormalizedLocation::from_iter([
+            (wdth, NormalizedCoord::new(0.75)),
+            (wght, NormalizedCoord::new(1.0)),
+            (ital, NormalizedCoord::new(0.0)),
+        ]);
+
+        // construct with repeated insert (different order)
+        let mut from_insert = NormalizedLocation::new();
+        from_insert.insert(ital, NormalizedCoord::new(0.0));
+        from_insert.insert(wght, NormalizedCoord::new(1.0));
+        from_insert.insert(wdth, NormalizedCoord::new(0.75));
+
+        // test that Eq and Hash agree
+        assert_eq!(from_iter, from_insert);
+
+        let hash = |loc: &NormalizedLocation| {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            loc.hash(&mut h);
+            h.finish()
+        };
+        assert_eq!(hash(&from_iter), hash(&from_insert));
+    }
+
+    #[test]
+    fn location_remove_existing_and_missing() {
+        let wght = Tag::new(b"wght");
+        let ital = Tag::new(b"ital");
+
+        let mut loc = NormalizedLocation::new();
+        loc.insert(wght, NormalizedCoord::new(1.0));
+        loc.insert(ital, NormalizedCoord::new(0.5));
+
+        loc.remove(wght);
+        assert_eq!(loc.get(wght), None);
+        assert_eq!(loc.get(ital), Some(NormalizedCoord::new(0.5)));
+
+        // Removing a non-existent key is a no-op
+        loc.remove(wght);
+        assert_eq!(loc.get(ital), Some(NormalizedCoord::new(0.5)));
     }
 
     #[test]
