@@ -9,15 +9,17 @@
 //!
 //! [Parser]: super::Parser
 
-mod lexeme;
+#[allow(missing_docs)]
+pub mod lexeme;
 mod token_set;
 
-pub(crate) use lexeme::{Kind, Lexeme};
+pub use lexeme::{Kind, Lexeme};
 pub use token_set::TokenSet;
 
 const EOF: u8 = 0x0;
 
-pub(crate) struct Lexer<'a> {
+#[allow(missing_docs)]
+pub struct Lexer<'a> {
     input: &'a str,
     pos: usize,
     after_backslash: bool,
@@ -57,7 +59,8 @@ impl ExpectingPath {
 }
 
 impl<'a> Lexer<'a> {
-    pub(crate) fn new(input: &'a str) -> Self {
+    #[allow(missing_docs)]
+    pub fn new(input: &'a str) -> Self {
         Lexer {
             input,
             pos: 0,
@@ -82,7 +85,8 @@ impl<'a> Lexer<'a> {
         next
     }
 
-    pub(crate) fn next_token(&mut self) -> Lexeme {
+    #[allow(missing_docs)]
+    pub fn next_token(&mut self) -> Lexeme {
         let start_pos = self.pos;
         let first = self.bump().unwrap_or(EOF);
         let kind = match first {

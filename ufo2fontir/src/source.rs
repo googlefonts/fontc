@@ -7,6 +7,7 @@ use std::{
 };
 
 use chrono::{DateTime, NaiveDateTime, Utc};
+use fea_rs::parse::lexer::{Kind, Lexer};
 use fontdrasil::{
     coords::{DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     orchestration::{Access, AccessBuilder, Work},
@@ -702,10 +703,62 @@ fn files_identical(f1: &Path, f2: &Path) -> Result<bool, BadSource> {
     let m2 = f2
         .metadata()
         .map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
-    if m1.len() != m2.len() {
-        return Ok(false);
+    if m1.len() == m2.len() {
+        // This is the common case: they are identical, even if we just checked size.
+        // We'll do a content check to be sure.
+        let c1 = std::fs::read(f1).map_err(|e| BadSource::new(f1, BadSourceKind::Io(e)))?;
+        let c2 = std::fs::read(f2).map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
+        if c1 == c2 {
+            return Ok(true);
+        }
     }
-    Ok(true)
+
+    // If they are not byte-identical, they might still be semantically identical
+    // if they differ only in relative paths within include() statements.
+    let c1 = std::fs::read_to_string(f1).map_err(|e| BadSource::new(f1, BadSourceKind::Io(e)))?;
+    let c2 = std::fs::read_to_string(f2).map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
+
+    Ok(get_normalized_tokens(&c1, f1) == get_normalized_tokens(&c2, f2))
+}
+
+fn get_normalized_tokens(content: &str, file_path: &Path) -> Vec<(Kind, String)> {
+    let mut lexer = Lexer::new(content);
+    let mut tokens = Vec::new();
+    let mut pos = 0;
+    loop {
+        let lexeme = lexer.next_token();
+        if lexeme.kind == Kind::Eof {
+            break;
+        }
+        let token_text = &content[pos..pos + lexeme.len];
+        pos += lexeme.len;
+
+        if lexeme.kind.is_trivia() {
+            continue;
+        }
+
+        let token_text = if lexeme.kind == Kind::Path {
+            normalize_path(token_text, file_path)
+        } else {
+            token_text.to_string()
+        };
+        tokens.push((lexeme.kind, token_text));
+    }
+    tokens
+}
+
+fn normalize_path(path_str: &str, base_file: &Path) -> String {
+    let path = Path::new(path_str);
+    if path.is_absolute() {
+        return path_str.to_string();
+    }
+    let parent = base_file.parent().unwrap();
+    let resolved = parent.join(path);
+    if let Ok(canonical) = resolved.canonicalize() {
+        canonical.to_string_lossy().to_string()
+    } else {
+        resolved.to_string_lossy().to_string()
+    }
 }
 
 /// Creates a map from UFO directory name => fontinfo.
@@ -2389,7 +2442,44 @@ mod tests {
     }
 
     #[test]
-    pub fn builds_default_glyph_order() {
+    fn test_files_identical_with_relative_paths() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+
+        let shared_fea = root.join("shared.fea");
+        std::fs::write(&shared_fea, "# shared features").unwrap();
+
+        let ufo1_dir = root.join("UFO1.ufo");
+        std::fs::create_dir(&ufo1_dir).unwrap();
+        let fea1 = ufo1_dir.join("features.fea");
+        std::fs::write(&fea1, "include(../shared.fea);").unwrap();
+
+        let ufo2_subdir = root.join("subdir");
+        std::fs::create_dir(&ufo2_subdir).unwrap();
+        let ufo2_dir = ufo2_subdir.join("UFO2.ufo");
+        std::fs::create_dir(&ufo2_dir).unwrap();
+        let fea2 = ufo2_dir.join("features.fea");
+        std::fs::write(&fea2, "include(../../shared.fea);").unwrap();
+
+        assert!(files_identical(&fea1, &fea2).unwrap());
+    }
+
+    #[test]
+    fn test_files_not_identical_when_tokens_differ() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+
+        let fea1 = root.join("fea1.fea");
+        std::fs::write(&fea1, "include(foo.fea);").unwrap();
+
+        let fea2 = root.join("fea2.fea");
+        std::fs::write(&fea2, "include(bar.fea);").unwrap();
+
+        assert!(!files_identical(&fea1, &fea2).unwrap());
+    }
+
+    #[test]
+    fn builds_default_glyph_order() {
         let go = glyph_order(
             &Default::default(),
             &HashSet::from([

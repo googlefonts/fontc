@@ -5,7 +5,7 @@
 
 mod context;
 pub(crate) mod grammar;
-mod lexer;
+pub mod lexer;
 mod parser;
 mod source;
 mod tree;
@@ -15,7 +15,7 @@ use std::{
     sync::Arc,
 };
 
-pub use lexer::TokenSet;
+pub use lexer::{Lexer, TokenSet};
 pub use source::{FileSystemResolver, SourceLoadError, SourceResolver};
 pub use tree::ParseTree;
 

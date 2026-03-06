@@ -2,12 +2,14 @@ use crate::token_tree::Kind as AstKind;
 
 /// The atomic unit of the lexer.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Lexeme {
-    pub(crate) len: usize,
-    pub(crate) kind: Kind,
+#[allow(missing_docs)]
+pub struct Lexeme {
+    pub len: usize,
+    pub kind: Kind,
 }
 
 impl Lexeme {
+    #[allow(missing_docs)]
     pub const EMPTY: Lexeme = Lexeme {
         len: 0,
         kind: Kind::Tombstone,
@@ -20,6 +22,7 @@ impl Lexeme {
 /// replaces them with the richer `Kind` enum in the `token_tree` module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
+#[allow(missing_docs)]
 pub enum Kind {
     Eof, // the end of the input stream
     // a name or a keyword or any other block of non-whitespace.

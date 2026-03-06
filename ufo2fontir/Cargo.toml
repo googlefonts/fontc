@@ -13,6 +13,7 @@ categories = ["text-processing", "parsing", "graphics"]
 [dependencies]
 fontdrasil = { version = "0.4.0", path = "../fontdrasil" }
 fontir = { version = "0.5.0", path = "../fontir" }
+fea-rs = { version = "0.22.0", path = "../fea-rs" }
 
 kurbo.workspace = true
 serde.workspace = true
