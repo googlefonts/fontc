@@ -481,9 +481,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
         static_metadata.variations = variations;
-        // treat "    " (four spaces) as equivalent to no value; it means
+        // treat  empty string or all spaces as equivalent to no value; it means
         // 'null', per the spec
-        if let Some(vendor_id) = font.vendor_id().filter(|id| *id != "    ") {
+        if let Some(vendor_id) = font.vendor_id().filter(|id| !id.trim().is_empty()) {
             static_metadata.misc.vendor_id =
                 vendor_id.parse().map_err(|cause| Error::InvalidTag {
                     raw_tag: vendor_id.to_owned(),
