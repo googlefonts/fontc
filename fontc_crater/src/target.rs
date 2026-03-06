@@ -180,16 +180,23 @@ impl Display for BuildType {
 
 impl Display for Target {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let config_path = if self.is_virtual {
+        let mut config_path = if self.is_virtual {
             self.repo_dir.join("$VIRTUAL").join(&self.config)
         } else {
             self.repo_dir.join(&self.config)
-        };
+        }
+        .display()
+        .to_string();
+
+        // our directories always have _SHA appended, so strip that.
+        let suffix = format!("_{}", self.sha);
+        if let Some(idx) = config_path.match_indices(suffix.as_str()).next() {
+            config_path.replace_range(idx.0..idx.0 + suffix.len(), "");
+        }
 
         write!(
             f,
-            "{} {}?{} ({})",
-            config_path.display(),
+            "{config_path} {}?{} ({})",
             self.source.display(),
             self.sha,
             self.build
