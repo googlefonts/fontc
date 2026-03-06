@@ -13,7 +13,6 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use google_fonts_sources::{Config, FontSource, SourceSet};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -341,9 +340,14 @@ fn preflight_all_repos(cache_dir: &Path, sources: &[FontSource]) {
         .filter(|src| seen.insert((src.repo_url.as_str(), src.git_rev())))
         .collect::<Vec<_>>();
 
-    has_unique_repo_and_sha.par_iter().for_each(|src| {
-        // we will handle errors later
-        let _ignore = src.instantiate(cache_dir);
+    let pool = super::threadpool::ThreadPool::new();
+    pool.run(|submitter| {
+        for src in &has_unique_repo_and_sha {
+            submitter.execute(|| {
+                // we will handle errors later
+                let _ignore = src.instantiate(cache_dir);
+            });
+        }
     });
 }
 

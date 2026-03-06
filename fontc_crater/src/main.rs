@@ -6,17 +6,20 @@ use std::{
     io::Write,
     path::Path,
     process::{Command, Stdio},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use clap::Parser;
-use rayon::{ThreadPoolBuilder, prelude::*};
 
 mod args;
 mod ci;
 mod error;
 mod target;
+mod threadpool;
 mod ttx_diff_runner;
 
 use serde::{Serialize, de::DeserializeOwned};
@@ -63,12 +66,12 @@ fn run_all<T: Send, E: Send, Cx: Sync>(
     let total_targets = targets.len();
     let counter = AtomicUsize::new(0);
     let currently_running = AtomicUsize::new(0);
-    let threadpool = ThreadPoolBuilder::new().build().unwrap();
+    let results = Mutex::new(Vec::new());
+    let pool = threadpool::ThreadPool::new();
 
-    let results = threadpool.install(|| {
-        targets
-            .into_par_iter()
-            .map(|target| {
+    pool.run(|submitter| {
+        for target in targets {
+            submitter.execute(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed) + 1;
                 currently_running.fetch_add(1, Ordering::Relaxed);
                 log::debug!("starting {target} ({i}/{total_targets})");
@@ -80,11 +83,12 @@ fn run_all<T: Send, E: Send, Cx: Sync>(
                     "finished {target} in {} ({n_running} active)",
                     human_readable_duration(total_t)
                 );
-                (target, r)
-            })
-            .collect()
+                results.lock().unwrap().push((target, r));
+            });
+        }
     });
-    Ok(results)
+
+    Ok(results.into_inner().unwrap())
 }
 
 /// Get the short sha of the current commit in the provided repository.
