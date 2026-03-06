@@ -307,15 +307,23 @@ impl<Space> Sub<Coord<Space>> for Coord<Space> {
 
 impl<Space> FromIterator<(Tag, Coord<Space>)> for Location<Space> {
     fn from_iter<I: IntoIterator<Item = (Tag, Coord<Space>)>>(iter: I) -> Self {
-        let mut v: Vec<_> = iter.into_iter().collect();
-        v.sort_by_key(|(tag, _)| *tag);
-        Location(v)
+        let v: Vec<_> = iter.into_iter().collect();
+        Self::from(v)
     }
 }
 
 impl<Space> From<Vec<(Tag, Coord<Space>)>> for Location<Space> {
-    fn from(value: Vec<(Tag, Coord<Space>)>) -> Self {
-        value.into_iter().collect()
+    fn from(mut value: Vec<(Tag, Coord<Space>)>) -> Self {
+        value.sort_by_key(|(tag, _)| *tag);
+        value.dedup_by(|(a_tag, a_val), (b_tag, b_val)| {
+            if a_tag == b_tag {
+                *b_val = *a_val;
+                true
+            } else {
+                false
+            }
+        });
+        Location(value)
     }
 }
 
@@ -750,6 +758,27 @@ mod tests {
         assert_eq!(
             UserCoord::new(100.0).to_normalized(&converter),
             NormalizedCoord::new(1.0)
+        );
+    }
+
+    #[test]
+    fn from_iter_last_value_wins_for_duplicate_tags() {
+        use write_fonts::types::Tag;
+        let wght = Tag::new(b"wght");
+        let ital = Tag::new(b"ital");
+        let loc = super::NormalizedLocation::from_iter([
+            (wght, super::NormalizedCoord::new(100.0)),
+            (ital, super::NormalizedCoord::new(0.0)),
+            (wght, super::NormalizedCoord::new(200.0)), // duplicate; should win
+        ]);
+
+        let entries: Vec<_> = loc.iter().map(|(t, c)| (*t, *c)).collect();
+        assert_eq!(
+            entries,
+            vec![
+                (ital, super::NormalizedCoord::new(0.0)),
+                (wght, super::NormalizedCoord::new(200.0)),
+            ]
         );
     }
 
