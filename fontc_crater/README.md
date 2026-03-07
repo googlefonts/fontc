@@ -1,5 +1,9 @@
 # `fontc_crater`
 
+[![Crates.io](https://img.shields.io/crates/v/fontc_crater.svg)](https://crates.io/crates/fontc_crater)
+[![Docs.rs](https://docs.rs/fontc_crater/badge.svg)](https://docs.rs/fontc_crater)
+[![MIT/Apache 2.0](https://img.shields.io/badge/license-MIT%2FApache-blue.svg)](#license)
+
 The `fontc_crater` crate (named after [rust-lang/crater]) is a tool for
 performing compilation and related actions across a large number of source
 fonts.
@@ -12,6 +16,8 @@ an existing checkout of this repository, which saves time.
 
 Once sources are identified, they are checked out into a cache directory, where
 they can be reused between runs.
+
+The tool processes and generates JSON outputs for tracking successful and failed font compilations across targets, in addition to an optional HTML report.
 
 ## CI
 
@@ -68,3 +74,7 @@ $ RUST_LOG=debug cargo run --release -p fontc_crater \
 [crater-repo]: https://github.com/googlefonts/fontc_crater
 [crater-results]: https://googlefonts.github.io/fontc_crater/
 [`pip-tools`]: https://github.com/jazzband/pip-tools
+
+## License
+
+Licensed under the Apache License, Version 2.0 ([LICENSE](../LICENSE) or http://www.apache.org/licenses/LICENSE-2.0).
