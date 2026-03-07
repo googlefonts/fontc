@@ -2,6 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/ttx-diff)](https://pypi.org/project/ttx-diff/)
 [![Python Version](https://img.shields.io/pypi/pyversions/ttx-diff)](https://pypi.org/project/ttx-diff/)
+[![MIT/Apache 2.0](https://img.shields.io/badge/license-MIT%2FApache-blue.svg)](#license)
 
 A tool for comparing font compiler outputs between fontc (Rust) and fontmake (Python).
 
@@ -12,6 +13,8 @@ A tool for comparing font compiler outputs between fontc (Rust) and fontmake (Py
 - **fontmake**: The Python-based font compiler
 
 The tool converts each binary font to TTX (XML) format, normalizes expected differences, and provides a detailed comparison summary.
+
+Please note that `ttx_diff` is a pure Python package (located in `src/ttx_diff/`) rather than a typical Rust crate within this workspace.
 
 ## Installation
 
@@ -109,3 +112,7 @@ pytest --cov=ttx_diff --cov-report=html
 ## Releasing
 
 See <https://googlefonts.github.io/python#make-a-release>.
+
+## License
+
+Licensed under the Apache License, Version 2.0 ([LICENSE](../LICENSE) or http://www.apache.org/licenses/LICENSE-2.0).
