@@ -1,5 +1,0 @@
-error: Inline multiple substitution must have a single glyph target
-in ./test-data/compile-tests/mini-latin/bad/contextual_gsub2_class.fea at 2:28
-  | 
-2 |     substitute [ a e i o u] [f_f f_f_i]' by f f;
-  |                             ^^^^^^^^^^^

@@ -861,26 +861,46 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                     }
                     lookup_id
                 } else {
-                    if target.is_class() {
-                        self.error(
-                            target.range(),
-                            "Inline multiple substitution must have a single glyph target",
-                        );
-                    }
                     let replacements = if rule.null().is_some() {
                         Vec::new()
                     } else {
-                        rule.replacement_glyphs()
-                            .map(|g| self.resolve_glyph(&g))
-                            .collect()
+                        rule.replacements()
+                            .map(|g| self.resolve_glyph_or_class(&g))
+                            .collect::<Vec<_>>()
                     };
-                    if let Some(target_id) = self.resolve_glyph_or_class(&target).iter().next() {
+
+                    let targets = self.resolve_glyph_or_class(&target);
+                    // ensure that if replacement contains any classes, they have equal length
+                    // to the target
+                    for (i, item) in replacements.iter().enumerate() {
+                        if item.is_class() && item.len() != targets.len() {
+                            let raw = rule.replacements().nth(i).unwrap();
+                            self.error(
+                                raw.range(),
+                                "replacement class must have same length as target",
+                            );
+                            return None;
+                        }
+                    }
+                    if targets.iter().next().is_some() {
                         let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-                        Some(
-                            lookup
-                                .as_gsub_contextual()
-                                .add_anon_gsub_type_2(target_id, replacements),
-                        )
+                        let mut lookup_id = None;
+                        for (i, target) in targets.iter().enumerate() {
+                            let replacement = replacements
+                                .iter()
+                                .filter_map(|r| match r {
+                                    GlyphOrClass::Glyph(gid) => Some(*gid),
+                                    GlyphOrClass::Class(cls) => cls.items().get(i).copied(),
+                                    GlyphOrClass::Null => None,
+                                })
+                                .collect();
+                            lookup_id = Some(
+                                lookup
+                                    .as_gsub_contextual()
+                                    .add_anon_gsub_type_2(target, replacement),
+                            );
+                        }
+                        lookup_id
                     } else {
                         None
                     }
