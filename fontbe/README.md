@@ -1,5 +1,7 @@
 # fontbe
 
+[![Crates.io](https://img.shields.io/crates/v/fontbe.svg)](https://crates.io/crates/fontbe)
+[![Docs.rs](https://docs.rs/fontbe/badge.svg)](https://docs.rs/fontbe)
 [![MIT/Apache 2.0](https://img.shields.io/badge/license-MIT%2FApache-blue.svg)](#license)
 
 fontbe: Font BackEnd.
