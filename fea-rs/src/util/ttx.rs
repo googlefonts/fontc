@@ -33,7 +33,6 @@ static IGNORED_TESTS: &[&str] = &[
     // ## tests with unofficial syntax extensiosn we haven't implemented yet ## //
     "AlternateChained.fea",
     "GSUB_6.fea",
-    "GSUB_2.fea",
     //
     // ## tests that should be revisited ## //
     //
