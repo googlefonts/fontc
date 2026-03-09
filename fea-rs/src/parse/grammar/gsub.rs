@@ -122,11 +122,11 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     if parser.eat(Kind::ByKw) {
         if parser.eat(Kind::NullKw) {
             // allowed, continue down to 'expect_semi'
-        } else if glyph::eat_glyph_or_glyph_class(parser, recovery) {
+        } else if glyph::expect_glyph_or_glyph_class(parser, recovery) {
             while glyph::eat_glyph_or_glyph_class(parser, recovery) {
                 continue;
             }
-        } else if !glyph::expect_named_or_unnamed_glyph_class(parser, recovery) {
+        } else {
             // unexpected thing here?
             parser.eat_until(recovery);
             parser.eat(Kind::Semi);
@@ -203,6 +203,10 @@ mod tests {
         let not_allowed = [
             "rsub a b' c' d;",     // only one mark glyph in rsub
             "sub a b' c d' by g;", // only one run of marked glyphs
+            "sub a by ;",          // there must be a replacement glyph or class
+            "sub [a] by ;",        // ditto
+            "sub a' by ;",         // ditto
+            "sub [a]' by ;",       // ditto
         ];
 
         for bad in not_allowed {
