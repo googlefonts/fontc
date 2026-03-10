@@ -981,9 +981,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         if let Some(vendor_id) = font_info_at_default
             .open_type_os2_vendor_id
             .as_ref()
-            // treat "    " (four spaces) as equivalent to no value; it means
+            // treat empty string or all spaces equivalent to no value; it means
             // 'null', per the spec
-            .filter(|id| *id != "    ")
+            .filter(|id| !id.trim().is_empty())
         {
             static_metadata.misc.vendor_id =
                 Tag::from_str(vendor_id).map_err(|cause| Error::InvalidTag {
@@ -2913,13 +2913,39 @@ mod tests {
     }
 
     #[test]
-    fn allow_four_spaces_for_vendor_id() {
-        let (_, context) = build_static_metadata("empty-vendorid.ufo", Flags::default());
-        let static_meta = context.static_metadata.get();
-        assert_eq!(
-            static_meta.misc.vendor_id.as_ref(),
-            fontir::ir::DEFAULT_VENDOR_ID.as_bytes()
-        )
+    fn allow_whitespace_vendor_id() {
+        let fixture_ufo = testdata_dir().join("empty-vendorid.ufo");
+        // I don't want to have separate files for every possible test case,
+        // so we'll modify + save the original one.
+        for vendor_id in ["", " ", "    ", " \t "] {
+            let tmp = tempfile::tempdir().unwrap();
+            let tmp_ufo = tmp.path().join("empty-vendorid.ufo");
+            let mut font = norad::Font::load(&fixture_ufo).unwrap();
+            font.font_info.open_type_os2_vendor_id = Some(vendor_id.to_string());
+            font.save(&tmp_ufo).unwrap();
+
+            let source = DesignSpaceIrSource::new(&tmp_ufo).unwrap();
+            let context = Context::new_root(Flags::default(), None);
+            let task_context = context.copy_for_work(
+                Access::None,
+                AccessBuilder::new()
+                    .variant(WorkId::StaticMetadata)
+                    .variant(WorkId::PreliminaryGlyphOrder)
+                    .variant(WorkId::PreliminaryGdefCategories)
+                    .build(),
+            );
+            source
+                .create_static_metadata_work()
+                .unwrap()
+                .exec(&task_context)
+                .unwrap();
+
+            assert_eq!(
+                context.static_metadata.get().misc.vendor_id.as_ref(),
+                fontir::ir::DEFAULT_VENDOR_ID.as_bytes(),
+                "expected {vendor_id:?} to be treated as empty vendor ID"
+            );
+        }
     }
 
     #[test]
