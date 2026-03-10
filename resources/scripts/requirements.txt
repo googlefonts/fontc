@@ -38,13 +38,13 @@ bump2version==1.0.1
     # via bumpfontversion
 bumpfontversion==0.4.1
     # via gftools
-cattrs==25.3.0
+cattrs==26.1.0
     # via
     #   statmake
     #   ufolib2
 cdifflib==1.2.9
     # via ttx-diff
-certifi==2026.1.4
+certifi==2026.2.25
     # via requests
 cffi==2.0.0
     # via
@@ -53,7 +53,7 @@ cffi==2.0.0
     #   pynacl
 cffsubr==0.4.0
     # via ufo2ft
-charset-normalizer==3.4.4
+charset-normalizer==3.4.5
     # via requests
 compreffor==0.6.0
     # via ufo2ft
@@ -68,7 +68,7 @@ defcon[lxml,pens]==0.12.2
     #   ufoprocessor
 ffmpeg-python==0.2.0
     # via gftools
-filelock==3.21.0
+filelock==3.25.1
     # via youseedee
 font-v==2.1.0
     # via gftools
@@ -87,11 +87,11 @@ fontmath==0.10.0
     #   mutatormath
     #   ufo2ft
     #   ufoprocessor
-fontparts==0.14.0
+fontparts==0.14.1
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.61.1
+fonttools[lxml,repacker,ufo,unicode,woff]==4.62.0
     # via
     #   afdko
     #   axisregistry
@@ -139,7 +139,7 @@ gitpython==3.1.46
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.12.7
+glyphslib==6.13.0
     # via
     #   bumpfontversion
     #   fontmake
@@ -197,7 +197,7 @@ pillow==12.1.1
     # via
     #   gftools
     #   nanoemoji
-platformdirs==4.6.0
+platformdirs==4.9.4
     # via youseedee
 pngquant-cli==3.0.3
     # via nanoemoji
@@ -229,7 +229,7 @@ pyyaml==6.0.3
     #   gftools
     #   glyphsets
     #   ttx-diff
-regex==2026.1.15
+regex==2026.2.28
     # via nanoemoji
 requests==2.32.5
     # via
@@ -239,17 +239,17 @@ requests==2.32.5
     #   youseedee
 resvg-cli==0.44.0
     # via nanoemoji
-rich==14.3.2
+rich==14.3.3
     # via gftools
 ruamel-yaml==0.19.1
     # via gftools
 six==1.17.0
     # via python-dateutil
-skia-pathops==0.9.1
+skia-pathops==0.9.2
     # via
     #   gftools
     #   picosvg
-smmap==5.0.2
+smmap==5.0.3
     # via gitdb
 soupsieve==2.8.3
     # via beautifulsoup4
@@ -257,7 +257,7 @@ statmake==2.0.1
     # via gftools
 strictyaml==1.7.3
     # via gftools
-tabulate==0.9.0
+tabulate==0.10.0
     # via
     #   gftools
     #   glyphsets
@@ -313,7 +313,7 @@ vttlib==0.12.0
     # via gftools
 youseedee==0.7.0
     # via glyphsets
-zopfli==0.4.0
+zopfli==0.4.1
     # via
     #   fonttools
     #   nanoemoji
