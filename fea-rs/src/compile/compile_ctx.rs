@@ -286,6 +286,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 gpos,
                 opts: self.opts.clone(),
                 gdef_classes,
+                insert_markers: self.insert_markers.clone(),
             },
             self.errors.clone(),
         ))

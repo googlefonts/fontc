@@ -787,7 +787,8 @@ impl AllLookups {
 }
 
 impl LookupId {
-    pub(crate) fn to_raw(self) -> usize {
+    /// Returns the raw index of this lookup ID.
+    pub fn to_raw(self) -> usize {
         match self {
             LookupId::Gpos(idx) => idx,
             LookupId::Gsub(idx) => idx,
