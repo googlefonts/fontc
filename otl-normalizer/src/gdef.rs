@@ -1,22 +1,47 @@
 //! Normalizing the ligature caret table
 
-use std::{fmt::Display, io};
+use std::{collections::BTreeSet, fmt::Display, io};
 
 use fontdrasil::types::GlyphName;
 use write_fonts::read::{
     ReadError,
     tables::gdef::{CaretValue, Gdef, LigGlyph},
+    tables::layout::DeviceOrVariationIndex,
 };
 
 use crate::{Error, NameMap, common::DeviceOrDeltas, variations::DeltaComputer};
 
+/// Collect the IVS outer (subtable) indices referenced by lig caret data.
+fn collect_caret_subtables(table: &Gdef) -> Result<BTreeSet<u16>, Error> {
+    let mut outers = BTreeSet::new();
+    let Some(lig_carets) = table.lig_caret_list().transpose().unwrap() else {
+        return Ok(outers);
+    };
+    for lig_glyph in lig_carets.lig_glyphs().iter() {
+        let lig_glyph = lig_glyph?;
+        for caret in lig_glyph.caret_values().iter() {
+            if let CaretValue::Format3(table_ref) = caret?
+                && let DeviceOrVariationIndex::VariationIndex(idx) = table_ref.device()?
+            {
+                outers.insert(idx.delta_set_outer_index());
+            }
+        }
+    }
+    Ok(outers)
+}
+
 /// Print normalized GDEF ligature carets
 pub fn print(f: &mut dyn io::Write, table: &Gdef, names: &NameMap) -> Result<(), Error> {
-    let var_store = table
-        .item_var_store()
-        .map(|ivs| ivs.and_then(DeltaComputer::new))
-        .transpose()
-        .unwrap();
+    let var_store = if table.item_var_store().is_some() {
+        let used_subtables = collect_caret_subtables(table)?;
+        table
+            .item_var_store()
+            .map(|ivs| ivs.and_then(|ivs| DeltaComputer::new(ivs, Some(&used_subtables))))
+            .transpose()
+            .unwrap()
+    } else {
+        None
+    };
 
     // so this is relatively simple; we're just looking at the ligature caret list.
     // - realistically, we only care if this has variations? but I think it's simpler

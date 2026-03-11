@@ -44,7 +44,9 @@ pub fn print(
     let var_store = gdef
         .as_ref()
         .and_then(|gdef| gdef.item_var_store())
-        .map(|ivs| ivs.and_then(DeltaComputer::new))
+        // TODO: pre-scan GPOS data to collect used subtable indices and filter regions,
+        // like gdef::collect_caret_subtables does for ligature carets.
+        .map(|ivs| ivs.and_then(|ivs| DeltaComputer::new(ivs, None)))
         .transpose()
         .unwrap();
     let mark_glyph_sets = gdef
