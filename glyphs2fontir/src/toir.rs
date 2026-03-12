@@ -196,9 +196,15 @@ fn to_ir_axis(
     let min = DesignCoord::new(*min);
     let max = DesignCoord::new(*max);
 
-    let converter = if font.axis_mappings.contains(&axis.name)
+    // If all masters sit at the same position on this axis, the mapping is
+    // meaningless and there's no variation to map. Treat as unmapped.
+    // glyphsLib handles this via reverse-map + clamp to [min(keys), max(keys)]:
+    // https://github.com/googlefonts/glyphsLib/blob/044f19e4/Lib/glyphsLib/builder/axes.py#L286
+    let has_non_identity_mapping = font.axis_mappings.contains(&axis.name)
         && !font.axis_mappings.get(&axis.name).unwrap().is_identity()
-    {
+        && min != max;
+
+    let converter = if has_non_identity_mapping {
         let mappings: Vec<_> = font
             .axis_mappings
             .get(&axis.name)

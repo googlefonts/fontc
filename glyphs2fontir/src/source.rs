@@ -2083,6 +2083,47 @@ mod tests {
         );
     }
 
+    // Single-master font with an instance at a different design coord on wght.
+    // The instance-derived mapping (User 400 => Design 100) doesn't cover the
+    // master's design coord (400). The axis should be treated as unmapped since
+    // min == max (degenerate).
+    #[test]
+    fn single_master_with_instance_derived_mapping() {
+        let (source, context) = context_for(&glyphs3_dir().join("SingleMasterWght.glyphs"));
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        let static_metadata = context.static_metadata.get();
+
+        assert_eq!(
+            vec![Axis {
+                name: "Weight".into(),
+                tag: Tag::new(b"wght"),
+                min: UserCoord::new(400.0),
+                default: UserCoord::new(400.0),
+                max: UserCoord::new(400.0),
+                hidden: false,
+                converter: CoordConverter::unmapped(
+                    UserCoord::new(400.0),
+                    UserCoord::new(400.0),
+                    UserCoord::new(400.0),
+                ),
+                localized_names: Default::default(),
+            }],
+            static_metadata.all_source_axes.clone().into_inner()
+        );
+    }
+
     fn build_static_metadata(glyphs_file: PathBuf) -> (impl Source, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let (source, context) = context_for(&glyphs_file);

@@ -1,0 +1,40 @@
+{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = SingleMasterWght;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = master01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = master01;
+width = 200;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+axesValues = (
+100
+);
+name = Regular;
+}
+);
+unitsPerEm = 1000;
+}
