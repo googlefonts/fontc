@@ -123,7 +123,9 @@ def log_and_run(cmd: Sequence, cwd=None, **kwargs):
         cmd,
         text=True,
         cwd=cwd,
-        capture_output=True,
+        # combine stderr and stdout for the purposes of capturing diagnostics
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         **kwargs,
     )
 
@@ -376,12 +378,27 @@ def path_to_move_external_config(source: Path, config: Path) -> Optional[Path]:
 
 
 def find_repo_root(path: Path) -> Optional[Path]:
+    # if this is an actual repo:
     if path.is_dir() and path.joinpath(".git").exists():
+        return path
+    # if this is from a tarball:
+    if path.is_dir() and looks_like_it_has_appended_sha(path.name):
         return path
     elif path.parent == path:
         return None
     else:
         return find_repo_root(path.parent)
+
+
+def looks_like_it_has_appended_sha(name: str) -> bool:
+    split = name.split("_")
+    if len(split) < 2:
+        return False
+    try:
+        int(split[-1], 16)
+        return True
+    except ValueError:
+        return False
 
 
 def source_is_variable(path: Path) -> bool:

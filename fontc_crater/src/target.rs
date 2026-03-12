@@ -204,22 +204,6 @@ impl Display for Target {
     }
 }
 
-impl Serialize for Target {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.to_string().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Target {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s: &str = Deserialize::deserialize(deserializer)?;
-        FromStr::from_str(s).map_err(serde::de::Error::custom)
-    }
-}
-
 /// in the format,
 ///
 /// $ORG/$REPO/$CONFIG_PATH?$SHA $SRC_PATH ($BUILD_TYPE)
@@ -231,11 +215,6 @@ impl FromStr for Target {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
-        // old version contain '($CONFIG.y[a]ml)'
-        if s.contains("ml)") {
-            return legacy_from_str_impl(s);
-        }
-
         let (head, type_) = s
             .rsplit_once('(')
             .ok_or_else(|| "missing opening paren".to_string())?;
@@ -262,6 +241,8 @@ impl FromStr for Target {
             (false, config_part)
         };
 
+        let org_repo = format!("{org_repo}_{sha}");
+
         let result = Self::new(org_repo, sha, config_path, is_virtual, source);
         match type_.trim_end_matches(')') {
             "default" => Ok(result),
@@ -271,37 +252,19 @@ impl FromStr for Target {
     }
 }
 
-// this can be deleted after the new format has been used twice.
-fn legacy_from_str_impl(s: &str) -> Result<Target, String> {
-    // expect the format, PATH [(config)] (default|gftools)
-    let (head, type_) = s
-        .rsplit_once('(')
-        .ok_or_else(|| "missing opening paren".to_string())?;
+impl Serialize for Target {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_string().serialize(serializer)
+    }
+}
 
-    let head = head.trim();
-
-    // now we may or may not have a config:
-    let (source_part, config_part) = if head.ends_with(')') {
-        let (source, config) = head
-            .rsplit_once('(')
-            .ok_or_else(|| format!("expected '(' in '{head}'"))?;
-        (source.trim(), config.trim_end_matches(')'))
-    } else {
-        (head, "")
-    };
-
-    let (source_part, sha_part) = source_part.rsplit_once('?').unwrap_or((source_part, ""));
-    let source = PathBuf::from(source_part.trim());
-    let repo: PathBuf = source.iter().take(2).collect();
-    let source = source.strip_prefix(&repo).unwrap();
-    let config = source.with_file_name(config_part);
-    let source = source.file_name().unwrap();
-
-    let result = Target::new(repo, sha_part, config, false, source);
-    match type_.trim_end_matches(')') {
-        "default" => Ok(result),
-        "gftools" => Ok(result.to_gftools_target()),
-        other => Err(format!("unknown build type '{other}'")),
+impl<'de> Deserialize<'de> for Target {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        FromStr::from_str(s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -312,7 +275,7 @@ mod tests {
     #[test]
     fn string_repr_simple() {
         let target = Target::new(
-            "googlefonts/derp",
+            "googlefonts/derp_deadbeef",
             "deadbeef",
             "sources/config.yaml",
             false,
@@ -333,7 +296,7 @@ mod tests {
     #[test]
     fn string_repr_virtual() {
         let target = Target::new(
-            "googlefonts/derp",
+            "googlefonts/derp_deadbeef",
             "deadbeef",
             "ofl/derp/config.yaml",
             true,
