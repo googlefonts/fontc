@@ -17,7 +17,7 @@ pub use glyph_map::GlyphMap;
 /// A glyph or glyph class.
 ///
 /// Various places in the FEA spec accept either a single glyph or a glyph class.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum GlyphOrClass {
     /// A resolved GlyphId
     Glyph(GlyphId16),
@@ -94,6 +94,14 @@ impl GlyphOrClass {
             GlyphOrClass::Class(class) if class.len() == 1 => class.iter().next(),
             _ => None,
         }
+    }
+
+    /// Combine the glyphs from `other` into this value.
+    ///
+    /// After this call, `self` contains the union of glyphs from both operands
+    /// as a `Class` variant.
+    pub(crate) fn extend(&mut self, other: &GlyphOrClass) {
+        *self = GlyphOrClass::Class(self.iter().chain(other.iter()).collect());
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {

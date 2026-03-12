@@ -304,6 +304,21 @@ impl ContextBuilder {
         context: Vec<(GlyphOrClass, Vec<LookupId>)>,
         lookahead: Vec<GlyphOrClass>,
     ) {
+        // If the new rule has a single input position and the previous rule
+        // has the same backtrack, lookahead, and lookups, merge the input
+        // glyphs into the previous rule instead of creating a new one.
+        // This lets the format selector pick the smallest encoding (often
+        // Format 3 with fewer subtables).  Inspired by fonttools PR #4058.
+        if context.len() == 1
+            && let Some(last) = self.rules.last_mut()
+            && last.context.len() == 1
+            && last.backtrack == backtrack
+            && last.lookahead == lookahead
+            && last.context[0].1 == context[0].1
+        {
+            last.context[0].0.extend(&context[0].0);
+            return;
+        }
         self.rules.push(ContextRule {
             backtrack,
             context,
