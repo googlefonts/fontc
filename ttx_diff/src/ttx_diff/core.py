@@ -123,7 +123,9 @@ def log_and_run(cmd: Sequence, cwd=None, **kwargs):
         cmd,
         text=True,
         cwd=cwd,
-        capture_output=True,
+        # combine stderr and stdout for the purposes of capturing diagnostics
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         **kwargs,
     )
 
