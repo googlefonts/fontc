@@ -4,6 +4,10 @@
 # there are currently two files we don't want:
 # - includ0.fea (part of include tests, that we don't run)
 # - STAT_bad.fea (an 'expected failure', which we don't currently handle)
+#
+# IMPORTANT: after syncing, also update the fonttools version pinned in
+# resources/scripts/fea_ci_requirements.txt so that CI's ttx matches
+# the expected .ttx output.
 
 TEMP_DIR=./temp
 REPO=https://github.com/fonttools/fonttools.git
