@@ -98,8 +98,8 @@ impl GlyphOrClass {
 
     /// Combine the glyphs from `other` into this value.
     ///
-    /// After this call, `self` contains the union of glyphs from both operands
-    /// as a `Class` variant.
+    /// After this call, `self` contains glyphs from both operands (appended
+    /// in order) as a `Class` variant.
     pub(crate) fn extend(&mut self, other: &GlyphOrClass) {
         *self = GlyphOrClass::Class(self.iter().chain(other.iter()).collect());
     }
