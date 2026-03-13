@@ -2252,6 +2252,30 @@ mod tests {
         assert_eq!(AnchorKind::CursiveExit.to_name(), "exit");
     }
 
+    // https://github.com/googlefonts/fontc/issues/1927
+    // ufo2ft uses last-one-wins for duplicate anchors regardless of position.
+    #[test]
+    fn duplicate_anchors_last_wins() {
+        let loc = NormalizedLocation::new();
+        let mut builder = AnchorBuilder::new("A".into());
+        builder
+            .add("top".into(), loc.clone(), Point::new(100.0, 200.0))
+            .unwrap();
+        // Adding the same anchor at the same location with a different position
+        // should succeed (last-one-wins), not error
+        builder
+            .add("top".into(), loc.clone(), Point::new(300.0, 400.0))
+            .unwrap();
+        let anchors = builder.build().unwrap();
+        let top = anchors
+            .anchors
+            .iter()
+            .find(|a| a.original_name == "top")
+            .unwrap();
+        // Last position wins
+        assert_eq!(top.positions[&loc], Point::new(300.0, 400.0));
+    }
+
     fn assert_names(expected: &[(NameId, &str)], actual: HashMap<NameKey, String>) {
         let mut actual: Vec<_> = actual
             .iter()
