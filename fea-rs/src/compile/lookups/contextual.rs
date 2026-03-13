@@ -304,11 +304,14 @@ impl ContextBuilder {
         context: Vec<(GlyphOrClass, Vec<LookupId>)>,
         lookahead: Vec<GlyphOrClass>,
     ) {
-        self.rules.push(ContextRule {
+        let rule = ContextRule {
             backtrack,
             context,
             lookahead,
-        })
+        };
+        if self.rules.last_mut().map(|last| last.try_merge(&rule)) != Some(true) {
+            self.rules.push(rule);
+        }
     }
 
     // for adjusting ids if we insert aalt at the front
@@ -454,6 +457,26 @@ impl SubContextBuilder {
 }
 
 impl ContextRule {
+    /// If `other` has a single input position and the same backtrack,
+    /// lookahead, and lookups as `self`, merge `other`'s input glyphs into
+    /// `self` and return `true`.  Otherwise return `false` unchanged.
+    ///
+    /// This lets the format selector pick the smallest encoding (often
+    /// Format 3 with fewer subtables).  Inspired by fonttools PR #4058.
+    fn try_merge(&mut self, other: &ContextRule) -> bool {
+        if self.context.len() == 1
+            && other.context.len() == 1
+            && self.backtrack == other.backtrack
+            && self.lookahead == other.lookahead
+            && self.context[0].1 == other.context[0].1
+        {
+            self.context[0].0.extend(&other.context[0].0);
+            true
+        } else {
+            false
+        }
+    }
+
     pub(crate) fn bump_all_lookup_ids(&mut self, from: usize, by: usize) {
         for (_, lookups) in &mut self.context {
             lookups

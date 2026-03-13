@@ -1,2 +1,2 @@
 # used in CI to install fonttools for ttx tests
-fonttools[unicode]==4.48.1
+fonttools[unicode]==4.62.1

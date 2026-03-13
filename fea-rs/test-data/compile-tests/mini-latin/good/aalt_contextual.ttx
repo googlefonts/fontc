@@ -50,40 +50,22 @@
         <LookupType value="6"/>
         <LookupFlag value="0"/>
         <!-- SubTableCount=1 -->
-        <ChainContextSubst index="0" Format="1">
-          <Coverage>
+        <ChainContextSubst index="0" Format="3">
+          <!-- BacktrackGlyphCount=0 -->
+          <!-- InputGlyphCount=1 -->
+          <InputCoverage index="0">
             <Glyph value="j"/>
             <Glyph value="k"/>
-          </Coverage>
-          <!-- ChainSubRuleSetCount=2 -->
-          <ChainSubRuleSet index="0">
-            <!-- ChainSubRuleCount=1 -->
-            <ChainSubRule index="0">
-              <!-- BacktrackGlyphCount=0 -->
-              <!-- InputGlyphCount=1 -->
-              <!-- LookAheadGlyphCount=1 -->
-              <LookAhead index="0" value="hyphen"/>
-              <!-- SubstCount=1 -->
-              <SubstLookupRecord index="0">
-                <SequenceIndex value="0"/>
-                <LookupListIndex value="2"/>
-              </SubstLookupRecord>
-            </ChainSubRule>
-          </ChainSubRuleSet>
-          <ChainSubRuleSet index="1">
-            <!-- ChainSubRuleCount=1 -->
-            <ChainSubRule index="0">
-              <!-- BacktrackGlyphCount=0 -->
-              <!-- InputGlyphCount=1 -->
-              <!-- LookAheadGlyphCount=1 -->
-              <LookAhead index="0" value="hyphen"/>
-              <!-- SubstCount=1 -->
-              <SubstLookupRecord index="0">
-                <SequenceIndex value="0"/>
-                <LookupListIndex value="2"/>
-              </SubstLookupRecord>
-            </ChainSubRule>
-          </ChainSubRuleSet>
+          </InputCoverage>
+          <!-- LookAheadGlyphCount=1 -->
+          <LookAheadCoverage index="0">
+            <Glyph value="hyphen"/>
+          </LookAheadCoverage>
+          <!-- SubstCount=1 -->
+          <SubstLookupRecord index="0">
+            <SequenceIndex value="0"/>
+            <LookupListIndex value="2"/>
+          </SubstLookupRecord>
         </ChainContextSubst>
       </Lookup>
       <Lookup index="2">

@@ -1,4 +1,7 @@
 # reduced from the ccmp feature in oswald
+# Rules are interleaved by lookahead pattern to prevent merging
+# consecutive rules with the same context, ensuring Format 2
+# (class-based) wins over Format 3 (coverage-based).
 feature ccmp {
     lookup ccmp_Other_1 {
         @CombiningTopAccents = [acutecomb brevecomb];
@@ -7,10 +10,8 @@ feature ccmp {
         # we should only generate two lookups; one contextual and one multiple sub,
         # containing 'sub a by I dotbelowcomb' and 'sub i by I ogonekcomb'
         sub a' @CombiningTopAccents by I dotbelowcomb;
-        sub i' @CombiningTopAccents by I ogonekcomb;
         sub a' @CombiningNonTopAccents @CombiningTopAccents by I dotbelowcomb;
+        sub i' @CombiningTopAccents by I ogonekcomb;
         sub i' @CombiningNonTopAccents @CombiningTopAccents by I ogonekcomb;
     } ccmp_Other_1;
 } ccmp;
-
-
