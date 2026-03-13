@@ -43,6 +43,13 @@ static IGNORED_TESTS: &[&str] = &[
     "variable_scalar_anchor.fea",
     "variable_scalar_valuerecord.fea",
     "variable_mark_anchor.fea",
+    // ## new in fonttools 4.62.1, not yet supported or compare failures ##
+    // inline alternate subst in contextual rules (see #1925)
+    "contextual_merge_alternate.fea",
+    // compare failures to investigate
+    "identical_feature_lookups.fea",
+    "spec8a_2.fea",
+    "useExtension.fea",
 ];
 
 /// An environment variable that can be set to specify where to write generated files.

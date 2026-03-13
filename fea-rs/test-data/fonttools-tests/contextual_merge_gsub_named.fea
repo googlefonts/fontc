@@ -1,17 +1,15 @@
-languagesystem DFLT dflt;
-
 # GSUB contextual substitution with named lookups:
 # consecutive rules sharing lookahead and lookup
 # but differing in input glyph should merge.
 
 lookup end_forms {
-    sub n by N;
-    sub s by S;
-    sub r by R;
+    sub n by n.end;
+    sub s by s.end;
+    sub e by e.end;
 } end_forms;
 
 feature calt {
     sub n' lookup end_forms space;
     sub s' lookup end_forms space;
-    sub r' lookup end_forms space;
+    sub e' lookup end_forms space;
 } calt;

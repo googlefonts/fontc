@@ -1,5 +1,3 @@
-languagesystem DFLT dflt;
-
 # Ignore rules with the same backtrack and lookahead
 # but differing in input glyph should merge.
 

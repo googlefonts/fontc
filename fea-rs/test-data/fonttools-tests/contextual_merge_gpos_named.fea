@@ -1,5 +1,3 @@
-languagesystem DFLT dflt;
-
 # GPOS contextual positioning with named lookups:
 # consecutive rules sharing backtrack, lookahead, and lookup
 # but differing in input glyph should merge.
