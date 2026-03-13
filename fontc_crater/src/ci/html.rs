@@ -406,7 +406,7 @@ fn make_detailed_report(
     let reports = [
         make_diff_report(current, prev, sources, annotations),
         make_summary_report(current),
-        make_error_report(current, prev, sources),
+        make_error_report(current, prev, sources, annotations),
     ];
     html! {
         @for report in reports {
@@ -670,6 +670,7 @@ fn make_error_report(
     current: &DiffResults,
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
+    annotations: &BTreeMap<Target, Vec<Annotation>>,
 ) -> Markup {
     let current_fontc = get_compiler_failures(current, "fontc");
     let prev_fontc = get_compiler_failures(prev, "fontc");
@@ -706,6 +707,7 @@ fn make_error_report(
                     .unwrap_or_default()
             },
             sources,
+            annotations,
         )
     } else {
         Default::default()
@@ -727,6 +729,7 @@ fn make_error_report(
                     .unwrap_or_default()
             },
             sources,
+            annotations,
         )
     } else {
         Default::default()
@@ -759,6 +762,7 @@ fn make_error_report(
                 }
             },
             sources,
+            annotations,
         )
     } else {
         Default::default()
@@ -780,6 +784,7 @@ fn make_error_report(
                 }
             },
             sources,
+            annotations,
         )
     } else {
         Default::default()
@@ -915,8 +920,10 @@ fn make_error_report_group<'a>(
     paths_and_if_is_new_error: impl Iterator<Item = (&'a Target, bool)>,
     details: impl Fn(&Target) -> Markup,
     sources: &BTreeMap<PathBuf, String>,
+    annotations: &BTreeMap<Target, Vec<Annotation>>,
 ) -> Markup {
-    let items = make_error_report_group_items(paths_and_if_is_new_error, details, sources);
+    let items =
+        make_error_report_group_items(paths_and_if_is_new_error, details, sources, annotations);
 
     let elem_id = format!("{group_name}-failures");
     html! {
@@ -933,6 +940,7 @@ fn make_error_report_group_items<'a>(
     paths_and_if_is_new_error: impl Iterator<Item = (&'a Target, bool)>,
     details: impl Fn(&Target) -> Markup,
     sources: &BTreeMap<PathBuf, String>,
+    annotations: &BTreeMap<Target, Vec<Annotation>>,
 ) -> Markup {
     let get_repo_url = |id: &Target| {
         sources
@@ -947,15 +955,20 @@ fn make_error_report_group_items<'a>(
     };
     html! {
         @for (path, is_new) in paths_and_if_is_new_error {
+            @let maybe_annotation_icon = if annotations.contains_key(path) { " ✎" } else { "" };
+            @let annotation_list = format_annotations(path, annotations);
             details.report_group_item {
                 summary {
                     (path)
                      @if is_new { " 🆕" }
+                     (maybe_annotation_icon)
             }
                     div.diff_info {
                         a href = (get_repo_url(path)) { "view source repository" }
                         " "
                         a href = "" onclick = (make_repro_command(path)) { "copy reproduction command" }
+                        " "
+                        (annotation_list)
                     }
 
                 (details(path))
