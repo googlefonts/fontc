@@ -1349,17 +1349,20 @@ impl AnchorBuilder {
         loc: NormalizedLocation,
         pos: Point,
     ) -> Result<(), BadGlyph> {
+        // Match ufo2ft last-one-wins behavior for duplicate anchors.
+        // https://github.com/googlefonts/fontc/issues/1927
         if self
             .anchors
             .entry(anchor_name.clone())
             .or_default()
-            .insert(loc.clone(), pos)
+            .insert(loc, pos)
             .is_some()
         {
-            return Err(BadGlyph::new(
-                self.glyph_name.clone(),
-                BadAnchor::new(anchor_name, BadAnchorReason::Ambiguous(loc)),
-            ));
+            log::warn!(
+                "duplicate anchor '{}' in glyph '{}'",
+                anchor_name,
+                self.glyph_name
+            );
         }
         Ok(())
     }
