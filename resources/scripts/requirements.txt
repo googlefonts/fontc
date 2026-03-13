@@ -68,7 +68,7 @@ defcon[lxml,pens]==0.12.2
     #   ufoprocessor
 ffmpeg-python==0.2.0
     # via gftools
-filelock==3.25.1
+filelock==3.25.2
     # via youseedee
 font-v==2.1.0
     # via gftools
@@ -91,7 +91,7 @@ fontparts==0.14.1
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.62.0
+fonttools[lxml,repacker,ufo,unicode,woff]==4.62.1
     # via
     #   afdko
     #   axisregistry
@@ -176,7 +176,7 @@ ninja==1.13.0
     # via
     #   gftools
     #   nanoemoji
-openstep-plist==0.5.1
+openstep-plist==0.5.2
     # via
     #   babelfont
     #   bumpfontversion
@@ -216,7 +216,7 @@ pygithub==2.8.1
     # via gftools
 pygments==2.19.2
     # via rich
-pyjwt[crypto]==2.11.0
+pyjwt[crypto]==2.12.0
     # via pygithub
 pynacl==1.6.2
     # via pygithub
