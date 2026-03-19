@@ -2132,6 +2132,9 @@ pub enum Paint {
     LinearGradient(Box<PaintLinearGradient>),
     RadialGradient(Box<PaintRadialGradient>),
     Layers(Box<Vec<Paint>>),
+    Composite(Box<PaintComposite>),
+    Transform(Box<PaintTransform>),
+    ColrGlyph(Box<PaintColrGlyph>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -2167,6 +2170,35 @@ pub struct PaintRadialGradient {
     /// Outer radius. None means calculate as max distance from center to
     /// bounding box corners (like Glyphs.app does).
     pub r1: Option<OrderedFloat<f32>>,
+}
+
+/// Porter-Duff compositing mode for COLRv1 PaintComposite.
+/// Maps to write-fonts CompositeMode.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CompositeMode {
+    SrcOver,
+    // Additional modes can be added as needed
+}
+
+/// Porter-Duff compositing of two paints.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintComposite {
+    pub source_paint: Paint,
+    pub composite_mode: CompositeMode,
+    pub backdrop_paint: Paint,
+}
+
+/// Affine transform applied to a paint.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintTransform {
+    pub paint: Paint,
+    pub transform: Affine,
+}
+
+/// Reference to another base glyph's paint graph.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintColrGlyph {
+    pub glyph_name: GlyphName,
 }
 
 #[cfg(test)]
@@ -2629,5 +2661,45 @@ mod tests {
         }
 
         assert_eq!(new_instance.components[0].transform.as_coeffs(), [-1.; 6]);
+    }
+
+    #[test]
+    fn paint_composite_serde_roundtrip() {
+        let paint = Paint::Composite(Box::new(PaintComposite {
+            source_paint: Paint::Solid(Box::new(PaintSolid {
+                color: Some(Color {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                }),
+            })),
+            composite_mode: CompositeMode::SrcOver,
+            backdrop_paint: Paint::Solid(Box::new(PaintSolid { color: None })),
+        }));
+        let yaml = serde_yaml::to_string(&paint).unwrap();
+        let deser: Paint = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(paint, deser);
+    }
+
+    #[test]
+    fn paint_transform_serde_roundtrip() {
+        let paint = Paint::Transform(Box::new(PaintTransform {
+            paint: Paint::Solid(Box::new(PaintSolid { color: None })),
+            transform: Affine::translate((10.0, 20.0)),
+        }));
+        let yaml = serde_yaml::to_string(&paint).unwrap();
+        let deser: Paint = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(paint, deser);
+    }
+
+    #[test]
+    fn paint_colr_glyph_serde_roundtrip() {
+        let paint = Paint::ColrGlyph(Box::new(PaintColrGlyph {
+            glyph_name: GlyphName::new("base_glyph"),
+        }));
+        let yaml = serde_yaml::to_string(&paint).unwrap();
+        let deser: Paint = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(paint, deser);
     }
 }

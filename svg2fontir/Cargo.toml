@@ -1,0 +1,28 @@
+[package]
+name = "svg2fontir"
+version = "0.1.0"
+edition = "2024"
+license = "MIT/Apache-2.0"
+description = "Converts SVG directories to font IR for compilation."
+repository = "https://github.com/googlefonts/fontc"
+readme = "README.md"
+categories = ["text-processing", "parsing", "graphics"]
+
+[features]
+
+[dependencies]
+fontdrasil = { version = "0.4.0", path = "../fontdrasil" }
+fontir = { version = "0.5.0", path = "../fontir" }
+
+usvg = { version = "0.44", default-features = false }
+
+indexmap.workspace = true
+kurbo.workspace = true
+log.workspace = true
+ordered-float.workspace = true
+smol_str.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true
+tempfile.workspace = true

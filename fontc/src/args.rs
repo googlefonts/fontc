@@ -15,7 +15,7 @@ use crate::Error;
 #[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
 #[command(version)]
 pub struct Args {
-    /// A designspace, ufo, or glyphs file
+    /// A designspace, ufo, glyphs, fontra file, or directory of SVGs (with .svg extension)
     #[arg(
         conflicts_with = "source",
         required_unless_present("source"),
@@ -116,6 +116,22 @@ pub struct Args {
     /// See <https://docs.rs/env_logger/latest/env_logger/#enabling-logging> for format.
     #[arg(long)]
     pub log: Option<String>,
+
+    /// Font family name. Required when compiling SVG directories.
+    #[arg(long)]
+    pub family_name: Option<String>,
+
+    /// Units per em. Default: 1000.
+    #[arg(long, default_value = "1000")]
+    pub upem: u16,
+
+    /// Ascender value in font units. Default: derived from SVG viewBox.
+    #[arg(long)]
+    pub ascender: Option<i16>,
+
+    /// Descender value in font units. Default: derived from SVG viewBox.
+    #[arg(long)]
+    pub descender: Option<i16>,
 }
 
 /// A wrapper around a validated regex string
@@ -232,6 +248,16 @@ impl TryInto<Options> for Args {
         let timing_file = self.emit_timing.then(|| self.build_dir.join("threads.svg"));
         let debug_dir = self.emit_debug.then(|| self.build_dir.join("debug/"));
         let ir_dir = self.emit_ir.then(|| self.build_dir.clone());
+        let svg_metadata = if let Some(family_name) = self.family_name {
+            Some(fontc::SvgMetadata {
+                family_name,
+                upem: self.upem,
+                ascender: self.ascender,
+                descender: self.descender,
+            })
+        } else {
+            None
+        };
         Ok(Options {
             flags,
             flags_to_disable,
@@ -242,6 +268,7 @@ impl TryInto<Options> for Args {
             timing_file,
             debug_dir,
             ir_dir,
+            svg_metadata,
         })
     }
 }

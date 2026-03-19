@@ -47,6 +47,7 @@ members = [
     "glyphs2fontir",
     "fontra2fontir",
     "ufo2fontir",
+    "svg2fontir",
     "fontc",
     "fea-rs",
     "otl-normalizer",

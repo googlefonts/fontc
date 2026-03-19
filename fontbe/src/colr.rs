@@ -16,13 +16,14 @@ use write_fonts::{
     OtRound,
     tables::{
         colr::{
-            BaseGlyph, BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, ColorLine,
-            ColorStop, Colr, Extend, Layer, LayerList, Paint, PaintColrLayers, PaintGlyph,
-            PaintLinearGradient, PaintRadialGradient, PaintSolid,
+            Affine2x3, BaseGlyph, BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList,
+            ColorLine, ColorStop, Colr, CompositeMode, Extend, Layer, LayerList, Paint,
+            PaintColrGlyph, PaintColrLayers, PaintComposite, PaintGlyph, PaintLinearGradient,
+            PaintRadialGradient, PaintSolid, PaintTransform,
         },
         glyf::Bbox,
     },
-    types::{F2Dot14, FWord, GlyphId16},
+    types::{F2Dot14, FWord, Fixed, GlyphId16},
 };
 
 static OPAQUE: F2Dot14 = F2Dot14::ONE;
@@ -32,6 +33,24 @@ struct ColrWork {}
 
 pub fn create_colr_work() -> Box<BeWork> {
     Box::new(ColrWork {})
+}
+
+fn ir_composite_mode_to_write_fonts(mode: ir::CompositeMode) -> CompositeMode {
+    match mode {
+        ir::CompositeMode::SrcOver => CompositeMode::SrcOver,
+    }
+}
+
+fn kurbo_affine_to_colr(affine: kurbo::Affine) -> Affine2x3 {
+    let coeffs = affine.as_coeffs();
+    Affine2x3::new(
+        Fixed::from_f64(coeffs[0]),
+        Fixed::from_f64(coeffs[1]),
+        Fixed::from_f64(coeffs[2]),
+        Fixed::from_f64(coeffs[3]),
+        Fixed::from_f64(coeffs[4]),
+        Fixed::from_f64(coeffs[5]),
+    )
 }
 
 fn to_colr_line(
@@ -244,6 +263,52 @@ fn to_colr_paint(
                 layers.len() as u8,
                 start_idx,
             )))
+        }
+        ir::Paint::Composite(c) => {
+            let source = to_colr_paint(
+                context,
+                glyph_order,
+                palette,
+                glyph_name,
+                bbox,
+                layer_list,
+                &c.source_paint,
+            )?;
+            let backdrop = to_colr_paint(
+                context,
+                glyph_order,
+                palette,
+                glyph_name,
+                bbox,
+                layer_list,
+                &c.backdrop_paint,
+            )?;
+            Ok(Paint::Composite(PaintComposite::new(
+                source,
+                ir_composite_mode_to_write_fonts(c.composite_mode),
+                backdrop,
+            )))
+        }
+        ir::Paint::Transform(t) => {
+            let inner = to_colr_paint(
+                context,
+                glyph_order,
+                palette,
+                glyph_name,
+                bbox,
+                layer_list,
+                &t.paint,
+            )?;
+            Ok(Paint::Transform(PaintTransform::new(
+                inner,
+                kurbo_affine_to_colr(t.transform),
+            )))
+        }
+        ir::Paint::ColrGlyph(g) => {
+            let gid = glyph_order.glyph_id(&g.glyph_name).ok_or_else(|| {
+                Error::GlyphError(g.glyph_name.clone(), GlyphProblem::NotInGlyphOrder)
+            })?;
+            Ok(Paint::ColrGlyph(PaintColrGlyph::new(gid)))
         }
     }
 }
@@ -522,6 +587,145 @@ mod tests {
                 assert_eq!(solid.palette_index, 0xFFFF);
             }
             _ => panic!("Expected Paint::Solid"),
+        }
+    }
+
+    #[test]
+    fn compile_composite_paint() {
+        use fontir::orchestration::Context as IrContext;
+
+        let ir_ctx = IrContext::new_root(Default::default(), None);
+        let context = Context::new_root(Default::default(), None, None, &ir_ctx);
+
+        let palette = ColorPalettes::default();
+        let mut glyph_order = GlyphOrder::new();
+        let glyph_name = GlyphName::new("test");
+        glyph_order.insert(glyph_name.clone());
+
+        let bbox = Bbox {
+            x_min: 0,
+            y_min: 0,
+            x_max: 100,
+            y_max: 100,
+        };
+        let mut layer_list = LayerList::default();
+
+        let ir_paint = ir::Paint::Composite(Box::new(ir::PaintComposite {
+            source_paint: ir::Paint::Solid(Box::new(ir::PaintSolid { color: None })),
+            composite_mode: ir::CompositeMode::SrcOver,
+            backdrop_paint: ir::Paint::Solid(Box::new(ir::PaintSolid { color: None })),
+        }));
+
+        let paint = to_colr_paint(
+            &context,
+            &glyph_order,
+            &palette,
+            &glyph_name,
+            &bbox,
+            &mut layer_list,
+            &ir_paint,
+        )
+        .unwrap();
+
+        match paint {
+            Paint::Composite(composite) => {
+                assert_eq!(composite.composite_mode, CompositeMode::SrcOver);
+            }
+            _ => panic!("Expected Paint::Composite"),
+        }
+    }
+
+    #[test]
+    fn compile_transform_paint() {
+        use fontir::orchestration::Context as IrContext;
+
+        let ir_ctx = IrContext::new_root(Default::default(), None);
+        let context = Context::new_root(Default::default(), None, None, &ir_ctx);
+
+        let palette = ColorPalettes::default();
+        let mut glyph_order = GlyphOrder::new();
+        let glyph_name = GlyphName::new("test");
+        glyph_order.insert(glyph_name.clone());
+
+        let bbox = Bbox {
+            x_min: 0,
+            y_min: 0,
+            x_max: 100,
+            y_max: 100,
+        };
+        let mut layer_list = LayerList::default();
+
+        let ir_paint = ir::Paint::Transform(Box::new(ir::PaintTransform {
+            paint: ir::Paint::Solid(Box::new(ir::PaintSolid { color: None })),
+            transform: kurbo::Affine::translate((100.0, 200.0)),
+        }));
+
+        let paint = to_colr_paint(
+            &context,
+            &glyph_order,
+            &palette,
+            &glyph_name,
+            &bbox,
+            &mut layer_list,
+            &ir_paint,
+        )
+        .unwrap();
+
+        match paint {
+            Paint::Transform(transform) => {
+                let affine = transform.transform;
+                assert_eq!(affine.dx, Fixed::from_f64(100.0));
+                assert_eq!(affine.dy, Fixed::from_f64(200.0));
+            }
+            _ => panic!("Expected Paint::Transform"),
+        }
+    }
+
+    #[test]
+    fn compile_colr_glyph_paint() {
+        use fontir::orchestration::Context as IrContext;
+
+        let ir_ctx = IrContext::new_root(Default::default(), None);
+        let context = Context::new_root(Default::default(), None, None, &ir_ctx);
+
+        let palette = ColorPalettes::default();
+        let mut glyph_order = GlyphOrder::new();
+        let base_glyph = GlyphName::new("base");
+        glyph_order.insert(base_glyph.clone());
+        let glyph_name = GlyphName::new("test");
+        glyph_order.insert(glyph_name.clone());
+
+        let bbox = Bbox {
+            x_min: 0,
+            y_min: 0,
+            x_max: 100,
+            y_max: 100,
+        };
+        let mut layer_list = LayerList::default();
+
+        let ir_paint = ir::Paint::ColrGlyph(Box::new(ir::PaintColrGlyph {
+            glyph_name: base_glyph.clone(),
+        }));
+
+        let paint = to_colr_paint(
+            &context,
+            &glyph_order,
+            &palette,
+            &glyph_name,
+            &bbox,
+            &mut layer_list,
+            &ir_paint,
+        )
+        .unwrap();
+
+        match paint {
+            Paint::ColrGlyph(colr_glyph) => {
+                assert_eq!(
+                    colr_glyph.glyph_id,
+                    glyph_order.glyph_id(&base_glyph).unwrap()
+                );
+            }
+            _ => panic!("Expected Paint::ColrGlyph"),
         }
     }
 }
