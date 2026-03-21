@@ -1,0 +1,12 @@
+{
+  "version": "1.1",
+  "fonts_repo_sha": "8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5",
+  "sources": [
+    {
+      "repo_url": "https://github.com/NaN-xyz/Rubik-Filtered",
+      "rev": "0c9d20f75e69991e2f3b075d978d9e23844027b6",
+      "config": "pixels/sources/pixels.yaml",
+      "has_rev_conflict": true
+    }
+  ]
+}

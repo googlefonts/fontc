@@ -979,10 +979,13 @@ def fill_in_gvar_deltas(
     fontmake: etree.ElementTree,
     fontmake_ttf: Path,
 ):
-    fontc_font = TTFont(fontc_ttf)
-    fontmake_font = TTFont(fontmake_ttf)
-    dense_fontc_count = densify_gvar(fontc_font, fontc)
-    dense_fontmake_count = densify_gvar(fontmake_font, fontmake)
+    with timed_step("fill_gvar_load_fonts"):
+        fontc_font = TTFont(fontc_ttf)
+        fontmake_font = TTFont(fontmake_ttf)
+    with timed_step("fill_gvar_densify_fontc"):
+        dense_fontc_count = densify_gvar(fontc_font, fontc)
+    with timed_step("fill_gvar_densify_fontmake"):
+        dense_fontmake_count = densify_gvar(fontmake_font, fontmake)
 
     if dense_fontc_count + dense_fontmake_count > 0:
         eprint(
@@ -1038,55 +1041,62 @@ def densify_one_glyph(coords, ends, variations: etree.ElementTree):
 
 
 def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
-    fontmake_glyph_map = {
-        el.attrib["name"]: int(el.attrib["id"])
-        for el in fontmake.xpath("//GlyphOrder/GlyphID")
-    }
+    with timed_step("reduce_diff_noise_glyph_map"):
+        fontmake_glyph_map = {
+            el.attrib["name"]: int(el.attrib["id"])
+            for el in fontmake.xpath("//GlyphOrder/GlyphID")
+        }
 
-    sort_indices(fontmake, "GPOS", "//Feature", "LookupListIndex")
-    sort_indices(fontmake, "GSUB", "//LangSys", "FeatureIndex")
-    sort_indices(fontmake, "GSUB", "//DefaultLangSys", "FeatureIndex")
-    reorder_contextual_class_based_rules(fontmake, "GSUB", fontmake_glyph_map)
-    reorder_contextual_class_based_rules(fontmake, "GPOS", fontmake_glyph_map)
-    for ttx in (fontc, fontmake):
-        # different name ids with the same value is fine
-        name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
-        name_id_to_name(ttx, "//NamedInstance", "postscriptNameID")
-        name_id_to_name(ttx, "//AxisNameID", "value")
-        name_id_to_name(ttx, "//UINameID", "value")
-        name_id_to_name(ttx, "//AxisNameID", None)
-        name_id_to_name(ttx, "//ValueNameID", "value")
-        name_id_to_name(ttx, "//ElidedFallbackNameID", "value")
-        normalize_null_tags(ttx, "//OS_2/achVendID", "value")
+    with timed_step("reduce_diff_noise_sort_indices"):
+        sort_indices(fontmake, "GPOS", "//Feature", "LookupListIndex")
+        sort_indices(fontmake, "GSUB", "//LangSys", "FeatureIndex")
+        sort_indices(fontmake, "GSUB", "//DefaultLangSys", "FeatureIndex")
+    
+    with timed_step("reduce_diff_noise_reorder"):
+        reorder_contextual_class_based_rules(fontmake, "GSUB", fontmake_glyph_map)
+        reorder_contextual_class_based_rules(fontmake, "GPOS", fontmake_glyph_map)
+    
+    with timed_step("reduce_diff_noise_normalize_ids"):
+        for ttx in (fontc, fontmake):
+            # different name ids with the same value is fine
+            name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
+            name_id_to_name(ttx, "//NamedInstance", "postscriptNameID")
+            name_id_to_name(ttx, "//AxisNameID", "value")
+            name_id_to_name(ttx, "//UINameID", "value")
+            name_id_to_name(ttx, "//AxisNameID", None)
+            name_id_to_name(ttx, "//ValueNameID", "value")
+            name_id_to_name(ttx, "//ElidedFallbackNameID", "value")
+            normalize_null_tags(ttx, "//OS_2/achVendID", "value")
 
-        # deal with https://github.com/googlefonts/fontmake/issues/1003
-        drop_weird_names(ttx)
+            # deal with https://github.com/googlefonts/fontmake/issues/1003
+            drop_weird_names(ttx)
 
-        # for matching purposes checksum is just noise
-        erase_checksum(ttx)
+            # for matching purposes checksum is just noise
+            erase_checksum(ttx)
 
-        stat_like_fontmake(ttx)
-        remove_mark_and_kern_and_curs_lookups(ttx)
+            stat_like_fontmake(ttx)
+            remove_mark_and_kern_and_curs_lookups(ttx)
 
-        erase_type_from_stranded_points(ttx)
-        remove_gdef_lig_caret_and_var_store(ttx)
-        sort_gdef_mark_filter_sets(ttx)
+            erase_type_from_stranded_points(ttx)
+            remove_gdef_lig_caret_and_var_store(ttx)
+            sort_gdef_mark_filter_sets(ttx)
 
-        # sort names within the name table (do this at the end, so ids are correct
-        # for earlier steps)
-        normalize_name_ids(ttx)
+            # sort names within the name table (do this at the end, so ids are correct
+            # for earlier steps)
+            normalize_name_ids(ttx)
 
     # Normalize glyf contour order but only when contours are identical
-    fontc_point_orders, fontmake_point_orders = normalize_glyf_contours(fontc, fontmake)
-    normalize_gvar_contours(fontc, fontc_point_orders)
-    normalize_gvar_contours(fontmake, fontmake_point_orders)
+    with timed_step("reduce_diff_noise_normalize_contours"):
+        fontc_point_orders, fontmake_point_orders = normalize_glyf_contours(fontc, fontmake)
+        normalize_gvar_contours(fontc, fontc_point_orders)
+        normalize_gvar_contours(fontmake, fontmake_point_orders)
 
-    allow_fontc_only_variations_postscript_prefix(fontc, fontmake)
-
-    allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
-    allow_some_off_by_ones(
-        fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
-    )
+    with timed_step("reduce_diff_noise_allow_off_by_ones"):
+        allow_fontc_only_variations_postscript_prefix(fontc, fontmake)
+        allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
+        allow_some_off_by_ones(
+            fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
+        )
 
 
 # given a font file, return a dictionary of tags -> size in bytes
@@ -1129,21 +1139,29 @@ def check_sizes(fontmake_ttf: Path, fontc_ttf: Path):
 def generate_output(
     build_dir: Path, otl_norm_bin: Path, fontmake_ttf: Path, fontc_ttf: Path
 ):
-    fontc_ttx = run_ttx(fontc_ttf)
-    fontmake_ttx = run_ttx(fontmake_ttf)
-    fontc_gpos = run_normalizer(otl_norm_bin, fontc_ttf, "gpos")
-    fontmake_gpos = run_normalizer(otl_norm_bin, fontmake_ttf, "gpos")
-    fontc_gdef = run_normalizer(otl_norm_bin, fontc_ttf, "gdef")
-    fontmake_gdef = run_normalizer(otl_norm_bin, fontmake_ttf, "gdef")
+    with timed_step("ttx_conversion"):
+        fontc_ttx = run_ttx(fontc_ttf)
+        fontmake_ttx = run_ttx(fontmake_ttf)
+    with timed_step("normalizer_gpos"):
+        fontc_gpos = run_normalizer(otl_norm_bin, fontc_ttf, "gpos")
+        fontmake_gpos = run_normalizer(otl_norm_bin, fontmake_ttf, "gpos")
+    with timed_step("normalizer_gdef"):
+        fontc_gdef = run_normalizer(otl_norm_bin, fontc_ttf, "gdef")
+        fontmake_gdef = run_normalizer(otl_norm_bin, fontmake_ttf, "gdef")
 
-    fontc = etree.parse(fontc_ttx)
-    fontmake = etree.parse(fontmake_ttx)
-    fill_in_gvar_deltas(fontc, fontc_ttf, fontmake, fontmake_ttf)
-    reduce_diff_noise(fontc, fontmake)
+    with timed_step("parse_ttx"):
+        fontc = etree.parse(fontc_ttx)
+        fontmake = etree.parse(fontmake_ttx)
+    with timed_step("fill_gvar_deltas"):
+        fill_in_gvar_deltas(fontc, fontc_ttf, fontmake, fontmake_ttf)
+    with timed_step("reduce_diff_noise"):
+        reduce_diff_noise(fontc, fontmake)
 
-    fontc = extract_comparables(fontc, build_dir, "fontc")
-    fontmake = extract_comparables(fontmake, build_dir, "fontmake")
-    size_diffs = check_sizes(fontmake_ttf, fontc_ttf)
+    with timed_step("extract_comparables"):
+        fontc = extract_comparables(fontc, build_dir, "fontc")
+        fontmake = extract_comparables(fontmake, build_dir, "fontmake")
+    with timed_step("check_sizes"):
+        size_diffs = check_sizes(fontmake_ttf, fontc_ttf)
     fontc[MARK_KERN_NAME] = fontc_gpos
     fontmake[MARK_KERN_NAME] = fontmake_gpos
     if len(fontc_gdef):
@@ -1403,6 +1421,17 @@ def get_crate_path(
     )
 
 
+@contextmanager
+def timed_step(name: str):
+    """Context manager for timing a step and logging to stderr."""
+    start = time.time()
+    try:
+        yield
+    finally:
+        elapsed = time.time() - start
+        eprint(f"[TIMING] {name}: {elapsed:.3f}s")
+
+
 def main(argv):
     if FLAGS.version:
         print(f"ttx-diff version {__version__}")
@@ -1425,7 +1454,8 @@ def main(argv):
             "Either a source file or both --fontc_font and --fontmake_font must be provided"
         )
 
-    source = resolve_source(argv[1]).resolve() if has_source else None
+    with timed_step("resolve_source"):
+        source = resolve_source(argv[1]).resolve() if has_source else None
 
     # Check if we're in the fontc repository (optional - allows building binaries)
     cwd = Path(".").resolve()
@@ -1437,11 +1467,13 @@ def main(argv):
     # Get binary paths - will look in PATH or build if in repo
     fontc_bin_path = None
     if not has_precompiled_fonts:
-        fontc_bin_path = get_crate_path(FLAGS.fontc_path, fontc_repo_root, "fontc")
+        with timed_step("build_fontc_binary"):
+            fontc_bin_path = get_crate_path(FLAGS.fontc_path, fontc_repo_root, "fontc")
 
-    otl_bin_path = get_crate_path(
-        FLAGS.normalizer_path, fontc_repo_root, "otl-normalizer"
-    )
+    with timed_step("build_normalizer_binary"):
+        otl_bin_path = get_crate_path(
+            FLAGS.normalizer_path, fontc_repo_root, "otl-normalizer"
+        )
 
     if not has_precompiled_fonts and shutil.which("fontmake") is None:
         sys.exit("No fontmake")
@@ -1490,30 +1522,35 @@ def main(argv):
             eprint(
                 "WARN: --rebuild flag ignored with precompiled fonts (always rebuilds derived files)"
             )
-        delete_things_we_must_rebuild("both", fontmake_ttf, fontc_ttf, skip_fonts=True)
+        with timed_step("cleanup_files"):
+            delete_things_we_must_rebuild("both", fontmake_ttf, fontc_ttf, skip_fonts=True)
 
-        if fontc_input != fontc_ttf:
-            copy(fontc_input, fontc_ttf)
-        if fontmake_input != fontmake_ttf:
-            copy(fontmake_input, fontmake_ttf)
+        with timed_step("copy_fonts"):
+            if fontc_input != fontc_ttf:
+                copy(fontc_input, fontc_ttf)
+            if fontmake_input != fontmake_ttf:
+                copy(fontmake_input, fontmake_ttf)
     else:
-        delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
+        with timed_step("cleanup_files"):
+            delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
 
         try:
-            if compare == "default":
-                build_fontc(source, fontc_bin_path, build_dir)
-            else:
-                run_gftools(source, FLAGS.config, build_dir, fontc_bin=fontc_bin_path)
+            with timed_step("fontc_compile"):
+                if compare == "default":
+                    build_fontc(source, fontc_bin_path, build_dir)
+                else:
+                    run_gftools(source, FLAGS.config, build_dir, fontc_bin=fontc_bin_path)
         except BuildFail as e:
             failures["fontc"] = {
                 "command": " ".join(e.command),
                 "stderr": e.msg[-MAX_ERR_LEN:],
             }
         try:
-            if compare == "default":
-                build_fontmake(source, build_dir)
-            else:
-                run_gftools(source, FLAGS.config, build_dir)
+            with timed_step("fontmake_compile"):
+                if compare == "default":
+                    build_fontmake(source, build_dir)
+                else:
+                    run_gftools(source, FLAGS.config, build_dir)
         except BuildFail as e:
             failures["fontmake"] = {
                 "command": " ".join(e.command),
@@ -1526,15 +1563,18 @@ def main(argv):
     assert fontmake_ttf.is_file(), fontmake_ttf
     assert fontc_ttf.is_file(), fontc_ttf
 
-    output = generate_output(build_dir, otl_bin_path, fontmake_ttf, fontc_ttf)
+    with timed_step("generate_output"):
+        output = generate_output(build_dir, otl_bin_path, fontmake_ttf, fontc_ttf)
     if output["fontc"] == output["fontmake"]:
         eprint("output is identical")
     else:
         diffs = True
         if not FLAGS.json:
-            print_output(build_dir, output)
+            with timed_step("print_output"):
+                print_output(build_dir, output)
         else:
-            output = jsonify_output(output)
-            print_json(output)
+            with timed_step("jsonify_output"):
+                output = jsonify_output(output)
+                print_json(output)
 
     sys.exit(diffs * 2)  # 0 or 2

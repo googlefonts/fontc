@@ -236,21 +236,23 @@ fn make_html(
         }
     }
     .into_string();
-    tidy_html(&raw_html)
+    Ok(raw_html)
+    // tidy_html(&raw_html)
 }
 
 fn tidy_html(raw_html: &str) -> Result<String, Error> {
-    let opts = tidier::FormatOptions {
-        // indent with tabs to reduce file size.
-        // the '4' option is suggested by the docs; does not mean 4 tabs each indent?
-        indent: tidier::Indent {
-            size: 4,
-            tabs: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    tidier::format(raw_html, false, &opts).map_err(Into::into)
+    return Ok(raw_html.to_string());
+    // let opts = tidier::FormatOptions {
+    //     // indent with tabs to reduce file size.
+    //     // the '4' option is suggested by the docs; does not mean 4 tabs each indent?
+    //     indent: tidier::Indent {
+    //         size: 4,
+    //         tabs: true,
+    //         ..Default::default()
+    //     },
+    //     ..Default::default()
+    // };
+    // tidier::format(raw_html, false, &opts).map_err(Into::into)
 }
 
 fn make_table_body(runs: &[RunSummary]) -> Markup {

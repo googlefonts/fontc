@@ -150,7 +150,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let (fontc_path, normalizer_path) = precompile_rust_binaries(temp_bin_dir.path());
 
     log::info!("compiled fontc to {}", fontc_path.display());
-    log::info!("compiled otl-normalizeer to {}", normalizer_path.display());
+    log::info!("compiled otl-normalizer to {}", normalizer_path.display());
 
     let ResolvedTargets {
         mut targets,

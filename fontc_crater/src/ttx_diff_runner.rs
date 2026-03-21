@@ -48,6 +48,12 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
     };
 
     let stderr = String::from_utf8_lossy(&output.stderr);
+    // Log timing information from Python stderr
+    for line in stderr.lines() {
+        if line.contains("[TIMING]") {
+            log::info!("{target}: {line}");
+        }
+    }
     let result = match output.status.code() {
         // success, diffs are identical
         Some(0) => RunResult::Success(DiffOutput::Identical),
