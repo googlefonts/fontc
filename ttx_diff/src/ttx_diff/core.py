@@ -719,7 +719,12 @@ def allow_fontc_only_variations_postscript_prefix(fontc, fontmake):
 
 
 def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
+    start_total = time.monotonic()
+
+    start = time.monotonic()
     fontmake_num_coords = len(fontmake.xpath(f"//{container}/{coord_holder}"))
+    eprint(f"[TIMING] off_by_ones_count_coords: {time.monotonic() - start:.3f}s, found {fontmake_num_coords} coords")
+
     off_by_one_budget = int(FLAGS.off_by_one_budget / 100.0 * fontmake_num_coords)
     spent = 0
     if off_by_one_budget == 0:
@@ -728,8 +733,20 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
     coord_tag = coord_holder.rpartition("/")[-1]
     # put all the containers into a dict to make querying more efficient:
 
+    start = time.monotonic()
     fontc_items = {x.attrib[name_attr]: x for x in fontc.xpath(f"//{container}")}
-    for fontmake_container in fontmake.xpath(f"//{container}"):
+    eprint(f"[TIMING] off_by_ones_build_dict: {time.monotonic() - start:.3f}s, found {len(fontc_items)} containers")
+
+    start_loop = time.monotonic()
+    containers_processed = 0
+    fontmake_containers = fontmake.xpath(f"//{container}")
+    total_containers = len(fontmake_containers)
+
+    for fontmake_container in fontmake_containers:
+        containers_processed += 1
+        if containers_processed % 1000 == 0:
+            eprint(f"[TIMING] off_by_ones_progress: {containers_processed}/{total_containers} containers, {time.monotonic() - start_loop:.3f}s elapsed")
+
         name = fontmake_container.attrib[name_attr]
         fontc_container = fontc_items.get(name)
         if fontc_container is None:
@@ -758,7 +775,10 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
                     eprint(
                         f"WARN: ran out of budget ({off_by_one_budget}) to fix off-by-ones in {container}"
                     )
+                    eprint(f"[TIMING] off_by_ones_total: {time.monotonic() - start_total:.3f}s for {container} (early exit)")
                     return
+
+    eprint(f"[TIMING] off_by_ones_total: {time.monotonic() - start_total:.3f}s for {container} (processed {containers_processed} containers)")
 
     if spent > 0:
         eprint(
