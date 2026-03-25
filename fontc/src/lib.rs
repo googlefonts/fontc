@@ -132,6 +132,7 @@ pub struct Options {
     /// Flags to explicitly disable, overriding source defaults (tri-state).
     pub flags_to_disable: DisableFlags,
     pub skip_features: bool,
+    pub compile_debg: bool,
     pub output_file: Option<PathBuf>,
     pub timing_file: Option<PathBuf>,
     pub ir_dir: Option<PathBuf>,
@@ -220,6 +221,7 @@ fn generate_font_internal(
         flags,
         options.ir_dir.clone(),
         options.debug_dir.clone(),
+        options.compile_debg,
         &fe_root,
     );
     let timer = workload.exec(&fe_root, &be_root)?;
@@ -420,6 +422,7 @@ mod tests {
                 flags,
                 options.ir_dir.clone(),
                 options.debug_dir.clone(),
+                options.compile_debg,
                 &fe_context.read_only(),
             );
             let workload = Workload::new(source, timer, options.skip_features).unwrap();
@@ -679,6 +682,41 @@ mod tests {
             args.debug_dir = None;
             args
         });
+    }
+
+    #[test]
+    fn compile_debg_emits_debg_table() {
+        let result = TestCompile::compile("static.designspace", |mut args| {
+            args.compile_debg = true;
+            args
+        });
+        let font = result.font();
+        let tags: Vec<_> = font
+            .table_directory
+            .table_records()
+            .iter()
+            .map(|tr| tr.tag())
+            .collect();
+        assert!(
+            tags.contains(&Tag::new(b"Debg")),
+            "expected Debg table in font, found: {tags:?}"
+        );
+    }
+
+    #[test]
+    fn no_debg_table_by_default() {
+        let result = TestCompile::compile_source("static.designspace");
+        let font = result.font();
+        let tags: Vec<_> = font
+            .table_directory
+            .table_records()
+            .iter()
+            .map(|tr| tr.tag())
+            .collect();
+        assert!(
+            !tags.contains(&Tag::new(b"Debg")),
+            "Debg table should not be present by default, found: {tags:?}"
+        );
     }
 
     fn build_contour_and_composite_glyph(prefer_simple_glyphs: bool) -> (TestCompile, ir::Glyph) {

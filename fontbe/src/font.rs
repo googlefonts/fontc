@@ -202,6 +202,15 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
                 })?;
         }
 
+        if let Some(debg_bytes) = context
+            .extra_fea_tables
+            .try_get()
+            .and_then(|fea| fea.debg.clone())
+        {
+            log::info!("adding Debg table from fea");
+            builder.add_raw(Tag::new(b"Debg"), debg_bytes);
+        }
+
         // A fancier implementation would mmap the files. We basic.
         let is_static = context.ir.static_metadata.get().axes.is_empty();
         for (work_id, tag) in TABLES_TO_MERGE {

@@ -401,6 +401,7 @@ impl FeatureCompilationWork {
         ast: &FeaFirstPassOutput,
         kerns: &FeaRsKerns,
         marks: &FeaRsMarks,
+        compile_debg: bool,
     ) -> Result<Compilation, Error> {
         let feature_variations = static_metadata
             .variations
@@ -421,7 +422,7 @@ impl FeatureCompilationWork {
             &marks.glyphmap,
             Some(&var_info),
             Some(&feature_writer),
-            Opts::new(),
+            Opts::new().compile_debg(compile_debg),
         ) {
             Ok((result, warnings)) => {
                 log_fea_warnings("compilation", &warnings);
@@ -608,6 +609,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
             &ast,
             kerns.as_ref(),
             marks.as_ref(),
+            context.compile_debg,
         )?;
         if result.gdef_classes.is_none() && !gdef_categories.categories.is_empty() {
             // the FEA did not contain an explicit GDEF block with glyph categories,

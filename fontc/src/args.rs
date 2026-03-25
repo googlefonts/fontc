@@ -89,6 +89,10 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub skip_features: bool,
 
+    /// Emit a Debg table with source-level lookup debug info
+    #[arg(long, default_value = "false")]
+    pub emit_lookup_debug_info: bool,
+
     /// Whether to keep the original glyph contour direction (TTF only).
     ///
     /// TrueType contours are recommended to follow clockwise orientation;
@@ -236,6 +240,7 @@ impl TryInto<Options> for Args {
             flags,
             flags_to_disable,
             skip_features: self.skip_features,
+            compile_debg: self.emit_lookup_debug_info,
             output_file: self
                 .output_file
                 .or_else(|| Some(self.build_dir.join("font.ttf"))),
