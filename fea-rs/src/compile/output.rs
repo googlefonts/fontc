@@ -12,6 +12,7 @@ use write_fonts::{
 
 use super::Opts;
 use super::feature_writer::InsertionPoint;
+use super::tables::DEBG_TAG;
 
 use crate::GlyphMap;
 
@@ -62,6 +63,10 @@ pub struct Compilation {
     /// features (e.g. kern, mark) and need to know the correct ordering
     /// relative to hand-written feature code.
     pub insert_markers: HashMap<Tag, InsertionPoint>,
+    /// Raw bytes for the `Debg` table, present when `Opts::compile_debg` is set.
+    ///
+    /// The content is UTF-8 JSON compatible with fontTools' feaLib Debg format.
+    pub debg: Option<Vec<u8>>,
 }
 
 impl Compilation {
@@ -74,6 +79,7 @@ impl Compilation {
             || self.base.is_some()
             || self.name.is_some()
             || self.stat.is_some()
+            || self.debg.is_some()
     }
 
     /// Remap any `NameId`s in the name table and anywhere they are referenced.
@@ -181,6 +187,9 @@ impl Compilation {
         add_if_some!(self.stat);
         add_if_some!(self.gsub);
         add_if_some!(self.gpos);
+        if let Some(debg_bytes) = &self.debg {
+            builder.add_raw(DEBG_TAG, debg_bytes.as_slice());
+        }
         Ok(builder)
     }
 
