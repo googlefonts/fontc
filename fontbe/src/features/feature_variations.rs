@@ -26,57 +26,60 @@ pub struct FeatureVariationsProvider {
     conditions: Vec<(ConditionSet, Vec<usize>)>,
 }
 
-// https://github.com/fonttools/fonttools/blob/a1c189bda7c8d970143f92b542f5e26759945a37/Lib/fontTools/varLib/__init__.py#L799
-pub fn make_gsub_feature_variations(
-    ir_variations: &VariableFeature,
-    static_metadata: &StaticMetadata,
-    glyph_order: &GlyphOrder,
-) -> Result<FeatureVariationsProvider, Error> {
-    let mut conditional_subs = Vec::new();
+impl FeatureVariationsProvider {
+    // https://github.com/fonttools/fonttools/blob/a1c189bda7c8d970143f92b542f5e26759945a37/Lib/fontTools/varLib/__init__.py#L799
+    pub fn new(
+        ir_variations: &VariableFeature,
+        static_metadata: &StaticMetadata,
+        glyph_order: &GlyphOrder,
+    ) -> Result<FeatureVariationsProvider, Error> {
+        let mut conditional_subs = Vec::new();
 
-    for rule in &ir_variations.rules {
-        let mut region = Region::default();
-        for conditions in &rule.conditions {
-            let mut space = NBox::default();
-            for condition in conditions {
-                let axis = static_metadata
-                    .axis(&condition.axis)
-                    .expect("checked already");
-                let min = condition.min.map(|min| min.to_normalized(&axis.converter));
-                let max = condition.max.map(|max| max.to_normalized(&axis.converter));
-                space.insert(condition.axis, min, max);
+        for rule in &ir_variations.rules {
+            let mut region = Region::default();
+            for conditions in &rule.conditions {
+                let mut space = NBox::default();
+                for condition in conditions {
+                    let axis = static_metadata
+                        .axis(&condition.axis)
+                        .expect("checked already");
+                    let min = condition.min.map(|min| min.to_normalized(&axis.converter));
+                    let max = condition.max.map(|max| max.to_normalized(&axis.converter));
+                    space.insert(condition.axis, min, max);
+                }
+                region.push(std::mem::take(&mut space));
             }
-            region.push(std::mem::take(&mut space));
-        }
-        let substitutions = rule
-            .substitutions
-            .iter()
-            .map(|ir_sub| (ir_sub.replace.clone(), ir_sub.with.clone()))
-            .collect::<BTreeMap<_, _>>();
-
-        conditional_subs.push((region, substitutions));
-    }
-    let substitutions = fontir::feature_variations::overlay_feature_variations(conditional_subs);
-    let (lookups, lookup_map) = make_substitution_lookups(&substitutions, glyph_order);
-
-    let conditions = substitutions
-        .iter()
-        .map(|(cond_set, subs)| {
-            let mut indices = subs
+            let substitutions = rule
+                .substitutions
                 .iter()
-                .map(|subs| lookup_map.get(&subs).copied().unwrap())
-                .collect::<Vec<_>>();
-            indices.sort();
-            let condition_set = cond_set.to_condition_set(static_metadata);
-            (condition_set, indices)
-        })
-        .collect::<Vec<_>>();
+                .map(|ir_sub| (ir_sub.replace.clone(), ir_sub.with.clone()))
+                .collect::<BTreeMap<_, _>>();
 
-    Ok(FeatureVariationsProvider {
-        tags: ir_variations.features.clone(),
-        lookups,
-        conditions,
-    })
+            conditional_subs.push((region, substitutions));
+        }
+        let substitutions =
+            fontir::feature_variations::overlay_feature_variations(conditional_subs);
+        let (lookups, lookup_map) = make_substitution_lookups(&substitutions, glyph_order);
+
+        let conditions = substitutions
+            .iter()
+            .map(|(cond_set, subs)| {
+                let mut indices = subs
+                    .iter()
+                    .map(|subs| lookup_map.get(&subs).copied().unwrap())
+                    .collect::<Vec<_>>();
+                indices.sort();
+                let condition_set = cond_set.to_condition_set(static_metadata);
+                (condition_set, indices)
+            })
+            .collect::<Vec<_>>();
+
+        Ok(FeatureVariationsProvider {
+            tags: ir_variations.features.clone(),
+            lookups,
+            conditions,
+        })
+    }
 }
 
 /// returns a vec of lookups, and a map from the raw lookups to the indices in the vec.
@@ -163,9 +166,12 @@ mod tests {
 
     impl FeatureVariationsOutput for LayoutOutput {
         fn compile_feature_variations(&self, variations: VariableFeature) -> Gsub {
-            let thingie =
-                make_gsub_feature_variations(&variations, &self.static_metadata, &self.glyph_order)
-                    .unwrap();
+            let thingie = FeatureVariationsProvider::new(
+                &variations,
+                &self.static_metadata,
+                &self.glyph_order,
+            )
+            .unwrap();
             self.compile(&thingie).gsub.unwrap()
         }
     }

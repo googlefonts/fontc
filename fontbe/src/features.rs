@@ -406,7 +406,7 @@ impl FeatureCompilationWork {
             .variations
             .as_ref()
             .map(|ir_variations| {
-                feature_variations::make_gsub_feature_variations(
+                feature_variations::FeatureVariationsProvider::new(
                     ir_variations,
                     static_metadata,
                     glyph_order,
