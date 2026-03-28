@@ -50,7 +50,7 @@ use crate::{
     paths::Paths,
 };
 
-mod feature_variations;
+pub mod feature_variations;
 mod kern;
 mod marks;
 mod ot_tags;

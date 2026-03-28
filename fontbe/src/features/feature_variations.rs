@@ -19,7 +19,7 @@ use crate::error::Error;
 
 const RVRN: Tag = Tag::new(b"rvrn");
 
-pub(super) struct FeatureVariationsProvider {
+pub struct FeatureVariationsProvider {
     tags: Vec<Tag>,
     lookups: Vec<PendingLookup<SingleSubBuilder>>,
     // the vec is indices into `lookups` for that conditionset
@@ -27,7 +27,7 @@ pub(super) struct FeatureVariationsProvider {
 }
 
 // https://github.com/fonttools/fonttools/blob/a1c189bda7c8d970143f92b542f5e26759945a37/Lib/fontTools/varLib/__init__.py#L799
-pub(super) fn make_gsub_feature_variations(
+pub fn make_gsub_feature_variations(
     ir_variations: &VariableFeature,
     static_metadata: &StaticMetadata,
     glyph_order: &GlyphOrder,
