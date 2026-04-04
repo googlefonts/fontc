@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use feature_variations::FeatureVariationsProvider;
+pub use feature_variations::FeatureVariationsProvider;
 use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
@@ -50,7 +50,7 @@ use crate::{
     paths::Paths,
 };
 
-pub mod feature_variations;
+mod feature_variations;
 mod kern;
 mod marks;
 mod ot_tags;

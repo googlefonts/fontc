@@ -27,7 +27,7 @@ pub struct FeatureVariationsProvider {
 }
 
 impl FeatureVariationsProvider {
-    // https://github.com/fonttools/fonttools/blob/a1c189bda7c8d970143f92b542f5e26759945a37/Lib/fontTools/varLib/__init__.py#L799
+    // https://github.com/fonttools/fonttools/blob/a1c189bda/Lib/fontTools/varLib/__init__.py#L799
     pub fn new(
         ir_variations: &VariableFeature,
         static_metadata: &StaticMetadata,
