@@ -280,7 +280,6 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             self.tables.debg = Some(super::tables::DebgBuilder::new(
                 gsub_info.to_vec(),
                 gpos_info.to_vec(),
-                self.tree.sources.clone(),
             ));
         }
 
@@ -299,7 +298,11 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 opts: self.opts.clone(),
                 gdef_classes,
                 insert_markers: self.insert_markers.clone(),
-                debg: self.tables.debg.as_ref().map(|d| d.build()),
+                debg: self
+                    .tables
+                    .debg
+                    .as_ref()
+                    .map(|d| d.build(&self.tree.sources)),
             },
             self.errors.clone(),
         ))

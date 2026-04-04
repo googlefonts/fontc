@@ -14,8 +14,6 @@
 //! }
 //! ```
 
-use std::sync::Arc;
-
 use crate::parse::{FileId, SourceList};
 use write_fonts::types::Tag;
 
@@ -40,24 +38,17 @@ pub(crate) struct LookupDebugInfo {
 pub(crate) struct DebgBuilder {
     gsub: Vec<Option<LookupDebugInfo>>,
     gpos: Vec<Option<LookupDebugInfo>>,
-    source_list: Arc<SourceList>,
 }
 
 impl DebgBuilder {
     pub(crate) fn new(
         gsub: Vec<Option<LookupDebugInfo>>,
         gpos: Vec<Option<LookupDebugInfo>>,
-        source_list: Arc<SourceList>,
     ) -> Self {
-        Self {
-            gsub,
-            gpos,
-            source_list,
-        }
+        Self { gsub, gpos }
     }
 
-    pub(crate) fn build(&self) -> Vec<u8> {
-        let source_list = &self.source_list;
+    pub(crate) fn build(&self, source_list: &SourceList) -> Vec<u8> {
         let mut out = String::new();
         out.push_str(&format!("{{\"{LOOKUP_DEBUG_INFO_KEY}\":{{"));
 
