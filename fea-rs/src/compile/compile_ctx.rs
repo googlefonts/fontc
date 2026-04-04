@@ -455,7 +455,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             let (file_id, local_range) = self.tree.source_map().resolve_range(name.range());
             self.pending_lookup_debug_info = Some(LookupDebugInfo {
                 location: (file_id, local_range.start),
-                name: Some(name.text.to_string()),
+                name: Some(name.text.clone()),
             });
         }
         self.lookups.start_named(name.text.clone());

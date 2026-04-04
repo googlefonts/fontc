@@ -16,6 +16,8 @@
 //! }
 //! ```
 
+use smol_str::SmolStr;
+
 use crate::parse::{FileId, SourceList};
 use write_fonts::types::Tag;
 
@@ -32,7 +34,7 @@ const LOOKUP_DEBUG_INFO_KEY: &str = "com.github.fonttools.feaLib";
 #[derive(Debug, Clone)]
 pub(crate) struct LookupDebugInfo {
     pub location: (FileId, usize),
-    pub name: Option<String>,
+    pub name: Option<SmolStr>,
 }
 
 /// Builder for the `Debg` table.
