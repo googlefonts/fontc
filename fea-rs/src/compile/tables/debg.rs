@@ -1,8 +1,10 @@
 //! Building the `Debg` debug table.
 //!
 //! The `Debg` table stores source-level information about each lookup,
-//! compatible with fontTools.feaLib format, but unlike feaLib, we always set
-//! feature to null
+//! compatible with the [fontTools feaLib implementation][feaLib], but unlike
+//! feaLib, we always set feature to null.
+//!
+//! [feaLib]: https://github.com/fonttools/fonttools/blob/bb1109e9/Lib/fontTools/feaLib/builder.py#L860-L864
 //!
 //! Format: raw UTF-8 JSON with the schema:
 //! ```json
