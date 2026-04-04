@@ -16,9 +16,11 @@
 //! }
 //! ```
 
+use std::ops::Range;
+
 use smol_str::SmolStr;
 
-use crate::parse::{FileId, SourceList};
+use crate::parse::ParseTree;
 use write_fonts::types::Tag;
 
 /// The 4-byte tag for the Debg table.
@@ -29,11 +31,11 @@ const LOOKUP_DEBUG_INFO_KEY: &str = "com.github.fonttools.feaLib";
 
 /// Debug information for a single lookup.
 ///
-/// The source location is stored as a raw `(FileId, local_offset)` pair,
-/// resolved to a `"file:line:col"` string when building the final Debg bytes.
+/// Stores the global source range and optional name; resolved to
+/// `"file:line:col"` when building the final Debg bytes.
 #[derive(Debug, Clone)]
 pub(crate) struct LookupDebugInfo {
-    pub location: (FileId, usize),
+    pub range: Range<usize>,
     pub name: Option<SmolStr>,
 }
 
@@ -52,7 +54,7 @@ impl DebgBuilder {
         Self { gsub, gpos }
     }
 
-    pub(crate) fn build(&self, source_list: &SourceList) -> Vec<u8> {
+    pub(crate) fn build(&self, tree: &ParseTree) -> Vec<u8> {
         let mut out = String::new();
         out.push_str(&format!("{{\"{LOOKUP_DEBUG_INFO_KEY}\":{{"));
 
@@ -65,11 +67,12 @@ impl DebgBuilder {
                     .enumerate()
                     .filter_map(|(idx, info)| {
                         let info = info.as_ref()?;
-                        let (file_id, offset) = info.location;
-                        let location = source_list
-                            .get(&file_id)
+                        let (file_id, local_range) =
+                            tree.source_map().resolve_range(info.range.clone());
+                        let location = tree
+                            .get_source(file_id)
                             .map(|source| {
-                                let (line, col) = source.line_col_for_offset(offset);
+                                let (line, col) = source.line_col_for_offset(local_range.start);
                                 format!("\"{}:{line}:{col}\"", source.path().display())
                             })
                             .unwrap_or_default();

@@ -6,6 +6,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
     fmt::Debug,
+    ops::Range,
 };
 
 use smol_str::SmolStr;
@@ -61,6 +62,7 @@ pub(crate) struct AllLookups {
     gpos: Vec<PositionLookup>,
     gsub: Vec<SubstitutionLookup>,
     named: HashMap<SmolStr, LookupId>,
+    compile_debg: bool,
     current_debug_info: Option<LookupDebugInfo>,
     gpos_debug_info: Vec<Option<LookupDebugInfo>>,
     gsub_debug_info: Vec<Option<LookupDebugInfo>>,
@@ -376,6 +378,13 @@ impl Builder for SubstitutionLookup {
 }
 
 impl AllLookups {
+    pub(crate) fn new(compile_debg: bool) -> Self {
+        Self {
+            compile_debg,
+            ..Default::default()
+        }
+    }
+
     fn push(&mut self, lookup: SomeLookup) -> LookupId {
         let debug_info = self.current_debug_info.take();
         match lookup {
@@ -404,7 +413,7 @@ impl AllLookups {
                         .push(PositionLookup::ChainedContextual(lookup.convert())),
                 }
                 let anon_debug_info = debug_info.as_ref().map(|info| LookupDebugInfo {
-                    location: info.location,
+                    range: info.range.clone(),
                     name: None,
                 });
                 self.gpos_debug_info.push(debug_info);
@@ -426,7 +435,7 @@ impl AllLookups {
                         .push(SubstitutionLookup::ChainedContextual(lookup.convert())),
                 }
                 let anon_debug_info = debug_info.as_ref().map(|info| LookupDebugInfo {
-                    location: info.location,
+                    range: info.range.clone(),
                     name: None,
                 });
                 self.gsub_debug_info.push(debug_info);
@@ -436,10 +445,6 @@ impl AllLookups {
                 id
             }
         }
-    }
-
-    pub(crate) fn set_current_debug(&mut self, info: LookupDebugInfo) {
-        self.current_debug_info = Some(info);
     }
 
     pub(crate) fn debug_info(&self) -> (&[Option<LookupDebugInfo>], &[Option<LookupDebugInfo>]) {
@@ -525,11 +530,22 @@ impl AllLookups {
     }
 
     // doesn't start it, just stashes the name
-    pub(crate) fn start_named(&mut self, name: SmolStr) {
+    pub(crate) fn start_named(&mut self, name: SmolStr, range: Range<usize>) {
+        if self.compile_debg {
+            self.current_debug_info = Some(LookupDebugInfo {
+                range,
+                name: Some(name.clone()),
+            });
+        }
         self.current_name = Some(name);
     }
 
-    pub(crate) fn start_lookup(&mut self, kind: Kind, flags: LookupFlagInfo) -> Option<LookupId> {
+    pub(crate) fn start_lookup(
+        &mut self,
+        kind: Kind,
+        flags: LookupFlagInfo,
+        range: Range<usize>,
+    ) -> Option<LookupId> {
         let finished_id = self.current.take().map(|lookup| self.push(lookup));
         let mut new_one = SomeLookup::new(kind, flags.flags, flags.mark_filter_set);
 
@@ -546,6 +562,9 @@ impl AllLookups {
             SomeLookup::GsubLookup(_) | SomeLookup::GposLookup(_) => (),
         }
         self.current = Some(new_one);
+        if self.compile_debg && self.current_debug_info.is_none() {
+            self.current_debug_info = Some(LookupDebugInfo { range, name: None });
+        }
         finished_id
     }
 

@@ -51,7 +51,7 @@ use super::{
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{AllLookups, FilterSetId, LookupFlagInfo, LookupId, SomeLookup},
     output::Compilation,
-    tables::{GlyphClassDefExt, LookupDebugInfo, ScriptRecord, Tables},
+    tables::{GlyphClassDefExt, ScriptRecord, Tables},
     tags,
 };
 
@@ -104,8 +104,6 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     // and we will use that for the generated lookups.
     // We also store the start pos of the comment, to break ties.
     insert_markers: HashMap<Tag, InsertionPoint>,
-    /// Pending debug info for the next lookup to be started (set in named lookup blocks).
-    pending_lookup_debug_info: Option<LookupDebugInfo>,
 }
 
 impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
@@ -126,7 +124,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             tables: Tables::default(),
             default_lang_systems: Default::default(),
             glyph_class_defs: Default::default(),
-            lookups: Default::default(),
+            lookups: AllLookups::new(opts.compile_debg),
             features: Default::default(),
             mark_classes: Default::default(),
             anchor_defs: Default::default(),
@@ -140,7 +138,6 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             mark_filter_sets: Default::default(),
             opts,
             insert_markers: Default::default(),
-            pending_lookup_debug_info: Default::default(),
         }
     }
 
@@ -298,11 +295,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 opts: self.opts.clone(),
                 gdef_classes,
                 insert_markers: self.insert_markers.clone(),
-                debg: self
-                    .tables
-                    .debg
-                    .as_ref()
-                    .map(|d| d.build(&self.tree.sources)),
+                debg: self.tables.debg.as_ref().map(|d| d.build(self.tree)),
             },
             self.errors.clone(),
         ))
@@ -448,17 +441,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         }
 
         self.vertical_feature.begin_lookup_block();
-        if self.opts.compile_debg {
-            // Record location and name now; the LookupId is unknown until the
-            // first rule is added, so we stash it as pending debug info and
-            // consume it in ensure_current_lookup_type.
-            let (file_id, local_range) = self.tree.source_map().resolve_range(name.range());
-            self.pending_lookup_debug_info = Some(LookupDebugInfo {
-                location: (file_id, local_range.start),
-                name: Some(name.text.clone()),
-            });
-        }
-        self.lookups.start_named(name.text.clone());
+        self.lookups.start_named(name.text.clone(), name.range());
     }
 
     fn end_lookup_block(&mut self) {
@@ -612,21 +595,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             //FIXME: find another way of ensuring that named lookup blocks don't
             //contain mismatched rules
             //assert!(!self.lookups.is_named(), "ensure rule type in validation");
-            if let Some(lookup) = self.lookups.start_lookup(kind, self.lookup_flags) {
+            if let Some(lookup) = self.lookups.start_lookup(kind, self.lookup_flags, range) {
                 self.add_lookup_to_current_feature_if_present(lookup);
-            }
-            if self.opts.compile_debg {
-                // Use pending debug info (from a named lookup block) if available;
-                // otherwise resolve the rule's source location.
-                let debug_info = self.pending_lookup_debug_info.take().unwrap_or_else(|| {
-                    let (file_id, local_range) =
-                        self.tree.source_map().resolve_range(range.clone());
-                    LookupDebugInfo {
-                        location: (file_id, local_range.start),
-                        name: None,
-                    }
-                });
-                self.lookups.set_current_debug(debug_info);
             }
         }
         self.lookups.current_mut().expect("we just created it")
