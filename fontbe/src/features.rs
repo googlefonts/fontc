@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use feature_variations::FeatureVariationsProvider;
+pub use feature_variations::FeatureVariationsProvider;
 use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
@@ -138,13 +138,13 @@ impl Display for NoIncludePathError {
     }
 }
 
-pub(crate) struct FeaVariationInfo<'a> {
+pub struct FeaVariationInfo<'a> {
     axes: HashMap<Tag, (usize, &'a Axis)>,
     static_metadata: &'a StaticMetadata,
 }
 
 impl<'a> FeaVariationInfo<'a> {
-    pub(crate) fn new(static_metadata: &'a StaticMetadata) -> FeaVariationInfo<'a> {
+    pub fn new(static_metadata: &'a StaticMetadata) -> FeaVariationInfo<'a> {
         FeaVariationInfo {
             axes: static_metadata
                 .axes
@@ -406,7 +406,7 @@ impl FeatureCompilationWork {
             .variations
             .as_ref()
             .map(|ir_variations| {
-                feature_variations::make_gsub_feature_variations(
+                feature_variations::FeatureVariationsProvider::new(
                     ir_variations,
                     static_metadata,
                     glyph_order,
