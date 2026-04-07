@@ -901,7 +901,10 @@ def reorder_rules(lookup: etree.ElementTree, new_order: Dict[int, int], rule_nam
     # there was a funny issue where if we moved the last element elsewhere
     # in the ordering it would end up having incorrect indentation, so just
     # reindent everything to be safe.
-    etree.indent(lookup, level=4)
+    # compute the actual nesting depth instead of hardcoding level=4, since
+    # the subtable may be wrapped inside an Extension element.
+    depth = sum(1 for _ in lookup.iterancestors())
+    etree.indent(lookup, level=depth)
 
 
 # for each named child in container, remap the 'value' attribute using the new ordering
