@@ -940,8 +940,10 @@ def reorder_contextual_class_based_rules(
     if table is None:
         return
     for lookup in table.xpath(".//Lookup"):
-        # first hanld the non-chaining case,  then handle the chaining case
-        for ctx in lookup.findall(context_name):
+        # first handle the non-chaining case, then handle the chaining case.
+        # use .//{name} instead of {name} so we also find subtables wrapped
+        # inside ExtensionPos/ExtensionSubst elements.
+        for ctx in lookup.findall(f".//{context_name}"):
             if ctx is None or int(ctx.attrib["Format"]) != 2:
                 continue
 
@@ -953,7 +955,7 @@ def reorder_contextual_class_based_rules(
                 for class_rule in class_set.findall(class_rule_name):
                     remap_values(class_rule, input_class_order, "Class")
 
-        for chain_ctx in lookup.findall(chain_name):
+        for chain_ctx in lookup.findall(f".//{chain_name}"):
             if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
                 continue
             input_class_order = remap_class_def_ids_like_fontc(
