@@ -1059,11 +1059,96 @@ def densify_one_glyph(coords, ends, variations: etree.ElementTree):
     return did_work
 
 
+def _dedent(el, space="  "):
+    """Remove one level of indentation from an element subtree.
+
+    Strips ``space`` (default: two spaces) from the end of every
+    whitespace-only ``.text`` and ``.tail``, except the root element's
+    ``.tail`` which belongs to the parent context.
+    """
+    for node in el.iter():
+        if node.text and not node.text.strip() and node.text.endswith(space):
+            node.text = node.text[: -len(space)]
+        if (
+            node is not el
+            and node.tail
+            and not node.tail.strip()
+            and node.tail.endswith(space)
+        ):
+            node.tail = node.tail[: -len(space)]
+
+
+def unwrap_extension_lookups(ttx: etree.ElementTree):
+    """Strip Extension wrappers from GPOS/GSUB lookups.
+
+    When a lookup uses ExtensionPos (type 9) or ExtensionSubst (type 7),
+    replace it with the inner subtable so that Extension-promoted and
+    non-promoted versions of the same lookup compare as equal.
+    """
+    for tag, ext_name, ext_type in [
+        ("GPOS", "ExtensionPos", "9"),
+        ("GSUB", "ExtensionSubst", "7"),
+    ]:
+        table = ttx.find(tag)
+        if table is None:
+            continue
+        for lookup in table.xpath(".//Lookup"):
+            lookup_type_el = lookup.find("LookupType")
+            if lookup_type_el is None or lookup_type_el.attrib.get("value") != ext_type:
+                continue
+
+            extensions = lookup.findall(ext_name)
+            if not extensions:
+                continue
+
+            # get the real lookup type from the first extension subtable
+            inner_type_el = extensions[0].find("ExtensionLookupType")
+            if inner_type_el is None:
+                continue
+            real_type = inner_type_el.attrib["value"]
+
+            # update the LookupType
+            lookup_type_el.attrib["value"] = real_type
+
+            # replace each Extension element with its inner subtable
+            for ext in extensions:
+                inner = None
+                for child in ext:
+                    if child.tag not in ("ExtensionLookupType",):
+                        inner = child
+                        break
+                if inner is None:
+                    continue
+                # transfer the index attribute from the Extension to the inner subtable,
+                # inserting it before existing attributes so the attribute order
+                # matches non-Extension subtables (index="0" Format="2" etc.)
+                if "index" in ext.attrib:
+                    old_attrib = dict(inner.attrib)
+                    inner.attrib.clear()
+                    inner.set("index", ext.attrib["index"])
+                    inner.attrib.update(old_attrib)
+                # replace Extension element with the unwrapped subtable
+                parent = ext.getparent()
+                idx = list(parent).index(ext)
+                parent.remove(ext)
+                parent.insert(idx, inner)
+                # ext.tail has the correct Lookup-level whitespace;
+                # transfer it and strip the extra indent from the subtree.
+                inner.tail = ext.tail
+                _dedent(inner)
+
+
 def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
     fontmake_glyph_map = {
         el.attrib["name"]: int(el.attrib["id"])
         for el in fontmake.xpath("//GlyphOrder/GlyphID")
     }
+
+    if flags.FLAGS.unwrap_extensions:
+        # unwrap Extension lookups before other normalizations so that
+        # contextual class remapping etc. see the inner subtables directly.
+        for ttx in (fontc, fontmake):
+            unwrap_extension_lookups(ttx)
 
     with timed("sort indices"):
         sort_indices(fontmake, "GPOS", "//Feature", "LookupListIndex")
