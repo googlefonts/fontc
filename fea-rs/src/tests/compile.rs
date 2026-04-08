@@ -300,3 +300,422 @@ fn bad_test_body(
         }
     }
 }
+
+/// Similar to compile_fea but with `compile_debg(true)` and return
+/// the parsed Debg JSON.
+fn compile_debg(fea: &str, test_name: &str) -> Option<serde_json::Value> {
+    use crate::parse::SourceLoadError;
+    use std::sync::Arc;
+
+    let fea_path = format!("{test_name}.fea");
+
+    let glyph_order_path = Path::new(ROOT_TEST_DIR)
+        .join("mini-latin")
+        .join(GLYPH_ORDER);
+    let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
+    let glyph_map: GlyphMap = glyph_order.lines().map(GlyphName::new).collect();
+
+    let fea = fea.to_string();
+    Compiler::<NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
+        .with_resolver(
+            move |_path: &std::path::Path| -> Result<Arc<str>, SourceLoadError> {
+                Ok(fea.as_str().into())
+            },
+        )
+        .with_opts(Opts::new().compile_debg(true))
+        .compile()
+        .expect("compilation should succeed")
+        .debg
+        .as_ref()
+        .map(|b| serde_json::from_slice(b).expect("Debg should be valid JSON"))
+}
+
+/// A named GSUB lookup referenced by a feature gets its name and source location.
+#[test]
+fn debg_named_gsub_lookup() {
+    let json = compile_debg(
+        "\
+lookup smcp_default {
+    sub A by B;
+} smcp_default;
+
+feature smcp {
+    lookup smcp_default;
+} smcp;
+",
+        "named_gsub",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GSUB": {
+                    "0": ["named_gsub.fea:1:7", "smcp_default", null],
+                }
+            }
+        })
+    );
+}
+
+/// A named GPOS lookup referenced by a feature gets its name and source location.
+#[test]
+fn debg_named_gpos_lookup() {
+    let json = compile_debg(
+        "\
+lookup kern_Default {
+    pos A B -50;
+} kern_Default;
+
+feature kern {
+    lookup kern_Default;
+} kern;
+",
+        "named_gpos",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GPOS": {
+                    "0": ["named_gpos.fea:1:7", "kern_Default", null]
+                }
+            }
+        })
+    );
+}
+
+/// A named GSUB lookup not referenced by any feature still appears in debug info.
+#[test]
+fn debg_orphan_named_gsub_lookup() {
+    let json = compile_debg(
+        "\
+lookup sub_orphan {
+    sub B by A;
+} sub_orphan;
+",
+        "orphan_gsub",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GSUB": {
+                    "0": ["orphan_gsub.fea:1:7", "sub_orphan", null],
+                }
+            }
+        })
+    );
+}
+
+/// A named GPOS lookup not referenced by any feature still appears in debug info.
+#[test]
+fn debg_orphan_named_gpos_lookup() {
+    let json = compile_debg(
+        "\
+lookup pos_orphan {
+    pos A B -50;
+} pos_orphan;
+",
+        "orphan_gpos",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GPOS": {
+                    "0": ["orphan_gpos.fea:1:7", "pos_orphan", null],
+                }
+            }
+        })
+    );
+}
+
+/// An anonymous GSUB rule inside a feature gets debug info with null name.
+#[test]
+fn debg_anonymous_gsub_rule() {
+    let json = compile_debg(
+        "\
+feature liga {
+    sub A B by B;
+} liga;
+",
+        "anon_gsub",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GSUB": {
+                    "0": ["anon_gsub.fea:2:4", null, null],
+                }
+            }
+        })
+    );
+}
+
+/// An anonymous GPOS rule inside a feature gets debug info with null name.
+#[test]
+fn debg_anonymous_gpos_rule() {
+    let json = compile_debg(
+        "\
+feature dist {
+    pos A -30;
+} dist;
+",
+        "anon_gpos",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GPOS": {
+                    "0": ["anon_gpos.fea:2:4", null, null]
+                }
+            }
+        })
+    );
+}
+
+/// A contextual substitution rule gets debug info.
+#[test]
+fn debg_contextual_substitution() {
+    let json = compile_debg(
+        "\
+feature calt {
+    sub A' by B;
+} calt;
+",
+        "calt",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GSUB": {
+                    "0": ["calt.fea:2:4", null, null],
+                    "1": ["calt.fea:2:4", null, null],
+                }
+            }
+        })
+    );
+}
+
+/// A contextual positioning rule gets debug info.
+#[test]
+fn debg_contextual_positioning() {
+    let json = compile_debg(
+        "\
+lookup kern_single {
+    pos A -50;
+} kern_single;
+
+feature kern {
+    pos A' lookup kern_single;
+} kern;
+",
+        "ctx_pos",
+    );
+
+    let json = json.unwrap();
+    let gpos = &json["com.github.fonttools.feaLib"]["GPOS"];
+    assert!(!gpos.is_null(), "expected GPOS entries for contextual pos");
+}
+
+/// Re-referencing a named GSUB lookup from a second feature block must not
+/// create duplicate entries.
+#[test]
+fn debg_reref_named_gsub_lookup() {
+    let json = compile_debg(
+        "\
+lookup smcp_default {
+    sub A by B;
+} smcp_default;
+
+feature smcp {
+    lookup smcp_default;
+} smcp;
+
+feature c2sc {
+    lookup smcp_default;
+} c2sc;
+",
+        "reref_gsub",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GSUB": {
+                    "0": ["reref_gsub.fea:1:7", "smcp_default", null]
+                }
+            }
+        })
+    );
+}
+
+/// Re-referencing a named GPOS lookup from a second feature block must not
+/// create duplicate entries.
+#[test]
+fn debg_reref_named_gpos_lookup() {
+    let json = compile_debg(
+        "\
+lookup kern_Default {
+    pos A B -50;
+} kern_Default;
+
+feature kern {
+    lookup kern_Default;
+} kern;
+
+feature dist {
+    lookup kern_Default;
+} dist;
+",
+        "reref_gpos",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GPOS": {
+                    "0": ["reref_gpos.fea:1:7", "kern_Default", null]
+                }
+            }
+        })
+    );
+}
+
+/// Multiple anonymous GSUB rules in one feature each get valid debug info.
+#[test]
+fn debg_multiple_anonymous_gsub() {
+    let json = compile_debg(
+        "\
+feature liga {
+    sub A B by B;
+    sub A from [A B];
+} liga;
+",
+        "multi_gsub",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GSUB": {
+                    "0": ["multi_gsub.fea:2:4", null, null],
+                    "1": ["multi_gsub.fea:3:4", null, null]
+                }
+            }
+        })
+    );
+}
+
+/// Multiple anonymous GPOS rules in one feature each get valid debug info.
+#[test]
+fn debg_multiple_anonymous_gpos() {
+    let json = compile_debg(
+        "\
+feature kern {
+    pos A B -50;
+    pos A <0 0 10 0>;
+} kern;
+",
+        "multi_gpos",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GPOS": {
+                    "0": ["multi_gpos.fea:2:4", null, null],
+                    "1": ["multi_gpos.fea:3:4", null, null]
+                }
+            }
+        })
+    );
+}
+
+/// A source with both GSUB and GPOS lookups produces entries for both tables.
+#[test]
+fn debg_gsub_and_gpos() {
+    let json = compile_debg(
+        "\
+lookup smcp_default {
+    sub A by B;
+} smcp_default;
+
+feature smcp {
+    lookup smcp_default;
+} smcp;
+
+lookup kern_Default {
+    pos A B -50;
+} kern_Default;
+
+feature kern {
+    lookup kern_Default;
+} kern;
+",
+        "gsub_and_gpos",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {
+                "GSUB": {
+                    "0": ["gsub_and_gpos.fea:1:7", "smcp_default", null],
+                },
+                "GPOS": {
+                    "0": ["gsub_and_gpos.fea:9:7", "kern_Default", null]
+                }
+            }
+        })
+    );
+}
+
+/// An empty feature block produces no lookup entries.
+#[test]
+fn debg_empty_feature_block() {
+    let json = compile_debg(
+        "\
+feature liga {
+} liga;
+",
+        "empty_feature_block",
+    );
+
+    assert_eq!(
+        json.unwrap(),
+        serde_json::json!({
+            "com.github.fonttools.feaLib": {}
+        })
+    );
+}
+
+#[test]
+fn debg_no_table_by_default() {
+    let compilation = compile_fea(
+        "\
+feature kern {
+    pos A B 10;
+} kern;
+",
+        "no_table_by_default",
+    );
+    assert!(
+        compilation.debg.is_none(),
+        "Debg should not be emitted by default"
+    );
+}

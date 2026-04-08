@@ -14,6 +14,7 @@ pub struct Opts {
     pub(crate) max_n_errors: usize,
     pub(crate) compile_gsub: bool,
     pub(crate) compile_gpos: bool,
+    pub(crate) compile_debg: bool,
 }
 
 impl Opts {
@@ -50,6 +51,14 @@ impl Opts {
         self.compile_gsub = flag;
         self
     }
+
+    /// Specify whether or not we should compile the Debg table. Default is `false`.
+    ///
+    /// The table stores the source location and optional name for each lookup.
+    pub fn compile_debg(mut self, flag: bool) -> Self {
+        self.compile_debg = flag;
+        self
+    }
 }
 
 impl Default for Opts {
@@ -59,6 +68,7 @@ impl Default for Opts {
             max_n_errors: DEFAULT_N_MESSAGES_TO_PRINT,
             compile_gsub: true,
             compile_gpos: true,
+            compile_debg: false,
         }
     }
 }

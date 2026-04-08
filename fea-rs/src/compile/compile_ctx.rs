@@ -32,7 +32,7 @@ use write_fonts::{
 use crate::{
     Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken, Opts,
     common::{GlyphClass, GlyphId16, GlyphOrClass, GlyphSet, MarkClass},
-    parse::SourceMap,
+    parse::ParseTree,
     token_tree::{
         Token,
         typed::{self, AstNode},
@@ -61,7 +61,7 @@ use super::{
 ///
 /// The basic flow is like this:
 /// - create a new context (CompilationCtx::new), providing a glyph map and
-///   [`SourceMap`] (so that errors can be associated with the source text)
+///   [`ParseTree`] (so that errors can be associated with the source text)
 /// - call `CompilationCtx::compile`, passing in the root AST node. This function
 ///   walks through all of the statements in the AST, accumulating state
 ///   (and possibly errors) in the context.
@@ -71,7 +71,7 @@ use super::{
 pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     glyph_map: &'a GlyphMap,
     reverse_glyph_map: BTreeMap<GlyphId16, GlyphIdent>,
-    source_map: &'a SourceMap,
+    tree: &'a ParseTree,
     variation_info: Option<&'a V>,
     feature_writer: Option<&'a F>,
     opts: Opts,
@@ -109,7 +109,7 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
 impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     pub(crate) fn new(
         glyph_map: &'a GlyphMap,
-        source_map: &'a SourceMap,
+        tree: &'a ParseTree,
         variation_info: Option<&'a V>,
         feature_writer: Option<&'a F>,
         opts: Opts,
@@ -117,14 +117,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         CompilationCtx {
             glyph_map,
             reverse_glyph_map: glyph_map.reverse_map(),
-            source_map,
+            tree,
             variation_info,
             feature_writer,
             errors: Vec::new(),
             tables: Tables::default(),
             default_lang_systems: Default::default(),
             glyph_class_defs: Default::default(),
-            lookups: Default::default(),
+            lookups: AllLookups::new(opts.compile_debg),
             features: Default::default(),
             mark_classes: Default::default(),
             anchor_defs: Default::default(),
@@ -272,6 +272,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             (!gdef.glyph_classes_were_inferred).then(|| gdef.glyph_classes.clone())
         });
 
+        if self.opts.compile_debg {
+            let (gsub_info, gpos_info) = self.lookups.debug_info();
+            self.tables.debg = Some(super::tables::DebgBuilder::new(
+                gsub_info.to_vec(),
+                gpos_info.to_vec(),
+            ));
+        }
+
         Ok((
             Compilation {
                 head: self.tables.head.as_ref().map(|raw| raw.build(None)),
@@ -287,6 +295,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 opts: self.opts.clone(),
                 gdef_classes,
                 insert_markers: self.insert_markers.clone(),
+                debg: self.tables.debg.as_ref().map(|d| d.build(self.tree)),
             },
             self.errors.clone(),
         ))
@@ -374,12 +383,12 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn error(&mut self, range: Range<usize>, message: impl Into<String>) {
-        let (file, range) = self.source_map.resolve_range(range);
+        let (file, range) = self.tree.source_map().resolve_range(range);
         self.errors.push(Diagnostic::error(file, range, message));
     }
 
     fn warning(&mut self, range: Range<usize>, message: impl Into<String>) {
-        let (file, range) = self.source_map.resolve_range(range);
+        let (file, range) = self.tree.source_map().resolve_range(range);
         self.errors.push(Diagnostic::warning(file, range, message));
     }
 
@@ -432,7 +441,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         }
 
         self.vertical_feature.begin_lookup_block();
-        self.lookups.start_named(name.text.clone());
+        self.lookups.start_named(name.text.clone(), name.range());
     }
 
     fn end_lookup_block(&mut self) {
@@ -581,12 +590,12 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         }
     }
 
-    fn ensure_current_lookup_type(&mut self, kind: Kind) -> &mut SomeLookup {
+    fn ensure_current_lookup_type(&mut self, kind: Kind, range: Range<usize>) -> &mut SomeLookup {
         if !self.lookups.has_current_kind(kind) || !self.lookups.has_same_flags(self.lookup_flags) {
             //FIXME: find another way of ensuring that named lookup blocks don't
             //contain mismatched rules
             //assert!(!self.lookups.is_named(), "ensure rule type in validation");
-            if let Some(lookup) = self.lookups.start_lookup(kind, self.lookup_flags) {
+            if let Some(lookup) = self.lookups.start_lookup(kind, self.lookup_flags, range) {
                 self.add_lookup_to_current_feature_if_present(lookup);
             }
         }
@@ -638,7 +647,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             // This is explicitly forbidden in the OpenType spec, and
             // explicitly encouraged in the FEA spec, and everyone else does it.
             // see https://github.com/adobe-type-tools/afdko/issues/1438
-            let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType2, node.range());
             for target in target.iter() {
                 lookup.add_gsub_type_2(target, vec![]);
             }
@@ -646,14 +655,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             && self.lookups.has_same_flags(self.lookup_flags)
         {
             // we combine chains of mixed single & multi-sub rules into multi-sub lookups
-            let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType2, node.range());
             for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
                 lookup.add_gsub_type_2(target, vec![replacement]);
             }
         } else if self.lookups.has_current_kind(Kind::GsubType4)
             && self.lookups.has_same_flags(self.lookup_flags)
         {
-            let lookup = self.ensure_current_lookup_type(Kind::GsubType4);
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType4, node.range());
             for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
                 if lookup.add_gsub_type_4(vec![target], replacement) {
                     self.error(node.range(), "Ligature substitution shadows existing rule");
@@ -661,7 +670,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 }
             }
         } else {
-            let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType1, node.range());
             for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
                 lookup.add_gsub_type_1(target, replacement);
             }
@@ -743,7 +752,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         if self.lookups.has_same_flags(self.lookup_flags) {
             self.lookups.promote_single_sub_to_multi_if_necessary();
         }
-        let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType2, node.range());
         for (i, target) in target.iter().enumerate() {
             let replacement = replacements
                 .iter()
@@ -761,7 +770,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     fn add_alternate_sub(&mut self, node: &typed::Gsub3) {
         let target = self.resolve_glyph(&node.target());
         let alts = self.resolve_glyph_class(&node.alternates());
-        let lookup = self.ensure_current_lookup_type(Kind::GsubType3);
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType3, node.range());
         lookup.add_gsub_type_3(target, alts.iter().collect());
     }
 
@@ -775,7 +784,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         if self.lookups.has_same_flags(self.lookup_flags) {
             self.lookups.promote_single_sub_to_liga_if_necessary();
         }
-        let lookup = self.ensure_current_lookup_type(Kind::GsubType4);
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType4, node.range());
 
         for target in sequence_enumerator(&target) {
             if lookup.add_gsub_type_4(target, replacement) {
@@ -818,7 +827,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                         return None;
                     }
                 };
-                let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
                 let mut to_return = None;
                 for target in sequence_enumerator(&target) {
                     to_return = Some(
@@ -836,7 +845,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                     if let Some((target, replacement)) =
                         self.validate_single_sub_inputs(&target, Some(&replacement))
                     {
-                        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                        let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
                         Some(
                             lookup
                                 .as_gsub_contextual()
@@ -868,7 +877,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                         }
                     }
                     if targets.iter().next().is_some() {
-                        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                        let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
                         let mut lookup_id = None;
                         for (i, target) in targets.iter().enumerate() {
                             let replacement = replacements
@@ -920,7 +929,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             })
             .collect::<Vec<_>>();
 
-        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
         lookup.add_contextual_rule(backtrack, context, lookahead);
     }
 
@@ -944,7 +953,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 .iter()
                 .zip(replacement.into_iter_for_target())
                 .collect();
-            self.ensure_current_lookup_type(Kind::GsubType8)
+            self.ensure_current_lookup_type(Kind::GsubType8, node.range())
                 .add_gsub_type_8(backtrack, context, lookahead);
         }
     }
@@ -952,7 +961,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     fn add_single_pos(&mut self, node: &typed::Gpos1) {
         let ids = self.resolve_glyph_or_class(&node.target());
         let record = self.resolve_value_record(&node.value());
-        let lookup = self.ensure_current_lookup_type(Kind::GposType1);
+        let lookup = self.ensure_current_lookup_type(Kind::GposType1, node.range());
         for id in ids.iter() {
             lookup.add_gpos_type_1(id, record.clone());
         }
@@ -974,7 +983,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             in_vert_feature,
         );
 
-        let lookup = self.ensure_current_lookup_type(Kind::GposType2);
+        let lookup = self.ensure_current_lookup_type(Kind::GposType2, node.range());
 
         if (first_ids.is_class() || second_ids.is_class()) && node.enum_().is_none() {
             lookup.add_gpos_type_2_class(
@@ -1003,7 +1012,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         // will fail.
         let entry = self.resolve_anchor(&node.entry());
         let exit = self.resolve_anchor(&node.exit());
-        let lookup = self.ensure_current_lookup_type(Kind::GposType3);
+        let lookup = self.ensure_current_lookup_type(Kind::GposType3, node.range());
         for id in ids.iter() {
             lookup.add_gpos_type_3(id, entry.clone(), exit.clone())
         }
@@ -1011,7 +1020,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
     fn add_mark_to_base(&mut self, node: &typed::Gpos4) {
         let base_ids = self.resolve_glyph_or_class(&node.base());
-        let _ = self.ensure_current_lookup_type(Kind::GposType4);
+        let _ = self.ensure_current_lookup_type(Kind::GposType4, node.range());
         for mark in node.attachments() {
             let base_anchor = self.resolve_anchor(&mark.anchor());
 
@@ -1062,7 +1071,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
         let mut components = Vec::new();
         for component in node.ligature_components() {
-            let _lookup = self.ensure_current_lookup_type(Kind::GposType5);
+            let _lookup = self.ensure_current_lookup_type(Kind::GposType5, node.range());
 
             let mut anchor_records = BTreeMap::new();
             for attachment in component.attachments() {
@@ -1121,7 +1130,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     //significantly.
     fn add_mark_to_mark(&mut self, node: &typed::Gpos6) {
         let base_ids = self.resolve_glyph_or_class(&node.base());
-        let _ = self.ensure_current_lookup_type(Kind::GposType6);
+        let _ = self.ensure_current_lookup_type(Kind::GposType6, node.range());
         for mark in node.attachments() {
             let base_anchor = self.resolve_anchor(&mark.anchor());
             let mark_class_node = mark.mark_class_name().expect("checked in validation");
@@ -1190,7 +1199,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 if let Some(value) = trailing_value_record.clone().or_else(|| item.valuerecord()) {
                     let value = self.resolve_value_record(&value);
                     let anon_id = self
-                        .ensure_current_lookup_type(Kind::GposType8)
+                        .ensure_current_lookup_type(Kind::GposType8, node.range())
                         .as_gpos_contextual()
                         .add_anon_gpos_type_1(&glyphs, value);
                     lookups.push(anon_id);
@@ -1210,7 +1219,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 (glyphs, lookups)
             })
             .collect();
-        self.ensure_current_lookup_type(Kind::GposType8)
+        self.ensure_current_lookup_type(Kind::GposType8, node.range())
             .add_contextual_rule(backtrack, context, lookahead);
     }
 
@@ -1228,7 +1237,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .items()
             .map(|item| (self.resolve_glyph_or_class(&item.target()), Vec::new()))
             .collect();
-        let lookup = self.ensure_current_lookup_type(kind);
+        let lookup = self.ensure_current_lookup_type(kind, rule.range());
         lookup.add_contextual_rule(backtrack, context, lookahead);
     }
 

@@ -6,6 +6,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
     fmt::Debug,
+    ops::Range,
 };
 
 use smol_str::SmolStr;
@@ -45,7 +46,7 @@ use crate::{
     compile::lookups::contextual::ChainOrNot,
 };
 
-use super::{features::AllFeatures, tags};
+use super::{features::AllFeatures, tables::LookupDebugInfo, tags};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
@@ -61,6 +62,10 @@ pub(crate) struct AllLookups {
     gpos: Vec<PositionLookup>,
     gsub: Vec<SubstitutionLookup>,
     named: HashMap<SmolStr, LookupId>,
+    compile_debg: bool,
+    current_debug_info: Option<LookupDebugInfo>,
+    gpos_debug_info: Vec<Option<LookupDebugInfo>>,
+    gsub_debug_info: Vec<Option<LookupDebugInfo>>,
 }
 
 #[derive(Clone, Debug)]
@@ -373,14 +378,24 @@ impl Builder for SubstitutionLookup {
 }
 
 impl AllLookups {
+    pub(crate) fn new(compile_debg: bool) -> Self {
+        Self {
+            compile_debg,
+            ..Default::default()
+        }
+    }
+
     fn push(&mut self, lookup: SomeLookup) -> LookupId {
+        let debug_info = self.current_debug_info.take();
         match lookup {
             SomeLookup::GsubLookup(sub) => {
                 self.gsub.push(sub);
+                self.gsub_debug_info.push(debug_info);
                 LookupId::Gsub(self.gsub.len() - 1)
             }
             SomeLookup::GposLookup(pos) => {
                 self.gpos.push(pos);
+                self.gpos_debug_info.push(debug_info);
                 LookupId::Gpos(self.gpos.len() - 1)
             }
             SomeLookup::GposContextual(lookup) => {
@@ -397,6 +412,13 @@ impl AllLookups {
                         .gpos
                         .push(PositionLookup::ChainedContextual(lookup.convert())),
                 }
+                let anon_debug_info = debug_info.as_ref().map(|info| LookupDebugInfo {
+                    range: info.range.clone(),
+                    name: None,
+                });
+                self.gpos_debug_info.push(debug_info);
+                self.gpos_debug_info
+                    .extend(std::iter::repeat_n(anon_debug_info, anon_lookups.len()));
                 self.gpos.extend(anon_lookups);
                 id
             }
@@ -412,10 +434,21 @@ impl AllLookups {
                         .gsub
                         .push(SubstitutionLookup::ChainedContextual(lookup.convert())),
                 }
+                let anon_debug_info = debug_info.as_ref().map(|info| LookupDebugInfo {
+                    range: info.range.clone(),
+                    name: None,
+                });
+                self.gsub_debug_info.push(debug_info);
+                self.gsub_debug_info
+                    .extend(std::iter::repeat_n(anon_debug_info, anon_lookups.len()));
                 self.gsub.extend(anon_lookups);
                 id
             }
         }
+    }
+
+    pub(crate) fn debug_info(&self) -> (&[Option<LookupDebugInfo>], &[Option<LookupDebugInfo>]) {
+        (&self.gsub_debug_info, &self.gpos_debug_info)
     }
 
     pub(crate) fn get_named(&self, name: &str) -> Option<LookupId> {
@@ -448,7 +481,11 @@ impl AllLookups {
         pos: usize,
         lookups: impl IntoIterator<Item = PositionLookup>,
     ) {
+        let lookups: Vec<_> = lookups.into_iter().collect();
+        let n = lookups.len();
         self.gpos.splice(pos..pos, lookups);
+        self.gpos_debug_info
+            .splice(pos..pos, std::iter::repeat_n(None, n));
     }
 
     /// insert a sequence of lookups into the GPOS list at a specific pos.
@@ -461,7 +498,11 @@ impl AllLookups {
         pos: usize,
         lookups: impl IntoIterator<Item = SubstitutionLookup>,
     ) {
+        let lookups: Vec<_> = lookups.into_iter().collect();
+        let n = lookups.len();
         self.gsub.splice(pos..pos, lookups);
+        self.gsub_debug_info
+            .splice(pos..pos, std::iter::repeat_n(None, n));
     }
 
     /// Returns `true` if there is an active lookup of this kind
@@ -489,11 +530,22 @@ impl AllLookups {
     }
 
     // doesn't start it, just stashes the name
-    pub(crate) fn start_named(&mut self, name: SmolStr) {
+    pub(crate) fn start_named(&mut self, name: SmolStr, range: Range<usize>) {
+        if self.compile_debg {
+            self.current_debug_info = Some(LookupDebugInfo {
+                range,
+                name: Some(name.clone()),
+            });
+        }
         self.current_name = Some(name);
     }
 
-    pub(crate) fn start_lookup(&mut self, kind: Kind, flags: LookupFlagInfo) -> Option<LookupId> {
+    pub(crate) fn start_lookup(
+        &mut self,
+        kind: Kind,
+        flags: LookupFlagInfo,
+        range: Range<usize>,
+    ) -> Option<LookupId> {
         let finished_id = self.current.take().map(|lookup| self.push(lookup));
         let mut new_one = SomeLookup::new(kind, flags.flags, flags.mark_filter_set);
 
@@ -510,6 +562,9 @@ impl AllLookups {
             SomeLookup::GsubLookup(_) | SomeLookup::GposLookup(_) => (),
         }
         self.current = Some(new_one);
+        if self.compile_debg && self.current_debug_info.is_none() {
+            self.current_debug_info = Some(LookupDebugInfo { range, name: None });
+        }
         finished_id
     }
 
@@ -723,7 +778,10 @@ impl AllLookups {
             _ => (),
         });
 
+        let n = lookups.len();
         self.gsub.splice(insert_point..insert_point, lookups);
+        self.gsub_debug_info
+            .splice(insert_point..insert_point, std::iter::repeat_n(None, n));
 
         lookup_ids
     }

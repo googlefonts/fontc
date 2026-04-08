@@ -139,7 +139,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
             .map_err(CompilerError::ValidationFail)?;
         let mut ctx = super::CompilationCtx::new(
             self.glyph_map,
-            tree.source_map(),
+            &tree,
             self.var_info,
             self.feature_writer,
             self.opts,

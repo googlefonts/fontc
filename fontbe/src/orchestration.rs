@@ -230,6 +230,7 @@ pub struct ExtraFeaTables {
     pub os2: Option<Os2>,
     pub base: Option<Base>,
     pub stat: Option<Stat>,
+    pub debg: Option<Vec<u8>>,
 }
 
 impl From<Compilation> for ExtraFeaTables {
@@ -242,6 +243,7 @@ impl From<Compilation> for ExtraFeaTables {
             base,
             name,
             stat,
+            debg,
             ..
         } = src;
         ExtraFeaTables {
@@ -252,6 +254,7 @@ impl From<Compilation> for ExtraFeaTables {
             base,
             stat,
             name,
+            debg,
         }
     }
 }
@@ -282,7 +285,7 @@ impl Persistable for ExtraFeaTables {
             Some(T::read(bytes.into()).unwrap())
         }
 
-        let [head, hhea, vhea, os2, base, stat, name]: [Option<Vec<u8>>; 7] =
+        let [head, hhea, vhea, os2, base, stat, name, debg]: [Option<Vec<u8>>; 8] =
             bincode::deserialize_from(from).unwrap();
 
         Self {
@@ -293,6 +296,7 @@ impl Persistable for ExtraFeaTables {
             base: read_table(base.as_ref()),
             stat: read_table(stat.as_ref()),
             name: read_table(name.as_ref()),
+            debg,
         }
     }
 
@@ -308,6 +312,7 @@ impl Persistable for ExtraFeaTables {
             base,
             stat,
             name,
+            debg,
         } = self;
 
         let out = [
@@ -318,6 +323,7 @@ impl Persistable for ExtraFeaTables {
             dump(base.as_ref()),
             dump(stat.as_ref()),
             dump(name.as_ref()),
+            debg.clone(),
         ];
 
         bincode::serialize_into(to, &out).unwrap()
@@ -868,6 +874,7 @@ pub struct Context {
 
     pub debug_dir: Option<PathBuf>,
     pub ir_dir: Option<PathBuf>,
+    pub compile_debg: bool,
 
     pub persistent_storage: Arc<BePersistentStorage>,
 
@@ -922,6 +929,7 @@ impl Context {
             flags: self.flags,
             debug_dir: self.debug_dir.clone(),
             ir_dir: self.ir_dir.clone(),
+            compile_debg: self.compile_debg,
             persistent_storage: self.persistent_storage.clone(),
             ir: self.ir.clone(),
             glyphs: self.glyphs.clone_with_acl(acl.clone()),
@@ -967,6 +975,7 @@ impl Context {
         flags: Flags,
         ir_dir: Option<PathBuf>,
         debug_dir: Option<PathBuf>,
+        compile_debg: bool,
         ir: &fontir::orchestration::Context,
     ) -> Context {
         let acl = Arc::from(AccessControlList::read_only());
@@ -977,6 +986,7 @@ impl Context {
             flags,
             debug_dir,
             ir_dir,
+            compile_debg,
             persistent_storage: persistent_storage.clone(),
             ir: Arc::from(ir.read_only()),
             glyphs: ContextMap::new(acl.clone(), persistent_storage.clone()),

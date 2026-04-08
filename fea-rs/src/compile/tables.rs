@@ -21,12 +21,14 @@ use write_fonts::{
 use crate::common::GlyphId16;
 
 mod base;
+mod debg;
 mod gdef;
 mod name;
 mod os2;
 mod stat;
 
 pub(crate) use base::{BASELINE_TAGS, BaseAxisBuilder, BaseBuilder, ScriptRecord};
+pub(crate) use debg::{DEBG_TAG, DebgBuilder, LookupDebugInfo};
 pub(crate) use gdef::{GdefBuilder, GlyphClassDefExt};
 pub(crate) use name::{NameBuilder, NameSpec};
 pub(crate) use os2::{CodePageRange, Os2Builder};
@@ -44,6 +46,7 @@ pub(crate) struct Tables {
     pub base: Option<BaseBuilder>,
     pub os2: Option<Os2Builder>,
     pub stat: Option<StatBuilder>,
+    pub debg: Option<DebgBuilder>,
 }
 
 #[derive(Clone, Debug, Default)]
