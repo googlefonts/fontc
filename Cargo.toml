@@ -8,7 +8,7 @@ serde_json = "1.0.113"
 bitflags = "2.0"
 chrono = { version = "0.4.24", features = ["serde"] }
 indexmap = { version = "2.0", features = ["serde"] }
-kurbo = { version = "0.12.0", features = ["serde"] }
+kurbo = { version = "0.13.0", features = ["serde"] }
 ordered-float = { version = "5.1.0", features = ["serde"] }
 smol_str = { version = "0.3.0", features = ["serde"] }
 regex = "1.7.1"
@@ -22,8 +22,8 @@ icu_properties = "=2.1"
 smallvec = {version = "1.15", features = ["const_new"]}
 
 # fontations etc
-write-fonts = { version = "0.44.1", features = ["serde", "read"] }
-skrifa = { version = "0.39.0", features = ["traversal"] }
+write-fonts = { version = "0.47.0", features = ["serde", "read"] }
+skrifa = { version = "0.42.0", features = ["traversal"] }
 norad = { version = "0.18.2", default-features = false }
 
 # dev dependencies

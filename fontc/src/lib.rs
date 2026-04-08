@@ -345,14 +345,14 @@ mod tests {
     use write_fonts::{
         dump_table,
         read::{
-            FontData, FontRead, FontReadWithArgs, FontRef, TableProvider, TableRef,
+            FontData, FontRead, FontReadWithArgs, FontRef, TableProvider,
             tables::{
                 cmap::{Cmap, CmapSubtable},
                 colr::{Colr, Paint, PaintGlyph},
                 cpal::ColorRecord,
                 gasp::GaspRangeBehavior,
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
-                gpos::{AnchorTable, Gpos, MarkBasePosFormat1Marker, PositionLookup},
+                gpos::{AnchorTable, Gpos, MarkBasePosFormat1, PositionLookup},
                 gsub::{SingleSubst, SubstitutionLookup},
                 hmtx::Hmtx,
                 layout::FeatureParams,
@@ -3058,7 +3058,7 @@ mod tests {
         }
     }
 
-    fn mark_base_lookups<'a>(gpos: &'a Gpos) -> Vec<TableRef<'a, MarkBasePosFormat1Marker>> {
+    fn mark_base_lookups<'a>(gpos: &'a Gpos) -> Vec<MarkBasePosFormat1<'a>> {
         // If only we had more indirections
         gpos.lookup_list()
             .iter()
@@ -3086,11 +3086,13 @@ mod tests {
 
         let bases = mark_base_lookups
             .iter()
-            .flat_map(|mb| mb.base_coverage().unwrap().iter().collect::<Vec<_>>())
+            .flat_map(|mb: &MarkBasePosFormat1| {
+                mb.base_coverage().unwrap().iter().collect::<Vec<_>>()
+            })
             .zip(
                 mark_base_lookups
                     .iter()
-                    .flat_map(|mb| {
+                    .flat_map(|mb: &MarkBasePosFormat1| {
                         let base_array = mb.base_array().unwrap();
                         let data = base_array.offset_data();
                         base_array
@@ -3105,11 +3107,13 @@ mod tests {
 
         let marks = mark_base_lookups
             .iter()
-            .flat_map(|mb| mb.mark_coverage().unwrap().iter().collect::<Vec<_>>())
+            .flat_map(|mb: &MarkBasePosFormat1| {
+                mb.mark_coverage().unwrap().iter().collect::<Vec<_>>()
+            })
             .zip(
                 mark_base_lookups
                     .iter()
-                    .flat_map(|mb| {
+                    .flat_map(|mb: &MarkBasePosFormat1| {
                         let mark_array = mb.mark_array().unwrap();
                         let data = mark_array.offset_data();
                         mb.mark_array()
