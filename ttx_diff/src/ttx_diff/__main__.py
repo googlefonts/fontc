@@ -64,6 +64,7 @@ flags.DEFINE_bool(
 flags.DEFINE_bool(
     "keep_direction", False, "Preserve contour winding direction from source."
 )
+flags.DEFINE_bool("timings", False, "Print timing for each step to stderr.")
 flags.DEFINE_string(
     "fontc_font",
     default=None,

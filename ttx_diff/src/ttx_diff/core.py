@@ -86,6 +86,23 @@ def eprint(*objects):
     print(*objects, file=sys.stderr)
 
 
+_timing_log: List[Tuple[str, float, int]] = []
+_timing_depth: int = 0
+
+
+@contextmanager
+def timed(label: str):
+    global _timing_depth
+    depth = _timing_depth
+    _timing_depth += 1
+    idx = len(_timing_log)
+    _timing_log.append((label, 0.0, depth))
+    start = time.time()
+    yield
+    _timing_depth -= 1
+    _timing_log[idx] = (label, time.time() - start, depth)
+
+
 def to_xml_string(e) -> str:
     xml = etree.tostring(e)
     # some table diffs were mismatched because of inconsistency in ending newline
@@ -1043,20 +1060,23 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         for el in fontmake.xpath("//GlyphOrder/GlyphID")
     }
 
-    sort_indices(fontmake, "GPOS", "//Feature", "LookupListIndex")
-    sort_indices(fontmake, "GSUB", "//LangSys", "FeatureIndex")
-    sort_indices(fontmake, "GSUB", "//DefaultLangSys", "FeatureIndex")
+    with timed("sort indices"):
+        sort_indices(fontmake, "GPOS", "//Feature", "LookupListIndex")
+        sort_indices(fontmake, "GSUB", "//LangSys", "FeatureIndex")
+        sort_indices(fontmake, "GSUB", "//DefaultLangSys", "FeatureIndex")
     reorder_contextual_class_based_rules(fontmake, "GSUB", fontmake_glyph_map)
     reorder_contextual_class_based_rules(fontmake, "GPOS", fontmake_glyph_map)
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
-        name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
-        name_id_to_name(ttx, "//NamedInstance", "postscriptNameID")
-        name_id_to_name(ttx, "//AxisNameID", "value")
-        name_id_to_name(ttx, "//UINameID", "value")
-        name_id_to_name(ttx, "//AxisNameID", None)
-        name_id_to_name(ttx, "//ValueNameID", "value")
-        name_id_to_name(ttx, "//ElidedFallbackNameID", "value")
+
+        with timed("name id to name"):
+            name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
+            name_id_to_name(ttx, "//NamedInstance", "postscriptNameID")
+            name_id_to_name(ttx, "//AxisNameID", "value")
+            name_id_to_name(ttx, "//UINameID", "value")
+            name_id_to_name(ttx, "//AxisNameID", None)
+            name_id_to_name(ttx, "//ValueNameID", "value")
+            name_id_to_name(ttx, "//ElidedFallbackNameID", "value")
         normalize_null_tags(ttx, "//OS_2/achVendID", "value")
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
@@ -1066,27 +1086,35 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         erase_checksum(ttx)
 
         stat_like_fontmake(ttx)
+
         remove_mark_and_kern_and_curs_lookups(ttx)
 
         erase_type_from_stranded_points(ttx)
-        remove_gdef_lig_caret_and_var_store(ttx)
-        sort_gdef_mark_filter_sets(ttx)
+        with timed("gdef work"):
+            remove_gdef_lig_caret_and_var_store(ttx)
+            sort_gdef_mark_filter_sets(ttx)
 
         # sort names within the name table (do this at the end, so ids are correct
         # for earlier steps)
         normalize_name_ids(ttx)
 
     # Normalize glyf contour order but only when contours are identical
-    fontc_point_orders, fontmake_point_orders = normalize_glyf_contours(fontc, fontmake)
-    normalize_gvar_contours(fontc, fontc_point_orders)
-    normalize_gvar_contours(fontmake, fontmake_point_orders)
+
+    with timed("normalize glyf contours"):
+        fontc_point_orders, fontmake_point_orders = normalize_glyf_contours(
+            fontc, fontmake
+        )
+    with timed("normalize gvar contours"):
+        normalize_gvar_contours(fontc, fontc_point_orders)
+        normalize_gvar_contours(fontmake, fontmake_point_orders)
 
     allow_fontc_only_variations_postscript_prefix(fontc, fontmake)
 
-    allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
-    allow_some_off_by_ones(
-        fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
-    )
+    with timed("allow off-by-ones"):
+        allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
+        allow_some_off_by_ones(
+            fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
+        )
 
 
 # given a font file, return a dictionary of tags -> size in bytes
@@ -1129,21 +1157,32 @@ def check_sizes(fontmake_ttf: Path, fontc_ttf: Path):
 def generate_output(
     build_dir: Path, otl_norm_bin: Path, fontmake_ttf: Path, fontc_ttf: Path
 ):
-    fontc_ttx = run_ttx(fontc_ttf)
-    fontmake_ttx = run_ttx(fontmake_ttf)
-    fontc_gpos = run_normalizer(otl_norm_bin, fontc_ttf, "gpos")
-    fontmake_gpos = run_normalizer(otl_norm_bin, fontmake_ttf, "gpos")
-    fontc_gdef = run_normalizer(otl_norm_bin, fontc_ttf, "gdef")
-    fontmake_gdef = run_normalizer(otl_norm_bin, fontmake_ttf, "gdef")
+    with timed("ttx fontc"):
+        fontc_ttx = run_ttx(fontc_ttf)
+    with timed("ttx fontmake"):
+        fontmake_ttx = run_ttx(fontmake_ttf)
+    with timed("normalize fontc gpos"):
+        fontc_gpos = run_normalizer(otl_norm_bin, fontc_ttf, "gpos")
+    with timed("normalize fontmake gpos"):
+        fontmake_gpos = run_normalizer(otl_norm_bin, fontmake_ttf, "gpos")
+    with timed("normalize fontc gdef"):
+        fontc_gdef = run_normalizer(otl_norm_bin, fontc_ttf, "gdef")
+    with timed("normalize fontmake gdef"):
+        fontmake_gdef = run_normalizer(otl_norm_bin, fontmake_ttf, "gdef")
 
     fontc = etree.parse(fontc_ttx)
     fontmake = etree.parse(fontmake_ttx)
-    fill_in_gvar_deltas(fontc, fontc_ttf, fontmake, fontmake_ttf)
-    reduce_diff_noise(fontc, fontmake)
+    with timed("fill_in_gvar_deltas"):
+        fill_in_gvar_deltas(fontc, fontc_ttf, fontmake, fontmake_ttf)
+    with timed("reduce_diff_noise"):
+        reduce_diff_noise(fontc, fontmake)
 
-    fontc = extract_comparables(fontc, build_dir, "fontc")
-    fontmake = extract_comparables(fontmake, build_dir, "fontmake")
-    size_diffs = check_sizes(fontmake_ttf, fontc_ttf)
+    with timed("extract_comparables fontc"):
+        fontc = extract_comparables(fontc, build_dir, "fontc")
+    with timed("extract_comparables fontmake"):
+        fontmake = extract_comparables(fontmake, build_dir, "fontmake")
+    with timed("check_sizes"):
+        size_diffs = check_sizes(fontmake_ttf, fontc_ttf)
     fontc[MARK_KERN_NAME] = fontc_gpos
     fontmake[MARK_KERN_NAME] = fontmake_gpos
     if len(fontc_gdef):
@@ -1472,6 +1511,8 @@ def main(argv):
     fontmake_ttf = build_dir / "fontmake.ttf"
     fontc_ttf = build_dir / "fontc.ttf"
 
+    total_start = time.time()
+
     if has_precompiled_fonts:
         eprint("Using precompiled fonts:")
         eprint(f"  fontc: {rel_user(FLAGS.fontc_font)}")
@@ -1499,26 +1540,30 @@ def main(argv):
     else:
         delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
 
-        try:
-            if compare == "default":
-                build_fontc(source, fontc_bin_path, build_dir)
-            else:
-                run_gftools(source, FLAGS.config, build_dir, fontc_bin=fontc_bin_path)
-        except BuildFail as e:
-            failures["fontc"] = {
-                "command": " ".join(e.command),
-                "stderr": e.msg[-MAX_ERR_LEN:],
-            }
-        try:
-            if compare == "default":
-                build_fontmake(source, build_dir)
-            else:
-                run_gftools(source, FLAGS.config, build_dir)
-        except BuildFail as e:
-            failures["fontmake"] = {
-                "command": " ".join(e.command),
-                "stderr": e.msg[-MAX_ERR_LEN:],
-            }
+        with timed("build fontc"):
+            try:
+                if compare == "default":
+                    build_fontc(source, fontc_bin_path, build_dir)
+                else:
+                    run_gftools(
+                        source, FLAGS.config, build_dir, fontc_bin=fontc_bin_path
+                    )
+            except BuildFail as e:
+                failures["fontc"] = {
+                    "command": " ".join(e.command),
+                    "stderr": e.msg[-MAX_ERR_LEN:],
+                }
+        with timed("build fontmake"):
+            try:
+                if compare == "default":
+                    build_fontmake(source, build_dir)
+                else:
+                    run_gftools(source, FLAGS.config, build_dir)
+            except BuildFail as e:
+                failures["fontmake"] = {
+                    "command": " ".join(e.command),
+                    "stderr": e.msg[-MAX_ERR_LEN:],
+                }
 
     report_errors_and_exit_if_there_were_any(failures)
 
@@ -1536,5 +1581,20 @@ def main(argv):
         else:
             output = jsonify_output(output)
             print_json(output)
+
+    def format_time(secs: float) -> str:
+        mins = int(secs / 60)
+        if mins > 0:
+            secs -= mins * 60
+            return f"{mins}m{secs:.3f}s"
+        return f"{secs:.3f}s"
+
+    if FLAGS.timings:
+        total = time.time() - total_start
+        eprint("TIMINGS")
+        for label, elapsed, depth in _timing_log:
+            indent = "  " * depth
+            eprint(f"  {indent}{format_time(elapsed)}  {label}")
+        eprint(f"  {format_time(total)}  total")
 
     sys.exit(diffs * 2)  # 0 or 2
