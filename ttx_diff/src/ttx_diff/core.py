@@ -918,7 +918,10 @@ def reorder_rules(lookup: etree.ElementTree, new_order: Dict[int, int], rule_nam
     # there was a funny issue where if we moved the last element elsewhere
     # in the ordering it would end up having incorrect indentation, so just
     # reindent everything to be safe.
-    etree.indent(lookup, level=4)
+    # compute the actual nesting depth instead of hardcoding level=4, since
+    # the subtable may be wrapped inside an Extension element.
+    depth = sum(1 for _ in lookup.iterancestors())
+    etree.indent(lookup, level=depth)
 
 
 # for each named child in container, remap the 'value' attribute using the new ordering
@@ -957,8 +960,10 @@ def reorder_contextual_class_based_rules(
     if table is None:
         return
     for lookup in table.xpath(".//Lookup"):
-        # first hanld the non-chaining case,  then handle the chaining case
-        for ctx in lookup.findall(context_name):
+        # first handle the non-chaining case, then handle the chaining case.
+        # use .//{name} instead of {name} so we also find subtables wrapped
+        # inside ExtensionPos/ExtensionSubst elements.
+        for ctx in lookup.findall(f".//{context_name}"):
             if ctx is None or int(ctx.attrib["Format"]) != 2:
                 continue
 
@@ -970,7 +975,7 @@ def reorder_contextual_class_based_rules(
                 for class_rule in class_set.findall(class_rule_name):
                     remap_values(class_rule, input_class_order, "Class")
 
-        for chain_ctx in lookup.findall(chain_name):
+        for chain_ctx in lookup.findall(f".//{chain_name}"):
             if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
                 continue
             input_class_order = remap_class_def_ids_like_fontc(
