@@ -21,7 +21,7 @@ use write_fonts::tables::{
         ClassDef,
         builders::{CaretValueBuilder, CoverageTableBuilder},
     },
-    variations::ivs_builder::RemapVariationIndices,
+    variations::common_builder::RemapVarStore,
 };
 
 use super::{VariationIndexRemapping, VariationStoreBuilder};

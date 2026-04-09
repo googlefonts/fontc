@@ -24,7 +24,7 @@ use write_fonts::{
             ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag,
             builders::{CaretValueBuilder as CaretValue, DeviceOrDeltas, Metric},
         },
-        variations::ivs_builder::{RemapVariationIndices, VariationStoreBuilder},
+        variations::{common_builder::RemapVarStore, ivs_builder::VariationStoreBuilder},
     },
     types::{F2Dot14, NameId, Tag},
 };
