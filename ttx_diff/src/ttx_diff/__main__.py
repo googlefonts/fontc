@@ -65,6 +65,13 @@ flags.DEFINE_bool(
     "keep_direction", False, "Preserve contour winding direction from source."
 )
 flags.DEFINE_bool("timings", False, "Print timing for each step to stderr.")
+flags.DEFINE_bool(
+    "unwrap_extensions",
+    False,
+    "Strip Extension lookup wrappers (GPOS type 9, GSUB type 7) before "
+    "comparing, so that Extension-promoted and non-promoted versions of "
+    "the same lookup compare as equal.",
+)
 flags.DEFINE_string(
     "fontc_font",
     default=None,
