@@ -736,17 +736,19 @@ def allow_fontc_only_variations_postscript_prefix(fontc, fontmake):
 
 
 def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
-    fontmake_num_coords = len(fontmake.xpath(f"//{container}/{coord_holder}"))
+    fontmake_containers = fontmake.xpath(f"//{container}")
+    coord_tag = coord_holder.rpartition("/")[-1]
+    fontmake_num_coords = sum(
+        sum(1 for _ in c.iter(coord_tag)) for c in fontmake_containers
+    )
     off_by_one_budget = int(FLAGS.off_by_one_budget / 100.0 * fontmake_num_coords)
     spent = 0
     if off_by_one_budget == 0:
         return
 
-    coord_tag = coord_holder.rpartition("/")[-1]
     # put all the containers into a dict to make querying more efficient:
-
     fontc_items = {x.attrib[name_attr]: x for x in fontc.xpath(f"//{container}")}
-    for fontmake_container in fontmake.xpath(f"//{container}"):
+    for fontmake_container in fontmake_containers:
         name = fontmake_container.attrib[name_attr]
         fontc_container = fontc_items.get(name)
         if fontc_container is None:
