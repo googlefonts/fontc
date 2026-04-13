@@ -64,10 +64,16 @@ pub fn propagate_all_anchors(context: &Context) -> Result<(), Error> {
         let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
 
         for (location, instance) in glyph.sources() {
-            let is_mark = gdef_categories
-                .categories
-                .get(&glyph_name)
-                .is_some_and(|c| matches!(c, GlyphClassDef::Mark));
+            // Use mark_category_glyphs (all Mark-category glyphs, any subCategory) rather
+            // than the GDEF Mark class (Nonspacing/SpacingCombining only). Glyphs.app skips
+            // component anchor propagation for any Mark-category glyph that has anchors,
+            // regardless of whether it's a GDEF mark. For example, "tilde" is Mark, Spacing
+            // (not a GDEF mark) but should still have its anchors returned as-is.
+            let is_mark = gdef_categories.mark_category_glyphs.contains(&glyph_name)
+                || gdef_categories
+                    .categories
+                    .get(&glyph_name)
+                    .is_some_and(|c| matches!(c, GlyphClassDef::Mark));
 
             let is_ligature = gdef_categories
                 .categories

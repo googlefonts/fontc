@@ -1702,6 +1702,19 @@ mod tests {
         assert_eq!(categories.get("U1C82"), Some(&GlyphClassDef::Base));
     }
 
+    // A "Mark, Spacing" glyph (tilde, U+02DC) composed of a "Mark, Nonspacing" component
+    // (tildecomb) should not be classified as GDEF Base. Without the fix, anchor propagation
+    // copied tildecomb's `top` anchor into tilde, causing recompute_gdef_categories to infer
+    // it as Base. With the fix, any Mark-category glyph that already has anchors skips
+    // component propagation (matching glyphsLib), leaving tilde unclassified.
+    #[test]
+    fn mark_spacing_glyph_not_classified_as_base() {
+        let result = TestCompile::compile_source("glyphs3/MarkSpacingGdef.glyphs");
+        let categories = &result.fe_context.gdef_categories.get().categories;
+        assert_eq!(categories.get("tildecomb"), Some(&GlyphClassDef::Mark));
+        assert_eq!(categories.get("tilde"), None);
+    }
+
     #[test]
     fn glyphs_app_bracket_glyph_categories() {
         let result = TestCompile::compile_source("glyphs3/PropagateAnchorsTest.glyphs");

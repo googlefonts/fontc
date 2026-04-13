@@ -924,6 +924,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 categories,
                 prefer_gdef_categories_in_fea: true,
                 infer_from_anchors: false,
+                mark_category_glyphs: Default::default(),
             })?;
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields

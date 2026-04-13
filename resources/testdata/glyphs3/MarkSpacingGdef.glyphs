@@ -1,0 +1,78 @@
+{
+.appVersion = "3259";
+.formatVersion = 3;
+familyName = "Mark Spacing Gdef Test";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 32;
+},
+{
+glyphname = tildecomb;
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (100,400);
+},
+{
+name = top;
+pos = (100,600);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(50,400,l),
+(150,400,l),
+(150,600,l),
+(50,600,l)
+);
+}
+);
+width = 0;
+}
+);
+unicode = 771;
+},
+{
+glyphname = tilde;
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (100,400);
+}
+);
+layerId = m01;
+shapes = (
+{
+ref = tildecomb;
+}
+);
+width = 0;
+}
+);
+unicode = 732;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

@@ -2279,6 +2279,7 @@ mod tests {
                 categories: Default::default(),
                 prefer_gdef_categories_in_fea: false,
                 infer_from_anchors: true,
+                mark_category_glyphs: Default::default(),
             });
         ctx.gdef_categories.set(GdefCategories::default());
 
