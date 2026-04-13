@@ -5,7 +5,9 @@ customParameters = (
 {
 name = openTypeHeadFlags;
 value = (
-0
+0,
+1,
+3
 );
 },
 {

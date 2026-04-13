@@ -37,6 +37,7 @@ use write_fonts::{
     tables::{
         gasp::{GaspRange, GaspRangeBehavior},
         gdef::GlyphClassDef,
+        head,
         os2::SelectionFlags,
     },
     types::{NameId, Tag},
@@ -526,6 +527,15 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         static_metadata.misc.version_minor = font.version_minor;
         if let Some(lowest_rec_ppm) = font.custom_parameters.lowest_rec_ppem {
             static_metadata.misc.lowest_rec_ppm = lowest_rec_ppm as _;
+        }
+
+        if let Some(bit_indices) = &font.custom_parameters.head_flags {
+            static_metadata.misc.head_flags = head::Flags::from_bits_truncate(
+                bit_indices
+                    .iter()
+                    .map(|i| 1 << i)
+                    .fold(0u16, |acc, e| acc | e),
+            );
         }
 
         static_metadata.misc.created = font
@@ -3209,6 +3219,12 @@ mod tests {
         let (_, context) = build_static_metadata(glyphs3_dir().join("UnusualCustomParams.glyphs"));
         let meta = context.static_metadata.get();
         assert_eq!(meta.misc.lowest_rec_ppm, 7);
+        assert_eq!(
+            meta.misc.head_flags,
+            head::Flags::BASELINE_AT_Y_0
+                | head::Flags::LSB_AT_X_0
+                | head::Flags::FORCE_INTEGER_PPEM
+        );
 
         // some of these end up as metrics:
         let (_, context) = build_global_metrics(glyphs3_dir().join("UnusualCustomParams.glyphs"));
