@@ -616,14 +616,18 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
             // so let's use the ones from the source, if present (i.e. from
             // `public.openTypeCatgories` or computed from GlyphData.xml
 
-            let gdef = result.gdef.get_or_insert_with(Default::default);
             let class_def: ClassDef = gdef_categories
                 .categories
                 .iter()
                 .filter_map(|(name, cls)| glyph_order.glyph_id(name).map(|id| (id, *cls as u16)))
                 .collect();
 
-            gdef.glyph_class_def.set(class_def);
+            // could be class_def.is_empty() when
+            // https://github.com/googlefonts/fontations/pull/1836 lands
+            if class_def.iter().next().is_some() {
+                let gdef = result.gdef.get_or_insert_with(Default::default);
+                gdef.glyph_class_def.set(class_def);
+            }
         }
 
         debug!(
