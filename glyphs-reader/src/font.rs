@@ -125,6 +125,7 @@ pub struct CustomParameters {
     pub codepage_range_bits: Option<BTreeSet<u32>>,
     pub panose: Option<Vec<i64>>,
 
+    pub head_flags: Option<Vec<i64>>,
     pub lowest_rec_ppem: Option<i64>,
     pub hhea_caret_slope_run: Option<i64>,
     pub hhea_caret_slope_rise: Option<i64>,
@@ -1197,10 +1198,13 @@ impl RawCustomParameters {
                 "Link Metrics With Master" => {
                     add_and_report_issues!(link_metrics_with_master, Plist::as_str, into)
                 }
+                "openTypeHeadFlags" => {
+                    add_and_report_issues!(head_flags, Plist::as_vec_of_ints)
+                }
                 // these might need to be handled? they're in the same list as
                 // the items above:
                 // https://github.com/googlefonts/glyphsLib/blob/74c63244fdb/Lib/glyphsLib/builder/custom_params.py#L429
-                "openTypeOS2FamilyClass" | "openTypeHeadFlags" => {
+                "openTypeOS2FamilyClass" => {
                     log_once_warn!("unhandled custom param '{name}'")
                 }
 
