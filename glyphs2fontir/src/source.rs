@@ -761,6 +761,15 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
 
 /// Compute GDEF glyph categories using only category and subcategory, no anchor inspection.
 fn make_preliminary_glyph_categories(font: &Font, axes: &Axes) -> PreliminaryGdefCategories {
+    let mark_category_glyphs = font
+        .glyphs
+        .values()
+        .filter(|glyph| glyph.category == Some(Category::Mark))
+        .flat_map(|glyph| {
+            std::iter::once(glyph.name.clone().into())
+                .chain(bracket_glyph_names(glyph, axes).map(|(name, _)| name))
+        })
+        .collect();
     let categories = font
         .glyphs
         .values()
@@ -783,6 +792,7 @@ fn make_preliminary_glyph_categories(font: &Font, axes: &Axes) -> PreliminaryGde
         categories,
         prefer_gdef_categories_in_fea: false,
         infer_from_anchors: true,
+        mark_category_glyphs,
     }
 }
 

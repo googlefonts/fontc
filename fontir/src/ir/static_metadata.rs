@@ -155,6 +155,16 @@ pub struct PreliminaryGdefCategories {
     /// of anchors (similarly to how glyphsLib does) or used as-is as defined in
     /// the source (as standard in DS+UFO workflows).
     pub infer_from_anchors: bool,
+    /// All glyphs whose source category is Mark (any subCategory)
+    ///
+    /// Used during anchor propagation. Glyphs.app skips component anchor
+    /// propagation for any Mark-category glyph that already has anchors,
+    /// regardless of subCategory. This differs from `categories` which only
+    /// contains GDEF Mark (Nonspacing/SpacingCombining); glyphs like "tilde"
+    /// (Mark, Spacing) are not GDEF marks but still need to opt out of
+    /// component propagation.
+    #[serde(default)]
+    pub mark_category_glyphs: BTreeSet<GlyphName>,
 }
 
 /// Final GDEF categories after anchor propagation has been applied.
