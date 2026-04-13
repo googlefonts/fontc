@@ -3094,7 +3094,7 @@ impl RawGlyph {
     }
 }
 
-// https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/constants.py#L186
+// https://github.com/googlefonts/glyphsLib/blob/044f19e4/Lib/glyphsLib/builder/constants.py#L231
 #[rustfmt::skip]
 static GLYPHS_TO_OPENTYPE_LANGUAGE_ID: &[(&str, i32)] = &[
     ("AFK", 0x0436), ("ARA", 0x0C01), ("ASM", 0x044D), ("AZE", 0x042C), ("BEL", 0x0423),
@@ -3104,9 +3104,9 @@ static GLYPHS_TO_OPENTYPE_LANGUAGE_ID: &[(&str, i32)] = &[
     ("FRA", 0x040C), ("FRI", 0x0462), ("GRN", 0x046F), ("GUJ", 0x0447), ("HAU", 0x0468),
     ("HIN", 0x0439), ("HRV", 0x041A), ("HUN", 0x040E), ("HVE", 0x042B), ("IRI", 0x083C),
     ("ISL", 0x040F), ("ITA", 0x0410), ("IWR", 0x040D), ("JPN", 0x0411), ("KAN", 0x044B),
-    ("KAT", 0x0437), ("KAZ", 0x043F), ("KHM", 0x0453), ("KOK", 0x0457), ("LAO", 0x0454),
+    ("KAT", 0x0437), ("KAZ", 0x043F), ("KHM", 0x0453), ("KOK", 0x0457), ("KOR", 0x0412), ("LAO", 0x0454),
     ("LSB", 0x082E), ("LTH", 0x0427), ("LVI", 0x0426), ("MAR", 0x044E), ("MKD", 0x042F),
-    ("MLR", 0x044C), ("MLY", 0x043E), ("MNG", 0x0352), ("MTS", 0x043A), ("NEP", 0x0461),
+    ("MLR", 0x044C), ("MLY", 0x043E), ("MNG", 0x0352), ("MOL", 0x0818), ("MTS", 0x043A), ("NEP", 0x0461),
     ("NLD", 0x0413), ("NOB", 0x0414), ("ORI", 0x0448), ("PAN", 0x0446), ("PAS", 0x0463),
     ("PLK", 0x0415), ("PTG", 0x0816), ("PTG-BR", 0x0416), ("RMS", 0x0417), ("ROM", 0x0418),
     ("RUS", 0x0419), ("SAN", 0x044F), ("SKY", 0x041B), ("SLV", 0x0424), ("SQI", 0x041C),
@@ -6237,5 +6237,10 @@ name = _corner.hi;
         let plist = r#"{ colorPalette = "*"; }"#;
         let attrs = LayerAttributes::parse_plist(plist).unwrap();
         assert_eq!(attrs.color_palette, Some(0xFFFF));
+    }
+
+    #[test]
+    fn ensure_lang_map_is_sorted() {
+        assert!(GLYPHS_TO_OPENTYPE_LANGUAGE_ID.is_sorted())
     }
 }
