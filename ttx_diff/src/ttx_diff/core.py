@@ -440,7 +440,7 @@ def get_name_to_id_map(ttx: etree.ElementTree):
     return {
         el.attrib["nameID"]: el.text
         for el in ttx.xpath(
-            "//name/namerecord[@platformID='3' and @platEncID='1' and @langID='0x409']"
+            "name/namerecord[@platformID='3' and @platEncID='1' and @langID='0x409']"
         )
     }
 
@@ -1162,13 +1162,14 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         # different name ids with the same value is fine
 
         with timed("name id to name"):
-            name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
-            name_id_to_name(ttx, "//NamedInstance", "postscriptNameID")
-            name_id_to_name(ttx, "//AxisNameID", "value")
-            name_id_to_name(ttx, "//UINameID", "value")
-            name_id_to_name(ttx, "//AxisNameID", None)
-            name_id_to_name(ttx, "//ValueNameID", "value")
-            name_id_to_name(ttx, "//ElidedFallbackNameID", "value")
+            name_id_to_name(ttx, "fvar//NamedInstance", "subfamilyNameID")
+            name_id_to_name(ttx, "fvar//NamedInstance", "postscriptNameID")
+            name_id_to_name(ttx, "STAT//AxisNameID", "value")
+            name_id_to_name(ttx, "fvar//AxisNameID", None)
+            name_id_to_name(ttx, "GPOS/FeatureList//UINameID", "value")
+            name_id_to_name(ttx, "GSUB/FeatureList//UINameID", "value")
+            name_id_to_name(ttx, "STAT//ValueNameID", "value")
+            name_id_to_name(ttx, "STAT//ElidedFallbackNameID", "value")
         normalize_null_tags(ttx, "//OS_2/achVendID", "value")
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
