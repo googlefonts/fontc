@@ -15,11 +15,10 @@ use thiserror::Error;
 use write_fonts::{
     read::ReadError,
     tables::{
-        cmap::CmapConflict,
-        glyf::MalformedPath,
-        gvar::{GvarInputError, iup::IupError},
+        cmap::CmapConflict, glyf::MalformedPath, gvar::iup::IupError,
+        variations::TupleVariationStoreInputError,
     },
-    types::Tag,
+    types::{GlyphId, Tag},
 };
 
 #[derive(Debug, Error)]
@@ -63,7 +62,7 @@ pub enum Error {
     #[error("Unable to compute deltas for kern pair '{}/{}': '{error}'", .pair.0, .pair.1)]
     KernDeltaError { pair: KernPair, error: DeltaError },
     #[error("Unable to assemble gvar")]
-    GvarError(#[from] GvarInputError),
+    GvarError(#[from] TupleVariationStoreInputError<GlyphId>),
     #[error("Unable to read")]
     ReadFontsReadError(#[from] ReadError),
     #[error("IUP error for {0}: {1:?}")]

@@ -22,7 +22,7 @@ icu_properties = "=2.1"
 smallvec = {version = "1.15", features = ["const_new"]}
 
 # fontations etc
-write-fonts = { version = "0.47.0", features = ["serde", "read"] }
+write-fonts = { version = "0.48.0", features = ["serde", "read"] }
 skrifa = { version = "0.42.0", features = ["traversal"] }
 norad = { version = "0.18.2", default-features = false }
 
