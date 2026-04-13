@@ -52,7 +52,3 @@ members = [
     "otl-normalizer",
     "fontc_crater",
 ]
-
-# https://github.com/insomnimus/tidy-sys/issues/2
-[patch.crates-io]
-tidy-sys = { git = "https://github.com/googlefonts/tidy-sys.git", branch = "update-bindgen" }
