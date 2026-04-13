@@ -3066,6 +3066,17 @@ mod tests {
         assert_eq!(Some(0), context.static_metadata.get().misc.fs_type);
     }
 
+    // Some fonts use the long UFO name "openTypeOS2Type" instead of the Glyphs-native "fsType"
+    #[test]
+    fn reads_fs_type_0x0000_long_name() {
+        // this has an explicit entry (but with a null value) for this flag.
+        // This needs t obe treated as a default value, e.g. an explicit 0.
+        // if this is _missing_ we will calculate a default value that is non-zero.
+        let (_, context) =
+            build_static_metadata(glyphs3_dir().join("fstype_0x0000_long_name.glyphs"));
+        assert_eq!(Some(0), context.static_metadata.get().misc.fs_type);
+    }
+
     #[test]
     fn reads_fs_type_0x0104() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("fstype_0x0104.glyphs"));
