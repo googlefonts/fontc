@@ -3610,6 +3610,22 @@ mod tests {
         assert_eq!(classdef.iter().count(), 1)
     }
 
+    // when gdef categories exist but the glyphs are all non-exported (absent from glyph order),
+    // no GlyphClassDef (and thus no GDEF table) should be created.
+    // https://github.com/googlefonts/fontc/issues/XXXX
+    #[test]
+    fn no_gdef_when_mark_glyphs_are_non_exported() {
+        let compile =
+            TestCompile::compile_source("glyphs3/gdef_categories_non_exported_mark.glyphs");
+        let font = compile.font();
+        // the only mark glyph has export=0, so it is absent from the glyph order.
+        // this means no GlyphClassDef should be set, and no GDEF table should exist.
+        assert!(
+            font.gdef().is_err(),
+            "expected no GDEF when all mark glyphs are non-exported"
+        );
+    }
+
     // <https://github.com/googlefonts/fontc/issues/1008>
     #[test]
     fn no_names_for_instances_in_a_static_font() {
