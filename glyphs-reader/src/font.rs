@@ -1023,9 +1023,27 @@ impl PlistParamsExt for Plist {
     }
 
     fn as_codepage_bits(&self) -> Option<BTreeSet<u32>> {
-        let bits = self.as_vec_of_ints()?;
-        bits.iter()
-            .map(|b| codepage_range_bit(*b as _))
+        // Values can be integers (e.g. 1252), string-encoded integers ("1252"),
+        // or "bit N" strings for raw bit positions — matching glyphsLib behaviour.
+        // https://github.com/googlefonts/glyphsLib/blob/d42d3b15/Lib/glyphsLib/builder/custom_params.py#L505
+        self.as_array()?
+            .iter()
+            .map(|val| {
+                if let Some(n) = val.as_i64() {
+                    return codepage_range_bit(n as u32);
+                }
+                if let Some(s) = val.as_str() {
+                    if let Ok(n) = s.parse::<u32>() {
+                        return codepage_range_bit(n);
+                    }
+                    if let Some(rest) = s.strip_prefix("bit ")
+                        && let Ok(bit) = rest.parse::<u32>()
+                    {
+                        return codepage_range_bit(bit);
+                    }
+                }
+                Err(Error::InvalidCodePage(0))
+            })
             .collect::<Result<_, _>>()
             .ok()
     }
@@ -6246,5 +6264,35 @@ name = _corner.hi;
     #[test]
     fn ensure_lang_map_is_sorted() {
         assert!(GLYPHS_TO_OPENTYPE_LANGUAGE_ID.is_sorted())
+    }
+
+    #[test]
+    fn codepage_bits_from_integers() {
+        let plist = Plist::Array(vec![Plist::Integer(1252), Plist::Integer(1258)]);
+        assert_eq!(
+            plist.as_codepage_bits(),
+            Some(BTreeSet::from([0, 8])) // 1252→bit 0 (Latin 1), 1258→bit 8 (Vietnamese)
+        );
+    }
+
+    #[test]
+    fn codepage_bits_from_strings() {
+        // "bit N" encodes a raw OS/2 bit position, used e.g. for bit 29 (Macintosh).
+        let plist = Plist::Array(vec![
+            Plist::String("1252".into()),
+            Plist::String("1258".into()),
+            Plist::String("bit 29".into()),
+        ]);
+        assert_eq!(plist.as_codepage_bits(), Some(BTreeSet::from([0, 8, 29])));
+    }
+
+    #[test]
+    fn read_codepage_range_bits_from_file() {
+        // WghtVar_OS2.glyphs has codePageRanges = ("1252", "1250", "949", "437")
+        let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
+        assert_eq!(
+            font.custom_parameters.codepage_range_bits,
+            Some(BTreeSet::from([0, 1, 19, 63]))
+        );
     }
 }
