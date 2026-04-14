@@ -444,14 +444,16 @@ impl GlobalMetricsBuilder {
         self.set_if_absent(GlobalMetric::Ascender, pos, ascender);
         self.set_if_absent(GlobalMetric::Descender, pos, descender);
 
-        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L229-L238
-        let typo_line_gap = units_per_em * 1.2 + descender - ascender;
-        let typo_line_gap = if typo_line_gap > 0.0 {
-            typo_line_gap
-        } else {
-            0.0
-        };
-        self.set_if_absent(GlobalMetric::Os2TypoLineGap, pos, typo_line_gap);
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd8/Lib/ufo2ft/fontInfoData.py#L229-L238
+        let computed_typo_line_gap = (units_per_em * 1.2 + descender - ascender).max(0.);
+
+        // Capture the actual stored value: if Os2TypoLineGap was already set (e.g. from a
+        // custom parameter), set_if_absent returns it unchanged; otherwise it stores and
+        // returns the computed fallback. HheaAscender and Os2WinAscent defaults depend on
+        // this value, so we must use the stored value rather than the locally-computed one.
+        let typo_line_gap = self
+            .set_if_absent(GlobalMetric::Os2TypoLineGap, pos, computed_typo_line_gap)
+            .into_inner();
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L215-L226
         self.set_if_absent(GlobalMetric::Os2TypoAscender, pos, ascender);
@@ -2532,6 +2534,26 @@ mod tests {
             .unwrap()
             .get(GlobalMetric::StrikeoutPosition, &pos);
         assert_eq!(default.into_inner(), 220.);
+    }
+
+    // If Os2TypoLineGap is explicitly set before populate_defaults (e.g. from a custom
+    // parameter), HheaAscender must use that stored value, not the formula fallback.
+    #[test]
+    fn hhea_ascender_uses_stored_typo_line_gap() {
+        let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let mut metrics = GlobalMetricsBuilder::new();
+
+        // Explicit typoLineGap=0, as in e.g. Amiko-Devanagari.
+        // The formula fallback would give 1000*1.2 + (-232) - 754 = 214.
+        metrics.set(GlobalMetric::Os2TypoLineGap, pos.clone(), 0.0);
+        metrics.populate_defaults(&pos, 1000, None, Some(754.0), Some(-232.0), None);
+
+        let built = metrics.build(&Axes::default()).unwrap();
+        // Before the fix this would have been 754 + 214 = 968 (214 = 1000*1.2 - 754 - 232).
+        assert_eq!(
+            754.0,
+            built.get(GlobalMetric::HheaAscender, &pos).into_inner()
+        );
     }
 
     /// Test that we can interpolate metrics between source locations.
