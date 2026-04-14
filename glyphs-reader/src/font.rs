@@ -2779,6 +2779,9 @@ fn user_to_design_from_axis_mapping(
                 .add_if_new(*user, *design);
         }
     }
+    if axis_mappings.is_empty() {
+        return None;
+    }
     Some(axis_mappings)
 }
 
@@ -4678,6 +4681,25 @@ mod tests {
             ),])),
             font.axis_mappings
         );
+    }
+
+    #[test]
+    fn empty_axis_mappings_falls_back_to_instances() {
+        // An empty "Axis Mappings" custom parameter ({}) should be treated as absent,
+        // falling back to instance-based mappings. Regression test for
+        // https://github.com/googlefonts/fontc/issues/1830
+        let base_path = glyphs3_dir().join("WghtVar_Avar_From_Instances.glyphs");
+        let raw = std::fs::read_to_string(&base_path).unwrap();
+        // Inject an empty Axis Mappings param into the existing customParameters
+        let raw = raw.replace(
+            "customParameters = (\n{",
+            "customParameters = (\n{\nname = \"Axis Mappings\";\nvalue = {};\n},\n{",
+        );
+        let font = Font::load_from_string(&raw).unwrap();
+
+        // Should produce the same instance-based mappings as the unmodified font
+        let font_without = Font::load(&base_path).unwrap();
+        assert_eq!(font_without.axis_mappings, font.axis_mappings);
     }
 
     #[test]
