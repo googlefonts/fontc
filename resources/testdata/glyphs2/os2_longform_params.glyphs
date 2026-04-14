@@ -1,0 +1,52 @@
+{
+.appVersion = "3260";
+customParameters = (
+{
+name = openTypeOS2StrikeoutPosition;
+value = 300;
+},
+{
+name = openTypeOS2StrikeoutSize;
+value = 50;
+},
+{
+name = openTypeOS2SubscriptXOffset;
+value = -80;
+},
+{
+name = openTypeOS2SubscriptXSize;
+value = 700;
+},
+{
+name = openTypeOS2SubscriptYOffset;
+value = -75;
+},
+{
+name = openTypeOS2SubscriptYSize;
+value = 650;
+},
+{
+name = openTypeOS2SuperscriptXOffset;
+value = 50;
+},
+{
+name = openTypeOS2SuperscriptXSize;
+value = 600;
+},
+{
+name = openTypeOS2SuperscriptYOffset;
+value = 350;
+},
+{
+name = openTypeOS2SuperscriptYSize;
+value = 600;
+}
+);
+familyName = "Long Params Test";
+fontMaster = (
+{
+id = "m01";
+}
+);
+unitsPerEm = 1000;
+}

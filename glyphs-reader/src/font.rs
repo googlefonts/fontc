@@ -1145,16 +1145,39 @@ impl RawCustomParameters {
                 "underlinePosition" => {
                     add_and_report_issues!(underline_position, Plist::as_ordered_f64)
                 }
-                "strikeoutPosition" => add_and_report_issues!(strikeout_position, Plist::as_i64),
-                "strikeoutSize" => add_and_report_issues!(strikeout_size, Plist::as_i64),
-                "subscriptXOffset" => add_and_report_issues!(subscript_x_offset, Plist::as_i64),
-                "subscriptXSize" => add_and_report_issues!(subscript_x_size, Plist::as_i64),
-                "subscriptYOffset" => add_and_report_issues!(subscript_y_offset, Plist::as_i64),
-                "subscriptYSize" => add_and_report_issues!(subscript_y_size, Plist::as_i64),
-                "superscriptXOffset" => add_and_report_issues!(superscript_x_offset, Plist::as_i64),
-                "superscriptXSize" => add_and_report_issues!(superscript_x_size, Plist::as_i64),
-                "superscriptYOffset" => add_and_report_issues!(superscript_y_offset, Plist::as_i64),
-                "superscriptYSize" => add_and_report_issues!(superscript_y_size, Plist::as_i64),
+                // Glyphs uses short names (e.g. "subscriptXSize") but some fonts use the
+                // long UFO names (e.g. "openTypeOS2SubscriptXSize"). Both are accepted.
+                // https://github.com/googlefonts/glyphsLib/blob/d42d3b15/Lib/glyphsLib/builder/custom_params.py#L329-L340
+                "strikeoutPosition" | "openTypeOS2StrikeoutPosition" => {
+                    add_and_report_issues!(strikeout_position, Plist::as_i64)
+                }
+                "strikeoutSize" | "openTypeOS2StrikeoutSize" => {
+                    add_and_report_issues!(strikeout_size, Plist::as_i64)
+                }
+                "subscriptXOffset" | "openTypeOS2SubscriptXOffset" => {
+                    add_and_report_issues!(subscript_x_offset, Plist::as_i64)
+                }
+                "subscriptXSize" | "openTypeOS2SubscriptXSize" => {
+                    add_and_report_issues!(subscript_x_size, Plist::as_i64)
+                }
+                "subscriptYOffset" | "openTypeOS2SubscriptYOffset" => {
+                    add_and_report_issues!(subscript_y_offset, Plist::as_i64)
+                }
+                "subscriptYSize" | "openTypeOS2SubscriptYSize" => {
+                    add_and_report_issues!(subscript_y_size, Plist::as_i64)
+                }
+                "superscriptXOffset" | "openTypeOS2SuperscriptXOffset" => {
+                    add_and_report_issues!(superscript_x_offset, Plist::as_i64)
+                }
+                "superscriptXSize" | "openTypeOS2SuperscriptXSize" => {
+                    add_and_report_issues!(superscript_x_size, Plist::as_i64)
+                }
+                "superscriptYOffset" | "openTypeOS2SuperscriptYOffset" => {
+                    add_and_report_issues!(superscript_y_offset, Plist::as_i64)
+                }
+                "superscriptYSize" | "openTypeOS2SuperscriptYSize" => {
+                    add_and_report_issues!(superscript_y_size, Plist::as_i64)
+                }
                 "fsType" | "openTypeOS2Type" => add_and_report_issues!(fs_type, Plist::as_fs_type),
                 "unicodeRanges" | "openTypeOS2UnicodeRanges" => {
                     add_and_report_issues!(unicode_range_bits, Plist::as_unicode_code_ranges)
@@ -4982,6 +5005,23 @@ etc;
         let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
         assert_eq!(font.custom_parameters.use_typo_metrics, None);
         assert_eq!(font.custom_parameters.has_wws_names, None);
+    }
+
+    #[test]
+    fn read_os2_longform_param_names() {
+        // Older Glyphs files may use either the short form ("subscriptXSize")
+        // or the long UFO form ("openTypeOS2SubscriptXSize").
+        let font = Font::load(&glyphs2_dir().join("os2_longform_params.glyphs")).unwrap();
+        assert_eq!(font.custom_parameters.strikeout_position, Some(300));
+        assert_eq!(font.custom_parameters.strikeout_size, Some(50));
+        assert_eq!(font.custom_parameters.subscript_x_offset, Some(-80));
+        assert_eq!(font.custom_parameters.subscript_x_size, Some(700));
+        assert_eq!(font.custom_parameters.subscript_y_offset, Some(-75));
+        assert_eq!(font.custom_parameters.subscript_y_size, Some(650));
+        assert_eq!(font.custom_parameters.superscript_x_offset, Some(50));
+        assert_eq!(font.custom_parameters.superscript_x_size, Some(600));
+        assert_eq!(font.custom_parameters.superscript_y_offset, Some(350));
+        assert_eq!(font.custom_parameters.superscript_y_size, Some(600));
     }
 
     #[test]
