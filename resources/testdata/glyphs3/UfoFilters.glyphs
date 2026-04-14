@@ -21,6 +21,9 @@ pre = 1;
 },
 {
 name = flattenComponents;
+},
+{
+name = decomposeTransformedComponents;
 }
 );
 };

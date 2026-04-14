@@ -5266,6 +5266,13 @@ mod tests {
         assert!(result.fe_context.flags.contains(Flags::FLATTEN_COMPONENTS));
         assert!(!result.fe_context.flags.contains(Flags::ERASE_OPEN_CORNERS));
         assert!(result.fe_context.flags.contains(Flags::PROPAGATE_ANCHORS));
+        assert!(
+            result
+                .fe_context
+                .flags
+                .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
+            "decomposeTransformedComponents filter in userData should set DECOMPOSE_TRANSFORMED_COMPONENTS flag"
+        );
     }
 
     #[test]
