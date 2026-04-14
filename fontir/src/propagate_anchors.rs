@@ -98,6 +98,36 @@ pub fn propagate_all_anchors(context: &Context) -> Result<(), Error> {
                 })
                 .unwrap_or_default();
 
+            // There are two anchor propagation pipelines in the Python world, and
+            // we must match whichever one would have run for this source format.
+            //
+            // .glyphs sources: glyphsLib runs `propagate_all_anchors` (in
+            //   glyphsLib/builder/transformations/propagate_anchors.py) via
+            //   `preflight_glyphs()` *before* the font is converted to UFO.
+            //   Anchors are baked into the GSFont object model using Glyphs.app
+            //   semantics: the first component always contributes all its anchors,
+            //   including _ (attach-to) anchors. Because glyphsLib populates
+            //   mark_category_glyphs from GlyphData.xml, GDEF classification is
+            //   explicit and independent of anchor names, so inheriting a _ anchor
+            //   does not accidentally reclassify a spacing modifier as a Mark.
+            //
+            // UFO/designspace sources: ufo2ft's `PropagateAnchorsFilter`
+            //   (ufo2ft/filters/propagateAnchors.py) runs during compilation on
+            //   the UFO objects. It classifies each component as a "mark component"
+            //   (has a _ anchor) or "base component" (no _ anchor). Only base
+            //   components' anchors are propagated. Mark components' _ anchors are
+            //   never propagated to a composite unless the composite is itself a
+            //   "ligature mark" by name (contains _ but doesn't start with _,
+            //   e.g. circumflexcomb_tildecomb). This caution is necessary because
+            //   UFO sources typically infer GDEF classes from anchor names: if
+            //   acute inherited _top from acutecomb, it would be misclassified as
+            //   a GDEF Mark instead of a Base.
+            //
+            // We detect which pipeline applies via mark_category_glyphs: it is
+            // populated from GlyphData.xml only for Glyphs sources, and is empty
+            // for UFO/DS sources.
+            let use_glyphs_mode = !gdef_categories.mark_category_glyphs.is_empty();
+
             // Compute propagated anchors for this (glyph, location)
             let anchors = anchors_traversing_components(
                 &glyph_name,
@@ -105,6 +135,7 @@ pub fn propagate_all_anchors(context: &Context) -> Result<(), Error> {
                 &instance.components,
                 is_mark,
                 is_ligature,
+                use_glyphs_mode,
                 location,
                 &done_anchors,
                 &mut base_glyph_counts,
@@ -269,6 +300,12 @@ fn anchors_traversing_components(
     components: &[Component],
     is_mark: bool,
     is_ligature: bool,
+    // When true, use Glyphs.app propagation: the first component always
+    // contributes its _ anchors to the composite. When false, use ufo2ft
+    // propagation: components with _ anchors are "mark components" and do not
+    // propagate their _ anchors unless the composite is a "ligature mark" by name.
+    // See: https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/filters/propagateAnchors.py
+    use_glyphs_mode: bool,
     location: &NormalizedLocation,
     // Map of (glyph, location) -> anchors, updated as we process each glyph.
     // Since we sort by component depth before doing work, we know that any
@@ -291,6 +328,45 @@ fn anchors_traversing_components(
     if !existing_anchors.is_empty() && is_mark {
         base_glyph_counts.insert((glyph_name.clone(), location.clone()), 0); // marks have 0 base glyphs
         return origin_adjusted_anchors(existing_anchors).collect();
+    }
+
+    // ufo2ft mode: classify components as "mark" (has _ anchors) or "base" (no _ anchors).
+    // If ALL components are mark components and the composite is not a "ligature mark"
+    // (a composed mark glyph whose name contains _ but doesn't start with _, e.g.
+    // "circumflexcomb_tildecomb"), then propagate nothing from the components.
+    //
+    // This matches ufo2ft's PropagateAnchorsFilter._propagate_glyph_anchors():
+    //   https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/filters/propagateAnchors.py#L102-L138
+    // ufo2ft only propagates anchors from "base components" (no _ anchors). When all
+    // components are mark components, it only promotes one to "base" if the composite
+    // is itself a "ligature mark" (see _is_ligature_mark() in that file).
+    if !use_glyphs_mode && !components.is_empty() {
+        let all_mark_components = components.iter().all(|comp| {
+            done_anchors
+                .get(&(comp.base.clone(), location.clone()))
+                .map(|anchors| {
+                    anchors
+                        .iter()
+                        .any(|a| a.name.len() >= 2 && a.name.starts_with('_'))
+                })
+                .unwrap_or(false)
+        });
+        // ufo2ft._is_ligature_mark(): name contains _ but doesn't start with _
+        let name_str = glyph_name.as_str();
+        let is_ligature_mark_by_name = name_str.contains('_') && !name_str.starts_with('_');
+
+        if all_mark_components && !is_ligature_mark_by_name {
+            // All components are mark glyphs (have _ anchors) and this composite
+            // is not a ligature mark: propagate nothing from the components.
+            // Example: "acute" composed of "acutecomb" — acute should not inherit
+            // acutecomb's _top anchor and become a GDEF Mark.
+            base_glyph_counts.insert((glyph_name.clone(), location.clone()), 0);
+            return origin_adjusted_anchors(existing_anchors).collect();
+        }
+        // all_mark_components && is_ligature_mark_by_name: fall through. The existing
+        // loop handles this correctly — the first component's _ anchor propagates,
+        // which matches ufo2ft's ligature-mark promotion of the closest-to-origin
+        // component (ufo2ft._is_ligature_mark + _component_closest_to_origin).
     }
 
     let mut has_underscore = existing_anchors
@@ -652,6 +728,10 @@ mod tests {
         glyphs: Vec<(GlyphName, Glyph)>,
         anchors: Vec<(GlyphName, GlyphAnchors)>,
         categories: HashMap<GlyphName, GlyphClassDef>,
+        /// When non-empty, simulates Glyphs.app mode where mark_category_glyphs
+        /// is populated from GlyphData.xml. This switches anchor propagation from
+        /// ufo2ft semantics to Glyphs.app semantics.
+        mark_category_glyphs: BTreeSet<GlyphName>,
     }
 
     impl GlyphSetBuilder {
@@ -661,7 +741,16 @@ mod tests {
                 glyphs: Vec::new(),
                 anchors: Vec::new(),
                 categories: HashMap::new(),
+                mark_category_glyphs: BTreeSet::new(),
             }
+        }
+
+        /// Register a glyph as a Glyphs.app Mark-category glyph, enabling
+        /// Glyphs.app propagation mode (where the first component's _ anchors
+        /// are always propagated). Without this, tests run in ufo2ft mode.
+        fn add_mark_category_glyph(&mut self, name: &str) -> &mut Self {
+            self.mark_category_glyphs.insert(name.into());
+            self
         }
 
         /// Add a glyph with anchors and components at the default location
@@ -747,6 +836,7 @@ mod tests {
             for (name, cat) in &self.categories {
                 gdef_categories.categories.insert(name.clone(), *cat);
             }
+            gdef_categories.mark_category_glyphs = self.mark_category_glyphs.clone();
             self.context
                 .preliminary_gdef_categories
                 .set(gdef_categories);
@@ -1061,6 +1151,10 @@ mod tests {
     fn invert_names_on_rotation() {
         // derived from the observed behaviour of glyphs 3.2.2 (3259)
         let mut builder = GlyphSetBuilder::new(test_context());
+        // This test models Glyphs.app behavior, so we need Glyphs mode
+        builder
+            .add_mark_category_glyph("commaaccentcomb")
+            .add_mark_category_glyph("commaturnedabovecomb");
 
         builder.add_glyph("comma", |_| {});
 
@@ -1136,7 +1230,12 @@ mod tests {
 
     #[test]
     fn attaching_anchors_from_first_component_only() {
+        // In Glyphs.app mode (mark_category_glyphs non-empty), the first
+        // component's _ anchor is always propagated regardless of whether it's
+        // a mark component. This tests Glyphs.app propagation semantics.
         let mut builder = GlyphSetBuilder::new(test_context());
+        builder.add_mark_category_glyph("acutecomb");
+        builder.add_mark_category_glyph("gravecomb");
 
         builder.add_glyph("acutecomb", |glyph| {
             glyph
@@ -1152,7 +1251,7 @@ mod tests {
                 .set_category(GlyphClassDef::Mark);
         });
 
-        // Composite mark
+        // Composite mark: Glyphs.app propagates _top from first component
         builder.add_glyph("acutegrave", |glyph| {
             glyph
                 .set_category(GlyphClassDef::Mark)
@@ -1163,12 +1262,12 @@ mod tests {
         let ctx = builder.build();
         propagate_all_anchors(&ctx).unwrap();
 
-        // Should get _top from first component only
+        // Should get _top from first component only (Glyphs.app mode)
         let names = get_anchor_names(&ctx, "acutegrave");
         assert!(names.contains(&"top".to_string()), "Should have 'top'");
         assert!(
             names.contains(&"_top".to_string()),
-            "Should have '_top' from first component"
+            "Should have '_top' from first component (Glyphs.app mode)"
         );
 
         // Verify the _top anchor position is from the first component
@@ -1207,6 +1306,151 @@ mod tests {
         assert!(
             names.contains(&"_top".to_string()),
             "Should have '_top' (attaching anchors propagate from base glyphs)"
+        );
+    }
+
+    /// In ufo2ft mode (UFO/DS sources with propagateAnchors), a spacing modifier
+    /// glyph that is composed solely of mark components must not inherit the mark's
+    /// _ (attach-to) anchors. ufo2ft's PropagateAnchorsFilter treats components
+    /// with _ anchors as "mark components" and never propagates their _ anchors to
+    /// a composite that is not a "ligature mark" (name contains _ but doesn't
+    /// start with _).
+    ///
+    /// Reference: https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/filters/propagateAnchors.py
+    /// Specifically: _propagate_glyph_anchors() classifies components into
+    /// base_components (no _ anchors) and mark_components (has _ anchors).
+    /// Only base_components' anchors populate anchor_names and are propagated.
+    ///
+    /// Reproduces the Vollkorn crater diff where "acute" (composed of "acutecomb")
+    /// was incorrectly classified as GDEF Mark due to inherited _top anchor.
+    #[test]
+    fn ufo_spacing_modifier_does_not_inherit_mark_anchor() {
+        // acute (U+00B4) is composed of acutecomb (U+0301) shifted right.
+        // acutecomb has _top (attach-to) and top (accept-mark-on) anchors.
+        // In ufo2ft mode, "acute" is composed of only mark components and is NOT
+        // a ligature mark by name → nothing should be propagated to it.
+        let mut builder = GlyphSetBuilder::new(test_context());
+        // No mark_category_glyphs → ufo2ft mode (the default for UFO/DS sources)
+
+        builder.add_glyph("acutecomb", |glyph| {
+            glyph
+                .add_anchor("_top", (80.0, 458.0))
+                .add_anchor("top", (80.0, 722.0));
+            // Note: not adding to mark_category_glyphs; ufo2ft classifies as mark
+            // component purely because it has a _ anchor.
+        });
+
+        builder.add_glyph("acute", |glyph| {
+            // acute has no explicit anchors; composed of acutecomb with x offset
+            glyph.add_component_at("acutecomb", (16.0, 0.0));
+        });
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        // In ufo2ft mode: acute should get NO anchors.
+        // acutecomb is a mark component (has _top). acute is not a ligature mark
+        // by name (no _ in "acute"). So nothing propagates.
+        let names = get_anchor_names(&ctx, "acute");
+        assert!(
+            names.is_empty(),
+            "ufo2ft mode: acute composed of mark acutecomb should have no propagated anchors, got {:?}",
+            names
+        );
+    }
+
+    /// In ufo2ft mode, a "ligature mark" (a composed mark whose name contains _
+    /// but doesn't start with _) does get _ anchors propagated from its first
+    /// component. ufo2ft promotes the closest-to-origin mark component to "base"
+    /// and propagates its anchors (including _).
+    ///
+    /// Reference: https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/filters/propagateAnchors.py#L123
+    /// See: _is_ligature_mark() — "not glyph.name.startswith('_') and '_' in glyph.name"
+    #[test]
+    fn ufo_ligature_mark_propagates_from_first_component() {
+        // circumflexcomb_tildecomb is a "ligature mark": name contains _ and
+        // doesn't start with _. Both components are mark glyphs (have _ anchors).
+        // ufo2ft promotes the first (closest-to-origin) component to "base" and
+        // propagates its anchors.
+        let mut builder = GlyphSetBuilder::new(test_context());
+        // No mark_category_glyphs → ufo2ft mode
+
+        builder.add_glyph("circumflexcomb", |glyph| {
+            glyph
+                .add_anchor("_top", (50.0, 450.0))
+                .add_anchor("top", (50.0, 600.0));
+        });
+
+        builder.add_glyph("tildecomb", |glyph| {
+            glyph
+                .add_anchor("_top", (50.0, 450.0))
+                .add_anchor("top", (50.0, 600.0));
+        });
+
+        builder.add_glyph("circumflexcomb_tildecomb", |glyph| {
+            glyph
+                .add_component_at("circumflexcomb", (0.0, 0.0))
+                .add_component_at("tildecomb", (0.0, 200.0));
+        });
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        // Should get _top from first component (circumflexcomb is promoted to base)
+        let names = get_anchor_names(&ctx, "circumflexcomb_tildecomb");
+        assert!(
+            names.contains(&"_top".to_string()),
+            "ligature mark should have _top propagated from first component, got {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"top".to_string()),
+            "ligature mark should have top propagated, got {:?}",
+            names
+        );
+        // _top comes from circumflexcomb at position (0,0): _top at (50, 450)
+        assert_anchor(
+            &ctx,
+            "circumflexcomb_tildecomb",
+            "_top",
+            Point::new(50.0, 450.0),
+        );
+    }
+
+    /// In ufo2ft mode, a spacing modifier composed of multiple mark components
+    /// (but not a ligature mark by name) should get no anchors propagated.
+    #[test]
+    fn ufo_spacing_modifier_multi_mark_components_no_propagation() {
+        let mut builder = GlyphSetBuilder::new(test_context());
+        // No mark_category_glyphs → ufo2ft mode
+
+        builder.add_glyph("acutecomb", |glyph| {
+            glyph
+                .add_anchor("_top", (80.0, 458.0))
+                .add_anchor("top", (80.0, 722.0));
+        });
+
+        builder.add_glyph("dotaccentcomb", |glyph| {
+            glyph
+                .add_anchor("_top", (50.0, 600.0))
+                .add_anchor("top", (50.0, 720.0));
+        });
+
+        // "acutedot" has no _ in name → not a ligature mark → no propagation
+        builder.add_glyph("acutedot", |glyph| {
+            glyph
+                .add_component_at("acutecomb", (0.0, 0.0))
+                .add_component_at("dotaccentcomb", (0.0, 200.0));
+        });
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        let names = get_anchor_names(&ctx, "acutedot");
+        assert!(
+            names.is_empty(),
+            "ufo2ft mode: spacing modifier with all-mark components should have no anchors, got {:?}",
+            names
         );
     }
 
