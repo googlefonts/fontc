@@ -1,0 +1,39 @@
+{
+.appVersion = "3219";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = openTypeOS2Type;
+value = (
+);
+}
+);
+familyName = fstype;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = fstype;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+}
+);
+unitsPerEm = 1000;
+}

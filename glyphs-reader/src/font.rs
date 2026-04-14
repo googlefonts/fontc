@@ -1155,7 +1155,7 @@ impl RawCustomParameters {
                 "superscriptXSize" => add_and_report_issues!(superscript_x_size, Plist::as_i64),
                 "superscriptYOffset" => add_and_report_issues!(superscript_y_offset, Plist::as_i64),
                 "superscriptYSize" => add_and_report_issues!(superscript_y_size, Plist::as_i64),
-                "fsType" => add_and_report_issues!(fs_type, Plist::as_fs_type),
+                "fsType" | "openTypeOS2Type" => add_and_report_issues!(fs_type, Plist::as_fs_type),
                 "unicodeRanges" | "openTypeOS2UnicodeRanges" => {
                     add_and_report_issues!(unicode_range_bits, Plist::as_unicode_code_ranges)
                 }
