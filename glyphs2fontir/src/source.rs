@@ -170,6 +170,9 @@ impl Source for GlyphsIrSource {
                     "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
                     "eraseOpenCorners" => flags.set(Flags::ERASE_OPEN_CORNERS, true),
                     "propagateAnchors" => flags.set(Flags::PROPAGATE_ANCHORS, true),
+                    "decomposeTransformedComponents" => {
+                        flags.set(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS, true)
+                    }
                     other => log::info!("unhandled ufo2ft filter '{other}'"),
                 }
             }
@@ -3962,5 +3965,36 @@ mod tests {
         // https://github.com/googlefonts/fontc/issues/1859
         let (_, context) = build_static_metadata(glyphs3_dir().join("VheaParams.glyphs"));
         assert!(context.static_metadata.get().build_vertical);
+    }
+
+    // https://github.com/googlefonts/fontc/issues/1900
+    #[test]
+    fn decompose_transformed_components_filter_sets_flag() {
+        let source = GlyphsIrSource::new_from_memory(
+            r#"{
+.appVersion = "3227";
+.formatVersion = 3;
+fontMaster = (
+{
+id = "master01";
+userData = {
+com.github.googlei18n.ufo2ft.filters = (
+{
+name = decomposeTransformedComponents;
+}
+);
+};
+}
+);
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+        assert!(
+            source
+                .compilation_flags()
+                .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
+            "decomposeTransformedComponents in userData should set DECOMPOSE_TRANSFORMED_COMPONENTS flag"
+        );
     }
 }
