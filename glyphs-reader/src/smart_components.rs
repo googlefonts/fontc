@@ -714,6 +714,53 @@ mod tests {
         }
     }
 
+    // Test that a flipped smart component preserves the Glyphs "start node"
+    // (last in the node list) after decomposition and reversal.
+    //
+    // Bug: a naive nodes.reverse() moves the start node from last position to
+    // first, causing to_ir_path to pick the wrong start point. The fix is to
+    // also rotate_left(1) so the start stays at the end.
+    #[test]
+    fn test_smart_component_flipped_x_start_point() {
+        let master_id = "master01";
+        let glyphs = smart_glyphs(master_id);
+        let rectangle = glyphs.get(&SmolStr::new("_part.rectangle")).unwrap();
+
+        // Default layer: rectangle_path(100, 100, 100, 100)
+        // Nodes: [(100,100), (200,100), (200,200), (100,200)]
+        // In Glyphs convention, the last node (100,200) is the "start" node.
+        // After flipping x (transform = [-1,0,0,1,0,0]):
+        //   (100,100) → (-100,100), (200,100) → (-200,100),
+        //   (200,200) → (-200,200), (100,200) → (-100,200) [start]
+        // The decomposed path should start at (-100,200).
+        let component = Component {
+            name: SmolStr::new("_part.rectangle"),
+            transform: Affine::new([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+            smart_component_values: BTreeMap::from([
+                ("Width".into(), 0.0),
+                ("Height".into(), 100.0),
+                ("Shift".into(), 0.0),
+            ]),
+            ..Default::default()
+        };
+        assert!(component.transform.determinant() < 0.0);
+
+        let instance =
+            instantiate_for_layer(master_id, &component, rectangle).expect("should succeed");
+        let path = instance.shapes[0].as_path().unwrap();
+
+        // The last node in the returned path is the Glyphs "start" node. After
+        // decomposing with a flip transform it should be the transformed original
+        // start, i.e. (-100, 200).
+        let last = path.nodes.last().expect("path has nodes");
+        assert_eq!(
+            last.pt,
+            kurbo::Point::new(-100.0, 200.0),
+            "start node after flip should be (-100, 200), got {:?}",
+            last.pt
+        );
+    }
+
     /// Helper to create a smart component with anchors for testing.
     /// Test data adapted from glyphsLib's test_smart_component_anchors
     /// (googlefonts/glyphsLib#1131, credit: @khaledhosny).

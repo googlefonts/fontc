@@ -789,9 +789,29 @@ impl Shape {
     }
 
     /// If the shape is a path, reverse it
+    ///
+    /// In Glyphs, the last node in the node list is the "start" node of a
+    /// closed contour (see `to_ir_path`). A naive `reverse()` would move the
+    /// start node to position 0, so `to_ir_path` would pick the wrong start.
+    ///
+    /// Python's `GSPath.reverse()` (which works via segments) is equivalent to
+    /// `reverse() + rotate_left(1)`, which keeps the start node at the last
+    /// position. We match that here.
+    ///
+    /// Note: this logic is only correct for closed paths. For open paths the
+    /// start node is `nodes[0]` (see `to_ir_path`), so a plain `reverse()`
+    /// without rotation would be correct. Python's segment-based `reverse()`
+    /// also appears to mishandle open paths (it silently drops the new start
+    /// node via `setSegments`). In practice this method is only called when
+    /// handling smart components, which are always closed?
+    ///
+    /// <https://github.com/googlefonts/glyphsLib/blob/d42d3b15/Lib/glyphsLib/classes.py#L2369>
     pub(crate) fn reverse(&mut self) {
         if let Shape::Path(path) = self {
             path.reverse();
+            if path.closed && !path.nodes.is_empty() {
+                path.nodes.rotate_left(1);
+            }
         }
     }
 }
