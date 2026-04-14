@@ -2817,29 +2817,59 @@ fn user_to_design_from_axis_location(
             };
             let user = axis_location.location;
             let design = master.axes_values[idx];
+            // Last master wins, matching glyphsLib overwrite semantics:
+            // https://github.com/googlefonts/glyphsLib/blob/71f487f9d24e/Lib/glyphsLib/builder/axes.py#L221
+            let source_label = format!("master '{}'", master.name.as_deref().unwrap_or(&master.id));
 
             axis_mappings
                 .entry(axis_location.axis_name.clone())
                 .or_default()
-                .add_if_new(user, design);
+                .add_or_replace(user, design, &axis.name, &source_label);
         }
     }
     Some(axis_mappings)
 }
 
 impl AxisUserToDesignMap {
-    fn add_any_new(&mut self, incoming: &AxisUserToDesignMap) {
-        for (user, design) in incoming.0.iter() {
-            self.add_if_new(*user, *design);
-        }
-    }
-
     fn add_if_new(&mut self, user: OrderedFloat<f64>, design: OrderedFloat<f64>) {
         // only keys (input/user-space) should be unique, values (output/design-space) can be duplicated
         if self.0.iter().any(|(u, _)| *u == user) {
             return;
         }
         self.0.push((user, design));
+    }
+
+    fn add_any_or_replace(
+        &mut self,
+        incoming: &AxisUserToDesignMap,
+        axis_name: &str,
+        source_label: &str,
+    ) {
+        for (user, design) in incoming.0.iter() {
+            self.add_or_replace(*user, *design, axis_name, source_label);
+        }
+    }
+
+    /// Insert or overwrite mapping for `user`. Warns when overwriting a different value.
+    fn add_or_replace(
+        &mut self,
+        user: OrderedFloat<f64>,
+        design: OrderedFloat<f64>,
+        axis_name: &str,
+        source_label: &str,
+    ) {
+        if let Some(entry) = self.0.iter_mut().find(|(u, _)| *u == user) {
+            if entry.1 != design {
+                warn!(
+                    "Axis {axis_name}: {source_label} redefines mapping for user \
+                     location {user} from {} to {design}",
+                    entry.1
+                );
+                entry.1 = design;
+            }
+        } else {
+            self.0.push((user, design));
+        }
     }
 
     fn add_identity_map(&mut self, value: OrderedFloat<f64>) {
@@ -2878,7 +2908,7 @@ impl UserToDesignMapping {
         let mut result = Self(result);
         if incomplete_mapping {
             //https://github.com/googlefonts/glyphsLib/blob/682ff4b17/Lib/glyphsLib/builder/axes.py#L251
-            result.add_instance_mappings_if_new(instances);
+            result.add_instance_mappings(instances);
             if result.0.is_empty() || result.0.values().all(|v| v.is_identity()) {
                 result.add_master_mappings_if_new(from);
             }
@@ -2894,18 +2924,19 @@ impl UserToDesignMapping {
         self.0.get(axis_name)
     }
 
-    /// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L128>
-    /// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L353>
-    fn add_instance_mappings_if_new(&mut self, instances: &[Instance]) {
+    /// Last instance wins, matching glyphsLib overwrite semantics:
+    /// * <https://github.com/googlefonts/glyphsLib/blob/71f487f9d24e/Lib/glyphsLib/builder/axes.py#L153>
+    fn add_instance_mappings(&mut self, instances: &[Instance]) {
         for instance in instances
             .iter()
             .filter(|i| i.active && i.type_ == InstanceType::Single)
         {
             for (axis_name, inst_mapping) in instance.axis_mappings.iter() {
+                let source_label = format!("instance '{}'", instance.name);
                 self.0
                     .entry(axis_name.clone())
                     .or_default()
-                    .add_any_new(inst_mapping);
+                    .add_any_or_replace(inst_mapping, axis_name, &source_label);
             }
         }
     }
