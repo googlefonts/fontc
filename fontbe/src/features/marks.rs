@@ -573,6 +573,13 @@ impl<'a> MarkLookupBuilder<'a> {
 
     //https://github.com/googlefonts/ufo2ft/blob/98e8916a86/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L40
     fn make_cursive_lookups(&self) -> Result<Vec<PendingLookup<CursivePosBuilder>>, Error> {
+        // Only generate the curs feature if both entry and exit anchors exist.
+        // in ufo2ft this is handled by the use of 'anchor pairs':
+        // https://github.com/googlefonts/ufo2ft/blob/98e8916a86/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L28
+        if !self.has_cursive_anchor_pairs() {
+            return Ok(Vec::new());
+        }
+
         let dir_glyphs = super::properties::glyphs_by_script_direction(
             &self.char_map,
             self.fea_first_pass.gsub().as_ref(),
@@ -612,6 +619,21 @@ impl<'a> MarkLookupBuilder<'a> {
                 .then(|| PendingLookup::new(vec![builder], LookupFlag::IGNORE_MARKS | flags, None))
         })
         .collect())
+    }
+
+    /// Returns `true` if there exist any matching anchor pairs.
+    ///
+    /// 'entry' and 'exit' are an anchor pair; so are 'entry.N' and 'exit.N'.
+    /// 'entry' and 'exit.M', however, do not constitute a pair.
+    fn has_cursive_anchor_pairs(&self) -> bool {
+        // at the moment we don't handle alternate entry/exit anchors,
+        // do these not exist in any of our sources?
+        let (mut has_entry, mut has_exit) = (false, false);
+        for kind in self.anchor_lists.values().flatten().map(|anc| &anc.kind) {
+            has_exit |= matches!(kind, AnchorKind::CursiveExit);
+            has_entry |= matches!(kind, AnchorKind::CursiveEntry);
+        }
+        has_entry && has_exit
     }
 
     // if either 'entry' or 'exit' is present, will return `Some`
@@ -2019,6 +2041,34 @@ mod tests {
                 ordfeminine @(x: 283 {290,292}, y: 691 {690,690})
                 @(x: 218 {265,282}, y: 704 {707,708}) acutecomb
             "#
+        );
+    }
+
+    // https://github.com/googlefonts/ufo2ft/blob/98e8916a86/Lib/ufo2ft/featureWriters/cursFeatureWriter.py#L28
+    // ufo2ft only generates curs lookups when both entry AND exit anchors exist globally.
+    // A font with only entry (or only exit) anchors should produce no curs feature.
+    #[test]
+    fn no_curs_without_entry_and_exit_pair() {
+        // entry anchor only — no exit anywhere in the font
+        let out = MarksInput::default()
+            .add_glyph("a", None, |anchors| {
+                anchors.add("entry", [(10., 10.)]);
+            })
+            .get_normalized_output();
+        assert!(
+            !out.contains("curs"),
+            "should not emit curs feature when only entry anchors exist"
+        );
+
+        // exit anchor only — no entry anywhere in the font
+        let out = MarksInput::default()
+            .add_glyph("a", None, |anchors| {
+                anchors.add("exit", [(10., 60.)]);
+            })
+            .get_normalized_output();
+        assert!(
+            !out.contains("curs"),
+            "should not emit curs feature when only exit anchors exist"
         );
     }
 
