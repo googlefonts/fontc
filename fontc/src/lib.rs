@@ -5179,6 +5179,31 @@ mod tests {
     }
 
     #[test]
+    fn gvar_work_waits_for_dynamic_notdef() {
+        // https://github.com/googlefonts/fontc/issues/1436
+        let mut test = TestCompile::new("wght_var.designspace", |options| options);
+
+        // GvarWork must start with Access::Unknown so it can't run before the final
+        // glyph order is resolved (which may add a synthesized .notdef).
+        let gvar_job = test
+            .workload
+            .jobs_pending
+            .get(&AnyWorkId::Be(BeWorkIdentifier::Gvar))
+            .expect("GvarWork should exist");
+        assert_eq!(
+            gvar_job.read_access,
+            AnyAccess::Be(Access::Unknown),
+            "GvarWork.read_access should start with Access::Unknown"
+        );
+
+        // Run the whole workload without panics to prove the dependencies are resolved correctly.
+        test.run();
+
+        let completed = test.work_executed.iter().cloned().collect::<HashSet<_>>();
+        assert!(completed.contains(&AnyWorkId::Be(BeWorkIdentifier::Gvar)));
+    }
+
+    #[test]
     fn component_point_rounding() {
         // if a component of a composite glyph has a non-integer offset,
         // rounding needs to occur before deltas are computed.
