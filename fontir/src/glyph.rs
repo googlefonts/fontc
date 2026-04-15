@@ -306,11 +306,26 @@ fn glyph_has_non_export_components(glyph: &Glyph, context: &Context) -> bool {
 fn ensure_composite_defined_at_component_locations(context: &Context, composite: &Glyph) -> Glyph {
     let mut glyph = composite.to_owned();
     let child_locations = collect_component_locations_nested(context, &glyph);
-    for loc in child_locations {
-        if !glyph.sources().contains_key(&loc) {
-            let new_layer = instantiate_instance(&glyph, &loc, context).unwrap();
-            glyph.sources_mut().insert(loc, new_layer);
-        }
+
+    // Collect all locations that need interpolation BEFORE adding any of them.
+    // This is critical for determinism: instantiate_instance builds a VariationModel
+    // from the glyph's current sources. If we add instances incrementally, the model
+    // changes with each addition, and the non-deterministic HashSet iteration order
+    // causes different interpolation results across builds.
+    // https://github.com/googlefonts/fontc/issues/1873
+    let missing: Vec<_> = child_locations
+        .into_iter()
+        .filter(|loc| !glyph.sources().contains_key(loc))
+        .collect();
+    let new_instances: Vec<_> = missing
+        .iter()
+        .map(|loc| {
+            let instance = instantiate_instance(&glyph, loc, context).unwrap();
+            (loc.clone(), instance)
+        })
+        .collect();
+    for (loc, instance) in new_instances {
+        glyph.sources_mut().insert(loc, instance);
     }
     glyph
 }
@@ -423,13 +438,26 @@ fn ensure_component_has_consistent_layers<'a>(
     }
 
     let mut component = component.to_owned();
-    for loc in base.sources().keys() {
-        if component.sources().contains_key(loc) {
-            continue;
-        }
-
-        let new_instance = get_or_instantiate_instance(&component, loc, context)?.into_owned();
-        component.sources_mut().insert(loc.to_owned(), new_instance);
+    // Collect all missing locations and interpolate from the ORIGINAL sources
+    // before adding any of them. This ensures determinism: each interpolation
+    // uses the same variation model regardless of processing order.
+    // https://github.com/googlefonts/fontc/issues/1873
+    let missing: Vec<_> = base
+        .sources()
+        .keys()
+        .filter(|loc| !component.sources().contains_key(*loc))
+        .cloned()
+        .collect();
+    let new_instances: Vec<_> = missing
+        .iter()
+        .map(|loc| {
+            let instance =
+                get_or_instantiate_instance(&component, loc, context).map(|cow| cow.into_owned());
+            (loc.clone(), instance)
+        })
+        .collect();
+    for (loc, instance) in new_instances {
+        component.sources_mut().insert(loc, instance?);
     }
 
     Ok(Cow::Owned(component))
