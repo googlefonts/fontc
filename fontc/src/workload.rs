@@ -408,6 +408,20 @@ impl Workload {
                 .get_mut(&BeWorkIdentifier::Glyf.into())
                 .expect("Glyf has to be pending");
             glyf_loca_job.read_access = glyf_loca_deps.build().into();
+
+            // Resolve the Access::Unknown for gvar, same race as glyf/loca; see issue #1436
+            let mut gvar_deps = AccessBuilder::<AnyWorkId>::new()
+                .variant(FeWorkIdentifier::StaticMetadata)
+                .variant(FeWorkIdentifier::GlyphOrder);
+            for glyph_name in final_glyph_order.names() {
+                gvar_deps =
+                    gvar_deps.specific_instance(BeWorkIdentifier::GvarFragment(glyph_name.clone()));
+            }
+            let gvar_job = self
+                .jobs_pending
+                .get_mut(&BeWorkIdentifier::Gvar.into())
+                .expect("Gvar has to be pending");
+            gvar_job.read_access = gvar_deps.build().into();
         }
 
         if let AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) = success {

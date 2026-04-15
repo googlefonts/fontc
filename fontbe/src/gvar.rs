@@ -1,10 +1,10 @@
 //! Generates a [gvar](https://learn.microsoft.com/en-us/typography/opentype/spec/gvar) table.
 
 use fontdrasil::{
-    orchestration::{Access, AccessBuilder, Work},
+    orchestration::{Access, Work},
     types::GlyphName,
 };
-use fontir::{ir::GlyphOrder, orchestration::WorkId as FeWorkId};
+use fontir::ir::GlyphOrder;
 use write_fonts::{
     dump_table,
     tables::gvar::{GlyphDeltas, GlyphVariations, Gvar},
@@ -39,12 +39,22 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
         WorkId::Gvar.into()
     }
 
+    /// We need to block on all `GvarFragment`s to build gvar, but the final glyph
+    /// order may not be known yet as it may be extended with e.g. a generated '.notdef'.
+    ///
+    /// A generic `variant(WorkId::ALL_GVAR_FRAGMENTS)` dependency can occasionally be racy
+    /// and lead to a panic if `GvarWork` is started too early.
+    /// For a `variant` access type, the dependency is deemed "fulfilled" if the pending work
+    /// count drops to 0, which may occur when all the "static" glyph fragments have been
+    /// generated before the dynamic ones have yet to be scheduled.
+    ///
+    /// So here instead we use `Access::Unknown` to start in a hard block and update our
+    /// `read_access` with `specific_instance` GvarFragments once the final `GlyphOrder`
+    /// work completes (see `fontc::workload::Workload::handle_success`).
+    ///
+    /// Also see <https://github.com/googlefonts/fontc/issues/1436>
     fn read_access(&self) -> Access<AnyWorkId> {
-        AccessBuilder::new()
-            .variant(FeWorkId::StaticMetadata)
-            .variant(FeWorkId::GlyphOrder)
-            .variant(WorkId::ALL_GVAR_FRAGMENTS)
-            .build()
+        Access::Unknown
     }
 
     /// Generate [gvar](https://learn.microsoft.com/en-us/typography/opentype/spec/gvar)
