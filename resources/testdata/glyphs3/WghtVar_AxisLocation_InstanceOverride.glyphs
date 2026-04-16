@@ -1,0 +1,143 @@
+{
+.appVersion = "3414";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = WghtVar;
+fontMaster = (
+{
+axesValues = (
+100
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 100;
+}
+);
+}
+);
+id = "thin-master";
+name = "Thin Italic";
+},
+{
+axesValues = (
+800
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 800;
+}
+);
+}
+);
+id = "extrabold-master";
+name = "ExtraBold Italic";
+},
+{
+axesValues = (
+1000
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 1000;
+}
+);
+}
+);
+id = "black-master";
+name = "Black Italic";
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = "thin-master";
+width = 200;
+},
+{
+layerId = "extrabold-master";
+width = 500;
+},
+{
+layerId = "black-master";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+instances = (
+{
+axesValues = (
+100
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 100;
+}
+);
+}
+);
+name = "Thin Italic";
+},
+{
+axesValues = (
+780
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 800;
+}
+);
+}
+);
+name = "ExtraBold Italic";
+},
+{
+axesValues = (
+1000
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 1000;
+}
+);
+}
+);
+name = "Black Italic";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

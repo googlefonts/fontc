@@ -79,6 +79,7 @@ instanceInterpolations = {
 m02 = 1;
 };
 name = Bold;
+weightClass = 700;
 }
 );
 kerningLTR = {

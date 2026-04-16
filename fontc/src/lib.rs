@@ -1438,6 +1438,44 @@ mod tests {
         );
     }
 
+    /// Instance Axis Location may override a master's Axis Location for the same user value.
+    /// <https://github.com/googlefonts/fontc/issues/1866>
+    #[test]
+    fn instance_axis_location_overrides_master() {
+        let result =
+            TestCompile::compile_source("glyphs3/WghtVar_AxisLocation_InstanceOverride.glyphs");
+        let font = result.font();
+
+        let axis_maps: Vec<_> = font
+            .avar()
+            .unwrap()
+            .axis_segment_maps()
+            .iter()
+            .map(|m| m.unwrap())
+            .map(|m| {
+                m.axis_value_maps()
+                    .iter()
+                    .map(|e| (e.from_coordinate().to_f32(), e.to_coordinate().to_f32()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        // Modeled on SUSE-Italic.glyphs (https://github.com/googlefonts/fontc/issues/1866):
+        // Masters: Thin(100→100), ExtraBold(800→800), Black(1000→1000).
+        // The ExtraBold *instance* redefines user=800 → design=780 (not 800).
+        // Normalized (default=100, max=1000): user 0.7778 should map to design 0.7556
+        // (not 0.7778 as it would if the instance override were silently dropped).
+        assert_eq!(
+            vec![vec![
+                (-1.0, -1.0),
+                (0.0, 0.0),
+                (0.777771, 0.7555542),
+                (1.0, 1.0)
+            ]],
+            axis_maps
+        );
+    }
+
     #[test]
     fn compile_without_ir() {
         let result = TestCompile::compile("glyphs2/WghtVar.glyphs", |mut args| {
