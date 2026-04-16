@@ -309,28 +309,34 @@ fn ensure_composite_defined_at_component_locations(
 ) -> Result<Glyph, BadGlyph> {
     let mut glyph = composite.to_owned();
     let child_locations = collect_component_locations_nested(context, &glyph);
+    batch_interpolate_missing(&mut glyph, child_locations.iter(), context)?;
+    Ok(glyph)
+}
 
-    // Collect all locations that need interpolation BEFORE adding any of them.
-    // This is critical for determinism: instantiate_instance builds a VariationModel
-    // from the glyph's current sources. If we add instances incrementally, the model
-    // changes with each addition, and the non-deterministic HashSet iteration order
-    // causes different interpolation results across builds.
-    // https://github.com/googlefonts/fontc/issues/1873
-    let missing: Vec<_> = child_locations
+/// Interpolate instances at all `locations` missing from `glyph`, in batch.
+///
+/// All interpolations are computed from the glyph's *original* source set before
+/// any new instances are inserted. This is critical for determinism: inserting
+/// incrementally would mutate the VariationModel between iterations, and
+/// non-deterministic HashMap iteration order would produce different results.
+/// See <https://github.com/googlefonts/fontc/issues/1873>.
+fn batch_interpolate_missing<'a>(
+    glyph: &mut Glyph,
+    locations: impl IntoIterator<Item = &'a NormalizedLocation>,
+    context: &Context,
+) -> Result<(), BadGlyph> {
+    let new_instances: Vec<_> = locations
         .into_iter()
-        .filter(|loc| !glyph.sources().contains_key(loc))
-        .collect();
-    let new_instances: Vec<_> = missing
-        .iter()
+        .filter(|loc| !glyph.sources().contains_key(*loc))
         .map(|loc| {
-            let instance = instantiate_instance(&glyph, loc, context);
+            let instance = instantiate_instance(glyph, loc, context);
             (loc.clone(), instance)
         })
         .collect();
     for (loc, instance) in new_instances {
         glyph.sources_mut().insert(loc, instance?);
     }
-    Ok(glyph)
+    Ok(())
 }
 
 fn collect_component_locations_nested(
@@ -441,27 +447,7 @@ fn ensure_component_has_consistent_layers<'a>(
     }
 
     let mut component = component.to_owned();
-    // Collect all missing locations and interpolate from the ORIGINAL sources
-    // before adding any of them. This ensures determinism: each interpolation
-    // uses the same variation model regardless of processing order.
-    // https://github.com/googlefonts/fontc/issues/1873
-    let missing: Vec<_> = base
-        .sources()
-        .keys()
-        .filter(|loc| !component.sources().contains_key(*loc))
-        .cloned()
-        .collect();
-    let new_instances: Vec<_> = missing
-        .iter()
-        .map(|loc| {
-            let instance = instantiate_instance(&component, loc, context);
-            (loc.clone(), instance)
-        })
-        .collect();
-    for (loc, instance) in new_instances {
-        component.sources_mut().insert(loc, instance?);
-    }
-
+    batch_interpolate_missing(&mut component, base.sources().keys(), context)?;
     Ok(Cow::Owned(component))
 }
 
