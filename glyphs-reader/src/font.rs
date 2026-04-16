@@ -2819,12 +2819,18 @@ fn user_to_design_from_axis_location(
             let design = master.axes_values[idx];
             // Last master wins, matching glyphsLib overwrite semantics:
             // https://github.com/googlefonts/glyphsLib/blob/71f487f9d24e/Lib/glyphsLib/builder/axes.py#L221
-            let source_label = format!("master '{}'", master.name.as_deref().unwrap_or(&master.id));
-
-            axis_mappings
+            let old = axis_mappings
                 .entry(axis_location.axis_name.clone())
                 .or_default()
-                .add_or_replace(user, design, &axis.name, &source_label);
+                .add_or_replace(user, design);
+            if let Some(old) = old {
+                let name = master.name.as_deref().unwrap_or(&master.id);
+                warn!(
+                    "Axis {}: master '{}' redefines mapping for user \
+                     location {user} from {old} to {design}",
+                    axis.name, name
+                );
+            }
         }
     }
     Some(axis_mappings)
@@ -2839,37 +2845,23 @@ impl AxisUserToDesignMap {
         self.0.push((user, design));
     }
 
-    fn add_any_or_replace(
-        &mut self,
-        incoming: &AxisUserToDesignMap,
-        axis_name: &str,
-        source_label: &str,
-    ) {
-        for (user, design) in incoming.0.iter() {
-            self.add_or_replace(*user, *design, axis_name, source_label);
-        }
-    }
-
-    /// Insert or overwrite mapping for `user`. Warns when overwriting a different value.
+    /// Insert or overwrite mapping for `user`.
+    /// Returns the previous design value if an existing entry was overwritten.
     fn add_or_replace(
         &mut self,
         user: OrderedFloat<f64>,
         design: OrderedFloat<f64>,
-        axis_name: &str,
-        source_label: &str,
-    ) {
+    ) -> Option<OrderedFloat<f64>> {
         if let Some(entry) = self.0.iter_mut().find(|(u, _)| *u == user) {
             if entry.1 != design {
-                warn!(
-                    "Axis {axis_name}: {source_label} redefines mapping for user \
-                     location {user} from {} to {design}",
-                    entry.1
-                );
+                let old = entry.1;
                 entry.1 = design;
+                return Some(old);
             }
         } else {
             self.0.push((user, design));
         }
+        None
     }
 
     fn add_identity_map(&mut self, value: OrderedFloat<f64>) {
@@ -2932,11 +2924,16 @@ impl UserToDesignMapping {
             .filter(|i| i.active && i.type_ == InstanceType::Single)
         {
             for (axis_name, inst_mapping) in instance.axis_mappings.iter() {
-                let source_label = format!("instance '{}'", instance.name);
-                self.0
-                    .entry(axis_name.clone())
-                    .or_default()
-                    .add_any_or_replace(inst_mapping, axis_name, &source_label);
+                let entry = self.0.entry(axis_name.clone()).or_default();
+                for (user, design) in inst_mapping.iter() {
+                    if let Some(old) = entry.add_or_replace(*user, *design) {
+                        warn!(
+                            "Axis {axis_name}: instance '{}' redefines mapping for user \
+                             location {user} from {old} to {design}",
+                            instance.name
+                        );
+                    }
+                }
             }
         }
     }
