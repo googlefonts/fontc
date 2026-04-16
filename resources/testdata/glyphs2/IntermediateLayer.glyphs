@@ -664,7 +664,7 @@ weightClass = Bold;
 },
 {
 interpolationWeight = 800;
-interpolationWidth = 700;
+interpolationWidth = 900;
 instanceInterpolations = {
 "F969B945-4602-464F-B67C-A69BED6E6A4A" = 0.4;
 m01 = 0.6;

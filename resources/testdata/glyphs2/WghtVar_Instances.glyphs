@@ -208,6 +208,7 @@ instanceInterpolations = {
 isBold = 1;
 linkStyle = Regular;
 name = Bold;
+weightClass = Bold;
 }
 );
 unitsPerEm = 1000;
