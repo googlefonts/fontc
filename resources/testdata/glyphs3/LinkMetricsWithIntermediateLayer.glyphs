@@ -74,6 +74,7 @@ instanceInterpolations = {
 m02 = 1;
 };
 name = Bold;
+weightClass = 700;
 }
 );
 unitsPerEm = 1000;
