@@ -254,7 +254,7 @@ fn flatten_non_export_components_for_glyph(
     context: &Context,
     glyph: &Glyph,
 ) -> Result<Glyph, BadGlyph> {
-    let glyph = ensure_composite_defined_at_component_locations(context, glyph);
+    let glyph = ensure_composite_defined_at_component_locations(context, glyph)?;
     let mut builder = GlyphBuilder::from(glyph.clone());
     builder.clear_components();
 
@@ -303,16 +303,40 @@ fn glyph_has_non_export_components(glyph: &Glyph, context: &Context) -> bool {
         .any(|name| !context.get_glyph(name.as_str()).emit_to_binary)
 }
 
-fn ensure_composite_defined_at_component_locations(context: &Context, composite: &Glyph) -> Glyph {
+fn ensure_composite_defined_at_component_locations(
+    context: &Context,
+    composite: &Glyph,
+) -> Result<Glyph, BadGlyph> {
     let mut glyph = composite.to_owned();
     let child_locations = collect_component_locations_nested(context, &glyph);
-    for loc in child_locations {
-        if !glyph.sources().contains_key(&loc) {
-            let new_layer = instantiate_instance(&glyph, &loc, context).unwrap();
-            glyph.sources_mut().insert(loc, new_layer);
-        }
+    batch_interpolate_missing(&mut glyph, child_locations.iter(), context)?;
+    Ok(glyph)
+}
+
+/// Interpolate instances at all `locations` missing from `glyph`, in batch.
+///
+/// All interpolations are computed from the glyph's *original* source set before
+/// any new instances are inserted. This is critical for determinism: inserting
+/// incrementally would mutate the VariationModel between iterations, and
+/// non-deterministic HashMap iteration order would produce different results.
+/// See <https://github.com/googlefonts/fontc/issues/1873>.
+fn batch_interpolate_missing<'a>(
+    glyph: &mut Glyph,
+    locations: impl IntoIterator<Item = &'a NormalizedLocation>,
+    context: &Context,
+) -> Result<(), BadGlyph> {
+    let new_instances: Vec<_> = locations
+        .into_iter()
+        .filter(|loc| !glyph.sources().contains_key(*loc))
+        .map(|loc| {
+            let instance = instantiate_instance(glyph, loc, context);
+            (loc.clone(), instance)
+        })
+        .collect();
+    for (loc, instance) in new_instances {
+        glyph.sources_mut().insert(loc, instance?);
     }
-    glyph
+    Ok(())
 }
 
 fn collect_component_locations_nested(
@@ -342,7 +366,7 @@ fn collect_component_locations_nested(
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcd/Lib/ufo2ft/util.py#L165>
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), BadGlyph> {
-    let original = ensure_composite_defined_at_component_locations(context, original);
+    let original = ensure_composite_defined_at_component_locations(context, original)?;
     // Component until you can't component no more
     let mut frontier: VecDeque<_> = components(&original, Affine::IDENTITY);
 
@@ -423,15 +447,7 @@ fn ensure_component_has_consistent_layers<'a>(
     }
 
     let mut component = component.to_owned();
-    for loc in base.sources().keys() {
-        if component.sources().contains_key(loc) {
-            continue;
-        }
-
-        let new_instance = get_or_instantiate_instance(&component, loc, context)?.into_owned();
-        component.sources_mut().insert(loc.to_owned(), new_instance);
-    }
-
+    batch_interpolate_missing(&mut component, base.sources().keys(), context)?;
     Ok(Cow::Owned(component))
 }
 
@@ -2296,5 +2312,272 @@ mod tests {
             Some(&GlyphClassDef::Base),
             "Glyph with pre-existing attaching anchor should be classified as Base"
         );
+    }
+
+    /// Regression test for <https://github.com/googlefonts/fontc/issues/1873>.
+    ///
+    /// `ensure_composite_defined_at_component_locations` must compute all
+    /// interpolations from the original source set, not incrementally mutate
+    /// the map. We verify the invariant: for each missing location, the result
+    /// matches an independent `instantiate_instance` call on the unmodified glyph.
+    ///
+    /// Derived from Georama's `uni03060300` (breve + grave combining mark).
+    /// The composite has 4 corner masters; its component `uni0306` has 5
+    /// additional intermediate layers (4 on-axis + 1 interior), so 5 instances
+    /// must be interpolated. The interior point at (wght=0.5, wdth=0.4) is
+    /// critical: when edge intermediates are inserted first (incrementally),
+    /// they change the VariationModel's support regions, causing the interior
+    /// interpolation to produce a *mathematically different* result (up to
+    /// ~19 units off). With batch interpolation from the original 4-master
+    /// model, all results are deterministic.
+    #[test]
+    fn interpolated_instances_depend_only_on_original_sources() {
+        // Georama design-space locations (wght x wdth), normalized to [0, 1].
+        // 4 corner masters
+        let m_00 = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]);
+        let m_01 = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 1.0)]);
+        let m_10 = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 0.0)]);
+        let m_11 = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]);
+
+        // 5 intermediate locations from uni0306's brace layers:
+        // 4 on-axis (edges of the rectangle)
+        let i_0_04 = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.4)]);
+        let i_1_04 = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 0.4)]);
+        let i_05_0 = NormalizedLocation::for_pos(&[("wght", 0.5), ("wdth", 0.0)]);
+        let i_05_1 = NormalizedLocation::for_pos(&[("wght", 0.5), ("wdth", 1.0)]);
+        // 1 interior (both axes non-zero) — this is the trigger for the bug
+        let i_05_04 = NormalizedLocation::for_pos(&[("wght", 0.5), ("wdth", 0.4)]);
+
+        // Composite uni03060300: components uni0306 + gravecomb.case.
+        // Real transforms from Georama source (4 corner masters only).
+        let composite = Glyph::new(
+            "uni03060300".into(),
+            true,
+            Default::default(),
+            [
+                // (wght=0, wdth=0): identity + translate(24, -4)
+                (
+                    &m_00,
+                    vec![
+                        Component::new("uni0306", Affine::IDENTITY),
+                        Component::new("gravecomb.case", Affine::translate((24.0, -4.0))),
+                    ],
+                ),
+                // (wght=0, wdth=1): identity + translate(173, 27)
+                (
+                    &m_01,
+                    vec![
+                        Component::new("uni0306", Affine::IDENTITY),
+                        Component::new("gravecomb.case", Affine::translate((173.0, 27.0))),
+                    ],
+                ),
+                // (wght=1, wdth=0): identity + [0.9, 0, 0, 0.9, -21, 132]
+                (
+                    &m_10,
+                    vec![
+                        Component::new("uni0306", Affine::IDENTITY),
+                        Component::new(
+                            "gravecomb.case",
+                            Affine::new([0.9, 0.0, 0.0, 0.9, -21.0, 132.0]),
+                        ),
+                    ],
+                ),
+                // (wght=1, wdth=1): identity + [0.9, 0, 0, 0.9, 81, 142]
+                (
+                    &m_11,
+                    vec![
+                        Component::new("uni0306", Affine::IDENTITY),
+                        Component::new(
+                            "gravecomb.case",
+                            Affine::new([0.9, 0.0, 0.0, 0.9, 81.0, 142.0]),
+                        ),
+                    ],
+                ),
+            ]
+            .into_iter()
+            .map(|(loc, components)| {
+                (
+                    loc.clone(),
+                    GlyphInstance {
+                        components,
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect(),
+        )
+        .unwrap();
+
+        // Component uni0306: simple glyph at 4 corners + 5 intermediates.
+        // Actual contour data doesn't affect the composite's interpolation;
+        // we just need the glyph to exist at the right locations so that
+        // collect_component_locations_nested returns all 9 locations.
+        let uni0306 = Glyph::new(
+            "uni0306".into(),
+            true,
+            Default::default(),
+            [
+                &m_00, &m_01, &m_10, &m_11, &i_0_04, &i_1_04, &i_05_0, &i_05_1, &i_05_04,
+            ]
+            .into_iter()
+            .map(|loc| {
+                (
+                    loc.clone(),
+                    GlyphInstance {
+                        contours: vec![simple_square_path()],
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect(),
+        )
+        .unwrap();
+
+        // Component gravecomb.case: only at the 4 corners (no intermediates).
+        let gravecomb_case = Glyph::new(
+            "gravecomb.case".into(),
+            true,
+            Default::default(),
+            [&m_00, &m_01, &m_10, &m_11]
+                .into_iter()
+                .map(|loc| {
+                    (
+                        loc.clone(),
+                        GlyphInstance {
+                            contours: vec![simple_square_path()],
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect(),
+        )
+        .unwrap();
+
+        // Context with the 4 corner master locations (the global model)
+        let context = test_context_with_locations(vec![
+            m_00.clone(),
+            m_01.clone(),
+            m_10.clone(),
+            m_11.clone(),
+        ]);
+        context.glyphs.set(uni0306);
+        context.glyphs.set(gravecomb_case);
+        context.glyphs.set(composite.clone());
+
+        // Without the fix, the function incrementally inserts edge intermediates
+        // (in non-deterministic HashSet order), which changes the VariationModel's
+        // support regions before the interior point is interpolated.
+        // NOTE: this test may randomly PASS without the fix if the interior point is processed first
+        let result = ensure_composite_defined_at_component_locations(&context, &composite).unwrap();
+        assert_eq!(result.sources().len(), 9);
+        for loc in [&i_0_04, &i_1_04, &i_05_0, &i_05_1, &i_05_04] {
+            let expected = instantiate_instance(&composite, loc, &context).unwrap();
+            assert_eq!(
+                result.sources().get(loc).unwrap(),
+                &expected,
+                "instance at {loc:?} differs from independent interpolation on the original glyph"
+            );
+        }
+    }
+
+    /// Same bug mechanism as `interpolated_instances_depend_only_on_original_sources`,
+    /// but for `ensure_component_has_consistent_layers` which interpolates a
+    /// *component's contour coordinates* (not a composite's transforms).
+    ///
+    /// In `convert_components_to_contours`, after the composite gets all 9
+    /// locations, each component is padded to match via
+    /// `ensure_component_has_consistent_layers`. For `gravecomb.case` (4 corner
+    /// sources), 5 intermediates must be interpolated — same edge+interior
+    /// layout, same non-determinism risk.
+    ///
+    /// Uses real Georama contour coordinates for `gravecomb.case`.
+    #[test]
+    fn component_consistent_layers_independent_of_insertion_order() {
+        // Same Georama locations as the composite test
+        let m_00 = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]);
+        let m_01 = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 1.0)]);
+        let m_10 = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 0.0)]);
+        let m_11 = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]);
+        let i_0_04 = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.4)]);
+        let i_1_04 = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 0.4)]);
+        let i_05_0 = NormalizedLocation::for_pos(&[("wght", 0.5), ("wdth", 0.0)]);
+        let i_05_1 = NormalizedLocation::for_pos(&[("wght", 0.5), ("wdth", 1.0)]);
+        let i_05_04 = NormalizedLocation::for_pos(&[("wght", 0.5), ("wdth", 0.4)]);
+
+        // Real Georama contour data for gravecomb.case (one contour, 4 points).
+        fn gc_instance(points: [(f64, f64); 4]) -> GlyphInstance {
+            let mut path = BezPath::new();
+            path.move_to(points[0]);
+            path.line_to(points[1]);
+            path.line_to(points[2]);
+            path.line_to(points[3]);
+            path.close_path();
+            GlyphInstance {
+                contours: vec![path],
+                ..Default::default()
+            }
+        }
+        let component = Glyph::new(
+            "gravecomb.case".into(),
+            true,
+            Default::default(),
+            [
+                (
+                    m_00.clone(),
+                    gc_instance([(-156., 736.), (-138., 736.), (-200., 885.), (-221., 885.)]),
+                ),
+                (
+                    m_01.clone(),
+                    gc_instance([(-644., 756.), (-615., 756.), (-837., 950.), (-867., 950.)]),
+                ),
+                (
+                    m_10.clone(),
+                    gc_instance([(-285., 745.), (-144., 745.), (-194., 939.), (-377., 939.)]),
+                ),
+                (
+                    m_11.clone(),
+                    gc_instance([(-694., 746.), (-465., 746.), (-570., 940.), (-864., 940.)]),
+                ),
+            ]
+            .into(),
+        )
+        .unwrap();
+
+        // This glyph represents the composite after
+        // ensure_composite_defined_at_component_locations: it has all 9
+        // locations. Contents don't matter, only the key set.
+        let composite = Glyph::new(
+            "composite".into(),
+            true,
+            Default::default(),
+            [
+                &m_00, &m_01, &m_10, &m_11, &i_0_04, &i_1_04, &i_05_0, &i_05_1, &i_05_04,
+            ]
+            .into_iter()
+            .map(|loc| (loc.clone(), GlyphInstance::default()))
+            .collect(),
+        )
+        .unwrap();
+
+        let context = test_context_with_locations(vec![
+            m_00.clone(),
+            m_01.clone(),
+            m_10.clone(),
+            m_11.clone(),
+        ]);
+
+        let result = ensure_component_has_consistent_layers(&composite, &component, &context)
+            .unwrap()
+            .into_owned();
+        assert_eq!(result.sources().len(), 9);
+
+        for loc in [&i_0_04, &i_1_04, &i_05_0, &i_05_1, &i_05_04] {
+            let expected = instantiate_instance(&component, loc, &context).unwrap();
+            assert_eq!(
+                result.sources().get(loc).unwrap(),
+                &expected,
+                "instance at {loc:?} differs from independent interpolation on the original component"
+            );
+        }
     }
 }
