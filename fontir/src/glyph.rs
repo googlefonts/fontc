@@ -254,7 +254,7 @@ fn flatten_non_export_components_for_glyph(
     context: &Context,
     glyph: &Glyph,
 ) -> Result<Glyph, BadGlyph> {
-    let glyph = ensure_composite_defined_at_component_locations(context, glyph);
+    let glyph = ensure_composite_defined_at_component_locations(context, glyph)?;
     let mut builder = GlyphBuilder::from(glyph.clone());
     builder.clear_components();
 
@@ -303,7 +303,10 @@ fn glyph_has_non_export_components(glyph: &Glyph, context: &Context) -> bool {
         .any(|name| !context.get_glyph(name.as_str()).emit_to_binary)
 }
 
-fn ensure_composite_defined_at_component_locations(context: &Context, composite: &Glyph) -> Glyph {
+fn ensure_composite_defined_at_component_locations(
+    context: &Context,
+    composite: &Glyph,
+) -> Result<Glyph, BadGlyph> {
     let mut glyph = composite.to_owned();
     let child_locations = collect_component_locations_nested(context, &glyph);
 
@@ -320,14 +323,14 @@ fn ensure_composite_defined_at_component_locations(context: &Context, composite:
     let new_instances: Vec<_> = missing
         .iter()
         .map(|loc| {
-            let instance = instantiate_instance(&glyph, loc, context).unwrap();
+            let instance = instantiate_instance(&glyph, loc, context);
             (loc.clone(), instance)
         })
         .collect();
     for (loc, instance) in new_instances {
-        glyph.sources_mut().insert(loc, instance);
+        glyph.sources_mut().insert(loc, instance?);
     }
-    glyph
+    Ok(glyph)
 }
 
 fn collect_component_locations_nested(
@@ -357,7 +360,7 @@ fn collect_component_locations_nested(
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcd/Lib/ufo2ft/util.py#L165>
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), BadGlyph> {
-    let original = ensure_composite_defined_at_component_locations(context, original);
+    let original = ensure_composite_defined_at_component_locations(context, original)?;
     // Component until you can't component no more
     let mut frontier: VecDeque<_> = components(&original, Affine::IDENTITY);
 
@@ -451,8 +454,7 @@ fn ensure_component_has_consistent_layers<'a>(
     let new_instances: Vec<_> = missing
         .iter()
         .map(|loc| {
-            let instance =
-                get_or_instantiate_instance(&component, loc, context).map(|cow| cow.into_owned());
+            let instance = instantiate_instance(&component, loc, context);
             (loc.clone(), instance)
         })
         .collect();
@@ -2480,7 +2482,7 @@ mod tests {
         // (in non-deterministic HashSet order), which changes the VariationModel's
         // support regions before the interior point is interpolated.
         // NOTE: this test may randomly PASS without the fix if the interior point is processed first
-        let result = ensure_composite_defined_at_component_locations(&context, &composite);
+        let result = ensure_composite_defined_at_component_locations(&context, &composite).unwrap();
         assert_eq!(result.sources().len(), 9);
         for loc in [&i_0_04, &i_1_04, &i_05_0, &i_05_1, &i_05_04] {
             let expected = instantiate_instance(&composite, loc, &context).unwrap();
