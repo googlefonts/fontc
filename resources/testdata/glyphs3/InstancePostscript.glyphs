@@ -84,6 +84,7 @@ key = variablePostscriptFontName;
 value = "PostBold";
 }
 );
+weightClass = 700;
 }
 );
 unitsPerEm = 1000;
