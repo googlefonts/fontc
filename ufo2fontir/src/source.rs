@@ -1743,7 +1743,17 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
             .unwrap();
 
         let ufo_dir = designspace_dir.join(&source.filename);
-        let data_request = norad::DataRequest::none().kerning(true);
+        // UFO2 kerning uses @MMK_L_/@MMK_R_ group names; norad's upconversion to
+        // public.kern1./kern2. only fires when groups are loaded alongside kerning.
+        // Reading metainfo.plist is cheap (~150 bytes) and avoids loading groups.plist
+        // on every UFO3 source.
+        let meta_path = ufo_dir.join("metainfo.plist");
+        let meta: norad::MetaInfo =
+            plist::from_file(&meta_path).map_err(|e| BadSource::custom(&meta_path, e))?;
+        let needs_upconversion = meta.format_version != norad::FormatVersion::V3;
+        let data_request = norad::DataRequest::none()
+            .kerning(true)
+            .groups(needs_upconversion);
         let font = norad::Font::load_requested_data(&ufo_dir, data_request)
             .map_err(|e| BadSource::custom(ufo_dir, e))?;
 
@@ -2633,6 +2643,53 @@ mod tests {
         assert_eq!(
             groups,
             vec![(KernGroup::Side1("correct_name".into()), vec!["bar", "plus"],),],
+        );
+    }
+
+    // UFO2 sources use @MMK_L_X/@MMK_R_X group naming instead of public.kern1.X/public.kern2.X.
+    // norad's upconversion only fires when groups are loaded alongside kerning, so we must
+    // request both. Regression test for https://github.com/googlefonts/fontc/issues/XXXX
+    // (Fanwood Text: group kern pairs silently dropped for UFO2 sources).
+    #[test]
+    fn ufo2_mmk_kerning_groups_upconverted() {
+        let (_, context) = build_kerning("ufo2_kern.designspace");
+        let kerning = context.kerning_groups.get();
+
+        // @MMK_L_A and @MMK_R_V should be upconverted to public.kern1.A / public.kern2.V
+        let mut groups: Vec<_> = kerning
+            .groups
+            .iter()
+            .map(|(name, entries)| {
+                let mut entries: Vec<_> = entries.iter().map(|e| e.as_str()).collect();
+                entries.sort();
+                (name.clone(), entries)
+            })
+            .collect();
+        groups.sort();
+
+        assert_eq!(
+            groups,
+            vec![
+                (KernGroup::Side1("A".into()), vec!["bar", "plus"]),
+                (KernGroup::Side2("V".into()), vec!["bar"]),
+            ],
+            "UFO2 @MMK_L_/@MMK_R_ groups should be upconverted to public.kern1./kern2. names"
+        );
+
+        // Verify the group-to-group kern pair is present in the kerning instance
+        let location = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let kern_instance = context
+            .kerning_at
+            .get(&fontir::orchestration::WorkId::KernInstance(location));
+        let group_pairs: Vec<_> = kern_instance
+            .kerns
+            .iter()
+            .filter(|((l, r), _)| l.is_group() && r.is_group())
+            .collect();
+        assert_eq!(
+            group_pairs.len(),
+            1,
+            "Expected one group-to-group kern pair from @MMK_L_A/@MMK_R_V"
         );
     }
 
