@@ -1469,6 +1469,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
     fn resolve_aalt_feature(&mut self, feature: &typed::Feature) {
         let mut aalt = AaltFeature::default();
+        aalt.use_extension = feature.use_extension().is_some();
+
         for item in feature.statements() {
             if let Some(node) = typed::Gsub1::cast(item) {
                 let Some((target, replacement)) = self.resolve_single_sub_glyphs(&node) else {

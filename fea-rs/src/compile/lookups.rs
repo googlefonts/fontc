@@ -893,6 +893,7 @@ impl AllLookups {
         &mut self,
         insert_point: usize,
         all_alts: HashMap<GlyphId16, Vec<GlyphId16>>,
+        use_extension: bool,
     ) -> Vec<LookupId> {
         let mut single = SingleSubBuilder::default();
         let mut alt = AlternateSubBuilder::default();
@@ -919,7 +920,17 @@ impl AllLookups {
             ))
         });
 
-        let lookups = one.into_iter().chain(two).collect::<Vec<_>>();
+        let lookups = one
+            .into_iter()
+            .chain(two)
+            .map(|lkp| {
+                if use_extension {
+                    SubstitutionLookup::Extension(lkp.into())
+                } else {
+                    lkp
+                }
+            })
+            .collect::<Vec<_>>();
         let lookup_ids = (insert_point..insert_point + lookups.len())
             .map(LookupId::Gsub)
             .collect();
