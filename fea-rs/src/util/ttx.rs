@@ -49,7 +49,6 @@ static IGNORED_TESTS: &[&str] = &[
     // compare failures to investigate
     "identical_feature_lookups.fea",
     "spec8a_2.fea",
-    "useExtension.fea",
 ];
 
 /// An environment variable that can be set to specify where to write generated files.

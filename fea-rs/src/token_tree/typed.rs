@@ -701,8 +701,6 @@ impl Feature {
 }
 
 impl LookupBlock {
-    #[allow(unused)]
-    //TODO: do we want to support this syntax?
     pub(crate) fn use_extension(&self) -> Option<&Token> {
         self.iter()
             .take_while(|t| t.kind() != Kind::LBrace)

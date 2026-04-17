@@ -430,7 +430,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         self.script = None;
     }
 
-    fn start_lookup_block(&mut self, name: &Token) {
+    fn start_lookup_block(&mut self, name: &Token, use_extension: bool) {
         if let Some((id, _name)) = self.lookups.finish_current() {
             assert!(_name.is_none(), "lookup blocks cannot be nested");
             self.add_lookup_to_current_feature_if_present(id);
@@ -441,7 +441,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         }
 
         self.vertical_feature.begin_lookup_block();
-        self.lookups.start_named(name.text.clone(), name.range());
+        self.lookups
+            .start_named(name.text.clone(), name.range(), use_extension);
     }
 
     fn end_lookup_block(&mut self) {
@@ -1981,9 +1982,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn resolve_lookup_block(&mut self, lookup: typed::LookupBlock) {
-        self.start_lookup_block(lookup.label());
-
-        //let use_extension = lookup.use_extension().is_some();
+        let use_extension = lookup.use_extension().is_some();
+        self.start_lookup_block(lookup.label(), use_extension);
         for item in lookup.statements() {
             self.resolve_statement(item);
         }

@@ -12,12 +12,15 @@
     <LookupList>
       <!-- LookupCount=1 -->
       <Lookup index="0">
-        <LookupType value="1"/>
+        <LookupType value="7"/>
         <LookupFlag value="0"/>
         <!-- SubTableCount=1 -->
-        <SingleSubst index="0">
-          <Substitution in="a" out="b"/>
-        </SingleSubst>
+        <ExtensionSubst index="0" Format="1">
+          <ExtensionLookupType value="1"/>
+          <SingleSubst>
+            <Substitution in="a" out="b"/>
+          </SingleSubst>
+        </ExtensionSubst>
       </Lookup>
     </LookupList>
   </GSUB>
