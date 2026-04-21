@@ -604,6 +604,7 @@ mod tests {
     };
     use fontdrasil::{orchestration::Access, types::Axis};
     use std::collections::BTreeSet;
+    use write_fonts::OtRound;
 
     /// Helper to create a test context with proper setup
     fn test_context() -> Context {
@@ -877,14 +878,14 @@ mod tests {
         );
     }
 
-    /// Helper to assert an anchor exists with expected position at a specific location
-    fn assert_anchor_at_loc(
+    /// Helper to retrieve an anchor position at a specific location, panicking
+    /// if the glyph, anchor, or location is missing.
+    fn anchor_at_loc(
         context: &Context,
         glyph_name: &str,
         anchor_name: &str,
         loc: &NormalizedLocation,
-        expected: Point,
-    ) {
+    ) -> Point {
         let glyph_anchors = context
             .anchors
             .try_get(&WorkId::Anchor(glyph_name.into()))
@@ -901,15 +902,25 @@ mod tests {
                 )
             });
 
-        let pos = anchor.positions.get(loc).unwrap_or_else(|| {
+        *anchor.positions.get(loc).unwrap_or_else(|| {
             panic!(
                 "Anchor {} should have position at location {:?}",
                 anchor_name, loc
             )
-        });
+        })
+    }
 
+    /// Helper to assert an anchor exists with expected position at a specific location
+    fn assert_anchor_at_loc(
+        context: &Context,
+        glyph_name: &str,
+        anchor_name: &str,
+        loc: &NormalizedLocation,
+        expected: Point,
+    ) {
+        let pos = anchor_at_loc(context, glyph_name, anchor_name, loc);
         assert_eq!(
-            *pos, expected,
+            pos, expected,
             "Anchor {anchor_name} on {glyph_name} at {loc:?} has wrong position"
         );
     }
@@ -1804,6 +1815,85 @@ mod tests {
             &loc_medium,
             Point::new(330.0, 810.0),
         );
+    }
+
+    /// Regression test for
+    /// <https://github.com/googlefonts/fontc/issues/1967>.
+    ///
+    /// When a composite has a brace-layer location its component lacks,
+    /// the anchor interpolated at that location is stored as an
+    /// additional master source for the composite's anchor. Master
+    /// anchor coordinates flow through the pipeline as floats and are
+    /// rounded once, at IVS encoding time (in `resolve_variable_metric`);
+    /// interpolated master sources must be handled the same way. The
+    /// default `VariationModel::deltas()` rounds deltas internally,
+    /// which collapses a fractional master coordinate too early — e.g.
+    /// a delta of -0.5 rounds to 0 (`RoundTiesEven`), and its fractional
+    /// contribution vanishes from the interpolated master's position.
+    ///
+    /// Setup mirrors the wght×wdth quadrant of NotoSerif-Italic's
+    /// `uni1DF14` / `eng` pair: `eng` is a simple component whose
+    /// `center` anchor has y=152.5 at the Bold Condensed master
+    /// (+1, -1); `uni1DF14` is a composite `{ref = eng}` with a brace
+    /// layer at (+0.5, -1) that `eng` lacks. At that brace three
+    /// regions overlap; the half-integer corner delta shifts the
+    /// interpolated y by 0.25 — enough to flip the downstream
+    /// `ot_round` integer (152 correct, 153 buggy).
+    #[test]
+    fn interpolate_component_anchor_uses_unrounded_deltas() {
+        let loc = |w: f64, d: f64| NormalizedLocation::for_pos(&[("wght", w), ("wdth", d)]);
+        let default_loc = loc(0.0, 0.0);
+        let bold_loc = loc(1.0, 0.0);
+        let cond_loc = loc(0.0, -1.0);
+        let bold_cond_loc = loc(1.0, -1.0);
+        let brace_loc = loc(0.5, -1.0);
+
+        let mut builder = GlyphSetBuilder::new(test_context_with_locations(vec![
+            default_loc.clone(),
+            bold_loc.clone(),
+            cond_loc.clone(),
+            bold_cond_loc.clone(),
+            brace_loc.clone(),
+        ]));
+
+        // Base: 4 masters forming a 2-axis quadrant; Bold Condensed
+        // has a half-integer y (eng's real value at (+1, -1)).
+        builder.add_variable_glyph(
+            "base",
+            vec![
+                (default_loc.clone(), vec![("top", 100.0, 152.0)], vec![]),
+                (bold_loc.clone(), vec![("top", 100.0, 153.0)], vec![]),
+                (cond_loc.clone(), vec![("top", 100.0, 152.0)], vec![]),
+                (bold_cond_loc.clone(), vec![("top", 100.0, 152.5)], vec![]),
+            ],
+            None,
+        );
+
+        // Composite: references `base` with an extra brace location.
+        builder.add_variable_glyph(
+            "composite",
+            vec![
+                (default_loc.clone(), vec![], vec![("base", 0.0, 0.0)]),
+                (bold_loc.clone(), vec![], vec![("base", 0.0, 0.0)]),
+                (cond_loc.clone(), vec![], vec![("base", 0.0, 0.0)]),
+                (bold_cond_loc.clone(), vec![], vec![("base", 0.0, 0.0)]),
+                (brace_loc.clone(), vec![], vec![("base", 0.0, 0.0)]),
+            ],
+            None,
+        );
+
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        // At (+0.5, -1), scalars: wght-region=0.5, wdth-region=1, corner=0.5.
+        // Unrounded: 152 + 0.5*1 + 1*0 + 0.5*(-0.5) = 152.25
+        //   -> downstream ot_round -> 152
+        // Rounded (corner delta -0.5 -> 0):
+        //         152 + 0.5*1 + 1*0 + 0.5*0    = 152.5
+        //   -> downstream ot_round -> 153  (1 fUnit drift)
+        let pos = anchor_at_loc(&ctx, "composite", "top", &brace_loc);
+        assert_eq!(OtRound::<i16>::ot_round(pos.y), 152);
+        assert_eq!(pos, Point::new(100.0, 152.25));
     }
 
     /// Test that `interpolate_component_anchors` handles sparse anchors correctly:
