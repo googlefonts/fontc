@@ -13,7 +13,11 @@ use smol_str::{SmolStr, format_smolstr};
 use write_fonts::tables::gdef::GlyphClassDef;
 use write_fonts::types::Tag;
 
-use fontdrasil::{coords::NormalizedLocation, types::GlyphName, variations::VariationModel};
+use fontdrasil::{
+    coords::NormalizedLocation,
+    types::GlyphName,
+    variations::{RoundingBehaviour, VariationModel},
+};
 
 use crate::{
     error::{BadGlyph, Error},
@@ -227,7 +231,10 @@ fn interpolate_component_anchors(
                     axis_order.to_vec(),
                 )
             });
-        let deltasets = match model.deltas(&point_seqs) {
+        // Interpolate without rounding, matching glyphsLib / fontTools:
+        // https://github.com/googlefonts/glyphsLib/blob/d3c3941e/Lib/glyphsLib/builder/transformations/propagate_anchors.py#L324
+        // https://github.com/fonttools/fonttools/blob/da54a292/Lib/fontTools/varLib/models.py#L568
+        let deltasets = match model.deltas_with_rounding(&point_seqs, RoundingBehaviour::None) {
             Ok(d) => d,
             Err(e) => {
                 log::warn!(
