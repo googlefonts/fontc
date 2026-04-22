@@ -1341,4 +1341,23 @@ mod tests {
             "{name}: {production_name:?} != {expected:?}"
         );
     }
+
+    // https://github.com/googlefonts/fontc/issues/XXXX
+    #[test]
+    fn prod_name_lookup_before_codepoint_lookup() {
+        // Inter-Italic has a glyph named "triagrt" (AGLFN name for U+25BA)
+        // with unicode = (0x25BA, 0x25B6). The codepoint fallback must not
+        // match U+25B6 → "uni25B6" before the production name lookup can
+        // match "triagrt" → U+25BA (which needs no rename).
+        let codepoints: BTreeSet<u32> = [0x25BA, 0x25B6].into_iter().collect();
+        let result = GlyphData::new(None)
+            .query("triagrt", Some(&codepoints))
+            .unwrap();
+        // "triagrt" IS the AGLFN production name for U+25BA, so the result's
+        // production name must be "triagrt" (a no-op rename), NOT "uni25B6".
+        assert_eq!(
+            result.production_name.as_ref().map(|p| p.to_string()),
+            Some("triagrt".to_string()),
+        );
+    }
 }
