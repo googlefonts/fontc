@@ -533,13 +533,13 @@ impl GlyphData {
 
         // No override, perhaps we have a direct answer?
         bundled::find_pos_by_name(name)
+            .or_else(|| find_pos_by_prod_name(name.into()))
             .or_else(|| {
                 codepoints
                     .into_iter()
                     .flat_map(|cps| cps.iter())
                     .find_map(|cp| bundled::find_pos_by_codepoint(*cp))
             })
-            .or_else(|| find_pos_by_prod_name(name.into()))
             .map(|i| {
                 bundled::get(i).unwrap_or_else(|| panic!("We found invalid index {i} somehow"))
             })
