@@ -98,13 +98,13 @@ impl Compilation {
         }
 
         let adjust_id = |id: NameId| {
-            if !id.is_reserved() {
+            if id == NameId::default() || id.is_reserved() {
+                id
+            } else {
                 // in the case of a degenerate name table we'll just reuse the last id?
                 // entries will be pruned later.
                 id.checked_add(id_offset)
                     .unwrap_or(NameId::LAST_ALLOWED_NAME_ID)
-            } else {
-                id
             }
         };
 
