@@ -533,13 +533,13 @@ impl GlyphData {
 
         // No override, perhaps we have a direct answer?
         bundled::find_pos_by_name(name)
+            .or_else(|| find_pos_by_prod_name(name.into()))
             .or_else(|| {
                 codepoints
                     .into_iter()
                     .flat_map(|cps| cps.iter())
                     .find_map(|cp| bundled::find_pos_by_codepoint(*cp))
             })
-            .or_else(|| find_pos_by_prod_name(name.into()))
             .map(|i| {
                 bundled::get(i).unwrap_or_else(|| panic!("We found invalid index {i} somehow"))
             })
@@ -1339,6 +1339,25 @@ mod tests {
         assert_eq!(
             &production_name, expected,
             "{name}: {production_name:?} != {expected:?}"
+        );
+    }
+
+    // https://github.com/googlefonts/fontc/issues/XXXX
+    #[test]
+    fn prod_name_lookup_before_codepoint_lookup() {
+        // Inter-Italic has a glyph named "triagrt" (AGLFN name for U+25BA)
+        // with unicode = (0x25BA, 0x25B6). The codepoint fallback must not
+        // match U+25B6 → "uni25B6" before the production name lookup can
+        // match "triagrt" → U+25BA (which needs no rename).
+        let codepoints: BTreeSet<u32> = [0x25BA, 0x25B6].into_iter().collect();
+        let result = GlyphData::new(None)
+            .query("triagrt", Some(&codepoints))
+            .unwrap();
+        // "triagrt" IS the AGLFN production name for U+25BA, so the result's
+        // production name must be "triagrt" (a no-op rename), NOT "uni25B6".
+        assert_eq!(
+            result.production_name.as_ref().map(|p| p.to_string()),
+            Some("triagrt".to_string()),
         );
     }
 }
