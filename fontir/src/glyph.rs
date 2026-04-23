@@ -254,15 +254,20 @@ fn flatten_non_export_components_for_glyph(
     context: &Context,
     glyph: &Glyph,
 ) -> Result<Glyph, BadGlyph> {
-    let glyph = ensure_composite_defined_at_component_locations(context, glyph)?;
-    let mut builder = GlyphBuilder::from(glyph.clone());
-    builder.clear_components();
+    let expanded = ensure_composite_defined_at_component_locations(context, glyph)?;
+    let mut new_sources = HashMap::with_capacity(expanded.sources().len());
 
     log::debug!("flattening non-export components of '{}'", glyph.name);
-    for (loc, instance) in glyph.sources() {
-        let mut new_instance = instance.clone();
-        new_instance.components.clear();
+    for (loc, instance) in expanded.sources() {
+        let mut new_instance = GlyphInstance {
+            width: instance.width,
+            height: instance.height,
+            vertical_origin: instance.vertical_origin,
+            contours: instance.contours.clone(),
+            components: Vec::with_capacity(instance.components.len()),
+        };
 
+        let mut non_export_has_location = false;
         for component in &instance.components {
             let id = WorkId::Glyph(component.base.clone());
             let referenced_glyph = context.glyphs.get(&id);
@@ -273,6 +278,7 @@ fn flatten_non_export_components_for_glyph(
 
             // okay so now we have a component that is not going to be exported,
             // and we need to flatten.
+            non_export_has_location |= referenced_glyph.sources().contains_key(loc);
             let xform = component.transform;
             let referenced_instance = get_or_instantiate_instance(&referenced_glyph, loc, context)?;
 
@@ -291,10 +297,22 @@ fn flatten_non_export_components_for_glyph(
                 new_instance.contours.push(contour);
             }
         }
-        builder.sources.insert(loc.clone(), new_instance);
+        // Keep sources at the glyph's original locations, plus any locations
+        // where a non-export component being flattened has its own source.
+        // Drop the other virtual sources added by
+        // ensure_composite_defined_at_component_locations — they would leak
+        // into gvar as superfluous intermediate tuples.
+        // https://github.com/googlefonts/fontc/issues/1840
+        if glyph.sources().contains_key(loc) || non_export_has_location {
+            new_sources.insert(loc.clone(), new_instance);
+        }
     }
-    // unwrap is okay because all used locations are from previously validated glyph
-    builder.build()
+    Glyph::new(
+        expanded.name,
+        expanded.emit_to_binary,
+        expanded.codepoints,
+        new_sources,
+    )
 }
 
 fn glyph_has_non_export_components(glyph: &Glyph, context: &Context) -> bool {
@@ -1928,7 +1946,12 @@ mod tests {
 
         flatten_all_non_export_components(&context).unwrap();
         let after = context.get_glyph("Aogonek");
-        assert_eq!(after.sources().len(), 3);
+        // The intermediate at wght=0.5 comes from ogonek (a sub-component of the
+        // *export* component ogonekcomb.case), not from the non-export A.ogonekAccent.
+        // Since no non-export component has a source at the intermediate, the virtual
+        // source is not kept here. It gets added later by convert_components_to_contours
+        // (see fontc::non_export_flatten_plus_decompose_adds_brace_intermediate).
+        assert_eq!(after.sources().len(), 2);
     }
 
     fn make_wght_locations<const N: usize>(positions: [f64; N]) -> [NormalizedLocation; N] {
