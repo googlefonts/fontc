@@ -39,6 +39,7 @@ rstest = "0.26.1"
 resolver = "2"
 
 members = [
+    "shape-brokkr",
     "fontdrasil",
     "fontbe",
     "fontir",
