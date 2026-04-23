@@ -719,3 +719,77 @@ feature kern {
         "Debg should not be emitted by default"
     );
 }
+
+// https://github.com/googlefonts/fontc/issues/1969
+#[test]
+fn remap_name_ids_preserves_cv_null_sentinel() {
+    use write_fonts::{
+        tables::{gsub::Gsub, layout::FeatureParams},
+        types::{NameId, Tag},
+    };
+
+    let mut compilation = compile_fea(
+        "\
+feature cv02 {
+    cvParameters {
+        FeatUILabelNameID {
+            name \"Tall W\";
+        };
+    };
+    sub a by b;
+} cv02;
+",
+        "remap_cv_null_sentinel",
+    );
+
+    let cv02 = Tag::new(b"cv02");
+    let get_cv_name_ids = |gsub: &Gsub| -> [NameId; 4] {
+        let cv_rec = gsub
+            .feature_list
+            .feature_records
+            .iter()
+            .find(|r| r.feature_tag == cv02)
+            .expect("should have cv02 feature");
+        let params = cv_rec
+            .feature
+            .feature_params
+            .as_ref()
+            .expect("cv02 should have feature params");
+        match params {
+            FeatureParams::CharacterVariant(p) => [
+                p.feat_ui_label_name_id,
+                p.feat_ui_tooltip_text_name_id,
+                p.sample_text_name_id,
+                p.first_param_ui_label_name_id,
+            ],
+            _ => panic!("cv02 should have CharacterVariant params"),
+        }
+    };
+
+    let [_, tooltip, sample, first_param] = get_cv_name_ids(compilation.gsub.as_ref().unwrap());
+    assert_eq!(tooltip, NameId::default());
+    assert_eq!(sample, NameId::default());
+    assert_eq!(first_param, NameId::default());
+
+    // Simulate fontc calling remap with a non-zero offset (as happens when
+    // other name IDs were already allocated before fea-rs compilation).
+    compilation.remap_name_ids(512);
+
+    let [label, tooltip, sample, first_param] = get_cv_name_ids(compilation.gsub.as_ref().unwrap());
+    assert_ne!(
+        label,
+        NameId::default(),
+        "assigned label ID should be remapped"
+    );
+    assert_eq!(tooltip, NameId::default(), "unset tooltip must stay 0xFFFF");
+    assert_eq!(
+        sample,
+        NameId::default(),
+        "unset sample text must stay 0xFFFF"
+    );
+    assert_eq!(
+        first_param,
+        NameId::default(),
+        "unset first param must stay 0xFFFF"
+    );
+}
