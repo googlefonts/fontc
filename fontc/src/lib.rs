@@ -3269,6 +3269,109 @@ mod tests {
         assert_noexport("designspace_from_glyphs/WghtVar_NoExport.designspace");
     }
 
+    fn gvar_tuple_count(result: &TestCompile, glyph_name: &str) -> usize {
+        let font = result.font();
+        let gvar = font.gvar().unwrap();
+        gvar.glyph_variation_data(result.get_gid(glyph_name).into())
+            .unwrap()
+            .unwrap()
+            .tuples()
+            .count()
+    }
+
+    /// Number of variation regions used by the given glyph's HVAR advance-width delta set.
+    fn hvar_region_count(result: &TestCompile, glyph_name: &str) -> usize {
+        let font = result.font();
+        let hvar = font.hvar().unwrap();
+        let mapping = hvar.advance_width_mapping().unwrap().unwrap();
+        let delta_set_index = mapping.get(result.get_gid(glyph_name).to_u32()).unwrap();
+        let varstore = hvar.item_variation_store().unwrap();
+        let vardata = varstore
+            .item_variation_data()
+            .get(delta_set_index.outer as usize)
+            .unwrap()
+            .unwrap();
+        vardata.region_indexes().len()
+    }
+
+    /// Regression test for <https://github.com/googlefonts/fontc/issues/1840>.
+    ///
+    /// When a composite references a non-export component AND another component
+    /// with a brace (intermediate) layer, flattening the non-export component calls
+    /// `ensure_composite_defined_at_component_locations` which adds virtual sources
+    /// at the brace layer's location. These extra sources leak into gvar, producing
+    /// spurious intermediate tuples on composites that should only have endpoint
+    /// master tuples.
+    #[test]
+    fn non_export_flatten_does_not_leak_brace_layer_sources_into_gvar() {
+        let result = TestCompile::compile_source("glyphs3/NonExportWithBraceLayer.glyphs");
+
+        // "A" has a brace layer — it legitimately gets intermediate tuples
+        assert_eq!(gvar_tuple_count(&result, "A"), 2);
+        // "acutecomb" has no brace layer — just 1 tuple
+        assert_eq!(gvar_tuple_count(&result, "acutecomb"), 1);
+
+        // "Aacute" = A + _acutecomb (non-export, composite of acutecomb, NO brace layer).
+        // After flattening: A + acutecomb (still purely composite).
+        // _acutecomb has no brace layer, so its intermediate is purely interpolated.
+        // Should have 1 gvar tuple, not 2 leaked from A's brace.
+        assert_eq!(gvar_tuple_count(&result, "Aacute"), 1);
+
+        // HVAR encoding should also be free of leaked brace data: Aacute's
+        // advance width variation should use a single peak region, not an
+        // intermediate split.
+        assert_eq!(hvar_region_count(&result, "Aacute"), 1);
+    }
+
+    /// Counterpart to `non_export_flatten_does_not_leak_brace_layer_sources_into_gvar`:
+    /// when the non-export component itself HAS a brace layer, the intermediate
+    /// tuple must be preserved.
+    #[test]
+    fn non_export_composite_brace_layer_preserved_in_gvar() {
+        let result = TestCompile::compile_source("glyphs3/NonExportWithBraceLayer.glyphs");
+
+        // Agraveacute = A + _graveacute (non-export, composite of gravecomb + acutecomb,
+        // WITH a brace layer at wght=700 that non-linearly adjusts acutecomb's offset).
+        // After flattening: A + gravecomb + acutecomb (purely composite).
+        // Unlike Aacute above, _graveacute's brace layer is its own, so the
+        // intermediate is kept — 2 gvar tuples, and HVAR uses the intermediate split.
+        assert_eq!(gvar_tuple_count(&result, "Agraveacute"), 2);
+        assert_eq!(hvar_region_count(&result, "Agraveacute"), 2);
+    }
+
+    /// When non-export flattening produces mixed contours+components, the glyph
+    /// gets decomposed by `convert_components_to_contours`, which adds an
+    /// intermediate at any remaining component's brace layer. This covers the
+    /// end-to-end path that the first test's "non-leak" assertion relies on
+    /// indirectly.
+    #[test]
+    fn non_export_flatten_plus_decompose_adds_brace_intermediate() {
+        let result = TestCompile::compile_source("glyphs3/NonExportWithBraceLayer.glyphs");
+
+        // Adot = A + _dot (non-export, simple glyph with contours, NO brace layer).
+        // After flattening: contours (from _dot) + component A → mixed content.
+        // convert_components_to_contours then decomposes A into contours, adding
+        // an intermediate at A's brace layer (wght=700). Result: simple glyph
+        // with 2 gvar tuples.
+        let font = result.font();
+        let gid = result.get_gid("Adot");
+
+        // Adot should be a simple glyph (decomposed)
+        let is_long = font.head().unwrap().index_to_loc_format() == 1;
+        let glyf = font.glyf().unwrap();
+        let loca = font.loca(is_long).unwrap();
+        let glyph_data = loca.get_glyf(gid.into(), &glyf).unwrap().unwrap();
+        assert!(
+            matches!(glyph_data, glyf::Glyph::Simple(_)),
+            "Adot should be decomposed to a simple glyph (mixed content + non-export flatten)"
+        );
+
+        // And both gvar and HVAR should reflect A's brace layer (wght=700)
+        // via the intermediate split.
+        assert_eq!(gvar_tuple_count(&result, "Adot"), 2);
+        assert_eq!(hvar_region_count(&result, "Adot"), 2);
+    }
+
     #[test]
     fn compile_do_not_decompose_nested_no_export_glyphs() {
         let result = TestCompile::compile("glyphs3/NestedNoExportComponent.glyphs", |mut args| {
