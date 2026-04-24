@@ -1910,6 +1910,44 @@ mod tests {
         );
     }
 
+    /// Verify anchors propagate through a single-layer smart component.
+    ///
+    /// Regression test for <https://github.com/googlefonts/fontc/issues/1973>.
+    /// When a smart component has only one layer per master, we preserve
+    /// the component reference and return no anchors from instantiation.
+    /// Anchors must still reach the outermost composite via propagation
+    /// through the component chain: composite → flipped(smart) → base.
+    #[test]
+    fn propagate_anchors_through_single_layer_smart_component() {
+        let result =
+            TestCompile::compile_source("glyphs3/SmartComponentSingleLayerAnchors.glyphs");
+
+        let anchors = result
+            .fe_context
+            .anchors
+            .try_get(&FeWorkIdentifier::Anchor("composite".into()))
+            .expect("composite should have propagated anchors");
+
+        // base "top" at (200, 400), propagated through:
+        //   flipped [-1, 0, 0, -1, 417, 353] → (217, -47)
+        //   composite translate(0, 376)       → (217, 329)
+        // The 180° rotation renames "top" → "bottom" (see rename_anchor_for_scale).
+        let bottom = anchors
+            .anchors
+            .iter()
+            .find(|a| a.original_name == "bottom")
+            .unwrap_or_else(|| {
+                let names: Vec<_> = anchors.anchors.iter().map(|a| &a.original_name).collect();
+                panic!("composite should have a 'bottom' anchor (renamed from base's 'top'), found: {names:?}")
+            });
+        let pos = bottom.default_pos();
+        assert_eq!(
+            (pos.x as i32, pos.y as i32),
+            (217, 329),
+            "anchor should be transformed through the full component chain"
+        );
+    }
+
     /// Verify anchor propagation works correctly for bracket layers.
     ///
     /// Bracket layers become separate glyphs in IR (e.g., A.BRACKET.varAlt01).
