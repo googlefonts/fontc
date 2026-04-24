@@ -1,0 +1,407 @@
+{
+.appVersion = "3414";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Write lastChange";
+value = 0;
+},
+{
+name = "Write DisplayStrings";
+value = 0;
+}
+);
+familyName = NonExportWithBraceLayer;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = light;
+name = Regular;
+},
+{
+axesValues = (
+900
+);
+id = bold;
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = light;
+width = 200;
+},
+{
+layerId = bold;
+width = 250;
+}
+);
+unicode = 32;
+},
+{
+glyphname = A;
+layers = (
+{
+layerId = light;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(200,700,l),
+(400,0,l),
+(350,0,l),
+(200,600,l),
+(50,0,l)
+);
+}
+);
+width = 400;
+},
+{
+associatedMasterId = light;
+attr = {
+coordinates = (
+700
+);
+};
+layerId = "brace-A";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(250,700,l),
+(500,0,l),
+(420,0,l),
+(250,550,l),
+(80,0,l)
+);
+}
+);
+width = 500;
+},
+{
+layerId = bold;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(300,700,l),
+(600,0,l),
+(490,0,l),
+(300,500,l),
+(110,0,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+glyphname = acutecomb;
+layers = (
+{
+layerId = light;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,600,l),
+(200,800,l),
+(150,800,l),
+(50,600,l)
+);
+}
+);
+width = 0;
+},
+{
+layerId = bold;
+shapes = (
+{
+closed = 1;
+nodes = (
+(80,600,l),
+(230,800,l),
+(150,800,l),
+(0,600,l)
+);
+}
+);
+width = 0;
+}
+);
+unicode = 769;
+},
+{
+export = 0;
+glyphname = _acutecomb;
+layers = (
+{
+layerId = light;
+shapes = (
+{
+pos = (10,0);
+ref = acutecomb;
+}
+);
+width = 0;
+},
+{
+layerId = bold;
+shapes = (
+{
+pos = (20,0);
+ref = acutecomb;
+}
+);
+width = 0;
+}
+);
+},
+{
+glyphname = Aacute;
+layers = (
+{
+layerId = light;
+shapes = (
+{
+ref = A;
+},
+{
+pos = (100,0);
+ref = _acutecomb;
+}
+);
+width = 400;
+},
+{
+layerId = bold;
+shapes = (
+{
+ref = A;
+},
+{
+pos = (150,0);
+ref = _acutecomb;
+}
+);
+width = 600;
+}
+);
+unicode = 193;
+},
+{
+glyphname = gravecomb;
+layers = (
+{
+layerId = light;
+shapes = (
+{
+closed = 1;
+nodes = (
+(50,600,l),
+(150,800,l),
+(100,800,l),
+(0,600,l)
+);
+}
+);
+width = 0;
+},
+{
+layerId = bold;
+shapes = (
+{
+closed = 1;
+nodes = (
+(80,600,l),
+(230,800,l),
+(150,800,l),
+(0,600,l)
+);
+}
+);
+width = 0;
+}
+);
+unicode = 768;
+},
+{
+export = 0;
+glyphname = _graveacute;
+layers = (
+{
+layerId = light;
+shapes = (
+{
+pos = (0,0);
+ref = gravecomb;
+},
+{
+pos = (100,0);
+ref = acutecomb;
+}
+);
+width = 0;
+},
+{
+associatedMasterId = light;
+attr = {
+coordinates = (
+700
+);
+};
+layerId = "brace-graveacute";
+shapes = (
+{
+pos = (0,0);
+ref = gravecomb;
+},
+{
+pos = (200,0);
+ref = acutecomb;
+}
+);
+width = 0;
+},
+{
+layerId = bold;
+shapes = (
+{
+pos = (0,0);
+ref = gravecomb;
+},
+{
+pos = (300,0);
+ref = acutecomb;
+}
+);
+width = 0;
+}
+);
+},
+{
+glyphname = Agraveacute;
+layers = (
+{
+layerId = light;
+shapes = (
+{
+ref = A;
+},
+{
+pos = (50,0);
+ref = _graveacute;
+}
+);
+width = 400;
+},
+{
+layerId = bold;
+shapes = (
+{
+ref = A;
+},
+{
+pos = (80,0);
+ref = _graveacute;
+}
+);
+width = 600;
+}
+);
+unicode = 192;
+},
+{
+export = 0;
+glyphname = _dot;
+layers = (
+{
+layerId = light;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,700,l),
+(150,700,l),
+(150,750,l),
+(100,750,l)
+);
+}
+);
+width = 0;
+},
+{
+layerId = bold;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,700,l),
+(160,700,l),
+(160,760,l),
+(100,760,l)
+);
+}
+);
+width = 0;
+}
+);
+},
+{
+glyphname = Adot;
+layers = (
+{
+layerId = light;
+shapes = (
+{
+ref = A;
+},
+{
+ref = _dot;
+}
+);
+width = 400;
+},
+{
+layerId = bold;
+shapes = (
+{
+ref = A;
+},
+{
+ref = _dot;
+}
+);
+width = 600;
+}
+);
+unicode = 229;
+}
+);
+instances = (
+{
+name = Regular;
+type = variable;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
