@@ -1919,8 +1919,7 @@ mod tests {
     /// through the component chain: composite → flipped(smart) → base.
     #[test]
     fn propagate_anchors_through_single_layer_smart_component() {
-        let result =
-            TestCompile::compile_source("glyphs3/SmartComponentSingleLayerAnchors.glyphs");
+        let result = TestCompile::compile_source("glyphs3/SmartComponentSingleLayerAnchors.glyphs");
 
         let anchors = result
             .fe_context
