@@ -1,0 +1,101 @@
+{
+.appVersion = "3434";
+.formatVersion = 3;
+familyName = SmartComponentSingleLayerAnchorsTest;
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = -200;
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = base;
+layers = (
+{
+anchors = (
+{
+name = top;
+pos = (200,400);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(400,0,l),
+(400,400,l),
+(0,400,l)
+);
+}
+);
+width = 400;
+}
+);
+unicode = 0062;
+},
+{
+glyphname = flipped;
+layers = (
+{
+layerId = m01;
+partSelection = {
+Axis = 1;
+};
+shapes = (
+{
+angle = 180;
+pos = (417,353);
+ref = base;
+}
+);
+width = 500;
+}
+);
+partsSettings = (
+{
+bottomValue = 0;
+name = Axis;
+topValue = 100;
+}
+);
+},
+{
+glyphname = composite;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+pos = (0,376);
+ref = flipped;
+}
+);
+width = 500;
+}
+);
+unicode = 0063;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = descender;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

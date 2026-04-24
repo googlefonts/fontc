@@ -82,20 +82,21 @@ pub(crate) fn instantiate_for_layer(
         return Err(BadSmartComponent::NoLayer(layer_master_id.to_string()));
     }
     if relevant_layers.len() == 1 {
-        log::debug!("smart component {} only has one layer?", component.name);
-        let mut shapes = relevant_layers[0].shapes.clone();
-        shapes
-            .iter_mut()
-            .for_each(|shape| shape.apply_affine(component.transform));
-        let anchors = relevant_layers[0]
-            .anchors
-            .iter()
-            .map(|a| Anchor {
-                name: a.name.clone(),
-                pos: component.transform * a.pos,
-            })
-            .collect();
-        return Ok(SmartComponentInstance { shapes, anchors });
+        // Only one layer for this master — the smart axes can't vary, so treat
+        // as a regular component reference, matching glyphsLib's model=None fallback:
+        // https://github.com/googlefonts/glyphsLib/blob/044f19e4/Lib/glyphsLib/builder/smart_components.py#L182-L184
+        log::debug!(
+            "smart component {} only has one layer, keeping as regular component",
+            component.name
+        );
+        let mut kept = component.clone();
+        kept.smart_component_values.clear();
+        // No anchors here; they'll be propagated through the component ref
+        // by propagate_all_anchors in fontir (see propagate_anchors.rs).
+        return Ok(SmartComponentInstance {
+            shapes: vec![Shape::Component(kept)],
+            anchors: vec![],
+        });
     }
 
     validate_relevant_layers(&relevant_layers)?;
@@ -351,7 +352,7 @@ impl Shape {
                     .for_each(|node| node.apply_affine(affine));
             }
             Shape::Component(component) => {
-                component.transform *= affine;
+                component.transform = affine * component.transform;
             }
         }
     }
@@ -896,5 +897,84 @@ mod tests {
             .unwrap();
         assert_eq!((top.pos.x, top.pos.y), (48.0, 123.0));
         assert_eq!((bottom.pos.x, bottom.pos.y), (56.0, -41.0));
+    }
+
+    // Regression tests for https://github.com/googlefonts/fontc/issues/1973
+    //
+    // MonaSans ninesuperior → nineinferior(smart, rotate 180°) → sixinferior
+
+    #[test]
+    fn apply_affine_component_transform_order() {
+        // Inner component: rotate 180° + translate (like nineinferior → sixinferior)
+        let mut shape = Shape::Component(Component {
+            name: "base".into(),
+            transform: Affine::new([-1.0, 0.0, 0.0, -1.0, 417.0, 353.0]),
+            ..Default::default()
+        });
+
+        // Outer: translate(0, 376) (like ninesuperior → nineinferior)
+        shape.apply_affine(Affine::translate((0.0, 376.0)));
+
+        let c = shape.as_component().unwrap().transform.as_coeffs();
+        // outer * inner = translate(0,376) * [-1,0,0,-1,417,353] = [-1,0,0,-1,417,729]
+        assert_eq!(
+            (c[4], c[5]),
+            (417.0, 729.0),
+            "should compose as outer * inner; wrong order gives (417, -23)"
+        );
+    }
+
+    #[test]
+    fn single_layer_smart_component_preserves_component_ref() {
+        let master_id = "master01";
+
+        // Smart component with 1 layer per master — smart axes can't vary.
+        // Its shape is a Component (like nineinferior → sixinferior).
+        let mut inner = Glyph {
+            name: "inner".into(),
+            ..Default::default()
+        };
+        inner
+            .smart_component_axes
+            .insert(SmolStr::new("Axis"), 0..=100);
+
+        let inner_layer = Layer {
+            layer_id: master_id.into(),
+            width: 500.0.into(),
+            shapes: vec![Shape::Component(Component {
+                name: "base".into(),
+                transform: Affine::new([-1.0, 0.0, 0.0, -1.0, 417.0, 353.0]),
+                ..Default::default()
+            })],
+            smart_component_positions: [(SmolStr::new("Axis"), AxisPole::Min)]
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        };
+        inner.layers.push(inner_layer);
+
+        // Caller references "inner" with translate(0, 376)
+        let caller = Component {
+            name: "inner".into(),
+            transform: Affine::translate((0.0, 376.0)),
+            ..Default::default()
+        };
+
+        let instance = instantiate_for_layer(master_id, &caller, &inner).expect("should succeed");
+
+        // glyphsLib keeps this as a regular component ref (model=None fallback).
+        // fontc should do the same — not flatten "inner" into its child "base".
+        assert_eq!(instance.shapes.len(), 1);
+        let comp = instance.shapes[0]
+            .as_component()
+            .expect("should preserve as Component, not inline inner shapes");
+        assert_eq!(
+            comp.name.as_str(),
+            "inner",
+            "should keep reference to 'inner', not flatten to 'base'"
+        );
+        assert_eq!(comp.transform, Affine::translate((0.0, 376.0)));
+        assert!(comp.smart_component_values.is_empty());
+        assert!(instance.anchors.is_empty());
     }
 }
