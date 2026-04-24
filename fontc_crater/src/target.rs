@@ -128,7 +128,17 @@ impl Target {
         let config = self.config.file_stem().unwrap_or(OsStr::new("config"));
         let mut result = in_dir.join(self.source_dir());
         result.push(config);
-        result.push(self.source.file_stem().unwrap());
+        // Flatten the full source path (minus extension) into a single directory
+        // name by replacing path separators, to avoid cache collisions when
+        // multiple sources share the same filename in different directories
+        // (e.g., styles/Light/font.ufo vs styles/Medium/font.ufo).
+        let source_no_ext = self
+            .source
+            .with_extension("")
+            .display()
+            .to_string()
+            .replace('/', "_");
+        result.push(source_no_ext);
         result.push(self.build.name());
         result
     }
