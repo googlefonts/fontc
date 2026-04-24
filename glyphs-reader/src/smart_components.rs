@@ -82,20 +82,21 @@ pub(crate) fn instantiate_for_layer(
         return Err(BadSmartComponent::NoLayer(layer_master_id.to_string()));
     }
     if relevant_layers.len() == 1 {
-        log::debug!("smart component {} only has one layer?", component.name);
-        let mut shapes = relevant_layers[0].shapes.clone();
-        shapes
-            .iter_mut()
-            .for_each(|shape| shape.apply_affine(component.transform));
-        let anchors = relevant_layers[0]
-            .anchors
-            .iter()
-            .map(|a| Anchor {
-                name: a.name.clone(),
-                pos: component.transform * a.pos,
-            })
-            .collect();
-        return Ok(SmartComponentInstance { shapes, anchors });
+        // Only one layer for this master — the smart axes can't vary, so treat
+        // as a regular component reference, matching glyphsLib's model=None fallback:
+        // https://github.com/googlefonts/glyphsLib/blob/044f19e4/Lib/glyphsLib/builder/smart_components.py#L182-L184
+        log::debug!(
+            "smart component {} only has one layer, keeping as regular component",
+            component.name
+        );
+        let mut kept = component.clone();
+        kept.smart_component_values.clear();
+        // No anchors here; they'll be propagated through the component ref
+        // by propagate_all_anchors in fontir (see propagate_anchors.rs).
+        return Ok(SmartComponentInstance {
+            shapes: vec![Shape::Component(kept)],
+            anchors: vec![],
+        });
     }
 
     validate_relevant_layers(&relevant_layers)?;
@@ -351,7 +352,7 @@ impl Shape {
                     .for_each(|node| node.apply_affine(affine));
             }
             Shape::Component(component) => {
-                component.transform *= affine;
+                component.transform = affine * component.transform;
             }
         }
     }
