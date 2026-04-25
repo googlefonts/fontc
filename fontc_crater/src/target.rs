@@ -83,6 +83,17 @@ impl Target {
         &self.repo_dir
     }
 
+    /// The repo name without org prefix or sha suffix (e.g. "derp" from "org/derp_deadbeef")
+    pub(crate) fn repo_name(&self) -> &str {
+        let dir = self
+            .repo_dir
+            .file_name()
+            .unwrap_or(self.repo_dir.as_os_str());
+        let name = dir.to_str().unwrap_or("");
+        let suffix = format!("_{}", self.sha);
+        name.strip_suffix(&suffix).unwrap_or(name)
+    }
+
     pub(crate) fn source_path(&self, git_cache: &Path) -> PathBuf {
         let mut out = git_cache.join(self.source_dir());
         out.push(&self.source);
