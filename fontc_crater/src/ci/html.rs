@@ -1,7 +1,7 @@
 //! generating html reports from crater results
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     ffi::OsStr,
     fmt::Display,
     ops::Sub,
@@ -551,6 +551,20 @@ fn make_diff_report(
     let mut current_diff = current_diff.into_iter().collect::<Vec<_>>();
     current_diff.sort_by_key(|(_, r)| -(r * 1e6) as i64);
 
+    // Pre-compute short source names and find which are ambiguous
+    let ambiguous_sources = {
+        let mut counts = HashMap::<String, usize>::new();
+        for (target, _) in &current_diff {
+            let short = short_source_name(target);
+            *counts.entry(short).or_default() += 1;
+        }
+        counts
+            .into_iter()
+            .filter(|(_, count)| *count > 1)
+            .map(|(name, _)| name)
+            .collect::<HashSet<String>>()
+    };
+
     let mut items = Vec::new();
     for (target, ratio) in &current_diff {
         let diff_details = current.success.get(*target).unwrap();
@@ -588,7 +602,7 @@ fn make_diff_report(
         } else {
             ""
         };
-        let target_description = make_target_description(target);
+        let target_description = make_target_description(target, &ambiguous_sources);
 
         items.push(html! {
             details {
@@ -649,9 +663,21 @@ fn format_annotations(target: &Target, annotations: &BTreeMap<Target, Vec<Annota
     }
 }
 
-fn make_target_description(target: &Target) -> Markup {
+/// Compute the short source name for a target (just the filename).
+fn short_source_name(target: &Target) -> String {
     let bare_path = target.source_path(Path::new(""));
-    let source = bare_path.file_name().unwrap().to_str().unwrap();
+    bare_path.file_name().unwrap().to_string_lossy().to_string()
+}
+
+fn make_target_description(target: &Target, ambiguous_sources: &HashSet<String>) -> Markup {
+    let short = short_source_name(target);
+    // If the short name is ambiguous (used by multiple targets), prepend repo
+    // name to disambiguate (e.g. "myrepo/font.glyphs" instead of "font.glyphs").
+    let source = if ambiguous_sources.contains(&short) {
+        format!("{}/{short}", target.repo_name())
+    } else {
+        short
+    };
     let annotation = match target.build {
         BuildType::Default => "default".to_string(),
         BuildType::GfTools if target.config.file_stem() != Some(OsStr::new("config")) => {

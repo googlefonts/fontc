@@ -83,6 +83,17 @@ impl Target {
         &self.repo_dir
     }
 
+    /// The repo name without org prefix or sha suffix (e.g. "derp" from "org/derp_deadbeef")
+    pub(crate) fn repo_name(&self) -> &str {
+        let dir = self
+            .repo_dir
+            .file_name()
+            .unwrap_or(self.repo_dir.as_os_str());
+        let name = dir.to_str().unwrap_or("");
+        let suffix = format!("_{}", self.sha);
+        name.strip_suffix(&suffix).unwrap_or(name)
+    }
+
     pub(crate) fn source_path(&self, git_cache: &Path) -> PathBuf {
         let mut out = git_cache.join(self.source_dir());
         out.push(&self.source);
@@ -128,7 +139,17 @@ impl Target {
         let config = self.config.file_stem().unwrap_or(OsStr::new("config"));
         let mut result = in_dir.join(self.source_dir());
         result.push(config);
-        result.push(self.source.file_stem().unwrap());
+        // Flatten the full source path (minus extension) into a single directory
+        // name by replacing path separators, to avoid cache collisions when
+        // multiple sources share the same filename in different directories
+        // (e.g., styles/Light/font.ufo vs styles/Medium/font.ufo).
+        let source_no_ext = self
+            .source
+            .with_extension("")
+            .display()
+            .to_string()
+            .replace('/', "_");
+        result.push(source_no_ext);
         result.push(self.build.name());
         result
     }
