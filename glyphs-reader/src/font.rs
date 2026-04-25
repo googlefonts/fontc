@@ -1932,6 +1932,7 @@ struct RawInstance {
     interpolation_width: Option<OrderedFloat<f64>>,
 
     custom_value: Option<OrderedFloat<f64>>,
+    interpolation_custom: Option<OrderedFloat<f64>>,
 
     weight_class: Option<String>,
     width_class: Option<String>,
@@ -1953,6 +1954,7 @@ trait GlyphsV2OrderedAxes {
     fn width_value(&self) -> Option<OrderedFloat<f64>>;
     fn interpolation_width(&self) -> Option<OrderedFloat<f64>>;
     fn custom_value(&self) -> Option<OrderedFloat<f64>>;
+    fn interpolation_custom(&self) -> Option<OrderedFloat<f64>>;
 
     fn value_for_nth_axis(&self, nth_axis: usize) -> Result<OrderedFloat<f64>, Error> {
         // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
@@ -1969,7 +1971,10 @@ trait GlyphsV2OrderedAxes {
                 .width_value()
                 .or(self.interpolation_width())
                 .unwrap_or(100.0.into()),
-            2 => self.custom_value().unwrap_or(0.0.into()),
+            2 => self
+                .custom_value()
+                .or(self.interpolation_custom())
+                .unwrap_or(0.0.into()),
             _ => {
                 return Err(Error::StructuralError(format!(
                     "We don't know what field to use for axis {nth_axis}"
@@ -2005,6 +2010,11 @@ impl GlyphsV2OrderedAxes for RawFontMaster {
     fn custom_value(&self) -> Option<OrderedFloat<f64>> {
         self.custom_value
     }
+
+    fn interpolation_custom(&self) -> Option<OrderedFloat<f64>> {
+        // Masters use customValue, not interpolationCustom
+        None
+    }
 }
 
 impl GlyphsV2OrderedAxes for RawInstance {
@@ -2026,6 +2036,10 @@ impl GlyphsV2OrderedAxes for RawInstance {
 
     fn custom_value(&self) -> Option<OrderedFloat<f64>> {
         self.custom_value
+    }
+
+    fn interpolation_custom(&self) -> Option<OrderedFloat<f64>> {
+        self.interpolation_custom
     }
 }
 
@@ -6403,6 +6417,38 @@ name = _corner.hi;
         assert_eq!(
             font.custom_parameters.codepage_range_bits,
             Some(BTreeSet::from([0, 1, 19, 63]))
+        );
+    }
+
+    #[test]
+    fn v2_instance_interpolation_custom_third_axis() {
+        // In Glyphs v2, instances store the third axis value as interpolationCustom
+        // (masters use customValue). Without the interpolationCustom fallback, the
+        // third axis value would incorrectly be 0.0.
+        let font =
+            Font::load(&glyphs2_dir().join("ThreeAxisWithInterpolationCustom.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                (
+                    "Regular Caption",
+                    vec![("Weight", 400.0), ("Width", 100.0), ("Optical Size", 12.0)]
+                ),
+                (
+                    "Bold Display",
+                    vec![("Weight", 700.0), ("Width", 100.0), ("Optical Size", 72.0)]
+                ),
+            ],
+            font.instances
+                .iter()
+                .map(|inst| (
+                    inst.name.as_str(),
+                    font.axes
+                        .iter()
+                        .zip(&inst.axes_values)
+                        .map(|(a, v)| (a.name.as_str(), v.0))
+                        .collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>()
         );
     }
 }
