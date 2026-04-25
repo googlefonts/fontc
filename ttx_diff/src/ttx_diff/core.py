@@ -351,14 +351,8 @@ def run_gftools(
     if out_dir.exists():
         shutil.rmtree(out_dir)
 
-    # Use source path relative to its repo root, not just the filename.
-    # gftools --experimental-single-source does suffix matching against config
-    # entries. source.name alone is ambiguous when multiple sources share a
-    # filename (e.g. itfoundry/halant has styles/Bold/font.ufo, styles/Light/font.ufo).
-    # The repo-root-relative path is always a suffix of the config entry regardless
-    # of whether the config is at the repo root or in a subdirectory.
-    source_repo = find_repo_root(source)
-    source_for_gftools = source.relative_to(source_repo) if source_repo else source.name
+    source_for_gftools = source_for_gftools_single_source(source, config_path)
+    maybe_new_config_path = path_to_move_external_config(source, config_path)
 
     cmd = [
         "gftools",
@@ -367,7 +361,7 @@ def run_gftools(
         "--experimental-simple-output",
         out_dir,
         "--experimental-single-source",
-        str(source_for_gftools),
+        source_for_gftools,
     ]
     if fontc_bin is not None:
         cmd += ["--experimental-fontc", fontc_bin]
@@ -379,7 +373,6 @@ def run_gftools(
     if not FLAGS.production_names:
         extra_args.append("--no-production-names")
 
-    maybe_new_config_path = path_to_move_external_config(source, config_path)
     with modified_gftools_config(maybe_new_config_path, cmd, extra_args):
         build(cmd, None)
 
@@ -394,6 +387,18 @@ def run_gftools(
 
     if out_dir.exists():
         shutil.rmtree(out_dir)
+
+
+def source_for_gftools_single_source(source: Path, config_path: Path) -> str:
+    """Compute the value for gftools --experimental-single-source.
+
+    Returns the source path relative to the effective config directory:
+    the source repo root for external configs (where the config gets moved),
+    or the config file's parent directory for same-repo configs.
+    """
+    maybe_new_config_path = path_to_move_external_config(source, config_path)
+    effective_config_dir = maybe_new_config_path or config_path.resolve().parent
+    return os.path.relpath(source, effective_config_dir)
 
 
 def path_to_move_external_config(source: Path, config: Path) -> Optional[Path]:
