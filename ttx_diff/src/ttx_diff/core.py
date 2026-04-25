@@ -350,6 +350,16 @@ def run_gftools(
     out_dir = build_dir / "gftools_temp_dir"
     if out_dir.exists():
         shutil.rmtree(out_dir)
+
+    # Use source path relative to its repo root, not just the filename.
+    # gftools --experimental-single-source does suffix matching against config
+    # entries. source.name alone is ambiguous when multiple sources share a
+    # filename (e.g. itfoundry/halant has styles/Bold/font.ufo, styles/Light/font.ufo).
+    # The repo-root-relative path is always a suffix of the config entry regardless
+    # of whether the config is at the repo root or in a subdirectory.
+    source_repo = find_repo_root(source)
+    source_for_gftools = source.relative_to(source_repo) if source_repo else source.name
+
     cmd = [
         "gftools",
         "builder",
@@ -357,7 +367,7 @@ def run_gftools(
         "--experimental-simple-output",
         out_dir,
         "--experimental-single-source",
-        source.name,
+        str(source_for_gftools),
     ]
     if fontc_bin is not None:
         cmd += ["--experimental-fontc", fontc_bin]
