@@ -436,6 +436,28 @@ mod tests {
     }
 
     #[test]
+    fn comment_cr_line_endings() {
+        // CR-only line endings (classic Mac) must terminate comments
+        let fea = "# comment\rlanguagesystem DFLT cool;";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "#(# comment)");
+        assert_eq!(token_strs[1], "WS(\r)");
+        assert_eq!(token_strs[2], "LanguagesystemKw");
+    }
+
+    #[test]
+    fn comment_crlf_line_endings() {
+        // CRLF line endings must terminate comments at the CR
+        let fea = "# comment\r\nlanguagesystem DFLT cool;";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "#(# comment)");
+        assert_eq!(token_strs[1], "WS(\r\n)");
+        assert_eq!(token_strs[2], "LanguagesystemKw");
+    }
+
+    #[test]
     fn suffixes_good() {
         let fea = "1n -5.3u 31.1d 0n";
         let tokens = tokenize(fea);
