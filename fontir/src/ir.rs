@@ -938,7 +938,7 @@ impl NameBuilder {
 
             self.add(NameId::SUBFAMILY_NAME, fallback_subfamily);
 
-            family_suffix
+            family_suffix.filter(|s| !s.is_empty())
         };
 
         // https://github.com/googlefonts/ufo2ft/blob/bb79cae53f1c160c7174ebef0d463c7a28a7552a/Lib/ufo2ft/fontInfoData.py#L57
@@ -2367,6 +2367,16 @@ mod tests {
             ],
             names,
         )
+    }
+
+    #[test]
+    fn empty_typographic_subfamily_no_trailing_space() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Halant".into());
+        builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "".into());
+        let names = builder.build(DEFAULT_VENDOR_ID);
+
+        assert_name(&names, "Halant", NameId::FAMILY_NAME);
     }
 
     #[test]
