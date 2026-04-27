@@ -237,7 +237,7 @@ impl Source {
 
         (
             offset_idx + 1,
-            self.contents[start_offset..end_offset].trim_end_matches('\n'),
+            self.contents[start_offset..end_offset].trim_end_matches(['\n', '\r']),
         )
     }
 
@@ -250,13 +250,19 @@ impl Source {
 }
 
 fn line_offsets(text: &str) -> Arc<[usize]> {
-    // we could use memchar for this; benefits would require benchmarking
     let mut result = vec![0];
-    result.extend(
-        text.bytes()
-            .enumerate()
-            .filter_map(|(i, b)| if b == b'\n' { Some(i + 1) } else { None }),
-    );
+    let mut iter = text.bytes().enumerate().peekable();
+    while let Some((i, b)) = iter.next() {
+        match b {
+            b'\r' if iter.peek().map(|(_, b)| *b) == Some(b'\n') => {
+                // treat \r\n as a single line ending
+                let _ = iter.next();
+                result.push(i + 2);
+            }
+            b'\n' | b'\r' => result.push(i + 1),
+            _ => (),
+        }
+    }
     result.into()
 }
 
@@ -366,5 +372,35 @@ impl SourceLoadError {
             cause: cause.to_string().into(),
             path,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn line_offsets_lf() {
+        let offsets = line_offsets("aaa\nbbb\nccc");
+        assert_eq!(&*offsets, &[0, 4, 8]);
+    }
+
+    #[test]
+    fn line_offsets_cr() {
+        let offsets = line_offsets("aaa\rbbb\rccc");
+        assert_eq!(&*offsets, &[0, 4, 8]);
+    }
+
+    #[test]
+    fn line_offsets_crlf() {
+        let offsets = line_offsets("aaa\r\nbbb\r\nccc");
+        assert_eq!(&*offsets, &[0, 5, 10]);
+    }
+
+    #[test]
+    fn line_offsets_mixed() {
+        // LF then CR then CRLF
+        let offsets = line_offsets("a\nb\rc\r\nd");
+        assert_eq!(&*offsets, &[0, 2, 4, 7]);
     }
 }

@@ -134,7 +134,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn comment(&mut self) -> Kind {
-        while ![b'\n', EOF].contains(&self.nth(0)) {
+        while ![b'\n', b'\r', EOF].contains(&self.nth(0)) {
             self.bump();
         }
         Kind::Comment
@@ -433,6 +433,28 @@ mod tests {
         assert_eq!(token_strs[7], "WS( )");
         assert_eq!(token_strs[8], "ID(cool)");
         assert_eq!(token_strs[9], ";");
+    }
+
+    #[test]
+    fn comment_cr_line_endings() {
+        // CR-only line endings (classic Mac) must terminate comments
+        let fea = "# comment\rlanguagesystem DFLT cool;";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "#(# comment)");
+        assert_eq!(token_strs[1], "WS(\r)");
+        assert_eq!(token_strs[2], "LanguagesystemKw");
+    }
+
+    #[test]
+    fn comment_crlf_line_endings() {
+        // CRLF line endings must terminate comments at the CR
+        let fea = "# comment\r\nlanguagesystem DFLT cool;";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "#(# comment)");
+        assert_eq!(token_strs[1], "WS(\r\n)");
+        assert_eq!(token_strs[2], "LanguagesystemKw");
     }
 
     #[test]
