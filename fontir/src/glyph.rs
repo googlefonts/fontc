@@ -799,7 +799,10 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         let current_glyph_order = &*arc_current;
         let original_glyphs: HashMap<_, _> = current_glyph_order
             .names()
-            .map(|gn| (gn, context.get_glyph(gn.clone())))
+            .map(|gn| {
+                let glyph = context.get_glyph(gn.clone());
+                (gn, glyph)
+            })
             .collect();
 
         // Anything the source specifically said not to retain shouldn't end up in the final font

@@ -30,6 +30,7 @@ fontir = { version = "0.5.0", path = "../fontir" }
 glyphs2fontir = { version = "0.6.0", path = "../glyphs2fontir" }
 fontra2fontir = { version = "0.4.0", path = "../fontra2fontir" }
 ufo2fontir = { version = "0.4.0", path = "../ufo2fontir" }
+svg2fontir = { version = "0.1.0", path = "../svg2fontir" }
 
 bitflags.workspace = true
 

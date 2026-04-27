@@ -136,6 +136,6 @@ Err: {err}"#
         }
     });
     input
-        .create_source()
+        .create_source(&fontc::Options::default())
         .unwrap_or_else(|err| panic!("Unable to create source for {path:?}: {err}"))
 }

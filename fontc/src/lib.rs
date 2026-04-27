@@ -12,6 +12,7 @@ pub use error::Error;
 pub use fontir::orchestration::Flags; // Re-export for library users
 use fontra2fontir::source::FontraIrSource;
 use glyphs2fontir::source::GlyphsIrSource;
+use svg2fontir::source::SvgIrSource;
 pub use timing::JobTimer;
 use ufo2fontir::source::DesignSpaceIrSource;
 use workload::Workload;
@@ -39,6 +40,7 @@ pub enum Input {
     GlyphsPath(PathBuf),
     FontraPath(PathBuf),
     GlyphsMemory(String),
+    SvgDirPath(PathBuf),
 }
 
 impl Input {
@@ -46,6 +48,11 @@ impl Input {
         if !path.exists() {
             return Err(Error::FileExpected(path.to_path_buf()));
         }
+
+        if path.is_dir() && Self::contains_svg_files(path) {
+            return Ok(Input::SvgDirPath(path.to_path_buf()));
+        }
+
         let ext = path
             .extension()
             .and_then(OsStr::to_str)
@@ -56,7 +63,25 @@ impl Input {
             "glyphs" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "glyphspackage" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "fontra" => Ok(Input::FontraPath(path.to_path_buf())),
+            "svg" => {
+                if !path.is_dir() {
+                    return Err(Error::ExpectedDirectory(path.to_path_buf()));
+                }
+                Ok(Input::SvgDirPath(path.to_path_buf()))
+            }
             _ => Err(Error::UnrecognizedSource(path.to_path_buf())),
+        }
+    }
+
+    fn contains_svg_files(path: &Path) -> bool {
+        if let Ok(mut entries) = std::fs::read_dir(path) {
+            entries.any(|e| {
+                e.map_or(false, |e| {
+                    e.path().extension() == Some(std::ffi::OsStr::new("svg"))
+                })
+            })
+        } else {
+            false
         }
     }
 
@@ -66,12 +91,27 @@ impl Input {
     }
 
     /// Creates the implementation of [`Source`] to feed to fontir.
-    pub fn create_source(&self) -> Result<Box<dyn Source>, Error> {
+    pub fn create_source(&self, options: &Options) -> Result<Box<dyn Source>, Error> {
         match self {
             Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path)?)),
             Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(path)?)),
             Input::FontraPath(path) => Ok(Box::new(FontraIrSource::new(path)?)),
             Input::GlyphsMemory(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+            Input::SvgDirPath(path) => {
+                let meta = options
+                    .svg_metadata
+                    .as_ref()
+                    .ok_or_else(|| Error::UnrecognizedSource(path.clone()))?;
+                let ascender = meta.ascender.unwrap_or(meta.upem as i16);
+                let descender = meta.descender.unwrap_or(0);
+                Ok(Box::new(SvgIrSource::new(
+                    path,
+                    meta.family_name.clone(),
+                    meta.upem,
+                    ascender,
+                    descender,
+                )?))
+            }
         }
     }
 }
@@ -122,6 +162,15 @@ impl std::ops::Not for DisableFlags {
     }
 }
 
+/// Metadata for SVG font compilation.
+#[derive(Debug, Clone)]
+pub struct SvgMetadata {
+    pub family_name: String,
+    pub upem: u16,
+    pub ascender: Option<i16>,
+    pub descender: Option<i16>,
+}
+
 /// Options for font compilation.
 ///
 /// Configures how the font is compiled (flags, output paths, etc.)
@@ -137,6 +186,8 @@ pub struct Options {
     pub timing_file: Option<PathBuf>,
     pub ir_dir: Option<PathBuf>,
     pub debug_dir: Option<PathBuf>,
+    /// SVG font metadata (only used for SvgDirPath input)
+    pub svg_metadata: Option<SvgMetadata>,
 }
 
 /// Run the compiler with the provided input and options.
@@ -155,7 +206,7 @@ pub fn run(input: Input, options: Options, mut timer: JobTimer) -> Result<(), Er
     let time = timer
         .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
         .run();
-    let source = input.create_source()?;
+    let source = input.create_source(&options)?;
     timer.add(time.complete());
 
     let (_fe_root, be_root, mut timer) = generate_font_internal(source, &options, timer)?;
@@ -412,7 +463,7 @@ mod tests {
             info!("Compile {options:?}");
 
             let input = Input::new(&testdata_dir().join(source_file)).unwrap();
-            let source = input.create_source().unwrap();
+            let source = input.create_source(&options).unwrap();
             let flags = merge_compilation_flags(&options, &*source);
 
             init_paths(&options).unwrap();
@@ -509,6 +560,18 @@ mod tests {
                 &Path::new("glyph_ir").join(string_to_filename(name, ".yml")),
             );
             ir::Glyph::read(&mut raw_glyph.as_slice())
+        }
+
+        fn compile_svg(svg_dir: &str, family_name: &str) -> TestCompile {
+            Self::compile(svg_dir, |mut opts| {
+                opts.svg_metadata = Some(SvgMetadata {
+                    family_name: family_name.to_string(),
+                    upem: 1000,
+                    ascender: Some(800),
+                    descender: Some(-200),
+                });
+                opts
+            })
         }
     }
 
@@ -5536,5 +5599,112 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
+    }
+
+    #[test]
+    fn test_compile_simple_svg_font() {
+        let result = TestCompile::compile_svg("svg/simple_glyphs", "Test Simple");
+        let font = result.font();
+
+        assert!(
+            font.table_data(Tag::new(b"glyf")).is_some()
+                || font.table_data(Tag::new(b"CFF ")).is_some(),
+            "should have glyph outlines"
+        );
+
+        let cmap = font.cmap().unwrap();
+        let gid_a = cmap.map_codepoint(0x0041 as u32).unwrap();
+        assert!(gid_a.to_u32() > 0);
+
+        let gid_b = cmap.map_codepoint(0x0042 as u32).unwrap();
+        assert!(gid_b.to_u32() > 0);
+    }
+
+    #[test]
+    fn test_compile_color_svg_font() {
+        let result = TestCompile::compile_svg("svg/multi_layer", "Test Color");
+        let font = result.font();
+
+        assert!(font.cpal().is_ok(), "should have CPAL table");
+        assert!(font.colr().is_ok(), "should have COLR table");
+
+        let cpal = font.cpal().unwrap();
+        assert!(cpal.num_palettes() > 0);
+        assert!(cpal.num_palette_entries() > 0);
+
+        let colr = font.colr().unwrap();
+        let cmap = font.cmap().unwrap();
+        let gid = cmap.map_codepoint(0x1F600 as u32).unwrap();
+        assert!(
+            colr.base_glyph_records()
+                .unwrap()
+                .unwrap()
+                .iter()
+                .any(|bg| bg.glyph_id() == gid),
+            "U+1F600 should be a COLR base glyph"
+        );
+    }
+
+    #[test]
+    fn test_compile_gradient_svg_font() {
+        let result = TestCompile::compile_svg("svg/gradient_glyphs", "Test Gradient");
+        let font = result.font();
+
+        assert!(font.colr().is_ok(), "should have COLR table");
+    }
+
+    #[test]
+    fn test_compile_opacity_svg_font() {
+        let result = TestCompile::compile_svg("svg/opacity_group", "Test Opacity");
+        let font = result.font();
+
+        assert!(font.colr().is_ok(), "should have COLR table");
+    }
+
+    #[test]
+    fn test_svg_font_name() {
+        let result = TestCompile::compile_svg("svg/simple_glyphs", "My SVG Font");
+        let font = result.font();
+
+        let name = font.name().unwrap();
+        let family = name
+            .name_record()
+            .iter()
+            .find(|r| r.name_id() == NameId::new(1))
+            .unwrap();
+        assert_eq!(
+            family.string(name.string_data()).unwrap().to_string(),
+            "My SVG Font"
+        );
+    }
+
+    #[test]
+    fn test_svg_font_upem() {
+        let result = TestCompile::compile_svg("svg/simple_glyphs", "Test");
+        let font = result.font();
+
+        let head = font.head().unwrap();
+        assert_eq!(head.units_per_em(), 1000);
+    }
+
+    #[test]
+    fn test_svg_font_glyph_order() {
+        let result = TestCompile::compile_svg("svg/simple_glyphs", "Test");
+
+        assert!(result.contains_glyph("A"));
+        assert!(result.contains_glyph("B"));
+    }
+
+    #[test]
+    fn test_svg_font_has_outline_glyphs() {
+        let result = TestCompile::compile_svg("svg/simple_glyphs", "Test");
+
+        let glyph_a = result.read_be_glyph("A");
+        match glyph_a {
+            RawGlyph::Simple(g) => {
+                assert!(!g.contours.is_empty(), "A should have contours");
+            }
+            _ => panic!("Expected simple glyph"),
+        }
     }
 }
