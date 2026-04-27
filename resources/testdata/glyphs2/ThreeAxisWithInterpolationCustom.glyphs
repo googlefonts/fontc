@@ -1,0 +1,92 @@
+{
+.appVersion = "3219";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+},
+{
+Name = Width;
+Tag = wdth;
+},
+{
+Name = "Optical Size";
+Tag = opsz;
+}
+);
+}
+);
+familyName = ThreeAxis;
+fontMaster = (
+{
+id = m01;
+weightValue = 400;
+widthValue = 100;
+customValue = 12;
+},
+{
+id = m02;
+weight = Bold;
+weightValue = 700;
+widthValue = 100;
+customValue = 12;
+},
+{
+id = m03;
+weightValue = 400;
+widthValue = 100;
+customValue = 72;
+},
+{
+id = m04;
+weight = Bold;
+weightValue = 700;
+widthValue = 100;
+customValue = 72;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = m02;
+width = 250;
+},
+{
+layerId = m03;
+width = 200;
+},
+{
+layerId = m04;
+width = 250;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+interpolationWeight = 400;
+interpolationWidth = 100;
+interpolationCustom = 12;
+name = "Regular Caption";
+},
+{
+interpolationWeight = 700;
+interpolationWidth = 100;
+interpolationCustom = 72;
+name = "Bold Display";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
