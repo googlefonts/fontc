@@ -134,7 +134,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn comment(&mut self) -> Kind {
-        while ![b'\n', EOF].contains(&self.nth(0)) {
+        while ![b'\n', b'\r', EOF].contains(&self.nth(0)) {
             self.bump();
         }
         Kind::Comment
