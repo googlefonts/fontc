@@ -12,21 +12,21 @@ pub(crate) struct CodePageRange([u32; 2]);
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Os2Builder {
-    pub us_weight_class: u16,
-    pub us_width_class: u16,
-    pub fs_type: u16,
-    pub s_family_class: i16,
-    pub panose_10: [u8; 10],
-    pub unicode_range: UnicodeRange,
-    pub ach_vend_id: Tag,
-    pub us_win_ascent: u16,
-    pub us_win_descent: u16,
-    pub code_page_range: CodePageRange,
-    pub sx_height: i16,
-    pub s_cap_height: i16,
-    pub s_typo_ascender: i16,
-    pub s_typo_descender: i16,
-    pub s_typo_line_gap: i16,
+    pub us_weight_class: Option<u16>,
+    pub us_width_class: Option<u16>,
+    pub fs_type: Option<u16>,
+    pub s_family_class: Option<i16>,
+    pub panose_10: Option<[u8; 10]>,
+    pub unicode_range: Option<UnicodeRange>,
+    pub ach_vend_id: Option<Tag>,
+    pub us_win_ascent: Option<u16>,
+    pub us_win_descent: Option<u16>,
+    pub code_page_range: Option<CodePageRange>,
+    pub sx_height: Option<i16>,
+    pub s_cap_height: Option<i16>,
+    pub s_typo_ascender: Option<i16>,
+    pub s_typo_descender: Option<i16>,
+    pub s_typo_line_gap: Option<i16>,
     pub us_lower_optical_point_size: Option<u16>,
     pub us_upper_optical_point_size: Option<u16>,
 }
@@ -60,34 +60,29 @@ fn set_bit_impl<const N: usize>(array: &mut [u32; N], bit: u8) {
 
 impl Os2Builder {
     pub fn build(&self) -> write_fonts::tables::os2::Os2 {
-        let [ul_code_page_range_1, ul_code_page_range_2] = self.code_page_range.0;
-        let [
-            ul_unicode_range_1,
-            ul_unicode_range_2,
-            ul_unicode_range_3,
-            ul_unicode_range_4,
-        ] = self.unicode_range.0;
+        let code_page_range = self.code_page_range.as_ref().map_or([0; 2], |r| r.0);
+        let unicode_range = self.unicode_range.as_ref().map_or([0; 4], |r| r.0);
 
         write_fonts::tables::os2::Os2 {
-            us_weight_class: self.us_weight_class,
-            us_width_class: self.us_width_class,
-            fs_type: self.fs_type,
-            s_family_class: self.s_family_class,
-            ul_unicode_range_1,
-            ul_unicode_range_2,
-            ul_unicode_range_3,
-            ul_unicode_range_4,
-            panose_10: self.panose_10,
-            ach_vend_id: self.ach_vend_id,
-            s_typo_ascender: self.s_typo_ascender,
-            s_typo_descender: self.s_typo_descender,
-            s_typo_line_gap: self.s_typo_line_gap,
-            us_win_ascent: self.us_win_ascent,
-            us_win_descent: self.us_win_descent,
-            ul_code_page_range_1: Some(ul_code_page_range_1),
-            ul_code_page_range_2: Some(ul_code_page_range_2),
-            sx_height: Some(self.sx_height),
-            s_cap_height: Some(self.s_cap_height),
+            us_weight_class: self.us_weight_class.unwrap_or_default(),
+            us_width_class: self.us_width_class.unwrap_or_default(),
+            fs_type: self.fs_type.unwrap_or_default(),
+            s_family_class: self.s_family_class.unwrap_or_default(),
+            ul_unicode_range_1: unicode_range[0],
+            ul_unicode_range_2: unicode_range[1],
+            ul_unicode_range_3: unicode_range[2],
+            ul_unicode_range_4: unicode_range[3],
+            panose_10: self.panose_10.unwrap_or_default(),
+            ach_vend_id: self.ach_vend_id.unwrap_or_default(),
+            s_typo_ascender: self.s_typo_ascender.unwrap_or_default(),
+            s_typo_descender: self.s_typo_descender.unwrap_or_default(),
+            s_typo_line_gap: self.s_typo_line_gap.unwrap_or_default(),
+            us_win_ascent: self.us_win_ascent.unwrap_or_default(),
+            us_win_descent: self.us_win_descent.unwrap_or_default(),
+            ul_code_page_range_1: Some(code_page_range[0]),
+            ul_code_page_range_2: Some(code_page_range[1]),
+            sx_height: Some(self.sx_height.unwrap_or_default()),
+            s_cap_height: Some(self.s_cap_height.unwrap_or_default()),
             //TODO: these are defined in fea, but we want them to be present
             //since other v2 fields are? I assume they get overwritten anyway?
             us_default_char: Some(0),
