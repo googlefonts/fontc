@@ -286,6 +286,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 hhea: self.tables.hhea.clone(),
                 vhea: self.tables.vhea.clone(),
                 os2: self.tables.os2.as_ref().map(|raw| raw.build()),
+                os2_builder: self.tables.os2.clone(),
                 gdef,
                 base: self.tables.base.as_ref().map(|raw| raw.build()),
                 name: name_builder.build(),

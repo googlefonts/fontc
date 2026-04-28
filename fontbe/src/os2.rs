@@ -522,6 +522,7 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
             .variant(WorkId::Gpos)
             .variant(WorkId::Gsub)
             .variant(FeWorkId::ALL_GLYPHS)
+            .variant(WorkId::ExtraFeaTables)
             .build()
     }
 
@@ -591,8 +592,67 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
 
         apply_max_context(&mut os2, context);
 
+        // Apply FEA `table OS/2 { ... }` overrides for explicitly set fields.
+        // Uses the builder to determine which fields were actually specified in FEA,
+        // matching fonttools feaLib behavior where only mentioned fields are overridden:
+        // https://github.com/fonttools/fonttools/blob/47813b21/Lib/fontTools/feaLib/builder.py#L466-L525
+        if let Some(extras) = context.extra_fea_tables.try_get()
+            && let (Some(fea_os2), Some(builder)) = (&extras.os2, &extras.os2_builder)
+        {
+            merge_fea_os2(&mut os2, fea_os2, builder);
+        }
+
         context.os2.set(os2);
         Ok(())
+    }
+}
+
+/// Merge FEA `table OS/2 { ... }` overrides into the OS/2 table.
+///
+/// Only fields that were explicitly set in the FEA source are applied, using the
+/// builder's `Option` fields to determine presence.  Values come from `fea_os2`
+/// (the fully built table) rather than the builder, since the builder's compound
+/// types (`UnicodeRange`, `CodePageRange`) are not publicly accessible.
+fn merge_fea_os2(os2: &mut Os2, fea_os2: &Os2, builder: &fea_rs::compile::Os2Builder) {
+    macro_rules! apply {
+        ($field:ident) => {
+            if builder.$field.is_some() {
+                os2.$field = fea_os2.$field;
+            }
+        };
+    }
+
+    apply!(us_weight_class);
+    apply!(us_width_class);
+    apply!(fs_type);
+    apply!(s_family_class);
+    apply!(ach_vend_id);
+    apply!(s_typo_ascender);
+    apply!(s_typo_descender);
+    apply!(s_typo_line_gap);
+    apply!(us_win_ascent);
+    apply!(us_win_descent);
+    apply!(sx_height);
+    apply!(s_cap_height);
+    apply!(us_lower_optical_point_size);
+    apply!(us_upper_optical_point_size);
+
+    if builder.panose_10.is_some() {
+        os2.panose_10 = fea_os2.panose_10;
+    }
+
+    // unicode_range and code_page_range are compound fields in the builder
+    // but map to individual u32 fields in the Os2 table
+    if builder.unicode_range.is_some() {
+        os2.ul_unicode_range_1 = fea_os2.ul_unicode_range_1;
+        os2.ul_unicode_range_2 = fea_os2.ul_unicode_range_2;
+        os2.ul_unicode_range_3 = fea_os2.ul_unicode_range_3;
+        os2.ul_unicode_range_4 = fea_os2.ul_unicode_range_4;
+    }
+
+    if builder.code_page_range.is_some() {
+        os2.ul_code_page_range_1 = fea_os2.ul_code_page_range_1;
+        os2.ul_code_page_range_2 = fea_os2.ul_code_page_range_2;
     }
 }
 
@@ -702,5 +762,78 @@ mod tests {
             (0xFFFF, 0xFFFF),
             (os2.us_first_char_index, os2.us_last_char_index)
         );
+    }
+
+    #[test]
+    fn merge_fea_os2_only_applies_set_fields() {
+        // Simulate: FEA says `FSType 8;` and `TypoAscender 950;` but nothing else.
+        // The computed OS/2 has its own values that should be preserved for unset fields.
+        let mut os2 = Os2 {
+            us_weight_class: 400,
+            us_width_class: 5,
+            fs_type: 4,             // will be overridden
+            s_typo_ascender: 800,   // will be overridden
+            s_typo_descender: -200, // not overridden
+            us_win_ascent: 1000,
+            ..Default::default()
+        };
+
+        // The FEA-built table has values for everything (build() fills defaults)
+        let fea_os2 = Os2 {
+            fs_type: 8,
+            s_typo_ascender: 950,
+            ..Default::default()
+        };
+
+        // The builder only has Some for fields explicitly in the FEA source
+        let builder = fea_rs::compile::Os2Builder {
+            fs_type: Some(8),
+            s_typo_ascender: Some(950),
+            ..Default::default()
+        };
+
+        merge_fea_os2(&mut os2, &fea_os2, &builder);
+
+        // Explicitly set fields are overridden
+        assert_eq!(8, os2.fs_type);
+        assert_eq!(950, os2.s_typo_ascender);
+        // Unset fields are preserved from the computed table
+        assert_eq!(400, os2.us_weight_class);
+        assert_eq!(5, os2.us_width_class);
+        assert_eq!(-200, os2.s_typo_descender);
+        assert_eq!(1000, os2.us_win_ascent);
+    }
+
+    #[test]
+    fn merge_fea_os2_explicit_zero_overrides() {
+        // Key bug case: FEA explicitly sets `FSType 0;` and `TypoLineGap 0;`
+        // to override non-zero values from fontinfo. The builder has Some(0)
+        // which must still cause an override.
+        let mut os2 = Os2 {
+            fs_type: 4,
+            s_typo_line_gap: 200,
+            us_win_ascent: 1000,
+            ..Default::default()
+        };
+
+        let fea_os2 = Os2 {
+            fs_type: 0,
+            s_typo_line_gap: 0,
+            ..Default::default()
+        };
+
+        let builder = fea_rs::compile::Os2Builder {
+            fs_type: Some(0),
+            s_typo_line_gap: Some(0),
+            ..Default::default()
+        };
+
+        merge_fea_os2(&mut os2, &fea_os2, &builder);
+
+        // Explicit zeros override non-zero computed values
+        assert_eq!(0, os2.fs_type);
+        assert_eq!(0, os2.s_typo_line_gap);
+        // Unset fields preserved
+        assert_eq!(1000, os2.us_win_ascent);
     }
 }

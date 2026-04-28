@@ -231,6 +231,11 @@ pub struct ExtraFeaTables {
     pub base: Option<Base>,
     pub stat: Option<Stat>,
     pub debg: Option<Vec<u8>>,
+    /// The OS/2 builder, preserving which fields were explicitly set in FEA.
+    ///
+    /// Not serialized — only available in the same compilation session.
+    #[serde(skip)]
+    pub os2_builder: Option<fea_rs::compile::Os2Builder>,
 }
 
 impl From<Compilation> for ExtraFeaTables {
@@ -240,6 +245,7 @@ impl From<Compilation> for ExtraFeaTables {
             hhea,
             vhea,
             os2,
+            os2_builder,
             base,
             name,
             stat,
@@ -255,6 +261,7 @@ impl From<Compilation> for ExtraFeaTables {
             stat,
             name,
             debg,
+            os2_builder,
         }
     }
 }
@@ -265,7 +272,6 @@ impl ExtraFeaTables {
             ("head", self.head.is_some()),
             ("hhea", self.hhea.is_some()),
             ("vhea", self.vhea.is_some()),
-            ("os2", self.os2.is_some()),
             ("base", self.base.is_some()),
             ("stat", self.stat.is_some()),
         ] {
@@ -297,6 +303,7 @@ impl Persistable for ExtraFeaTables {
             stat: read_table(stat.as_ref()),
             name: read_table(name.as_ref()),
             debg,
+            os2_builder: None, // not persisted
         }
     }
 
@@ -313,6 +320,7 @@ impl Persistable for ExtraFeaTables {
             stat,
             name,
             debg,
+            os2_builder: _, // not persisted
         } = self;
 
         let out = [

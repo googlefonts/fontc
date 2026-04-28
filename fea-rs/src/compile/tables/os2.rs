@@ -3,15 +3,20 @@
 use write_fonts::types::Tag;
 
 /// [ulUnicodeRangeN](https://learn.microsoft.com/en-us/typography/opentype/spec/os2#ulunicoderange1-bits-031ulunicoderange2-bits-3263ulunicoderange3-bits-6495ulunicoderange4-bits-96127)
-#[derive(Clone, Debug, Default)]
-pub(crate) struct UnicodeRange([u32; 4]);
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UnicodeRange([u32; 4]);
 
 /// [ulCodePageRangeN](https://learn.microsoft.com/en-us/typography/opentype/spec/os2#ulcodepagerange1-bits-031ulcodepagerange2-bits-3263)
-#[derive(Clone, Debug, Default)]
-pub(crate) struct CodePageRange([u32; 2]);
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CodePageRange([u32; 2]);
 
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Os2Builder {
+/// Builder for the OS/2 table from FEA `table OS/2 { ... }` blocks.
+///
+/// Fields are `Option<T>` — `Some` means the field was explicitly set in FEA,
+/// `None` means it was not mentioned and should not override computed values.
+#[allow(missing_docs)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Os2Builder {
     pub us_weight_class: Option<u16>,
     pub us_width_class: Option<u16>,
     pub fs_type: Option<u16>,
@@ -59,6 +64,7 @@ fn set_bit_impl<const N: usize>(array: &mut [u32; N], bit: u8) {
 }
 
 impl Os2Builder {
+    /// Build the write-fonts `Os2` table, using defaults for unset fields.
     pub fn build(&self) -> write_fonts::tables::os2::Os2 {
         let code_page_range = self.code_page_range.as_ref().map_or([0; 2], |r| r.0);
         let unicode_range = self.unicode_range.as_ref().map_or([0; 4], |r| r.0);
