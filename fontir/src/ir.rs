@@ -859,6 +859,13 @@ impl NameBuilder {
     }
 
     pub fn add(&mut self, name_id: NameId, value: String) {
+        // Work around plist crate not performing XML end-of-line normalization
+        // (XML 1.0 §2.11: \r\n → \n, bare \r → \n)
+        let value = if value.contains('\r') {
+            value.replace("\r\n", "\n").replace('\r', "\n")
+        } else {
+            value
+        };
         let key = NameKey::new(name_id, &value);
         self.names.insert(key, value);
         self.name_to_key.insert(name_id, key);
@@ -2661,5 +2668,20 @@ mod tests {
         }
 
         assert_eq!(new_instance.components[0].transform.as_coeffs(), [-1.; 6]);
+    }
+
+    #[test]
+    fn name_builder_normalizes_cr() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::COPYRIGHT_NOTICE, "hello\rworld".to_string());
+        assert_eq!(builder.get(NameId::COPYRIGHT_NOTICE), Some("hello\nworld"));
+
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::COPYRIGHT_NOTICE, "hello\r\nworld".to_string());
+        assert_eq!(builder.get(NameId::COPYRIGHT_NOTICE), Some("hello\nworld"));
+
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::COPYRIGHT_NOTICE, "a\r\nb\rc\nd".to_string());
+        assert_eq!(builder.get(NameId::COPYRIGHT_NOTICE), Some("a\nb\nc\nd"));
     }
 }
