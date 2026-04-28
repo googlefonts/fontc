@@ -664,7 +664,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
         // so we can merge later on
         if result.has_non_layout_tables() {
             let extras = ExtraFeaTables::from(result);
-            // we're currently only handling 'name'; if other tables are in
+            // we're currently only handling 'name' and OS/2; if other tables are in
             // here we probably need to do something with them too, so let's warn
             extras.log_unhandled_extras();
             context.extra_fea_tables.set(extras);

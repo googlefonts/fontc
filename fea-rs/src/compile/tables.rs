@@ -31,7 +31,8 @@ pub(crate) use base::{BASELINE_TAGS, BaseAxisBuilder, BaseBuilder, ScriptRecord}
 pub(crate) use debg::{DEBG_TAG, DebgBuilder, LookupDebugInfo};
 pub(crate) use gdef::{GdefBuilder, GlyphClassDefExt};
 pub(crate) use name::{NameBuilder, NameSpec};
-pub(crate) use os2::{CodePageRange, Os2Builder};
+pub(crate) use os2::CodePageRange;
+pub use os2::Os2Builder;
 pub(crate) use stat::{AxisLocation, AxisRecord, AxisValue, StatBuilder, StatFallbackName};
 
 /// The explicit tables allowed in a fea file

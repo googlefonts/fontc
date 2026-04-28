@@ -286,6 +286,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 hhea: self.tables.hhea.clone(),
                 vhea: self.tables.vhea.clone(),
                 os2: self.tables.os2.as_ref().map(|raw| raw.build()),
+                os2_builder: self.tables.os2.clone(),
                 gdef,
                 base: self.tables.base.as_ref().map(|raw| raw.build()),
                 name: name_builder.build(),
@@ -1671,51 +1672,55 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 typed::Os2TableItem::Number(val) => {
                     let value = val.number().parse_unsigned().unwrap();
                     match val.keyword().text.as_str() {
-                        "WeightClass" => os2.us_weight_class = value,
-                        "WidthClass" => os2.us_width_class = value,
+                        "WeightClass" => os2.us_weight_class = Some(value),
+                        "WidthClass" => os2.us_width_class = Some(value),
                         "LowerOpSize" => os2.us_lower_optical_point_size = Some(value),
                         "UpperOpSize" => os2.us_upper_optical_point_size = Some(value),
-                        "FSType" => os2.fs_type = value,
+                        "FSType" => os2.fs_type = Some(value),
                         _ => unreachable!("checked at parse time"),
                     }
                 }
                 typed::Os2TableItem::Metric(val) => {
                     let value = val.metric().parse_simple().expect("checked in validation");
                     match val.keyword().kind {
-                        Kind::TypoAscenderKw => os2.s_typo_ascender = value,
-                        Kind::TypoDescenderKw => os2.s_typo_descender = value,
-                        Kind::TypoLineGapKw => os2.s_typo_line_gap = value,
-                        Kind::XHeightKw => os2.sx_height = value,
-                        Kind::CapHeightKw => os2.s_cap_height = value,
-                        Kind::WinAscentKw => os2.us_win_ascent = value as u16,
-                        Kind::WinDescentKw => os2.us_win_descent = value as u16,
+                        Kind::TypoAscenderKw => os2.s_typo_ascender = Some(value),
+                        Kind::TypoDescenderKw => os2.s_typo_descender = Some(value),
+                        Kind::TypoLineGapKw => os2.s_typo_line_gap = Some(value),
+                        Kind::XHeightKw => os2.sx_height = Some(value),
+                        Kind::CapHeightKw => os2.s_cap_height = Some(value),
+                        Kind::WinAscentKw => os2.us_win_ascent = Some(value as u16),
+                        Kind::WinDescentKw => os2.us_win_descent = Some(value as u16),
                         _ => unreachable!("checked at parse time"),
                     }
                 }
                 typed::Os2TableItem::NumberList(list) => match list.keyword().kind {
                     Kind::PanoseKw => {
+                        let panose = os2.panose_10.get_or_insert_default();
                         for (i, val) in list.values().enumerate() {
-                            os2.panose_10[i] = val.parse_signed() as u8;
+                            panose[i] = val.parse_signed() as u8;
                         }
                     }
                     Kind::UnicodeRangeKw => {
                         for val in list.values() {
-                            os2.unicode_range.set_bit(val.parse_signed() as _);
+                            os2.unicode_range
+                                .get_or_insert_default()
+                                .set_bit(val.parse_signed() as _);
                         }
                     }
                     Kind::CodePageRangeKw => {
                         for val in list.values() {
                             os2.code_page_range
+                                .get_or_insert_default()
                                 .add_code_page(val.parse_unsigned().unwrap());
                         }
                     }
                     _ => unreachable!("checked at parse time"),
                 },
                 typed::Os2TableItem::Vendor(item) => {
-                    os2.ach_vend_id = item.parse_tag().expect("validated");
+                    os2.ach_vend_id = Some(item.parse_tag().expect("validated"));
                 }
                 typed::Os2TableItem::FamilyClass(item) => {
-                    os2.s_family_class = item.value().parse().unwrap() as i16
+                    os2.s_family_class = Some(item.value().parse().unwrap() as i16)
                 }
             }
         }

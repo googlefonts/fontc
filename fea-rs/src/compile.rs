@@ -20,6 +20,7 @@ pub use language_system::LanguageSystem;
 pub use lookups::{FeatureKey, LookupId};
 pub use opts::Opts;
 pub use output::Compilation;
+pub use tables::Os2Builder;
 pub use variations::{AxisLocation, NopVariationInfo, VariationInfo};
 
 #[cfg(any(test, feature = "test", feature = "cli"))]

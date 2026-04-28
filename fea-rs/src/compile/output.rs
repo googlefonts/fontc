@@ -38,6 +38,11 @@ pub struct Compilation {
     pub vhea: Option<wtables::vhea::Vhea>,
     /// The `OS/2` table, if one was generated
     pub os2: Option<wtables::os2::Os2>,
+    /// The OS/2 builder, preserving which fields were explicitly set in FEA.
+    ///
+    /// Use this to determine which fields should override computed values:
+    /// a field with `Some` was explicitly specified in the FEA source.
+    pub os2_builder: Option<super::tables::Os2Builder>,
     /// The `GDEF` table, if one was generated
     pub gdef: Option<wtables::gdef::Gdef>,
     /// The `BASE` table, if one was generated
