@@ -90,6 +90,7 @@ fn get_inputs_applying_denylist(input_path: &Path) -> Result<SourceSet, Error> {
             "chiron-fonts/chiron-hei-hk", // these repos are huge and we can't build them anyway
             "chiron-fonts/chiron-go-round-tc",
             "chiron-fonts/chiron-sung-hk",
+            "EbenSorkin/Merriweather4",
         ];
 
         // this is quadratic. I'm sorry.
