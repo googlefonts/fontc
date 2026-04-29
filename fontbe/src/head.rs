@@ -114,6 +114,7 @@ impl Work<Context, AnyWorkId, Error> for HeadWork {
             .variant(FeWorkId::StaticMetadata)
             .variant(WorkId::Glyf)
             .variant(WorkId::LocaFormat)
+            .variant(WorkId::ExtraFeaTables)
             .build()
     }
 
@@ -134,6 +135,14 @@ impl Work<Context, AnyWorkId, Error> for HeadWork {
         );
         apply_created_modified(&mut head, static_metadata.misc.created);
         apply_macstyle(&mut head, static_metadata.misc.selection_flags);
+
+        // Apply FEA `table head { ... }` override (only FontRevision is settable)
+        if let Some(extra_tables) = context.extra_fea_tables.try_get()
+            && let Some(font_rev) = extra_tables.head.as_ref().map(|h| h.font_revision)
+        {
+            head.font_revision = font_rev
+        }
+
         context.head.set(head);
 
         // Defer x/y Min/Max to metrics and limits job

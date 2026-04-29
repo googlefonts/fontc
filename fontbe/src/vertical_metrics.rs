@@ -36,6 +36,7 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
             .variant(WorkId::ALL_GLYF_FRAGMENTS)
             // We need composite bboxes to be calculated:
             .variant(WorkId::Glyf)
+            .variant(WorkId::ExtraFeaTables)
             .build()
     }
 
@@ -97,7 +98,7 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
         let metrics = builder.build();
 
         // Build and send vertical metrics tables out into the world
-        let vhea = Vhea {
+        let mut vhea = Vhea {
             ascender: FWord::new(default_metrics.vhea_ascender.into_inner().ot_round()),
             descender: FWord::new(default_metrics.vhea_descender.into_inner().ot_round()),
             line_gap: FWord::new(default_metrics.vhea_line_gap.into_inner().ot_round()),
@@ -118,6 +119,15 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
                 }
             })?,
         };
+        // Apply FEA `table vhea { ... }` overrides.
+        // FEA can only set VertTypoAscender, VertTypoDescender, VertTypoLineGap.
+        if let Some(extra_tables) = context.extra_fea_tables.try_get()
+            && let Some(fea_vhea) = extra_tables.vhea.as_ref()
+        {
+            vhea.ascender = fea_vhea.ascender;
+            vhea.descender = fea_vhea.descender;
+            vhea.line_gap = fea_vhea.line_gap;
+        }
         context.vhea.set(vhea);
 
         let vmtx = Vmtx::new(metrics.long_metrics, metrics.first_side_bearings);

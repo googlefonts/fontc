@@ -1,0 +1,22 @@
+languagesystem DFLT dflt;
+
+table head {
+    FontRevision 2.5;
+} head;
+
+table hhea {
+    Ascender 950;
+    Descender -250;
+    LineGap 0;
+    CaretOffset 20;
+} hhea;
+
+table OS/2 {
+    FSType 0;
+    TypoAscender 950;
+    TypoDescender -250;
+    TypoLineGap 0;
+    winAscent 1100;
+    winDescent 250;
+    WeightClass 700;
+} OS/2;

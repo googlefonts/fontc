@@ -266,22 +266,6 @@ impl From<Compilation> for ExtraFeaTables {
     }
 }
 
-impl ExtraFeaTables {
-    pub(crate) fn log_unhandled_extras(&self) {
-        for (name, unhandled) in [
-            ("head", self.head.is_some()),
-            ("hhea", self.hhea.is_some()),
-            ("vhea", self.vhea.is_some()),
-            ("base", self.base.is_some()),
-            ("stat", self.stat.is_some()),
-        ] {
-            if unhandled {
-                log::warn!("FEA generated unused table '{name}'");
-            }
-        }
-    }
-}
-
 // we could use serde here but it produces really big outputs; so instead
 // we can use fontwrite on each table, and then serialize an array of Option<Vec<u8>>
 impl Persistable for ExtraFeaTables {
