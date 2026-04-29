@@ -75,16 +75,11 @@ fn init_head(
 /// * <https://www.microsoft.com/typography/otspec/recom.htm>
 /// * <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L313-L326>
 fn apply_font_revision(head: &mut Head, major: i32, minor: u32) {
-    let major = major as f64;
-    let minor = if minor != 0 {
-        // Make minor the decimal part, treating minor as number of thousandths per <https://github.com/googlefonts/fontc/issues/925>
-        // Keep 3 decimal places per OTSpec recommendation. Since minor is thousandths ... we're good.
-        (minor as f64) * 0.001
-    } else {
-        0.0
-    };
-
-    head.font_revision = Fixed::from_f64(major + minor);
+    // minor is placed literally after the decimal point (zero-padded to 3 digits),
+    // matching Python's `float("%d.%03d" % (major, minor))`.
+    // e.g. (1, 7000) => "1.7000" => 1.7, not 1 + 7000*0.001 = 8.0
+    let revision: f64 = format!("{major}.{minor:03}").parse().unwrap();
+    head.font_revision = Fixed::from_f64(revision);
 }
 
 fn apply_macstyle(head: &mut Head, selection_flags: SelectionFlags) {
@@ -236,5 +231,13 @@ mod tests {
         let mut head = init_head(1000, LocaFormat::Long, DEFAULT_HEAD_FLAGS, 42);
         apply_font_revision(&mut head, 42, 42);
         assert_eq!(Fixed::from_f64(42.042), head.font_revision);
+    }
+
+    #[test]
+    fn minor_version_large() {
+        // e.g. versionMinor=7000 should produce 1.7, not 8.0
+        let mut head = init_head(1000, LocaFormat::Long, DEFAULT_HEAD_FLAGS, 42);
+        apply_font_revision(&mut head, 1, 7000);
+        assert_eq!(Fixed::from_f64(1.7), head.font_revision);
     }
 }
