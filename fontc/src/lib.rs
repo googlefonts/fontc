@@ -5537,4 +5537,47 @@ mod tests {
                 .join("\n")
         );
     }
+
+    // FEA `table` block overrides: verify that explicit values in FEA win over
+    // fontinfo-derived values for head, hhea, and OS/2 tables.
+
+    #[test]
+    fn fea_table_overrides_head() {
+        let result = TestCompile::compile_source("FeaTableOverrides.ufo");
+        let head = result.font().head().unwrap();
+        // FEA says FontRevision 2.5; fontinfo says versionMajor=1 versionMinor=0
+        assert_eq!(
+            write_fonts::types::Fixed::from_f64(2.5),
+            head.font_revision()
+        );
+    }
+
+    #[test]
+    fn fea_table_overrides_hhea() {
+        let result = TestCompile::compile_source("FeaTableOverrides.ufo");
+        let hhea = result.font().hhea().unwrap();
+        // FEA: Ascender 950, Descender -250, LineGap 0, CaretOffset 20
+        // fontinfo: 800, -200, 0, (default)
+        assert_eq!(write_fonts::types::FWord::new(950), hhea.ascender());
+        assert_eq!(write_fonts::types::FWord::new(-250), hhea.descender());
+        assert_eq!(write_fonts::types::FWord::new(0), hhea.line_gap());
+        assert_eq!(20, hhea.caret_offset());
+    }
+
+    #[test]
+    fn fea_table_overrides_os2() {
+        let result = TestCompile::compile_source("FeaTableOverrides.ufo");
+        let os2 = result.font().os2().unwrap();
+        // FEA: FSType 0, TypoAscender 950, TypoDescender -250, TypoLineGap 0,
+        //      winAscent 1100, winDescent 250, WeightClass 700
+        // fontinfo: FSType 4 (bit 2), TypoAscender 800, TypoDescender -200,
+        //           TypoLineGap 200, winAscent 1000, winDescent 200, WeightClass 400
+        assert_eq!(0, os2.fs_type());
+        assert_eq!(950, os2.s_typo_ascender());
+        assert_eq!(-250, os2.s_typo_descender());
+        assert_eq!(0, os2.s_typo_line_gap());
+        assert_eq!(1100, os2.us_win_ascent());
+        assert_eq!(250, os2.us_win_descent());
+        assert_eq!(700, os2.us_weight_class());
+    }
 }

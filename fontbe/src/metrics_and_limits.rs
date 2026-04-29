@@ -290,6 +290,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             .variant(WorkId::ALL_GLYF_FRAGMENTS)
             // We need composite bboxes to be calculated:
             .variant(WorkId::Glyf)
+            .variant(WorkId::ExtraFeaTables)
             .build()
     }
 
@@ -350,7 +351,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
         let metrics = builder.build();
 
         // Build and send horizontal metrics tables out into the world
-        let hhea = Hhea {
+        let mut hhea = Hhea {
             ascender: FWord::new(default_metrics.hhea_ascender.into_inner().ot_round()),
             descender: FWord::new(default_metrics.hhea_descender.into_inner().ot_round()),
             line_gap: FWord::new(default_metrics.hhea_line_gap.into_inner().ot_round()),
@@ -368,6 +369,16 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                 }
             })?,
         };
+        // Apply FEA `table hhea { ... }` overrides.
+        // FEA can only set Ascender, Descender, LineGap, CaretOffset.
+        if let Some(extra_tables) = context.extra_fea_tables.try_get()
+            && let Some(fea_hhea) = extra_tables.hhea.as_ref()
+        {
+            hhea.ascender = fea_hhea.ascender;
+            hhea.descender = fea_hhea.descender;
+            hhea.line_gap = fea_hhea.line_gap;
+            hhea.caret_offset = fea_hhea.caret_offset;
+        }
         context.hhea.set(hhea);
 
         let hmtx = Hmtx::new(metrics.long_metrics, metrics.first_side_bearings);
