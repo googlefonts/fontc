@@ -527,12 +527,11 @@ mod tests {
 
             crate::typed::NameSpec::cast(&token).unwrap()
         };
+        assert_eq!("", parse_name("3 1 0x409 \"\"").string());
+        assert_eq!("duck", parse_name("3 1 0x409 \"duck\"").string());
         assert_eq!(
-            ["", "duck"],
-            [
-                parse_name("3 1 0x409 \"\"").string(),
-                parse_name("3 1 0x409 \"duck\"").string(),
-            ]
+            "i have some newlines",
+            parse_name("3 1 0x409 \"i have\n some \rnewlines\"").string()
         );
     }
 }

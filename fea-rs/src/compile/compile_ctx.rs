@@ -1973,7 +1973,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             platform_id,
             encoding_id,
             language_id,
-            string: node.string().into(),
+            string: SmolStr::from(node.string().as_ref()),
         }
     }
 

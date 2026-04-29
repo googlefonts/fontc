@@ -7,6 +7,7 @@
 //! This lets us implement useful methods on specific AST nodes, which are
 //! internally working on untyped `NodeOrToken`s.
 
+use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::ops::Range;
 
@@ -1549,10 +1550,17 @@ impl NameSpec {
         self.find_token(Kind::String).unwrap()
     }
 
-    pub(crate) fn string(&self) -> &str {
+    pub(crate) fn string(&self) -> Cow<'_, str> {
         // The value is always doublequoted so slice out the actual string
         let s = self.string_token().as_str();
-        &s[1..s.len() - 1]
+        let s = &s[1..s.len() - 1];
+        // Per the FEA spec: "Newlines embedded within the string are removed
+        // from the character sequence to be stored."
+        if s.contains(['\n', '\r']) {
+            Cow::Owned(s.replace(['\n', '\r'], ""))
+        } else {
+            Cow::Borrowed(s)
+        }
     }
 }
 
