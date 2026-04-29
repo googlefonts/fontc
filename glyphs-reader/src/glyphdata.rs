@@ -140,6 +140,7 @@ pub enum Script {
     Nko,
     NyiakengPuachueHmong,
     Ogham,
+    OldGeorgian,
     Oriya,
     Osage,
     Osmanya,
@@ -151,6 +152,7 @@ pub enum Script {
     Shavian,
     Sinhala,
     Syriac,
+    Tagalog,
     Tamil,
     Telugu,
     Thaana,
@@ -158,6 +160,7 @@ pub enum Script {
     Tham,
     Tibet,
     Tifinagh,
+    TuluTigalari,
     Vai,
     Yezidi,
     Yi,
@@ -949,6 +952,7 @@ impl FromStr for Script {
             "nko" => Ok(Self::Nko),
             "nyiakeng puachue hmong" => Ok(Self::NyiakengPuachueHmong),
             "ogham" => Ok(Self::Ogham),
+            "old georgian" => Ok(Self::OldGeorgian),
             "oriya" => Ok(Self::Oriya),
             "osage" => Ok(Self::Osage),
             "osmanya" => Ok(Self::Osmanya),
@@ -960,6 +964,7 @@ impl FromStr for Script {
             "shavian" => Ok(Self::Shavian),
             "sinhala" => Ok(Self::Sinhala),
             "syriac" => Ok(Self::Syriac),
+            "tagalog" => Ok(Self::Tagalog),
             "tamil" => Ok(Self::Tamil),
             "telugu" => Ok(Self::Telugu),
             "thaana" => Ok(Self::Thaana),
@@ -967,6 +972,7 @@ impl FromStr for Script {
             "tham" => Ok(Self::Tham),
             "tibet" => Ok(Self::Tibet),
             "tifinagh" => Ok(Self::Tifinagh),
+            "tulu tigalari" => Ok(Self::TuluTigalari),
             "vai" => Ok(Self::Vai),
             "yi" => Ok(Self::Yi),
             _ => Err(s.into()),
@@ -1328,6 +1334,12 @@ mod tests {
         case("pileOfPoo_pileOfPoo", "u1F4A9_u1F4A9"),
         case("pileOfPoo.ss01", "u1F4A9.ss01"),
         case("lam_alef-ar.fina.ss02", "uni06440627.fina.ss02"),
+        // CJK Hangzhou numerals (U+3021-U+3029): glyphsLib 6.13.1 renamed
+        // these from e.g. one-hangzhou to one-han
+        case("one-han.half.vert", "uni3021.half.vert"),
+        case("one_parenleft-han.vert", "uni30210028.vert"),
+        case("one_one-han.paren", "uni30213021.paren"),
+        case("one_parenleftsmall-han.vert", "uni3021FE59.vert"),
     )]
     fn synthetic_production_names(name: &str, expected: &str) {
         let production_name = GlyphData::new(None)
