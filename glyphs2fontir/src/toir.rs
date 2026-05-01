@@ -204,7 +204,7 @@ fn to_ir_axis(
         && !font.axis_mappings.get(&axis.name).unwrap().is_identity()
         && min != max;
 
-    let converter = if has_non_identity_mapping {
+    let (converter, user_min, user_default, user_max) = if has_non_identity_mapping {
         let mappings: Vec<_> = font
             .axis_mappings
             .get(&axis.name)
@@ -213,16 +213,30 @@ fn to_ir_axis(
             .map(|(u, d)| (UserCoord::new(*u), DesignCoord::new(*d)))
             .collect();
         let default_idx = find_by_design_coord(&mappings, default, axis.name.as_str(), "default")?;
-        // Make sure we have min and max mappings
-        find_by_design_coord(&mappings, min, axis.name.as_str(), "min")?;
-        find_by_design_coord(&mappings, max, axis.name.as_str(), "max")?;
-        CoordConverter::new(mappings, default_idx)?
+        let min_idx = find_by_design_coord(&mappings, min, axis.name.as_str(), "min")?;
+        let max_idx = find_by_design_coord(&mappings, max, axis.name.as_str(), "max")?;
+        // Use user-space values directly from the mapping, matching glyphsLib.
+        // Don't round-trip via design_to_user which is lossy for many-to-one maps.
+        let user_min = mappings[min_idx].0;
+        let user_default = mappings[default_idx].0;
+        let user_max = mappings[max_idx].0;
+        (
+            CoordConverter::new(mappings, default_idx)?,
+            user_min,
+            user_default,
+            user_max,
+        )
     } else {
         // There is no meaningful mapping; design == user
         let min = UserCoord::new(min.into_inner());
         let max = UserCoord::new(max.into_inner());
         let default = UserCoord::new(default.into_inner());
-        CoordConverter::unmapped(min, default, max)
+        (
+            CoordConverter::unmapped(min, default, max),
+            min,
+            default,
+            max,
+        )
     };
 
     Ok(fontdrasil::types::Axis {
@@ -232,9 +246,9 @@ fn to_ir_axis(
             cause,
         })?,
         hidden: axis.hidden.unwrap_or(false),
-        min: min.to_user(&converter),
-        default: default.to_user(&converter),
-        max: max.to_user(&converter),
+        min: user_min,
+        default: user_default,
+        max: user_max,
         converter,
         // localized axis names from .glyphs sources aren't supported yet
         // https://forum.glyphsapp.com/t/localisable-axis-names/19028
@@ -724,8 +738,9 @@ pub(crate) fn to_ir_paint(
 mod tests {
     use glyphs_reader::{Font, Glyph, Layer, LayerAttributes, Node, Path};
     use std::path::PathBuf;
+    use std::str::FromStr;
 
-    use super::{split_color_glyphs, to_ir_path};
+    use super::{FontInfo, split_color_glyphs, to_ir_path};
 
     fn testdata_dir() -> PathBuf {
         let dir = PathBuf::from("../resources/testdata");
@@ -877,6 +892,21 @@ mod tests {
             !color_glyphs.contains_key("empty_color"),
             "COLRv1 glyph with empty color layer should not be added to color_glyphs"
         );
+    }
+
+    /// When multiple user-space values map to the same design-space value
+    /// (a many-to-one axis map), the axis max should reflect the largest
+    /// user-space value, not the result of a lossy design-to-user round-trip.
+    /// https://github.com/googlefonts/ufo2ft/issues/978
+    #[test]
+    fn many_to_one_axis_map_preserves_max() {
+        let font = Font::load(&testdata_dir().join("glyphs3/ManyToOneAxisMap.glyphs")).unwrap();
+        let font_info = FontInfo::try_from(font).unwrap();
+        let wght_tag = write_fonts::types::Tag::from_str("wght").unwrap();
+        let wght = font_info.axes.get(&wght_tag).unwrap();
+        // user=900 and user=1000 both map to design=1000;
+        // axis max must be 1000 (the largest user value), not 900
+        assert_eq!(wght.max, fontdrasil::coords::UserCoord::new(1000.0));
     }
 
     /// Test that a layer with palette index 0xFFFF produces a PaintSolid with color `None`.
