@@ -56,7 +56,13 @@ impl PiecewiseLinearMap {
         #[allow(clippy::indexing_slicing)]
         // Either the binary_search found it, or it's within 0..len
         match self.from.binary_search(&value) {
-            Ok(idx) => self.to[idx], // This value is just right
+            Ok(_) => {
+                // Find the first occurrence; binary_search may return any
+                // index when there are duplicates (many-to-one maps).
+                // https://github.com/googlefonts/ufo2ft/issues/978
+                let first = self.from.partition_point(|x| x < &value);
+                self.to[first]
+            }
             Err(idx) => {
                 // idx is where we would insert from.
                 // Interpolate between the values left/right of it, if any.
