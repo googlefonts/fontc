@@ -56,7 +56,13 @@ impl PiecewiseLinearMap {
         #[allow(clippy::indexing_slicing)]
         // Either the binary_search found it, or it's within 0..len
         match self.from.binary_search(&value) {
-            Ok(idx) => self.to[idx], // This value is just right
+            Ok(_) => {
+                // Find the first occurrence; binary_search may return any
+                // index when there are duplicates (many-to-one maps).
+                // https://github.com/googlefonts/ufo2ft/issues/978
+                let first = self.from.partition_point(|x| x < &value);
+                self.to[first]
+            }
             Err(idx) => {
                 // idx is where we would insert from.
                 // Interpolate between the values left/right of it, if any.
@@ -133,6 +139,62 @@ mod tests {
         assert_eq!(plm.map(OrderedFloat(0_f64)), OrderedFloat(400_f64));
         assert_eq!(plm.map(OrderedFloat(5_f64)), OrderedFloat(550_f64));
         assert_eq!(plm.map(OrderedFloat(10_f64)), OrderedFloat(700_f64));
+    }
+
+    #[test]
+    fn many_to_one_reverse() {
+        // https://github.com/googlefonts/ufo2ft/issues/978
+        // user=900 and user=1000 both map to design=1000
+        let user_to_design = PiecewiseLinearMap::new(vec![
+            (OrderedFloat(100_f64), OrderedFloat(100_f64)),
+            (OrderedFloat(800_f64), OrderedFloat(780_f64)),
+            (OrderedFloat(900_f64), OrderedFloat(1000_f64)),
+            (OrderedFloat(1000_f64), OrderedFloat(1000_f64)),
+        ]);
+        let design_to_user = user_to_design.reverse();
+
+        // Exact match at the flat value should return the first user value
+        assert_eq!(
+            design_to_user.map(OrderedFloat(1000_f64)),
+            OrderedFloat(900_f64)
+        );
+
+        // Interpolation before the flat segment
+        let result = design_to_user.map(OrderedFloat(800_f64)).0;
+        let expected = 800.0 + (800.0 - 780.0) / (1000.0 - 780.0) * (900.0 - 800.0);
+        assert!(
+            (result - expected).abs() < 1e-10,
+            "expected {expected}, got {result}"
+        );
+    }
+
+    #[test]
+    fn many_to_one_mid_range() {
+        // Flat segment in the middle: both user=400 and user=500 map to design=50
+        let user_to_design = PiecewiseLinearMap::new(vec![
+            (OrderedFloat(100_f64), OrderedFloat(10_f64)),
+            (OrderedFloat(400_f64), OrderedFloat(50_f64)),
+            (OrderedFloat(500_f64), OrderedFloat(50_f64)),
+            (OrderedFloat(700_f64), OrderedFloat(80_f64)),
+            (OrderedFloat(900_f64), OrderedFloat(100_f64)),
+        ]);
+        let design_to_user = user_to_design.reverse();
+
+        // Before the flat segment
+        let result = design_to_user.map(OrderedFloat(45_f64)).0;
+        let expected = 100.0 + (45.0 - 10.0) / (50.0 - 10.0) * (400.0 - 100.0);
+        assert!(
+            (result - expected).abs() < 1e-10,
+            "expected {expected}, got {result}"
+        );
+
+        // After the flat segment
+        let result = design_to_user.map(OrderedFloat(65_f64)).0;
+        let expected = 500.0 + (65.0 - 50.0) / (80.0 - 50.0) * (700.0 - 500.0);
+        assert!(
+            (result - expected).abs() < 1e-10,
+            "expected {expected}, got {result}"
+        );
     }
 
     #[test]

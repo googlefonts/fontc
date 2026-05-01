@@ -1,0 +1,78 @@
+{
+.appVersion = "3436";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Axis Mappings";
+value = {
+wght = {
+100 = 100;
+800 = 780;
+900 = 1000;
+1000 = 1000;
+};
+};
+}
+);
+fontMaster = (
+{
+axesValues = (
+100
+);
+iconName = Light;
+id = master01;
+name = Light;
+},
+{
+axesValues = (
+1000
+);
+id = master02;
+name = Black;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = master01;
+width = 200;
+},
+{
+layerId = master02;
+width = 250;
+}
+);
+}
+);
+instances = (
+{
+axesValues = (
+100
+);
+instanceInterpolations = {
+master01 = 1;
+};
+name = Light;
+},
+{
+axesValues = (
+1000
+);
+instanceInterpolations = {
+master02 = 1;
+};
+name = Black;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 1;
+}
