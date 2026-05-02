@@ -174,9 +174,9 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             //TODO: have help message
         }
         if let Some(literal) = node.class_def() {
-            self.validate_glyph_class_literal(&literal, false);
+            self.validate_glyph_class_literal(&literal);
         } else if let Some(alias) = node.class_alias() {
-            self.validate_glyph_class_ref(&alias, false);
+            self.validate_glyph_class_ref(&alias);
         } else {
             self.error(node.range(), "unknown parser bug?");
         }
@@ -562,19 +562,19 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             match statement {
                 typed::GdefTableItem::ClassDef(node) => {
                     if let Some(cls) = node.base_glyphs() {
-                        self.validate_glyph_class(&cls, true);
+                        self.validate_glyph_class(&cls);
                     }
 
                     if let Some(cls) = node.ligature_glyphs() {
-                        self.validate_glyph_class(&cls, true);
+                        self.validate_glyph_class(&cls);
                     }
 
                     if let Some(cls) = node.mark_glyphs() {
-                        self.validate_glyph_class(&cls, true);
+                        self.validate_glyph_class(&cls);
                     }
 
                     if let Some(cls) = node.component_glyphs() {
-                        self.validate_glyph_class(&cls, true);
+                        self.validate_glyph_class(&cls);
                     }
                 }
                 typed::GdefTableItem::Attach(node) => {
@@ -1045,7 +1045,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             }
             typed::GsubStatement::Type3(rule) => {
                 self.validate_glyph(&rule.target());
-                self.validate_glyph_class(&rule.alternates(), false);
+                self.validate_glyph_class(&rule.alternates());
             }
             typed::GsubStatement::Type4(rule) => {
                 let mut count = 0;
@@ -1127,7 +1127,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 if let Some(inline) = rule.inline_rule() {
                     if let Some(class) = inline.replacement_class() {
                         debug_assert!(inline.replacement_glyphs().next().is_none());
-                        self.validate_glyph_class(&class, true);
+                        self.validate_glyph_class(&class);
                         if !input_class {
                             self.error(class.range(), "class can only substitute another class");
                         }
@@ -1185,7 +1185,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 Kind::MarkAttachmentTypeKw if !mark_set => {
                     mark_set = true;
                     match iter.next().and_then(typed::GlyphClass::cast) {
-                        Some(node) => self.validate_glyph_class(&node, true),
+                        Some(node) => self.validate_glyph_class(&node),
                         None => self.error(
                             next.range(),
                             "MarkAttachmentType should be followed by glyph class",
@@ -1195,7 +1195,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 Kind::UseMarkFilteringSetKw if !filter_set => {
                     filter_set = true;
                     match iter.next().and_then(typed::GlyphClass::cast) {
-                        Some(node) => self.validate_glyph_class(&node, true),
+                        Some(node) => self.validate_glyph_class(&node),
                         None => self.error(
                             next.range(),
                             "MarkAttachmentType should be followed by glyph class",
@@ -1220,8 +1220,8 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         match node {
             typed::GlyphOrClass::Glyph(name) => self.validate_glyph_name(name),
             typed::GlyphOrClass::Cid(cid) => self.validate_cid(cid),
-            typed::GlyphOrClass::Class(class) => self.validate_glyph_class_literal(class, true),
-            typed::GlyphOrClass::NamedClass(name) => self.validate_glyph_class_ref(name, true),
+            typed::GlyphOrClass::Class(class) => self.validate_glyph_class_literal(class),
+            typed::GlyphOrClass::NamedClass(name) => self.validate_glyph_class_ref(name),
             typed::GlyphOrClass::Null(_) => (),
         }
     }
@@ -1234,22 +1234,14 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         }
     }
 
-    fn validate_glyph_class(&mut self, node: &typed::GlyphClass, accept_mark_class: bool) {
+    fn validate_glyph_class(&mut self, node: &typed::GlyphClass) {
         match node {
-            typed::GlyphClass::Literal(lit) => {
-                self.validate_glyph_class_literal(lit, accept_mark_class)
-            }
-            typed::GlyphClass::Named(name) => {
-                self.validate_glyph_class_ref(name, accept_mark_class)
-            }
+            typed::GlyphClass::Literal(lit) => self.validate_glyph_class_literal(lit),
+            typed::GlyphClass::Named(name) => self.validate_glyph_class_ref(name),
         }
     }
 
-    fn validate_glyph_class_literal(
-        &mut self,
-        node: &typed::GlyphClassLiteral,
-        accept_mark_class: bool,
-    ) {
+    fn validate_glyph_class_literal(&mut self, node: &typed::GlyphClassLiteral) {
         for item in node.items() {
             if let Some(id) = typed::GlyphName::cast(item) {
                 self.validate_glyph_name(&id);
@@ -1258,7 +1250,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             } else if let Some(range) = typed::GlyphRange::cast(item) {
                 self.validate_glyph_range(&range);
             } else if let Some(alias) = typed::GlyphClassName::cast(item) {
-                self.validate_glyph_class_ref(&alias, accept_mark_class);
+                self.validate_glyph_class_ref(&alias);
                 // these two cases indicate existing errors
             } else if !item.kind().is_trivia()
                 && item.kind() != Kind::Ident
@@ -1289,8 +1281,8 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         }
     }
 
-    fn validate_glyph_class_ref(&mut self, node: &typed::GlyphClassName, accept_mark_class: bool) {
-        if accept_mark_class && self.mark_class_defs.contains(node.text()) {
+    fn validate_glyph_class_ref(&mut self, node: &typed::GlyphClassName) {
+        if self.mark_class_defs.contains(node.text()) {
             return;
         }
         if !self.glyph_class_defs.contains_key(node.text()) {
