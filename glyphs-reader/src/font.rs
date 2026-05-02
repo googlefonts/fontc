@@ -3443,6 +3443,25 @@ impl Instance {
             tags_done.insert(axes[axis_index].tag.as_str());
         }
 
+        // For non-wght without an "Axis Location" CP, the user
+        // location defaults to the design location (identity mapping), matching
+        // glyphsLib's AxisDefinition.get_user_loc() behavior:
+        // https://github.com/googlefonts/glyphsLib/blob/75c07d42/Lib/glyphsLib/builder/axes.py#L403-L405
+        for (i, axis) in axes.iter().enumerate() {
+            if tags_done.contains(axis.tag.as_str()) {
+                continue;
+            }
+            if axis.tag == "wght" || axis.tag == "wdth" {
+                continue;
+            }
+            if let Some(&design) = value.axes_values.get(i) {
+                axis_mappings
+                    .entry(axis.name.clone())
+                    .or_default()
+                    .add_if_new(design, design);
+            }
+        }
+
         // only infer legacy mappings when Axis Locations aren't defined
         if !masters_have_axis_locations && !tags_done.contains("wght") {
             // OS/2 weight_class corresponds to 'wght' axis user-space value
@@ -4742,6 +4761,26 @@ mod tests {
         // Should produce the same instance-based mappings as the unmodified font
         let font_without = Font::load(&base_path).unwrap();
         assert_eq!(font_without.axis_mappings, font.axis_mappings);
+    }
+
+    #[test]
+    fn custom_axis_instance_without_axis_location_gets_identity_mapping() {
+        // A font with a custom axis (YEAR) where instances lack "Axis Location" CPs
+        // should get identity mappings (user = design) for that axis.
+        // Regression test for dancoull/ClimateCrisis crash.
+        let font = Font::load(&glyphs3_dir().join("CustomAxisNoAxisLocation.glyphs")).unwrap();
+
+        assert_eq!(
+            UserToDesignMapping(BTreeMap::from([(
+                "Year".into(),
+                AxisUserToDesignMap(vec![
+                    (OrderedFloat(1979.0), OrderedFloat(1979.0)),
+                    (OrderedFloat(2020.0), OrderedFloat(2020.0)),
+                    (OrderedFloat(2050.0), OrderedFloat(2050.0)),
+                ])
+            )])),
+            font.axis_mappings
+        );
     }
 
     #[test]
