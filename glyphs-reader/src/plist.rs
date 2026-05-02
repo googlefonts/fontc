@@ -655,20 +655,20 @@ impl From<Dictionary> for Plist {
 }
 
 pub(crate) fn parse_int(s: &str) -> Result<i64, Error> {
-    if numeric_ok(s) {
-        if let Ok(num) = s.parse::<i64>() {
-            return Ok(num);
-        }
-        if let Ok(num) = s.parse::<f64>() {
-            return Ok(num as i64);
-        }
+    if let Ok(num) = s.parse::<i64>() {
+        return Ok(num);
+    }
+    if let Ok(num) = s.parse::<f64>()
+        && num.is_finite()
+    {
+        return Ok(num as i64);
     }
     Err(Error::ExpectedNumber)
 }
 
 pub(crate) fn parse_float(s: &str) -> Result<f64, Error> {
-    if numeric_ok(s)
-        && let Ok(num) = s.parse::<f64>()
+    if let Ok(num) = s.parse::<f64>()
+        && num.is_finite()
     {
         return Ok(num);
     }
@@ -994,6 +994,30 @@ mod tests {
         let foobar = BTreeMap::<SmolStr, i64>::parse_plist(contents).unwrap();
         assert_eq!(foobar.get("foo"), Some(&5));
         assert_eq!(foobar.get("bar"), Some(&32));
+    }
+
+    #[test]
+    fn parse_int_leading_zero() {
+        let contents = r#"
+        {
+            versionMinor = 011;
+            other = 0;
+        }"#;
+
+        let map = BTreeMap::<SmolStr, i64>::parse_plist(contents).unwrap();
+        assert_eq!(map.get("versionMinor"), Some(&11));
+        assert_eq!(map.get("other"), Some(&0));
+    }
+
+    #[test]
+    #[should_panic(expected = "ExpectedNumber")]
+    fn parse_int_rejects_infinity() {
+        let contents = r#"
+        {
+            bad = infinity;
+        }"#;
+
+        let _map = BTreeMap::<SmolStr, i64>::parse_plist(contents).unwrap();
     }
 
     #[test]
