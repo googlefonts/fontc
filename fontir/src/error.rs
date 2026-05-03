@@ -65,8 +65,8 @@ pub enum Error {
     DuplicateUserLocation { what: String, loc: UserLocation },
     #[error("Global metadata very bad, very very bad")]
     InvalidGlobalMetadata,
-    #[error("No default master in {0}")]
-    NoDefaultMaster(PathBuf),
+    #[error("No default master")]
+    NoDefaultMaster,
     #[error("Missing mapping on {axis_name} for {field} at {value:?}. Mappings {mappings:?}")]
     MissingMappingForDesignCoord {
         axis_name: String,

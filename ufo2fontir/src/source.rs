@@ -218,11 +218,7 @@ impl Source for DesignSpaceIrSource {
 
         let mut glyphs = HashMap::<GlyphName, HashMap<PathBuf, Vec<DesignLocation>>>::new();
 
-        let Some((default_master_idx, _)) = default_master(&designspace) else {
-            return Err(Error::NoDefaultMaster(
-                designspace_or_ufo_file.to_path_buf(),
-            ));
-        };
+        let (default_master_idx, _) = default_master(&designspace)?;
         let mut sources_indices_default_first = (0..designspace.sources.len()).collect::<Vec<_>>();
         sources_indices_default_first.swap(0, default_master_idx);
         let mut default_master_lib = None;
@@ -502,8 +498,10 @@ struct PaintGraphWork {
     lib: plist::Dictionary,
 }
 
-fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
-    let ds_axes = to_ir_axes(&designspace.axes).ok()?;
+fn default_master(
+    designspace: &DesignSpaceDocument,
+) -> Result<(usize, &designspace::Source), Error> {
+    let ds_axes = to_ir_axes(&designspace.axes)?;
     let tags_by_name: HashMap<_, _> = ds_axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
     let axes: HashMap<_, _> = ds_axes.iter().map(|a| (a.tag, a)).collect();
 
@@ -521,6 +519,7 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designsp
         .iter()
         .enumerate()
         .find(|(_, source)| to_design_location(&tags_by_name, &source.location) == default_location)
+        .ok_or(Error::NoDefaultMaster)
 }
 
 fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, BadSource> {
@@ -843,11 +842,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Static metadata for {:#?}", self.designspace_or_ufo);
         let designspace_dir = self.designspace_dir.as_ref();
-        let Some((_, default_master)) = default_master(&self.designspace) else {
-            return Err(Error::NoDefaultMaster(
-                self.designspace_or_ufo.to_path_buf(),
-            ));
-        };
+        let (_, default_master) = default_master(&self.designspace)?;
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
         let font_info_at_default = font_infos.get(&default_master.filename).ok_or_else(|| {
             BadSource::new(
@@ -1628,11 +1623,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         let static_metadata = context.static_metadata.get();
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
-        let Some((default_master_idx, default_master)) = default_master(&self.designspace) else {
-            return Err(Error::NoDefaultMaster(
-                self.designspace_or_ufo.to_path_buf(),
-            ));
-        };
+        let (default_master_idx, default_master) = default_master(&self.designspace)?;
 
         // Step 1: find the groups
 
