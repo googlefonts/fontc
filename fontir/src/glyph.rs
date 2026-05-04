@@ -22,7 +22,7 @@ use write_fonts::{OtRound, types::GlyphId16};
 
 use crate::{
     error::{BadGlyph, Error},
-    ir::{Component, GlobalMetric, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
+    ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
     propagate_anchors::propagate_all_anchors,
 };
@@ -692,16 +692,28 @@ fn synthesize_notdef(context: &Context) -> Result<Glyph, BadGlyph> {
     }
 
     for location in static_metadata.variation_model.locations() {
-        let ascender = global_metrics.get(GlobalMetric::Ascender, location);
-        let descender = global_metrics.get(GlobalMetric::Descender, location);
-        if (ascender, descender) == (default.ascender, default.descender) {
+        if location.is_default() {
             continue;
         }
-        let outline = make_notdef_outline(upem, ascender.0, descender.0);
+        let metrics = global_metrics.at(location);
+        if (
+            metrics.ascender,
+            metrics.descender,
+            metrics.os2_typo_ascender,
+            metrics.os2_typo_descender,
+        ) == (
+            default.ascender,
+            default.descender,
+            default.os2_typo_ascender,
+            default.os2_typo_descender,
+        ) {
+            continue;
+        }
+        let outline = make_notdef_outline(upem, metrics.ascender.0, metrics.descender.0);
 
         let instance = GlyphInstance {
             width,
-            height: Some(ascender.0 - descender.0),
+            height: Some(metrics.ascender.0 - metrics.descender.0),
             contours: vec![outline],
             ..Default::default()
         };
@@ -985,8 +997,8 @@ mod tests {
 
     use crate::{
         ir::{
-            AnchorBuilder, Component, GdefCategories, GlobalMetricsBuilder, Glyph, GlyphBuilder,
-            GlyphInstance, GlyphOrder, PreliminaryGdefCategories, StaticMetadata,
+            AnchorBuilder, Component, GdefCategories, GlobalMetric, GlobalMetricsBuilder, Glyph,
+            GlyphBuilder, GlyphInstance, GlyphOrder, PreliminaryGdefCategories, StaticMetadata,
         },
         orchestration::{Context, Flags, WorkId},
     };
@@ -1131,6 +1143,32 @@ mod tests {
         let notdef = make_notdef_with_ascenders(&[(&loc0, 600.), (&loc1, 600.)]);
         assert_eq!(notdef.sources().len(), 1);
         assert_eq!(notdef.sources()[&loc0].height, Some(600.));
+    }
+
+    /// When os2_typo_ascender varies across masters but the outline ascender/descender
+    /// are constant, the .notdef should still have sources at all locations so that
+    /// the vertical phantom point deltas are captured in gvar.
+    #[test]
+    fn variable_notdef_from_typo_metrics() {
+        let [loc0, loc1] = make_wght_locations([0.0, 1.0]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+        let mut global_metrics = GlobalMetricsBuilder::new();
+        // Pre-set varying Os2TypoAscender before populate_defaults
+        global_metrics.set(GlobalMetric::Os2TypoAscender, loc0.clone(), 1000.0);
+        global_metrics.set(GlobalMetric::Os2TypoAscender, loc1.clone(), 1050.0);
+        // Constant outline ascender/descender across both locations
+        for loc in [&loc0, &loc1] {
+            global_metrics.populate_defaults(loc, 1000, None, Some(800.0), Some(-200.0), None);
+        }
+        let global_metrics = global_metrics
+            .build(&context.static_metadata.get().axes)
+            .unwrap();
+        context.global_metrics.set(global_metrics);
+        let notdef = synthesize_notdef(&context).unwrap();
+
+        // Both locations have sources; phantom points pick up varying
+        // os2_typo_ascender via the fallback in GlyphInstance::vertical_origin()
+        assert_eq!(notdef.sources().len(), 2);
     }
 
     #[test]
