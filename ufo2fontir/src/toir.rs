@@ -27,11 +27,14 @@ pub(crate) fn to_design_location(
 ) -> DesignLocation {
     // TODO: what if Dimension uses uservalue? - new in DS5.0
     loc.iter()
-        .map(|d| {
-            (
-                *tags_by_name.get(d.name.as_str()).unwrap(),
-                DesignCoord::new(d.xvalue.unwrap() as f64),
-            )
+        .filter_map(|d| match tags_by_name.get(d.name.as_str()) {
+            Some(tag) => Some((*tag, DesignCoord::new(d.xvalue.unwrap() as f64))),
+            // warn and skip dimensions with unknown axis names:
+            // https://github.com/fonttools/fonttools/blob/8e5c1bf7/Lib/fontTools/designspaceLib/__init__.py#L2424
+            None => {
+                log::warn!("Location with undefined axis: {:?}, skipping", d.name);
+                None
+            }
         })
         .collect()
 }
@@ -392,6 +395,52 @@ mod tests {
             to_ir_component(&c, None).transform,
             Affine::new([0.4366, -0.4366, 0.4415, 0.4425, 282.0, 5.0])
         );
+    }
+
+    // Tilt-Fonts TiltNeon[XROT,YROT].designspace uses axis tags ("XROT") instead of names
+    #[test]
+    fn to_design_location_skips_undefined_axis() {
+        let tags_by_name: HashMap<&str, Tag> = HashMap::from([
+            ("Rotation in X", Tag::new(b"XROT")),
+            ("Rotation in Y", Tag::new(b"YROT")),
+        ]);
+
+        // Normal case: dimension names match axis names
+        let loc = vec![
+            Dimension {
+                name: "Rotation in X".into(),
+                xvalue: Some(10.0),
+                yvalue: None,
+                uservalue: None,
+            },
+            Dimension {
+                name: "Rotation in Y".into(),
+                xvalue: Some(20.0),
+                yvalue: None,
+                uservalue: None,
+            },
+        ];
+        let result = to_design_location(&tags_by_name, &loc);
+        assert_eq!(result.get(Tag::new(b"XROT")), Some(DesignCoord::new(10.0)));
+        assert_eq!(result.get(Tag::new(b"YROT")), Some(DesignCoord::new(20.0)));
+
+        // Bug case: dimension uses axis tags instead of axis names
+        let loc_with_tags = vec![
+            Dimension {
+                name: "XROT".into(),
+                xvalue: Some(0.0),
+                yvalue: None,
+                uservalue: None,
+            },
+            Dimension {
+                name: "YROT".into(),
+                xvalue: Some(0.0),
+                yvalue: None,
+                uservalue: None,
+            },
+        ];
+        let result = to_design_location(&tags_by_name, &loc_with_tags);
+        assert_eq!(result.iter().count(), 0, "undefined axes should be skipped");
     }
 
     /// Test parsing component anchors from glyphsLib's ComponentInfo in glyph lib.
