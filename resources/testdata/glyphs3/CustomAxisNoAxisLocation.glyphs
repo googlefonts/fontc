@@ -1,0 +1,70 @@
+{
+.appVersion = "3316";
+.formatVersion = 3;
+axes = (
+{
+name = Year;
+tag = YEAR;
+}
+);
+customParameters = (
+{
+name = "Variable Font Origin";
+value = m01;
+}
+);
+familyName = CustomAxisTest;
+fontMaster = (
+{
+axesValues = (
+1979
+);
+id = m01;
+name = "Master 1979";
+},
+{
+axesValues = (
+2050
+);
+id = m02;
+name = "Master 2050";
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = m02;
+width = 250;
+}
+);
+unicode = 32;
+}
+);
+instances = (
+{
+axesValues = (
+1979
+);
+name = "Year 1979";
+},
+{
+axesValues = (
+2020
+);
+name = "Year 2020";
+},
+{
+axesValues = (
+2050
+);
+name = "Year 2050";
+}
+);
+unitsPerEm = 1000;
+}
