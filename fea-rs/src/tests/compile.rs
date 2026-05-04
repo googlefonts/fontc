@@ -793,3 +793,17 @@ feature cv02 {
         "unset first param must stay 0xFFFF"
     );
 }
+
+#[test]
+fn mark_class_used_in_glyph_class_def() {
+    // Mark classes should be accepted wherever glyph classes are expected,
+    // including inside glyph class definitions.
+    compile_fea(
+        "\
+languagesystem DFLT dflt;
+markClass a <anchor 150 -10> @top;
+@foo = [@top b];
+",
+        "mark_class_in_glyph_class",
+    );
+}
