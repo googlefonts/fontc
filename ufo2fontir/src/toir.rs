@@ -235,22 +235,24 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
     })
 }
 
+/// Invariant: the default location is always first in the glif_files list.
 pub fn to_ir_glyph(
     glyph_name: GlyphName,
     emit_to_binary: bool,
     erase_open_corners: bool,
-    glif_files: &HashMap<&PathBuf, Vec<NormalizedLocation>>,
+    glif_files: &[(Vec<NormalizedLocation>, &PathBuf)],
     anchors: &mut AnchorBuilder,
 ) -> Result<ir::Glyph, Error> {
     let mut glyph = ir::GlyphBuilder::new(glyph_name.clone());
     glyph.emit_to_binary = emit_to_binary;
-    for (glif_file, locations) in glif_files {
-        let norad_glyph =
+
+    // We stash the codepoints from the default location so we can warn
+    // if any other instances have different codepoints
+    let mut default_loc_codepoints = None;
+    for (locations, glif_file) in glif_files.iter() {
+        let mut norad_glyph =
             norad::Glyph::load(glif_file).map_err(|e| BadSource::custom(glif_file, e))?;
 
-        norad_glyph.codepoints.iter().for_each(|cp| {
-            glyph.codepoints.insert(cp as u32);
-        });
         for location in locations {
             glyph.try_add_source(
                 location,
@@ -268,6 +270,19 @@ pub fn to_ir_glyph(
                     )?;
                 }
             }
+        }
+        match default_loc_codepoints.as_ref() {
+            None => {
+                glyph.codepoints = norad_glyph.codepoints.iter().map(|cp| cp as u32).collect();
+                default_loc_codepoints = Some(std::mem::take(&mut norad_glyph.codepoints));
+            }
+            Some(cps) if !norad_glyph.codepoints.is_empty() && cps != &norad_glyph.codepoints => {
+                log::warn!(
+                    "Glyph '{glyph_name}' codepoints differ between instances. Default: '{cps:?}', {glif_file:?}: {:?}",
+                    norad_glyph.codepoints
+                );
+            }
+            Some(_) => (),
         }
     }
     glyph.build().map_err(Into::into)
@@ -335,14 +350,12 @@ mod tests {
         let mut norm_loc = NormalizedLocation::new();
         norm_loc.insert(Tag::new(b"wght"), NormalizedCoord::new(0.0));
         let mut anchors = AnchorBuilder::new("bar".into());
+        let glif_path = testdata_dir().join("WghtVar-Regular.ufo/glyphs/bar.glif");
         let glyph = to_ir_glyph(
             "bar".into(),
             true,
             false,
-            &HashMap::from([(
-                &testdata_dir().join("WghtVar-Regular.ufo/glyphs/bar.glif"),
-                vec![norm_loc],
-            )]),
+            &[(vec![norm_loc], &glif_path)],
             &mut anchors,
         )
         .unwrap();

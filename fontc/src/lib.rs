@@ -1148,6 +1148,29 @@ mod tests {
         }
     }
 
+    /// When instances disagree on codepoints, we use the default master's codepoints.
+    /// This must not produce a cmap conflict (duplicate mappings or missing entries).
+    #[test]
+    fn codepoint_mismatch_uses_default_in_cmap() {
+        // default has U+007C for "bar", non-default has U+00A6
+        let result =
+            TestCompile::compile_source("codepoint_mismatch/codepoint_mismatch.designspace");
+        let font = result.font();
+        let cmap = font.cmap().unwrap();
+
+        // U+007C (from default) should map to the "bar" glyph
+        assert!(
+            cmap.map_codepoint(0x007Cu32).is_some(),
+            "U+007C from default master should be in cmap"
+        );
+        // U+00A6 (from non-default only) should NOT be in cmap
+        assert_eq!(
+            None,
+            cmap.map_codepoint(0x00A6u32),
+            "U+00A6 from non-default master should not be in cmap"
+        );
+    }
+
     #[test]
     fn hmtx_of_one() {
         let result = TestCompile::compile_source("glyphs2/NotDef.glyphs");
