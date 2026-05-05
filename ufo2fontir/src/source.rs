@@ -1834,14 +1834,19 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         );
         let static_metadata = context.static_metadata.get();
 
-        // Migrate glif_files into internal coordinates
-        let mut glif_files = HashMap::new();
+        // Migrate glif_files into internal coordinates, default location first
+        let mut glif_files = Vec::new();
+        //let mut default_idx = None;
         for (path, design_locations) in self.glif_files.iter() {
             let normalized_locations: Vec<NormalizedLocation> = design_locations
                 .iter()
                 .map(|dl| dl.to_normalized(&static_metadata.all_source_axes).unwrap())
                 .collect();
-            glif_files.insert(path, normalized_locations);
+            if normalized_locations.iter().any(|loc| loc.is_default()) {
+                glif_files.insert(0, (normalized_locations, path));
+            } else {
+                glif_files.push((normalized_locations, path));
+            }
         }
 
         let erase_open_corners = context.flags.contains(Flags::ERASE_OPEN_CORNERS);
