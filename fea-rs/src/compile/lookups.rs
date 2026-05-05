@@ -31,8 +31,8 @@ use write_fonts::{
         layout::{
             ConditionSet as RawConditionSet, Feature, FeatureList, FeatureRecord,
             FeatureTableSubstitution, FeatureTableSubstitutionRecord, FeatureVariationRecord,
-            FeatureVariations, LangSys, LangSysRecord, LookupFlag, LookupList, Script, ScriptList,
-            ScriptRecord,
+            FeatureVariations, LangSys, LangSysRecord, Lookup, LookupFlag, LookupList, Script,
+            ScriptList, ScriptRecord,
             builders::{Builder, LookupBuilder},
         },
         variations::ivs_builder::VariationStoreBuilder,
@@ -59,6 +59,7 @@ pub(crate) type FilterSetId = u16;
 pub(crate) struct AllLookups {
     current: Option<SomeLookup>,
     current_name: Option<SmolStr>,
+    current_use_extension: bool,
     gpos: Vec<PositionLookup>,
     gsub: Vec<SubstitutionLookup>,
     named: HashMap<SmolStr, LookupId>,
@@ -80,6 +81,9 @@ pub(crate) enum PositionLookup {
     #[allow(dead_code)]
     Contextual(LookupBuilder<PosContextBuilder>),
     ChainedContextual(LookupBuilder<PosChainContextBuilder>),
+    /// Wraps another PositionLookup in a GPOS Extension lookup (type 9).
+    /// Set when the `useExtension` keyword is used on the named lookup block.
+    Extension(Box<PositionLookup>),
 }
 
 // a litle helper to implement this conversion trait.
@@ -113,6 +117,9 @@ pub(crate) enum SubstitutionLookup {
     Contextual(LookupBuilder<SubContextBuilder>),
     ChainedContextual(LookupBuilder<SubChainContextBuilder>),
     Reverse(LookupBuilder<ReverseChainBuilder>),
+    /// Wraps another SubstitutionLookup in a GSUB Extension lookup (type 7).
+    /// Set when the `useExtension` keyword is used on the named lookup block.
+    Extension(Box<SubstitutionLookup>),
 }
 
 #[derive(Clone, Debug)]
@@ -247,6 +254,7 @@ impl PositionLookup {
         match self {
             PositionLookup::Contextual(lookup) => lookup.remap_ids(id_map),
             PositionLookup::ChainedContextual(lookup) => lookup.remap_ids(id_map),
+            PositionLookup::Extension(inner) => inner.remap_ids(id_map),
             _ => (),
         }
     }
@@ -261,6 +269,8 @@ impl PositionLookup {
             PositionLookup::MarkToMark(_) => Kind::GposType6,
             PositionLookup::Contextual(_) => Kind::GposType7,
             PositionLookup::ChainedContextual(_) => Kind::GposType8,
+            // Extension is never stored in self.current, so kind() is never called on it.
+            PositionLookup::Extension(_) => unreachable!("Extension lookup has no Kind"),
         }
     }
 
@@ -274,6 +284,7 @@ impl PositionLookup {
             PositionLookup::MarkToMark(lookup) => lookup.force_subtable_break(),
             PositionLookup::Contextual(lookup) => lookup.force_subtable_break(),
             PositionLookup::ChainedContextual(lookup) => lookup.force_subtable_break(),
+            PositionLookup::Extension(_) => unreachable!("Extension lookup has no subtable break"),
         }
     }
 }
@@ -283,6 +294,7 @@ impl SubstitutionLookup {
         match self {
             SubstitutionLookup::Contextual(lookup) => lookup.remap_ids(id_map),
             SubstitutionLookup::ChainedContextual(lookup) => lookup.remap_ids(id_map),
+            SubstitutionLookup::Extension(inner) => inner.remap_ids(id_map),
             _ => (),
         }
     }
@@ -296,6 +308,8 @@ impl SubstitutionLookup {
             SubstitutionLookup::Contextual(_) => Kind::GsubType5,
             SubstitutionLookup::ChainedContextual(_) => Kind::GsubType6,
             SubstitutionLookup::Reverse(_) => Kind::GsubType8,
+            // Extension is never stored in self.current, so kind() is never called on it.
+            SubstitutionLookup::Extension(_) => unreachable!("Extension lookup has no Kind"),
         }
     }
 
@@ -308,8 +322,117 @@ impl SubstitutionLookup {
             SubstitutionLookup::Contextual(lookup) => lookup.force_subtable_break(),
             SubstitutionLookup::Reverse(lookup) => lookup.force_subtable_break(),
             SubstitutionLookup::ChainedContextual(lookup) => lookup.force_subtable_break(),
+            SubstitutionLookup::Extension(_) => {
+                unreachable!("Extension lookup has no subtable break")
+            }
         }
     }
+}
+
+/// Wrap a built GSUB lookup in an Extension (type 7) lookup.
+///
+/// Each subtable of the original lookup becomes one ExtensionSubst subtable
+/// pointing to the original subtable data.
+fn wrap_gsub_in_extension(
+    lookup: write_gsub::SubstitutionLookup,
+) -> write_gsub::SubstitutionLookup {
+    use write_gsub::{ExtensionSubstFormat1, ExtensionSubtable};
+
+    fn rewrap<T: Default>(
+        inner: Lookup<T>,
+        make: impl Fn(T) -> ExtensionSubtable,
+    ) -> Lookup<ExtensionSubtable> {
+        let flag = inner.lookup_flag;
+        let mfs = inner.mark_filtering_set;
+        let subtables = inner
+            .subtables
+            .into_iter()
+            .map(|s| make(s.into_inner()))
+            .collect();
+        let mut out = Lookup::new(flag, subtables);
+        out.mark_filtering_set = mfs;
+        out
+    }
+
+    let ext_lookup = match lookup {
+        write_gsub::SubstitutionLookup::Single(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Single(ExtensionSubstFormat1::new(1, s))
+        }),
+        write_gsub::SubstitutionLookup::Multiple(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Multiple(ExtensionSubstFormat1::new(2, s))
+        }),
+        write_gsub::SubstitutionLookup::Alternate(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Alternate(ExtensionSubstFormat1::new(3, s))
+        }),
+        write_gsub::SubstitutionLookup::Ligature(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Ligature(ExtensionSubstFormat1::new(4, s))
+        }),
+        write_gsub::SubstitutionLookup::Contextual(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Contextual(ExtensionSubstFormat1::new(5, s))
+        }),
+        write_gsub::SubstitutionLookup::ChainContextual(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::ChainContextual(ExtensionSubstFormat1::new(6, s))
+        }),
+        write_gsub::SubstitutionLookup::Reverse(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Reverse(ExtensionSubstFormat1::new(8, s))
+        }),
+        write_gsub::SubstitutionLookup::Extension(_) => {
+            panic!("unexpected nested GSUB extension lookup")
+        }
+    };
+    write_gsub::SubstitutionLookup::Extension(ext_lookup)
+}
+
+/// Wrap a built GPOS lookup in an Extension (type 9) lookup.
+fn wrap_gpos_in_extension(lookup: write_gpos::PositionLookup) -> write_gpos::PositionLookup {
+    use write_gpos::{ExtensionPosFormat1, ExtensionSubtable};
+
+    fn rewrap<T: Default>(
+        inner: Lookup<T>,
+        make: impl Fn(T) -> ExtensionSubtable,
+    ) -> Lookup<ExtensionSubtable> {
+        let flag = inner.lookup_flag;
+        let mfs = inner.mark_filtering_set;
+        let subtables = inner
+            .subtables
+            .into_iter()
+            .map(|s| make(s.into_inner()))
+            .collect();
+        let mut out = Lookup::new(flag, subtables);
+        out.mark_filtering_set = mfs;
+        out
+    }
+
+    let ext_lookup = match lookup {
+        write_gpos::PositionLookup::Single(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Single(ExtensionPosFormat1::new(1, s))
+        }),
+        write_gpos::PositionLookup::Pair(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Pair(ExtensionPosFormat1::new(2, s))
+        }),
+        write_gpos::PositionLookup::Cursive(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Cursive(ExtensionPosFormat1::new(3, s))
+        }),
+        write_gpos::PositionLookup::MarkToBase(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::MarkToBase(ExtensionPosFormat1::new(4, s))
+        }),
+        write_gpos::PositionLookup::MarkToLig(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::MarkToLig(ExtensionPosFormat1::new(5, s))
+        }),
+        write_gpos::PositionLookup::MarkToMark(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::MarkToMark(ExtensionPosFormat1::new(6, s))
+        }),
+        write_gpos::PositionLookup::Contextual(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::Contextual(ExtensionPosFormat1::new(7, s))
+        }),
+        write_gpos::PositionLookup::ChainContextual(inner) => rewrap(inner, |s| {
+            ExtensionSubtable::ChainContextual(ExtensionPosFormat1::new(8, s))
+        }),
+        write_gpos::PositionLookup::Extension(_) => {
+            panic!("unexpected nested GPOS extension lookup")
+        }
+    };
+    write_gpos::PositionLookup::Extension(ext_lookup)
 }
 
 impl Builder for PositionLookup {
@@ -341,6 +464,7 @@ impl Builder for PositionLookup {
             PositionLookup::ChainedContextual(lookup) => {
                 write_gpos::PositionLookup::ChainContextual(lookup.build(var_store).into_concrete())
             }
+            PositionLookup::Extension(inner) => wrap_gpos_in_extension(inner.build(var_store)),
         }
     }
 }
@@ -348,31 +472,32 @@ impl Builder for PositionLookup {
 impl Builder for SubstitutionLookup {
     type Output = write_gsub::SubstitutionLookup;
 
-    fn build(self, _var_store: &mut VariationStoreBuilder) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         match self {
             SubstitutionLookup::Single(lookup) => {
-                write_gsub::SubstitutionLookup::Single(lookup.build(_var_store))
+                write_gsub::SubstitutionLookup::Single(lookup.build(var_store))
             }
             SubstitutionLookup::Multiple(lookup) => {
-                write_gsub::SubstitutionLookup::Multiple(lookup.build(_var_store))
+                write_gsub::SubstitutionLookup::Multiple(lookup.build(var_store))
             }
             SubstitutionLookup::Alternate(lookup) => {
-                write_gsub::SubstitutionLookup::Alternate(lookup.build(_var_store))
+                write_gsub::SubstitutionLookup::Alternate(lookup.build(var_store))
             }
             SubstitutionLookup::Ligature(lookup) => {
-                write_gsub::SubstitutionLookup::Ligature(lookup.build(_var_store))
+                write_gsub::SubstitutionLookup::Ligature(lookup.build(var_store))
             }
             SubstitutionLookup::Contextual(lookup) => {
-                write_gsub::SubstitutionLookup::Contextual(lookup.build(_var_store).into_concrete())
+                write_gsub::SubstitutionLookup::Contextual(lookup.build(var_store).into_concrete())
             }
             SubstitutionLookup::ChainedContextual(lookup) => {
                 write_gsub::SubstitutionLookup::ChainContextual(
-                    lookup.build(_var_store).into_concrete(),
+                    lookup.build(var_store).into_concrete(),
                 )
             }
             SubstitutionLookup::Reverse(lookup) => {
-                write_gsub::SubstitutionLookup::Reverse(lookup.build(_var_store))
+                write_gsub::SubstitutionLookup::Reverse(lookup.build(var_store))
             }
+            SubstitutionLookup::Extension(inner) => wrap_gsub_in_extension(inner.build(var_store)),
         }
     }
 }
@@ -385,15 +510,25 @@ impl AllLookups {
         }
     }
 
-    fn push(&mut self, lookup: SomeLookup) -> LookupId {
+    fn push(&mut self, lookup: SomeLookup, use_extension: bool) -> LookupId {
         let debug_info = self.current_debug_info.take();
         match lookup {
             SomeLookup::GsubLookup(sub) => {
+                let sub = if use_extension {
+                    SubstitutionLookup::Extension(Box::new(sub))
+                } else {
+                    sub
+                };
                 self.gsub.push(sub);
                 self.gsub_debug_info.push(debug_info);
                 LookupId::Gsub(self.gsub.len() - 1)
             }
             SomeLookup::GposLookup(pos) => {
+                let pos = if use_extension {
+                    PositionLookup::Extension(Box::new(pos))
+                } else {
+                    pos
+                };
                 self.gpos.push(pos);
                 self.gpos_debug_info.push(debug_info);
                 LookupId::Gpos(self.gpos.len() - 1)
@@ -402,16 +537,28 @@ impl AllLookups {
                 let id = LookupId::Gpos(self.gpos.len());
                 assert_eq!(id, lookup.root_id); // sanity check
                 let (lookup, anon_lookups) = lookup.into_lookups();
-                match lookup {
-                    ChainOrNot::Context(lookup) => self
-                        .gpos
-                        //NOTE: we currently force all GPOS7 into GPOS8, to match
-                        //the behaviour of fonttools.
-                        .push(PositionLookup::ChainedContextual(lookup.convert())),
-                    ChainOrNot::Chain(lookup) => self
-                        .gpos
-                        .push(PositionLookup::ChainedContextual(lookup.convert())),
-                }
+                // NOTE: we currently force all GPOS7 into GPOS8, to match
+                // the behaviour of fonttools.
+                let root = match lookup {
+                    ChainOrNot::Context(lb) => PositionLookup::ChainedContextual(lb.convert()),
+                    ChainOrNot::Chain(lb) => PositionLookup::ChainedContextual(lb.convert()),
+                };
+                let root = if use_extension {
+                    PositionLookup::Extension(Box::new(root))
+                } else {
+                    root
+                };
+                self.gpos.push(root);
+                // Matches fonttools: anonymous lookups inherit use_extension from the parent.
+                // https://github.com/fonttools/fonttools/blob/34be244/Lib/fontTools/feaLib/builder.py#L249-L255
+                let anon_lookups: Vec<_> = if use_extension {
+                    anon_lookups
+                        .into_iter()
+                        .map(|a| PositionLookup::Extension(Box::new(a)))
+                        .collect()
+                } else {
+                    anon_lookups
+                };
                 let anon_debug_info = debug_info.as_ref().map(|info| LookupDebugInfo {
                     range: info.range.clone(),
                     name: None,
@@ -426,14 +573,26 @@ impl AllLookups {
                 let id = LookupId::Gsub(self.gsub.len());
                 assert_eq!(id, lookup.root_id); // sanity check
                 let (lookup, anon_lookups) = lookup.into_lookups();
-                match lookup {
-                    ChainOrNot::Context(lookup) => self
-                        .gsub
-                        .push(SubstitutionLookup::Contextual(lookup.convert())),
-                    ChainOrNot::Chain(lookup) => self
-                        .gsub
-                        .push(SubstitutionLookup::ChainedContextual(lookup.convert())),
-                }
+                let root = match lookup {
+                    ChainOrNot::Context(lb) => SubstitutionLookup::Contextual(lb.convert()),
+                    ChainOrNot::Chain(lb) => SubstitutionLookup::ChainedContextual(lb.convert()),
+                };
+                let root = if use_extension {
+                    SubstitutionLookup::Extension(Box::new(root))
+                } else {
+                    root
+                };
+                self.gsub.push(root);
+                // Matches fonttools: anonymous lookups inherit use_extension from the parent.
+                // https://github.com/fonttools/fonttools/blob/34be2443/Lib/fontTools/feaLib/builder.py#L249-L255
+                let anon_lookups: Vec<_> = if use_extension {
+                    anon_lookups
+                        .into_iter()
+                        .map(|a| SubstitutionLookup::Extension(Box::new(a)))
+                        .collect()
+                } else {
+                    anon_lookups
+                };
                 let anon_debug_info = debug_info.as_ref().map(|info| LookupDebugInfo {
                     range: info.range.clone(),
                     name: None,
@@ -530,7 +689,7 @@ impl AllLookups {
     }
 
     // doesn't start it, just stashes the name
-    pub(crate) fn start_named(&mut self, name: SmolStr, range: Range<usize>) {
+    pub(crate) fn start_named(&mut self, name: SmolStr, range: Range<usize>, use_extension: bool) {
         if self.compile_debg {
             self.current_debug_info = Some(LookupDebugInfo {
                 range,
@@ -538,6 +697,7 @@ impl AllLookups {
             });
         }
         self.current_name = Some(name);
+        self.current_use_extension = use_extension;
     }
 
     pub(crate) fn start_lookup(
@@ -546,7 +706,7 @@ impl AllLookups {
         flags: LookupFlagInfo,
         range: Range<usize>,
     ) -> Option<LookupId> {
-        let finished_id = self.current.take().map(|lookup| self.push(lookup));
+        let finished_id = self.current.take().map(|lookup| self.push(lookup, false));
         let mut new_one = SomeLookup::new(kind, flags.flags, flags.mark_filter_set);
 
         let new_id = if is_gpos_rule(kind) {
@@ -569,8 +729,9 @@ impl AllLookups {
     }
 
     pub(crate) fn finish_current(&mut self) -> Option<(LookupId, Option<SmolStr>)> {
+        let use_extension = std::mem::take(&mut self.current_use_extension);
         if let Some(lookup) = self.current.take() {
-            let id = self.push(lookup);
+            let id = self.push(lookup, use_extension);
             if let Some(name) = self.current_name.take() {
                 self.named.insert(name.clone(), id);
                 Some((id, Some(name)))
@@ -732,6 +893,7 @@ impl AllLookups {
         &mut self,
         insert_point: usize,
         all_alts: HashMap<GlyphId16, Vec<GlyphId16>>,
+        use_extension: bool,
     ) -> Vec<LookupId> {
         let mut single = SingleSubBuilder::default();
         let mut alt = AlternateSubBuilder::default();
@@ -758,7 +920,17 @@ impl AllLookups {
             ))
         });
 
-        let lookups = one.into_iter().chain(two).collect::<Vec<_>>();
+        let lookups = one
+            .into_iter()
+            .chain(two)
+            .map(|lkp| {
+                if use_extension {
+                    SubstitutionLookup::Extension(lkp.into())
+                } else {
+                    lkp
+                }
+            })
+            .collect::<Vec<_>>();
         let lookup_ids = (insert_point..insert_point + lookups.len())
             .map(LookupId::Gsub)
             .collect();
@@ -766,16 +938,27 @@ impl AllLookups {
         // now we need to insert these lookups at the front of our gsub lookups,
         // and bump all of their ids:
 
-        self.gsub.iter_mut().for_each(|lookup| match lookup {
-            SubstitutionLookup::Contextual(lookup) => lookup
-                .subtables
-                .iter_mut()
-                .for_each(|sub| sub.bump_all_lookup_ids(insert_point, lookups.len())),
-            SubstitutionLookup::ChainedContextual(lookup) => lookup
-                .subtables
-                .iter_mut()
-                .for_each(|sub| sub.bump_all_lookup_ids(insert_point, lookups.len())),
-            _ => (),
+        self.gsub.iter_mut().for_each(|lookup| {
+            // Helper closure to bump ids in a concrete contextual lookup.
+            fn bump_contextual(lookup: &mut SubstitutionLookup, insert_point: usize, n: usize) {
+                match lookup {
+                    SubstitutionLookup::Contextual(l) => l
+                        .subtables
+                        .iter_mut()
+                        .for_each(|sub| sub.bump_all_lookup_ids(insert_point, n)),
+                    SubstitutionLookup::ChainedContextual(l) => l
+                        .subtables
+                        .iter_mut()
+                        .for_each(|sub| sub.bump_all_lookup_ids(insert_point, n)),
+                    _ => (),
+                }
+            }
+            match lookup {
+                SubstitutionLookup::Extension(inner) => {
+                    bump_contextual(inner, insert_point, lookups.len())
+                }
+                other => bump_contextual(other, insert_point, lookups.len()),
+            }
         });
 
         let n = lookups.len();
@@ -944,7 +1127,9 @@ impl SomeLookup {
                 Kind::GsubType5 => {
                     SubstitutionLookup::Contextual(LookupBuilder::new(flags, filter))
                 }
-                Kind::GsubType7 => unimplemented!("extension"),
+                Kind::GsubType7 => {
+                    unreachable!("extension is a lookup-level attribute, not a rule type")
+                }
                 Kind::GsubType8 => SubstitutionLookup::Reverse(LookupBuilder::new(flags, filter)),
                 other => panic!("illegal kind for lookup: '{other}'"),
             };
@@ -973,6 +1158,10 @@ impl SomeLookup {
                     LookupFlagInfo::new(l.flags, l.mark_set)
                 }
                 SubstitutionLookup::Reverse(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                // Extension is never stored as the current lookup.
+                SubstitutionLookup::Extension(_) => {
+                    unreachable!("Extension lookup is never stored as current")
+                }
             },
             SomeLookup::GposLookup(l) => match l {
                 PositionLookup::Single(l) => LookupFlagInfo::new(l.flags, l.mark_set),
@@ -983,6 +1172,10 @@ impl SomeLookup {
                 PositionLookup::MarkToMark(l) => LookupFlagInfo::new(l.flags, l.mark_set),
                 PositionLookup::Contextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
                 PositionLookup::ChainedContextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                // Extension is never stored as the current lookup.
+                PositionLookup::Extension(_) => {
+                    unreachable!("Extension lookup is never stored as current")
+                }
             },
             SomeLookup::GposContextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
             SomeLookup::GsubContextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),

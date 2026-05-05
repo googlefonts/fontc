@@ -1,0 +1,9 @@
+feature aalt useExtension {
+    feature calt;
+    sub a by b;
+} aalt;
+
+feature calt {
+    sub x from [y z];
+} calt;
+

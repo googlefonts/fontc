@@ -675,6 +675,14 @@ impl Feature {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
+    /// only expected in `aalt`
+    pub(crate) fn use_extension(&self) -> Option<&Token> {
+        self.iter()
+            .take_while(|t| t.kind() != Kind::LBrace)
+            .find(|t| t.kind() == Kind::UseExtensionKw)
+            .and_then(NodeOrToken::as_token)
+    }
+
     /// Returns `true` if this feature block contains an '# Automatic Code' comment
     pub fn has_insert_marker(&self) -> bool {
         self.statements().any(|s| s.kind() == Kind::Comment)
@@ -702,8 +710,6 @@ impl Feature {
 }
 
 impl LookupBlock {
-    #[allow(unused)]
-    //TODO: do we want to support this syntax?
     pub(crate) fn use_extension(&self) -> Option<&Token> {
         self.iter()
             .take_while(|t| t.kind() != Kind::LBrace)

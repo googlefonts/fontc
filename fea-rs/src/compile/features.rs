@@ -60,6 +60,7 @@ pub(crate) struct AaltFeature {
     pub(crate) all_alts: HashMap<GlyphId16, Vec<GlyphId16>>,
     // to avoid duplicates
     all_pairs: HashSet<(GlyphId16, GlyphId16)>,
+    pub(crate) use_extension: bool,
 }
 
 /// Helper for compiling the `size` feature
@@ -203,8 +204,11 @@ impl AllFeatures {
 
         // now we have all of our referenced lookups, and so we want to use that
         // to construct the aalt lookups:
-        let aalt_lookup_indices =
-            all_lookups.insert_aalt_lookups(insert_point, std::mem::take(&mut aalt.all_alts));
+        let aalt_lookup_indices = all_lookups.insert_aalt_lookups(
+            insert_point,
+            std::mem::take(&mut aalt.all_alts),
+            aalt.use_extension,
+        );
 
         // now adjust our previously set lookupids, which are now invalid,
         // since we're going to insert the aalt lookups in front of the lookup
