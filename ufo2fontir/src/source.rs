@@ -573,16 +573,16 @@ fn glyph_order(
 }
 
 fn glyph_categories(
-    lib_plist: &plist::Dictionary,
+    lib: &plist::Dictionary,
 ) -> Result<BTreeMap<GlyphName, GlyphClassDef>, BadSource> {
     const OPENTYPE_CATEGORIES: &str = "public.openTypeCategories";
 
-    let categories = match lib_plist.get(OPENTYPE_CATEGORIES) {
+    let categories = match lib.get(OPENTYPE_CATEGORIES) {
         Some(plist::Value::Dictionary(categories)) => categories,
         Some(_other) => {
             return Err(BadSource::custom(
-                "lib.plist",
-                format!("value for '{OPENTYPE_CATEGORIES}' is not a dictionary"),
+                OPENTYPE_CATEGORIES,
+                "value is not a dictionary",
             ));
         }
         None => return Ok(Default::default()),
@@ -916,13 +916,19 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
 
         // for DS+UFO, infer_from_anchors=false thus "preliminary" GDEF categories will
-        // simply be copied over to final ones (and potentially overridden by feature code)
-        let preliminary_gdef_categories =
-            glyph_categories(&lib_plist).map(|categories| PreliminaryGdefCategories {
-                categories,
-                infer_from_anchors: false,
-                mark_category_glyphs: Default::default(),
-            })?;
+        // simply be copied over to final ones (and potentially overridden by feature code).
+        // Check the designspace lib first (canonical location), fall back to the default
+        // master's UFO lib (legacy location).
+        // <https://github.com/googlefonts/ufo2ft/blob/46196892e8/Lib/ufo2ft/util.py#L696-L704>
+        let mut categories = glyph_categories(&self.designspace.lib)?;
+        if categories.is_empty() {
+            categories = glyph_categories(&lib_plist)?;
+        }
+        let preliminary_gdef_categories = PreliminaryGdefCategories {
+            categories,
+            infer_from_anchors: false,
+            mark_category_glyphs: Default::default(),
+        };
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
         // Start with the bits from selection flags
