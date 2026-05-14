@@ -929,8 +929,7 @@ fn recompute_gdef_categories(context: &Context) -> Result<(), Error> {
 
     let preliminary = context.preliminary_gdef_categories.get();
 
-    // For sources that don't infer from anchors (e.g. DS+UFO), just clone
-    // preliminary->final categories directly
+    // For sources with explicit categories, just clone preliminary->final directly
     if !preliminary.infer_from_anchors {
         context.gdef_categories.set(GdefCategories {
             categories: preliminary.categories.clone(),

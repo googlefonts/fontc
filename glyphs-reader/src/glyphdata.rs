@@ -254,7 +254,7 @@ pub struct GlyphData {
 
 impl GlyphData {
     /// Overrides, if provided, explicitly assign the result for a given query
-    pub(crate) fn new(overrides: Option<HashMap<SmolStr, QueryResult>>) -> Self {
+    pub fn new(overrides: Option<HashMap<SmolStr, QueryResult>>) -> Self {
         let overrrides_by_codepoint = overrides.as_ref().map(|overrides| {
             overrides
                 .iter()

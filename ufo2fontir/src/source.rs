@@ -607,6 +607,59 @@ fn glyph_categories(
     Ok(categories)
 }
 
+/// Generate preliminary GDEF categories from GlyphData.xml for UFO sources
+/// without explicit `public.openTypeCategories`.
+///
+/// Only marks and ligatures are assigned here; bases are inferred after anchor
+/// propagation by `recompute_gdef_categories` (with `infer_from_anchors: true`).
+fn preliminary_gdef_categories_from_glyphdata(
+    glyph_names: &HashSet<GlyphName>,
+) -> PreliminaryGdefCategories {
+    use glyphs_reader::glyphdata::{Category, GlyphData, Subcategory};
+
+    let glyph_data = GlyphData::new(None);
+    let mut categories = BTreeMap::new();
+    let mut mark_category_glyphs = BTreeSet::new();
+
+    for name in glyph_names {
+        // TODO(anthrotype): pass codepoints for better resolution
+        // https://github.com/googlefonts/fontc/issues/2022
+        let Some(result) = glyph_data.query(name.as_str(), None) else {
+            continue;
+        };
+        if result.category == Category::Mark {
+            mark_category_glyphs.insert(name.clone());
+        }
+        match (result.category, result.subcategory) {
+            (Category::Mark, Some(Subcategory::Nonspacing | Subcategory::SpacingCombining)) => {
+                categories.insert(name.clone(), GlyphClassDef::Mark);
+            }
+            (_, Some(Subcategory::Ligature)) => {
+                categories.insert(name.clone(), GlyphClassDef::Ligature);
+            }
+            _ => {}
+        }
+    }
+
+    log::info!(
+        "Inferred preliminary GDEF categories from GlyphData.xml: {} mark, {} ligature",
+        categories
+            .values()
+            .filter(|c| **c == GlyphClassDef::Mark)
+            .count(),
+        categories
+            .values()
+            .filter(|c| **c == GlyphClassDef::Ligature)
+            .count(),
+    );
+
+    PreliminaryGdefCategories {
+        categories,
+        infer_from_anchors: true,
+        mark_category_glyphs,
+    }
+}
+
 fn postscript_names(lib_plist: &plist::Dictionary) -> Result<Option<PostscriptNames>, BadSource> {
     let Some(raw_postscript_names) = lib_plist.get("public.postscriptNames") else {
         // absence of 'public.postscriptNames' signals intention to keep original 'nice' names
@@ -915,8 +968,6 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             };
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
 
-        // for DS+UFO, infer_from_anchors=false thus "preliminary" GDEF categories will
-        // simply be copied over to final ones (and potentially overridden by feature code).
         // Check the designspace lib first (canonical location), fall back to the default
         // master's UFO lib (legacy location).
         // <https://github.com/googlefonts/ufo2ft/blob/46196892e8/Lib/ufo2ft/util.py#L696-L704>
@@ -924,11 +975,19 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         if categories.is_empty() {
             categories = glyph_categories(&lib_plist)?;
         }
-        let preliminary_gdef_categories = PreliminaryGdefCategories {
-            categories,
-            infer_from_anchors: false,
-            mark_category_glyphs: Default::default(),
-        };
+        let preliminary_gdef_categories =
+            if categories.is_empty() && context.flags.contains(Flags::PROPAGATE_ANCHORS) {
+                // No explicit categories but propagateAnchors is enabled: infer from
+                // GlyphData.xml, matching fontmake's build-time category generation.
+                preliminary_gdef_categories_from_glyphdata(&self.glyph_names)
+            } else {
+                // Explicit categories or no propagateAnchors: use as-is
+                PreliminaryGdefCategories {
+                    categories,
+                    infer_from_anchors: false,
+                    mark_category_glyphs: Default::default(),
+                }
+            };
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
         // Start with the bits from selection flags
