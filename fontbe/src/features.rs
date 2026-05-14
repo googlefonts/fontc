@@ -167,19 +167,13 @@ pub(crate) fn get_gdef_classes(
     ast: &FeaFirstPassOutput,
     glyph_order: &GlyphOrder,
 ) -> HashMap<GlyphId16, GlyphClassDef> {
-    ast.gdef_classes
-        .as_ref()
-        .filter(|_| gdef_categories.prefer_gdef_categories_in_fea)
-        .cloned()
-        .unwrap_or_else(|| {
-            gdef_categories
-                .categories
-                .iter()
-                .filter_map(|(name, category)| {
-                    glyph_order.glyph_id(name).map(|gid| (gid, *category))
-                })
-                .collect()
-        })
+    ast.gdef_classes.clone().unwrap_or_else(|| {
+        gdef_categories
+            .categories
+            .iter()
+            .filter_map(|(name, category)| glyph_order.glyph_id(name).map(|gid| (gid, *category)))
+            .collect()
+    })
 }
 
 //NOTE: this is basically identical to the same method on FeaVariationInfo,

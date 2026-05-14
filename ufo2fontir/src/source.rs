@@ -920,7 +920,6 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let preliminary_gdef_categories =
             glyph_categories(&lib_plist).map(|categories| PreliminaryGdefCategories {
                 categories,
-                prefer_gdef_categories_in_fea: true,
                 infer_from_anchors: false,
                 mark_category_glyphs: Default::default(),
             })?;

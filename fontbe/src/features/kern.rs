@@ -1272,7 +1272,6 @@ mod tests {
         fn build(self) -> (FeaRsKerns, String) {
             let pairs = self.pairs.iter().collect::<Vec<_>>();
             let categories = GdefCategories {
-                prefer_gdef_categories_in_fea: self.opentype_categories.is_empty(),
                 categories: self.opentype_categories,
             };
             let layout_output = LayoutOutputBuilder::new()
