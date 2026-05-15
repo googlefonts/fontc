@@ -1114,7 +1114,6 @@ mod tests {
     /// A helper for testing our mark generation code
     #[derive(Clone, Debug)]
     struct MarksInput<const N: usize> {
-        prefer_gdef_categories_in_fea: bool,
         locations: [NormalizedLocation; N],
         anchors: BTreeMap<GlyphName, Vec<Anchor>>,
         categories: BTreeMap<GlyphName, GlyphClassDef>,
@@ -1205,7 +1204,6 @@ mod tests {
                 anchors: Default::default(),
                 categories: Default::default(),
                 char_map: Default::default(),
-                prefer_gdef_categories_in_fea: false,
             }
         }
 
@@ -1214,15 +1212,6 @@ mod tests {
         /// By default we use a single 'languagesytem DFLT dflt' statement.
         fn set_user_fea(&mut self, fea: &'static str) -> &mut Self {
             self.user_fea = fea;
-            self
-        }
-
-        /// Set whether or not to prefer GDEF categories defined in FEA vs in metadata
-        ///
-        /// this is 'true' for UFO sources and 'false' for glyphs sources; default
-        /// here is false.
-        fn set_prefer_fea_gdef_categories(&mut self, flag: bool) -> &mut Self {
-            self.prefer_gdef_categories_in_fea = flag;
             self
         }
 
@@ -1282,7 +1271,6 @@ mod tests {
             let glyph_locations = self.locations.iter().cloned().collect();
             let categories = GdefCategories {
                 categories: self.categories.clone(),
-                prefer_gdef_categories_in_fea: self.prefer_gdef_categories_in_fea,
             };
             LayoutOutputBuilder::new()
                 .with_axes(axes)
@@ -1687,60 +1675,6 @@ mod tests {
             # 1 MarkToBase rules
             # lookupflag LookupFlag(0)
             A @(x: 100, y: 400)
-              @(x: 50, y: 50) acutecomb
-            "#
-        );
-    }
-
-    // shared between two tests below
-    fn gdef_test_input() -> MarksInput<1> {
-        let mut out = simple_test_input();
-        out.set_user_fea(
-            r#"
-            @Bases = [A];
-            @Marks = [acutecomb];
-            table GDEF {
-                GlyphClassDef @Bases, [], @Marks,;
-            } GDEF;
-            "#,
-        )
-        // is not in the FEA classes defined above
-        .add_glyph("gravecomb", GlyphClassDef::Mark, |anchors| {
-            anchors.add("_top", [(5, 15)]);
-        });
-        out
-    }
-
-    #[test]
-    fn prefer_fea_gdef_categories_true() {
-        let out = gdef_test_input()
-            .set_prefer_fea_gdef_categories(true)
-            .get_normalized_output();
-        assert_eq_ignoring_ws!(
-            out,
-            r#"
-            # mark: DFLT/dflt
-            # 1 MarkToBase rules
-            # lookupflag LookupFlag(0)
-            A @(x: 100, y: 400)
-              @(x: 50, y: 50) acutecomb
-            "#
-        );
-    }
-
-    #[test]
-    fn prefer_fea_gdef_categories_false() {
-        let out = gdef_test_input()
-            .set_prefer_fea_gdef_categories(false)
-            .get_normalized_output();
-        assert_eq_ignoring_ws!(
-            out,
-            r#"
-            # mark: DFLT/dflt
-            # 1 MarkToBase rules
-            # lookupflag LookupFlag(0)
-            A @(x: 100, y: 400)
-              @(x: 5, y: 15) gravecomb
               @(x: 50, y: 50) acutecomb
             "#
         );

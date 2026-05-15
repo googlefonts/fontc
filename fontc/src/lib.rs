@@ -2067,26 +2067,6 @@ mod tests {
     }
 
     #[test]
-    fn ufo_and_glyphs_set_prefer_fea_flag() {
-        let glyphs = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
-        let ufo = TestCompile::compile_source("Oswald-glyph-categories/Oswald-Regular.designspace");
-
-        assert!(
-            !glyphs
-                .fe_context
-                .gdef_categories
-                .get()
-                .prefer_gdef_categories_in_fea
-        );
-        assert!(
-            ufo.fe_context
-                .gdef_categories
-                .get()
-                .prefer_gdef_categories_in_fea
-        );
-    }
-
-    #[test]
     fn captures_vendor_id() {
         let result = TestCompile::compile_source("glyphs3/TheBestNames.glyphs");
         let font = result.font();

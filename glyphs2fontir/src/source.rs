@@ -793,7 +793,6 @@ fn make_preliminary_glyph_categories(font: &Font, axes: &Axes) -> PreliminaryGde
 
     PreliminaryGdefCategories {
         categories,
-        prefer_gdef_categories_in_fea: false,
         infer_from_anchors: true,
         mark_category_glyphs,
     }

@@ -934,7 +934,6 @@ fn recompute_gdef_categories(context: &Context) -> Result<(), Error> {
     if !preliminary.infer_from_anchors {
         context.gdef_categories.set(GdefCategories {
             categories: preliminary.categories.clone(),
-            prefer_gdef_categories_in_fea: preliminary.prefer_gdef_categories_in_fea,
         });
         return Ok(());
     }
@@ -978,7 +977,6 @@ fn recompute_gdef_categories(context: &Context) -> Result<(), Error> {
     // Write final categories directly to context (no StaticMetadata cloning!)
     context.gdef_categories.set(GdefCategories {
         categories: final_categories,
-        prefer_gdef_categories_in_fea: preliminary.prefer_gdef_categories_in_fea,
     });
 
     Ok(())
@@ -2354,7 +2352,6 @@ mod tests {
         ctx.preliminary_gdef_categories
             .set(PreliminaryGdefCategories {
                 categories: Default::default(),
-                prefer_gdef_categories_in_fea: false,
                 infer_from_anchors: true,
                 mark_category_glyphs: Default::default(),
             });

@@ -147,10 +147,6 @@ impl NameKey {
 pub struct PreliminaryGdefCategories {
     /// A map of glyphs to categories from source.
     pub categories: BTreeMap<GlyphName, GlyphClassDef>,
-    /// If set, we should prefer categories defined in FEA source to ones here.
-    ///
-    /// This is set for UFO/DS sources, but not for glyphs sources.
-    pub prefer_gdef_categories_in_fea: bool,
     /// Controls whether final GDEF categories should be inferred from the presence
     /// of anchors (similarly to how glyphsLib does) or used as-is as defined in
     /// the source (as standard in DS+UFO workflows).
@@ -172,10 +168,6 @@ pub struct PreliminaryGdefCategories {
 pub struct GdefCategories {
     /// A map of glyphs to categories.
     pub categories: BTreeMap<GlyphName, GlyphClassDef>,
-    /// If set, we should prefer categories defined in FEA source to ones here.
-    ///
-    /// This is set for UFO/DS sources, but not for glyphs sources.
-    pub prefer_gdef_categories_in_fea: bool,
 }
 
 /// Metadata primarily feeding the OS/2 table.
