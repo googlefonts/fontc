@@ -1,0 +1,121 @@
+{
+.appVersion = "3515";
+.formatVersion = 3;
+familyName = SmartComponentUnderscoreAnchorsTest;
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = -200;
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = knmAU;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+piece = {
+height = 0;
+};
+ref = "_part.knmAU";
+}
+);
+width = 500;
+}
+);
+unicode = 3404;
+},
+{
+export = 0;
+glyphname = "_part.knmAU";
+layers = (
+{
+anchors = (
+{
+name = "_headline";
+pos = (135,383);
+},
+{
+name = top;
+pos = (250,600);
+}
+);
+layerId = m01;
+partSelection = {
+height = 2;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(500,0,l),
+(500,600,l),
+(0,600,l)
+);
+}
+);
+width = 500;
+},
+{
+anchors = (
+{
+name = "_headline";
+pos = (135,283);
+},
+{
+name = top;
+pos = (250,400);
+}
+);
+associatedMasterId = m01;
+layerId = "short-layer-id";
+name = Short;
+partSelection = {
+height = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(500,0,l),
+(500,400,l),
+(0,400,l)
+);
+}
+);
+width = 500;
+}
+);
+partsSettings = (
+{
+bottomValue = -100;
+name = height;
+topValue = 0;
+}
+);
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = descender;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
