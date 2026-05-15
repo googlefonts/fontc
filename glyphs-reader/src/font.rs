@@ -3994,15 +3994,12 @@ impl Font {
                             issue,
                         })?;
                         new_shapes.extend(instance.shapes);
-                        // Add anchors from smart component, filtering out
-                        // 'mark' anchors used for internal part-to-part connections
-                        // and any that would override the glyph's explicit anchors.
+                        // Add anchors from smart component, skipping any that
+                        // would override the glyph's explicit anchors.
                         let new_anchors: Vec<_> = instance
                             .anchors
                             .into_iter()
-                            .filter(|a| {
-                                !a.name.starts_with('_') && !explicit_anchor_names.contains(&a.name)
-                            })
+                            .filter(|a| !explicit_anchor_names.contains(&a.name))
                             .collect();
                         // When duplicates exist among smart component anchors,
                         // keep the last one (matching Glyphs.app).
@@ -6141,6 +6138,32 @@ etc;
             anchor_map.get("bottom"),
             Some(&(300.0, 0.0)),
             "explicit 'bottom' anchor was overridden by smart component"
+        );
+    }
+
+    /// `_`-prefixed anchors on smart components must survive instantiation.
+    /// Regression test for <https://github.com/googlefonts/fontc/issues/2010>
+    #[test]
+    fn smart_component_preserves_underscore_anchors() {
+        let font =
+            Font::load(&glyphs3_dir().join("SmartComponentUnderscoreAnchors.glyphs")).unwrap();
+        let glyph = font.glyphs.get("knmAU").unwrap();
+        let layer = &glyph.layers[0];
+        let anchor_map: std::collections::HashMap<&str, (f64, f64)> = layer
+            .anchors
+            .iter()
+            .map(|a| (a.name.as_str(), (a.pos.x, a.pos.y)))
+            .collect();
+
+        assert_eq!(
+            anchor_map.get("_headline"),
+            Some(&(135.0, 383.0)),
+            "_headline anchor was dropped during smart component instantiation"
+        );
+        assert_eq!(
+            anchor_map.get("top"),
+            Some(&(250.0, 600.0)),
+            "top anchor was dropped during smart component instantiation"
         );
     }
 
