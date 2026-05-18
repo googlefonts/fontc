@@ -12,7 +12,7 @@ absl-py==2.4.0
     #   nanoemoji
     #   picosvg
     #   ttx-diff
-afdko==5.0.0
+afdko==5.0.1
     # via gftools
 attrs==26.1.0
     # via
@@ -57,7 +57,7 @@ charset-normalizer==3.4.7
     # via requests
 compreffor==0.6.0
     # via ufo2ft
-cryptography==47.0.0
+cryptography==48.0.0
     # via pyjwt
 defcon[lxml,pens]==0.12.2
     # via
@@ -91,7 +91,7 @@ fontparts==0.14.1
     # via ufoprocessor
 fontpens==0.2.4
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.62.1
+fonttools[lxml,repacker,ufo,unicode,woff]==4.63.0
     # via
     #   afdko
     #   axisregistry
@@ -135,7 +135,7 @@ gftools==0.9.93
     #   ttx-diff
 gitdb==4.0.12
     # via gitpython
-gitpython==3.1.48
+gitpython==3.1.50
     # via font-v
 glyphsets==1.1.0
     # via gftools
@@ -146,7 +146,7 @@ glyphslib==6.13.1
     #   gftools
     #   glyphsets
     #   ttx-diff
-idna==3.13
+idna==3.15
     # via requests
 importlib-resources==7.1.0
     # via gfsubsets
@@ -160,7 +160,7 @@ lxml==6.1.0
     #   nanoemoji
     #   picosvg
     #   ttx-diff
-markdown-it-py==4.0.0
+markdown-it-py==4.2.0
     # via rich
 markupsafe==3.0.3
     # via jinja2
@@ -183,7 +183,7 @@ openstep-plist==0.5.2
     #   glyphslib
 opentype-sanitizer==9.2.0
     # via gftools
-orjson==3.11.8
+orjson==3.11.9
     # via
     #   babelfont
     #   ufolib2
@@ -229,9 +229,9 @@ pyyaml==6.0.3
     #   gftools
     #   glyphsets
     #   ttx-diff
-regex==2026.4.4
+regex==2026.5.9
     # via nanoemoji
-requests==2.33.1
+requests==2.34.2
     # via
     #   gftools
     #   glyphsets
@@ -272,7 +272,7 @@ typing-extensions==4.15.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.7.2
+ufo2ft[cffsubr,compreffor]==3.7.3
     # via
     #   fontmake
     #   nanoemoji
@@ -293,7 +293,7 @@ ufonormalizer==0.6.3
     # via afdko
 ufoprocessor==1.14.1
     # via afdko
-uharfbuzz==0.54.0
+uharfbuzz==0.54.1
     # via
     #   fonttools
     #   vharfbuzz
@@ -303,7 +303,7 @@ unicodedata2==17.0.1
     #   glyphsets
 unidecode==1.4.0
     # via gftools
-urllib3==2.6.3
+urllib3==2.7.0
     # via
     #   pygithub
     #   requests
