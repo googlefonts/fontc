@@ -1,0 +1,10 @@
+# The spec says valueRecordDef is top-level only, but feaLib accepts
+# them inside feature and lookup blocks, and real fonts use this
+# (e.g. Google Sans Arabic).
+feature test {
+    valueRecordDef 123 foo;
+} test;
+
+lookup shmookup {
+    valueRecordDef <4 3 2 1> bar;
+} shmookup;
