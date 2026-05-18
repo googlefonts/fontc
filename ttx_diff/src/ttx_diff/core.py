@@ -438,10 +438,27 @@ def source_is_variable(path: Path) -> bool:
         return False
     if path.suffix == ".designspace":
         dspace = DesignSpaceDocument.fromfile(path)
-        return len(dspace.sources) > 1
+        return any(
+            a.minimum != a.default or a.maximum != a.default for a in dspace.axes
+        )
     if path.suffix == ".glyphs" or path.suffix == ".glyphspackage":
         font = GSFont(path)
-        return len(font.masters) > 1
+        # Virtual masters can extend axis min/max beyond what real masters define
+        # https://github.com/googlefonts/glyphsLib/blob/75c07d42/Lib/glyphsLib/builder/axes.py#L168-L173
+        virtual_masters = [
+            cp.value
+            for cp in font.customParameters
+            if cp.name == "Virtual Master" and not getattr(cp, "disabled", False)
+        ]
+        for i, axis in enumerate(font.axes):
+            values = [m.axes[i] for m in font.masters]
+            for vm in virtual_masters:
+                for entry in vm:
+                    if entry.get("Axis") == axis.name:
+                        values.append(entry["Location"])
+            if min(values) != max(values):
+                return True
+        return False
     # fallback to variable, the existing default, but we should never get here?
     return True
 
