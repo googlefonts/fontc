@@ -1118,20 +1118,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             }
         }
 
-        groups.locations = font
-            .kerning_ltr
-            .iter()
-            .filter_map(
-                |(master_id, _)| match font_info.master_positions.get(master_id) {
-                    Some(pos) => Some(pos),
-                    None => {
-                        warn!("Kerning is present for non-existent master {master_id}");
-                        None
-                    }
-                },
-            )
-            .cloned()
-            .collect();
+        groups.locations = font_info.master_positions.values().cloned().collect();
 
         context.kerning_groups.set(groups);
         Ok(())
@@ -1218,23 +1205,21 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 
         let bracket_glyph_map = make_bracket_glyph_map(glyph_order);
 
-        let Some(kern_pairs) = kerning_at_location(font_info, &self.location) else {
-            return Ok(());
-        };
-
-        kern_pairs
-            .iter()
-            .filter_map(|((side1, side2), pos_adjust)| {
-                let side1 = kern_participant(glyph_order, groups, SIDE1_PREFIX, side1);
-                let side2 = kern_participant(glyph_order, groups, SIDE2_PREFIX, side2);
-                side1.zip(side2).map(|side| (side, *pos_adjust))
-            })
-            .flat_map(|(participants, value)| {
-                expand_kerning_to_brackets(&bracket_glyph_map, participants, value)
-            })
-            .for_each(|(participants, value)| {
-                *kerning.kerns.entry(participants).or_default() = value;
-            });
+        if let Some(kern_pairs) = kerning_at_location(font_info, &self.location) {
+            kern_pairs
+                .iter()
+                .filter_map(|((side1, side2), pos_adjust)| {
+                    let side1 = kern_participant(glyph_order, groups, SIDE1_PREFIX, side1);
+                    let side2 = kern_participant(glyph_order, groups, SIDE2_PREFIX, side2);
+                    side1.zip(side2).map(|side| (side, *pos_adjust))
+                })
+                .flat_map(|(participants, value)| {
+                    expand_kerning_to_brackets(&bracket_glyph_map, participants, value)
+                })
+                .for_each(|(participants, value)| {
+                    *kerning.kerns.entry(participants).or_default() = value;
+                });
+        }
 
         context.kerning_at.set(kerning);
         Ok(())
@@ -3014,6 +2999,41 @@ mod tests {
                 ("@side1.bet", "@side2.alef", 29)
             ])
         )
+    }
+
+    #[test]
+    fn empty_kerning_master_participates_in_variation() {
+        let (_, context) = build_kerning(glyphs3_dir().join("KerningEmptyMaster.glyphs"));
+
+        let groups = context.kerning_groups.get();
+        assert_eq!(
+            groups.locations.len(),
+            2,
+            "expected both masters in locations"
+        );
+
+        let all_kerns = context.kerning_at.all();
+        assert_eq!(
+            all_kerns.len(),
+            2,
+            "expected kerning instances at both masters"
+        );
+
+        let non_empty: Vec<_> = all_kerns
+            .iter()
+            .filter(|(_, k)| !k.kerns.is_empty())
+            .collect();
+        let empty: Vec<_> = all_kerns
+            .iter()
+            .filter(|(_, k)| k.kerns.is_empty())
+            .collect();
+        assert_eq!(non_empty.len(), 1);
+        assert_eq!(empty.len(), 1);
+
+        assert_eq!(
+            non_empty[0].1.kerns,
+            make_kerning(&[("@side1.A", "@side2.B", -50)])
+        );
     }
 
     #[test]

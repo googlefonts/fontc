@@ -1,0 +1,69 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+familyName = SparseKerning;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = "master01";
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+id = "master02";
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = A;
+kernRight = A;
+layers = (
+{
+layerId = "master01";
+width = 500;
+},
+{
+layerId = "master02";
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+glyphname = B;
+kernLeft = B;
+layers = (
+{
+layerId = "master01";
+width = 500;
+},
+{
+layerId = "master02";
+width = 600;
+}
+);
+unicode = 66;
+}
+);
+kerningLTR = {
+master01 = {
+"@MMK_L_A" = {
+"@MMK_R_B" = -50;
+};
+};
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
