@@ -1,0 +1,35 @@
+error: Expected MarkKw found ID
+in ./test-data/parse-tests/bad/GPOS_5_non_null_no_mark.fea at 4:4
+  | 
+4 |     ligComponent
+  |     ^^^^^^^^^^^^
+
+error: Expected @GlyphClass found <
+in ./test-data/parse-tests/bad/GPOS_5_non_null_no_mark.fea at 5:4
+  | 
+5 |     <anchor 100 500> mark @TOP_MARKS;
+  |     ^
+
+error: Expected ';'
+in ./test-data/parse-tests/bad/GPOS_5_non_null_no_mark.fea at 5:5
+  | 
+5 |     <anchor 100 500> mark @TOP_MARKS;
+  |      ^
+
+error: 'anchor' Not valid in a feature block
+in ./test-data/parse-tests/bad/GPOS_5_non_null_no_mark.fea at 5:5
+  | 
+5 |     <anchor 100 500> mark @TOP_MARKS;
+  |      ^^^^^^
+
+error: Expected = found ;
+in ./test-data/parse-tests/bad/GPOS_5_non_null_no_mark.fea at 5:36
+  | 
+5 |     <anchor 100 500> mark @TOP_MARKS;
+  |                                     ^
+
+error: Expected named glyph class or '['.
+in ./test-data/parse-tests/bad/GPOS_5_non_null_no_mark.fea at 5:36
+  | 
+5 |     <anchor 100 500> mark @TOP_MARKS;
+  |                                     ^

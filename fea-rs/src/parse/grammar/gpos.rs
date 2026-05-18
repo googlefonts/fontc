@@ -217,12 +217,18 @@ fn anchor_mark(parser: &mut Parser, recovery: TokenSet) -> bool {
         return false;
     }
     parser.in_node(AstKind::AnchorMarkNode, |parser| {
+        let is_null = parser.matches(2, Kind::NullKw);
         metrics::anchor(parser, recovery.union(RECOVERY));
-        // we will verify later that the anchor was NULL
-        if !parser.matches(0, Kind::Semi) {
+        if parser.matches(0, Kind::MarkKw) {
+            parser.eat_raw();
+            parser.expect_recover(Kind::NamedGlyphClass, recovery.union(RECOVERY));
+        } else if !is_null {
             parser.expect_recover(Kind::MarkKw, recovery.union(RECOVERY));
             parser.expect_recover(Kind::NamedGlyphClass, recovery.union(RECOVERY));
         }
+        // <anchor NULL> without mark class is valid in ligature rules (GPOS type 5)
+        // to denote a component with no mark attachment point.
+        // cf. https://github.com/fonttools/fonttools/blob/67ff24a36/Lib/fontTools/feaLib/parser.py#L200-L201
     });
     true
 }
