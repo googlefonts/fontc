@@ -2008,6 +2008,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             self.define_glyph_class(glyph_def);
         } else if let Some(glyph_def) = typed::MarkClassDef::cast(item) {
             self.define_mark_class(glyph_def);
+        } else if let Some(item) = typed::ValueRecordDef::cast(item) {
+            self.define_named_value_record(item);
         } else if item.kind() == Kind::SubtableNode {
             self.add_subtable_break();
         } else if let Some(lookup) = typed::LookupRef::cast(item) {

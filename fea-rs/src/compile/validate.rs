@@ -705,6 +705,8 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 self.validate_glyph_class_def(&node);
             } else if let Some(node) = typed::MarkClassDef::cast(item) {
                 self.validate_mark_class_def(&node);
+            } else if let Some(node) = typed::ValueRecordDef::cast(item) {
+                self.validate_value_record_def(&node);
             } else if let Some(_node) = typed::FeatureNames::cast(item) {
                 self.warning(item.range(), "Only one featureNames block is allowed, it must preceed all rules, and it is only valid in features ss01-ss20");
             } else if let Some(node) = typed::FeatureRef::cast(item) {
@@ -897,6 +899,8 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 self.validate_glyph_class_def(&node);
             } else if let Some(node) = typed::MarkClassDef::cast(item) {
                 self.validate_mark_class_def(&node);
+            } else if let Some(node) = typed::ValueRecordDef::cast(item) {
+                self.validate_value_record_def(&node);
             } else if item.kind() == Kind::Semi {
                 // continue
             } else {

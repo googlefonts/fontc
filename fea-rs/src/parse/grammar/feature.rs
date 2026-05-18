@@ -131,6 +131,9 @@ pub(crate) fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool
         }
         Kind::CvParametersKw => cv_parameters(parser, recovery),
         Kind::FeatureNamesKw => feature_names(parser, recovery),
+        // spec says top-level only, but feaLib accepts it in any block scope:
+        // https://github.com/fonttools/fonttools/blob/67ff24a36/Lib/fontTools/feaLib/parser.py#L2035-L2036
+        Kind::ValueRecordDefKw => super::value_record_def(parser, recovery),
         Kind::Semi => {
             parser.warn("';' should only follow a statement");
             parser.eat_raw();
