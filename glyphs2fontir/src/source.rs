@@ -3017,6 +3017,41 @@ mod tests {
     }
 
     #[test]
+    fn empty_kerning_master_participates_in_variation() {
+        let (_, context) = build_kerning(glyphs3_dir().join("KerningEmptyMaster.glyphs"));
+
+        let groups = context.kerning_groups.get();
+        assert_eq!(
+            groups.locations.len(),
+            2,
+            "expected both masters in locations"
+        );
+
+        let all_kerns = context.kerning_at.all();
+        assert_eq!(
+            all_kerns.len(),
+            2,
+            "expected kerning instances at both masters"
+        );
+
+        let non_empty: Vec<_> = all_kerns
+            .iter()
+            .filter(|(_, k)| !k.kerns.is_empty())
+            .collect();
+        let empty: Vec<_> = all_kerns
+            .iter()
+            .filter(|(_, k)| k.kerns.is_empty())
+            .collect();
+        assert_eq!(non_empty.len(), 1);
+        assert_eq!(empty.len(), 1);
+
+        assert_eq!(
+            non_empty[0].1.kerns,
+            make_kerning(&[("@side1.A", "@side2.B", -50)])
+        );
+    }
+
+    #[test]
     fn captures_anchors() {
         let base_name = "A".into();
         let mark_name = "macroncomb".into();
