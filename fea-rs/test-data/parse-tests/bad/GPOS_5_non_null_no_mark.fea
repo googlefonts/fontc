@@ -1,0 +1,6 @@
+feature test {
+    position ligature f_i
+    <anchor 100 200>
+    ligComponent
+    <anchor 100 500> mark @TOP_MARKS;
+} test;
