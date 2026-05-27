@@ -387,6 +387,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .map(|v| -v)
             .unwrap_or(0.0);
 
+        warn_master_font_custom_param_mismatch(font);
+
         let mut selection_flags = match font.custom_parameters.use_typo_metrics.unwrap_or_default() {
             true => SelectionFlags::USE_TYPO_METRICS,
             false => SelectionFlags::empty(),
@@ -1885,6 +1887,44 @@ impl Work<Context, WorkId, Error> for ColorGlyphsWork {
     }
 }
 
+/// Warn when the default master has font-wide customParameters that differ from font-level values.
+///
+/// fontc uses font-level values; fontmake/glyphsLib would use the default master's
+/// (because master-level handlers happen to run after font-level ones).
+/// <https://github.com/googlefonts/fontc/issues/1856>
+fn warn_master_font_custom_param_mismatch(font: &Font) {
+    let default_master = font.default_master();
+    let fc = &font.custom_parameters;
+    let mc = &default_master.custom_parameters;
+
+    macro_rules! check {
+        ($field:ident, $name:expr) => {
+            if mc.$field.is_some() && mc.$field != fc.$field {
+                warn!(
+                    "Default master '{}' has customParameter '{}' that differs from \
+                     font-level value; fontc uses the font-level value \
+                     (fontmake/glyphsLib would use the master's). \
+                     Consider removing the master-level parameter or aligning it \
+                     with the font-level value.",
+                    default_master.name, $name
+                );
+            }
+        };
+    }
+
+    check!(use_typo_metrics, "Use Typo Metrics");
+    check!(has_wws_names, "Has WWS Names");
+    check!(fs_type, "fsType");
+    check!(is_fixed_pitch, "isFixedPitch");
+    check!(unicode_range_bits, "unicodeRanges");
+    check!(codepage_range_bits, "codePageRanges");
+    check!(head_flags, "headFlags");
+    check!(lowest_rec_ppem, "lowestRecPPEM");
+    check!(dont_use_production_names, "Don't use Production Names");
+    check!(gasp_table, "GASP Table");
+    check!(panose, "panose");
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -3103,6 +3143,31 @@ mod tests {
     fn reads_fs_type_0x0104() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("fstype_0x0104.glyphs"));
         assert_eq!(Some(0x104), context.static_metadata.get().misc.fs_type);
+    }
+
+    // When font-level and default master customParameters disagree, fontc uses
+    // font-level values (and warns). fontmake/glyphsLib would use the master's.
+    // https://github.com/googlefonts/fontc/issues/1856
+    #[test]
+    fn font_level_custom_params_take_precedence_over_master() {
+        let (_, context) =
+            build_static_metadata(glyphs3_dir().join("master_custom_params_override.glyphs"));
+        let static_metadata = context.static_metadata.get();
+
+        // font-level unicodeRanges has 14 bits; master has 9 => font wins
+        assert_eq!(
+            Some(HashSet::from([
+                0u32, 1, 2, 3, 5, 6, 15, 16, 29, 31, 33, 35, 38, 45
+            ])),
+            static_metadata.misc.unicode_range_bits
+        );
+        // font-level Use Typo Metrics = 1 => flag set (master has 0)
+        assert!(
+            static_metadata
+                .misc
+                .selection_flags
+                .contains(SelectionFlags::USE_TYPO_METRICS),
+        );
     }
 
     #[test]
