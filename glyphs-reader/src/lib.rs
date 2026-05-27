@@ -3,9 +3,6 @@
 mod corner_components;
 pub mod error;
 mod font;
-pub mod glyphdata;
-mod glyphdata_bundled;
-mod glyphslib_enums;
 mod plist;
 mod smart_components;
 

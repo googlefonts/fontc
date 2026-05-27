@@ -14,8 +14,8 @@ use std::str::FromStr;
 use std::sync::{LazyLock, Mutex};
 use std::{fs, path};
 
-use crate::glyphdata::{Category, GlyphData, Subcategory};
 use ascii_plist_derive::FromPlist;
+use fontdrasil::glyphdata::{Category, GlyphData, Subcategory};
 use fontdrasil::types::WidthClass;
 use indexmap::{IndexMap, IndexSet};
 use kurbo::{Affine, CubicBez, Line, PathSeg, Point, QuadBez};

@@ -3,6 +3,8 @@
 pub mod agl;
 pub mod coords;
 pub mod error;
+#[cfg(feature = "glyphdata")]
+pub mod glyphdata;
 pub mod orchestration;
 pub mod paths;
 mod piecewise_linear_map;

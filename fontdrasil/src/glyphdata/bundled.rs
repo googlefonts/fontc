@@ -7,7 +7,7 @@ use std::{
 
 use smol_str::SmolStr;
 
-use crate::glyphdata::{Category, ProductionName, QueryResult, Script, Subcategory};
+use super::{Category, ProductionName, QueryResult, Script, Subcategory};
 
 type U24 = usize;
 
@@ -64,22 +64,24 @@ where
     }
 }
 
-const NAME_OFFSETS: ArrayOf<U24> = ArrayOf::new(include_bytes!("../resources/name_offsets.dat"));
-const NAMES: &[u8] = include_bytes!("../resources/names.dat");
+const NAME_OFFSETS: ArrayOf<U24> = ArrayOf::new(include_bytes!("../../resources/name_offsets.dat"));
+const NAMES: &[u8] = include_bytes!("../../resources/names.dat");
 
 const PROD_NAME_OFFSETS: ArrayOf<U24> =
-    ArrayOf::new(include_bytes!("../resources/prod_name_offsets.dat"));
-const PROD_NAMES: &[u8] = include_bytes!("../resources/prod_names.dat");
-const PROD_NAME_PREDICTABLE_BITMAP: &[u8] = include_bytes!("../resources/prod_name_bitmap.dat");
+    ArrayOf::new(include_bytes!("../../resources/prod_name_offsets.dat"));
+const PROD_NAMES: &[u8] = include_bytes!("../../resources/prod_names.dat");
+const PROD_NAME_PREDICTABLE_BITMAP: &[u8] = include_bytes!("../../resources/prod_name_bitmap.dat");
 
 const CODEPOINT_TO_INFO_IDX: ArrayOf<(U24, U24)> =
-    ArrayOf::new(include_bytes!("../resources/codepoints_to_idx.dat"));
+    ArrayOf::new(include_bytes!("../../resources/codepoints_to_idx.dat"));
 
-const CODEPOINTS: ArrayOf<U24> = ArrayOf::new(include_bytes!("../resources/codepoints.dat"));
-const CATEGORIES: ArrayOf<Category> = ArrayOf::new(include_bytes!("../resources/categories.dat"));
+const CODEPOINTS: ArrayOf<U24> = ArrayOf::new(include_bytes!("../../resources/codepoints.dat"));
+const CATEGORIES: ArrayOf<Category> =
+    ArrayOf::new(include_bytes!("../../resources/categories.dat"));
 const SUBCATEGORIES: ArrayOf<Option<Subcategory>> =
-    ArrayOf::new(include_bytes!("../resources/subcategories.dat"));
-const SCRIPTS: ArrayOf<Option<Script>> = ArrayOf::new(include_bytes!("../resources/scripts.dat"));
+    ArrayOf::new(include_bytes!("../../resources/subcategories.dat"));
+const SCRIPTS: ArrayOf<Option<Script>> =
+    ArrayOf::new(include_bytes!("../../resources/scripts.dat"));
 
 fn offset(offsets: &ArrayOf<U24>, target: &[u8], idx: usize) -> usize {
     // The last offset extends to EOF
@@ -94,7 +96,7 @@ fn offset(offsets: &ArrayOf<U24>, target: &[u8], idx: usize) -> usize {
 fn name(idx: usize) -> &'static str {
     let start = offset(&NAME_OFFSETS, NAMES, idx);
     let end = offset(&NAME_OFFSETS, NAMES, idx + 1);
-    // SAFETY: we only write ascii names in glyphs-reader/data/update.py
+    // SAFETY: we only write ascii names in fontdrasil/data/update_glyphdata.py
     unsafe { from_utf8_unchecked(&NAMES[start..end]) }
 }
 

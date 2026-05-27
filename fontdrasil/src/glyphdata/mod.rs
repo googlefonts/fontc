@@ -1,7 +1,9 @@
-//! determining glyph properties
+//! Glyph properties from Glyphs.app's bundled GlyphData.xml
 //!
 //! This module provides access to glyph info extracted from bundled
 //! (and potentially user-provided) data files.
+
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
 use quick_xml::{
     Reader,
@@ -20,7 +22,10 @@ use icu_properties::props::GeneralCategory;
 
 use smol_str::SmolStr;
 
-use crate::glyphdata_bundled::{self as bundled, find_pos_by_prod_name};
+mod bundled;
+mod bundled_impls;
+
+use bundled::find_pos_by_prod_name;
 
 /// The primary category for a given glyph
 ///
@@ -659,7 +664,7 @@ impl GlyphData {
                 self.query_no_synthesis(&name, None).and_then(|result| {
                     result.production_name.map(Into::into).or_else(|| {
                         // if no production name, return the name itself if already in AGLFN
-                        fontdrasil::agl::char_for_agl_name(name.as_ref()).map(|_| name)
+                        crate::agl::char_for_agl_name(name.as_ref()).map(|_| name)
                     })
                 })
             })
@@ -680,7 +685,7 @@ impl GlyphData {
                     uni_names.push(Cow::Borrowed(stripped));
                 } else if part.len() == 5 && is_u_name(part.as_ref()) {
                     uni_names.push(Cow::Borrowed(&part.as_str()[1..]));
-                } else if let Some(ch) = fontdrasil::agl::char_for_agl_name(part.as_ref()) {
+                } else if let Some(ch) = crate::agl::char_for_agl_name(part.as_ref()) {
                     uni_names.push(Cow::Owned(format!("{:04X}", ch as u32)));
                 } else {
                     panic!("Unexpected part while constructing production name: {part}");
@@ -702,10 +707,7 @@ impl GlyphData {
     // this doesn't need a &self param, but we want it locally close to the
     // code that calls it, so we'll make it a type method :shrug:
     fn construct_category_via_agl(base_name: &str) -> Option<(Category, Option<Subcategory>)> {
-        if let Some(first_char) = fontdrasil::agl::glyph_name_to_unicode(base_name)
-            .chars()
-            .next()
-        {
+        if let Some(first_char) = crate::agl::glyph_name_to_unicode(base_name).chars().next() {
             let (category, subcategory) = category_from_icu(first_char);
 
             // Exception: Something like "one_two" should be a (_, Ligature),

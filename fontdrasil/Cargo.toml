@@ -9,6 +9,7 @@ readme = "README.md"
 categories = ["text-processing", "parsing", "graphics"]
 
 [features]
+glyphdata = ["dep:quick-xml", "dep:icu_properties"]
 
 [dependencies]
 ordered-float.workspace = true
@@ -20,10 +21,14 @@ env_logger.workspace = true
 thiserror.workspace = true
 kurbo.workspace = true
 
+quick-xml = { version = "0.38", optional = true }
+icu_properties = { workspace = true, optional = true }
+
 [dev-dependencies]
 diff.workspace = true
 tempfile.workspace = true
 pretty_assertions.workspace = true
+rstest.workspace = true
 
 [lints.clippy]
 unwrap_used = "deny"

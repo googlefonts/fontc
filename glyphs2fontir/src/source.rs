@@ -8,6 +8,7 @@ use std::{
 use chrono::DateTime;
 use log::{debug, trace, warn};
 
+use fontdrasil::glyphdata::{Category, Subcategory};
 use fontdrasil::{
     coords::{DesignCoord, NormalizedCoord, NormalizedLocation},
     orchestration::{Access, AccessBuilder, Work},
@@ -26,10 +27,7 @@ use fontir::{
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
 };
-use glyphs_reader::{
-    Font, InstanceType, Layer, Plist,
-    glyphdata::{Category, Subcategory},
-};
+use glyphs_reader::{Font, InstanceType, Layer, Plist};
 use indexmap::IndexMap;
 use ordered_float::OrderedFloat;
 use smol_str::{SmolStr, format_smolstr};
@@ -1892,6 +1890,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
+    use fontdrasil::glyphdata::Category;
     use fontdrasil::{
         coords::{
             Coord, CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
@@ -1906,7 +1905,7 @@ mod tests {
         orchestration::{Context, Flags, WorkId},
         source::Source,
     };
-    use glyphs_reader::{AxisRule, Font, glyphdata::Category};
+    use glyphs_reader::{AxisRule, Font};
 
     use ir::{Panose, test_helpers::Round2};
     use write_fonts::types::{NameId, Tag};
