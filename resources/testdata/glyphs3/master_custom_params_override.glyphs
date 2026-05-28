@@ -1,0 +1,223 @@
+{
+.appVersion = "3414";
+.formatVersion = 3;
+customParameters = (
+{
+name = fsType;
+value = (
+);
+},
+{
+name = unicodeRanges;
+value = (
+0,
+1,
+2,
+3,
+5,
+6,
+15,
+16,
+29,
+31,
+33,
+35,
+38,
+45
+);
+},
+{
+name = "Use Typo Metrics";
+value = 1;
+},
+{
+name = "Has WWS Names";
+value = 1;
+},
+{
+name = trademark;
+value = "Font level trademark";
+}
+);
+familyName = TestOverride;
+fontMaster = (
+{
+axesValues = (
+400
+);
+customParameters = (
+{
+name = unicodeRanges;
+value = (
+0,
+1,
+5,
+15,
+16,
+31,
+33,
+38,
+45
+);
+},
+{
+name = vendorID;
+value = MAST;
+},
+{
+name = license;
+value = "Master license text with slash/";
+},
+{
+name = "Use Typo Metrics";
+value = 0;
+},
+{
+name = trademark;
+value = "Default master trademark";
+}
+);
+id = "master01";
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+over = -16;
+},
+{
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+customParameters = (
+{
+name = unicodeRanges;
+value = (
+7,
+8,
+9
+);
+},
+{
+name = vendorID;
+value = BOLD;
+},
+{
+name = license;
+value = "Bold master license (ignored)";
+},
+{
+name = "Use Typo Metrics";
+value = 1;
+},
+{
+name = trademark;
+value = "Bold master trademark (ignored)";
+}
+);
+id = "master02";
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+over = -16;
+},
+{
+}
+);
+name = Bold;
+}
+);
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = descender;
+},
+{
+type = baseline;
+},
+{
+type = "italic angle";
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = master01;
+width = 200;
+},
+{
+layerId = master02;
+width = 200;
+}
+);
+unicode = 0020;
+}
+);
+properties = (
+{
+key = vendorID;
+value = FONT;
+},
+{
+key = licenses;
+values = (
+{
+language = dflt;
+value = "Font level license text";
+}
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
