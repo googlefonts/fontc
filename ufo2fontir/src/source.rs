@@ -740,23 +740,81 @@ fn units_per_em<'a>(font_infos: impl Iterator<Item = &'a norad::FontInfo>) -> Re
     }
 }
 
-fn files_identical(f1: &Path, f2: &Path) -> Result<bool, BadSource> {
+fn fea_files_identical(f1: &Path, f2: &Path) -> Result<bool, BadSource> {
     if !f1.is_file() {
         return Err(BadSource::new(f1, BadSourceKind::ExpectedFile));
     }
     if !f2.is_file() {
         return Err(BadSource::new(f2, BadSourceKind::ExpectedFile));
     }
-    let m1 = f1
-        .metadata()
-        .map_err(|e| BadSource::new(f1, BadSourceKind::Io(e)))?;
-    let m2 = f2
-        .metadata()
-        .map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
-    if m1.len() != m2.len() {
-        return Ok(false);
+    let c1 = std::fs::read_to_string(f1).map_err(|e| BadSource::new(f1, BadSourceKind::Io(e)))?;
+    let c2 = std::fs::read_to_string(f2).map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
+    if c1 == c2 {
+        return Ok(true);
     }
-    Ok(true)
+    debug!(
+        "Feature files differ, canonicalizing include paths: {} vs {}",
+        f1.display(),
+        f2.display()
+    );
+    let n1 = canonicalize_fea_includes(&c1, f1);
+    let n2 = canonicalize_fea_includes(&c2, f2);
+    Ok(n1 == n2)
+}
+
+/// Replace `include(relative/path)` with `include(/canonical/path)` so that
+/// two files with different relative include paths to the same target compare
+/// as equal.
+///
+/// Follows the same resolution order as fea-rs's `FileSystemResolver` and
+/// fontTools' `IncludingLexer` (used by ufo2ft): try the UFO's parent
+/// directory first, then the directory containing the including file.
+///
+/// Per the UFO spec, includes resolve relative to the directory where the
+/// UFO lives, not inside the UFO package itself.
+fn canonicalize_fea_includes(content: &str, fea_path: &Path) -> String {
+    let fea_dir = fea_path.parent().unwrap_or(Path::new("."));
+    let ufo_parent_dir = fea_dir.parent().unwrap_or(fea_dir);
+    let mut result = String::with_capacity(content.len());
+    let mut remaining = content;
+    while let Some(start) = remaining.find("include(") {
+        result.push_str(&remaining[..start]);
+        let after = &remaining[start + 8..];
+        if let Some(end) = after.find(')') {
+            let raw_path = Path::new(after[..end].trim());
+            let resolved = resolve_include(raw_path, ufo_parent_dir, fea_dir);
+            let canonical = std::fs::canonicalize(&resolved)
+                .unwrap_or(resolved)
+                .display()
+                .to_string();
+            result.push_str("include(");
+            result.push_str(&canonical);
+            result.push(')');
+            remaining = &after[end + 1..];
+        } else {
+            result.push_str(&remaining[start..start + 8]);
+            remaining = after;
+        }
+    }
+    result.push_str(remaining);
+    result
+}
+
+/// Resolve an include path the same way fea-rs does: try the UFO's parent
+/// directory first, then the including file's directory.
+fn resolve_include(path: &Path, ufo_parent_dir: &Path, including_dir: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    let from_root = ufo_parent_dir.join(path);
+    if from_root.exists() {
+        return from_root;
+    }
+    let from_parent = including_dir.join(path);
+    if from_parent.exists() {
+        return from_parent;
+    }
+    from_parent
 }
 
 /// Creates a map from UFO directory name => fontinfo.
@@ -1564,7 +1622,7 @@ impl Work<Context, WorkId, Error> for FeatureWork {
 
         let fea_files = self.fea_files.as_ref();
         for fea_file in fea_files.iter().skip(1) {
-            if !files_identical(&fea_files[0], fea_file)? {
+            if !fea_files_identical(&fea_files[0], fea_file)? {
                 warn!(
                     "Bailing out due to non-identical feature files. This is an unnecessary limitation."
                 );
