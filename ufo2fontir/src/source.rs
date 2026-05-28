@@ -620,6 +620,8 @@ fn preliminary_gdef_categories_from_glyphdata(
     let glyph_data = GlyphData::new(None);
     let mut categories = BTreeMap::new();
     let mut mark_category_glyphs = BTreeSet::new();
+    let mut num_mark = 0;
+    let mut num_ligature = 0;
 
     for name in glyph_names {
         // TODO(anthrotype): pass codepoints for better resolution
@@ -633,24 +635,18 @@ fn preliminary_gdef_categories_from_glyphdata(
         match (result.category, result.subcategory) {
             (Category::Mark, Some(Subcategory::Nonspacing | Subcategory::SpacingCombining)) => {
                 categories.insert(name.clone(), GlyphClassDef::Mark);
+                num_mark += 1;
             }
             (_, Some(Subcategory::Ligature)) => {
                 categories.insert(name.clone(), GlyphClassDef::Ligature);
+                num_ligature += 1;
             }
             _ => {}
         }
     }
 
     log::info!(
-        "Inferred preliminary GDEF categories from GlyphData.xml: {} mark, {} ligature",
-        categories
-            .values()
-            .filter(|c| **c == GlyphClassDef::Mark)
-            .count(),
-        categories
-            .values()
-            .filter(|c| **c == GlyphClassDef::Ligature)
-            .count(),
+        "Inferred preliminary GDEF categories from GlyphData.xml: {num_mark} mark, {num_ligature} ligature",
     );
 
     PreliminaryGdefCategories {
