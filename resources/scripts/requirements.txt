@@ -44,7 +44,7 @@ cattrs==26.1.0
     #   ufolib2
 cdifflib==1.2.9
     # via ttx-diff
-certifi==2026.4.22
+certifi==2026.5.20
     # via requests
 cffi==2.0.0
     # via
@@ -74,7 +74,7 @@ font-v==2.1.0
     # via gftools
 fontfeatures==1.9.0
     # via gftools
-fontmake[json,repacker]==3.11.0
+fontmake[json,repacker]==3.12.0
     # via
     #   -r resources/scripts/requirements.in
     #   gftools
@@ -87,9 +87,9 @@ fontmath==0.10.0
     #   mutatormath
     #   ufo2ft
     #   ufoprocessor
-fontparts==0.14.1
+fontparts==1.0.0
     # via ufoprocessor
-fontpens==0.2.4
+fontpens==0.3.1
     # via defcon
 fonttools[lxml,repacker,ufo,unicode,woff]==4.63.0
     # via
@@ -146,13 +146,13 @@ glyphslib==6.13.1
     #   gftools
     #   glyphsets
     #   ttx-diff
-idna==3.15
+idna==3.17
     # via requests
 importlib-resources==7.1.0
     # via gfsubsets
 jinja2==3.1.6
     # via gftools
-lxml==6.1.0
+lxml==6.1.1
     # via
     #   afdko
     #   fontfeatures
@@ -197,7 +197,7 @@ pillow==12.2.0
     # via
     #   gftools
     #   nanoemoji
-platformdirs==4.9.6
+platformdirs==4.10.0
     # via youseedee
 pngquant-cli==3.0.3
     # via nanoemoji
@@ -216,7 +216,7 @@ pygithub==2.9.1
     # via gftools
 pygments==2.20.0
     # via rich
-pyjwt[crypto]==2.12.1
+pyjwt[crypto]==2.13.0
     # via pygithub
 pynacl==1.6.2
     # via pygithub
@@ -251,7 +251,7 @@ skia-pathops==0.9.2
     #   picosvg
 smmap==5.0.3
     # via gitdb
-soupsieve==2.8.3
+soupsieve==2.8.4
     # via beautifulsoup4
 statmake==2.0.1
     # via gftools
@@ -272,7 +272,7 @@ typing-extensions==4.15.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.7.3
+ufo2ft[cffsubr,compreffor]==3.8.1
     # via
     #   fontmake
     #   nanoemoji
@@ -313,7 +313,7 @@ vttlib==0.12.0
     # via gftools
 youseedee==0.7.0
     # via glyphsets
-zopfli==0.4.1
+zopfli==0.4.2
     # via
     #   fonttools
     #   nanoemoji
