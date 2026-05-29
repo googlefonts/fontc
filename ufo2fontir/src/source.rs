@@ -573,16 +573,16 @@ fn glyph_order(
 }
 
 fn glyph_categories(
-    lib_plist: &plist::Dictionary,
+    lib: &plist::Dictionary,
 ) -> Result<BTreeMap<GlyphName, GlyphClassDef>, BadSource> {
     const OPENTYPE_CATEGORIES: &str = "public.openTypeCategories";
 
-    let categories = match lib_plist.get(OPENTYPE_CATEGORIES) {
+    let categories = match lib.get(OPENTYPE_CATEGORIES) {
         Some(plist::Value::Dictionary(categories)) => categories,
         Some(_other) => {
             return Err(BadSource::custom(
-                "lib.plist",
-                format!("value for '{OPENTYPE_CATEGORIES}' is not a dictionary"),
+                OPENTYPE_CATEGORIES,
+                "value is not a dictionary",
             ));
         }
         None => return Ok(Default::default()),
@@ -605,6 +605,55 @@ fn glyph_categories(
         })
         .collect();
     Ok(categories)
+}
+
+/// Generate preliminary GDEF categories from GlyphData.xml for UFO sources
+/// without explicit `public.openTypeCategories`.
+///
+/// Only marks and ligatures are assigned here; bases are inferred after anchor
+/// propagation by `recompute_gdef_categories` (with `infer_from_anchors: true`).
+fn preliminary_gdef_categories_from_glyphdata(
+    glyph_names: &HashSet<GlyphName>,
+) -> PreliminaryGdefCategories {
+    use glyphs_reader::glyphdata::{Category, GlyphData, Subcategory};
+
+    let glyph_data = GlyphData::new(None);
+    let mut categories = BTreeMap::new();
+    let mut mark_category_glyphs = BTreeSet::new();
+    let mut num_mark = 0;
+    let mut num_ligature = 0;
+
+    for name in glyph_names {
+        // TODO(anthrotype): pass codepoints for better resolution
+        // https://github.com/googlefonts/fontc/issues/2022
+        let Some(result) = glyph_data.query(name.as_str(), None) else {
+            continue;
+        };
+        if result.category == Category::Mark {
+            mark_category_glyphs.insert(name.clone());
+        }
+        match (result.category, result.subcategory) {
+            (Category::Mark, Some(Subcategory::Nonspacing | Subcategory::SpacingCombining)) => {
+                categories.insert(name.clone(), GlyphClassDef::Mark);
+                num_mark += 1;
+            }
+            (_, Some(Subcategory::Ligature)) => {
+                categories.insert(name.clone(), GlyphClassDef::Ligature);
+                num_ligature += 1;
+            }
+            _ => {}
+        }
+    }
+
+    log::info!(
+        "Inferred preliminary GDEF categories from GlyphData.xml: {num_mark} mark, {num_ligature} ligature",
+    );
+
+    PreliminaryGdefCategories {
+        categories,
+        infer_from_anchors: true,
+        mark_category_glyphs,
+    }
 }
 
 fn postscript_names(lib_plist: &plist::Dictionary) -> Result<Option<PostscriptNames>, BadSource> {
@@ -915,14 +964,26 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             };
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
 
-        // for DS+UFO, infer_from_anchors=false thus "preliminary" GDEF categories will
-        // simply be copied over to final ones (and potentially overridden by feature code)
+        // Check the designspace lib first (canonical location), fall back to the default
+        // master's UFO lib (legacy location).
+        // <https://github.com/googlefonts/ufo2ft/blob/46196892e8/Lib/ufo2ft/util.py#L696-L704>
+        let mut categories = glyph_categories(&self.designspace.lib)?;
+        if categories.is_empty() {
+            categories = glyph_categories(&lib_plist)?;
+        }
         let preliminary_gdef_categories =
-            glyph_categories(&lib_plist).map(|categories| PreliminaryGdefCategories {
-                categories,
-                infer_from_anchors: false,
-                mark_category_glyphs: Default::default(),
-            })?;
+            if categories.is_empty() && context.flags.contains(Flags::PROPAGATE_ANCHORS) {
+                // No explicit categories but propagateAnchors is enabled: infer from
+                // GlyphData.xml, matching fontmake's build-time category generation.
+                preliminary_gdef_categories_from_glyphdata(&self.glyph_names)
+            } else {
+                // Explicit categories or no propagateAnchors: use as-is
+                PreliminaryGdefCategories {
+                    categories,
+                    infer_from_anchors: false,
+                    mark_category_glyphs: Default::default(),
+                }
+            };
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
         // Start with the bits from selection flags
@@ -2144,6 +2205,14 @@ mod tests {
 
     use super::*;
 
+    macro_rules! plist_dict {
+        ($($key:expr => $val:expr),* $(,)?) => {{
+            let mut d = plist::Dictionary::new();
+            $(d.insert($key.into(), $val.into());)*
+            d
+        }};
+    }
+
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
         assert!(dir.is_dir());
@@ -2193,8 +2262,17 @@ mod tests {
     }
 
     fn build_static_metadata(name: &str, flags: Flags) -> (impl Source + use<>, Context) {
+        build_static_metadata_with(name, flags, |_| {})
+    }
+
+    fn build_static_metadata_with<F: FnOnce(&mut DesignSpaceIrSource)>(
+        name: &str,
+        flags: Flags,
+        modify: F,
+    ) -> (DesignSpaceIrSource, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
-        let source = load_designspace(name);
+        let mut source = load_designspace(name);
+        modify(&mut source);
         let context = Context::new_root(flags, None);
         let task_context = context.copy_for_work(
             Access::None,
@@ -3422,5 +3500,161 @@ mod tests {
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             "decomposeTransformedComponents in lib.plist should set DECOMPOSE_TRANSFORMED_COMPONENTS flag"
         );
+    }
+
+    #[test]
+    fn glyph_categories_from_plist() {
+        let categories = plist_dict! {
+            "A" => "base",
+            "f_i" => "ligature",
+            "acutecomb" => "mark",
+            "dotlessi" => "component",
+            "space" => "unassigned",
+        };
+        let dict = plist_dict! {
+            "public.openTypeCategories" => plist::Value::from(categories),
+        };
+
+        let result = glyph_categories(&dict).unwrap();
+        assert_eq!(result.get(&GlyphName::new("A")), Some(&GlyphClassDef::Base));
+        assert_eq!(
+            result.get(&GlyphName::new("f_i")),
+            Some(&GlyphClassDef::Ligature)
+        );
+        assert_eq!(
+            result.get(&GlyphName::new("acutecomb")),
+            Some(&GlyphClassDef::Mark)
+        );
+        assert_eq!(
+            result.get(&GlyphName::new("dotlessi")),
+            Some(&GlyphClassDef::Component)
+        );
+        // "unassigned" is valid but produces no entry
+        assert_eq!(result.get(&GlyphName::new("space")), None);
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn glyph_categories_missing_key_returns_empty() {
+        let dict = plist::Dictionary::new();
+        let result = glyph_categories(&dict).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn glyph_categories_non_dict_value_is_error() {
+        let dict = plist_dict! { "public.openTypeCategories" => "oops" };
+        assert!(glyph_categories(&dict).is_err());
+    }
+
+    #[test]
+    fn preliminary_categories_from_glyphdata() {
+        use glyphs_reader::glyphdata::{Category, GlyphData, Subcategory};
+
+        // Verify our assumptions about GlyphData.xml classifications
+        let gd = GlyphData::new(None);
+        let acute = gd.query("acutecomb", None).unwrap();
+        assert_eq!(acute.category, Category::Mark);
+        assert_eq!(acute.subcategory, Some(Subcategory::Nonspacing));
+
+        let fi = gd.query("f_i", None).unwrap();
+        assert_eq!(fi.subcategory, Some(Subcategory::Ligature));
+
+        // "acute" is Mark/Spacing -- has its own advance width, not a combining mark.
+        // GlyphData still classifies it as Mark category, so it should appear in
+        // mark_category_glyphs but NOT in categories (only Nonspacing/SpacingCombining
+        // get GlyphClassDef::Mark).
+        let acute_spacing = gd.query("acute", None).unwrap();
+        assert_eq!(acute_spacing.category, Category::Mark);
+        assert_eq!(acute_spacing.subcategory, Some(Subcategory::Spacing));
+
+        let a_query = gd.query("A", None).unwrap();
+        assert_eq!(a_query.category, Category::Letter);
+
+        // Now test the function itself
+        let names: HashSet<GlyphName> = ["acutecomb", "gravecomb", "acute", "f_i", "A", "space"]
+            .iter()
+            .map(|n| GlyphName::new(*n))
+            .collect();
+
+        let result = preliminary_gdef_categories_from_glyphdata(&names);
+
+        assert!(result.infer_from_anchors);
+        assert_eq!(
+            result.categories.get(&GlyphName::new("acutecomb")),
+            Some(&GlyphClassDef::Mark)
+        );
+        assert_eq!(
+            result.categories.get(&GlyphName::new("gravecomb")),
+            Some(&GlyphClassDef::Mark)
+        );
+        assert_eq!(
+            result.categories.get(&GlyphName::new("f_i")),
+            Some(&GlyphClassDef::Ligature)
+        );
+        // Base glyphs are NOT assigned here; inferred later from anchors
+        assert_eq!(result.categories.get(&GlyphName::new("A")), None);
+        assert_eq!(result.categories.get(&GlyphName::new("space")), None);
+
+        assert!(
+            result
+                .mark_category_glyphs
+                .contains(&GlyphName::new("acutecomb"))
+        );
+        assert!(
+            result
+                .mark_category_glyphs
+                .contains(&GlyphName::new("gravecomb"))
+        );
+        // "acute" is Mark/Spacing: in mark_category_glyphs but not in categories
+        assert!(
+            result
+                .mark_category_glyphs
+                .contains(&GlyphName::new("acute"))
+        );
+        assert_eq!(result.categories.get(&GlyphName::new("acute")), None);
+        assert!(!result.mark_category_glyphs.contains(&GlyphName::new("A")));
+    }
+
+    #[test]
+    fn reads_categories_from_designspace_lib() {
+        let (_, context) =
+            build_static_metadata_with("wght_var.designspace", Flags::default(), |source| {
+                let ds = Arc::get_mut(&mut source.designspace).unwrap();
+                let categories = plist_dict! { "bar" => "base", "plus" => "ligature" };
+                ds.lib
+                    .insert("public.openTypeCategories".into(), categories.into());
+            });
+        let cats = context.preliminary_gdef_categories.get();
+        assert!(!cats.infer_from_anchors);
+        assert_eq!(
+            cats.categories.get(&GlyphName::new("bar")),
+            Some(&GlyphClassDef::Base)
+        );
+        assert_eq!(
+            cats.categories.get(&GlyphName::new("plus")),
+            Some(&GlyphClassDef::Ligature)
+        );
+    }
+
+    #[test]
+    fn no_categories_without_propagate_anchors() {
+        // wght_var has no openTypeCategories and no propagateAnchors
+        let (_, context) = build_static_metadata("wght_var.designspace", Flags::default());
+        let cats = context.preliminary_gdef_categories.get();
+        assert!(cats.categories.is_empty());
+        assert!(!cats.infer_from_anchors);
+    }
+
+    #[test]
+    fn infers_categories_from_glyphdata_with_propagate_anchors() {
+        // wght_var has no openTypeCategories; with PROPAGATE_ANCHORS flag,
+        // should infer from GlyphData.xml
+        let (_, context) = build_static_metadata("wght_var.designspace", Flags::PROPAGATE_ANCHORS);
+        let cats = context.preliminary_gdef_categories.get();
+        assert!(cats.infer_from_anchors);
+        // wght_var has glyphs "bar" and "plus" -- neither is a mark or ligature,
+        // so categories will be empty but infer_from_anchors is still true
+        assert!(cats.categories.is_empty());
     }
 }
