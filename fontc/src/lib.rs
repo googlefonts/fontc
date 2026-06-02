@@ -53,6 +53,8 @@ impl Input {
         match ext {
             "designspace" => Ok(Input::DesignSpacePath(path.to_path_buf())),
             "ufo" => Ok(Input::DesignSpacePath(path.to_path_buf())),
+            // a zipped UFO; ufo2fontir unpacks it before reading
+            "ufoz" => Ok(Input::DesignSpacePath(path.to_path_buf())),
             "glyphs" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "glyphspackage" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "fontra" => Ok(Input::FontraPath(path.to_path_buf())),
@@ -2011,6 +2013,19 @@ mod tests {
     #[test]
     fn captures_created_from_designspace() {
         assert_created_set("wght_var.designspace");
+    }
+
+    #[test]
+    fn ufoz_routes_to_designspace_source() {
+        // A `.ufoz` (zipped UFO) is handled by the designspace/ufo source, which
+        // unpacks it. Here we only assert the dispatch; ufo2fontir covers loading.
+        let tmp = tempdir().unwrap();
+        let ufoz = tmp.path().join("Whatever.ufoz");
+        std::fs::write(&ufoz, b"").unwrap();
+        assert!(matches!(
+            Input::new(&ufoz).unwrap(),
+            Input::DesignSpacePath(_)
+        ));
     }
 
     #[test]

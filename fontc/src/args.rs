@@ -15,7 +15,7 @@ use crate::Error;
 #[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
 #[command(version)]
 pub struct Args {
-    /// A designspace, ufo, or glyphs file
+    /// A designspace, ufo, ufoz, glyphs, glyphspackage, or fontra source
     #[arg(
         conflicts_with = "source",
         required_unless_present("source"),

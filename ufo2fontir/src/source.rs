@@ -1,6 +1,8 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
+    fs::{self, File},
+    io::Read,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -31,12 +33,14 @@ use norad::{
     fontinfo::StyleMapStyle,
 };
 use plist::{Dictionary, Value};
+use tempfile::TempDir;
 use write_fonts::{
     OtRound,
     read::tables::gasp::GaspRangeBehavior,
     tables::{gasp::GaspRange, gdef::GlyphClassDef, head, os2::SelectionFlags},
     types::{NameId, Tag},
 };
+use zip::ZipArchive;
 
 use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph};
 
@@ -57,6 +61,11 @@ pub struct DesignSpaceIrSource {
     designspace_dir: Arc<PathBuf>,
     glyphs: Arc<HashMap<GlyphName, HashMap<PathBuf, Vec<DesignLocation>>>>,
     fea_files: Arc<Vec<PathBuf>>,
+    /// When the source is a zipped UFO (`.ufoz`) it is unpacked to a temporary
+    /// directory; this guard keeps that directory alive for as long as the
+    /// source (and every work item that reads from it) exists. `None` for a
+    /// plain `.ufo`/`.designspace` source.
+    _ufoz_tempdir: Option<Arc<TempDir>>,
 }
 
 fn glif_files(
@@ -181,8 +190,149 @@ fn load_designspace(
     Ok((designspace_dir.into(), designspace))
 }
 
+/// Returns true if `path` looks like a zipped UFO (`.ufoz`).
+fn is_ufoz(path: &Path) -> bool {
+    path.extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("ufoz"))
+}
+
+/// Entries some archivers add next to the real payload; ignored when deciding
+/// the layout and skipped during extraction.
+const UFOZ_JUNK: &[&str] = &["__MACOSX", ".DS_Store", "Thumbs.db"];
+
+/// Ceiling on the total uncompressed bytes written when unpacking a `.ufoz`.
+/// The archive is untrusted (fontc_crater builds arbitrary repos) and is
+/// unpacked into the system temp dir, so this guards against a decompression
+/// bomb. It is far larger than any real UFO.
+const MAX_UFOZ_UNPACKED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+fn is_ufoz_junk(component: &OsStr) -> bool {
+    component.to_str().is_some_and(|s| UFOZ_JUNK.contains(&s))
+}
+
+/// Unpacks a zipped UFO (`.ufoz`) into a temporary directory and returns the
+/// path to the inner `.ufo` directory together with the [`TempDir`] guard that
+/// owns it.
+///
+/// fontc reads a UFO as a directory tree (lazily, throughout compilation), so a
+/// `.ufoz` is expanded on disk first; the returned [`TempDir`] must outlive
+/// those reads (callers keep it in [`DesignSpaceIrSource`]).
+///
+/// The UFO payload always lands directly inside a synthetic `<stem>.ufo`
+/// directory, whether the archive wraps it in a single top-level directory
+/// (`zip -r foo.ufoz foo.ufo`) or stores the UFO contents at the archive root
+/// (as fontTools' `ufoLib` does). Junk siblings (`__MACOSX/`, `.DS_Store`, …)
+/// are ignored, and entries are written through a size-limited copy so an
+/// untrusted archive cannot exceed [`MAX_UFOZ_UNPACKED_BYTES`].
+fn extract_ufoz(ufoz: &Path) -> Result<(PathBuf, TempDir), BadSourceKind> {
+    let file = File::open(ufoz).map_err(BadSourceKind::Io)?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|e| BadSourceKind::Custom(format!("not a valid .ufoz: {e}")))?;
+
+    // If every non-junk entry lives under one top-level directory, strip that
+    // wrapper so the UFO contents land directly in `<stem>.ufo`. `tops` maps a
+    // top-level component to whether it is a directory prefix (has children).
+    let mut tops: BTreeMap<OsString, bool> = BTreeMap::new();
+    for i in 0..archive.len() {
+        let entry = archive
+            .by_index(i)
+            .map_err(|e| BadSourceKind::Custom(format!("not a valid .ufoz: {e}")))?;
+        // `enclosed_name` rejects unsafe paths (absolute, `..`, …).
+        if let Some(name) = entry.enclosed_name() {
+            let mut comps = name.components();
+            if let Some(first) = comps.next() {
+                let first = first.as_os_str();
+                if is_ufoz_junk(first) {
+                    continue;
+                }
+                let is_dir_prefix = comps.next().is_some() || entry.is_dir();
+                *tops.entry(first.to_owned()).or_insert(false) |= is_dir_prefix;
+            }
+        }
+    }
+    let strip = if tops.len() == 1 {
+        let (only, &is_dir) = tops.iter().next().unwrap();
+        is_dir.then(|| PathBuf::from(only.as_os_str()))
+    } else {
+        None
+    };
+
+    let tempdir = TempDir::new().map_err(BadSourceKind::Io)?;
+    let stem = ufoz
+        .file_stem()
+        .ok_or_else(|| BadSourceKind::Custom("zipped UFO has no file name".into()))?;
+    let ufo_dir = tempdir
+        .path()
+        .join(format!("{}.ufo", stem.to_string_lossy()));
+
+    let mut written_total: u64 = 0;
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| BadSourceKind::Custom(format!("not a valid .ufoz: {e}")))?;
+        let Some(name) = entry.enclosed_name() else {
+            continue;
+        };
+        // Drop the wrapping directory (if any) and any junk entries.
+        let rel = match &strip {
+            Some(prefix) => match name.strip_prefix(prefix) {
+                Ok(rel) if !rel.as_os_str().is_empty() => rel.to_path_buf(),
+                _ => continue,
+            },
+            None => name,
+        };
+        if rel
+            .components()
+            .next()
+            .is_some_and(|c| is_ufoz_junk(c.as_os_str()))
+        {
+            continue;
+        }
+        let out_path = ufo_dir.join(&rel);
+        if entry.is_dir() {
+            fs::create_dir_all(&out_path).map_err(BadSourceKind::Io)?;
+            continue;
+        }
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent).map_err(BadSourceKind::Io)?;
+        }
+        // Bound the output so a bomb (or a lying size field) cannot exhaust RAM.
+        let budget = MAX_UFOZ_UNPACKED_BYTES - written_total;
+        let mut writer = File::create(&out_path).map_err(BadSourceKind::Io)?;
+        let mut limited = entry.by_ref().take(budget + 1);
+        written_total += std::io::copy(&mut limited, &mut writer).map_err(BadSourceKind::Io)?;
+        if written_total > MAX_UFOZ_UNPACKED_BYTES {
+            return Err(BadSourceKind::Custom(format!(
+                "zipped UFO is too large to unpack (over {MAX_UFOZ_UNPACKED_BYTES} bytes uncompressed)"
+            )));
+        }
+    }
+
+    if !ufo_dir.join("metainfo.plist").is_file() {
+        return Err(BadSourceKind::Custom(
+            "zipped UFO is missing metainfo.plist".into(),
+        ));
+    }
+    Ok((ufo_dir, tempdir))
+}
+
 impl Source for DesignSpaceIrSource {
     fn new(designspace_or_ufo_file: &Path) -> Result<Self, Error> {
+        // A `.ufoz` is a zipped UFO: unpack it to a temp dir and build from the
+        // inner `.ufo`. The `TempDir` is moved into the returned source so the
+        // unpacked files outlive every work item that reads them.
+        let (unpacked, ufoz_tempdir): (PathBuf, Option<Arc<TempDir>>) =
+            if is_ufoz(designspace_or_ufo_file) {
+                let (ufo_dir, tempdir) = extract_ufoz(designspace_or_ufo_file).map_err(|kind| {
+                    Error::BadSource(BadSource::new(designspace_or_ufo_file, kind))
+                })?;
+                (ufo_dir, Some(Arc::new(tempdir)))
+            } else {
+                (designspace_or_ufo_file.to_path_buf(), None)
+            };
+        let designspace_or_ufo_file = unpacked.as_path();
+
         let (designspace_dir, mut designspace) = load_designspace(designspace_or_ufo_file)
             .map_err(|kind| Error::BadSource(BadSource::new(designspace_or_ufo_file, kind)))?;
 
@@ -298,6 +448,7 @@ impl Source for DesignSpaceIrSource {
             designspace_dir: Arc::new(designspace_dir),
             glyphs: Arc::new(glyphs),
             fea_files: Arc::new(fea_files),
+            _ufoz_tempdir: ufoz_tempdir,
         })
     }
 
@@ -2951,6 +3102,181 @@ mod tests {
     #[test]
     fn fixed_pitch_on() {
         assert_eq!(Some(true), fixed_pitch_of("FixedPitch.designspace"));
+    }
+
+    /// Writes a zip archive at `dest` from the given `(name, bytes)` entries.
+    fn write_ufoz(entries: &[(String, Vec<u8>)], dest: &Path) {
+        use std::io::Write;
+        use zip::write::{SimpleFileOptions, ZipWriter};
+        let mut writer = ZipWriter::new(File::create(dest).unwrap());
+        for (name, data) in entries {
+            writer
+                .start_file(name, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(data).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    /// Collects the files under `src_dir` as `(archive_name, bytes)` entries,
+    /// each prefixed with `prefix` (pass "" to place them at the archive root).
+    fn ufo_entries(src_dir: &Path, prefix: &str) -> Vec<(String, Vec<u8>)> {
+        fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    collect(&path, out);
+                } else {
+                    out.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        collect(src_dir, &mut files);
+        files
+            .into_iter()
+            .map(|path| {
+                let rel = path.strip_prefix(src_dir).unwrap().to_str().unwrap();
+                let name = if prefix.is_empty() {
+                    rel.to_string()
+                } else {
+                    format!("{prefix}/{rel}")
+                };
+                (name, std::fs::read(&path).unwrap())
+            })
+            .collect()
+    }
+
+    fn glyph_names(src: &DesignSpaceIrSource) -> Vec<GlyphName> {
+        let mut names: Vec<GlyphName> = src.glyphs.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    /// Builds full glyph IR from a source at `path`, driving the lazy exec-time
+    /// reads of the (possibly unpacked) glif tree.
+    fn build_glyph_ir_at(path: &Path) -> Context {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let source = DesignSpaceIrSource::new(path).unwrap();
+        let context = Context::new_root(Flags::default(), None);
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(
+                &context.copy_for_work(
+                    Access::None,
+                    AccessBuilder::new()
+                        .variant(WorkId::StaticMetadata)
+                        .variant(WorkId::PreliminaryGlyphOrder)
+                        .variant(WorkId::PreliminaryGdefCategories)
+                        .build(),
+                ),
+            )
+            .unwrap();
+        build_glyph_order(&context);
+        let task_context = context.copy_for_work(Access::All, Access::All);
+        source
+            .create_glyph_ir_work()
+            .unwrap()
+            .into_iter()
+            .for_each(|w| w.exec(&task_context).unwrap());
+        context
+    }
+
+    #[test]
+    fn loads_zipped_ufoz() {
+        // A wrapped `.ufoz` (`zip -r foo.ufoz foo.ufo`) loads the same glyphs as
+        // the `.ufo` directly.
+        let ufo = testdata_dir().join("Static-Regular.ufo");
+        let tmp = tempfile::tempdir().unwrap();
+        let ufoz = tmp.path().join("Static-Regular.ufoz");
+        write_ufoz(&ufo_entries(&ufo, "Static-Regular.ufo"), &ufoz);
+        assert!(is_ufoz(&ufoz) && !is_ufoz(&ufo));
+
+        let from_ufo = DesignSpaceIrSource::new(&ufo).unwrap();
+        let from_ufoz = DesignSpaceIrSource::new(&ufoz).unwrap();
+        assert!(!glyph_names(&from_ufo).is_empty());
+        assert_eq!(glyph_names(&from_ufo), glyph_names(&from_ufoz));
+    }
+
+    #[test]
+    fn loads_root_contents_ufoz() {
+        // A `.ufoz` whose UFO contents sit at the archive root (no wrapping
+        // directory, as fontTools ufoLib writes) loads identically.
+        let ufo = testdata_dir().join("Static-Regular.ufo");
+        let tmp = tempfile::tempdir().unwrap();
+        let ufoz = tmp.path().join("MyFont.ufoz");
+        write_ufoz(&ufo_entries(&ufo, ""), &ufoz);
+
+        let from_ufo = DesignSpaceIrSource::new(&ufo).unwrap();
+        let from_ufoz = DesignSpaceIrSource::new(&ufoz).unwrap();
+        assert!(!glyph_names(&from_ufo).is_empty());
+        assert_eq!(glyph_names(&from_ufo), glyph_names(&from_ufoz));
+    }
+
+    #[test]
+    fn ufoz_ignores_archiver_junk() {
+        // A wrapped `.ufoz` carrying macOS/Windows junk siblings still loads.
+        let ufo = testdata_dir().join("Static-Regular.ufo");
+        let tmp = tempfile::tempdir().unwrap();
+        let ufoz = tmp.path().join("Static-Regular.ufoz");
+        let mut entries = ufo_entries(&ufo, "Static-Regular.ufo");
+        entries.push((
+            "__MACOSX/._Static-Regular.ufo".to_string(),
+            b"junk".to_vec(),
+        ));
+        entries.push((".DS_Store".to_string(), b"junk".to_vec()));
+        write_ufoz(&entries, &ufoz);
+
+        let from_ufo = DesignSpaceIrSource::new(&ufo).unwrap();
+        let from_ufoz = DesignSpaceIrSource::new(&ufoz).unwrap();
+        assert_eq!(glyph_names(&from_ufo), glyph_names(&from_ufoz));
+    }
+
+    #[test]
+    fn ufoz_builds_glyph_ir_via_lazy_reads() {
+        // Building full glyph IR from a `.ufoz` drives the lazy, exec-time reads
+        // of the unpacked glif files; these only succeed if the extracted temp
+        // dir is still alive (the `Arc<TempDir>` invariant) and extraction was
+        // correct. Checked for parity against the same build from the `.ufo`.
+        let ufo = testdata_dir().join("Static-Regular.ufo");
+        let tmp = tempfile::tempdir().unwrap();
+        let ufoz = tmp.path().join("Static-Regular.ufoz");
+        write_ufoz(&ufo_entries(&ufo, "Static-Regular.ufo"), &ufoz);
+
+        let names = glyph_names(&DesignSpaceIrSource::new(&ufo).unwrap());
+        assert!(!names.is_empty());
+        let ufo_ctx = build_glyph_ir_at(&ufo);
+        let ufoz_ctx = build_glyph_ir_at(&ufoz);
+        let export_flags = |ctx: &Context| {
+            names
+                .iter()
+                .map(|n| ctx.glyphs.get(&WorkId::Glyph(n.clone())).emit_to_binary)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(export_flags(&ufo_ctx), export_flags(&ufoz_ctx));
+    }
+
+    #[test]
+    fn ufoz_invalid_archive_is_an_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ufoz = tmp.path().join("bad.ufoz");
+        std::fs::write(&ufoz, b"this is not a zip archive").unwrap();
+        assert!(DesignSpaceIrSource::new(&ufoz).is_err());
+    }
+
+    #[test]
+    fn ufoz_without_metainfo_is_an_error() {
+        let ufo = testdata_dir().join("Static-Regular.ufo");
+        let tmp = tempfile::tempdir().unwrap();
+        let ufoz = tmp.path().join("Static-Regular.ufoz");
+        let entries: Vec<_> = ufo_entries(&ufo, "Static-Regular.ufo")
+            .into_iter()
+            .filter(|(name, _)| !name.ends_with("metainfo.plist"))
+            .collect();
+        write_ufoz(&entries, &ufoz);
+        let err = format!("{:?}", DesignSpaceIrSource::new(&ufoz).unwrap_err());
+        assert!(err.contains("metainfo"), "unexpected error: {err}");
     }
 
     #[test]

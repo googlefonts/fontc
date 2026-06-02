@@ -402,7 +402,7 @@ def looks_like_it_has_appended_sha(name: str) -> bool:
 
 
 def source_is_variable(path: Path) -> bool:
-    if path.suffix == ".ufo":
+    if path.suffix == ".ufo" or path.suffix == ".ufoz":
         return False
     if path.suffix == ".designspace":
         dspace = DesignSpaceDocument.fromfile(path)
