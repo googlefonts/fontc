@@ -4,7 +4,7 @@
 # Pin versions for CI stability (overrides ttx-diff's minimum versions)
 # keep fontmake version pinned to ensure output from ttx-diff is stable;
 # the 'repacker' option enables faster GSUB/GPOS serialization via uharfbuzz
-fontmake[repacker]==3.12.0
+fontmake[repacker]==3.12.1
 # keep gftools pinned as well to ensure ttx-diff output is stable.
 # 0.9.74 is when experimental support for fontc was added to gftools.
 gftools==0.9.93
