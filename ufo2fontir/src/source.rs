@@ -2256,6 +2256,55 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn fea_files_differing_only_by_trailing_newline_are_identical() {
+        // https://github.com/.../Intel-One-Mono: two masters whose features.fea
+        // differ only by a trailing newline must be treated as compatible (as
+        // ufo2ft does, since it compares tokens and ignores whitespace).
+        let tmp = tempfile::tempdir().unwrap();
+        let f1 = tmp.path().join("a.fea");
+        let f2 = tmp.path().join("b.fea");
+        std::fs::write(&f1, "feature kern { pos a b -5; } kern;").unwrap();
+        std::fs::write(&f2, "feature kern { pos a b -5; } kern;\n").unwrap();
+        assert!(fea_files_identical(&f1, &f2).unwrap());
+    }
+
+    #[test]
+    fn fea_files_differing_only_by_comments_are_identical() {
+        // comments don't affect the compiled features, so two masters that
+        // differ only by comments must be treated as compatible (as ufo2ft,
+        // which excludes comments from its token comparison).
+        let tmp = tempfile::tempdir().unwrap();
+        let f1 = tmp.path().join("a.fea");
+        let f2 = tmp.path().join("b.fea");
+        std::fs::write(&f1, "# master A\nfeature kern { pos a b -5; } kern;\n").unwrap();
+        std::fs::write(&f2, "feature kern { pos a b -5; } kern; # note\n").unwrap();
+        assert!(fea_files_identical(&f1, &f2).unwrap());
+    }
+
+    #[test]
+    fn fea_files_include_whitespace_and_relative_paths_normalized() {
+        // `include (path)` with whitespace before the paren is valid FEA (the
+        // old literal "include(" scan missed it), and two masters including the
+        // same file via paths that resolve identically must compare equal.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("shared.fea"),
+            "feature liga { sub a b by c; } liga;\n",
+        )
+        .unwrap();
+        let write_master = |name: &str, include: &str| {
+            let ufo = tmp.path().join(name);
+            std::fs::create_dir(&ufo).unwrap();
+            let fea = ufo.join("features.fea");
+            std::fs::write(&fea, include).unwrap();
+            fea
+        };
+        let a = write_master("A.ufo", "include(../shared.fea)");
+        let b = write_master("B.ufo", "include (../shared.fea)\n");
+        assert!(fea_files_identical(&a, &b).unwrap());
+    }
+
     macro_rules! plist_dict {
         ($($key:expr => $val:expr),* $(,)?) => {{
             let mut d = plist::Dictionary::new();
