@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     ffi::OsStr,
     path::{Path, PathBuf},
@@ -7,6 +8,10 @@ use std::{
 };
 
 use chrono::{DateTime, NaiveDateTime, Utc};
+use fea_rs::{
+    Kind, ParseTree,
+    parse::{FileSystemResolver, SourceResolver, parse_string},
+};
 use fontdrasil::{
     coords::{DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     orchestration::{Access, AccessBuilder, Work},
@@ -749,72 +754,60 @@ fn fea_files_identical(f1: &Path, f2: &Path) -> Result<bool, BadSource> {
     }
     let c1 = std::fs::read_to_string(f1).map_err(|e| BadSource::new(f1, BadSourceKind::Io(e)))?;
     let c2 = std::fs::read_to_string(f2).map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
-    if c1 == c2 {
-        return Ok(true);
-    }
-    debug!(
-        "Feature files differ, canonicalizing include paths: {} vs {}",
-        f1.display(),
-        f2.display()
-    );
-    let n1 = canonicalize_fea_includes(&c1, f1);
-    let n2 = canonicalize_fea_includes(&c2, f2);
-    Ok(n1 == n2)
+    let (ast1, _) = parse_string(c1);
+    let (ast2, _) = parse_string(c2);
+    let resolver1 = FileSystemResolver::new(ufo_parent_dir(f1));
+    let resolver2 = FileSystemResolver::new(ufo_parent_dir(f2));
+    // Compare the significant tokens -- include paths canonicalized, whitespace
+    // and comments ignored -- rather than the raw text, matching how ufo2ft
+    // decides feature compatibility. This tolerates trailing-newline,
+    // reformatting and comment-only differences, and different relative include
+    // paths that point at the same file, while still erroring on real changes.
+    // `Iterator::eq` walks both streams lazily and stops at the first mismatch,
+    // and only the (canonicalized) include paths allocate.
+    Ok(significant_fea_tokens(&ast1, f1, &resolver1)
+        .eq(significant_fea_tokens(&ast2, f2, &resolver2)))
 }
 
-/// Replace `include(relative/path)` with `include(/canonical/path)` so that
-/// two files with different relative include paths to the same target compare
-/// as equal.
-///
-/// Follows the same resolution order as fea-rs's `FileSystemResolver` and
-/// fontTools' `IncludingLexer` (used by ufo2ft): try the UFO's parent
-/// directory first, then the directory containing the including file.
-///
-/// Per the UFO spec, includes resolve relative to the directory where the
-/// UFO lives, not inside the UFO package itself.
-fn canonicalize_fea_includes(content: &str, fea_path: &Path) -> String {
+/// The directory an include path is resolved against: per the UFO spec, the
+/// directory the UFO lives in (the parent of the UFO package).
+fn ufo_parent_dir(fea_path: &Path) -> PathBuf {
     let fea_dir = fea_path.parent().unwrap_or(Path::new("."));
-    let ufo_parent_dir = fea_dir.parent().unwrap_or(fea_dir);
-    let mut result = String::with_capacity(content.len());
-    let mut remaining = content;
-    while let Some(start) = remaining.find("include(") {
-        result.push_str(&remaining[..start]);
-        let after = &remaining[start + 8..];
-        if let Some(end) = after.find(')') {
-            let raw_path = Path::new(after[..end].trim());
-            let resolved = resolve_include(raw_path, ufo_parent_dir, fea_dir);
-            let canonical = std::fs::canonicalize(&resolved)
-                .unwrap_or(resolved)
-                .display()
-                .to_string();
-            result.push_str("include(");
-            result.push_str(&canonical);
-            result.push(')');
-            remaining = &after[end + 1..];
-        } else {
-            result.push_str(&remaining[start..start + 8]);
-            remaining = after;
-        }
-    }
-    result.push_str(remaining);
-    result
+    fea_dir.parent().unwrap_or(fea_dir).to_path_buf()
 }
 
-/// Resolve an include path the same way fea-rs does: try the UFO's parent
-/// directory first, then the including file's directory.
-fn resolve_include(path: &Path, ufo_parent_dir: &Path, including_dir: &Path) -> PathBuf {
-    if path.is_absolute() {
-        return path.to_path_buf();
-    }
-    let from_root = ufo_parent_dir.join(path);
-    if from_root.exists() {
-        return from_root;
-    }
-    let from_parent = including_dir.join(path);
-    if from_parent.exists() {
-        return from_parent;
-    }
-    from_parent
+/// Iterate the significant tokens of a features.fea for compatibility comparison:
+/// whitespace and comments are dropped (as ufo2ft does), and each `include()`
+/// path is canonicalized so that include paths resolving to the same file
+/// compare equal even when the masters spell them differently (e.g. relative
+/// paths that differ because the master UFOs sit at different directory depths).
+///
+/// Paths are resolved with fea-rs's own [`FileSystemResolver`], the same
+/// machinery used when the features are compiled for real, so the compatibility
+/// check and the compile agree on what each include points to.
+fn significant_fea_tokens<'a>(
+    ast: &'a ParseTree,
+    fea_path: &'a Path,
+    resolver: &'a FileSystemResolver,
+) -> impl Iterator<Item = (Kind, Cow<'a, str>)> + 'a {
+    ast.root()
+        .iter_tokens()
+        .filter_map(move |token| match token.kind {
+            // ignore trivia, matching ufo2ft (which excludes comments and whitespace)
+            Kind::Whitespace | Kind::Comment => None,
+            // the Path token text is the raw include path, including any whitespace
+            // inside the parens; trim before resolving.
+            Kind::Path => {
+                let raw_path = Path::new(token.as_str().trim());
+                let resolved = resolver.resolve_raw_path(raw_path, Some(fea_path));
+                let canonical = std::fs::canonicalize(&resolved)
+                    .unwrap_or(resolved)
+                    .display()
+                    .to_string();
+                Some((Kind::Path, Cow::Owned(canonical)))
+            }
+            kind => Some((kind, Cow::Borrowed(token.as_str()))),
+        })
 }
 
 /// Creates a map from UFO directory name => fontinfo.

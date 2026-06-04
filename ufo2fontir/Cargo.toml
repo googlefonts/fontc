@@ -11,6 +11,7 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
+fea-rs = { version = "0.22.0", path = "../fea-rs" }
 fontdrasil = { version = "0.4.0", path = "../fontdrasil" }
 fontir = { version = "0.5.0", path = "../fontir" }
 glyphs-reader = { version = "0.5.0", path = "../glyphs-reader" }
