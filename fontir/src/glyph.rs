@@ -5,7 +5,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeSet, HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -216,6 +216,42 @@ impl fontdrasil::util::CompositeLike for &Glyph {
 
     fn component_names(&self) -> impl Iterator<Item = smol_str::SmolStr> {
         Glyph::component_names(self).map(|name| name.clone().into_inner())
+    }
+}
+
+/// Drop component references pointing at glyphs that don't exist.
+///
+/// fontmake skips such components (with a warning) and builds anyway; we match
+/// that. Run as a preflight before any other glyph processing: otherwise a
+/// single missing component decomposes the *whole* glyph, inlining its valid
+/// siblings (<https://github.com/googlefonts/fontc/issues/1858>). We only warn,
+/// like fontmake (<https://github.com/googlefonts/fontc/issues/2032>).
+fn prune_missing_components(context: &Context) {
+    for (_, glyph) in context.glyphs.all() {
+        // collect once, deduped, so we warn at most once per missing base and
+        // can strip every reference to it across all of the glyph's sources.
+        let missing: BTreeSet<GlyphName> = glyph
+            .sources()
+            .values()
+            .flat_map(|inst| inst.components.iter())
+            .map(|component| &component.base)
+            .filter(|base| context.try_get_glyph(base.as_str()).is_none())
+            .cloned()
+            .collect();
+        if missing.is_empty() {
+            continue;
+        }
+        for base in &missing {
+            log::warn!(
+                "glyph '{}' references non-existent component '{base}'; dropping it",
+                glyph.name
+            );
+        }
+        let mut new_glyph = (*glyph).clone();
+        for instance in new_glyph.sources_mut().values_mut() {
+            instance.components.retain(|c| !missing.contains(&c.base));
+        }
+        context.glyphs.set(new_glyph);
     }
 }
 
@@ -787,10 +823,11 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // We should now have access to *all* the glyph IR
         // Some of it may need to be massaged to produce BE glyphs
         // In particular, glyphs with both paths and components need to push the path into a component
-        // preflght: lets remove component references to non-export glyphs.
-        // In python this happens during preprocessing
-        // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/preProcessor.py#L92)
-        // (https://github.com/googlefonts/ufo2ft/blob/98e8916a8/Lib/ufo2ft/util.py#L112)
+
+        // Drop references to non-existent components before anything else, so a
+        // missing component can't cause its glyph (or its siblings) to be
+        // decomposed. See https://github.com/googlefonts/fontc/issues/1858
+        prune_missing_components(context);
 
         // Propagate anchors from components to composites (if enabled)
         // This must happen BEFORE flattening non-export components, because after
@@ -1749,6 +1786,42 @@ mod tests {
         let context = builder.into_context();
         let glyph = context.get_glyph("a");
         convert_components_to_contours(&context, &glyph).unwrap();
+    }
+
+    #[test]
+    fn prune_missing_components_keeps_valid_siblings() {
+        // 'a' references 'b' (present) and 'missing' (absent). Pruning should
+        // drop only 'missing', leaving 'a' a composite referencing 'b'.
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph("a", ["b", "missing"]);
+        builder.add_glyph("b", []);
+        let context = builder.into_context();
+
+        prune_missing_components(&context);
+
+        let a = context.get_glyph("a");
+        let bases: Vec<_> = a
+            .default_instance()
+            .components
+            .iter()
+            .map(|c| c.base.as_str())
+            .collect();
+        assert_eq!(bases, ["b"]);
+    }
+
+    #[test]
+    fn prune_missing_components_drops_sole_missing() {
+        // 'a' references only 'missing'; pruning leaves it an empty glyph
+        // (no components, no contours), matching fontmake. See #2032.
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph("a", ["missing"]);
+        let context = builder.into_context();
+
+        prune_missing_components(&context);
+
+        let a = context.get_glyph("a");
+        assert!(a.default_instance().components.is_empty());
+        assert!(a.default_instance().contours.is_empty());
     }
 
     #[test]
