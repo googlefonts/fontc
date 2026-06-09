@@ -1,0 +1,51 @@
+{
+.appVersion = "3414";
+.formatVersion = 3;
+familyName = "Missing Component";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = B;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,100,l),
+(300,100,l),
+(300,300,l),
+(100,300,l)
+);
+}
+);
+width = 400;
+}
+);
+unicode = 66;
+},
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+shapes = (
+{ ref = B; },
+{ ref = F; }
+);
+width = 400;
+}
+);
+unicode = 65;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
