@@ -676,6 +676,11 @@ mod tests {
     }
 
     #[test]
+    fn compile_fea_with_includes_resolved() {
+        assert_compiles_with_gpos_and_gsub("fea_include_resolve.designspace", |o| o);
+    }
+
+    #[test]
     fn compile_fea_with_includes_no_ir() {
         assert_compiles_with_gpos_and_gsub("fea_include.designspace", |mut args| {
             args.ir_dir = None;

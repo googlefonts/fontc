@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     ffi::OsStr,
     path::{Path, PathBuf},
@@ -7,6 +8,10 @@ use std::{
 };
 
 use chrono::{DateTime, NaiveDateTime, Utc};
+use fea_rs::{
+    Kind, ParseTree,
+    parse::{FileSystemResolver, SourceResolver, parse_string},
+};
 use fontdrasil::{
     coords::{DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     orchestration::{Access, AccessBuilder, Work},
@@ -740,23 +745,69 @@ fn units_per_em<'a>(font_infos: impl Iterator<Item = &'a norad::FontInfo>) -> Re
     }
 }
 
-fn files_identical(f1: &Path, f2: &Path) -> Result<bool, BadSource> {
+fn fea_files_identical(f1: &Path, f2: &Path) -> Result<bool, BadSource> {
     if !f1.is_file() {
         return Err(BadSource::new(f1, BadSourceKind::ExpectedFile));
     }
     if !f2.is_file() {
         return Err(BadSource::new(f2, BadSourceKind::ExpectedFile));
     }
-    let m1 = f1
-        .metadata()
-        .map_err(|e| BadSource::new(f1, BadSourceKind::Io(e)))?;
-    let m2 = f2
-        .metadata()
-        .map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
-    if m1.len() != m2.len() {
-        return Ok(false);
-    }
-    Ok(true)
+    let c1 = std::fs::read_to_string(f1).map_err(|e| BadSource::new(f1, BadSourceKind::Io(e)))?;
+    let c2 = std::fs::read_to_string(f2).map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
+    let (ast1, _) = parse_string(c1);
+    let (ast2, _) = parse_string(c2);
+    let resolver1 = FileSystemResolver::new(ufo_parent_dir(f1));
+    let resolver2 = FileSystemResolver::new(ufo_parent_dir(f2));
+    // Compare the significant tokens -- include paths canonicalized, whitespace
+    // and comments ignored -- rather than the raw text, matching how ufo2ft
+    // decides feature compatibility. This tolerates trailing-newline,
+    // reformatting and comment-only differences, and different relative include
+    // paths that point at the same file, while still erroring on real changes.
+    // `Iterator::eq` walks both streams lazily and stops at the first mismatch,
+    // and only the (canonicalized) include paths allocate.
+    Ok(significant_fea_tokens(&ast1, f1, &resolver1)
+        .eq(significant_fea_tokens(&ast2, f2, &resolver2)))
+}
+
+/// The directory an include path is resolved against: per the UFO spec, the
+/// directory the UFO lives in (the parent of the UFO package).
+fn ufo_parent_dir(fea_path: &Path) -> PathBuf {
+    let fea_dir = fea_path.parent().unwrap_or(Path::new("."));
+    fea_dir.parent().unwrap_or(fea_dir).to_path_buf()
+}
+
+/// Iterate the significant tokens of a features.fea for compatibility comparison:
+/// whitespace and comments are dropped (as ufo2ft does), and each `include()`
+/// path is canonicalized so that include paths resolving to the same file
+/// compare equal even when the masters spell them differently (e.g. relative
+/// paths that differ because the master UFOs sit at different directory depths).
+///
+/// Paths are resolved with fea-rs's own [`FileSystemResolver`], the same
+/// machinery used when the features are compiled for real, so the compatibility
+/// check and the compile agree on what each include points to.
+fn significant_fea_tokens<'a>(
+    ast: &'a ParseTree,
+    fea_path: &'a Path,
+    resolver: &'a FileSystemResolver,
+) -> impl Iterator<Item = (Kind, Cow<'a, str>)> + 'a {
+    ast.root()
+        .iter_tokens()
+        .filter_map(move |token| match token.kind {
+            // ignore trivia, matching ufo2ft (which excludes comments and whitespace)
+            Kind::Whitespace | Kind::Comment => None,
+            // the Path token text is the raw include path, including any whitespace
+            // inside the parens; trim before resolving.
+            Kind::Path => {
+                let raw_path = Path::new(token.as_str().trim());
+                let resolved = resolver.resolve_raw_path(raw_path, Some(fea_path));
+                let canonical = std::fs::canonicalize(&resolved)
+                    .unwrap_or(resolved)
+                    .display()
+                    .to_string();
+                Some((Kind::Path, Cow::Owned(canonical)))
+            }
+            kind => Some((kind, Cow::Borrowed(token.as_str()))),
+        })
 }
 
 /// Creates a map from UFO directory name => fontinfo.
@@ -1564,7 +1615,7 @@ impl Work<Context, WorkId, Error> for FeatureWork {
 
         let fea_files = self.fea_files.as_ref();
         for fea_file in fea_files.iter().skip(1) {
-            if !files_identical(&fea_files[0], fea_file)? {
+            if !fea_files_identical(&fea_files[0], fea_file)? {
                 warn!(
                     "Bailing out due to non-identical feature files. This is an unnecessary limitation."
                 );
@@ -2204,6 +2255,55 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn fea_files_differing_only_by_trailing_newline_are_identical() {
+        // https://github.com/.../Intel-One-Mono: two masters whose features.fea
+        // differ only by a trailing newline must be treated as compatible (as
+        // ufo2ft does, since it compares tokens and ignores whitespace).
+        let tmp = tempfile::tempdir().unwrap();
+        let f1 = tmp.path().join("a.fea");
+        let f2 = tmp.path().join("b.fea");
+        std::fs::write(&f1, "feature kern { pos a b -5; } kern;").unwrap();
+        std::fs::write(&f2, "feature kern { pos a b -5; } kern;\n").unwrap();
+        assert!(fea_files_identical(&f1, &f2).unwrap());
+    }
+
+    #[test]
+    fn fea_files_differing_only_by_comments_are_identical() {
+        // comments don't affect the compiled features, so two masters that
+        // differ only by comments must be treated as compatible (as ufo2ft,
+        // which excludes comments from its token comparison).
+        let tmp = tempfile::tempdir().unwrap();
+        let f1 = tmp.path().join("a.fea");
+        let f2 = tmp.path().join("b.fea");
+        std::fs::write(&f1, "# master A\nfeature kern { pos a b -5; } kern;\n").unwrap();
+        std::fs::write(&f2, "feature kern { pos a b -5; } kern; # note\n").unwrap();
+        assert!(fea_files_identical(&f1, &f2).unwrap());
+    }
+
+    #[test]
+    fn fea_files_include_whitespace_and_relative_paths_normalized() {
+        // `include (path)` with whitespace before the paren is valid FEA (the
+        // old literal "include(" scan missed it), and two masters including the
+        // same file via paths that resolve identically must compare equal.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("shared.fea"),
+            "feature liga { sub a b by c; } liga;\n",
+        )
+        .unwrap();
+        let write_master = |name: &str, include: &str| {
+            let ufo = tmp.path().join(name);
+            std::fs::create_dir(&ufo).unwrap();
+            let fea = ufo.join("features.fea");
+            std::fs::write(&fea, include).unwrap();
+            fea
+        };
+        let a = write_master("A.ufo", "include(../shared.fea)");
+        let b = write_master("B.ufo", "include (../shared.fea)\n");
+        assert!(fea_files_identical(&a, &b).unwrap());
+    }
 
     macro_rules! plist_dict {
         ($($key:expr => $val:expr),* $(,)?) => {{

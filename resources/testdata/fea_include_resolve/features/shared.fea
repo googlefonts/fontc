@@ -1,0 +1,3 @@
+feature liga {
+    substitute bar bar by plus;
+} liga;
