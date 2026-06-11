@@ -2292,6 +2292,88 @@ mod tests {
         assert_simple_kerning("designspace_from_glyphs/WghtVar.designspace");
     }
 
+    // A glyph-to-class kern exception present in only some masters used to get
+    // backfilled, at the masters that omit it, with the class-to-class value.
+    // Because glyph-to-class outranks class-to-glyph, that backfill then shadows
+    // a competing class-to-glyph exception on the cells they share, producing --
+    // at those locations -- a value the source never resolves to for the cell
+    // (a "phantom"). We resolve such exceptions at the cell level instead,
+    // splitting out only the glyphs whose value diverges. This mirrors the
+    // equivalent fix in ufo2ft's kernFeatureWriter.
+    // See https://github.com/googlefonts/fontc/issues/2035.
+    #[test]
+    fn partial_master_kern_exception_is_resolved_per_cell() {
+        let result = TestCompile::compile_source("PartialKernException.designspace");
+        let all_kerns = result.be_context.all_kerning_pairs.get();
+
+        // one compact "side1 side2: [value at wght 0, value at wght 1]" line
+        // per pair, sorted, compared exhaustively: pairs untouched by the
+        // cell-level resolution must come through unchanged.
+        let mut kerns: Vec<(KernPair, Vec<(f64, f64)>)> = all_kerns
+            .adjustments
+            .iter()
+            .map(|(pair, adj)| {
+                let mut values: Vec<(f64, f64)> = adj
+                    .iter()
+                    .map(|(loc, val)| (loc.iter().map(|(_, v)| v.to_f64()).next().unwrap(), val.0))
+                    .collect();
+                values.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+                (pair.clone(), values)
+            })
+            .collect();
+        kerns.sort_by(|(a, _), (b, _)| a.cmp(b));
+        let kerns: Vec<String> = kerns
+            .iter()
+            .map(|((first, second), values)| {
+                let values = values
+                    .iter()
+                    .map(|(_, val)| val.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{first} {second}: [{values}]")
+            })
+            .collect();
+
+        assert_eq!(
+            kerns,
+            vec![
+                // Greek: the exception (iotadasiaoxia, @GRK_iotaLeft)=30 is present
+                // only in the default master and its cells diverge, so the
+                // glyph-to-class pair is gone, replaced by per-member glyph-glyph
+                // pairs carrying the cell-faithful values: iotadasiaoxia falls
+                // through to the class-to-class value at wght 1 (50),
+                // iotapsilioxia to the class-to-glyph exception (30).
+                "iotadasiaoxia iotadasiaoxia: [30, 50]",
+                "iotadasiaoxia iotapsilioxia: [30, 30]",
+                // Ethiopic: the mirror case -- the exception
+                // (qhwee-ethiopic, @ethi_ca)=30 is present only in the *other*
+                // master, so the phantom would land on the default. Also split:
+                // ca-ethiopic keeps the class-to-glyph value (40) at wght 0.
+                "qhwee-ethiopic ca-ethiopic: [40, 30]",
+                "qhwee-ethiopic cee-ethiopic: [30, 30]",
+                // Uniform override: the class-to-glyph exceptions cover *every*
+                // member of @uoRight equally (one per member, same value), so no
+                // cell diverges and the compact glyph-to-class pair is kept, not
+                // split. But it must carry the agreed cell value [30, 70], not
+                // the class-to-class value (50) the backfill produced where the
+                // glyph-to-class exception is absent (which would shadow the
+                // class-to-glyph exceptions at wght 0 -- a phantom even though
+                // no two cells disagree).
+                "uoA @side2.uoRight: [30, 70]",
+                // The remaining pairs are untouched by the cell-level resolution;
+                // where a master omits one, the aligned value comes from the
+                // class-to-class backfill, which is correct for these kinds.
+                "@side1.GRK_iotaRight iotapsilioxia: [20, 30]",
+                "@side1.GRK_iotaRight @side2.GRK_iotaLeft: [60, 50]",
+                "@side1.ethi_qhee ca-ethiopic: [40, 50]",
+                "@side1.ethi_qhee @side2.ethi_ca: [30, 50]",
+                "@side1.uoLeft uoX: [30, 50]",
+                "@side1.uoLeft uoY: [30, 50]",
+                "@side1.uoLeft @side2.uoRight: [50, 50]",
+            ]
+        );
+    }
+
     fn assert_intermediate_layer(src: &str) {
         let result = TestCompile::compile_source(src);
         let font = result.font();
