@@ -2153,8 +2153,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .conditions()
             .map(|cond| {
                 let tag = cond.tag().to_raw();
-                let min = UserCoord::new(cond.min_value().parse_signed());
-                let max = UserCoord::new(cond.max_value().parse_signed());
+                let min = UserCoord::new(cond.min_value().parse());
+                let max = UserCoord::new(cond.max_value().parse());
                 let (axis_index, axis) = var_info.axis(tag).unwrap();
 
                 ConditionFormat1 {

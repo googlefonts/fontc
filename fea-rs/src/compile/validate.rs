@@ -248,7 +248,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             self.error(condition.tag().range(), "unknown axis");
             return;
         };
-        if (condition.min_value().parse_signed() as f64) < axis.min.into_inner().0 {
+        if condition.min_value().parse() < axis.min.into_inner().0 {
             self.error(
                 condition.min_value().range(),
                 format!(
@@ -257,7 +257,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 ),
             );
         }
-        if (condition.max_value().parse_signed() as f64) > axis.max.into_inner().0 {
+        if condition.max_value().parse() > axis.max.into_inner().0 {
             self.error(
                 condition.max_value().range(),
                 format!(
