@@ -265,23 +265,11 @@ fn build_variable_kern_adjustments(
             && let Some(members) = ir_groups.groups.get(second_group)
         {
             // group second-side members by their per-location cell value vector
-            let mut by_value: Vec<(KernAdjustments, Vec<GlyphName>)> = Vec::new();
-            for member in members {
-                if glyph_order.glyph_id(member).is_none() {
-                    continue;
-                }
-                let cell = (
-                    ir::KernSide::Glyph(first.clone()),
-                    ir::KernSide::Glyph(member.clone()),
-                );
+            let mut by_value = BTreeMap::<_, Vec<_>>::new();
+            for member in members.iter().filter(|name| glyph_order.contains(*name)) {
+                let cell = (first.clone().into(), member.clone().into());
                 let vector = resolve(&cell);
-                match by_value
-                    .iter_mut()
-                    .find(|(existing, _)| *existing == vector)
-                {
-                    Some((_, members)) => members.push(member.clone()),
-                    None => by_value.push((vector, vec![member.clone()])),
-                }
+                by_value.entry(vector).or_default().push(member.clone());
             }
             if by_value.len() == 1 {
                 // no cell diverges: keep the compact glyph-to-class pair, but
