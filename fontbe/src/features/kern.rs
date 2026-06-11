@@ -146,32 +146,12 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
             .collect::<BTreeMap<_, _>>();
 
         // Add IR kerns to builder. IR kerns are split by location so put them back together again.
-        let mut kern_by_pos: HashMap<_, _> = ir_kerns
+        let kern_by_pos: HashMap<_, _> = ir_kerns
             .iter()
             .map(|(_, ki)| (ki.location.clone(), ki.as_ref().to_owned()))
             .collect();
 
-        align_kerning(&ir_groups, &mut kern_by_pos);
-        let mut adjustments: HashMap<ir::KernPair, KernAdjustments> = Default::default();
-
-        // We want to add items to locations in the same order as the group locations
-        // so start with group locations and then find the matching kerning.
-        ir_groups
-            .locations
-            .iter()
-            .filter_map(|pos| kern_by_pos.get(pos))
-            .flat_map(|instance| {
-                instance
-                    .kerns
-                    .iter()
-                    .map(|(pair, adjustment)| (pair, (instance.location.clone(), *adjustment)))
-            })
-            .for_each(|(pair, (location, adjustment))| {
-                adjustments
-                    .entry(pair.clone())
-                    .or_default()
-                    .insert(location, adjustment);
-            });
+        let adjustments = build_variable_kern_adjustments(&ir_groups, &kern_by_pos);
 
         let adjustments: Vec<_> = adjustments
             .into_iter()
@@ -207,67 +187,68 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
     }
 }
 
-/// 'align' the kerning, ensuring each pair is defined for each location.
+/// Build the glyph -> containing-group lookups for each side, used by the UFO
+/// kerning value cascade in [`lookup_kerning_value`].
+fn glyph_to_group_maps(
+    groups: &KerningGroups,
+) -> (
+    HashMap<&GlyphName, &KernGroup>,
+    HashMap<&GlyphName, &KernGroup>,
+) {
+    let map_for = |is_side1: bool| {
+        groups
+            .groups
+            .iter()
+            .filter(move |(group, _)| matches!(group, KernGroup::Side1(_)) == is_side1)
+            .flat_map(|(group, glyphs)| glyphs.iter().map(move |glyph| (glyph, group)))
+            .collect::<HashMap<_, _>>()
+    };
+    (map_for(true), map_for(false))
+}
+
+/// Resolve every kern pair defined in any master to a value at every location.
 ///
 /// missing pairs are filled in via the UFO kerning value lookup algorithm:
 ///
 /// <https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-value-lookup-algorithm>
 ///
 /// in pythonland this happens in ufo2ft, here:
-/// <https://github.com/googlefonts/ufo2ft/blob/5fd168e65a0b0a/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L442>
-fn align_kerning(
-    groups: &KerningGroups,
-    instances: &mut HashMap<NormalizedLocation, KerningInstance>,
-) {
-    // all pairs defined in at least one instance
-    let all_known_pairs = instances
+/// <https://github.com/googlefonts/ufo2ft/blob/1a21d0071c69b1/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L748>
+fn build_variable_kern_adjustments(
+    ir_groups: &KerningGroups,
+    kern_by_pos: &HashMap<NormalizedLocation, KerningInstance>,
+) -> BTreeMap<ir::KernPair, KernAdjustments> {
+    let (side1_glyphs, side2_glyphs) = glyph_to_group_maps(ir_groups);
+    // resolve at the locations kerning is defined at
+    let sources = ir_groups
+        .locations
+        .iter()
+        .filter_map(|pos| kern_by_pos.get(pos))
+        .collect::<Vec<_>>();
+    // all pairs defined in at least one master
+    let all_pairs = kern_by_pos
         .values()
         .flat_map(|instance| instance.kerns.keys())
         .cloned()
         .collect::<HashSet<_>>();
 
-    let side1_glyph_to_group_map = groups
-        .groups
-        .iter()
-        .filter(|(group, _)| matches!(group, KernGroup::Side1(_)))
-        .flat_map(|(group, glyphs)| glyphs.iter().map(move |glyph| (glyph, group)))
-        .collect::<HashMap<_, _>>();
-    let side2_glyph_to_group_map = groups
-        .groups
-        .iter()
-        .filter(|(group, _)| matches!(group, KernGroup::Side2(_)))
-        .flat_map(|(group, glyphs)| glyphs.iter().map(move |glyph| (glyph, group)))
-        .collect::<HashMap<_, _>>();
+    let resolve = |pair: &ir::KernPair| -> KernAdjustments {
+        sources
+            .iter()
+            .map(|instance| {
+                let value =
+                    lookup_kerning_value(pair, &instance.kerns, &side1_glyphs, &side2_glyphs);
+                (instance.location.clone(), value)
+            })
+            .collect()
+    };
 
-    for instance in instances.values_mut() {
-        align_instance(
-            &all_known_pairs,
-            &mut instance.kerns,
-            &side1_glyph_to_group_map,
-            &side2_glyph_to_group_map,
-        )
+    let mut adjustments: BTreeMap<ir::KernPair, KernAdjustments> = Default::default();
+    for pair in all_pairs {
+        let values = resolve(&pair);
+        adjustments.insert(pair, values);
     }
-}
-
-fn align_instance(
-    all_pairs: &HashSet<ir::KernPair>,
-    instance: &mut BTreeMap<ir::KernPair, OrderedFloat<f64>>,
-    side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
-    side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
-) {
-    let mut buf = Vec::new();
-    // iterate the pairs that are not present in this instance
-    for pair in all_pairs.iter().filter(|pair| !instance.contains_key(pair)) {
-        let value = lookup_kerning_value(pair, instance, side1_glyphs, side2_glyphs);
-
-        // accumulate any additions and add at the end, otherwise newly added
-        // additions could influence the calculation of subsequent values
-        buf.push((pair, value));
-    }
-    // when done all pairs, add them to the instance
-    for (pair, value) in buf {
-        instance.insert(pair.to_owned(), value);
-    }
+    adjustments
 }
 
 // <https://github.com/fonttools/fonttools/blob/a3b9eddcafca/Lib/fontTools/ufoLib/kerning.py#L1>
@@ -277,6 +258,11 @@ fn lookup_kerning_value(
     side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
     side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
 ) -> OrderedFloat<f64> {
+    // the exact pair wins outright when the source defines it
+    if let Some(value) = kerning.get(pair) {
+        return *value;
+    }
+
     // if already a group, return it, else look for group for glyph
     fn get_group_if_glyph(
         side: &ir::KernSide,
@@ -1882,10 +1868,9 @@ mod tests {
         );
     }
 
-    // we had a bug where we were updating the kerning values in place, which
-    // meant the order in which we handled pairs could influence the results
+    // https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-value-lookup-algorithm
     #[test]
-    fn alignment_determinism() {
+    fn lookup_kerning_value_cascade() {
         let g1 = GlyphName::new("a");
         let g2 = GlyphName::new("b");
         let side1 = ir::KernGroup::Side1("aa".into());
@@ -1898,28 +1883,28 @@ mod tests {
         let group_glyph: ir::KernPair = (side1.clone().into(), g2.clone().into());
         let group_group: ir::KernPair = (side1.clone().into(), side2.clone().into());
 
-        let all_pairs = HashSet::from([
-            glyph_glyph.clone(),
-            glyph_group.clone(),
-            group_glyph.clone(),
-            group_group.clone(),
+        // all the candidate pairs for (a, b), most specific first
+        let mut kerning = BTreeMap::from([
+            (glyph_glyph.clone(), OrderedFloat(1.0)),
+            (glyph_group.clone(), OrderedFloat(2.0)),
+            (group_glyph.clone(), OrderedFloat(3.0)),
+            (group_group.clone(), OrderedFloat(4.0)),
         ]);
-        let mut kerns = BTreeMap::new();
-        kerns.insert(group_group.clone(), OrderedFloat::from(-70.));
-        kerns.insert(group_glyph.clone(), 10.0.into());
-        // explanation:
-        // we need to align glyph_glyph and glyph_group.
-        // - if we do glyph_group first, we will use the group_group value of
-        //   -70, and then when we do glyph_glyph we will use this value, since
-        //   glyph_group is preferred to group_glyph
-        // - but if we do glyph_glyph first, we will use the value from
-        //   group_glyph, which is set.
 
-        // run a few times because triggering depended on hashmap iteration order
-        for _ in 0..20 {
-            align_instance(&all_pairs, &mut kerns, &side1_glyphs, &side2_glyphs);
-            assert_eq!(kerns.get(&glyph_glyph).map(|x| x.0), Some(10.0f64));
-        }
+        let lookup = |kerning: &BTreeMap<_, _>| {
+            lookup_kerning_value(&glyph_glyph, kerning, &side1_glyphs, &side2_glyphs).0
+        };
+
+        // each candidate wins once the more specific ones are removed
+        assert_eq!(lookup(&kerning), 1.0); // the exact pair itself
+        kerning.remove(&glyph_glyph);
+        assert_eq!(lookup(&kerning), 2.0); // (glyph, group)
+        kerning.remove(&glyph_group);
+        assert_eq!(lookup(&kerning), 3.0); // (group, glyph)
+        kerning.remove(&group_glyph);
+        assert_eq!(lookup(&kerning), 4.0); // (group, group)
+        kerning.remove(&group_group);
+        assert_eq!(lookup(&kerning), 0.0); // fallback
     }
 
     #[test]
