@@ -1,0 +1,6 @@
+# https://github.com/googlefonts/fontc/issues/2034
+conditionset cool {
+	wght 700.5 900;
+    temp 100 300;
+} cool;
+
