@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="0" maximum="1000" default="0"/>
+  </axes>
+  <sources>
+    <source filename="PartialKernException-Regular.ufo" familyname="PartialKernException" stylename="Regular">
+      <location>
+        <dimension name="Weight" xvalue="0"/>
+      </location>
+    </source>
+    <source filename="PartialKernException-Bold.ufo" familyname="PartialKernException" stylename="Bold">
+      <location>
+        <dimension name="Weight" xvalue="1000"/>
+      </location>
+    </source>
+  </sources>
+</designspace>

@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>.notdef</key>
+    <string>_notdef.glif</string>
+    <key>ca-ethiopic</key>
+    <string>ca-ethiopic.glif</string>
+    <key>cee-ethiopic</key>
+    <string>cee-ethiopic.glif</string>
+    <key>iotadasiaoxia</key>
+    <string>iotadasiaoxia.glif</string>
+    <key>iotadasiavaria</key>
+    <string>iotadasiavaria.glif</string>
+    <key>iotapsilioxia</key>
+    <string>iotapsilioxia.glif</string>
+    <key>qhee-ethiopic</key>
+    <string>qhee-ethiopic.glif</string>
+    <key>qhwee-ethiopic</key>
+    <string>qhwee-ethiopic.glif</string>
+    <key>uoA</key>
+    <string>uoA_.glif</string>
+    <key>uoB</key>
+    <string>uoB_.glif</string>
+    <key>uoX</key>
+    <string>uoX_.glif</string>
+    <key>uoY</key>
+    <string>uoY_.glif</string>
+  </dict>
+</plist>
