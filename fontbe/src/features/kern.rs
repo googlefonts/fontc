@@ -151,7 +151,7 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
             .map(|(_, ki)| (ki.location.clone(), ki.as_ref().to_owned()))
             .collect();
 
-        let adjustments = build_variable_kern_adjustments(&ir_groups, &kern_by_pos);
+        let adjustments = build_variable_kern_adjustments(&ir_groups, &glyph_order, &kern_by_pos);
 
         let adjustments: Vec<_> = adjustments
             .into_iter()
@@ -214,8 +214,22 @@ fn glyph_to_group_maps(
 ///
 /// in pythonland this happens in ufo2ft, here:
 /// <https://github.com/googlefonts/ufo2ft/blob/1a21d0071c69b1/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L748>
+///
+/// The exception is a glyph-to-class pair that is present in only some
+/// masters: the cascade would backfill it, where missing, with the more
+/// general class-to-class value, and -- since kern rules are ordered
+/// most-specific-first and the first match wins -- that backfill shadows
+/// competing class-to-glyph exceptions on the cells they share, rendering
+/// "phantom" values there that the sources never resolve to. Such a pair
+/// is instead resolved cell by cell: when every member of the class lands
+/// on the same values, the compact glyph-to-class pair is kept, carrying
+/// those cell values; otherwise it is split into one glyph-glyph pair per
+/// member. See <https://github.com/googlefonts/fontc/issues/2035>; this
+/// mirrors the equivalent fix in ufo2ft's kernFeatureWriter
+/// (<https://github.com/googlefonts/ufo2ft/issues/988>).
 fn build_variable_kern_adjustments(
     ir_groups: &KerningGroups,
+    glyph_order: &GlyphOrder,
     kern_by_pos: &HashMap<NormalizedLocation, KerningInstance>,
 ) -> BTreeMap<ir::KernPair, KernAdjustments> {
     let (side1_glyphs, side2_glyphs) = glyph_to_group_maps(ir_groups);
@@ -244,11 +258,81 @@ fn build_variable_kern_adjustments(
     };
 
     let mut adjustments: BTreeMap<ir::KernPair, KernAdjustments> = Default::default();
-    for pair in all_pairs {
-        let values = resolve(&pair);
-        adjustments.insert(pair, values);
+    for key in all_pairs {
+        // resolve glyph-to-class exceptions at the cell level (see the doc
+        // comment above)
+        if let (ir::KernSide::Glyph(first), ir::KernSide::Group(second_group)) = &key
+            && let Some(members) = ir_groups.groups.get(second_group)
+        {
+            // group second-side members by their per-location cell value vector
+            let mut by_value: Vec<(KernAdjustments, Vec<GlyphName>)> = Vec::new();
+            for member in members {
+                if glyph_order.glyph_id(member).is_none() {
+                    continue;
+                }
+                let cell = (
+                    ir::KernSide::Glyph(first.clone()),
+                    ir::KernSide::Glyph(member.clone()),
+                );
+                let vector = resolve(&cell);
+                match by_value
+                    .iter_mut()
+                    .find(|(existing, _)| *existing == vector)
+                {
+                    Some((_, members)) => members.push(member.clone()),
+                    None => by_value.push((vector, vec![member.clone()])),
+                }
+            }
+            if by_value.len() == 1 {
+                // no cell diverges: keep the compact glyph-to-class pair, but
+                // carrying the agreed *cell* value -- not the key-level value,
+                // which class-to-glyph exceptions covering every cell
+                // uniformly never resolve to.
+                let (vector, _members) = by_value.into_iter().next().unwrap();
+                insert_resolved(&mut adjustments, key, vector);
+            } else {
+                // cells diverge: replace the glyph-to-class pair with one
+                // glyph-glyph pair per second-side member, each carrying its
+                // own cell value vector. (With no members in the glyph order
+                // this emits nothing, dropping the pair like `exec` would.)
+                for (vector, members) in by_value {
+                    for member in members {
+                        let pair = (
+                            ir::KernSide::Glyph(first.clone()),
+                            ir::KernSide::Glyph(member),
+                        );
+                        insert_resolved(&mut adjustments, pair, vector.clone());
+                    }
+                }
+            }
+            continue;
+        }
+        let values = resolve(&key);
+        insert_resolved(&mut adjustments, key, values);
     }
     adjustments
+}
+
+/// Insert a resolved pair; colliding pairs always carry equal values.
+///
+/// Two keys can produce the same pair: the cell-level split of a
+/// glyph-to-class exception emits glyph-glyph pairs, and one of those may
+/// also be defined explicitly (encountered in either order). Both resolve
+/// the same cell against the same unmodified sources, so the values cannot
+/// differ and the overwrite is benign. The debug_assert cannot fire; it
+/// documents that invariant and is compiled out of release builds.
+fn insert_resolved(
+    adjustments: &mut BTreeMap<ir::KernPair, KernAdjustments>,
+    pair: ir::KernPair,
+    values: KernAdjustments,
+) {
+    debug_assert!(
+        adjustments
+            .get(&pair)
+            .is_none_or(|previous| previous == &values),
+        "conflicting variable kern values for {pair:?}"
+    );
+    adjustments.insert(pair, values);
 }
 
 // <https://github.com/fonttools/fonttools/blob/a3b9eddcafca/Lib/fontTools/ufoLib/kerning.py#L1>
