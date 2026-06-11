@@ -753,12 +753,12 @@ impl Condition {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub(crate) fn min_value(&self) -> Number {
-        self.iter().find_map(Number::cast).unwrap()
+    pub(crate) fn min_value(&self) -> FloatLike {
+        self.iter().find_map(FloatLike::cast).unwrap()
     }
 
-    pub(crate) fn max_value(&self) -> Number {
-        self.iter().filter_map(Number::cast).nth(1).unwrap()
+    pub(crate) fn max_value(&self) -> FloatLike {
+        self.iter().filter_map(FloatLike::cast).nth(1).unwrap()
     }
 }
 

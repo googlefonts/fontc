@@ -18,8 +18,11 @@ pub(crate) fn condition_set(parser: &mut Parser) {
             return false;
         }
         parser.in_node(AstKind::ConditionNode, |parser| {
-            parser.expect_tag(TokenSet::TOP_SEMI.add(Kind::Number));
-            parser.repeat(|p| p.expect_recover(Kind::Number, TokenSet::TOP_SEMI), 2);
+            parser.expect_tag(TokenSet::TOP_SEMI.union(TokenSet::FLOAT_LIKE));
+            parser.repeat(
+                |p| p.expect_recover(TokenSet::FLOAT_LIKE, TokenSet::TOP_SEMI),
+                2,
+            );
             parser.expect_semi();
         });
 
