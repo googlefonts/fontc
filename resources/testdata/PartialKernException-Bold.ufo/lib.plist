@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>public.glyphOrder</key>
+    <array>
+      <string>.notdef</string>
+      <string>iotadasiaoxia</string>
+      <string>iotadasiavaria</string>
+      <string>iotapsilioxia</string>
+      <string>qhwee-ethiopic</string>
+      <string>qhee-ethiopic</string>
+      <string>ca-ethiopic</string>
+      <string>cee-ethiopic</string>
+      <string>uoA</string>
+      <string>uoB</string>
+      <string>uoX</string>
+      <string>uoY</string>
+    </array>
+  </dict>
+</plist>

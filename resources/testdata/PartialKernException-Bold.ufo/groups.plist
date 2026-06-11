@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>public.kern1.GRK_iotaRight</key>
+    <array>
+      <string>iotadasiaoxia</string>
+      <string>iotadasiavaria</string>
+    </array>
+    <key>public.kern1.ethi_qhee</key>
+    <array>
+      <string>qhwee-ethiopic</string>
+      <string>qhee-ethiopic</string>
+    </array>
+    <key>public.kern1.uoLeft</key>
+    <array>
+      <string>uoA</string>
+      <string>uoB</string>
+    </array>
+    <key>public.kern2.GRK_iotaLeft</key>
+    <array>
+      <string>iotapsilioxia</string>
+      <string>iotadasiaoxia</string>
+    </array>
+    <key>public.kern2.ethi_ca</key>
+    <array>
+      <string>ca-ethiopic</string>
+      <string>cee-ethiopic</string>
+    </array>
+    <key>public.kern2.uoRight</key>
+    <array>
+      <string>uoX</string>
+      <string>uoY</string>
+    </array>
+  </dict>
+</plist>

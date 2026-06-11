@@ -1,0 +1,33 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>public.kern1.GRK_iotaRight</key>
+    <dict>
+      <key>iotapsilioxia</key>
+      <integer>30</integer>
+      <key>public.kern2.GRK_iotaLeft</key>
+      <integer>50</integer>
+    </dict>
+    <key>public.kern1.ethi_qhee</key>
+    <dict>
+      <key>public.kern2.ethi_ca</key>
+      <integer>50</integer>
+    </dict>
+    <key>public.kern1.uoLeft</key>
+    <dict>
+      <key>public.kern2.uoRight</key>
+      <integer>50</integer>
+    </dict>
+    <key>qhwee-ethiopic</key>
+    <dict>
+      <key>public.kern2.ethi_ca</key>
+      <integer>30</integer>
+    </dict>
+    <key>uoA</key>
+    <dict>
+      <key>public.kern2.uoRight</key>
+      <integer>70</integer>
+    </dict>
+  </dict>
+</plist>
