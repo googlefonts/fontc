@@ -14,14 +14,15 @@ pub(crate) fn condition_set(parser: &mut Parser) {
     // <tag> <min> <max>;, e.g.
     // wght 100 300;
     fn condition(parser: &mut Parser) -> bool {
-        const FLOAT_LIKE: TokenSet = TokenSet::new(&[Kind::Number, Kind::Float]);
-
         if !parser.matches(0, TokenSet::TAG_LIKE) {
             return false;
         }
         parser.in_node(AstKind::ConditionNode, |parser| {
-            parser.expect_tag(TokenSet::TOP_SEMI.union(FLOAT_LIKE));
-            parser.repeat(|p| p.expect_recover(FLOAT_LIKE, TokenSet::TOP_SEMI), 2);
+            parser.expect_tag(TokenSet::TOP_SEMI.union(TokenSet::FLOAT_LIKE));
+            parser.repeat(
+                |p| p.expect_recover(TokenSet::FLOAT_LIKE, TokenSet::TOP_SEMI),
+                2,
+            );
             parser.expect_semi();
         });
 
