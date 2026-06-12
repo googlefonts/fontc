@@ -13,7 +13,7 @@ fn main() {
     let args = Args::parse();
 
     // catch and print errors manually, to avoid just seeing the Debug impls
-    // The default log level is error so the user will see it unless they specifically turned off logging
+    // The default log level is warn so the user will see it unless they specifically turned off logging
     if let Err(e) = run(args) {
         let mut error_displayed = false;
         let mut additional = "";
@@ -46,7 +46,9 @@ fn run(args: Args) -> Result<(), Error> {
         .create_timer(AnyWorkId::InternalTiming("Init logger"), 0)
         .queued()
         .run();
-    let mut log_cfg = env_logger::builder();
+    // default to WARN; RUST_LOG or --log can still override
+    let mut log_cfg =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"));
     log_cfg.format(|buf, record| {
         let ts = buf.timestamp_micros();
         let style = buf.default_level_style(record.level());

@@ -115,7 +115,7 @@ pub struct Args {
     #[arg(long = "vv", default_value = "false")]
     pub verbose_version: bool,
 
-    /// Set the log level, either globally or per module.
+    /// Set the log level, either globally or per module. Defaults to warn.
     ///
     /// See <https://docs.rs/env_logger/latest/env_logger/#enabling-logging> for format.
     #[arg(long)]
