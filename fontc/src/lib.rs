@@ -851,6 +851,22 @@ mod tests {
     }
 
     #[test]
+    fn missing_component_does_not_decompose_siblings() {
+        // 'A' references 'B' (present) and 'F' (missing). A missing component
+        // must not cause the whole glyph to be decomposed into a simple glyph;
+        // 'A' should stay a composite referencing only 'B', matching fontmake.
+        // https://github.com/googlefonts/fontc/issues/1858
+        let result = TestCompile::compile_source("glyphs3/MissingComponent.glyphs");
+        let b_gid = result.get_gid("B");
+
+        let RawGlyph::Composite(glyph) = result.read_be_glyph("A") else {
+            panic!("'A' should remain a composite glyph, not be decomposed");
+        };
+        let comp_gids: Vec<_> = glyph.components().iter().map(|c| c.glyph).collect();
+        assert_eq!(comp_gids, vec![b_gid], "'A' should reference only 'B'");
+    }
+
+    #[test]
     fn compile_sets_xmin_eq_lsb_flag() {
         let result = TestCompile::compile_source("fontinfo.designspace");
         let head = result.font().head().unwrap();
