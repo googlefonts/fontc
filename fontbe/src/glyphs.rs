@@ -1085,6 +1085,21 @@ mod tests {
         assert_eq!(c.anchor, Anchor::Offset { x: 100, y: -200 });
     }
 
+    #[test]
+    fn component_transform_rounds_in_f64() {
+        // Regression test for https://github.com/googlefonts/fontc/issues/1966.
+        // Component scales are f64 and must be packed to F2Dot14 in f64; narrowing
+        // to f32 first can nudge a value onto an exact .5 tie and round it the
+        // "wrong" way. ShipporiAntique has a 0.98526 component scale: fonttools and
+        // fontmake pack it to 0x3F0E (16142), but F2Dot14::from_f32(0.98526 as f32)
+        // gives 16143 because 0.98526_f32 * 16384 is exactly 16142.5.
+        let transform = Affine::new([0.98526, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        let (c, _) = create_component_ref_gid(GlyphId16::new(1), &transform).unwrap();
+        assert_eq!(c.transform.xx, F2Dot14::from_bits(16142));
+        // Guard against a regression to the f32-narrowing path:
+        assert_ne!(c.transform.xx, F2Dot14::from_f32(0.98526_f32));
+    }
+
     #[rstest]
     #[case::empty(GlyphType::Simple, 0)]
     #[case::simple(GlyphType::Simple, 4)]
