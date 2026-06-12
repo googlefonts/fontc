@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use smallvec::SmallVec;
 use write_fonts::{
     tables::layout::{ConditionFormat1, ConditionSet},
-    types::{F2Dot14, Tag},
+    types::Tag,
 };
 
 /// A rectilinear region of an n-dimensional designspace.
@@ -56,8 +56,8 @@ impl NBox {
                     .position(|a| a.tag == *tag)
                     .expect("should be checked before now");
                 let axis = static_meta.axes.iter().nth(axis_index).unwrap();
-                let min = F2Dot14::from_f32(min.to_f64() as _);
-                let max = F2Dot14::from_f32(max.to_f64() as _);
+                let min = min.to_f2dot14();
+                let max = max.to_f2dot14();
                 let axis_min = axis.min.to_normalized(&axis.converter).to_f2dot14();
                 let axis_max = axis.max.to_normalized(&axis.converter).to_f2dot14();
 

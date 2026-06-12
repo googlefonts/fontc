@@ -96,8 +96,10 @@ fn create_component_ref_gid(
 
     // By this point, fontir should have decomposed any components with transforms
     // outside the -2.0 to +2.0 range. For values between MAX_F2DOT14 and 2.0,
-    // F2Dot14::from_f32() will saturate to MAX_F2DOT14, matching fonttools behavior:
+    // F2Dot14::from_f64() will saturate to MAX_F2DOT14, matching fonttools behavior:
     // https://github.com/googlefonts/fontc/issues/1638
+    // The coeffs are f64; pack directly in f64 to avoid an intermediate narrowing
+    // to f32 that can flip rounding ties (https://github.com/googlefonts/fontc/issues/1966).
 
     let component = Component::new(
         gid,
@@ -106,10 +108,10 @@ fn create_component_ref_gid(
             y: f.ot_round(),
         },
         Transform {
-            xx: F2Dot14::from_f32(a as f32),
-            yx: F2Dot14::from_f32(b as f32),
-            xy: F2Dot14::from_f32(c as f32),
-            yy: F2Dot14::from_f32(d as f32),
+            xx: F2Dot14::from_f64(a),
+            yx: F2Dot14::from_f64(b),
+            xy: F2Dot14::from_f64(c),
+            yy: F2Dot14::from_f64(d),
         },
         flags,
     );
@@ -1065,7 +1067,7 @@ mod tests {
     #[test]
     fn test_component_transform_saturation() {
         // Test that component 2x2 transforms with values exceeding F2Dot14's range
-        // get saturated to min/max by font-types' F2Dot14::from_f32.
+        // get saturated to min/max by font-types' F2Dot14::from_f64.
         // We are interested in particular to values > MAX_F2DOT14 but <= 2.0 (e.g.
         // 'xx' below), which fonttools TTGlyphPen clamps to MAX_F2DOT14.
         // Components with transform values < -2.0 or > 2.0 are always decomposed
@@ -1083,6 +1085,21 @@ mod tests {
         assert_eq!(c.transform.xy.to_f32(), 1.0);
         // translation offsets are encoded as Fixed16.16 so stay the same
         assert_eq!(c.anchor, Anchor::Offset { x: 100, y: -200 });
+    }
+
+    #[test]
+    fn component_transform_rounds_in_f64() {
+        // Regression test for https://github.com/googlefonts/fontc/issues/1966.
+        // Component scales are f64 and must be packed to F2Dot14 in f64; narrowing
+        // to f32 first can nudge a value onto an exact .5 tie and round it the
+        // "wrong" way. ShipporiAntique has a 0.98526 component scale: fonttools and
+        // fontmake pack it to 0x3F0E (16142), but F2Dot14::from_f32(0.98526 as f32)
+        // gives 16143 because 0.98526_f32 * 16384 is exactly 16142.5.
+        let transform = Affine::new([0.98526, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        let (c, _) = create_component_ref_gid(GlyphId16::new(1), &transform).unwrap();
+        assert_eq!(c.transform.xx, F2Dot14::from_bits(16142));
+        // Guard against a regression to the f32-narrowing path:
+        assert_ne!(c.transform.xx, F2Dot14::from_f32(0.98526_f32));
     }
 
     #[rstest]

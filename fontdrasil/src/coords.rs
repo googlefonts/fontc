@@ -167,7 +167,7 @@ impl Coord<NormalizedSpace> {
     };
 
     pub fn to_f2dot14(self) -> F2Dot14 {
-        F2Dot14::from_f32(self.to_f64() as _)
+        F2Dot14::from_f64(self.to_f64())
     }
 }
 
@@ -295,7 +295,7 @@ impl From<UserCoord> for Fixed {
 
 impl From<NormalizedCoord> for F2Dot14 {
     fn from(value: NormalizedCoord) -> Self {
-        F2Dot14::from_f32(value.to_f64() as _)
+        F2Dot14::from_f64(value.to_f64())
     }
 }
 
