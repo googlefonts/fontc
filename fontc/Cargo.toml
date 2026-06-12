@@ -49,6 +49,10 @@ rayon = { workspace = true, optional = true }
 # just for fontc!
 crossbeam-channel = "0.5.6"
 
+# Not used directly: this only exists so the workspace pin on `time` (see the
+# root Cargo.toml) takes effect on resolution. Remove together with that pin.
+time = { workspace = true }
+
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]

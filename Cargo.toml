@@ -21,6 +21,10 @@ rayon = "1.6"
 icu_properties = "=2.1"
 smallvec = {version = "1.15", features = ["const_new"]}
 
+# TEMPORARY: see https://github.com/googlefonts/fontc/issues/2042
+# and https://github.com/time-rs/time/issues/783.
+time = "=0.3.47"
+
 # fontations etc
 write-fonts = { version = "0.49.1", features = ["serde", "read"] }
 skrifa = { version = "0.43.2", features = ["traversal"] }
