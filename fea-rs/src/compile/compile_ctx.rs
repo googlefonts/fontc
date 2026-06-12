@@ -26,7 +26,7 @@ use write_fonts::{
         },
         variations::{common_builder::RemapVarStore, ivs_builder::VariationStoreBuilder},
     },
-    types::{F2Dot14, NameId, Tag},
+    types::{NameId, Tag},
 };
 
 use crate::{
@@ -2159,12 +2159,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
                 ConditionFormat1 {
                     axis_index: axis_index as u16,
-                    filter_range_min_value: F2Dot14::from_f32(
-                        min.to_normalized(&axis.converter).to_f64() as _,
-                    ),
-                    filter_range_max_value: F2Dot14::from_f32(
-                        max.to_normalized(&axis.converter).to_f64() as _,
-                    ),
+                    filter_range_min_value: min.to_normalized(&axis.converter).to_f2dot14(),
+                    filter_range_max_value: max.to_normalized(&axis.converter).to_f2dot14(),
                 }
                 .into()
             })

@@ -96,8 +96,10 @@ fn create_component_ref_gid(
 
     // By this point, fontir should have decomposed any components with transforms
     // outside the -2.0 to +2.0 range. For values between MAX_F2DOT14 and 2.0,
-    // F2Dot14::from_f32() will saturate to MAX_F2DOT14, matching fonttools behavior:
+    // F2Dot14::from_f64() will saturate to MAX_F2DOT14, matching fonttools behavior:
     // https://github.com/googlefonts/fontc/issues/1638
+    // The coeffs are f64; pack directly in f64 to avoid an intermediate narrowing
+    // to f32 that can flip rounding ties (https://github.com/googlefonts/fontc/issues/1966).
 
     let component = Component::new(
         gid,
@@ -106,10 +108,10 @@ fn create_component_ref_gid(
             y: f.ot_round(),
         },
         Transform {
-            xx: F2Dot14::from_f32(a as f32),
-            yx: F2Dot14::from_f32(b as f32),
-            xy: F2Dot14::from_f32(c as f32),
-            yy: F2Dot14::from_f32(d as f32),
+            xx: F2Dot14::from_f64(a),
+            yx: F2Dot14::from_f64(b),
+            xy: F2Dot14::from_f64(c),
+            yy: F2Dot14::from_f64(d),
         },
         flags,
     );
@@ -1065,7 +1067,7 @@ mod tests {
     #[test]
     fn test_component_transform_saturation() {
         // Test that component 2x2 transforms with values exceeding F2Dot14's range
-        // get saturated to min/max by font-types' F2Dot14::from_f32.
+        // get saturated to min/max by font-types' F2Dot14::from_f64.
         // We are interested in particular to values > MAX_F2DOT14 but <= 2.0 (e.g.
         // 'xx' below), which fonttools TTGlyphPen clamps to MAX_F2DOT14.
         // Components with transform values < -2.0 or > 2.0 are always decomposed

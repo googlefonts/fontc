@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use write_fonts::{
     tables::{gvar, variations::RegionAxisCoordinates},
-    types::{F2Dot14, Tag},
+    types::Tag,
 };
 
 #[derive(Debug, Error)]
@@ -767,9 +767,9 @@ impl Tent {
     /// Create an equivalent [RegionAxisCoordinates] instance.
     pub fn to_region_axis_coords(&self) -> RegionAxisCoordinates {
         RegionAxisCoordinates {
-            start_coord: F2Dot14::from_f32(self.min.to_f64() as _),
-            peak_coord: F2Dot14::from_f32(self.peak.to_f64() as _),
-            end_coord: F2Dot14::from_f32(self.max.to_f64() as _),
+            start_coord: self.min.to_f2dot14(),
+            peak_coord: self.peak.to_f2dot14(),
+            end_coord: self.max.to_f2dot14(),
         }
     }
 }

@@ -1461,7 +1461,7 @@ fn has_overflowing_2x2_transforms(
 ) -> bool {
     // MAX_F2DOT14 is 1.99993896484375 but we still allow up to 2.0 to match fonttools
     // https://github.com/fonttools/fonttools/blob/c4e96980/Lib/fontTools/pens/ttGlyphPen.py#L89-L128
-    // fontbe uses F2Dot14::from_f32() which saturates at MAX_F2DOT14
+    // fontbe uses F2Dot14::from_f64() which saturates at MAX_F2DOT14
     let overflow_info = sources.iter().find_map(|(location, instance)| {
         instance.components.iter().find_map(|component| {
             component.transform.as_coeffs()[..4]
