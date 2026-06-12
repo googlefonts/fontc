@@ -100,9 +100,9 @@ jobs:
     env:
       TOOL: ${{ needs.detect.outputs.tool }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           architecture: ${{ matrix.platform.python-architecture }}
@@ -170,13 +170,13 @@ jobs:
           cd -
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: ${{ needs.detect.outputs.working-directory }}/dist
 
       - name: Upload binary artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: |
@@ -198,7 +198,7 @@ jobs:
           - target: "aarch64-unknown-linux-gnu"
             manylinux: "2014"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build Wheels
         uses: PyO3/maturin-action@v1
@@ -220,13 +220,13 @@ jobs:
         run: tar czvf target/release/${TOOL}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${TOOL}
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: ${{ needs.detect.outputs.working-directory }}/dist
 
       - name: Upload binary artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz
@@ -252,10 +252,10 @@ jobs:
     steps:
       # checkout@v3 doesn't work inside the manylinux container:
       # https://github.com/actions/checkout/issues/1487
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
 
       - name: Build Wheels
-        uses: PyO3/maturin-action@main
+        uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.compatibility }}
@@ -267,13 +267,13 @@ jobs:
         run: tar czvf target/release/${TOOL}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${TOOL}
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: ${{ needs.detect.outputs.working-directory }}/dist
 
       - name: Upload binary artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz
@@ -289,7 +289,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: wheels-${{ needs.detect.outputs.tool }}-*
           # so that all artifacts are downloaded in the same directory specified by 'path'
@@ -311,12 +311,12 @@ jobs:
     env:
       TOOL: ${{ needs.detect.outputs.tool }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: binaries-${{ needs.detect.outputs.tool }}-*
           merge-multiple: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: wheels-${{ needs.detect.outputs.tool }}-*
           merge-multiple: true
@@ -364,7 +364,7 @@ jobs:
           fi
 
       - name: Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ${{ steps.before_release.outputs.release_title }}
           files: |
