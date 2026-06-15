@@ -23,7 +23,7 @@ axisregistry==0.4.16
     # via gftools
 babelfont==3.1.3
     # via gftools
-beautifulsoup4==4.14.3
+beautifulsoup4==4.15.0
     # via gftools
 booleanoperations==0.10.0
     # via
@@ -57,7 +57,7 @@ charset-normalizer==3.4.7
     # via requests
 compreffor==0.6.0
     # via ufo2ft
-cryptography==48.0.0
+cryptography==49.0.0
     # via pyjwt
 defcon[lxml,pens]==0.12.2
     # via
@@ -68,7 +68,7 @@ defcon[lxml,pens]==0.12.2
     #   ufoprocessor
 ffmpeg-python==0.2.0
     # via gftools
-filelock==3.29.0
+filelock==3.29.4
     # via youseedee
 font-v==2.1.0
     # via gftools
@@ -89,7 +89,7 @@ fontmath==0.10.0
     #   ufoprocessor
 fontparts==1.0.0
     # via ufoprocessor
-fontpens==0.3.1
+fontpens==0.4.0
     # via defcon
 fonttools[lxml,repacker,ufo,unicode,woff]==4.63.0
     # via
@@ -146,7 +146,7 @@ glyphslib==6.13.1
     #   gftools
     #   glyphsets
     #   ttx-diff
-idna==3.17
+idna==3.18
     # via requests
 importlib-resources==7.1.0
     # via gfsubsets
@@ -263,7 +263,7 @@ tabulate==0.10.0
     #   glyphsets
 toml==0.10.2
     # via nanoemoji
-tqdm==4.67.3
+tqdm==4.68.2
     # via afdko
 ttfautohint-py==0.6.0
     # via gftools
@@ -272,7 +272,7 @@ typing-extensions==4.15.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.8.1
+ufo2ft[cffsubr,compreffor]==3.8.2
     # via
     #   fontmake
     #   nanoemoji
@@ -293,7 +293,7 @@ ufonormalizer==0.6.3
     # via afdko
 ufoprocessor==1.14.1
     # via afdko
-uharfbuzz==0.54.1
+uharfbuzz==0.55.0
     # via
     #   fonttools
     #   vharfbuzz
@@ -313,7 +313,7 @@ vttlib==0.12.0
     # via gftools
 youseedee==0.7.0
     # via glyphsets
-zopfli==0.4.2
+zopfli==0.4.3
     # via
     #   fonttools
     #   nanoemoji
