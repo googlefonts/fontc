@@ -39,6 +39,7 @@ JSON:
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -551,6 +552,17 @@ def drop_weird_names(ttx):
     )
     for drop in drops:
         drop.getparent().remove(drop)
+
+
+def strip_fontc_version_tag(ttx):
+    # fontc appends ";fontc <version>" to the version string (nameID 5); fontmake
+    # does not, so strip it before comparing. Mirror the Rust predicate in
+    # name.rs: only ";fontc " followed by a digit (the SemVer) is the stamp --
+    # a human note like ";fontc is great" is left intact, and matched only
+    # through the end of that segment so any other content/whitespace survives.
+    for record in ttx.xpath("//name/namerecord[@nameID='5']"):
+        if record.text:
+            record.text = re.sub(r";fontc (?=\d)[^;\s]*", "", record.text)
 
 
 def erase_checksum(ttx):
@@ -1210,6 +1222,8 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
         drop_weird_names(ttx)
+
+        strip_fontc_version_tag(ttx)
 
         # for matching purposes checksum is just noise
         erase_checksum(ttx)
