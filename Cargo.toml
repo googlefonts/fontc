@@ -16,7 +16,8 @@ thiserror = "2.0"
 log = "0.4"
 env_logger = "0.11.0"
 parking_lot = "0.12.1"
-clap = { version = "4.0.32", features = ["derive"] }
+# "string" lets us pass a runtime-built version string to #[command(version = ...)]
+clap = { version = "4.0.32", features = ["derive", "string"] }
 rayon = "1.6"
 icu_properties = "=2.1"
 smallvec = {version = "1.15", features = ["const_new"]}

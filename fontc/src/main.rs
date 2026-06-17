@@ -73,13 +73,21 @@ fn run(args: Args) -> Result<(), Error> {
 }
 
 fn print_verbose_version() -> Result<(), std::io::Error> {
-    writeln!(
-        std::io::stdout(),
-        "{} {} @ {}\n",
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION"),
-        env!("VERGEN_GIT_SHA")
-    )?;
+    let version = fontc::version();
+    // In a git-less build (e.g. `cargo install`) vergen's idempotent mode sets
+    // VERGEN_GIT_SHA to the literal "VERGEN_IDEMPOTENT_OUTPUT" sentinel (see
+    // fontbe::version); drop the "@ <sha>" rather than print that. is_empty()
+    // covers a var that wasn't emitted at all.
+    let sha = option_env!("VERGEN_GIT_SHA").unwrap_or_default();
+    if sha.is_empty() || sha.starts_with("VERGEN_") {
+        writeln!(std::io::stdout(), "{} {version}\n", env!("CARGO_PKG_NAME"))?;
+    } else {
+        writeln!(
+            std::io::stdout(),
+            "{} {version} @ {sha}\n",
+            env!("CARGO_PKG_NAME"),
+        )?;
+    }
     writeln!(std::io::stdout(), "{}", env!("VERGEN_RUSTC_HOST_TRIPLE"))?;
     writeln!(
         std::io::stdout(),
