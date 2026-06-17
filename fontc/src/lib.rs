@@ -4,6 +4,7 @@ mod error;
 #[cfg(not(feature = "rayon"))]
 mod norayon;
 mod timing;
+mod version;
 pub mod work;
 mod workload;
 
@@ -122,6 +123,14 @@ impl std::ops::Not for DisableFlags {
     }
 }
 
+/// The canonical fontc version string (e.g. `0.6.1-dev.394+gd62ba016.dirty`),
+/// reported by `--version`/`--vv` and stamped into the `name` table of every
+/// font fontc builds. See the `version` module and
+/// <https://github.com/googlefonts/fontc/issues/2048>.
+pub fn version() -> String {
+    crate::version::version_string(env!("VERGEN_GIT_DESCRIBE"), env!("CARGO_PKG_VERSION"))
+}
+
 /// Options for font compilation.
 ///
 /// Configures how the font is compiled (flags, output paths, etc.)
@@ -219,6 +228,7 @@ fn generate_font_internal(
     let fe_root = FeContext::new_root(flags, options.ir_dir.clone());
     let be_root = BeContext::new_root(
         flags,
+        Some(format!("fontc {}", version()).into()),
         options.ir_dir.clone(),
         options.debug_dir.clone(),
         options.compile_debg,
@@ -420,6 +430,7 @@ mod tests {
             let fe_context = FeContext::new_root(flags, options.ir_dir.clone());
             let be_context = BeContext::new_root(
                 flags,
+                Some(format!("fontc {}", crate::version()).into()),
                 options.ir_dir.clone(),
                 options.debug_dir.clone(),
                 options.compile_debg,
@@ -1540,13 +1551,22 @@ mod tests {
         assert_eq!(vec![Path::new("font.ttf")], outputs);
     }
 
+    /// Strip the build-dependent ";fontc <version>" tag that fontc stamps onto
+    /// the version string (name ID 5), so tests can assert stable values.
+    /// See https://github.com/googlefonts/fontc/issues/2048
+    fn strip_fontc_version_tag(s: &str) -> &str {
+        s.split_once(";fontc ").map_or(s, |(head, _)| head)
+    }
+
     fn resolve_name(name: &Name, id: NameId) -> Option<String> {
         name.name_record().iter().find_map(|nr| {
             (nr.name_id() == id).then(|| {
-                nr.string(name.string_data())
+                let resolved = nr
+                    .string(name.string_data())
                     .unwrap()
                     .chars()
-                    .collect::<String>()
+                    .collect::<String>();
+                strip_fontc_version_tag(&resolved).to_string()
             })
         })
     }
@@ -4121,10 +4141,11 @@ mod tests {
             .name_record()
             .iter()
             .map(|rec| {
+                let value = rec.string(name.string_data()).unwrap().to_string();
                 (
                     rec.name_id(),
                     rec.language_id(),
-                    rec.string(name.string_data()).unwrap().to_string(),
+                    strip_fontc_version_tag(&value).to_string(),
                 )
             })
             .collect::<Vec<_>>();

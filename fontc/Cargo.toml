@@ -56,6 +56,7 @@ time = { workspace = true }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
+semver = "1"
 diff.workspace = true
 tempfile.workspace = true
 pretty_assertions.workspace = true
