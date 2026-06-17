@@ -228,7 +228,7 @@ fn generate_font_internal(
     let fe_root = FeContext::new_root(flags, options.ir_dir.clone());
     let be_root = BeContext::new_root(
         flags,
-        Some(format!("fontc {}", version()).into()),
+        Some(version().into()),
         options.ir_dir.clone(),
         options.debug_dir.clone(),
         options.compile_debg,
@@ -430,7 +430,7 @@ mod tests {
             let fe_context = FeContext::new_root(flags, options.ir_dir.clone());
             let be_context = BeContext::new_root(
                 flags,
-                Some(format!("fontc {}", crate::version()).into()),
+                Some(crate::version().into()),
                 options.ir_dir.clone(),
                 options.debug_dir.clone(),
                 options.compile_debg,

@@ -61,12 +61,11 @@ impl Work<Context, AnyWorkId, Error> for NameWork {
             name_records.sort();
         }
 
-        // Stamp the caller's compiler identity (e.g. "fontc 0.6.1-dev...") into
-        // the version string (name ID 5), so the tool that built a shipping font
-        // binary can be identified. The whole stamp is supplied by the caller;
-        // fontbe doesn't assume it was fontc.
-        if let Some(stamp) = context.compiler_version.as_deref() {
-            stamp_compiler_version(&mut name_records, stamp);
+        // Stamp the fontc version into the version string (name ID 5) so a
+        // shipping font binary records which fontc built it (see #2048). fontc
+        // threads the version in; None means don't stamp.
+        if let Some(version) = context.compiler_version.as_deref() {
+            stamp_compiler_version(&mut name_records, version);
         }
 
         context.name.set(Name::new(name_records));
@@ -74,41 +73,29 @@ impl Work<Context, AnyWorkId, Error> for NameWork {
     }
 }
 
-/// Append `;{stamp}` to every version string (name ID 5) record, replacing any
-/// prior stamp from the same tool.
+/// Append `;fontc {version}` to every version string (name ID 5) record,
+/// replacing any prior `;fontc ...` stamp.
 ///
-/// `stamp` is the caller's `<tool> <version>` (e.g. "fontc 0.6.1-dev..."); the
-/// replace marker `;<tool> ` is derived from its leading token. Replacing rather
-/// than keeping matters when a source version string carries a *stale* stamp
-/// from an earlier build (e.g. a round-tripped `openTypeNameVersion`).
-///
-/// A stamp not of that `<tool> <digit-led version>` shape is still appended, but
-/// re-runs won't detect/replace it (idempotence relies on the shape).
-fn stamp_compiler_version(records: &mut [NameRecord], stamp: &str) {
-    let tool = stamp.split(' ').next().unwrap_or(stamp);
-    let marker = format!(";{tool} ");
+/// Replacing rather than keeping matters when a source version string carries a
+/// *stale* stamp from an earlier build (e.g. a round-tripped
+/// `openTypeNameVersion`): the stamp must report the fontc that actually built
+/// the font. Our stamp always runs to the end (we append last), so truncating at
+/// the marker drops it; this also makes re-stamping idempotent.
+fn stamp_compiler_version(records: &mut [NameRecord], version: &str) {
+    const MARKER: &str = ";fontc ";
     for record in records.iter_mut() {
         if record.name_id != NameId::VERSION_STRING {
             continue;
         }
         let value = &mut *record.string;
-        // A prior stamp is always appended last, so it runs to the end; drop it
-        // before re-stamping. Only treat the marker as a stamp when a digit
-        // follows (the version is SemVer, digit-led), so a human-authored note
-        // like "...;fontc rules" is left untouched.
-        if let Some(idx) = value.find(&marker)
-            && value
-                .as_bytes()
-                .get(idx + marker.len())
-                .is_some_and(u8::is_ascii_digit)
-        {
+        if let Some(idx) = value.find(MARKER) {
             value.truncate(idx);
         }
-        // Don't emit a bare ";<tool> ..." when there's no actual version in
-        // front of it (an empty record, or one stripped down to nothing).
+        // Don't emit a bare ";fontc ..." when there's no actual version in front
+        // of it (an empty record, or one stripped down to nothing).
         if !value.is_empty() {
-            value.push(';');
-            value.push_str(stamp);
+            value.push_str(MARKER);
+            value.push_str(version);
         }
     }
 }
@@ -161,7 +148,7 @@ mod tests {
     #[test]
     fn stamps_version_string() {
         let mut records = vec![version_record("Version 1.000")];
-        stamp_compiler_version(&mut records, "fontc 0.6.1-dev.394+gd62ba016");
+        stamp_compiler_version(&mut records, "0.6.1-dev.394+gd62ba016");
         assert_eq!(
             records[0].string.as_str(),
             "Version 1.000;fontc 0.6.1-dev.394+gd62ba016"
@@ -171,9 +158,9 @@ mod tests {
     #[test]
     fn appends_after_existing_note() {
         // The version string may already carry a `;`-delimited note (allowed by
-        // the OT spec); the stamp is appended after it, leaving it intact.
+        // the OT spec); a note that isn't our stamp is left intact.
         let mut records = vec![version_record("Version 2.000; my custom note")];
-        stamp_compiler_version(&mut records, "fontc 0.6.0");
+        stamp_compiler_version(&mut records, "0.6.0");
         assert_eq!(
             records[0].string.as_str(),
             "Version 2.000; my custom note;fontc 0.6.0"
@@ -186,7 +173,7 @@ mod tests {
             NameRecord::new(3, 1, 0x409, NameId::FAMILY_NAME, "Foo".to_string().into()),
             version_record("Version 1.000"),
         ];
-        stamp_compiler_version(&mut records, "fontc 0.6.0");
+        stamp_compiler_version(&mut records, "0.6.0");
         assert_eq!(records[0].string.as_str(), "Foo");
         assert_eq!(records[1].string.as_str(), "Version 1.000;fontc 0.6.0");
     }
@@ -194,8 +181,8 @@ mod tests {
     #[test]
     fn stamp_is_idempotent() {
         let mut records = vec![version_record("Version 1.000")];
-        stamp_compiler_version(&mut records, "fontc 0.6.0");
-        stamp_compiler_version(&mut records, "fontc 0.6.0");
+        stamp_compiler_version(&mut records, "0.6.0");
+        stamp_compiler_version(&mut records, "0.6.0");
         assert_eq!(records[0].string.as_str(), "Version 1.000;fontc 0.6.0");
     }
 
@@ -205,22 +192,10 @@ mod tests {
         // must be re-stamped with the fontc that's actually building now,
         // otherwise the provenance lies.
         let mut records = vec![version_record("Version 1.000;fontc 0.5.0")];
-        stamp_compiler_version(&mut records, "fontc 0.6.1-dev.394+gd62ba016");
+        stamp_compiler_version(&mut records, "0.6.1-dev.394+gd62ba016");
         assert_eq!(
             records[0].string.as_str(),
             "Version 1.000;fontc 0.6.1-dev.394+gd62ba016"
-        );
-    }
-
-    #[test]
-    fn leaves_non_stamp_fontc_note() {
-        // A human note that merely starts a segment with "fontc " (no version)
-        // is not our stamp (a digit always follows ours) so it survives.
-        let mut records = vec![version_record("Version 1.000;fontc is great")];
-        stamp_compiler_version(&mut records, "fontc 0.6.0");
-        assert_eq!(
-            records[0].string.as_str(),
-            "Version 1.000;fontc is great;fontc 0.6.0"
         );
     }
 
@@ -229,7 +204,7 @@ mod tests {
         // An empty version record (e.g. an explicit empty nameID 5 from FEA) is
         // left empty rather than turned into a bare ";fontc ..." with no version.
         let mut records = vec![version_record("")];
-        stamp_compiler_version(&mut records, "fontc 0.6.0");
+        stamp_compiler_version(&mut records, "0.6.0");
         assert_eq!(records[0].string.as_str(), "");
     }
 
@@ -252,7 +227,7 @@ mod tests {
                 "Version 1.000".to_string().into(),
             ),
         ];
-        stamp_compiler_version(&mut records, "fontc 0.6.0");
+        stamp_compiler_version(&mut records, "0.6.0");
         assert!(
             records
                 .iter()

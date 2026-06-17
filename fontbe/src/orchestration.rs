@@ -864,9 +864,8 @@ type BeContextMap<T> = ContextMap<AnyWorkId, T, BePersistentStorage>;
 pub struct Context {
     pub flags: Flags,
 
-    /// Stamp to append to the name table version string, e.g.
-    /// "fontc 0.6.1-dev.394+gd62ba016", or None to not stamp. Supplied whole by
-    /// the caller so fontbe stays tool-agnostic; see name.rs.
+    /// The fontc version to stamp into the name table version string (name ID 5),
+    /// e.g. "0.6.1-dev.394+gd62ba016", or None to not stamp. See name.rs.
     pub compiler_version: Option<Arc<str>>,
 
     pub debug_dir: Option<PathBuf>,
