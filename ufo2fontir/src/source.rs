@@ -1665,10 +1665,23 @@ fn kerning_groups_for(
 ) -> Result<BTreeMap<KernGroup, BTreeSet<GlyphName>>, Error> {
     let ufo_dir = designspace_dir.join(&source.filename);
     let data_request = norad::DataRequest::none().groups(true);
-    Ok(norad::Font::load_requested_data(&ufo_dir, data_request)
-        .map_err(|e| BadSource::custom(ufo_dir, e))?
-        .groups
-        .into_iter()
+    let font = norad::Font::load_requested_data(&ufo_dir, data_request)
+        .map_err(|e| BadSource::custom(ufo_dir, e))?;
+    Ok(kern_groups_from_norad(&font.groups, glyph_order))
+}
+
+/// Build the kern-group partition for a single source.
+///
+/// Keep only kern1/kern2 groups, prune members to the glyph order, and drop the
+/// empties. The membership is this source's alone; sources in a designspace can
+/// disagree on how glyphs are grouped, which the BE reconciles.
+/// See <https://github.com/googlefonts/fontc/issues/339>.
+fn kern_groups_from_norad(
+    groups: &norad::Groups,
+    glyph_order: &GlyphOrder,
+) -> BTreeMap<KernGroup, BTreeSet<GlyphName>> {
+    groups
+        .iter()
         .filter_map(|(group_name, entries)| {
             KernGroup::from_group_name(group_name.as_str())
                 .filter(|_| !entries.is_empty())
@@ -1676,27 +1689,22 @@ fn kerning_groups_for(
         })
         .filter_map(|(group_name, entries)| {
             let members: BTreeSet<_> = entries
-                .into_iter()
+                .iter()
                 .filter_map(|glyph_name| {
-                    let glyph_name = GlyphName::new(glyph_name);
+                    let glyph_name = GlyphName::new(glyph_name.as_str());
                     if glyph_order.contains(&glyph_name) {
                         Some(glyph_name)
                     } else {
                         debug!(
-                            "{} kerning group '{}' references non-existent glyph '{}'; ignoring",
-                            source.filename, group_name, glyph_name
+                            "kern group '{group_name}' references non-existent glyph '{glyph_name}'; ignoring"
                         );
                         None
                     }
                 })
                 .collect();
-            if !members.is_empty() {
-                Some((group_name, members))
-            } else {
-                None
-            }
+            (!members.is_empty()).then_some((group_name, members))
         })
-        .collect())
+        .collect()
 }
 
 /// UFO specific behaviour for kern groups
@@ -1777,10 +1785,13 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
+        // No KerningGroups dependency: each instance loads its own source's
+        // groups. Instances are still only spawned once KerningGroupWork
+        // completes -- workload.rs reacts to its success by creating one
+        // KernInstance work per participating location.
         AccessBuilder::new()
             .variant(WorkId::StaticMetadata)
             .variant(WorkId::GlyphOrder)
-            .variant(WorkId::KerningGroups)
             .build()
     }
 
@@ -1793,7 +1804,6 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
         let designspace_dir = self.designspace_dir.as_ref();
         let static_metadata = context.static_metadata.get();
         let glyph_order = context.glyph_order.get();
-        let groups = context.kerning_groups.get();
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
 
@@ -1809,19 +1819,17 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
             .unwrap();
 
         let ufo_dir = designspace_dir.join(&source.filename);
-        // UFO2 kerning uses @MMK_L_/@MMK_R_ group names; norad's upconversion to
-        // public.kern1./kern2. only fires when groups are loaded alongside kerning.
-        // Reading metainfo.plist is cheap (~150 bytes) and avoids loading groups.plist
-        // on every UFO3 source.
-        let meta_path = ufo_dir.join("metainfo.plist");
-        let meta: norad::MetaInfo =
-            plist::from_file(&meta_path).map_err(|e| BadSource::custom(&meta_path, e))?;
-        let needs_upconversion = meta.format_version != norad::FormatVersion::V3;
-        let data_request = norad::DataRequest::none()
-            .kerning(true)
-            .groups(needs_upconversion);
+        // Load groups alongside kerning: norad's UFO2 @MMK_L_/@MMK_R_ ->
+        // public.kern1./kern2. upconversion only fires when both are present,
+        // and we need this source's own groups to resolve its kerning cascade.
+        let data_request = norad::DataRequest::none().kerning(true).groups(true);
         let font = norad::Font::load_requested_data(&ufo_dir, data_request)
             .map_err(|e| BadSource::custom(ufo_dir, e))?;
+
+        // This source's own kern-group partition. Kerning references are
+        // validated against it (and resolved against it in the BE), so a group
+        // unique to this source is kept rather than dropped against a merged map.
+        let source_groups = kern_groups_from_norad(&font.groups, glyph_order.as_ref());
 
         let resolve = |name: &norad::Name, group_prefix: &str| {
             if let Some(group_name) = KernGroup::from_group_name(name.as_str()) {
@@ -1829,7 +1837,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
                     warn!("'{name}' should have prefix {group_prefix}; ignored");
                     return None;
                 }
-                if !groups.groups.contains_key(&group_name) {
+                if !source_groups.contains_key(&group_name) {
                     warn!("'{name}' is not a valid group name; ignored");
                     return None;
                 }
@@ -1868,6 +1876,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 
             *kerns.kerns.entry((side1, side2)).or_default() = adjustment.into();
         }
+        kerns.groups = source_groups;
 
         debug!("{:?} has {} kern entries", self.location, kerns.kerns.len());
         context.kerning_at.set(kerns);
@@ -2861,11 +2870,12 @@ mod tests {
         }
     }
 
-    // #636's user-visible fallout: kerning referencing this master's own name
-    // for a same-membership group is dropped instead of renamed. #339's group
-    // reconciliation will keep these kerns; flip this test then.
+    // #636 used to drop kerning referencing this master's own name for a
+    // same-membership group (#2063 pinned that); each source's kerning now
+    // resolves against its own groups, so the pair survives under the
+    // source's own name and the BE reconciles the naming across masters (#339)
     #[test]
-    fn kerning_against_renamed_group_is_dropped() {
+    fn kerning_against_renamed_group_is_kept() {
         let tmp = tempfile::tempdir().unwrap();
         for ufo in ["WghtVar-Regular.ufo", "WghtVar-Bold.ufo"] {
             copy_dir(&testdata_dir().join(ufo), &tmp.path().join(ufo));
@@ -2904,9 +2914,13 @@ mod tests {
             ));
         assert_eq!(
             bold.kerns.keys().cloned().collect::<Vec<_>>(),
-            vec![(KernSide::Glyph("bar".into()), KernSide::Glyph("bar".into()))],
-            "only the glyph-glyph pair should survive; if the group pair is now \
-             kept, #339's reconciliation landed and this test should assert that instead"
+            vec![
+                (KernSide::Glyph("bar".into()), KernSide::Glyph("bar".into())),
+                (
+                    KernSide::Group(KernGroup::Side1("the_WrOng_name".into())),
+                    KernSide::Glyph("bar".into())
+                ),
+            ],
         );
     }
 

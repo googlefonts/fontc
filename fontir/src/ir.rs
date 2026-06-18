@@ -181,6 +181,14 @@ pub struct KerningInstance {
     /// Used for both LTR and RTL. The BE application differs but the concept
     /// is the same.
     pub kerns: BTreeMap<KernPair, OrderedFloat<f64>>,
+    /// This source's own kerning groups (group -> member glyphs), as defined
+    /// at this location.
+    ///
+    /// Sources in a designspace can partition glyphs into kerning groups
+    /// differently, so the value-lookup cascade for a pair must be resolved
+    /// against the groups of the source it came from, not a single merged map.
+    /// See <https://github.com/googlefonts/fontc/issues/339>.
+    pub groups: BTreeMap<KernGroup, BTreeSet<GlyphName>>,
 }
 
 /// A named set of glyphs with common kerning behaviour

@@ -1236,6 +1236,10 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
                     *kerning.kerns.entry(participants).or_default() = value;
                 });
         }
+        // Glyphs kerning groups are per-glyph and so shared across all masters;
+        // every instance carries the same partition and the BE reconciliation is
+        // a no-op. See <https://github.com/googlefonts/fontc/issues/339>.
+        kerning.groups = groups.clone();
 
         context.kerning_at.set(kerning);
         Ok(())
