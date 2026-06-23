@@ -13,7 +13,7 @@ use crate::Error;
 
 /// What font can we build for you today?
 #[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
-#[command(version)]
+#[command(version = fontc::version())]
 pub struct Args {
     /// A designspace, ufo, or glyphs file
     #[arg(

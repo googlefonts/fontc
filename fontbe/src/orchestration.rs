@@ -864,6 +864,10 @@ type BeContextMap<T> = ContextMap<AnyWorkId, T, BePersistentStorage>;
 pub struct Context {
     pub flags: Flags,
 
+    /// The fontc version to stamp into the name table version string (name ID 5),
+    /// e.g. "0.6.1-dev.394+gd62ba016", or None to not stamp. See name.rs.
+    pub compiler_version: Option<Arc<str>>,
+
     pub debug_dir: Option<PathBuf>,
     pub ir_dir: Option<PathBuf>,
     pub compile_debg: bool,
@@ -919,6 +923,7 @@ impl Context {
         let acl = Arc::from(acl);
         Context {
             flags: self.flags,
+            compiler_version: self.compiler_version.clone(),
             debug_dir: self.debug_dir.clone(),
             ir_dir: self.ir_dir.clone(),
             compile_debg: self.compile_debg,
@@ -965,6 +970,7 @@ impl Context {
 
     pub fn new_root(
         flags: Flags,
+        compiler_version: Option<Arc<str>>,
         ir_dir: Option<PathBuf>,
         debug_dir: Option<PathBuf>,
         compile_debg: bool,
@@ -976,6 +982,7 @@ impl Context {
         });
         Context {
             flags,
+            compiler_version,
             debug_dir,
             ir_dir,
             compile_debg,

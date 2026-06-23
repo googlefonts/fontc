@@ -2,7 +2,7 @@
 
 from lxml import etree
 
-from ttx_diff.core import unwrap_extension_lookups
+from ttx_diff.core import strip_fontc_version_tag, unwrap_extension_lookups
 
 
 def _make_tree(xml_str):
@@ -104,3 +104,43 @@ def test_no_extensions_is_noop():
     before = etree.tostring(tree)
     unwrap_extension_lookups(tree)
     assert etree.tostring(tree) == before
+
+
+def _name_tree(version_string):
+    return _make_tree(
+        f"""\
+<ttFont>
+  <name>
+    <namerecord nameID="5" platformID="3" platEncID="1" langID="0x409">
+      {version_string}
+    </namerecord>
+  </name>
+</ttFont>"""
+    )
+
+
+def test_strip_fontc_version_tag_matches_fontmake():
+    # After stripping, fontc's stamped version string is byte-identical to
+    # fontmake's unstamped one (including TTX indentation).
+    fontc = _name_tree("Version 1.000;fontc 0.6.1-dev.394+gd62ba016.dirty")
+    fontmake = _name_tree("Version 1.000")
+    strip_fontc_version_tag(fontc)
+    strip_fontc_version_tag(fontmake)
+    assert etree.tostring(fontc) == etree.tostring(fontmake)
+
+
+def test_strip_fontc_version_tag_is_noop_without_tag():
+    tree = _name_tree("Version 1.000")
+    before = etree.tostring(tree)
+    strip_fontc_version_tag(tree)
+    assert etree.tostring(tree) == before
+
+
+def test_strip_keeps_non_stamp_fontc_note():
+    # Only the digit-led ";fontc <version>" stamp is removed; a human note that
+    # merely starts a segment with "fontc " survives, so a real diff in it isn't
+    # masked.
+    got = _name_tree("Version 1.000;fontc is broken;fontc 0.6.1-dev.394+gd62ba016")
+    want = _name_tree("Version 1.000;fontc is broken")
+    strip_fontc_version_tag(got)
+    assert etree.tostring(got) == etree.tostring(want)
