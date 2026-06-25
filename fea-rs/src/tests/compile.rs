@@ -799,3 +799,53 @@ markClass a <anchor 150 -10> @top;
         "mark_class_in_glyph_class",
     );
 }
+
+/// Compile a FEA string against an explicit glyph order.
+fn compile_fea_with_glyphs(
+    fea: &str,
+    glyph_names: &[&str],
+    test_name: &str,
+) -> Result<Vec<u8>, CompilerError> {
+    let fea_path = write_temp_fea(fea, test_name);
+    let glyph_map = GlyphMap::new(glyph_names.iter().copied()).unwrap();
+    Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
+        .compile_binary()
+}
+
+// A Glyphs.app '$[...]' predicate inside a class compiles to the same thing as
+// the equivalent explicit class. This exercises the full lexer -> grammar ->
+// compile path (the predicate unit tests cover the evaluator in isolation).
+#[test]
+fn glyphs_predicate_matches_explicit_class() {
+    let glyphs = ["a", "b", "a.sc", "b.sc", "c"];
+    let with_predicate = compile_fea_with_glyphs(
+        "feature test { sub [ $[name endswith \".sc\"] ] by a; } test;",
+        &glyphs,
+        "glyphs_predicate_sc",
+    )
+    .unwrap();
+    let explicit = compile_fea_with_glyphs(
+        "feature test { sub [ a.sc b.sc ] by a; } test;",
+        &glyphs,
+        "glyphs_predicate_sc_explicit",
+    )
+    .unwrap();
+    assert_eq!(with_predicate, explicit);
+}
+
+// An out-of-scope predicate (Phase 2, https://github.com/googlefonts/fontc/issues/2052)
+// fails cleanly at validation rather than panicking or silently mis-compiling.
+#[test]
+fn glyphs_predicate_out_of_scope_fails_validation() {
+    let glyphs = ["a", "b", "a.sc"];
+    let result = compile_fea_with_glyphs(
+        "@x = [ $[category like \"Letter\"] ]; feature test { sub @x by a; } test;",
+        &glyphs,
+        "glyphs_predicate_bad",
+    );
+    assert!(
+        matches!(result, Err(CompilerError::ValidationFail(_))),
+        "expected ValidationFail, got {:?}",
+        result.map(|bytes| bytes.len())
+    );
+}
