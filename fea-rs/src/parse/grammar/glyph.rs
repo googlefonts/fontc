@@ -92,6 +92,10 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
     if parser.eat(Kind::NamedGlyphClass) {
         return true;
     }
+    // a glyphs '$[...]' glyph predicate, expanded to a glyph class at compile time
+    if parser.eat(Kind::GlyphsPredicate) {
+        return true;
+    }
     // a glyphname
     // a glyph development name
     // an escaped glyph name
@@ -243,6 +247,44 @@ mod tests {
             eat_glyph_name_like(&mut parser);
             assert_eq!(sink.errors().len(), 1, "'{raw}'");
         }
+    }
+
+    #[test]
+    fn glyphs_predicate_is_one_token_in_class() {
+        // a '$[...]' predicate is lexed as a single GlyphsPredicate token by
+        // the lexer and accepted as a glyph-class-list member by the grammar,
+        // interleaved with ordinary glyph names.
+        let fea = "[a $[name endswith \".sc\"] b]";
+        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
+        let mut parser = Parser::new(fea, &mut sink);
+        eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
+
+        let (node, errs, _) = sink.finish();
+        assert!(errs.is_empty(), "{errs:?}");
+
+        let mut cursor = node.cursor();
+        let mut predicate = None;
+        while let Some(tok) = cursor.next_token() {
+            if tok.kind == AstKind::GlyphsPredicate {
+                predicate = Some(tok.text.clone());
+            }
+        }
+        assert_eq!(predicate.as_deref(), Some("$[name endswith \".sc\"]"));
+    }
+
+    #[test]
+    fn unterminated_glyphs_predicate_errors() {
+        // no closing ']' anywhere after '$[' -> the predicate runs to EOF
+        let fea = "[a $[name endswith \".sc\"";
+        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
+        let mut parser = Parser::new(fea, &mut sink);
+        eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
+        let (_node, errs, _) = sink.finish();
+        assert!(
+            errs.iter()
+                .any(|e| e.text().contains("Unterminated glyphs predicate")),
+            "{errs:?}"
+        );
     }
 
     #[test]

@@ -2223,11 +2223,47 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 self.add_glyphs_from_range(&range, &mut glyphs);
             } else if let Some(alias) = typed::GlyphClassName::cast(item) {
                 glyphs.extend(self.resolve_named_glyph_class(&alias).items());
+            } else if let Some(predicate) = typed::GlyphsAppPredicate::cast(item) {
+                self.resolve_glyphs_predicate(&predicate, &mut glyphs);
             } else {
                 panic!("unexptected kind in class literal: '{}'", item.kind());
             }
         }
         glyphs.into()
+    }
+
+    /// Expand a Glyphs.app glyph predicate token (`$[...]`) into glyphs.
+    ///
+    /// See [`crate::compile::glyphsapp_syntax_ext::predicate`]. We evaluate the predicate
+    /// against the (export-filtered) glyph order fontc hands us, in GID order,
+    /// which matches glyphsLib's source-order, exported-glyphs-only output. The
+    /// glyph set may also contain synthesized glyphs (bracket glyphs, a
+    /// synthesized `.notdef`, decomposition derivatives) absent from glyphsLib's
+    /// predicate set -- a rare divergence checked against the reference toolchain.
+    fn resolve_glyphs_predicate(
+        &mut self,
+        predicate: &typed::GlyphsAppPredicate,
+        out: &mut Vec<GlyphId16>,
+    ) {
+        let parsed = match super::glyphsapp_syntax_ext::Predicate::parse(predicate.text()) {
+            Ok(parsed) => parsed,
+            // validation reports this first and halts compilation; this is a
+            // defensive fallback so we never panic on a bad predicate.
+            Err(err) => {
+                self.error(predicate.range(), err.message);
+                return;
+            }
+        };
+        let glyphs: Vec<_> = self
+            .glyph_map
+            .reverse_map()
+            .into_iter()
+            .filter_map(|(id, ident)| match ident {
+                GlyphIdent::Name(name) => Some((id, name)),
+                GlyphIdent::Cid(_) => None,
+            })
+            .collect();
+        out.extend(parsed.evaluate(glyphs.iter().map(|(id, name)| (*id, name.as_str()))));
     }
 
     fn resolve_named_glyph_class(&mut self, name: &typed::GlyphClassName) -> GlyphClass {

@@ -110,6 +110,7 @@ impl<'a> Lexer<'a> {
             b'<' => Kind::LAngle,
             b'>' => Kind::RAngle,
             b'\'' => Kind::SingleQuote,
+            b'$' if self.nth(0) == b'[' => self.glyphs_predicate(),
             b'$' => Kind::Dollar,
             b'*' => Kind::Asterisk,
             b'+' => Kind::Plus,
@@ -148,6 +149,29 @@ impl<'a> Lexer<'a> {
                     break Kind::String;
                 }
                 EOF => break Kind::StringUnterminated,
+                _ => {
+                    self.bump();
+                }
+            }
+        }
+    }
+
+    // A Glyphs.app glyph predicate token, '$[...]'. We have already consumed the
+    // leading '$' and confirmed the next byte is '['. We consume everything up to
+    // and including the closing ']' as a single token, leaving the predicate
+    // body opaque to the FEA grammar (it is NSPredicate syntax, not FEA, and is
+    // parsed separately at compile time). This stops at the first ']', matching
+    // glyphsLib's `\$\[([^\]]+)\]` capture.
+    fn glyphs_predicate(&mut self) -> Kind {
+        debug_assert_eq!(self.nth(0), b'[');
+        self.bump(); // the '['
+        loop {
+            match self.nth(0) {
+                b']' => {
+                    self.bump();
+                    break Kind::GlyphsPredicate;
+                }
+                EOF => break Kind::GlyphsPredicateUnterminated,
                 _ => {
                     self.bump();
                 }

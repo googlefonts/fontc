@@ -168,6 +168,10 @@ pub enum Kind {
     Asterisk,
     // '/': an operator in glyphs syntax
     Slash,
+    // '$[...]'; a glyphs glyph-predicate token, lexed as one token
+    GlyphsPredicate,
+    // '$[' with no closing ']'; an error handled at a higher level
+    GlyphsPredicateUnterminated,
 
     Tombstone, // a placeholder value
 }
@@ -299,7 +303,10 @@ impl Kind {
     pub(crate) fn to_token_kind(self) -> AstKind {
         match self {
             Self::Eof => AstKind::Eof,
-            Self::StringUnterminated | Self::HexEmpty | Self::Tombstone => {
+            Self::StringUnterminated
+            | Self::HexEmpty
+            | Self::GlyphsPredicateUnterminated
+            | Self::Tombstone => {
                 panic!("lexeme type '{self}' should not be seen after parser")
             }
             Self::Ident => AstKind::Ident,
@@ -423,6 +430,7 @@ impl Kind {
             Self::Plus => AstKind::Plus,
             Self::Asterisk => AstKind::Asterisk,
             Self::Slash => AstKind::Slash,
+            Self::GlyphsPredicate => AstKind::GlyphsPredicate,
         }
     }
 }
@@ -558,6 +566,8 @@ impl std::fmt::Display for Kind {
             Self::Plus => write!(f, "+"),
             Self::Asterisk => write!(f, "*"),
             Self::Slash => write!(f, "/"),
+            Self::GlyphsPredicate => write!(f, "GlyphsPredicate"),
+            Self::GlyphsPredicateUnterminated => write!(f, "GlyphsPredicate OPEN"),
         }
     }
 }

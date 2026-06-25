@@ -170,6 +170,10 @@ impl<'b, 'a> Parser<'a, 'b> {
             LexemeKind::HexEmpty => {
                 Some((LexemeKind::Hex, "Missing digits after hexidecimal prefix."))
             }
+            LexemeKind::GlyphsPredicateUnterminated => Some((
+                LexemeKind::GlyphsPredicate,
+                "Unterminated glyphs predicate (missing trailing ']')",
+            )),
             _ => None,
         } {
             let mut range = self.nth_range(LOOKAHEAD_MAX);

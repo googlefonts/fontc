@@ -199,6 +199,7 @@ ast_token!(Cid, Kind::Cid);
 ast_token!(GlyphName, Kind::GlyphName);
 ast_token!(Tag, Kind::Tag);
 ast_token!(GlyphClassName, Kind::NamedGlyphClass);
+ast_token!(GlyphsAppPredicate, Kind::GlyphsPredicate);
 ast_token!(Number, Kind::Number);
 ast_token!(Float, Kind::Float);
 ast_token!(Octal, Kind::Octal);

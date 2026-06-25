@@ -304,6 +304,8 @@ pub enum Kind {
     GlyphsNumberValueNode,
     GlyphsNumberValueExprNode,
     GlyphsNumberIdent,
+    // '$[...]'; a glyphs glyph-predicate token (expanded to a glyph class at compile time)
+    GlyphsPredicate,
 }
 
 impl Kind {
@@ -582,6 +584,7 @@ impl std::fmt::Display for Kind {
             Self::GlyphsNumberValueNode => write!(f, "GlyphsNumberValueNode"),
             Self::GlyphsNumberValueExprNode => write!(f, "GlyphsNumberValueExprNode"),
             Self::GlyphsNumberIdent => write!(f, "GlyphsNumberIdent"),
+            Self::GlyphsPredicate => write!(f, "GlyphsPredicate"),
         }
     }
 }

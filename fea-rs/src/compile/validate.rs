@@ -1255,6 +1255,13 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 self.validate_glyph_range(&range);
             } else if let Some(alias) = typed::GlyphClassName::cast(item) {
                 self.validate_glyph_class_ref(&alias);
+            } else if let Some(predicate) = typed::GlyphsAppPredicate::cast(item) {
+                // a glyphs '$[...]' predicate: parse it now so out-of-scope
+                // predicates fail cleanly here (validation halts compilation)
+                // rather than reaching the compile pass.
+                if let Err(err) = super::glyphsapp_syntax_ext::Predicate::parse(predicate.text()) {
+                    self.error(predicate.range(), err.message);
+                }
                 // these two cases indicate existing errors
             } else if !item.kind().is_trivia()
                 && item.kind() != Kind::Ident
