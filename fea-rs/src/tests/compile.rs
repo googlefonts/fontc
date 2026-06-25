@@ -9,7 +9,6 @@ use crate::{
     },
     util::ttx::{self as test_utils, Filter, Report, TestCase, TestResult},
 };
-use fontdrasil::types::GlyphName;
 
 static ROOT_TEST_DIR: &str = "./test-data/compile-tests";
 static GOOD_DIR: &str = "good";
@@ -109,39 +108,37 @@ fn run_bad_test(
     }
 }
 
-/// Compile a FEA string using the mini-latin glyph order.
-fn compile_fea(fea: &str, test_name: &str) -> Compilation {
+/// Write `fea` to a temp file named after the test, returning its path.
+fn write_temp_fea(fea: &str, test_name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("fea_rs_test_{test_name}"));
     std::fs::create_dir_all(&dir).unwrap();
     let fea_path = dir.join(format!("{test_name}.fea"));
     std::fs::write(&fea_path, fea).unwrap();
+    fea_path
+}
 
+/// The mini-latin glyph order used by most compile tests.
+fn mini_latin_glyph_map() -> GlyphMap {
     let glyph_order_path = Path::new(ROOT_TEST_DIR)
         .join("mini-latin")
         .join(GLYPH_ORDER);
     let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
-    let glyph_map = GlyphMap::new(glyph_order.lines()).unwrap();
+    GlyphMap::new(glyph_order.lines()).unwrap()
+}
 
-    Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
+/// Compile a FEA string using the mini-latin glyph order.
+fn compile_fea(fea: &str, test_name: &str) -> Compilation {
+    let fea_path = write_temp_fea(fea, test_name);
+    Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &mini_latin_glyph_map())
         .compile()
         .expect("compilation should succeed")
 }
 
 /// Like [`compile_fea`], but with variable font info.
 fn compile_fea_variable(fea: &str, test_name: &str) -> Compilation {
-    let dir = std::env::temp_dir().join(format!("fea_rs_test_{test_name}"));
-    std::fs::create_dir_all(&dir).unwrap();
-    let fea_path = dir.join(format!("{test_name}.fea"));
-    std::fs::write(&fea_path, fea).unwrap();
-
-    let glyph_order_path = Path::new(ROOT_TEST_DIR)
-        .join("mini-latin")
-        .join(GLYPH_ORDER);
-    let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
-    let glyph_map = GlyphMap::new(glyph_order.lines()).unwrap();
+    let fea_path = write_temp_fea(fea, test_name);
     let var_info = test_utils::make_var_info();
-
-    Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
+    Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &mini_latin_glyph_map())
         .with_variable_info(&var_info)
         .compile()
         .expect("compilation should succeed")
@@ -334,12 +331,7 @@ fn compile_debg(fea: &str, test_name: &str) -> Option<serde_json::Value> {
     use std::sync::Arc;
 
     let fea_path = format!("{test_name}.fea");
-
-    let glyph_order_path = Path::new(ROOT_TEST_DIR)
-        .join("mini-latin")
-        .join(GLYPH_ORDER);
-    let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
-    let glyph_map = GlyphMap::new(glyph_order.lines().map(GlyphName::new)).unwrap();
+    let glyph_map = mini_latin_glyph_map();
 
     let fea = fea.to_string();
     Compiler::<NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
