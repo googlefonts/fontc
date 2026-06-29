@@ -49,14 +49,16 @@ fn parse_bad() -> Result<(), Report> {
 
 fn parse_test_glyph_order() -> GlyphMap {
     let raw_glyphs = std::fs::read_to_string(GLYPH_ORDER_PATH).unwrap();
-    crate::compile::parse_glyph_order(&raw_glyphs)
-        .unwrap()
-        .iter()
-        // we add one extra glyph, which could be a glyph range.
-        // during parsing, when provided a glyphmap, we can disambiguate this,
-        // but we can't do that otherwise
-        .chain([GlyphIdent::from("two-four")])
-        .collect()
+    GlyphMap::new(
+        crate::compile::parse_glyph_order(&raw_glyphs)
+            .unwrap()
+            .iter()
+            // we add one extra glyph, which could be a glyph range.
+            // during parsing, when provided a glyphmap, we can disambiguate this,
+            // but we can't do that otherwise
+            .chain([GlyphIdent::from("two-four")]),
+    )
+    .unwrap()
 }
 
 fn run_good_test(path: PathBuf, glyphmap: &GlyphMap) -> Result<PathBuf, TestCase> {

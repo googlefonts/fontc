@@ -3,6 +3,7 @@
 use std::fmt::{Display, Formatter};
 
 use fontdrasil::types::GlyphName;
+use smol_str::SmolStr;
 use write_fonts::tables::gpos::builders::AnchorBuilder;
 pub use write_fonts::types::GlyphId16;
 
@@ -41,8 +42,26 @@ pub(crate) struct MarkClass {
     pub(crate) members: Vec<(GlyphClass, Option<AnchorBuilder>)>,
 }
 
-impl<T: Into<GlyphName>> From<T> for GlyphIdent {
-    fn from(src: T) -> Self {
+impl From<u16> for GlyphIdent {
+    fn from(src: u16) -> GlyphIdent {
+        GlyphIdent::Cid(src)
+    }
+}
+
+impl From<GlyphName> for GlyphIdent {
+    fn from(src: GlyphName) -> GlyphIdent {
+        GlyphIdent::Name(src)
+    }
+}
+
+impl From<&str> for GlyphIdent {
+    fn from(src: &str) -> GlyphIdent {
+        GlyphIdent::Name(src.into())
+    }
+}
+
+impl From<SmolStr> for GlyphIdent {
+    fn from(src: SmolStr) -> GlyphIdent {
         GlyphIdent::Name(src.into())
     }
 }

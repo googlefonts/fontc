@@ -93,9 +93,10 @@ pub fn get_ufo_glyph_order(font: &norad::Font) -> Result<GlyphMap, UfoGlyphOrder
             name_array
                 .iter()
                 .map(|val| val.as_string().map(GlyphName::new))
-                .collect()
+                .collect::<Option<Vec<_>>>()
         })
         .ok_or(UfoGlyphOrderError::Malformed)
+        .and_then(|names| GlyphMap::new(names).map_err(Into::into))
 }
 
 /// A helper function for extracting glyph order from a font with a 'post' table
@@ -122,9 +123,10 @@ pub fn get_post_glyph_order(font_data: &[u8]) -> Result<GlyphMap, FontGlyphOrder
                         .get((i - 258) as usize)
                         .map(GlyphName::new),
                 })
-                .collect()
+                .collect::<Option<Vec<_>>>()
         })
         .ok_or(FontGlyphOrderError::MissingNames)
+        .and_then(|names| GlyphMap::new(names).map_err(Into::into))
 }
 
 /// Extract a glyph order from an ordered list of glyph names.
@@ -136,14 +138,13 @@ pub fn parse_glyph_order(glyphs: &str) -> Result<GlyphMap, GlyphOrderError> {
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|line| {
             if line.bytes().any(|b| b.is_ascii_whitespace()) {
-                Err(GlyphOrderError::NameError {
-                    name: line.to_owned(),
-                })
+                Err(GlyphOrderError::NameError { name: line.into() })
             } else {
                 Ok(GlyphName::new(line))
             }
         })
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<Vec<_>, _>>()
+        .and_then(GlyphMap::new)?;
     if map.get(".notdef") != Some(GlyphId16::NOTDEF) {
         Err(GlyphOrderError::MissingNotDef)
     } else {

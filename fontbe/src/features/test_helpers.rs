@@ -79,7 +79,7 @@ impl LayoutOutputBuilder {
 
         let gdef_categories = self.categories.clone().unwrap_or_default();
 
-        let glyph_map = self.glyph_order.names().cloned().collect();
+        let glyph_map = fea_rs::GlyphMap::new(self.glyph_order.names().cloned()).unwrap();
         // first get the AST, which we need to use as input
         let fea = self.user_fea.clone();
         let (ast, _) = fea_rs::parse::parse_root(
@@ -108,7 +108,7 @@ impl LayoutOutputBuilder {
 impl LayoutOutput {
     pub(crate) fn compile(&self, feature_writer: &impl FeatureProvider) -> Compilation {
         let var_info = FeaVariationInfo::new(&self.static_metadata);
-        let glyph_map = self.glyph_order.names().cloned().collect();
+        let glyph_map = fea_rs::GlyphMap::new(self.glyph_order.names().cloned()).unwrap();
         fea_rs::compile::compile(
             &self.first_pass_fea.ast,
             &glyph_map,

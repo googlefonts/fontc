@@ -73,7 +73,7 @@ fn iter_test_groups(
         let glyph_order_path = dir.join(GLYPH_ORDER);
         let glyph_order =
             std::fs::read_to_string(glyph_order_path).expect("failed to read glyph order");
-        let glyph_map = glyph_order.lines().map(GlyphName::new).collect();
+        let glyph_map = GlyphMap::new(glyph_order.lines()).unwrap();
         let var_info = test_utils::make_var_info();
         let tests_dir = dir.join(test_dir);
         let tests = test_utils::iter_fea_files(tests_dir, Filter::from_env()).collect::<Vec<_>>();
@@ -120,7 +120,7 @@ fn compile_fea(fea: &str, test_name: &str) -> Compilation {
         .join("mini-latin")
         .join(GLYPH_ORDER);
     let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
-    let glyph_map: GlyphMap = glyph_order.lines().map(GlyphName::new).collect();
+    let glyph_map = GlyphMap::new(glyph_order.lines()).unwrap();
 
     Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
         .compile()
@@ -138,7 +138,7 @@ fn compile_fea_variable(fea: &str, test_name: &str) -> Compilation {
         .join("mini-latin")
         .join(GLYPH_ORDER);
     let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
-    let glyph_map: GlyphMap = glyph_order.lines().map(GlyphName::new).collect();
+    let glyph_map = GlyphMap::new(glyph_order.lines()).unwrap();
     let var_info = test_utils::make_var_info();
 
     Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
@@ -313,7 +313,7 @@ fn compile_debg(fea: &str, test_name: &str) -> Option<serde_json::Value> {
         .join("mini-latin")
         .join(GLYPH_ORDER);
     let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
-    let glyph_map: GlyphMap = glyph_order.lines().map(GlyphName::new).collect();
+    let glyph_map = GlyphMap::new(glyph_order.lines().map(GlyphName::new)).unwrap();
 
     let fea = fea.to_string();
     Compiler::<NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)

@@ -1,6 +1,6 @@
 use std::{fmt::Display, io, path::PathBuf};
 
-use fea_rs::compile::error::CompilerError;
+use fea_rs::compile::error::{CompilerError, GlyphOrderError};
 use fontdrasil::{
     coords::NormalizedLocation,
     types::GlyphName,
@@ -27,6 +27,8 @@ pub enum Error {
     IoError(#[from] io::Error),
     #[error(transparent)]
     FeaCompileError(#[from] CompilerError),
+    #[error(transparent)]
+    GlyphOrderError(#[from] GlyphOrderError),
     #[error("'{0}' {1}")]
     GlyphError(GlyphName, GlyphProblem),
     #[error("'{glyph_name}' {kurbo_problem:?} {context}")]

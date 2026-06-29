@@ -470,7 +470,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureFirstPassWork {
         let features = context.ir.features.get();
         let glyph_order = context.ir.glyph_order.get();
         let static_metadata = context.ir.static_metadata.get();
-        let glyph_map = glyph_order.names().cloned().collect();
+        let glyph_map = GlyphMap::new(glyph_order.names().cloned())?;
 
         let result = self.parse(&features, &glyph_map);
 

@@ -1,12 +1,12 @@
 use write_fonts::tables::post::Post;
 
+use crate::compile::error::GlyphOrderError;
+
 use super::{GlyphId16, GlyphIdent};
 use fontdrasil::types::GlyphName;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
-    convert::TryInto,
-    iter::FromIterator,
 };
 
 /// A glyph map for mapping from raw glyph identifiers to numeral `GlyphId16`s.
@@ -20,7 +20,7 @@ use std::{
 ///
 /// ```
 /// # use fea_rs::GlyphMap;
-/// let myglyphs = GlyphMap::from_iter(["a", "b", "gee", "whiz"]);
+/// let myglyphs = GlyphMap::new(["a", "b", "gee", "whiz"]).unwrap();
 /// ```
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -30,6 +30,27 @@ pub struct GlyphMap {
 }
 
 impl GlyphMap {
+    /// Construct a new GlyphMap from an iterator of idents.
+    ///
+    /// Idents
+    pub fn new<T, I>(iter: I) -> Result<Self, GlyphOrderError>
+    where
+        T: Into<GlyphIdent>,
+        I: IntoIterator<Item = T>,
+    {
+        let mut names = HashMap::new();
+        let mut cids = HashMap::new();
+        for (idx, item) in iter.into_iter().enumerate() {
+            let idx = u16::try_from(idx)
+                .map(GlyphId16::new)
+                .map_err(|_| GlyphOrderError::TooManyGlyphs { found: idx as _ })?;
+            match item.into() {
+                GlyphIdent::Cid(cid) => cids.insert(cid, idx),
+                GlyphIdent::Name(name) => names.insert(name, idx),
+            };
+        }
+        Ok(GlyphMap { names, cids })
+    }
     /// The total number of glyphs
     pub fn len(&self) -> usize {
         self.names.len() + self.cids.len()
@@ -95,21 +116,6 @@ impl GlyphMap {
             .collect::<Vec<_>>();
 
         Post::new_v2(rev_vec.iter().map(Cow::as_ref))
-    }
-}
-
-impl<T: Into<GlyphIdent>> FromIterator<T> for GlyphMap {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let mut names = HashMap::new();
-        let mut cids = HashMap::new();
-        for (idx, item) in iter.into_iter().enumerate() {
-            let idx = GlyphId16::new(idx.try_into().unwrap());
-            match item.into() {
-                GlyphIdent::Cid(cid) => cids.insert(cid, idx),
-                GlyphIdent::Name(name) => names.insert(name, idx),
-            };
-        }
-        GlyphMap { names, cids }
     }
 }
 
