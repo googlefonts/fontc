@@ -199,7 +199,7 @@ mod tests {
     fn cid_range() {
         let range = make_range_node(Kind::Cid, "4", Kind::Cid, "12");
         let idents = glyph_range(&range).unwrap();
-        let map: GlyphMap = idents.into_iter().collect();
+        let map = GlyphMap::new(idents).unwrap();
         for val in 4u16..=12 {
             assert!(map.contains(&val));
         }
@@ -230,7 +230,7 @@ mod tests {
     fn named_range_() {
         let range = make_range_node(Kind::GlyphName, "A.hi", Kind::GlyphName, "E.hi");
         let idents = glyph_range(&range).unwrap();
-        let map: GlyphMap = idents.into_iter().collect();
+        let map = GlyphMap::new(idents).unwrap();
         assert_eq!(map.len(), 5, "{map:?}");
         for val in ["A.hi", "B.hi", "C.hi", "D.hi", "E.hi"] {
             assert!(map.contains(val));

@@ -216,7 +216,6 @@ mod tests {
     use crate::GlyphMap;
     use crate::parse::FileId;
     use crate::token_tree::AstSink;
-    use fontdrasil::types::GlyphName;
 
     #[test]
     fn name_like() {
@@ -265,7 +264,7 @@ mod tests {
         assert_eq!(cursor.next_token().unwrap().kind, AstKind::RSquare);
 
         // now we parse with a glyph map
-        let glyphs: GlyphMap = ["a", "b"].iter().cloned().map(GlyphName::from).collect();
+        let glyphs = GlyphMap::new(["a", "b"]).unwrap();
 
         let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, Some(&glyphs));
         let mut parser = Parser::new(fea, &mut sink);

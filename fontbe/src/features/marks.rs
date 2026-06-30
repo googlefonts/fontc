@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
-    GlyphSet,
+    GlyphMap, GlyphSet,
     compile::{FeatureProvider, LookupId, PendingLookup},
 };
 use fontdrasil::{
@@ -345,7 +345,7 @@ impl<'a> MarkLookupBuilder<'a> {
         };
 
         Ok(FeaRsMarks {
-            glyphmap: self.glyph_order.names().cloned().collect(),
+            glyphmap: GlyphMap::new(self.glyph_order.names().cloned())?,
             mark_mkmk,
             abvm,
             blwm,

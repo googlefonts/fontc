@@ -566,11 +566,13 @@ pub(crate) fn fonttools_test_glyph_order() -> GlyphMap {
         panic!("could not locate glyph map at {}", path.display());
     }
     let order_str = std::fs::read_to_string(path).unwrap();
-    crate::compile::parse_glyph_order(&order_str)
-        .unwrap()
-        .iter()
-        .chain((800_u16..=1001).map(GlyphIdent::Cid))
-        .collect()
+    GlyphMap::new(
+        crate::compile::parse_glyph_order(&order_str)
+            .unwrap()
+            .iter()
+            .chain((800_u16..=1001).map(GlyphIdent::Cid)),
+    )
+    .unwrap()
 }
 
 /// Generate variation info
