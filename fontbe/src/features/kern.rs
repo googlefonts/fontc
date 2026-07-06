@@ -117,10 +117,20 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
         let ir_groups = context.ir.kerning_groups.get();
         let ir_kerns = context.ir.kerning_at.all();
 
-        // convert the groups stored in the Kerning object into the glyph classes
-        // expected by fea-rs:
-        let groups = ir_groups
-            .groups
+        // Add IR kerns to builder. IR kerns are split by location so put them back together again.
+        let kern_by_pos: HashMap<_, _> = ir_kerns
+            .iter()
+            .map(|(_, ki)| (ki.location.clone(), ki.as_ref().to_owned()))
+            .collect();
+
+        // Resolve every pair at every location, reconciling sources whose
+        // kerning groups disagree. `refined_groups` is the reconciled output
+        // class partition (see build_variable_kern_adjustments).
+        let (refined_groups, adjustments) =
+            build_variable_kern_adjustments(&ir_groups, &kern_by_pos);
+
+        // convert the refined groups into the glyph classes expected by fea-rs:
+        let groups = refined_groups
             .iter()
             .filter_map(|(class_name, glyph_set)| {
                 let glyph_class: GlyphSet = glyph_set
@@ -144,14 +154,6 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
                 }
             })
             .collect::<BTreeMap<_, _>>();
-
-        // Add IR kerns to builder. IR kerns are split by location so put them back together again.
-        let kern_by_pos: HashMap<_, _> = ir_kerns
-            .iter()
-            .map(|(_, ki)| (ki.location.clone(), ki.as_ref().to_owned()))
-            .collect();
-
-        let adjustments = build_variable_kern_adjustments(&ir_groups, &glyph_order, &kern_by_pos);
 
         let adjustments: Vec<_> = adjustments
             .into_iter()
@@ -187,58 +189,464 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
     }
 }
 
-/// Build the glyph -> containing-group lookups for each side, used by the UFO
-/// kerning value cascade in [`lookup_kerning_value`].
-fn glyph_to_group_maps(
-    groups: &KerningGroups,
-) -> (
-    HashMap<&GlyphName, &KernGroup>,
-    HashMap<&GlyphName, &KernGroup>,
-) {
-    let map_for = |is_side1: bool| {
-        groups
-            .groups
-            .iter()
-            .filter(move |(group, _)| matches!(group, KernGroup::Side1(_)) == is_side1)
-            .flat_map(|(group, glyphs)| glyphs.iter().map(move |glyph| (glyph, group)))
-            .collect::<HashMap<_, _>>()
-    };
-    (map_for(true), map_for(false))
+/// Which logical side of a kern pair a glyph or group sits on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Side {
+    First,
+    Second,
 }
 
-/// Resolve every kern pair defined in any master to a value at every location.
+/// Per-source kerning state for the variable cascade.
 ///
-/// missing pairs are filled in via the UFO kerning value lookup algorithm:
+/// Each source resolves its kerning against its *own* groups, so we keep the
+/// per-side glyph -> group maps alongside that source's raw kern values.
+struct KernSource<'a> {
+    location: &'a NormalizedLocation,
+    kerns: &'a BTreeMap<ir::KernPair, OrderedFloat<f64>>,
+    side1: HashMap<&'a GlyphName, &'a KernGroup>,
+    side2: HashMap<&'a GlyphName, &'a KernGroup>,
+}
+
+impl<'a> KernSource<'a> {
+    fn new(instance: &'a KerningInstance) -> Self {
+        let mut side1 = HashMap::new();
+        let mut side2 = HashMap::new();
+        for (group, members) in &instance.groups {
+            let map = match group {
+                KernGroup::Side1(_) => &mut side1,
+                KernGroup::Side2(_) => &mut side2,
+            };
+            for member in members {
+                map.insert(member, group);
+            }
+        }
+        KernSource {
+            location: &instance.location,
+            kerns: &instance.kerns,
+            side1,
+            side2,
+        }
+    }
+
+    fn map_for(&self, side: Side) -> &HashMap<&'a GlyphName, &'a KernGroup> {
+        match side {
+            Side::First => &self.side1,
+            Side::Second => &self.side2,
+        }
+    }
+
+    fn group_of(&self, side: Side, glyph: &GlyphName) -> Option<&'a KernGroup> {
+        self.map_for(side).get(glyph).copied()
+    }
+
+    /// The groups referenced by this source's kerning on one side.
+    fn kerned_names(&self, side: Side) -> HashSet<&'a KernGroup> {
+        self.kerns
+            .keys()
+            .filter_map(|(first, second)| {
+                let name = match side {
+                    Side::First => first,
+                    Side::Second => second,
+                };
+                match name {
+                    ir::KernSide::Group(group) => Some(group),
+                    ir::KernSide::Glyph(_) => None,
+                }
+            })
+            .collect()
+    }
+}
+
+/// A glyph "diverges" on a side when its containing group there is not the same
+/// across every source -- a different group, or grouped in some and
+/// ungrouped/absent in others. Such a glyph cannot stay whole in a shared
+/// output class; the class is refined around it (see
+/// [`refine_divergent_groups`]).
+fn is_divergent(sources: &[KernSource], glyph: &GlyphName, side: Side) -> bool {
+    let mut groups = sources.iter().map(|src| src.group_of(side, glyph));
+    match groups.next() {
+        Some(first) => groups.any(|group| group != first),
+        None => false,
+    }
+}
+
+/// Resolve a pair to a value at every source location, each against that
+/// source's own groups (see [`lookup_kerning_value`]).
+fn resolve_pair(sources: &[KernSource], pair: &ir::KernPair) -> KernAdjustments {
+    sources
+        .iter()
+        .map(|src| {
+            (
+                src.location.clone(),
+                lookup_kerning_value(pair, src.kerns, &src.side1, &src.side2),
+            )
+        })
+        .collect()
+}
+
+/// One refined output class: a maximal set of a divergent group's members
+/// sharing the same kerned group in every source.
+struct RefinedClass<'a> {
+    /// The output class name. Synthesized, never surfaces in the compiled font.
+    name: KernGroup,
+    members: BTreeSet<&'a GlyphName>,
+    /// The class's kerned group in each source; `None` means its members are
+    /// in no kerned group there and the class resolves to 0 (varLib.merger's
+    /// implicit class 0).
+    signature: Vec<Option<&'a KernGroup>>,
+}
+
+/// The per-source lookup names for one side of a refined pair.
+enum Names<'a> {
+    /// One name, looked up in every source: a bare glyph, for which
+    /// [`lookup_kerning_value`] falls back to each source's own groups, or a
+    /// consistent class, named the same in every source.
+    Uniform(ir::KernSide),
+    /// A refined class's kerned group in each source; `None` resolves to 0.
+    PerSource(&'a [Option<&'a KernGroup>]),
+}
+
+impl Names<'_> {
+    fn at(&self, source_idx: usize) -> Option<ir::KernSide> {
+        match self {
+            Names::Uniform(side) => Some(side.clone()),
+            Names::PerSource(signature) => {
+                signature[source_idx].map(|group| ir::KernSide::Group(group.clone()))
+            }
+        }
+    }
+}
+
+/// One participant of a refined output pair: the per-source names that resolve
+/// its value, and the glyph or class it is emitted as.
+struct Unit<'a> {
+    names: Names<'a>,
+    emit: ir::KernSide,
+}
+
+/// Per-side reconciliation state.
 ///
-/// <https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-value-lookup-algorithm>
+/// The full group maps carry what the sources declare, the kerned maps what
+/// reaches the compiled ClassDefs that varLib.merger partitions: divergence is
+/// detected on the former (so mere differences in kern coverage don't count),
+/// the refined partition computed on the latter (so distinctions carrying no
+/// kerning don't split).
+struct SideState<'a> {
+    /// Union of each group's membership across every source.
+    ///
+    /// Inverted from the per-source maps rather than the declared groups so
+    /// membership stays consistent with value resolution: a glyph in two
+    /// same-side groups of one source (invalid per UFO3) resolves to the
+    /// lexicographically-last one.
+    all_members: BTreeMap<&'a KernGroup, BTreeSet<&'a GlyphName>>,
+    /// Glyphs whose group assignment differs between sources.
+    divergent_glyphs: HashSet<&'a GlyphName>,
+    /// The refined classes of the divergent groups.
+    refined_classes: Vec<RefinedClass<'a>>,
+    /// Each divergent group's partition, as indices into `refined_classes`. A refined
+    /// class two groups refine to (same members, hence same signature) is
+    /// shared, so it emits as one output class no matter which group's key
+    /// produced it.
+    refined_by_group: BTreeMap<&'a KernGroup, Vec<usize>>,
+}
+
+/// Each source's kerned glyph -> group map: only the groups that source's
+/// kerning references. Unkerned groups don't exist in compiled ClassDefs, so
+/// treating their members as ungrouped matches varLib.merger.
+fn kerned_maps<'a>(
+    sources: &[KernSource<'a>],
+    side: Side,
+) -> Vec<HashMap<&'a GlyphName, &'a KernGroup>> {
+    sources
+        .iter()
+        .map(|source| {
+            let kerned = source.kerned_names(side);
+            source
+                .map_for(side)
+                .iter()
+                .filter(|(_, group)| kerned.contains(*group))
+                .map(|(glyph, group)| (*glyph, *group))
+                .collect()
+        })
+        .collect()
+}
+
+/// Partition each divergent group's members into refined classes by
+/// per-source kerned-group signature: the coarsest common refinement, the
+/// same partition varLib's merger derives with classifyTools.classify on the
+/// compiled per-master ClassDefs.
 ///
-/// in pythonland this happens in ufo2ft, here:
-/// <https://github.com/googlefonts/ufo2ft/blob/1a21d0071c69b1/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L748>
+/// Returns the refined classes and each divergent group's partition as
+/// indices into them; a class two groups refine to (same members, hence same
+/// signature) is shared.
+fn refine_divergent_groups<'a>(
+    all_members: &BTreeMap<&'a KernGroup, BTreeSet<&'a GlyphName>>,
+    divergent_glyphs: &HashSet<&'a GlyphName>,
+    kerned_maps: &[HashMap<&'a GlyphName, &'a KernGroup>],
+) -> (Vec<RefinedClass<'a>>, BTreeMap<&'a KernGroup, Vec<usize>>) {
+    let mut refined_classes: Vec<RefinedClass> = Vec::new();
+    let mut refined_by_group: BTreeMap<&KernGroup, Vec<usize>> = Default::default();
+    let mut ids_by_members: HashMap<BTreeSet<&GlyphName>, usize> = HashMap::new();
+    // Names claimed by output classes: every group name up front (a
+    // consistent group keeps its name; a divergent group's is reserved for
+    // its own refined classes), plus refined-class names as assigned.
+    let mut taken: HashSet<KernGroup> = all_members.keys().map(|group| (*group).clone()).collect();
+    for (group, members) in all_members {
+        if !members
+            .iter()
+            .any(|member| divergent_glyphs.contains(*member))
+        {
+            continue; // consistent: stays whole under its own name
+        }
+        let mut partition: BTreeMap<Vec<Option<&KernGroup>>, BTreeSet<&GlyphName>> =
+            Default::default();
+        for member in members {
+            let signature = kerned_maps
+                .iter()
+                .map(|map| map.get(member).copied())
+                .collect();
+            partition.entry(signature).or_default().insert(member);
+        }
+        let mut group_classes: Vec<(BTreeSet<&GlyphName>, Vec<Option<&KernGroup>>)> = partition
+            .into_iter()
+            .map(|(sig, members)| (members, sig))
+            .collect();
+        group_classes.sort();
+        // Naming (cosmetic; class names never reach the compiled font): the
+        // refined class of members the group holds in every source keeps the
+        // group's name -- failing that, the first new one does -- and the
+        // rest get numeric suffixes in member order.
+        let is_loyal =
+            |signature: &[Option<&KernGroup>]| signature.iter().all(|found| *found == Some(*group));
+        let mut base_name_free = !group_classes
+            .iter()
+            .any(|(_, signature)| is_loyal(signature));
+        let mut ids = Vec::new();
+        for (members, signature) in group_classes {
+            if let Some(&id) = ids_by_members.get(&members) {
+                ids.push(id); // shared with an earlier group's refinement
+                continue;
+            }
+            let name = if is_loyal(&signature) || base_name_free {
+                base_name_free = false;
+                (*group).clone()
+            } else {
+                synthesize_class_name(group, &taken)
+            };
+            taken.insert(name.clone());
+            ids_by_members.insert(members.clone(), refined_classes.len());
+            ids.push(refined_classes.len());
+            refined_classes.push(RefinedClass {
+                name,
+                members,
+                signature,
+            });
+        }
+        refined_by_group.insert(*group, ids);
+    }
+    (refined_classes, refined_by_group)
+}
+
+impl<'a> SideState<'a> {
+    fn new(sources: &[KernSource<'a>], side: Side) -> Self {
+        let kerned_maps = kerned_maps(sources, side);
+
+        let mut all_members: BTreeMap<&KernGroup, BTreeSet<&GlyphName>> = Default::default();
+        for source in sources {
+            for (glyph, group) in source.map_for(side) {
+                all_members.entry(group).or_default().insert(glyph);
+            }
+        }
+
+        let divergent_glyphs: HashSet<&GlyphName> = all_members
+            .values()
+            .flatten()
+            .filter(|glyph| is_divergent(sources, glyph, side))
+            .copied()
+            .collect();
+
+        let (refined_classes, refined_by_group) =
+            refine_divergent_groups(&all_members, &divergent_glyphs, &kerned_maps);
+
+        SideState {
+            all_members,
+            divergent_glyphs,
+            refined_classes,
+            refined_by_group,
+        }
+    }
+
+    /// Expand one side of a kern key into its pairing units.
+    ///
+    /// A glyph or a consistent class is a single unit. A divergent class
+    /// expands to its precomputed refined classes, each emitted as a class --
+    /// singletons included, so class-level kerns stay in class-based
+    /// (PairPos format 2) subtables the way the varLib.merge path compiles
+    /// them.
+    fn units_for(&self, side: &ir::KernSide) -> Vec<Unit<'_>> {
+        let group = match side {
+            ir::KernSide::Glyph(_) => {
+                return vec![Unit {
+                    names: Names::Uniform(side.clone()),
+                    emit: side.clone(),
+                }];
+            }
+            ir::KernSide::Group(group) => group,
+        };
+        match self.refined_by_group.get(group) {
+            None if self.all_members.contains_key(group) => vec![Unit {
+                names: Names::Uniform(side.clone()),
+                emit: side.clone(),
+            }],
+            // a group unknown to every source; the FE validates against this
+            None => vec![],
+            Some(ids) => ids
+                .iter()
+                .map(|&id| {
+                    let refined_class = &self.refined_classes[id];
+                    Unit {
+                        names: Names::PerSource(&refined_class.signature),
+                        emit: ir::KernSide::Group(refined_class.name.clone()),
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
+/// A fresh name for a refined class: the group's name plus the first free
+/// numeric suffix.
+fn synthesize_class_name(group: &KernGroup, taken: &HashSet<KernGroup>) -> KernGroup {
+    (1usize..)
+        .map(|n| match group {
+            KernGroup::Side1(name) => KernGroup::Side1(format!("{name}_{n}").into()),
+            KernGroup::Side2(name) => KernGroup::Side2(format!("{name}_{n}").into()),
+        })
+        .find(|name| !taken.contains(name))
+        .unwrap()
+}
+
+/// Resolve a refined pair to a value at every source location.
+fn resolve_units(sources: &[KernSource], unit1: &Unit, unit2: &Unit) -> KernAdjustments {
+    // the common case: one pair, resolved with each source's own cascade
+    if let (Names::Uniform(side1), Names::Uniform(side2)) = (&unit1.names, &unit2.names) {
+        return resolve_pair(sources, &(side1.clone(), side2.clone()));
+    }
+    sources
+        .iter()
+        .enumerate()
+        .map(|(idx, source)| {
+            let value = match (unit1.names.at(idx), unit2.names.at(idx)) {
+                (Some(side1), Some(side2)) => lookup_kerning_value(
+                    &(side1, side2),
+                    source.kerns,
+                    &source.side1,
+                    &source.side2,
+                ),
+                // no kerned group in that source: varLib.merger's implicit class 0
+                _ => 0.0.into(),
+            };
+            (source.location.clone(), value)
+        })
+        .collect()
+}
+
+/// The most divergent glyph names quoted in the reconciliation log record.
+const MAX_LOGGED_DIVERGENT_GLYPHS: usize = 10;
+
+/// Resolve every kern pair defined in any master to a value at every location,
+/// reconciling sources whose kerning groups disagree.
 ///
-/// The exception is a glyph-to-class pair that is present in only some
-/// masters: the cascade would backfill it, where missing, with the more
-/// general class-to-class value, and -- since kern rules are ordered
-/// most-specific-first and the first match wins -- that backfill shadows
-/// competing class-to-glyph exceptions on the cells they share, rendering
-/// "phantom" values there that the sources never resolve to. Such a pair
-/// is instead resolved cell by cell: when every member of the class lands
-/// on the same values, the compact glyph-to-class pair is kept, carrying
-/// those cell values; otherwise it is split into one glyph-glyph pair per
-/// member. See <https://github.com/googlefonts/fontc/issues/2035>; this
-/// mirrors the equivalent fix in ufo2ft's kernFeatureWriter
-/// (<https://github.com/googlefonts/ufo2ft/issues/988>).
+/// Sources in a designspace can partition glyphs into kerning groups
+/// differently. Each source's cascade is therefore resolved against its own
+/// groups (the missing-pair fill follows the UFO kerning value lookup
+/// algorithm:
+/// <https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-value-lookup-algorithm>),
+/// and the output classes are the *common refinement* of the per-source
+/// partitions: members that share a kerned group in every source stay
+/// together, the rest split into refined classes resolved at class level per
+/// source (see [`SideState`]). This is the partition varLib's merger computes when
+/// aligning the per-master ClassDefs, so class kerning compiles the way the
+/// merge path would. See <https://github.com/googlefonts/fontc/issues/339>;
+/// mirrors the equivalent reconciliation in ufo2ft
+/// (<https://github.com/googlefonts/ufo2ft/issues/992>).
+///
+/// A glyph-to-class kern is instead a per-glyph override: it is resolved cell
+/// by cell over the class's members and emitted per glyph, so a partial-master
+/// exception can't backfill the class-to-class value, which would shadow
+/// competing class-to-glyph exceptions. See
+/// <https://github.com/googlefonts/fontc/issues/2035> and
+/// <https://github.com/googlefonts/ufo2ft/issues/988>.
+///
+/// Returns the refined group partition (the output classes) alongside the
+/// resolved adjustments.
 fn build_variable_kern_adjustments(
     ir_groups: &KerningGroups,
-    glyph_order: &GlyphOrder,
     kern_by_pos: &HashMap<NormalizedLocation, KerningInstance>,
-) -> BTreeMap<ir::KernPair, KernAdjustments> {
-    let (side1_glyphs, side2_glyphs) = glyph_to_group_maps(ir_groups);
+) -> (
+    BTreeMap<KernGroup, BTreeSet<GlyphName>>,
+    BTreeMap<ir::KernPair, KernAdjustments>,
+) {
     // resolve at the locations kerning is defined at
-    let sources = ir_groups
+    let instances: Vec<&KerningInstance> = ir_groups
         .locations
         .iter()
         .filter_map(|pos| kern_by_pos.get(pos))
-        .collect::<Vec<_>>();
+        .collect();
+    let sources: Vec<KernSource> = instances.iter().map(|i| KernSource::new(i)).collect();
+
+    let side1 = SideState::new(&sources, Side::First);
+    let side2 = SideState::new(&sources, Side::Second);
+
+    let divergent_glyphs: BTreeSet<&GlyphName> = side1
+        .divergent_glyphs
+        .iter()
+        .chain(&side2.divergent_glyphs)
+        .copied()
+        .collect();
+    if !divergent_glyphs.is_empty() {
+        let mut shown = divergent_glyphs
+            .iter()
+            .take(MAX_LOGGED_DIVERGENT_GLYPHS)
+            .map(|glyph| glyph.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if divergent_glyphs.len() > MAX_LOGGED_DIVERGENT_GLYPHS {
+            shown.push_str(&format!(
+                ", ... ({} more)",
+                divergent_glyphs.len() - MAX_LOGGED_DIVERGENT_GLYPHS
+            ));
+        }
+        log::info!(
+            "Reconciling kerning groups that differ across masters for {} glyph(s): {shown}",
+            divergent_glyphs.len(),
+        );
+    }
+
+    // the output classes: consistent groups keep their union membership, the
+    // refined classes replace the divergent groups
+    let mut refined_groups: BTreeMap<KernGroup, BTreeSet<GlyphName>> = Default::default();
+    for state in [&side1, &side2] {
+        for (group, members) in &state.all_members {
+            if !state.refined_by_group.contains_key(*group) {
+                refined_groups.insert(
+                    (*group).clone(),
+                    members.iter().map(|member| (*member).clone()).collect(),
+                );
+            }
+        }
+        for refined_class in &state.refined_classes {
+            refined_groups.insert(
+                refined_class.name.clone(),
+                refined_class
+                    .members
+                    .iter()
+                    .map(|member| (*member).clone())
+                    .collect(),
+            );
+        }
+    }
+
     // all pairs defined in at least one master
     let all_pairs = kern_by_pos
         .values()
@@ -246,69 +654,48 @@ fn build_variable_kern_adjustments(
         .cloned()
         .collect::<HashSet<_>>();
 
-    let resolve = |pair: &ir::KernPair| -> KernAdjustments {
-        sources
-            .iter()
-            .map(|instance| {
-                let value =
-                    lookup_kerning_value(pair, &instance.kerns, &side1_glyphs, &side2_glyphs);
-                (instance.location.clone(), value)
-            })
-            .collect()
-    };
-
     let mut adjustments: BTreeMap<ir::KernPair, KernAdjustments> = Default::default();
     for key in all_pairs {
-        // resolve glyph-to-class exceptions at the cell level (see the doc
-        // comment above)
-        if let (ir::KernSide::Glyph(first), ir::KernSide::Group(second_group)) = &key
-            && let Some(members) = ir_groups.groups.get(second_group)
-        {
-            // group second-side members by their per-location cell value vector
-            let mut by_value = BTreeMap::<_, Vec<_>>::new();
-            for member in members.iter().filter(|name| glyph_order.contains(*name)) {
-                let cell = (first.clone().into(), member.clone().into());
-                let vector = resolve(&cell);
-                by_value.entry(vector).or_default().push(member.clone());
-            }
-            if by_value.len() == 1 {
-                // no cell diverges: keep the compact glyph-to-class pair, but
-                // carrying the agreed *cell* value -- not the key-level value,
-                // which class-to-glyph exceptions covering every cell
-                // uniformly never resolve to.
-                let (vector, _members) = by_value.into_iter().next().unwrap();
-                insert_resolved(&mut adjustments, key, vector);
-            } else {
-                // cells diverge: replace the glyph-to-class pair with one
-                // glyph-glyph pair per second-side member, each carrying its
-                // own cell value vector. (With no members in the glyph order
-                // this emits nothing, dropping the pair like `exec` would.)
-                for (vector, members) in by_value {
-                    for member in members {
-                        let pair = (
-                            ir::KernSide::Glyph(first.clone()),
-                            ir::KernSide::Glyph(member),
-                        );
-                        insert_resolved(&mut adjustments, pair, vector.clone());
-                    }
-                }
+        // glyph-to-class: a per-glyph override, not divergence -- resolve each
+        // member's own cell with the cascade and emit it as its own pair (the
+        // builder enumerates mixed glyph/class pairs to per-glyph rules anyway)
+        if let (ir::KernSide::Glyph(first), ir::KernSide::Group(second_group)) = &key {
+            for member in side2.all_members.get(second_group).into_iter().flatten() {
+                let pair = (first.clone().into(), (*member).clone().into());
+                let values = resolve_pair(&sources, &pair);
+                insert_resolved(&mut adjustments, pair, values);
             }
             continue;
         }
-        let values = resolve(&key);
-        insert_resolved(&mut adjustments, key, values);
+        let class_to_class = matches!(&key, (ir::KernSide::Group(_), ir::KernSide::Group(_)));
+        for unit1 in side1.units_for(&key.0) {
+            for unit2 in side2.units_for(&key.1) {
+                let values = resolve_units(&sources, &unit1, &unit2);
+                // zero class-to-class pairs override nothing, even refined ones
+                if class_to_class && values.values().all(|value| value.0 == 0.0) {
+                    continue;
+                }
+                insert_resolved(
+                    &mut adjustments,
+                    (unit1.emit.clone(), unit2.emit.clone()),
+                    values,
+                );
+            }
+        }
     }
-    adjustments
+    (refined_groups, adjustments)
 }
 
 /// Insert a resolved pair; colliding pairs always carry equal values.
 ///
-/// Two keys can produce the same pair: the cell-level split of a
+/// Distinct keys can produce the same pair: the cell-level split of a
 /// glyph-to-class exception emits glyph-glyph pairs, and one of those may
-/// also be defined explicitly (encountered in either order). Both resolve
-/// the same cell against the same unmodified sources, so the values cannot
-/// differ and the overwrite is benign. The debug_assert cannot fire; it
-/// documents that invariant and is compiled out of release builds.
+/// also be defined explicitly or emitted by the split of another class key
+/// containing the same member; two group keys refining to a shared class
+/// likewise emit the same class pair. Colliding inserts resolve the same
+/// cell against the same unmodified sources, so the values cannot differ
+/// and the overwrite is benign. The debug_assert cannot fire; it documents
+/// that invariant and is compiled out of release builds.
 fn insert_resolved(
     adjustments: &mut BTreeMap<ir::KernPair, KernAdjustments>,
     pair: ir::KernPair,
