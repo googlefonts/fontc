@@ -224,16 +224,10 @@ jobs:
           which ttx
           ttx --version
 
-      # Temporarily build the variable-FEA branch of GoogleSans (googlefonts/googlesans#740)
-      # as a smoke test. The static per-master features.fea on the GS default branch are
-      # intentionally rejected as incompatible by this check (see #1829), so building main
-      # here would fail CI. Drop this `ref` once variable FEA lands on the GS default branch
-      # (tracked in googlefonts/googlesans#708).
       - name: Check out GS source repository
         uses: actions/checkout@v6
         with:
           repository: googlefonts/googlesans
-          ref: merge-fea-ast
           path: googlesans
           token: ${{ secrets.GS_READ_FONTC }}
 
