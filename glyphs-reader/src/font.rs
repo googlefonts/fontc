@@ -3168,6 +3168,17 @@ impl RawGlyph {
         let mut sub_category = parse_category(self.sub_category.as_deref(), &self.glyphname);
         let mut production_name = self.production_name;
 
+        // Whether the source explicitly set a non-empty category/subCategory. A value that
+        // was set but not recognized parses to None (parse_category logs and drops it), so
+        // we track "was set" separately to distinguish it from "absent". When the author
+        // set a value, we don't let the name-based GlyphData lookup override it -- even if
+        // we failed to parse it -- otherwise an underscore-named glyph explicitly marked as
+        // e.g. `subCategory = <something fontc doesn't recognize>` silently reverts to being
+        // guessed as a Ligature (breaking mark attachment).
+        // https://github.com/googlefonts/fontc/issues/2055
+        let category_was_set = self.category.as_deref().is_some_and(|s| !s.is_empty());
+        let sub_category_was_set = self.sub_category.as_deref().is_some_and(|s| !s.is_empty());
+
         let codepoints = self
             .unicode
             .map(|s| parse_codepoint_str(&s, format_version.codepoint_radix()))
@@ -3176,9 +3187,14 @@ impl RawGlyph {
         if (category.is_none() || sub_category.is_none() || production_name.is_none())
             && let Some(result) = glyph_data.query(&self.glyphname, Some(&codepoints))
         {
-            // if they were manually set don't change them, otherwise do
-            category = category.or(Some(result.category));
-            sub_category = sub_category.or(result.subcategory);
+            // Only fall back to the looked-up value for fields the source left unset;
+            // an explicitly-set value (even one we couldn't parse) is the author's intent.
+            if !category_was_set {
+                category = category.or(Some(result.category));
+            }
+            if !sub_category_was_set {
+                sub_category = sub_category.or(result.subcategory);
+            }
             production_name = production_name.or(result.production_name.map(Into::into));
         }
 
@@ -5360,7 +5376,9 @@ etc;
         assert_eq!(master.get_metric("zone 2"), Some((-100., -15.)));
     }
 
-    // If category is unknown, we should ignore and compute it
+    // If the source explicitly sets a category we don't recognize, we keep it unset
+    // rather than letting the name-based GlyphData guess override the author's intent.
+    // https://github.com/googlefonts/fontc/issues/2055
     #[test]
     fn unknown_glyph_category() {
         let raw = super::RawGlyph {
@@ -5370,10 +5388,25 @@ etc;
         };
 
         let cooked = raw.build(FormatVersion::V2, &GlyphData::default()).unwrap();
-        assert_eq!(
-            (cooked.category, cooked.sub_category),
-            (Some(Category::Letter), None)
-        );
+        assert_eq!((cooked.category, cooked.sub_category), (None, None));
+    }
+
+    // An unrecognized *explicit* subCategory on an underscore-named glyph must not fall
+    // through to the name-based Ligature guess: the author set something, so we leave the
+    // slot None (which later resolves to Base from anchors) instead of guessing Ligature.
+    // https://github.com/googlefonts/fontc/issues/2055
+    #[test]
+    fn explicit_unknown_subcategory_does_not_revert_to_ligature_guess() {
+        let raw = super::RawGlyph {
+            glyphname: "a_a".into(),
+            category: Some("Letter".into()),
+            sub_category: Some("Conjunct-but-fontc-doesnt-know-it".into()),
+            ..Default::default()
+        };
+
+        let cooked = raw.build(FormatVersion::V2, &GlyphData::default()).unwrap();
+        assert_eq!(cooked.category, Some(Category::Letter));
+        assert_eq!(cooked.sub_category, None); // NOT Some(Ligature)
     }
 
     #[test]
