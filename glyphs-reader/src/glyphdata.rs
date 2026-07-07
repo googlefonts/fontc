@@ -1076,6 +1076,16 @@ mod tests {
         );
     }
 
+    // The `Other` and `Conjunct` subcategories are the values used to tell Glyphs (and
+    // fontc) that an underscore-named glyph is not a component-based ligature; if they
+    // fail to parse, the explicit source override is silently dropped and the name-based
+    // Ligature guess wins. https://github.com/googlefonts/fontc/issues/2055
+    #[test]
+    fn parse_non_ligature_subcategories() {
+        assert_eq!(Subcategory::from_str("Other"), Ok(Subcategory::Other));
+        assert_eq!(Subcategory::from_str("Conjunct"), Ok(Subcategory::Conjunct));
+    }
+
     fn get_category(name: &str, codepoints: &[u32]) -> Option<(Category, Option<Subcategory>)> {
         let codepoints = codepoints.iter().copied().collect();
         GlyphData::new(None)
