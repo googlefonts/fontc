@@ -2391,6 +2391,26 @@ mod tests {
         );
     }
 
+    // An explicit `subCategory` of `Ligature` yields a preliminary Ligature, but the
+    // non-ligature subcategories used to mark Indic conjuncts (`Other`, `Conjunct`) must
+    // NOT: they defer to anchor inspection and become Base, so marks attach to the whole
+    // glyph. https://github.com/googlefonts/fontc/issues/2055
+    #[test]
+    fn non_ligature_subcategory_is_not_a_preliminary_ligature() {
+        assert_eq!(
+            category_for_glyph_preliminary(Some(Category::Letter), Some(Subcategory::Ligature)),
+            Some(GlyphClassDef::Ligature)
+        );
+        assert_eq!(
+            category_for_glyph_preliminary(Some(Category::Letter), Some(Subcategory::Other)),
+            None
+        );
+        assert_eq!(
+            category_for_glyph_preliminary(Some(Category::Letter), Some(Subcategory::Conjunct)),
+            None
+        );
+    }
+
     // It's so minimal it's a good test
     #[test]
     fn loads_minimal() {
