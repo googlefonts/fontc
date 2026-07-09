@@ -1,0 +1,62 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+familyName = FeatureWritersCurs;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+anchors = (
+{
+name = entry;
+pos = (50,0);
+},
+{
+name = exit;
+pos = (450,0);
+}
+);
+layerId = m01;
+width = 500;
+}
+);
+}
+);
+kerningLTR = {
+m01 = {
+A = {
+A = -50;
+};
+};
+};
+unitsPerEm = 1000;
+userData = {
+com.github.googlei18n.ufo2ft.featureWriters = (
+{
+class = CursFeatureWriter;
+options = {
+mode = append;
+};
+},
+{
+class = KernFeatureWriter;
+options = {
+mode = append;
+};
+},
+{
+class = MarkFeatureWriter;
+options = {
+mode = skip;
+};
+}
+);
+};
+}
