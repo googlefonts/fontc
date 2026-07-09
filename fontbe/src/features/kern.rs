@@ -15,7 +15,10 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, GdefCategories, GlyphOrder, KernGroup, KerningInstance, KerningLocations},
+    ir::{
+        self, GdefCategories, GlyphOrder, KernGroup, KerningInstance, KerningLocations,
+        StaticMetadata, resolve_feature_writers,
+    },
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::props::BidiClass;
@@ -829,6 +832,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
         let ast = context.fea_ast.get();
         let glyph_order = context.ir.glyph_order.get();
         let gdef_categories = context.ir.gdef_categories.get();
+        let static_metadata = context.ir.static_metadata.get();
         let mut pairs: Vec<_> = arc_fragments
             .iter()
             .flat_map(|(_, fragment)| fragment.kerns.iter())
@@ -858,6 +862,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
             &ast,
             &gdef_categories,
             &glyph_order,
+            &static_metadata,
             char_map,
             non_spacing_glyphs,
         )?;
@@ -874,10 +879,12 @@ fn finalize_kerning(
     ast: &FeaFirstPassOutput,
     gdef_categories: &GdefCategories,
     glyph_order: &GlyphOrder,
+    static_metadata: &StaticMetadata,
     char_map: HashMap<u32, GlyphId16>,
     non_spacing_glyphs: HashSet<GlyphId16>,
 ) -> Result<FeaRsKerns, Error> {
-    let todo = super::feature_writer_todo_list(&[KERN, DIST], &ast.ast);
+    let plan = resolve_feature_writers(&static_metadata.misc.feature_writers);
+    let todo = super::feature_writer_todo_list(&[KERN, DIST], plan.kern.as_ref(), &ast.ast);
     if pairs.is_empty() || todo.is_empty() {
         log::info!("no kerning work to do");
         return Ok(Default::default());
@@ -906,10 +913,10 @@ fn finalize_kerning(
     let (lookups_by_script, lookups) = split_lookups_by_script(lookups);
 
     let kern_features = todo
-        .contains(&KERN)
+        .contains_key(&KERN)
         .then(|| assign_lookups_to_scripts(lookups_by_script.clone(), &ast.ast, KERN));
     let dist_features = todo
-        .contains(&DIST)
+        .contains_key(&DIST)
         .then(|| assign_lookups_to_scripts(lookups_by_script, &ast.ast, DIST));
     let features = kern_features
         .into_iter()
@@ -1729,6 +1736,7 @@ mod tests {
                 &layout_output.first_pass_fea,
                 &layout_output.gdef_categories,
                 &self.glyph_order,
+                &layout_output.static_metadata,
                 self.charmap,
                 self.non_spacing,
             )

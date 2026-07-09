@@ -24,7 +24,10 @@ use fea_rs::{
 };
 
 use fontir::{
-    ir::{FeaturesSource, GdefCategories, GlyphOrder, StaticMetadata},
+    ir::{
+        FeatureWriterMode, FeatureWriterPlan, FeatureWriterSettings, FeaturesSource,
+        GdefCategories, GlyphOrder, StaticMetadata, resolve_feature_writers,
+    },
     orchestration::WorkId as FeWorkId,
 };
 
@@ -63,6 +66,14 @@ pub use marks::create_mark_work;
 
 const DFLT_SCRIPT: Tag = Tag::new(b"DFLT");
 const DFLT_LANG: Tag = Tag::new(b"dflt");
+
+const CURS: Tag = Tag::new(b"curs");
+const KERN: Tag = Tag::new(b"kern");
+const DIST: Tag = Tag::new(b"dist");
+const MARK: Tag = Tag::new(b"mark");
+const MKMK: Tag = Tag::new(b"mkmk");
+const ABVM: Tag = Tag::new(b"abvm");
+const BLWM: Tag = Tag::new(b"blwm");
 
 #[derive(Debug)]
 pub struct FeatureFirstPassWork {}
@@ -250,6 +261,8 @@ struct FeatureWriter<'a> {
     kerning: &'a FeaRsKerns,
     marks: &'a FeaRsMarks,
     feature_variations: Option<FeatureVariationsProvider>,
+    // tags whose generated lookups must be appended after all user lookups
+    append_features: Vec<Tag>,
 }
 
 impl<'a> FeatureWriter<'a> {
@@ -257,11 +270,13 @@ impl<'a> FeatureWriter<'a> {
         kerning: &'a FeaRsKerns,
         marks: &'a FeaRsMarks,
         feature_variations: Option<FeatureVariationsProvider>,
+        append_features: Vec<Tag>,
     ) -> Self {
         FeatureWriter {
             marks,
             kerning,
             feature_variations,
+            append_features,
         }
     }
 
@@ -299,6 +314,11 @@ impl FeatureProvider for FeatureWriter<'_> {
         self.add_kerning_features(builder);
         self.add_marks(builder);
         self.add_feature_variations(builder);
+        // writers running in `append` mode ignore insertion markers; their
+        // lookups land after all user-defined ones.
+        for tag in &self.append_features {
+            builder.force_append(*tag);
+        }
     }
 }
 
@@ -388,6 +408,7 @@ impl FeatureCompilationWork {
         Box::new(FeatureCompilationWork {})
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compile(
         &self,
         static_metadata: &StaticMetadata,
@@ -395,6 +416,7 @@ impl FeatureCompilationWork {
         ast: &FeaFirstPassOutput,
         kerns: &FeaRsKerns,
         marks: &FeaRsMarks,
+        plan: &FeatureWriterPlan,
         compile_debg: bool,
     ) -> Result<Compilation, Error> {
         let feature_variations = static_metadata
@@ -409,7 +431,8 @@ impl FeatureCompilationWork {
             })
             .transpose()?;
         let var_info = FeaVariationInfo::new(static_metadata);
-        let feature_writer = FeatureWriter::new(kerns, marks, feature_variations);
+        let feature_writer =
+            FeatureWriter::new(kerns, marks, feature_variations, append_forced_tags(plan));
         // we've already validated the AST, so we only need to compile
         match fea_rs::compile::compile(
             &ast.ast,
@@ -597,15 +620,19 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
         let kerns = context.fea_rs_kerns.get();
         let marks = context.fea_rs_marks.get();
 
+        // Resolve the plan once for this work unit; separate work units (kern,
+        // marks) resolve their own, since the work graph precludes threading one.
+        let plan = resolve_feature_writers(&static_metadata.misc.feature_writers);
         let mut result = self.compile(
             &static_metadata,
             &glyph_order,
             &ast,
             kerns.as_ref(),
             marks.as_ref(),
+            &plan,
             context.compile_debg,
         )?;
-        if result.gdef_classes.is_none() && !gdef_categories.categories.is_empty() {
+        if plan.gdef && result.gdef_classes.is_none() && !gdef_categories.categories.is_empty() {
             // the FEA did not contain an explicit GDEF block with glyph categories,
             // so let's use the ones from the source, if present (i.e. from
             // `public.openTypeCatgories` or computed from GlyphData.xml
@@ -717,13 +744,55 @@ fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec
     unic_script_to_languages
 }
 
-/// Return the set of features from the list that we need to generate.
+/// The effective tags a writer generates, applying its `features` subset option.
+fn settings_tags(settings: &FeatureWriterSettings, all: &[Tag]) -> Vec<Tag> {
+    match &settings.features {
+        Some(subset) => all.iter().copied().filter(|t| subset.contains(t)).collect(),
+        None => all.to_vec(),
+    }
+}
+
+/// Tags whose generated lookups must be appended (insertion markers ignored).
 ///
-/// This ignores features that already exist in the FEA, and for which there
-/// is no insertion mark.
-fn feature_writer_todo_list(features: &[Tag], ast: &ParseTree) -> HashSet<Tag> {
+/// A tag is force-appended exactly when its writer is enabled in `append` mode;
+/// this is independent of the FEA, so it needs no AST.
+fn append_forced_tags(plan: &FeatureWriterPlan) -> Vec<Tag> {
+    let mut tags = Vec::new();
+    for (settings, all) in [
+        (&plan.curs, &[CURS][..]),
+        (&plan.kern, &[KERN, DIST][..]),
+        (&plan.mark, &[MARK, MKMK, ABVM, BLWM][..]),
+    ] {
+        let Some(settings) = settings else { continue };
+        if settings.mode == FeatureWriterMode::Append {
+            tags.extend(settings_tags(settings, all));
+        }
+    }
+    tags
+}
+
+/// Decide which of a writer's `tags` to generate and whether each is appended.
+///
+/// `settings` is `None` when the writer is disabled, in which case nothing
+/// generates. In `Skip` mode a tag whose feature is manually declared in the FEA
+/// without an insertion marker is dropped (fontc's historical behavior); `Append`
+/// mode ignores markers and keeps every tag. The returned value maps each retained
+/// tag to whether its lookups must be appended after all user lookups.
+fn feature_writer_todo_list(
+    tags: &[Tag],
+    settings: Option<&FeatureWriterSettings>,
+    ast: &ParseTree,
+) -> BTreeMap<Tag, bool> {
     use fea_rs::typed;
-    let mut result = features.iter().copied().collect::<HashSet<_>>();
+    let Some(settings) = settings else {
+        return BTreeMap::new();
+    };
+    let wanted = settings_tags(settings, tags);
+    if settings.mode == FeatureWriterMode::Append {
+        return wanted.into_iter().map(|tag| (tag, true)).collect();
+    }
+
+    let wanted_set = wanted.iter().copied().collect::<HashSet<_>>();
     let mut existing_features = HashMap::new();
     for feature in ast
         .typed_root()
@@ -731,10 +800,14 @@ fn feature_writer_todo_list(features: &[Tag], ast: &ParseTree) -> HashSet<Tag> {
         .filter_map(typed::Feature::cast)
     {
         let tag = feature.tag().to_raw();
-        if result.contains(&tag) {
+        if wanted_set.contains(&tag) {
             *existing_features.entry(tag).or_insert(false) |= feature.has_insert_marker();
         }
     }
+    let mut result = wanted
+        .into_iter()
+        .map(|tag| (tag, false))
+        .collect::<BTreeMap<_, _>>();
     for (tag, has_marker) in existing_features {
         if !has_marker {
             log::warn!(
@@ -817,5 +890,112 @@ mod tests {
         assert!(!regions.iter().any(|(r, _)| is_default(r)));
         let region_values: Vec<_> = regions.into_iter().map(|(_, v)| v + default).collect();
         assert_eq!((15, vec![10, 20]), (default, region_values));
+    }
+
+    fn parse_fea(fea: &str) -> ParseTree {
+        fea_rs::parse::parse_string(fea.to_string()).0
+    }
+
+    fn settings(mode: FeatureWriterMode) -> FeatureWriterSettings {
+        FeatureWriterSettings {
+            mode,
+            features: None,
+        }
+    }
+
+    // a manual kern block, optionally with an insertion marker
+    fn manual_kern_fea(marker: bool) -> String {
+        let marker = if marker { "# Automatic Code\n" } else { "" };
+        format!("languagesystem DFLT dflt;\nfeature kern {{\n{marker}    pos A B -40;\n}} kern;\n")
+    }
+
+    #[test]
+    fn todo_disabled_generates_nothing() {
+        let ast = parse_fea("languagesystem DFLT dflt;");
+        let todo = feature_writer_todo_list(&[KERN, DIST], None, &ast);
+        assert!(todo.is_empty());
+    }
+
+    #[test]
+    fn todo_skip_no_user_block() {
+        let ast = parse_fea("languagesystem DFLT dflt;");
+        let todo = feature_writer_todo_list(
+            &[KERN, DIST],
+            Some(&settings(FeatureWriterMode::Skip)),
+            &ast,
+        );
+        assert_eq!(todo, BTreeMap::from([(KERN, false), (DIST, false)]));
+    }
+
+    #[test]
+    fn todo_skip_manual_block_without_marker_drops_tag() {
+        let ast = parse_fea(&manual_kern_fea(false));
+        let todo = feature_writer_todo_list(
+            &[KERN, DIST],
+            Some(&settings(FeatureWriterMode::Skip)),
+            &ast,
+        );
+        // kern is manually declared with no marker, so it drops; dist stays.
+        assert_eq!(todo, BTreeMap::from([(DIST, false)]));
+    }
+
+    #[test]
+    fn todo_skip_manual_block_with_marker_keeps_tag() {
+        let ast = parse_fea(&manual_kern_fea(true));
+        let todo = feature_writer_todo_list(
+            &[KERN, DIST],
+            Some(&settings(FeatureWriterMode::Skip)),
+            &ast,
+        );
+        // the insertion marker means kern still generates, landing at the marker.
+        assert_eq!(todo, BTreeMap::from([(KERN, false), (DIST, false)]));
+    }
+
+    #[test]
+    fn todo_append_ignores_markerless_manual_block() {
+        let ast = parse_fea(&manual_kern_fea(false));
+        let todo = feature_writer_todo_list(
+            &[KERN, DIST],
+            Some(&settings(FeatureWriterMode::Append)),
+            &ast,
+        );
+        // append mode ignores markers: every tag stays and is force-appended.
+        assert_eq!(todo, BTreeMap::from([(KERN, true), (DIST, true)]));
+    }
+
+    #[test]
+    fn todo_respects_features_subset() {
+        let ast = parse_fea("languagesystem DFLT dflt;");
+        let settings = FeatureWriterSettings {
+            mode: FeatureWriterMode::Skip,
+            features: Some(vec![KERN]),
+        };
+        let todo = feature_writer_todo_list(&[KERN, DIST], Some(&settings), &ast);
+        assert_eq!(todo, BTreeMap::from([(KERN, false)]));
+    }
+
+    #[test]
+    fn append_forced_tags_only_for_append_writers() {
+        // key absent -> everything enabled in skip mode -> nothing appended.
+        let plan = resolve_feature_writers(&None);
+        assert!(append_forced_tags(&plan).is_empty());
+
+        // kern in append mode -> its tags are forced; disabled writers contribute none.
+        let plan = resolve_feature_writers(&Some(vec![
+            fontir::ir::FeatureWriterSpec {
+                writer: fontir::ir::KnownFeatureWriter::Kern,
+                mode: FeatureWriterMode::Append,
+                features: None,
+            },
+            fontir::ir::FeatureWriterSpec {
+                writer: fontir::ir::KnownFeatureWriter::Curs,
+                mode: FeatureWriterMode::Skip,
+                features: None,
+            },
+        ]));
+        let tags = append_forced_tags(&plan)
+            .into_iter()
+            .collect::<HashSet<_>>();
+        assert_eq!(tags, HashSet::from([KERN, DIST]));
     }
 }
