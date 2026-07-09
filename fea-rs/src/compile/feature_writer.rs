@@ -59,6 +59,7 @@ pub struct FeatureBuilder<'a> {
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
     mark_filter_sets: &'a mut HashMap<GlyphSet, FilterSetId>,
     feature_variations: Option<RawFeatureVariations>,
+    append_features: HashSet<Tag>,
 }
 
 pub trait LookupSubtableBuilder: Sized {
@@ -145,6 +146,7 @@ impl<'a> FeatureBuilder<'a> {
             mark_filter_sets,
             feature_variations: Default::default(),
             lig_carets: Default::default(),
+            append_features: Default::default(),
         }
     }
 
@@ -229,6 +231,15 @@ impl<'a> FeatureBuilder<'a> {
         })
     }
 
+    /// Force a generated feature to be appended, ignoring any insertion marker.
+    ///
+    /// Generated lookups for `tag` will be placed after all user-defined
+    /// lookups even if the FEA contains a `# Automatic Code` marker for that
+    /// feature. This models a feature writer running in `append` mode.
+    pub fn force_append(&mut self, tag: Tag) {
+        self.append_features.insert(tag);
+    }
+
     fn get_filter_set_id(&mut self, cls: GlyphSet) -> FilterSetId {
         let next_id = self.mark_filter_sets.len();
         *self.mark_filter_sets.entry(cls).or_insert_with(|| {
@@ -246,6 +257,7 @@ impl<'a> FeatureBuilder<'a> {
             features,
             lig_carets,
             feature_variations,
+            append_features,
             ..
         } = self;
         ExternalFeatures {
@@ -254,6 +266,7 @@ impl<'a> FeatureBuilder<'a> {
             sub_lookups,
             feature_variations,
             lig_carets,
+            append_features,
         }
     }
 }
@@ -297,6 +310,9 @@ pub(crate) struct ExternalFeatures {
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
     pub(crate) feature_variations: Option<RawFeatureVariations>,
+    /// Features whose generated lookups must ignore insertion markers and be
+    /// appended after all user-defined lookups (feature writer `append` mode).
+    pub(crate) append_features: HashSet<Tag>,
 }
 
 /// A position in a feature where generated code should be inserted.
@@ -323,6 +339,8 @@ struct MergeCtx<'a> {
     all_feats: &'a mut AllFeatures,
     // that were explicit
     insert_markers: &'a HashMap<Tag, InsertionPoint>,
+    // features forced to append, ignoring any insertion marker
+    append_features: HashSet<Tag>,
     ext_pos_lookups: BTreeMap<LookupId, PositionLookup>,
     ext_sub_lookups: BTreeMap<LookupId, SubstitutionLookup>,
     ext_features: BTreeMap<FeatureKey, FeatureLookups>,
@@ -510,11 +528,14 @@ impl MergeCtx<'_> {
     }
 
     fn do_curs(&mut self) {
-        let curs_pos = self
-            .insert_markers
-            .get(&CURS)
-            .copied()
-            .unwrap_or_else(|| self.insertion_point_for_append());
+        let curs_pos = if self.append_features.contains(&CURS) {
+            self.insertion_point_for_append()
+        } else {
+            self.insert_markers
+                .get(&CURS)
+                .copied()
+                .unwrap_or_else(|| self.insertion_point_for_append())
+        };
         self.finalize_lookups_for_feature(CURS, curs_pos);
     }
 
@@ -533,11 +554,18 @@ impl MergeCtx<'_> {
                     DIST => [Some(DIST), kern],
                     _ => [kern, dist],
                 });
-        let marker = features_we_are_writing
-            .into_iter()
-            .flatten()
-            .find_map(|k| self.insert_markers.get(&k).copied())
-            .unwrap_or_else(|| self.insertion_point_for_append());
+        // kern and dist are set together by the caller; if either is forced to
+        // append, ignore both markers.
+        let marker = if self.append_features.contains(&KERN) || self.append_features.contains(&DIST)
+        {
+            self.insertion_point_for_append()
+        } else {
+            features_we_are_writing
+                .into_iter()
+                .flatten()
+                .find_map(|k| self.insert_markers.get(&k).copied())
+                .unwrap_or_else(|| self.insertion_point_for_append())
+        };
 
         let lookups = self.take_lookups_for_features(&[KERN, DIST]);
         if !lookups.is_empty() {
@@ -561,13 +589,16 @@ impl MergeCtx<'_> {
 
         const ORDER: [Tag; 4] = [ABVM, BLWM, MARK, MKMK];
         let mut inserts = [None; 4];
+        // append-forced tags neither take a marker nor participate in the
+        // priority cascade below; they fall through to append placement.
+        let is_append = ORDER.map(|tag| self.append_features.contains(&tag));
         let features_we_write = self
             .ext_features
             .keys()
             .map(|ft| ft.feature)
             .collect::<HashSet<_>>();
         for (i, tag) in ORDER.iter().enumerate() {
-            if features_we_write.contains(tag) {
+            if features_we_write.contains(tag) && !is_append[i] {
                 inserts[i] = self.insert_markers.get(tag).copied();
             }
         }
@@ -579,7 +610,7 @@ impl MergeCtx<'_> {
                 for j in 0..i {
                     let j = i - j - 1; // we want to go in reverse order,
                     // prepending each time
-                    if inserts[j].is_none() {
+                    if inserts[j].is_none() && !is_append[j] {
                         inserts[j] = Some(InsertionPoint {
                             lookup_id: insert.lookup_id,
                             priority: insert.priority - 1,
@@ -652,6 +683,7 @@ impl ExternalFeatures {
             ext_features: self.features.clone(),
             feature_variations: self.feature_variations.clone(),
             insert_markers: markers,
+            append_features: self.append_features.clone(),
             processed_lookups: Default::default(),
             append_priority: 1_000_000_000,
         };
@@ -738,6 +770,7 @@ mod tests {
             features,
             lig_carets: Default::default(),
             feature_variations: Default::default(),
+            append_features: Default::default(),
         };
 
         let mut all_features = AllFeatures::default();
@@ -787,6 +820,7 @@ mod tests {
             features,
             lig_carets: Default::default(),
             feature_variations: Default::default(),
+            append_features: Default::default(),
         };
 
         let markers = make_markers_with_order([]);
@@ -842,6 +876,7 @@ mod tests {
             features,
             lig_carets: Default::default(),
             feature_variations: Default::default(),
+            append_features: Default::default(),
         }
     }
 
@@ -959,5 +994,75 @@ mod tests {
         let mut all_feats = AllFeatures::default();
         external.merge_into(&mut all, &mut all_feats, &markers);
         assert_eq!(all_feats.feature_order_for_test(), [CURS, ABVM]);
+    }
+
+    #[test]
+    fn appended_kern_ignores_marker() {
+        // the user has some hand-written lookups...
+        let mut all = AllLookups::default();
+        all.splice_gpos(
+            0,
+            (0..4).map(|_| PositionLookup::Single(Default::default())),
+        );
+
+        let mut external = mock_external_features(&[KERN]);
+        // ...and kern has an explicit insertion marker near the front...
+        let markers = HashMap::from([(
+            KERN,
+            InsertionPoint {
+                lookup_id: LookupId::Gpos(1),
+                priority: 100,
+            },
+        )]);
+        // ...but forcing append makes the generated lookups ignore the marker
+        // and land after all user lookups.
+        external.append_features = HashSet::from([KERN]);
+
+        let mut all_feats = AllFeatures::default();
+        external.merge_into(&mut all, &mut all_feats, &markers);
+
+        let kern = all_feats
+            .features
+            .get(&FeatureKey::new(KERN, LANG_DFLT, SCRIPT_DFLT))
+            .unwrap();
+        // id 4 is past the four user lookups, not the marker position (id 1)
+        assert_eq!(
+            kern.iter_ids().map(LookupId::to_raw).collect::<Vec<_>>(),
+            [4]
+        );
+    }
+
+    #[test]
+    fn appended_curs_before_kern() {
+        // markers would order these [KERN, CURS]...
+        let mut external = mock_external_features(&[KERN, CURS]);
+        let markers = make_markers_with_order([KERN, CURS]);
+        // ...but forcing both to append ignores the markers, so the default
+        // writer order (curs before kern) wins.
+        external.append_features = HashSet::from([CURS, KERN]);
+        let mut all = AllLookups::default();
+        let mut all_feats = AllFeatures::default();
+        external.merge_into(&mut all, &mut all_feats, &markers);
+        assert_eq!(all_feats.feature_order_for_test(), [CURS, KERN]);
+    }
+
+    #[test]
+    fn appended_mark_excluded_from_cascade() {
+        // mkmk has a marker; normally it drags abvm & blwm in front of it.
+        // abvm is forced to append so it must not be dragged forward, but blwm
+        // (not appended) still cascades ahead of mkmk.
+        //
+        // This mixed state is unreachable through the featureWriters config
+        // (ufo2ft's mark writer applies one mode to all four tags); it pins the
+        // per-tag contract of the public force_append API, and is the only
+        // configuration that can observe the cascade exclusion: with all four
+        // tags appended every insert slot stays empty and the cascade no-ops.
+        let mut external = mock_external_features(&[ABVM, BLWM, MKMK]);
+        let markers = make_markers_with_order([MKMK]);
+        external.append_features = HashSet::from([ABVM]);
+        let mut all = AllLookups::default();
+        let mut all_feats = AllFeatures::default();
+        external.merge_into(&mut all, &mut all_feats, &markers);
+        assert_eq!(all_feats.feature_order_for_test(), [BLWM, MKMK, ABVM]);
     }
 }
