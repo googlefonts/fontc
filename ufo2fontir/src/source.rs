@@ -21,10 +21,12 @@ use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
         AnchorBuilder, Color, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
-        DEFAULT_VENDOR_ID, FeaturesSource, GlobalMetric, GlobalMetricsBuilder, GlyphOrder,
-        KernGroup, KernSide, KerningInstance, KerningLocations, MetaTableValues, NameBuilder,
-        NameKey, NamedInstance, Paint, PaintGlyph, PaintSolid, Panose, PostscriptNames,
-        PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
+        DEFAULT_VENDOR_ID, FEATURE_WRITERS_LIB_KEY, FeatureWriterOptionValue, FeatureWriterSpec,
+        FeaturesSource, GlobalMetric, GlobalMetricsBuilder, GlyphOrder, KernGroup, KernSide,
+        KerningInstance, KerningLocations, MetaTableValues, NameBuilder, NameKey, NamedInstance,
+        Paint, PaintGlyph, PaintSolid, Panose, PostscriptNames, PreliminaryGdefCategories, Rule,
+        StaticMetadata, Substitution, VariableFeature, reject_duplicate_writers,
+        validate_feature_writer,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -612,6 +614,87 @@ fn glyph_categories(
     Ok(categories)
 }
 
+/// Read the `com.github.googlei18n.ufo2ft.featureWriters` config from a lib dict.
+///
+/// The default master's UFO lib is already merged into `designspace.lib`, so this
+/// single lookup implements fontmake's precedence (designspace lib beats the
+/// default-master UFO lib). `None` means the key is absent (use the defaults);
+/// `Some` (including an empty list, or one where every entry was dropped) fully
+/// replaces them. Malformed entries warn and drop, mirroring fontmake; a
+/// malformed key or module and duplicate writers are hard errors.
+fn feature_writers_from_lib(lib: &Dictionary) -> Result<Option<Vec<FeatureWriterSpec>>, Error> {
+    let Some(value) = lib.get(FEATURE_WRITERS_LIB_KEY) else {
+        return Ok(None);
+    };
+    let Some(entries) = value.as_array() else {
+        // ufo2ft iterates whatever it finds and drops every element, silently
+        // building a font with no automatic features. A non-list value is always
+        // an authoring mistake; refusing loudly beats shipping a featureless font.
+        return Err(Error::UnsupportedFeatureWriters(
+            "featureWriters lib key is not a list".into(),
+        ));
+    };
+    let mut specs = Vec::new();
+    for entry in entries {
+        let Some(dict) = entry.as_dictionary() else {
+            warn!("featureWriters entry is not a dict; dropping");
+            continue;
+        };
+        let Some(class) = dict.get("class").and_then(Value::as_string) else {
+            warn!("featureWriters entry has no 'class'; dropping");
+            continue;
+        };
+        let module = match dict.get("module") {
+            None => None,
+            Some(value) => match value.as_string() {
+                Some(module) => Some(module),
+                // ufo2ft would fail the import and drop the entry; a non-string
+                // module is always an authoring mistake, so refuse loudly.
+                None => {
+                    return Err(Error::UnsupportedFeatureWriters(
+                        "featureWriters 'module' is not a string".into(),
+                    ));
+                }
+            },
+        };
+        let options = match dict.get("options") {
+            None => Vec::new(),
+            Some(Value::Dictionary(opts)) => opts
+                .iter()
+                .map(|(k, v)| (k.clone(), plist_to_feature_writer_option(v)))
+                .collect(),
+            Some(_) => {
+                warn!("featureWriters 'options' is not a dict; dropping");
+                continue;
+            }
+        };
+        if let Some(spec) = validate_feature_writer(class, module, &options)? {
+            specs.push(spec);
+        }
+    }
+    reject_duplicate_writers(&specs)?;
+    Ok(Some(specs))
+}
+
+fn plist_to_feature_writer_option(value: &Value) -> FeatureWriterOptionValue {
+    if let Some(b) = value.as_boolean() {
+        FeatureWriterOptionValue::Boolean(b)
+    } else if let Some(i) = value.as_signed_integer() {
+        FeatureWriterOptionValue::Integer(i)
+    } else if let Some(s) = value.as_string() {
+        FeatureWriterOptionValue::String(s.to_string())
+    } else if let Some(items) = value.as_array() {
+        items
+            .iter()
+            .map(|v| v.as_string().map(str::to_string))
+            .collect::<Option<Vec<_>>>()
+            .map(FeatureWriterOptionValue::Array)
+            .unwrap_or(FeatureWriterOptionValue::Other)
+    } else {
+        FeatureWriterOptionValue::Other
+    }
+}
+
 /// Generate preliminary GDEF categories from GlyphData.xml for UFO sources
 /// without explicit `public.openTypeCategories`.
 ///
@@ -1176,6 +1259,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         static_metadata.misc.meta_table = lib_plist
             .get("public.openTypeMeta")
             .and_then(parse_meta_table_values);
+
+        static_metadata.misc.feature_writers = feature_writers_from_lib(&self.designspace.lib)?;
 
         if let Some(gasp_records) = font_info_at_default.open_type_gasp_range_records.as_ref() {
             static_metadata.misc.gasp = gasp_records
@@ -2187,8 +2272,8 @@ mod tests {
     };
     use fontir::{
         ir::{
-            AnchorKind, GlobalMetricsInstance, GlyphOrder, NameKey, PostscriptNames,
-            test_helpers::Round2,
+            AnchorKind, FeatureWriterMode, FeatureWriterSpec, GlobalMetricsInstance, GlyphOrder,
+            KnownFeatureWriter, NameKey, PostscriptNames, test_helpers::Round2,
         },
         orchestration::{Context, Flags, WorkId},
         source::Source,
@@ -3767,5 +3852,142 @@ mod tests {
         // wght_var has glyphs "bar" and "plus" -- neither is a mark or ligature,
         // so categories will be empty but infer_from_anchors is still true
         assert!(cats.categories.is_empty());
+    }
+
+    fn feature_writers_of(
+        source_name: &str,
+        entries: Vec<Value>,
+    ) -> Option<Vec<FeatureWriterSpec>> {
+        let (_, context) = build_static_metadata_with(source_name, Flags::default(), |source| {
+            let ds = Arc::get_mut(&mut source.designspace).unwrap();
+            ds.lib
+                .insert(FEATURE_WRITERS_LIB_KEY.into(), Value::Array(entries));
+        });
+        context.static_metadata.get().misc.feature_writers.clone()
+    }
+
+    #[test]
+    fn reads_feature_writers_from_designspace_lib() {
+        let entry = plist_dict! {
+            "class" => "KernFeatureWriter",
+            "options" => plist_dict! { "mode" => "skip" },
+        };
+        let writers = feature_writers_of("wght_var.designspace", vec![entry.into()]).unwrap();
+        assert_eq!(
+            writers,
+            vec![FeatureWriterSpec {
+                writer: KnownFeatureWriter::Kern,
+                mode: FeatureWriterMode::Skip,
+                features: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn malformed_feature_writer_entry_is_dropped() {
+        // The unknown class drops with a warning; the valid entry still applies.
+        let bad = plist_dict! { "class" => "BogusWriter" };
+        let good = plist_dict! { "class" => "CursFeatureWriter" };
+        let writers =
+            feature_writers_of("wght_var.designspace", vec![bad.into(), good.into()]).unwrap();
+        assert_eq!(
+            writers,
+            vec![FeatureWriterSpec {
+                writer: KnownFeatureWriter::Curs,
+                mode: FeatureWriterMode::Skip,
+                features: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn empty_feature_writers_list_is_some_empty() {
+        assert_eq!(
+            feature_writers_of("wght_var.designspace", vec![]),
+            Some(vec![])
+        );
+    }
+
+    /// Build static metadata with the featureWriters lib key set to `value`,
+    /// returning the work result so error cases can be asserted.
+    fn static_metadata_with_feature_writers(value: Value) -> Result<(), Error> {
+        let mut source = load_designspace("wght_var.designspace");
+        let ds = Arc::get_mut(&mut source.designspace).unwrap();
+        ds.lib.insert(FEATURE_WRITERS_LIB_KEY.into(), value);
+        let context = Context::new_root(Flags::default(), None);
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+    }
+
+    #[test]
+    fn non_list_feature_writers_is_error() {
+        // ufo2ft would iterate-and-drop, silently building a featureless font;
+        // fontc refuses instead. Never a fallback to the built-in defaults.
+        let result = static_metadata_with_feature_writers(Value::String("nonsense".into()));
+        assert!(matches!(result, Err(Error::UnsupportedFeatureWriters(_))));
+    }
+
+    #[test]
+    fn non_string_feature_writer_module_is_error() {
+        // ufo2ft would fail the import and drop the entry; fontc refuses.
+        let entry = plist_dict! {
+            "class" => "KernFeatureWriter",
+            "module" => 123i64,
+        };
+        let result = static_metadata_with_feature_writers(Value::Array(vec![entry.into()]));
+        assert!(matches!(result, Err(Error::UnsupportedFeatureWriters(_))));
+    }
+
+    #[test]
+    fn duplicate_feature_writers_is_error() {
+        // ufo2ft runs every entry in order; fontc keeps one settings slot per
+        // writer, so it refuses rather than silently keeping only the last.
+        let first = plist_dict! { "class" => "KernFeatureWriter" };
+        let second = plist_dict! { "class" => "KernFeatureWriter" };
+        let result =
+            static_metadata_with_feature_writers(Value::Array(vec![first.into(), second.into()]));
+        assert!(matches!(result, Err(Error::UnsupportedFeatureWriters(_))));
+    }
+
+    #[test]
+    fn absent_feature_writers_key_is_none() {
+        let (_, context) = build_static_metadata("wght_var.designspace", Flags::default());
+        assert_eq!(context.static_metadata.get().misc.feature_writers, None);
+    }
+
+    #[test]
+    fn unsupported_feature_writer_option_is_error() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let entry = plist_dict! {
+            "class" => "KernFeatureWriter",
+            "options" => plist_dict! { "quantization" => 2i64 },
+        };
+        let result = static_metadata_with_feature_writers(Value::Array(vec![entry.into()]));
+        assert!(matches!(result, Err(Error::UnsupportedFeatureWriters(_))));
+    }
+
+    #[test]
+    fn reads_feature_writers_from_ufo_lib() {
+        // The default master's UFO lib is merged into the designspace lib, so a
+        // key set only in a raw .ufo's lib.plist is still read.
+        let (_, context) = build_static_metadata("FeatureWriters.ufo", Flags::default());
+        assert_eq!(
+            context.static_metadata.get().misc.feature_writers,
+            Some(vec![FeatureWriterSpec {
+                writer: KnownFeatureWriter::Kern,
+                mode: FeatureWriterMode::Skip,
+                features: None,
+            }])
+        );
     }
 }
