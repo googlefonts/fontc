@@ -126,7 +126,7 @@ fn write_header(writer: &mut impl Write, err: &Diagnostic, source: &Source, colo
 
     write!(writer, "{}{}: {}", color.prefix(), text, color.suffix(),).unwrap();
 
-    writeln!(writer, "{}", &err.message.text).unwrap();
+    writeln!(writer, "{}", err.message.text).unwrap();
     let (line, column) = source.line_col_for_offset(err.message.span.range().start);
     let pre = style_or_dont!(colorized, Colour::Blue.italic()).prefix();
     let suf = style_or_dont!(colorized, Colour::Blue.italic()).suffix();

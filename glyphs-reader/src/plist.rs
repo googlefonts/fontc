@@ -1055,11 +1055,11 @@ mod tests {
 
     #[test]
     fn ascii_to_hex() {
-        assert_eq!(byte_from_hex([b'0', b'1']), Ok(0x01));
-        assert_eq!(byte_from_hex([b'0', b'0']), Ok(0x00));
-        assert_eq!(byte_from_hex([b'f', b'f']), Ok(0xff));
-        assert_eq!(byte_from_hex([b'f', b'0']), Ok(0xf0));
-        assert_eq!(byte_from_hex([b'0', b'f']), Ok(0x0f));
+        assert_eq!(byte_from_hex(*b"01"), Ok(0x01));
+        assert_eq!(byte_from_hex(*b"00"), Ok(0x00));
+        assert_eq!(byte_from_hex(*b"ff"), Ok(0xff));
+        assert_eq!(byte_from_hex(*b"f0"), Ok(0xf0));
+        assert_eq!(byte_from_hex(*b"0f"), Ok(0x0f));
     }
 
     // in arrays the trailing comma is optional but supported

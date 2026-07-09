@@ -162,7 +162,7 @@ impl<'a> Lexer<'a> {
                 return Kind::Hyphen;
             }
             // hex: ditto
-            if [b'x', b'X'].contains(&self.nth(1)) {
+            if b"xX".contains(&self.nth(1)) {
                 return Kind::Hyphen;
             }
         }
@@ -175,7 +175,7 @@ impl<'a> Lexer<'a> {
 
     fn number(&mut self, leading_zero: bool) -> Kind {
         if leading_zero && self.nth(0) != b'.' {
-            if [b'x', b'X'].contains(&self.nth(0)) {
+            if b"xX".contains(&self.nth(0)) {
                 self.bump();
                 if self.nth(0).is_ascii_hexdigit() {
                     self.eat_hex_digits();

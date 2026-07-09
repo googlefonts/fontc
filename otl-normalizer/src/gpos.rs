@@ -491,7 +491,7 @@ impl Display for ResolvedValueRecord {
             write!(
                 f,
                 "<{} {} {} {}>",
-                &self.x_placement, &self.y_placement, &self.x_advance, &self.y_advance
+                self.x_placement, self.y_placement, self.x_advance, self.y_advance
             )
         }
     }
