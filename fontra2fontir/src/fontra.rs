@@ -301,6 +301,7 @@ pub(crate) struct FontraTransform {
     t_center_y: f64,
 }
 
+#[allow(dead_code)] // TEMPORARY: only used by FontraTransform, which is not yet wired up
 fn float_one() -> f64 {
     1.0
 }

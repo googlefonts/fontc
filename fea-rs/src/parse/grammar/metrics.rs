@@ -258,7 +258,7 @@ fn take_next_token(text: &str) -> Option<(usize, AstKind)> {
             let end = text
                 .as_bytes()
                 .iter()
-                .position(|x| [b'-', b'/'].contains(x))
+                .position(|x| b"-/".contains(x))
                 .unwrap_or(text.len());
             Some((end, AstKind::GlyphsNumberIdent))
         }

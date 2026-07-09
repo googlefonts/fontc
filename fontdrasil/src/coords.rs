@@ -66,7 +66,7 @@ pub struct Coord<Space> {
 impl<Space: Debug + Default> Debug for Coord<Space> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // format as `UserSpace(42.0)` (for instance)
-        write!(f, "{:?}({:?})", &Space::default(), self.coord)
+        write!(f, "{:?}({:?})", Space::default(), self.coord)
     }
 }
 
