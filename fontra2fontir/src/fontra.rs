@@ -13,7 +13,7 @@ use std::{
 };
 
 use fontdrasil::{paths::string_to_filename, types::GlyphName};
-use fontir::error::{BadSource, BadSourceKind, Error, PathConversionError};
+use fontir::error::{BadSource, BadSourceKind, PathConversionError};
 use serde::Deserialize;
 use write_fonts::types::Tag;
 
@@ -198,38 +198,51 @@ pub(crate) struct Font {
 
 impl Font {
     pub(crate) fn from_file(p: &path::Path) -> Result<Self, BadSource> {
-        from_file(p)
+        let mut font: Font = from_file(p)?;
+        if let Some(dir) = p.parent() {
+            // The glyph map and infos live in glyph-info.csv.
+            let (glyph_map, glyph_infos) = parse_glyph_info(dir)?;
+            font.glyph_map = glyph_map;
+            font.glyph_infos = glyph_infos;
+        }
+        Ok(font)
     }
 }
 
-pub(crate) fn parse_glyph_info(
-    fontra_dir: &path::Path,
-) -> Result<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>, Error> {
+/// Parse glyph-info.csv into the glyph map (code points) and glyph infos.
+///
+/// Fontra keeps these in glyph-info.csv rather than font-data.json.
+fn parse_glyph_info(fontra_dir: &path::Path) -> Result<(GlyphMap, GlyphInfos), BadSource> {
     let glyphinfo_file = fontra_dir.join("glyph-info.csv");
     if !glyphinfo_file.is_file() {
-        return Err(BadSource::new(glyphinfo_file, BadSourceKind::ExpectedFile).into());
+        return Err(BadSource::new(glyphinfo_file, BadSourceKind::ExpectedFile));
     }
-
-    // Read the glyph-info file
     let file = File::open(&glyphinfo_file).map_err(|e| BadSource::new(&glyphinfo_file, e))?;
+    let mut lines = BufReader::new(file).lines();
 
-    let glyph_dir = fontra_dir.join("glyphs");
-    if !glyph_dir.is_dir() {
-        return Err(BadSource::new(glyph_dir, BadSourceKind::ExpectedDirectory).into());
-    }
+    // The first line is the header. The first two columns are mandatory
+    // "glyph name" and "code points". All remaining columns are optional,
+    // so we resolve the ones we want by name.
+    let header = lines
+        .next()
+        .transpose()
+        .map_err(|e| BadSource::new(&glyphinfo_file, BadSourceKind::Io(e)))?
+        .ok_or_else(|| BadSource::custom(&glyphinfo_file, "Empty glyph-info.csv"))?;
+    let column = |name: &str| header.split(';').position(|h| h.trim() == name);
+    let category_col = column("category");
+    let subcategory_col = column("subcategory");
 
-    // Example files suggest the first line is just the column headers. Hopefully always :)
-    // This file is tool generated so it shouldn't be full of human error. Fail if we don't understand.
-    let mut glyph_info = BTreeMap::default();
-    for (i, line) in BufReader::new(file).lines().enumerate().skip(1) {
+    let mut glyph_map = GlyphMap::new();
+    let mut glyph_infos = GlyphInfos::new();
+    for (i, line) in lines.enumerate() {
+        let i = i + 1;
         let line = line.map_err(|e| BadSource::new(&glyphinfo_file, BadSourceKind::Io(e)))?;
         let parts: Vec<_> = line.split(';').collect();
-        if parts.len() != 2 {
+        if parts.len() < 2 {
             return Err(BadSource::custom(
                 &glyphinfo_file,
-                format!("Expected two parts in line {i} separated by ;"),
-            )
-            .into());
+                format!("Expected at least two parts in line {i} separated by ;"),
+            ));
         }
         let glyph_name = GlyphName::new(parts[0].trim());
         let codepoints = parts[1]
@@ -253,24 +266,28 @@ pub(crate) fn parse_glyph_info(
                 }))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let glyph_file = glyph_file(&glyph_dir, glyph_name.clone());
-        if !glyph_file.is_file() {
-            return Err(BadSource::new(glyph_file, BadSourceKind::ExpectedFile).into());
-        }
 
-        if glyph_info
-            .insert(glyph_name.clone(), (glyph_file, codepoints))
-            .is_some()
-        {
+        let cell = |col: Option<usize>| {
+            col.and_then(|c| parts.get(c))
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        };
+        let info = GlyphInfo {
+            category: cell(category_col),
+            sub_category: cell(subcategory_col),
+        };
+
+        if glyph_map.insert(glyph_name.clone(), codepoints).is_some() {
             return Err(BadSource::custom(
                 &glyphinfo_file,
                 format!("Multiple definitions of '{glyph_name}'"),
-            )
-            .into());
+            ));
         }
+        glyph_infos.insert(glyph_name, info);
     }
 
-    Ok(glyph_info)
+    Ok((glyph_map, glyph_infos))
 }
 
 /// Corresponds to a Fontra FontSource
