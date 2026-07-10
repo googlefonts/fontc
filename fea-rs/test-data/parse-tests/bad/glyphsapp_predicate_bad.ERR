@@ -1,0 +1,191 @@
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 1:28
+  | 
+1 | @missing_value = [$[name == ]];
+  |                             ^
+
+error: expected predicate operator
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 2:28
+  | 
+2 | @missing_operator = [$[name "x"]];
+  |                             ^^^
+
+error: expected predicate attribute
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 3:12
+  | 
+3 | @empty = [$[]];
+  |             ^
+
+error: not predicates are not yet supported (see fontc#2052)
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 4:10
+  | 
+4 | @not = [$[not name == "x"]];
+  |           ^^^
+
+error: not predicates are not yet supported (see fontc#2052)
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 5:20
+  | 
+5 | @bang_negation = [$[! name == "x"] $[!name == "x"]];
+  |                     ^
+
+error: not predicates are not yet supported (see fontc#2052)
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 5:37
+  | 
+5 | @bang_negation = [$[! name == "x"] $[!name == "x"]];
+  |                                      ^
+
+error: parenthesized predicates are not yet supported (see fontc#2052)
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 6:20
+  | 
+6 | @parenthesized = [$[(name == "x")]];
+  |                     ^
+
+error: expected predicate connective
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 7:37
+  | 
+7 | @relational_garbage = [$[name >= "x" garbage]];
+  |                                      ^^^^^^^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 9:13
+  | 
+9 |     $[name = = "x"] $[name ! = "x"] $[name < > "x"]
+  |              ^
+
+error: expected predicate operator
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 9:27
+  | 
+9 |     $[name = = "x"] $[name ! = "x"] $[name < > "x"]
+  |                            ^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 9:45
+  | 
+9 |     $[name = = "x"] $[name ! = "x"] $[name < > "x"]
+  |                                              ^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 10:13
+   | 
+10 |     $[name < = "x"] $[name > = "x"]
+   |              ^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 10:29
+   | 
+10 |     $[name < = "x"] $[name > = "x"]
+   |                              ^
+
+error: expected predicate operator
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 12:28
+   | 
+12 | @glued_keyword_op = [$[name contains"x"]];
+   |                             ^^^^^^^^^^^
+
+error: expected predicate connective
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 13:41
+   | 
+13 | @glued_connective_quoted = [$[name == "x"&&name == "y"||name == "z"]];
+   |                                          ^^^^^^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 14:36
+   | 
+14 | @glued_connective_bare = [$[name == x&&name == y||name == z]];
+   |                                     ^^^^^^^
+
+error: expected predicate connective
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 15:39
+   | 
+15 | @glued_connective_number = [$[name == 1&&name == "one"]];
+   |                                        ^^^^^^
+
+error: expected predicate connective
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 16:35
+   | 
+16 | @lexer_split_numeric = [$[name == 09] $[name == 078] $[name == 123abc]];
+   |                                    ^
+
+error: expected predicate connective
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 16:50
+   | 
+16 | @lexer_split_numeric = [$[name == 09] $[name == 078] $[name == 123abc]];
+   |                                                   ^
+
+error: expected predicate connective
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 16:66
+   | 
+16 | @lexer_split_numeric = [$[name == 09] $[name == 078] $[name == 123abc]];
+   |                                                                   ^^^
+
+error: Unexpected token, expected glyph or glyph class
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 17:18
+   | 
+17 | @spaced_dollar = [$ [name == "x"]];
+   |                   ^
+
+error: Expected ';'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 17:33
+   | 
+17 | @spaced_dollar = [$ [name == "x"]];
+   |                                  ^
+
+error: Unexpected token ']', expected global keyword.
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 17:33
+   | 
+17 | @spaced_dollar = [$ [name == "x"]];
+   |                                  ^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 18:26
+   | 
+18 | @float_value = [$[name == 1.5]];
+   |                           ^^^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 19:29
+   | 
+19 | @negative_value = [$[name == -1]];
+   |                              ^^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 20:24
+   | 
+20 | @hex_value = [$[name == 0x10]];
+   |                         ^^^^
+
+error: Expected glyph or glyph class
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 22:8
+   | 
+22 |     sub $[name == "not-a-class-member"] by B;
+   |         ^
+
+warning: ';' should only follow a statement
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 22:44
+   | 
+22 |     sub $[name == "not-a-class-member"] by B;
+   |                                             ^
+
+error: Expected ] found EOF
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 25:0
+   | 
+25 | 
+   | 
+
+error: Unexpected token, expected glyph or glyph class
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 25:0
+   | 
+25 | 
+   | 
+
+error: Unclosed glyph class.
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 24:16
+   | 
+24 | @unterminated = [$[name == "at-eof"
+   |                 ^
+
+error: Expected ';'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_bad.fea at 25:0
+   | 
+25 | 
+   | ^

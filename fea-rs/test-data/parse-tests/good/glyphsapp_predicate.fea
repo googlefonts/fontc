@@ -1,0 +1,43 @@
+# https://glyphsapp.com/learn/tokens#glyph-predicates
+#
+# "good" here means only that every predicate below PARSES into the tree in the
+# sibling .PARSE_TREE file. Many of them are then REJECTED at validation (compile
+# time): Phase 1 of fontc#92 supports only the `name` attribute with a limited
+# set of operators and quoted/bare string values. Those cases are collected in
+# the "parse-only" section below; their rejection is pinned by the compile tests
+# in src/compile/glyphsapp_syntax_ext/predicate.rs and src/tests/compile.rs.
+@other = [A B];
+@vertical_bars = [a|b a||b];
+
+# -- evaluable: parses and passes Phase 1 validation --
+@predicate = [
+    A $[name == "double"] $[name = "single"] $[name != "not-equal"]
+    $[name <> "angle-not-equal"] $[name beginswith "begin"]
+    $[name endswith 'end'] $[name contains bare]
+    $[name == café]
+    $[name!="unspaced"]
+    $[name == "a" or name == "b" or name == "c"]
+    $[name == "a" and name == "b" and name == "c"]
+    $[name ENDSWITH "case-insensitive" Or name contains "operator"]
+    $[name == NULL] $[name == mark]
+    @other B
+];
+
+# -- parse-only: rejected at validation, see compile tests --
+@predicate_parse_only = [
+    $[name == 123]
+    $[name matches "matches"]
+    $[name == "a" && name == "b" || name == "c"]
+    $[category like "x"] $[script == "latn"] $[language == "x"]
+    $[mark == "x"] $[name sub "x"]
+    $[NAME == "uppercase"]
+    $[name < 1] $[name <= 2] $[name > 4] $[name >= 5]
+    $[name =< 3] $[name => 6]
+];
+
+feature test {
+    sub [A $[name contains "inline"] @other] by B;
+    # a single-quoted value whose content is a keyword of the enclosing
+    # rule's grammar (`by`) must not terminate the value scan
+    sub [C $[name == 'by']] by D;
+} test;

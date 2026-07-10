@@ -1,0 +1,3 @@
+@single_quote_recovery = [$[name == 'x] B];
+@after_single_quote_recovery = [C];
+@single_quote_comment = [$[name == 'a #the comment consumes the closing quote and brackets ']];

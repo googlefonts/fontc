@@ -1,0 +1,24 @@
+@missing_value = [$[name == ]];
+@missing_operator = [$[name "x"]];
+@empty = [$[]];
+@not = [$[not name == "x"]];
+@bang_negation = [$[! name == "x"] $[!name == "x"]];
+@parenthesized = [$[(name == "x")]];
+@relational_garbage = [$[name >= "x" garbage]];
+@spaced_symbolic_ops = [
+    $[name = = "x"] $[name ! = "x"] $[name < > "x"]
+    $[name < = "x"] $[name > = "x"]
+];
+@glued_keyword_op = [$[name contains"x"]];
+@glued_connective_quoted = [$[name == "x"&&name == "y"||name == "z"]];
+@glued_connective_bare = [$[name == x&&name == y||name == z]];
+@glued_connective_number = [$[name == 1&&name == "one"]];
+@lexer_split_numeric = [$[name == 09] $[name == 078] $[name == 123abc]];
+@spaced_dollar = [$ [name == "x"]];
+@float_value = [$[name == 1.5]];
+@negative_value = [$[name == -1]];
+@hex_value = [$[name == 0x10]];
+feature test {
+    sub $[name == "not-a-class-member"] by B;
+} test;
+@unterminated = [$[name == "at-eof"

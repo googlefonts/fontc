@@ -2014,7 +2014,7 @@ impl GlyphsAppPredicateValue {
         match kind {
             Some(Kind::String) => Self::DoubleQuoted(node),
             Some(Kind::SingleQuote) => Self::SingleQuoted(node),
-            Some(Kind::Number | Kind::Float | Kind::Octal | Kind::Hex) => Self::Number(node),
+            Some(Kind::Number) => Self::Number(node),
             _ => Self::Bare(node),
         }
     }

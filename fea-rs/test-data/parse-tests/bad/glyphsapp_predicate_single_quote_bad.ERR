@@ -1,0 +1,35 @@
+error: Expected ' found ]
+in ./test-data/parse-tests/bad/glyphsapp_predicate_single_quote_bad.fea at 1:38
+  | 
+1 | @single_quote_recovery = [$[name == 'x] B];
+  |                                       ^
+
+error: Expected ' found EOF
+in ./test-data/parse-tests/bad/glyphsapp_predicate_single_quote_bad.fea at 4:0
+  | 
+4 | 
+  | 
+
+error: Expected ] found EOF
+in ./test-data/parse-tests/bad/glyphsapp_predicate_single_quote_bad.fea at 4:0
+  | 
+4 | 
+  | 
+
+error: Unexpected token, expected glyph or glyph class
+in ./test-data/parse-tests/bad/glyphsapp_predicate_single_quote_bad.fea at 4:0
+  | 
+4 | 
+  | 
+
+error: Unclosed glyph class.
+in ./test-data/parse-tests/bad/glyphsapp_predicate_single_quote_bad.fea at 3:24
+  | 
+3 | @single_quote_comment = [$[name == 'a #the comment consumes the closing quote and brackets ']];
+  |                         ^
+
+error: Expected ';'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_single_quote_bad.fea at 4:0
+  | 
+4 | 
+  | ^
