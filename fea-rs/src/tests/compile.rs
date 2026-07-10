@@ -825,3 +825,135 @@ markClass a <anchor 150 -10> @top;
         "mark_class_in_glyph_class",
     );
 }
+
+/// Compile a FEA string against an explicit glyph order.
+fn compile_fea_with_glyphs(
+    fea: &str,
+    glyph_names: &[&str],
+    test_name: &str,
+) -> Result<Vec<u8>, CompilerError> {
+    let fea_path = write_temp_fea(fea, test_name);
+    let glyph_map = GlyphMap::new(glyph_names.iter().copied()).unwrap();
+    Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
+        .compile_binary()
+}
+
+// A Glyphs.app '$[...]' predicate inside a class compiles to the same thing as
+// the equivalent explicit class. This exercises the full lexer -> grammar ->
+// compile path (the predicate unit tests cover the evaluator in isolation).
+#[test]
+fn glyphs_predicate_matches_explicit_class() {
+    let glyphs = ["a", "b", "a.sc", "b.sc", "c"];
+    let with_predicate = compile_fea_with_glyphs(
+        "feature test { sub [ $[name endswith \".sc\"] ] by a; } test;",
+        &glyphs,
+        "glyphs_predicate_sc",
+    )
+    .unwrap();
+    let explicit = compile_fea_with_glyphs(
+        "feature test { sub [ a.sc b.sc ] by a; } test;",
+        &glyphs,
+        "glyphs_predicate_sc_explicit",
+    )
+    .unwrap();
+    assert_eq!(with_predicate, explicit);
+}
+
+// Compile a predicate-bearing source that must be rejected at validation, and
+// return the (message, source-range) of each error diagnostic. Panics on any
+// other outcome: an out-of-scope predicate has to fail *validation*, not parse,
+// build, or panic. The returned ranges let a caller assert that each diagnostic
+// is attached to the offending child rather than the whole predicate.
+fn predicate_validation_errors(
+    fea: &str,
+    test_name: &str,
+) -> Vec<(String, std::ops::Range<usize>)> {
+    let glyphs = ["a", "b", "a.sc"];
+    let result = compile_fea_with_glyphs(fea, &glyphs, test_name);
+    let Err(CompilerError::ValidationFail(errs)) = result else {
+        panic!(
+            "expected ValidationFail, got {:?}",
+            result.map(|bytes| bytes.len())
+        );
+    };
+    errs.diagnostics()
+        .iter()
+        .filter(|diag| diag.is_error())
+        .map(|diag| (diag.text().to_string(), diag.span()))
+        .collect()
+}
+
+// An out-of-scope predicate (Phase 2, https://github.com/googlefonts/fontc/issues/2052)
+// fails cleanly at validation rather than panicking or silently mis-compiling,
+// and -- the Colin-facing point of this restructure -- each diagnostic attaches
+// to the offending child, not the whole predicate. `category like` is doubly
+// out of scope, so it must emit *both* an attribute error (on `category`) and an
+// operator error (on `like`), each pointing at #2052. Asserting the child ranges
+// and the targeted #2052 message (not just any ValidationFail) is what makes
+// this meaningful red-first evidence: the parse-only D6 stub rejects every
+// predicate with a single whole-predicate fontc#92 error, which fails both the
+// per-child lookup and the #2052 assertion.
+#[test]
+fn glyphs_predicate_out_of_scope_fails_validation() {
+    let fea = "@x = [ $[category like \"Letter\"] ]; feature test { sub @x by a; } test;";
+    let errs = predicate_validation_errors(fea, "glyphs_predicate_bad");
+    let attr = errs
+        .iter()
+        .find(|(_, span)| &fea[span.clone()] == "category")
+        .unwrap_or_else(|| panic!("expected an error on the `category` attribute, got {errs:?}"));
+    assert!(
+        attr.0.contains("2052"),
+        "attribute error should point at fontc#2052, got: {}",
+        attr.0
+    );
+    let op = errs
+        .iter()
+        .find(|(_, span)| &fea[span.clone()] == "like")
+        .unwrap_or_else(|| panic!("expected an error on the `like` operator, got {errs:?}"));
+    assert!(
+        op.0.contains("2052"),
+        "operator error should point at fontc#2052, got: {}",
+        op.0
+    );
+}
+
+// Uppercase `NAME` parses (PR A) but is rejected here: glyphsLib's object regex
+// is case-sensitive, so `NAME` is a different, unsupported object. The error
+// must point at #2052 and attach to the `NAME` attribute child specifically.
+#[test]
+fn glyphs_predicate_uppercase_name_fails_validation() {
+    let fea = "@x = [ $[NAME == \"a\"] ]; feature test { sub @x by a; } test;";
+    let errs = predicate_validation_errors(fea, "glyphs_predicate_upper_name");
+    assert_eq!(errs.len(), 1, "expected exactly one error, got {errs:?}");
+    let (msg, span) = &errs[0];
+    assert!(
+        msg.contains("2052"),
+        "error should point at fontc#2052, got: {msg}"
+    );
+    assert_eq!(
+        &fea[span.clone()],
+        "NAME",
+        "error must attach to the attribute child, not the whole predicate"
+    );
+}
+
+// A mixed `and`/`or` chain parses but is rejected: Phase 1 supports only a flat
+// chain of a single connective. The error attaches to the connective that breaks
+// the chain (the `or`), not the whole predicate.
+#[test]
+fn glyphs_predicate_mixed_connectives_fail_validation() {
+    let fea = "@x = [ $[name == \"a\" and name == \"b\" or name == \"c\"] ]; \
+               feature test { sub @x by a; } test;";
+    let errs = predicate_validation_errors(fea, "glyphs_predicate_mixed");
+    assert_eq!(errs.len(), 1, "expected exactly one error, got {errs:?}");
+    let (msg, span) = &errs[0];
+    assert!(
+        msg.contains("2052"),
+        "error should point at fontc#2052, got: {msg}"
+    );
+    assert_eq!(
+        &fea[span.clone()],
+        "or",
+        "error must attach to the offending connective child"
+    );
+}
