@@ -158,6 +158,8 @@ impl Default for ConditionalSubstitutions {
     }
 }
 
+type KerningValues = HashMap<String, HashMap<String, Vec<Option<f64>>>>;
+
 /// Corresponds to a Fontra Kerning
 /// <https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/classes.py#L93>
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -167,7 +169,7 @@ pub(crate) struct Kerning {
     pub(crate) groups_side2: HashMap<String, Vec<String>>,
     pub(crate) source_identifiers: Vec<String>,
     /// left glyph/group -> right glyph/group -> source index -> value
-    pub(crate) values: HashMap<String, HashMap<String, Vec<Option<f64>>>>,
+    pub(crate) values: KerningValues,
 }
 
 /// Corresponds to a Fontra Font
@@ -223,6 +225,9 @@ impl Font {
             font.features.text = fs::read_to_string(&features_file)
                 .map_err(|e| BadSource::new(&features_file, e))?;
         }
+
+        // The kerning lives in kerning.csv
+        font.kerning = parse_kerning(path)?;
 
         Ok(font)
     }
@@ -307,6 +312,171 @@ fn parse_glyph_info(fontra_dir: &path::Path) -> Result<(GlyphMap, GlyphInfos), B
     }
 
     Ok((glyph_map, glyph_infos))
+}
+
+/// Parse kerning.
+///
+/// Fontra keeps kerning in kerning.csv file.
+///
+/// The file is split into blank line-delimited sections (TYPE, GROUPS1, GROUPS2, VALUES), repeated
+/// once per kerning type. Each section contains semicolon-delimited entries.
+///
+/// The legacy single-GROUPS format is not supported.
+///
+/// <https://github.com/fontra/fontra/blob/469a001f8/src/fontra/backends/fontra.py#L538>
+fn parse_kerning(fontra_dir: &path::Path) -> Result<BTreeMap<String, Kerning>, BadSource> {
+    let kerning_file = fontra_dir.join("kerning.csv");
+    if !kerning_file.is_file() {
+        return Ok(BTreeMap::new());
+    }
+    let content =
+        fs::read_to_string(&kerning_file).map_err(|e| BadSource::new(&kerning_file, e))?;
+    let mut row_iter = (1..).zip(
+        content
+            .lines()
+            .map(|line| line.split(';').collect::<Vec<_>>()),
+    );
+
+    let mut kerning = BTreeMap::new();
+    while let Some(kern_type) = kerning_read_type(&mut row_iter, &kerning_file)? {
+        let groups_side1 = kerning_read_groups(&mut row_iter, &kerning_file, "GROUPS1")?;
+        let groups_side2 = kerning_read_groups(&mut row_iter, &kerning_file, "GROUPS2")?;
+        let (source_identifiers, values) = kerning_read_values(&mut row_iter, &kerning_file)?;
+        kerning.insert(
+            kern_type,
+            Kerning {
+                groups_side1,
+                groups_side2,
+                source_identifiers,
+                values,
+            },
+        );
+    }
+
+    Ok(kerning)
+}
+
+fn next_non_blank_row<'a>(
+    row_iter: &mut impl Iterator<Item = (usize, Vec<&'a str>)>,
+) -> (Option<usize>, Vec<&'a str>) {
+    row_iter
+        .find(|(_, row)| !row[0].is_empty())
+        .map(|(line_number, row)| (Some(line_number), row))
+        .unwrap_or_default()
+}
+
+fn next_row<'a>(
+    row_iter: &mut impl Iterator<Item = (usize, Vec<&'a str>)>,
+) -> (Option<usize>, Vec<&'a str>) {
+    row_iter
+        .next()
+        .map(|(line_number, row)| (Some(line_number), row))
+        .unwrap_or_default()
+}
+
+fn kerning_read_type<'a>(
+    row_iter: &mut impl Iterator<Item = (usize, Vec<&'a str>)>,
+    kerning_file: &path::Path,
+) -> Result<Option<String>, BadSource> {
+    let (line_number, row) = next_non_blank_row(row_iter);
+    if line_number.is_none() {
+        return Ok(None);
+    }
+    if row[0] != "TYPE" {
+        return Err(BadSource::custom(
+            kerning_file,
+            format!("expected TYPE keyword (line {line_number:?})"),
+        ));
+    }
+
+    let (line_number, row) = next_row(row_iter);
+    if row.is_empty() || row[0].is_empty() {
+        return Err(BadSource::custom(
+            kerning_file,
+            format!("expected TYPE value string (line {line_number:?})"),
+        ));
+    }
+    Ok(Some(row[0].to_string()))
+}
+
+fn kerning_read_groups<'a>(
+    row_iter: &mut impl Iterator<Item = (usize, Vec<&'a str>)>,
+    kerning_file: &path::Path,
+    keyword: &str,
+) -> Result<HashMap<String, Vec<String>>, BadSource> {
+    let (line_number, row) = next_non_blank_row(row_iter);
+    if row.is_empty() || row[0] != keyword {
+        return Err(BadSource::custom(
+            kerning_file,
+            format!("expected {keyword} keyword (line {line_number:?})"),
+        ));
+    }
+
+    let mut groups = HashMap::new();
+    for (_, row) in row_iter {
+        if row[0].is_empty() {
+            break;
+        }
+        let members = row[1..].iter().map(|s| s.to_string()).collect();
+        groups.insert(row[0].to_string(), members);
+    }
+
+    Ok(groups)
+}
+
+fn kerning_read_values<'a>(
+    row_iter: &mut impl Iterator<Item = (usize, Vec<&'a str>)>,
+    kerning_file: &path::Path,
+) -> Result<(Vec<String>, KerningValues), BadSource> {
+    let (line_number, row) = next_non_blank_row(row_iter);
+    if row.is_empty() || row[0] != "VALUES" {
+        return Err(BadSource::custom(
+            kerning_file,
+            format!("expected VALUES keyword (line {line_number:?})"),
+        ));
+    }
+
+    let (line_number, row) = next_row(row_iter);
+    if row.len() < 3 || row[0] != "side1" || row[1] != "side2" {
+        return Err(BadSource::custom(
+            kerning_file,
+            format!("expected source identifier row (line {line_number:?})"),
+        ));
+    }
+    let source_identifiers: Vec<_> = row[2..].iter().map(|s| s.to_string()).collect();
+
+    let mut values: KerningValues = HashMap::new();
+    for (line_number, row) in row_iter {
+        if row[0].is_empty() {
+            break;
+        }
+        if row.len() < 2 {
+            return Err(BadSource::custom(
+                kerning_file,
+                format!("expected kern values (line {line_number})"),
+            ));
+        }
+
+        let left = row[0];
+        let right = row[1];
+        let kerns = row[2..]
+            .iter()
+            .map(|v| match *v {
+                "" => Ok(None),
+                v => v.parse().map(Some).map_err(|_| {
+                    BadSource::custom(
+                        kerning_file,
+                        format!("parse error: {v:?} (line {line_number})"),
+                    )
+                }),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        values
+            .entry(left.to_string())
+            .or_default()
+            .insert(right.to_string(), kerns);
+    }
+    Ok((source_identifiers, values))
 }
 
 /// Corresponds to a Fontra FontSource
