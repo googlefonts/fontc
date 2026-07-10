@@ -1908,7 +1908,6 @@ impl GlyphsAppNumberExpr {
     }
 }
 
-#[allow(dead_code)]
 impl GlyphsAppPredicate {
     pub(crate) fn clauses(&self) -> impl Iterator<Item = GlyphsAppPredicateClause> + '_ {
         self.iter().filter_map(GlyphsAppPredicateClause::cast)
@@ -1921,7 +1920,6 @@ impl GlyphsAppPredicate {
     }
 }
 
-#[allow(dead_code)]
 impl GlyphsAppPredicateClause {
     pub(crate) fn attr(&self) -> Option<GlyphsAppPredicateAttr> {
         self.iter().find_map(GlyphsAppPredicateAttr::cast)
@@ -1940,7 +1938,6 @@ impl GlyphsAppPredicateClause {
     }
 }
 
-#[allow(dead_code)]
 impl GlyphsAppPredicateOp {
     fn from_node(node: GlyphsAppPredicateOpNode) -> Self {
         match compact_node_text(&node).as_str() {
@@ -2004,7 +2001,6 @@ impl AstNode for GlyphsAppPredicateOp {
     }
 }
 
-#[allow(dead_code)]
 impl GlyphsAppPredicateValue {
     fn from_node(node: GlyphsAppPredicateValueNode) -> Self {
         let kind = node
@@ -2072,7 +2068,6 @@ impl AstNode for GlyphsAppPredicateValue {
     }
 }
 
-#[allow(dead_code)]
 impl GlyphsAppPredicateConnective {
     fn from_token(token: GlyphsAppPredicateConnectiveToken) -> Self {
         if token.text().eq_ignore_ascii_case("and") {
@@ -2105,7 +2100,6 @@ impl AstNode for GlyphsAppPredicateConnective {
     }
 }
 
-#[allow(dead_code)]
 fn compact_node_text(node: &impl AstNode) -> String {
     node.iter()
         .filter(|item| !item.kind().is_trivia())

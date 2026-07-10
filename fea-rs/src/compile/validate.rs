@@ -1256,16 +1256,105 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             } else if let Some(alias) = typed::GlyphClassName::cast(item) {
                 self.validate_glyph_class_ref(&alias);
             } else if let Some(predicate) = typed::GlyphsAppPredicate::cast(item) {
-                self.error(
-                    predicate.range(),
-                    "glyphs predicate tokens are not yet supported at compile time (see fontc#92)",
-                );
+                self.validate_glyphs_predicate(&predicate);
                 // these two cases indicate existing errors
             } else if !item.kind().is_trivia()
                 && item.kind() != Kind::Ident
                 && item.kind() != Kind::GlyphNameOrRange
             {
                 self.warning(item.range(), format!("unexpected item {}", item.kind()));
+            }
+        }
+    }
+
+    /// Enforce the Phase 1 subset of Glyphs.app glyph predicates.
+    ///
+    /// The grammar accepts the structural predicate surface; here we reject the
+    /// constructs deferred to fontc#2052, attaching each diagnostic to the
+    /// offending attribute/operator/value/connective child rather than the whole
+    /// predicate. Conversion and evaluation live in
+    /// [`crate::compile::glyphsapp_syntax_ext::predicate`].
+    fn validate_glyphs_predicate(&mut self, predicate: &typed::GlyphsAppPredicate) {
+        use super::glyphsapp_syntax_ext::predicate::starts_with_boolean_word;
+
+        for clause in predicate.clauses() {
+            if let Some(attr) = clause.attr() {
+                // glyphsLib's object regex is case-sensitive: `name` is the only
+                // supported object, and `NAME` is a different (unknown) one.
+                if attr.text() != "name" {
+                    self.error(
+                        attr.range(),
+                        format!(
+                            "unsupported glyphs predicate attribute '{}': only 'name' \
+                             is supported (see fontc#2052)",
+                            attr.text()
+                        ),
+                    );
+                }
+            }
+            if let Some(op) = clause.op() {
+                use typed::GlyphsAppPredicateOp as Op;
+                match op {
+                    Op::BeginsWith(_)
+                    | Op::EndsWith(_)
+                    | Op::Contains(_)
+                    | Op::EqualEqual(_)
+                    | Op::Equal(_)
+                    | Op::NotEqual(_)
+                    | Op::AngleNotEqual(_)
+                    | Op::LessThan(_)
+                    | Op::LessThanOrEqual(_)
+                    | Op::GreaterThan(_)
+                    | Op::GreaterThanOrEqual(_) => (),
+                    Op::Like(_) | Op::Matches(_) => self.error(
+                        op.range(),
+                        format!(
+                            "unsupported glyphs predicate operator '{}' (see fontc#2052)",
+                            op.text()
+                        ),
+                    ),
+                    Op::UnknownKeyword(_) => self.error(
+                        op.range(),
+                        format!("unknown glyphs predicate operator '{}'", op.text()),
+                    ),
+                }
+            }
+            if let Some(value) = clause.value() {
+                use typed::GlyphsAppPredicateValue as Value;
+                let text = value.text();
+                if matches!(value, Value::Number(_)) {
+                    self.error(
+                        value.range(),
+                        "numeric values in glyphs predicates must be quoted (see fontc#2052)",
+                    );
+                } else if matches!(value, Value::Bare(_)) && starts_with_boolean_word(&text) {
+                    self.error(
+                        value.range(),
+                        format!(
+                            "the bare value '{text}' is treated as a boolean by Glyphs and \
+                             must be quoted (see fontc#2052)"
+                        ),
+                    );
+                } else if text.is_empty() {
+                    self.error(value.range(), "empty value in glyphs predicate");
+                }
+            }
+        }
+
+        // A flat chain of a single connective only; mixing `and` and `or` needs
+        // real precedence handling and is deferred.
+        let mut first_is_and: Option<bool> = None;
+        for conn in predicate.connectives() {
+            use typed::GlyphsAppPredicateConnective as Conn;
+            let is_and = matches!(conn, Conn::And(_) | Conn::AndAnd(_));
+            match first_is_and {
+                None => first_is_and = Some(is_and),
+                Some(prev) if prev != is_and => self.error(
+                    conn.range(),
+                    "mixing 'and' and 'or' in a glyphs predicate is not yet \
+                     supported (see fontc#2052)",
+                ),
+                Some(_) => (),
             }
         }
     }

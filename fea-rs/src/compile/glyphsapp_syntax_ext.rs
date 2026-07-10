@@ -1,5 +1,9 @@
 //! Handling glyphsapp syntax extensions
 
+pub(crate) mod predicate;
+
+pub(crate) use predicate::Predicate;
+
 use std::{
     collections::HashMap,
     ops::{AddAssign, DivAssign, MulAssign, SubAssign},

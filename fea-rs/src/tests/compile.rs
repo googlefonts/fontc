@@ -144,32 +144,6 @@ fn compile_fea_variable(fea: &str, test_name: &str) -> Compilation {
         .expect("compilation should succeed")
 }
 
-#[test]
-fn glyphs_predicate_fails_validation_until_compile_support_is_added() {
-    let test_name = "glyphs_predicate_validation_failure";
-    let dir = std::env::temp_dir().join(format!("fea_rs_test_{test_name}"));
-    std::fs::create_dir_all(&dir).unwrap();
-    let fea_path = dir.join(format!("{test_name}.fea"));
-    std::fs::write(&fea_path, "@predicate = [$[name == \"A\"]];\n").unwrap();
-
-    let glyph_order_path = Path::new(ROOT_TEST_DIR)
-        .join("mini-latin")
-        .join(GLYPH_ORDER);
-    let glyph_order = std::fs::read_to_string(glyph_order_path).unwrap();
-    let glyph_map = GlyphMap::new(glyph_order.lines()).unwrap();
-
-    let err = match Compiler::<'_, NopFeatureProvider, MockVariationInfo>::new(fea_path, &glyph_map)
-        .compile()
-    {
-        Ok(_) => panic!("predicate compiled successfully"),
-        Err(err) => err,
-    };
-    assert!(
-        matches!(err, CompilerError::ValidationFail(_)),
-        "expected validation failure, got {err:?}"
-    );
-}
-
 // Regression test for https://github.com/googlefonts/fontc/issues/1847
 //
 // When a variable font has no mark attachment lookups, finalize_gdef_table()
