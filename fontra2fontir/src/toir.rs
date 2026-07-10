@@ -14,17 +14,18 @@ use kurbo::BezPath;
 use log::trace;
 use write_fonts::types::Tag;
 
-use crate::fontra::{AxisName, FontraContour, FontraFontData, FontraGlyph, FontraPoint, PointType};
+use crate::fontra::{AxisName, Contour, Font, Point, PointType, VariableGlyph};
 
-pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<StaticMetadata, Error> {
+pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, Error> {
     let axes = font_data
+        .axes
         .axes
         .iter()
         .map(|a| match a {
-            crate::fontra::FontraAxis::Discrete(_) => {
+            crate::fontra::Axis::Discrete(_) => {
                 Err(Error::UnsupportedConstruct(format!("discrete axis {a:?}")))
             }
-            crate::fontra::FontraAxis::Continuous(a) => Ok(a),
+            crate::fontra::Axis::Continuous(a) => Ok(a),
         })
         .map(|a| {
             let a = a?;
@@ -87,7 +88,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<Static
 fn to_ir_glyph(
     global_axes: HashMap<AxisName, Tag>,
     codepoints: HashSet<u32>,
-    fontra_glyph: &FontraGlyph,
+    fontra_glyph: &VariableGlyph,
 ) -> Result<Glyph, BadGlyph> {
     let _local_axes: HashMap<_, _> = fontra_glyph
         .axes
@@ -127,7 +128,7 @@ fn to_ir_glyph(
         let contours: Vec<_> = layer
             .glyph
             .path
-            .contours
+            .contours()
             .iter()
             .map(|c| to_ir_path(fontra_glyph.name.clone(), c))
             .collect::<Result<_, _>>()?;
@@ -155,7 +156,7 @@ fn to_ir_glyph(
 #[allow(dead_code)] // TEMPORARY
 fn add_to_path<'a>(
     path_builder: &'a mut GlyphPathBuilder,
-    points: impl Iterator<Item = &'a FontraPoint>,
+    points: impl Iterator<Item = &'a Point>,
 ) -> Result<(), PathConversionError> {
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/pens.py#L92
@@ -174,7 +175,7 @@ fn add_to_path<'a>(
     Ok(())
 }
 
-fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath, BadGlyph> {
+fn to_ir_path(glyph_name: GlyphName, contour: &Contour) -> Result<BezPath, BadGlyph> {
     // Based on glyphs2fontir/src/toir.rs to_ir_path
     // TODO(https://github.com/googlefonts/fontc/issues/700): share code
     if contour.points.is_empty() {
@@ -225,7 +226,7 @@ mod tests {
     use write_fonts::types::Tag;
 
     use crate::{
-        fontra::{FontraFontData, FontraGlyph},
+        fontra::{Font, VariableGlyph},
         test::testdata_dir,
         toir::to_ir_static_metadata,
     };
@@ -278,7 +279,7 @@ mod tests {
     #[test]
     fn static_metadata_of_2glyphs() {
         let fontdata_file = testdata_dir().join("2glyphs.fontra/font-data.json");
-        let font_data = FontraFontData::from_file(&fontdata_file).unwrap();
+        let font_data = Font::from_file(&fontdata_file).unwrap();
         let static_metadata = to_ir_static_metadata(&font_data).unwrap();
         assert_eq!(1000, static_metadata.units_per_em);
         assert_eq!(
@@ -293,7 +294,7 @@ mod tests {
     #[test]
     fn ir_of_glyph_u20089() {
         let glyph_file = testdata_dir().join("2glyphs.fontra/glyphs/u20089.json");
-        let fontra_glyph = FontraGlyph::from_file(&glyph_file).unwrap();
+        let fontra_glyph = VariableGlyph::from_file(&glyph_file).unwrap();
         let glyph = to_ir_glyph(
             HashMap::from([("Weight".to_string(), Tag::new(b"wght"))]),
             Default::default(),

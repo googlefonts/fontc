@@ -16,7 +16,7 @@ use fontir::{
 use log::debug;
 
 use crate::{
-    fontra::{self, FontraFontData},
+    fontra::{self, Font},
     toir::to_ir_static_metadata,
 };
 
@@ -112,7 +112,7 @@ impl Source for FontraIrSource {
     fn create_static_metadata_work(
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        FontraFontData::from_file(&self.fontdata_file)?;
+        Font::from_file(&self.fontdata_file)?;
         Ok(Box::new(StaticMetadataWork {
             fontdata_file: self.fontdata_file.clone(),
             glyph_info: self.glyph_info.clone(),
@@ -171,7 +171,7 @@ struct StaticMetadataWork {
 
 fn create_static_metadata(fontdata_file: &Path) -> Result<StaticMetadata, Error> {
     debug!("Static metadata for {fontdata_file:#?}");
-    let font_data = FontraFontData::from_file(fontdata_file)?;
+    let font_data = Font::from_file(fontdata_file)?;
     to_ir_static_metadata(&font_data)
 }
 
