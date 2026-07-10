@@ -301,9 +301,16 @@ pub enum Kind {
     Plus,
     Asterisk,
     Slash,
+    Bang,
     GlyphsNumberValueNode,
     GlyphsNumberValueExprNode,
     GlyphsNumberIdent,
+    GlyphsPredicateNode,
+    GlyphsPredicateClauseNode,
+    GlyphsPredicateAttr,
+    GlyphsPredicateOpNode,
+    GlyphsPredicateValueNode,
+    GlyphsPredicateConnective,
 }
 
 impl Kind {
@@ -579,9 +586,16 @@ impl std::fmt::Display for Kind {
             Self::Plus => write!(f, "+"),
             Self::Slash => write!(f, "/"),
             Self::Asterisk => write!(f, "*"),
+            Self::Bang => write!(f, "!"),
             Self::GlyphsNumberValueNode => write!(f, "GlyphsNumberValueNode"),
             Self::GlyphsNumberValueExprNode => write!(f, "GlyphsNumberValueExprNode"),
             Self::GlyphsNumberIdent => write!(f, "GlyphsNumberIdent"),
+            Self::GlyphsPredicateNode => write!(f, "GlyphsPredicateNode"),
+            Self::GlyphsPredicateClauseNode => write!(f, "GlyphsPredicateClauseNode"),
+            Self::GlyphsPredicateAttr => write!(f, "GlyphsPredicateAttr"),
+            Self::GlyphsPredicateOpNode => write!(f, "GlyphsPredicateOpNode"),
+            Self::GlyphsPredicateValueNode => write!(f, "GlyphsPredicateValueNode"),
+            Self::GlyphsPredicateConnective => write!(f, "GlyphsPredicateConnective"),
         }
     }
 }

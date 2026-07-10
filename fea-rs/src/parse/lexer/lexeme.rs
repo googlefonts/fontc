@@ -48,6 +48,7 @@ pub enum Kind {
     Backslash,
     Hyphen,
     Eq,
+    Bang,
     LBrace,
     RBrace,
     LSquare,
@@ -316,6 +317,7 @@ impl Kind {
             Self::Backslash => AstKind::Backslash,
             Self::Hyphen => AstKind::Hyphen,
             Self::Eq => AstKind::Eq,
+            Self::Bang => AstKind::Bang,
             Self::LBrace => AstKind::LBrace,
             Self::RBrace => AstKind::RBrace,
             Self::LSquare => AstKind::LSquare,
@@ -448,6 +450,7 @@ impl std::fmt::Display for Kind {
             Self::Backslash => write!(f, "\\"),
             Self::Hyphen => write!(f, "-"), // also minus
             Self::Eq => write!(f, "="),
+            Self::Bang => write!(f, "!"),
             Self::LBrace => write!(f, "{{"),
             Self::RBrace => write!(f, "}}"),
             Self::LSquare => write!(f, "["),
