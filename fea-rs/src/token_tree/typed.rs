@@ -431,6 +431,68 @@ ast_enum!(GlyphsAppNumberValue {
     Ident(GlyphsAppNumberName),
 });
 
+// Glyphs.app glyph predicates: https://glyphsapp.com/learn/tokens#glyph-predicates
+ast_node!(GlyphsAppPredicate, Kind::GlyphsPredicateNode);
+ast_node!(GlyphsAppPredicateClause, Kind::GlyphsPredicateClauseNode);
+ast_token!(GlyphsAppPredicateAttr, Kind::GlyphsPredicateAttr);
+ast_node!(GlyphsAppPredicateOpNode, Kind::GlyphsPredicateOpNode);
+ast_node!(GlyphsAppPredicateValueNode, Kind::GlyphsPredicateValueNode);
+ast_token!(GlyphsAppPredicateAnd, Kind::GlyphsPredicateAnd);
+ast_token!(GlyphsAppPredicateOr, Kind::GlyphsPredicateOr);
+
+// a connective between predicate clauses; the grammar sorts the `and`/`&&` and
+// `or`/`||` spellings into two kinds, so the classification is in the tree
+ast_enum!(GlyphsAppPredicateConnective {
+    And(GlyphsAppPredicateAnd),
+    Or(GlyphsAppPredicateOr),
+});
+
+/// An operator written in a Glyphs.app glyph predicate.
+#[derive(Clone, Debug)]
+pub enum GlyphsAppPredicateOp {
+    /// `beginswith`, in any ASCII case.
+    BeginsWith(GlyphsAppPredicateOpNode),
+    /// `endswith`, in any ASCII case.
+    EndsWith(GlyphsAppPredicateOpNode),
+    /// `contains`, in any ASCII case.
+    Contains(GlyphsAppPredicateOpNode),
+    /// `like`, in any ASCII case.
+    Like(GlyphsAppPredicateOpNode),
+    /// `matches`, in any ASCII case.
+    Matches(GlyphsAppPredicateOpNode),
+    /// A word operator not yet recognized by the typed predicate syntax.
+    UnknownKeyword(GlyphsAppPredicateOpNode),
+    /// `==`
+    EqualEqual(GlyphsAppPredicateOpNode),
+    /// `=`
+    Equal(GlyphsAppPredicateOpNode),
+    /// `!=`
+    NotEqual(GlyphsAppPredicateOpNode),
+    /// `<>`
+    AngleNotEqual(GlyphsAppPredicateOpNode),
+    /// `<`
+    LessThan(GlyphsAppPredicateOpNode),
+    /// `<=`
+    LessThanOrEqual(GlyphsAppPredicateOpNode),
+    /// `>`
+    GreaterThan(GlyphsAppPredicateOpNode),
+    /// `>=`
+    GreaterThanOrEqual(GlyphsAppPredicateOpNode),
+}
+
+/// A value written in a Glyphs.app glyph predicate.
+#[derive(Clone, Debug)]
+pub enum GlyphsAppPredicateValue {
+    /// A value delimited by double quotes.
+    DoubleQuoted(GlyphsAppPredicateValueNode),
+    /// A value delimited by single quotes.
+    SingleQuoted(GlyphsAppPredicateValueNode),
+    /// An unquoted word.
+    Bare(GlyphsAppPredicateValueNode),
+    /// A numeric literal.
+    Number(GlyphsAppPredicateValueNode),
+}
+
 /// A trait for contextual and chain contextual rule nodes.
 ///
 /// These types share a common implementation, and this lets us reuse code
@@ -1836,4 +1898,174 @@ impl GlyphsAppNumberExpr {
     pub(crate) fn items(&self) -> impl Iterator<Item = GlyphsAppExprItem> + '_ {
         self.iter().filter_map(GlyphsAppExprItem::cast)
     }
+}
+
+#[allow(dead_code)]
+impl GlyphsAppPredicate {
+    pub(crate) fn clauses(&self) -> impl Iterator<Item = GlyphsAppPredicateClause> + '_ {
+        self.iter().filter_map(GlyphsAppPredicateClause::cast)
+    }
+
+    pub(crate) fn connectives(&self) -> impl Iterator<Item = GlyphsAppPredicateConnective> + '_ {
+        self.iter().filter_map(GlyphsAppPredicateConnective::cast)
+    }
+}
+
+#[allow(dead_code)]
+impl GlyphsAppPredicateClause {
+    pub(crate) fn attr(&self) -> Option<GlyphsAppPredicateAttr> {
+        self.iter().find_map(GlyphsAppPredicateAttr::cast)
+    }
+
+    pub(crate) fn op(&self) -> Option<GlyphsAppPredicateOp> {
+        self.iter()
+            .find_map(GlyphsAppPredicateOpNode::cast)
+            .map(GlyphsAppPredicateOp::from_node)
+    }
+
+    pub(crate) fn value(&self) -> Option<GlyphsAppPredicateValue> {
+        self.iter()
+            .find_map(GlyphsAppPredicateValueNode::cast)
+            .map(GlyphsAppPredicateValue::from_node)
+    }
+}
+
+#[allow(dead_code)]
+impl GlyphsAppPredicateOp {
+    fn from_node(node: GlyphsAppPredicateOpNode) -> Self {
+        match compact_node_text(&node).as_str() {
+            text if text.eq_ignore_ascii_case("beginswith") => Self::BeginsWith(node),
+            text if text.eq_ignore_ascii_case("endswith") => Self::EndsWith(node),
+            text if text.eq_ignore_ascii_case("contains") => Self::Contains(node),
+            text if text.eq_ignore_ascii_case("like") => Self::Like(node),
+            text if text.eq_ignore_ascii_case("matches") => Self::Matches(node),
+            "==" => Self::EqualEqual(node),
+            "=" => Self::Equal(node),
+            "!=" => Self::NotEqual(node),
+            "<>" => Self::AngleNotEqual(node),
+            "<" => Self::LessThan(node),
+            "<=" => Self::LessThanOrEqual(node),
+            ">" => Self::GreaterThan(node),
+            ">=" => Self::GreaterThanOrEqual(node),
+            // `=>`/`=<` are the NSPredicate spellings of `>=`/`<=`. glyphsLib
+            // rejects them (a bug: its comparator regex consumes the leading `=`
+            // first), but Glyphs.app itself accepts them, and its own dead
+            // normalize table maps them to `>=`/`<=`; we accept them too, since
+            // being more permissive than glyphsLib on inputs it rejects is safe.
+            "=>" => Self::GreaterThanOrEqual(node),
+            "=<" => Self::LessThanOrEqual(node),
+            _ => Self::UnknownKeyword(node),
+        }
+    }
+
+    /// The exact parsed operator node, including its source range.
+    pub(crate) fn node(&self) -> &GlyphsAppPredicateOpNode {
+        match self {
+            Self::BeginsWith(node)
+            | Self::EndsWith(node)
+            | Self::Contains(node)
+            | Self::Like(node)
+            | Self::Matches(node)
+            | Self::UnknownKeyword(node)
+            | Self::EqualEqual(node)
+            | Self::Equal(node)
+            | Self::NotEqual(node)
+            | Self::AngleNotEqual(node)
+            | Self::LessThan(node)
+            | Self::LessThanOrEqual(node)
+            | Self::GreaterThan(node)
+            | Self::GreaterThanOrEqual(node) => node,
+        }
+    }
+
+    /// The operator spelling, without trivia.
+    pub(crate) fn text(&self) -> String {
+        compact_node_text(self.node())
+    }
+}
+
+impl AstNode for GlyphsAppPredicateOp {
+    fn cast(node: &NodeOrToken) -> Option<Self> {
+        GlyphsAppPredicateOpNode::cast(node).map(Self::from_node)
+    }
+
+    fn range(&self) -> Range<usize> {
+        self.node().range()
+    }
+}
+
+#[allow(dead_code)]
+impl GlyphsAppPredicateValue {
+    fn from_node(node: GlyphsAppPredicateValueNode) -> Self {
+        let kind = node
+            .iter()
+            .find(|item| !item.kind().is_trivia())
+            .map(|item| item.kind());
+        match kind {
+            Some(Kind::String) => Self::DoubleQuoted(node),
+            Some(Kind::SingleQuote) => Self::SingleQuoted(node),
+            Some(Kind::Number) => Self::Number(node),
+            _ => Self::Bare(node),
+        }
+    }
+
+    /// The exact parsed value node, including its source range.
+    pub(crate) fn node(&self) -> &GlyphsAppPredicateValueNode {
+        match self {
+            Self::DoubleQuoted(node)
+            | Self::SingleQuoted(node)
+            | Self::Bare(node)
+            | Self::Number(node) => node,
+        }
+    }
+
+    /// The value content without its surrounding quotes.
+    pub(crate) fn text(&self) -> String {
+        match self {
+            Self::DoubleQuoted(node) => node
+                .iter()
+                .find(|item| item.kind() == Kind::String)
+                .and_then(NodeOrToken::token_text)
+                // strip the surrounding quotes; `get` avoids panicking on a
+                // malformed short token (e.g. a lone `"` recovered from an
+                // unterminated string) or a non-char-boundary slice.
+                .and_then(|text| text.get(1..text.len().saturating_sub(1)))
+                .unwrap_or_default()
+                .to_owned(),
+            Self::SingleQuoted(node) => {
+                let mut found_open_quote = false;
+                let mut text = String::new();
+                for item in node.iter() {
+                    if item.kind() == Kind::SingleQuote {
+                        if found_open_quote {
+                            break;
+                        }
+                        found_open_quote = true;
+                    } else if found_open_quote {
+                        text.push_str(item.token_text().unwrap_or_default());
+                    }
+                }
+                text
+            }
+            Self::Bare(node) | Self::Number(node) => compact_node_text(node),
+        }
+    }
+}
+
+impl AstNode for GlyphsAppPredicateValue {
+    fn cast(node: &NodeOrToken) -> Option<Self> {
+        GlyphsAppPredicateValueNode::cast(node).map(Self::from_node)
+    }
+
+    fn range(&self) -> Range<usize> {
+        self.node().range()
+    }
+}
+
+#[allow(dead_code)]
+fn compact_node_text(node: &impl AstNode) -> String {
+    node.iter()
+        .filter(|item| !item.kind().is_trivia())
+        .filter_map(NodeOrToken::token_text)
+        .collect()
 }
