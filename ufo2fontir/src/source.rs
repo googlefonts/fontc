@@ -2785,6 +2785,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn non_default_kernless_source_skipped_from_variation() {
+        // ufo2ft#995 port: KernlessMid has 3 masters; the middle Medium master
+        // (non-default) has no kerning, so it must NOT add a kern variation
+        // location -- otherwise the class kern hollows toward 0 there instead of
+        // interpolating across. Regular (the default) and Bold kern, Medium does
+        // not, so exactly those two locations survive.
+        let (_, context) = build_kerning("KernlessMid.designspace");
+        let groups = context.kerning_groups.get();
+        assert_eq!(
+            groups.locations.len(),
+            2,
+            "the kernless non-default Medium master should be skipped"
+        );
+    }
+
     // UFO2 sources use @MMK_L_X/@MMK_R_X group naming instead of public.kern1.X/public.kern2.X.
     // norad's upconversion only fires when groups are loaded alongside kerning, so we must
     // request both. Regression test for https://github.com/googlefonts/fontc/issues/XXXX

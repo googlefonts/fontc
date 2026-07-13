@@ -3117,6 +3117,21 @@ mod tests {
     }
 
     #[test]
+    fn non_default_rtl_only_kerning_master_is_kept() {
+        // fontc#1857 guard: a non-default master with ONLY RTL kerning (no LTR)
+        // still kerns, so it must keep its variation location. master02 (Bold,
+        // non-default) has only RTL kerning here; a kernless check that looked at
+        // kerning_ltr alone -- the original #1857 miss -- would wrongly skip it.
+        let (_, context) = build_kerning(glyphs3_dir().join("KerningRtlOnlyMaster.glyphs"));
+        let groups = context.kerning_groups.get();
+        assert_eq!(
+            groups.locations.len(),
+            2,
+            "the RTL-only non-default master must be kept"
+        );
+    }
+
+    #[test]
     fn captures_anchors() {
         let base_name = "A".into();
         let mark_name = "macroncomb".into();

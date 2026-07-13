@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="0" maximum="1000" default="0"/>
+  </axes>
+  <sources>
+    <source filename="KernlessMid-Regular.ufo" familyname="KernlessMid" stylename="Regular">
+      <location>
+        <dimension name="Weight" xvalue="0"/>
+      </location>
+    </source>
+    <source filename="KernlessMid-Medium.ufo" familyname="KernlessMid" stylename="Medium">
+      <location>
+        <dimension name="Weight" xvalue="500"/>
+      </location>
+    </source>
+    <source filename="KernlessMid-Bold.ufo" familyname="KernlessMid" stylename="Bold">
+      <location>
+        <dimension name="Weight" xvalue="1000"/>
+      </location>
+    </source>
+  </sources>
+</designspace>
