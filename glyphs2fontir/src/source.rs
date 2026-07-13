@@ -1131,14 +1131,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             .iter()
             .filter_map(|(master_id, pos)| {
                 let keep = master_id.as_str() == default_master_id.as_str()
-                    || font
-                        .kerning_ltr
-                        .get(master_id)
-                        .is_some_and(|k| !k.is_empty())
-                    || font
-                        .kerning_rtl
-                        .get(master_id)
-                        .is_some_and(|k| !k.is_empty());
+                    || font.has_kerns_for_master(master_id);
                 keep.then(|| pos.clone())
             })
             .collect();
