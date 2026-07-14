@@ -1690,9 +1690,6 @@ fn kerning_groups_for(
 /// UFO specific behaviour for kern groups
 trait KernGroupExt {
     fn from_group_name(name: &str) -> Option<KernGroup>;
-
-    // used when computing the 'reverse groups'
-    fn side_ord(&self) -> u8;
 }
 
 impl KernGroupExt for KernGroup {
@@ -1703,13 +1700,6 @@ impl KernGroupExt for KernGroup {
                 name.strip_prefix(UFO_KERN2_PREFIX)
                     .map(|name| Self::Side2(name.into()))
             })
-    }
-
-    fn side_ord(&self) -> u8 {
-        match self {
-            KernGroup::Side1(_) => 1,
-            KernGroup::Side2(_) => 2,
-        }
     }
 }
 
@@ -1734,7 +1724,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         let static_metadata = context.static_metadata.get();
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
-        let (default_master_idx, default_master) = default_master(&self.designspace)?;
+        let (_, default_master) = default_master(&self.designspace)?;
 
         // Step 1: find the groups
 
@@ -1744,52 +1734,6 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             groups: kerning_groups_for(designspace_dir, glyph_order.as_ref(), default_master)?,
             ..Default::default()
         };
-
-        // Group names are side-specific (public.kern1/2) but the set of glyph names isn't
-        // so include side in the key to avoid matching the wrong side
-        let reverse_groups: HashMap<_, _> = kerning_groups
-            .groups
-            .iter()
-            .map(|(k, v)| ((k.side_ord(), v), k))
-            .collect();
-
-        // https://gist.github.com/madig/76567a9650de639bbff51ce010783790#file-align-groups-py-L21
-        // claims some sources use different names for groups of the same glyphs in different masters
-        // so we need to create a renaming map.
-        kerning_groups.groups.keys().for_each(|name| {
-            kerning_groups
-                .old_to_new_group_names
-                .insert(name.clone(), name.clone());
-        });
-
-        for (_, source) in self
-            .designspace
-            .sources
-            .iter()
-            .enumerate()
-            .filter(|(idx, source)| !is_glyph_only(source) && *idx != default_master_idx)
-        {
-            for (name, entries) in &kerning_groups.groups {
-                let Some(real_name) = reverse_groups.get(&(name.side_ord(), entries)) else {
-                    warn!(
-                        "{name} exists only in {} and will be ignored",
-                        source.name.as_ref().unwrap()
-                    );
-                    continue;
-                };
-                if name == *real_name {
-                    continue;
-                }
-                warn!(
-                    "{name} in {} matches {real_name} in {} and will be renamed",
-                    source.name.as_ref().unwrap(),
-                    default_master.name.as_ref().unwrap()
-                );
-                kerning_groups
-                    .old_to_new_group_names
-                    .insert(name.to_owned(), (*real_name).clone());
-            }
-        }
 
         for source in self
             .designspace
@@ -1833,7 +1777,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
 
-        // We know all the groups, read all the kerning and update group naming
+        // We know all the groups, read all the kerning
         let source = self
             .designspace
             .sources
@@ -1865,7 +1809,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
                     warn!("'{name}' should have prefix {group_prefix}; ignored");
                     return None;
                 }
-                if !groups.old_to_new_group_names.contains_key(&group_name) {
+                if !groups.groups.contains_key(&group_name) {
                     warn!("'{name}' is not a valid group name; ignored");
                     return None;
                 }
@@ -2797,8 +2741,10 @@ mod tests {
         );
     }
 
+    // The merged map is built from the default master alone; non-default
+    // masters' groups (e.g. Bold's renamed the_WrOng_name, #338) never appear.
     #[test]
-    fn groups_renamed_to_match_master() {
+    fn groups_come_from_default_master() {
         let (_, context) = build_kerning("wght_var.designspace");
         let kerning = context.kerning_groups.get();
 
@@ -2863,6 +2809,68 @@ mod tests {
             group_pairs.len(),
             1,
             "Expected one group-to-group kern pair from @MMK_L_A/@MMK_R_V"
+        );
+    }
+
+    fn copy_dir(src: &Path, dst: &Path) {
+        std::fs::create_dir_all(dst).unwrap();
+        for entry in std::fs::read_dir(src).unwrap() {
+            let entry = entry.unwrap();
+            let dst = dst.join(entry.file_name());
+            if entry.path().is_dir() {
+                copy_dir(&entry.path(), &dst);
+            } else {
+                std::fs::copy(entry.path(), &dst).unwrap();
+            }
+        }
+    }
+
+    // #636's user-visible fallout: kerning referencing this master's own name
+    // for a same-membership group is dropped instead of renamed. #339's group
+    // reconciliation will keep these kerns; flip this test then.
+    #[test]
+    fn kerning_against_renamed_group_is_dropped() {
+        let tmp = tempfile::tempdir().unwrap();
+        for ufo in ["WghtVar-Regular.ufo", "WghtVar-Bold.ufo"] {
+            copy_dir(&testdata_dir().join(ufo), &tmp.path().join(ufo));
+        }
+        let designspace = tmp.path().join("wght_var.designspace");
+        std::fs::copy(testdata_dir().join("wght_var.designspace"), &designspace).unwrap();
+        // Bold kerns bar against the_WrOng_name, its own name for the group
+        // the default master calls correct_name (see WghtVar-Bold groups.plist)
+        std::fs::write(
+            tmp.path().join("WghtVar-Bold.ufo/kerning.plist"),
+            r#"<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>bar</key>
+    <dict>
+      <key>bar</key>
+      <integer>-200</integer>
+    </dict>
+    <key>public.kern1.the_WrOng_name</key>
+    <dict>
+      <key>bar</key>
+      <integer>-100</integer>
+    </dict>
+  </dict>
+</plist>
+"#,
+        )
+        .unwrap();
+
+        let (_, context) = build_kerning(designspace.to_str().unwrap());
+        let bold = context
+            .kerning_at
+            .get(&fontir::orchestration::WorkId::KernInstance(
+                NormalizedLocation::for_pos(&[("wght", 1.0)]),
+            ));
+        assert_eq!(
+            bold.kerns.keys().cloned().collect::<Vec<_>>(),
+            vec![(KernSide::Glyph("bar".into()), KernSide::Glyph("bar".into()))],
+            "only the glyph-glyph pair should survive; if the group pair is now \
+             kept, #339's reconciliation landed and this test should assert that instead"
         );
     }
 
