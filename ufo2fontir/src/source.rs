@@ -2819,6 +2819,47 @@ mod tests {
         );
     }
 
+    // #636 broke group renaming: the loop that builds old_to_new_group_names
+    // compares the default master's groups against themselves, never loading
+    // the other sources', so the map only ever holds identity entries.
+    #[test]
+    fn group_rename_map_only_ever_holds_identity_entries() {
+        let (_, context) = build_kerning("wght_var.designspace");
+        let kerning = context.kerning_groups.get();
+
+        // assert the fixture premise (#338): Bold carries the default's group
+        // under a different name -- the exact match the rename loop keys on
+        let dss = load_designspace("wght_var.designspace");
+        let bold = dss
+            .designspace
+            .sources
+            .iter()
+            .find(|s| s.filename == "WghtVar-Bold.ufo")
+            .unwrap();
+        let glyph_order = context.glyph_order.get();
+        let bold_groups =
+            kerning_groups_for(&dss.designspace_dir, glyph_order.as_ref(), bold).unwrap();
+        let renamed = bold_groups
+            .get(&KernGroup::Side1("the_WrOng_name".into()))
+            .expect("fixture premise: Bold has public.kern1.the_WrOng_name");
+        assert_eq!(
+            Some(renamed),
+            kerning.groups.get(&KernGroup::Side1("correct_name".into())),
+            "fixture premise: same members as the default's public.kern1.correct_name"
+        );
+
+        // ...and yet the map never contains anything but identity entries
+        assert_eq!(
+            kerning.old_to_new_group_names,
+            [(
+                KernGroup::Side1("correct_name".into()),
+                KernGroup::Side1("correct_name".into()),
+            )]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+        );
+    }
+
     // UFO2 sources use @MMK_L_X/@MMK_R_X group naming instead of public.kern1.X/public.kern2.X.
     // norad's upconversion only fires when groups are loaded alongside kerning, so we must
     // request both. Regression test for https://github.com/googlefonts/fontc/issues/XXXX
@@ -2863,6 +2904,68 @@ mod tests {
             group_pairs.len(),
             1,
             "Expected one group-to-group kern pair from @MMK_L_A/@MMK_R_V"
+        );
+    }
+
+    fn copy_dir(src: &Path, dst: &Path) {
+        std::fs::create_dir_all(dst).unwrap();
+        for entry in std::fs::read_dir(src).unwrap() {
+            let entry = entry.unwrap();
+            let dst = dst.join(entry.file_name());
+            if entry.path().is_dir() {
+                copy_dir(&entry.path(), &dst);
+            } else {
+                std::fs::copy(entry.path(), &dst).unwrap();
+            }
+        }
+    }
+
+    // #636's user-visible fallout: kerning referencing this master's own name
+    // for a same-membership group is dropped instead of renamed. #339's group
+    // reconciliation will keep these kerns; flip this test then.
+    #[test]
+    fn kerning_against_renamed_group_is_dropped() {
+        let tmp = tempfile::tempdir().unwrap();
+        for ufo in ["WghtVar-Regular.ufo", "WghtVar-Bold.ufo"] {
+            copy_dir(&testdata_dir().join(ufo), &tmp.path().join(ufo));
+        }
+        let designspace = tmp.path().join("wght_var.designspace");
+        std::fs::copy(testdata_dir().join("wght_var.designspace"), &designspace).unwrap();
+        // Bold kerns bar against the_WrOng_name, its own name for the group
+        // the default master calls correct_name (see WghtVar-Bold groups.plist)
+        std::fs::write(
+            tmp.path().join("WghtVar-Bold.ufo/kerning.plist"),
+            r#"<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>bar</key>
+    <dict>
+      <key>bar</key>
+      <integer>-200</integer>
+    </dict>
+    <key>public.kern1.the_WrOng_name</key>
+    <dict>
+      <key>bar</key>
+      <integer>-100</integer>
+    </dict>
+  </dict>
+</plist>
+"#,
+        )
+        .unwrap();
+
+        let (_, context) = build_kerning(designspace.to_str().unwrap());
+        let bold = context
+            .kerning_at
+            .get(&fontir::orchestration::WorkId::KernInstance(
+                NormalizedLocation::for_pos(&[("wght", 1.0)]),
+            ));
+        assert_eq!(
+            bold.kerns.keys().cloned().collect::<Vec<_>>(),
+            vec![(KernSide::Glyph("bar".into()), KernSide::Glyph("bar".into()))],
+            "only the glyph-glyph pair should survive; if the group pair is now \
+             kept, #339's reconciliation landed and this test should assert that instead"
         );
     }
 
