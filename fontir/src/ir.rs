@@ -166,11 +166,6 @@ pub struct KerningGroups {
     ///
     /// Must be a subset of the master locations.
     pub locations: BTreeSet<NormalizedLocation>,
-
-    /// Optional group renaming map, meant for [KerningInstance] to consume
-    ///
-    /// The rhs should be the name used in the groups map.
-    pub old_to_new_group_names: BTreeMap<KernGroup, KernGroup>,
 }
 
 /// IR representation of kerning for a location.

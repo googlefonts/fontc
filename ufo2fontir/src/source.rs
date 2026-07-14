@@ -1690,9 +1690,6 @@ fn kerning_groups_for(
 /// UFO specific behaviour for kern groups
 trait KernGroupExt {
     fn from_group_name(name: &str) -> Option<KernGroup>;
-
-    // used when computing the 'reverse groups'
-    fn side_ord(&self) -> u8;
 }
 
 impl KernGroupExt for KernGroup {
@@ -1703,13 +1700,6 @@ impl KernGroupExt for KernGroup {
                 name.strip_prefix(UFO_KERN2_PREFIX)
                     .map(|name| Self::Side2(name.into()))
             })
-    }
-
-    fn side_ord(&self) -> u8 {
-        match self {
-            KernGroup::Side1(_) => 1,
-            KernGroup::Side2(_) => 2,
-        }
     }
 }
 
@@ -1734,7 +1724,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         let static_metadata = context.static_metadata.get();
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
-        let (default_master_idx, default_master) = default_master(&self.designspace)?;
+        let (_, default_master) = default_master(&self.designspace)?;
 
         // Step 1: find the groups
 
@@ -1744,52 +1734,6 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             groups: kerning_groups_for(designspace_dir, glyph_order.as_ref(), default_master)?,
             ..Default::default()
         };
-
-        // Group names are side-specific (public.kern1/2) but the set of glyph names isn't
-        // so include side in the key to avoid matching the wrong side
-        let reverse_groups: HashMap<_, _> = kerning_groups
-            .groups
-            .iter()
-            .map(|(k, v)| ((k.side_ord(), v), k))
-            .collect();
-
-        // https://gist.github.com/madig/76567a9650de639bbff51ce010783790#file-align-groups-py-L21
-        // claims some sources use different names for groups of the same glyphs in different masters
-        // so we need to create a renaming map.
-        kerning_groups.groups.keys().for_each(|name| {
-            kerning_groups
-                .old_to_new_group_names
-                .insert(name.clone(), name.clone());
-        });
-
-        for (_, source) in self
-            .designspace
-            .sources
-            .iter()
-            .enumerate()
-            .filter(|(idx, source)| !is_glyph_only(source) && *idx != default_master_idx)
-        {
-            for (name, entries) in &kerning_groups.groups {
-                let Some(real_name) = reverse_groups.get(&(name.side_ord(), entries)) else {
-                    warn!(
-                        "{name} exists only in {} and will be ignored",
-                        source.name.as_ref().unwrap()
-                    );
-                    continue;
-                };
-                if name == *real_name {
-                    continue;
-                }
-                warn!(
-                    "{name} in {} matches {real_name} in {} and will be renamed",
-                    source.name.as_ref().unwrap(),
-                    default_master.name.as_ref().unwrap()
-                );
-                kerning_groups
-                    .old_to_new_group_names
-                    .insert(name.to_owned(), (*real_name).clone());
-            }
-        }
 
         for source in self
             .designspace
@@ -1833,7 +1777,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
 
-        // We know all the groups, read all the kerning and update group naming
+        // We know all the groups, read all the kerning
         let source = self
             .designspace
             .sources
@@ -1865,7 +1809,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
                     warn!("'{name}' should have prefix {group_prefix}; ignored");
                     return None;
                 }
-                if !groups.old_to_new_group_names.contains_key(&group_name) {
+                if !groups.groups.contains_key(&group_name) {
                     warn!("'{name}' is not a valid group name; ignored");
                     return None;
                 }
@@ -2797,8 +2741,10 @@ mod tests {
         );
     }
 
+    // The merged map is built from the default master alone; non-default
+    // masters' groups (e.g. Bold's renamed the_WrOng_name, #338) never appear.
     #[test]
-    fn groups_renamed_to_match_master() {
+    fn groups_come_from_default_master() {
         let (_, context) = build_kerning("wght_var.designspace");
         let kerning = context.kerning_groups.get();
 
@@ -2816,47 +2762,6 @@ mod tests {
         assert_eq!(
             groups,
             vec![(KernGroup::Side1("correct_name".into()), vec!["bar", "plus"],),],
-        );
-    }
-
-    // #636 broke group renaming: the loop that builds old_to_new_group_names
-    // compares the default master's groups against themselves, never loading
-    // the other sources', so the map only ever holds identity entries.
-    #[test]
-    fn group_rename_map_only_ever_holds_identity_entries() {
-        let (_, context) = build_kerning("wght_var.designspace");
-        let kerning = context.kerning_groups.get();
-
-        // assert the fixture premise (#338): Bold carries the default's group
-        // under a different name -- the exact match the rename loop keys on
-        let dss = load_designspace("wght_var.designspace");
-        let bold = dss
-            .designspace
-            .sources
-            .iter()
-            .find(|s| s.filename == "WghtVar-Bold.ufo")
-            .unwrap();
-        let glyph_order = context.glyph_order.get();
-        let bold_groups =
-            kerning_groups_for(&dss.designspace_dir, glyph_order.as_ref(), bold).unwrap();
-        let renamed = bold_groups
-            .get(&KernGroup::Side1("the_WrOng_name".into()))
-            .expect("fixture premise: Bold has public.kern1.the_WrOng_name");
-        assert_eq!(
-            Some(renamed),
-            kerning.groups.get(&KernGroup::Side1("correct_name".into())),
-            "fixture premise: same members as the default's public.kern1.correct_name"
-        );
-
-        // ...and yet the map never contains anything but identity entries
-        assert_eq!(
-            kerning.old_to_new_group_names,
-            [(
-                KernGroup::Side1("correct_name".into()),
-                KernGroup::Side1("correct_name".into()),
-            )]
-            .into_iter()
-            .collect::<BTreeMap<_, _>>(),
         );
     }
 
