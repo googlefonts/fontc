@@ -110,7 +110,7 @@ impl FeatureWriterOptionValue {
 /// A built-in writer is recognised under every spelling ufo2ft can import: the
 /// bare class name (resolved in the default `ufo2ft.featureWriters` package),
 /// the class qualified by its defining submodule, and glyphsLib's legacy
-/// `ContextualMarkFeatureWriter` alias (see [`GLYPHSLIB_MARK_MODULE`]).
+/// `ContextualMarkFeatureWriter` alias (see `GLYPHSLIB_MARK_MODULE`).
 ///
 /// Mirrors ufo2ft's `loadFeatureWriters(..., ignoreErrors=True)`:
 /// - malformed or unrecognised entries (unknown module/class combination, unknown
