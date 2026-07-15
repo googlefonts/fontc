@@ -9,7 +9,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs::{self, File},
     io::{BufRead, BufReader},
-    path::{self, PathBuf},
+    path,
 };
 
 use fontdrasil::{paths::string_to_filename, types::GlyphName};
@@ -25,10 +25,6 @@ pub(crate) type GlyphInfos = BTreeMap<GlyphName, GlyphInfo>;
 /// Corresponds to a Fontra Location
 /// <https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/classes.py#L318>
 pub(crate) type Location = HashMap<AxisName, f64>;
-
-pub(crate) fn glyph_file(glyph_dir: &path::Path, glyph: GlyphName) -> PathBuf {
-    glyph_dir.join(string_to_filename(glyph.as_str(), ".json"))
-}
 
 fn from_file<T>(p: &path::Path) -> Result<T, BadSource>
 where
@@ -209,6 +205,17 @@ impl Font {
         let (glyph_map, glyph_infos) = parse_glyph_info(path)?;
         font.glyph_map = glyph_map;
         font.glyph_infos = glyph_infos;
+
+        // The glyph data live in individual .json files under "glyphs" dir
+        let glyphs_dir = path.join("glyphs");
+        font.glyphs = font
+            .glyph_map
+            .keys()
+            .map(|name| {
+                let file = glyphs_dir.join(string_to_filename(name.as_str(), ".json"));
+                Ok((name.clone(), VariableGlyph::from_file(&file)?))
+            })
+            .collect::<Result<_, BadSource>>()?;
 
         Ok(font)
     }
