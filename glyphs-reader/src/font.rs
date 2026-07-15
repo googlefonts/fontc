@@ -4088,6 +4088,17 @@ impl Font {
         &self.masters[self.default_master_idx]
     }
 
+    /// Whether the given master declares any kerning, LTR or RTL.
+    pub fn has_kerns_for_master(&self, master_id: &str) -> bool {
+        self.kerning_ltr
+            .get(master_id)
+            .is_some_and(|k| !k.is_empty())
+            || self
+                .kerning_rtl
+                .get(master_id)
+                .is_some_and(|k| !k.is_empty())
+    }
+
     /// <https://handbook.glyphsapp.com/exports/>
     pub fn variable_export_settings(&self, master: &FontMaster) -> Option<&Instance> {
         variable_instance_for(&self.instances, &master.name)

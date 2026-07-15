@@ -1120,7 +1120,21 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             }
         }
 
-        groups.locations = font_info.master_positions.values().cloned().collect();
+        // ufo2ft#995: keep the default master (it anchors the variation model)
+        // and any master that actually kerns; drop non-default masters with no
+        // kerning so the kern interpolates across them instead of being pinned
+        // toward 0. Check both LTR and RTL kerning -- a master that kerns only
+        // RTL is not kernless (fontc#1857 was exactly that miss).
+        let default_master_id = font.default_master().id.clone();
+        groups.locations = font_info
+            .master_positions
+            .iter()
+            .filter_map(|(master_id, pos)| {
+                let keep = master_id.as_str() == default_master_id.as_str()
+                    || font.has_kerns_for_master(master_id);
+                keep.then(|| pos.clone())
+            })
+            .collect();
 
         context.kerning_groups.set(groups);
         Ok(())
@@ -3062,37 +3076,51 @@ mod tests {
     }
 
     #[test]
-    fn empty_kerning_master_participates_in_variation() {
+    fn non_default_empty_kerning_master_is_skipped() {
+        // ufo2ft#995: a non-default master with no kerning must NOT become a
+        // variation location, else the kern hollows toward 0 there instead of
+        // interpolating across. In KerningEmptyMaster.glyphs master01 (Regular,
+        // the default) kerns and master02 (Bold) is empty, so only the default's
+        // location survives and the kern stays constant across the axis.
+        //
+        // This reverses fontc#2013's expectation for the Geom-like empty-master
+        // case, realigning fontc with ufo2ft main after ufo2ft#997. It does NOT
+        // regress fontc#1857 (NotoSansHebrew): that font's masters all carry RTL
+        // kerning, so they are not kernless -- see combine_ltr_and_rtl_kerning
+        // and the kerning_ltr/kerning_rtl check in KerningGroupWork.
         let (_, context) = build_kerning(glyphs3_dir().join("KerningEmptyMaster.glyphs"));
 
         let groups = context.kerning_groups.get();
         assert_eq!(
             groups.locations.len(),
-            2,
-            "expected both masters in locations"
+            1,
+            "the empty non-default master should be skipped"
         );
 
         let all_kerns = context.kerning_at.all();
         assert_eq!(
             all_kerns.len(),
-            2,
-            "expected kerning instances at both masters"
+            1,
+            "only the kerning (default) master gets an instance"
         );
-
-        let non_empty: Vec<_> = all_kerns
-            .iter()
-            .filter(|(_, k)| !k.kerns.is_empty())
-            .collect();
-        let empty: Vec<_> = all_kerns
-            .iter()
-            .filter(|(_, k)| k.kerns.is_empty())
-            .collect();
-        assert_eq!(non_empty.len(), 1);
-        assert_eq!(empty.len(), 1);
-
         assert_eq!(
-            non_empty[0].1.kerns,
+            all_kerns[0].1.kerns,
             make_kerning(&[("@side1.A", "@side2.B", -50)])
+        );
+    }
+
+    #[test]
+    fn non_default_rtl_only_kerning_master_is_kept() {
+        // fontc#1857 guard: a non-default master with ONLY RTL kerning (no LTR)
+        // still kerns, so it must keep its variation location. master02 (Bold,
+        // non-default) has only RTL kerning here; a kernless check that looked at
+        // kerning_ltr alone -- the original #1857 miss -- would wrongly skip it.
+        let (_, context) = build_kerning(glyphs3_dir().join("KerningRtlOnlyMaster.glyphs"));
+        let groups = context.kerning_groups.get();
+        assert_eq!(
+            groups.locations.len(),
+            2,
+            "the RTL-only non-default master must be kept"
         );
     }
 

@@ -1242,6 +1242,18 @@ fn is_glyph_only(source: &norad::designspace::Source) -> bool {
     source.layer.is_some()
 }
 
+/// Whether a source declares any kerning at all (mirrors ufo2ft's
+/// `not source.font.kerning`). Reads only the UFO's kerning, no glyphs.
+fn source_has_kerning(
+    designspace_dir: &Path,
+    source: &norad::designspace::Source,
+) -> Result<bool, Error> {
+    let ufo_dir = designspace_dir.join(&source.filename);
+    let font = norad::Font::load_requested_data(&ufo_dir, norad::DataRequest::none().kerning(true))
+        .map_err(|e| BadSource::custom(ufo_dir, e))?;
+    Ok(!font.kerning.is_empty())
+}
+
 fn parse_meta_table_values(plist: &plist::Value) -> Option<MetaTableValues> {
     let plist = plist.as_dictionary()?;
     let mut ret = MetaTableValues::default();
@@ -1724,7 +1736,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         let static_metadata = context.static_metadata.get();
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
-        let (_, default_master) = default_master(&self.designspace)?;
+        let (default_master_idx, default_master) = default_master(&self.designspace)?;
 
         // Step 1: find the groups
 
@@ -1735,12 +1747,20 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             ..Default::default()
         };
 
-        for source in self
+        for (idx, source) in self
             .designspace
             .sources
             .iter()
-            .filter(|s| !is_glyph_only(s))
+            .enumerate()
+            .filter(|(_, s)| !is_glyph_only(s))
         {
+            // ufo2ft#995: keep the default source (it anchors the variation
+            // model) and any source that kerns; drop non-default sources with no
+            // kerning so the kern interpolates across them instead of being
+            // pinned toward 0 there.
+            if idx != default_master_idx && !source_has_kerning(designspace_dir, source)? {
+                continue;
+            }
             let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
             kerning_groups.locations.insert(pos.clone());
         }
@@ -2762,6 +2782,22 @@ mod tests {
         assert_eq!(
             groups,
             vec![(KernGroup::Side1("correct_name".into()), vec!["bar", "plus"],),],
+        );
+    }
+
+    #[test]
+    fn non_default_kernless_source_skipped_from_variation() {
+        // ufo2ft#995 port: KernlessMid has 3 masters; the middle Medium master
+        // (non-default) has no kerning, so it must NOT add a kern variation
+        // location -- otherwise the class kern hollows toward 0 there instead of
+        // interpolating across. Regular (the default) and Bold kern, Medium does
+        // not, so exactly those two locations survive.
+        let (_, context) = build_kerning("KernlessMid.designspace");
+        let groups = context.kerning_groups.get();
+        assert_eq!(
+            groups.locations.len(),
+            2,
+            "the kernless non-default Medium master should be skipped"
         );
     }
 

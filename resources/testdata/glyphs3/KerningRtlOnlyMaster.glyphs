@@ -1,0 +1,102 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+familyName = RtlOnlyKerning;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = "master01";
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+id = "master02";
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = "master01";
+width = 500;
+},
+{
+layerId = "master02";
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+glyphname = B;
+layers = (
+{
+layerId = "master01";
+width = 500;
+},
+{
+layerId = "master02";
+width = 600;
+}
+);
+unicode = 66;
+},
+{
+glyphname = "alef-hb";
+layers = (
+{
+layerId = "master01";
+width = 500;
+},
+{
+layerId = "master02";
+width = 600;
+}
+);
+unicode = 1488;
+},
+{
+glyphname = "bet-hb";
+layers = (
+{
+layerId = "master01";
+width = 500;
+},
+{
+layerId = "master02";
+width = 600;
+}
+);
+unicode = 1489;
+}
+);
+kerningLTR = {
+master01 = {
+A = {
+B = -50;
+};
+};
+};
+kerningRTL = {
+master02 = {
+"alef-hb" = {
+"bet-hb" = 29;
+};
+};
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
