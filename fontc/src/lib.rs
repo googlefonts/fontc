@@ -2340,38 +2340,11 @@ mod tests {
     #[test]
     fn partial_master_kern_exception_is_resolved_per_cell() {
         let result = TestCompile::compile_source("PartialKernException.designspace");
-        let all_kerns = result.be_context.all_kerning_pairs.get();
 
-        // one compact "side1 side2: [value at wght 0, value at wght 1]" line
-        // per pair, sorted, compared exhaustively: pairs untouched by the
-        // cell-level resolution must come through unchanged.
-        let mut kerns: Vec<(KernPair, Vec<(f64, f64)>)> = all_kerns
-            .adjustments
-            .iter()
-            .map(|(pair, adj)| {
-                let mut values: Vec<(f64, f64)> = adj
-                    .iter()
-                    .map(|(loc, val)| (loc.iter().map(|(_, v)| v.to_f64()).next().unwrap(), val.0))
-                    .collect();
-                values.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-                (pair.clone(), values)
-            })
-            .collect();
-        kerns.sort_by(|(a, _), (b, _)| a.cmp(b));
-        let kerns: Vec<String> = kerns
-            .iter()
-            .map(|((first, second), values)| {
-                let values = values
-                    .iter()
-                    .map(|(_, val)| val.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{first} {second}: [{values}]")
-            })
-            .collect();
-
+        // pairs untouched by the cell-level resolution must come through
+        // unchanged.
         assert_eq!(
-            kerns,
+            dump_kern_adjustments(&result),
             vec![
                 // Greek: the exception (iotadasiaoxia, @GRK_iotaLeft)=30 is present
                 // only in the default master and its cells diverge, so the
@@ -2388,24 +2361,567 @@ mod tests {
                 "qhwee-ethiopic ca-ethiopic: [40, 30]",
                 "qhwee-ethiopic cee-ethiopic: [30, 30]",
                 // Uniform override: the class-to-glyph exceptions cover *every*
-                // member of @uoRight equally (one per member, same value), so no
-                // cell diverges and the compact glyph-to-class pair is kept, not
-                // split. But it must carry the agreed cell value [30, 70], not
-                // the class-to-class value (50) the backfill produced where the
+                // member of @uoRight equally (one per member, same value), so
+                // both cells carry the agreed value [30, 70] -- not the
+                // class-to-class value (50) the backfill produced where the
                 // glyph-to-class exception is absent (which would shadow the
                 // class-to-glyph exceptions at wght 0 -- a phantom even though
-                // no two cells disagree).
-                "uoA @side2.uoRight: [30, 70]",
+                // no two cells disagree). Per-glyph pairs, one per member: a
+                // mixed glyph/class pair enumerates to those exact rules in the
+                // lookup builder anyway.
+                "uoA uoX: [30, 70]",
+                "uoA uoY: [30, 70]",
                 // The remaining pairs are untouched by the cell-level resolution;
                 // where a master omits one, the aligned value comes from the
                 // class-to-class backfill, which is correct for these kinds.
                 "@side1.GRK_iotaRight iotapsilioxia: [20, 30]",
-                "@side1.GRK_iotaRight @side2.GRK_iotaLeft: [60, 50]",
                 "@side1.ethi_qhee ca-ethiopic: [40, 50]",
-                "@side1.ethi_qhee @side2.ethi_ca: [30, 50]",
                 "@side1.uoLeft uoX: [30, 50]",
                 "@side1.uoLeft uoY: [30, 50]",
+                "@side1.GRK_iotaRight @side2.GRK_iotaLeft: [60, 50]",
+                "@side1.ethi_qhee @side2.ethi_ca: [30, 50]",
                 "@side1.uoLeft @side2.uoRight: [50, 50]",
+            ]
+        );
+    }
+
+    /// Dump the resolved variable kern pairs as "first second: [v0, .., vN]"
+    /// lines, values in source location order. Pairs are listed the way the
+    /// kern feature orders its rules, most specific kind first -- glyph-glyph,
+    /// glyph-class, class-glyph, class-class -- then by name.
+    fn dump_kern_adjustments(result: &TestCompile) -> Vec<String> {
+        let all_kerns = result.be_context.all_kerning_pairs.get();
+        let mut kerns: Vec<(KernPair, Vec<(f64, f64)>)> = all_kerns
+            .adjustments
+            .iter()
+            .map(|(pair, adj)| {
+                let mut values: Vec<(f64, f64)> = adj
+                    .iter()
+                    .map(|(loc, val)| (loc.iter().map(|(_, v)| v.to_f64()).next().unwrap(), val.0))
+                    .collect();
+                values.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+                (pair.clone(), values)
+            })
+            .collect();
+        kerns.sort_by(|(a, _), (b, _)| {
+            (a.0.is_group(), a.1.is_group(), a).cmp(&(b.0.is_group(), b.1.is_group(), b))
+        });
+        kerns
+            .iter()
+            .map(|((first, second), values)| {
+                let values = values
+                    .iter()
+                    .map(|(_, val)| val.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{first} {second}: [{values}]")
+            })
+            .collect()
+    }
+
+    /// Dump the output kern classes as "@group = [member ..]" lines.
+    fn dump_kern_groups(result: &TestCompile) -> Vec<String> {
+        let all_kerns = result.be_context.all_kerning_pairs.get();
+        let glyph_order = result.fe_context.glyph_order.get();
+        all_kerns
+            .groups
+            .iter()
+            .map(|(group, glyphs)| {
+                let glyphs = glyphs
+                    .iter()
+                    .map(|gid| {
+                        glyph_order
+                            .glyph_name(gid.to_u32() as usize)
+                            .unwrap()
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("@{group} = [{glyphs}]")
+            })
+            .collect()
+    }
+
+    // Kern fixtures are generated, not checked in: masters share identical
+    // box glyphs and differ only in groups/kerning, so the semantic input
+    // sits right beside the assertions.
+
+    /// (group name, members)
+    type KernGroupsDsl<'a> = &'a [(&'a str, &'a [&'a str])];
+    /// (side1, [(side2, value)])
+    type KernPairsDsl<'a> = &'a [(&'a str, &'a [(&'a str, i32)])];
+
+    #[derive(Clone, Copy)]
+    struct KernMaster<'a> {
+        style: &'a str,
+        xvalue: u32,
+        groups: KernGroupsDsl<'a>,
+        /// None = kernless master (no kerning.plist at all)
+        kerning: Option<KernPairsDsl<'a>>,
+    }
+
+    fn kern_plist(body: String) -> String {
+        format!(
+            "<?xml version='1.0' encoding='UTF-8'?>\n\
+             <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \
+             \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+             <plist version=\"1.0\">\n{body}</plist>\n"
+        )
+    }
+
+    fn kern_groups_plist(groups: KernGroupsDsl) -> String {
+        let mut body = String::from("  <dict>\n");
+        for (name, members) in groups {
+            body.push_str(&format!("    <key>{name}</key>\n    <array>\n"));
+            for member in *members {
+                body.push_str(&format!("      <string>{member}</string>\n"));
+            }
+            body.push_str("    </array>\n");
+        }
+        body.push_str("  </dict>\n");
+        kern_plist(body)
+    }
+
+    fn kern_kerning_plist(pairs: KernPairsDsl) -> String {
+        let mut body = String::from("  <dict>\n");
+        for (side1, entries) in pairs {
+            body.push_str(&format!("    <key>{side1}</key>\n    <dict>\n"));
+            for (side2, value) in *entries {
+                body.push_str(&format!(
+                    "      <key>{side2}</key>\n      <integer>{value}</integer>\n"
+                ));
+            }
+            body.push_str("    </dict>\n");
+        }
+        body.push_str("  </dict>\n");
+        kern_plist(body)
+    }
+
+    fn kern_glif(name: &str, codepoint: Option<u32>) -> String {
+        let unicode = codepoint
+            .map(|cp| format!("  <unicode hex=\"{cp:04X}\"/>\n"))
+            .unwrap_or_default();
+        format!(
+            "<?xml version='1.0' encoding='UTF-8'?>\n\
+             <glyph name=\"{name}\" format=\"2\">\n\
+             \x20 <advance width=\"600\"/>\n\
+             {unicode}\
+             \x20 <outline>\n\
+             \x20   <contour>\n\
+             \x20     <point x=\"50\" y=\"0\" type=\"line\"/>\n\
+             \x20     <point x=\"550\" y=\"0\" type=\"line\"/>\n\
+             \x20     <point x=\"550\" y=\"700\" type=\"line\"/>\n\
+             \x20     <point x=\"50\" y=\"700\" type=\"line\"/>\n\
+             \x20   </contour>\n\
+             \x20 </outline>\n\
+             </glyph>\n"
+        )
+    }
+
+    /// Write a wght designspace whose masters share identical box glyphs and
+    /// differ only in kern groups/kerning; returns the designspace path.
+    fn write_kern_fixture(
+        dir: &Path,
+        family: &str,
+        glyphs: &[&str],
+        masters: &[KernMaster],
+    ) -> PathBuf {
+        for master in masters {
+            let ufo = dir.join(format!("{family}-{}.ufo", master.style));
+            let glyphs_dir = ufo.join("glyphs");
+            fs::create_dir_all(&glyphs_dir).unwrap();
+            fs::write(
+                ufo.join("metainfo.plist"),
+                kern_plist(
+                    "  <dict>\n\
+                     \x20   <key>creator</key>\n\
+                     \x20   <string>com.github.fonttools.ufoLib</string>\n\
+                     \x20   <key>formatVersion</key>\n\
+                     \x20   <integer>3</integer>\n\
+                     \x20 </dict>\n"
+                        .into(),
+                ),
+            )
+            .unwrap();
+            fs::write(
+                ufo.join("layercontents.plist"),
+                kern_plist(
+                    "  <array>\n\
+                     \x20   <array>\n\
+                     \x20     <string>public.default</string>\n\
+                     \x20     <string>glyphs</string>\n\
+                     \x20   </array>\n\
+                     \x20 </array>\n"
+                        .into(),
+                ),
+            )
+            .unwrap();
+            fs::write(
+                ufo.join("fontinfo.plist"),
+                kern_plist(format!(
+                    "  <dict>\n\
+                     \x20   <key>ascender</key>\n\
+                     \x20   <integer>800</integer>\n\
+                     \x20   <key>capHeight</key>\n\
+                     \x20   <integer>700</integer>\n\
+                     \x20   <key>descender</key>\n\
+                     \x20   <integer>-200</integer>\n\
+                     \x20   <key>familyName</key>\n\
+                     \x20   <string>{family}</string>\n\
+                     \x20   <key>styleName</key>\n\
+                     \x20   <string>{}</string>\n\
+                     \x20   <key>unitsPerEm</key>\n\
+                     \x20   <integer>1000</integer>\n\
+                     \x20   <key>xHeight</key>\n\
+                     \x20   <integer>500</integer>\n\
+                     \x20 </dict>\n",
+                    master.style
+                )),
+            )
+            .unwrap();
+            let mut order = String::from(
+                "  <dict>\n\
+                 \x20   <key>public.glyphOrder</key>\n\
+                 \x20   <array>\n\
+                 \x20     <string>.notdef</string>\n",
+            );
+            for glyph in glyphs {
+                order.push_str(&format!("      <string>{glyph}</string>\n"));
+            }
+            order.push_str("    </array>\n  </dict>\n");
+            fs::write(ufo.join("lib.plist"), kern_plist(order)).unwrap();
+            let mut contents = String::from(
+                "  <dict>\n    <key>.notdef</key>\n    <string>_notdef.glif</string>\n",
+            );
+            for glyph in glyphs {
+                contents.push_str(&format!(
+                    "    <key>{glyph}</key>\n    <string>{glyph}_.glif</string>\n"
+                ));
+            }
+            contents.push_str("  </dict>\n");
+            fs::write(glyphs_dir.join("contents.plist"), kern_plist(contents)).unwrap();
+            fs::write(glyphs_dir.join("_notdef.glif"), kern_glif(".notdef", None)).unwrap();
+            for glyph in glyphs {
+                let codepoint = glyph.chars().next().unwrap() as u32;
+                fs::write(
+                    glyphs_dir.join(format!("{glyph}_.glif")),
+                    kern_glif(glyph, Some(codepoint)),
+                )
+                .unwrap();
+            }
+            fs::write(ufo.join("groups.plist"), kern_groups_plist(master.groups)).unwrap();
+            if let Some(pairs) = master.kerning {
+                fs::write(ufo.join("kerning.plist"), kern_kerning_plist(pairs)).unwrap();
+            }
+        }
+        let mut sources = String::new();
+        for master in masters {
+            sources.push_str(&format!(
+                "    <source filename=\"{family}-{style}.ufo\" \
+                 familyname=\"{family}\" stylename=\"{style}\">\n\
+                 \x20     <location>\n\
+                 \x20       <dimension name=\"Weight\" xvalue=\"{x}\"/>\n\
+                 \x20     </location>\n\
+                 \x20   </source>\n",
+                style = master.style,
+                x = master.xvalue
+            ));
+        }
+        let designspace = dir.join(format!("{family}.designspace"));
+        fs::write(
+            &designspace,
+            format!(
+                "<?xml version='1.0' encoding='UTF-8'?>\n\
+                 <designspace format=\"5.0\">\n\
+                 \x20 <axes>\n\
+                 \x20   <axis tag=\"wght\" name=\"Weight\" minimum=\"0\" \
+                 maximum=\"1000\" default=\"0\"/>\n\
+                 \x20 </axes>\n\
+                 \x20 <sources>\n\
+                 {sources}\x20 </sources>\n\
+                 </designspace>\n"
+            ),
+        )
+        .unwrap();
+        designspace
+    }
+
+    const DIVERGENT_GLYPHS: &[&str] = &["A", "B", "C", "D", "E", "H", "T", "W", "X", "Y", "Z"];
+
+    const DIVERGENT_REGULAR: KernMaster = KernMaster {
+        style: "Regular",
+        xvalue: 0,
+        groups: &[
+            ("public.kern1.in_both", &["C", "D", "E"]),
+            ("public.kern2.in_both", &["X", "W", "Y"]),
+        ],
+        kerning: Some(&[
+            ("A", &[("public.kern2.in_both", 100)]),
+            (
+                "public.kern1.in_both",
+                &[("T", 200), ("public.kern2.in_both", 300)],
+            ),
+        ]),
+    };
+
+    const DIVERGENT_BOLD: KernMaster = KernMaster {
+        style: "Bold",
+        xvalue: 1000,
+        groups: &[
+            ("public.kern1.bold_only_e", &["E"]),
+            ("public.kern1.in_both", &["C", "D", "H"]),
+            ("public.kern2.bold_only_y", &["Y"]),
+            ("public.kern2.bold_only_z", &["Z"]),
+            ("public.kern2.in_both", &["X", "W"]),
+        ],
+        kerning: Some(&[
+            (
+                "A",
+                &[
+                    ("public.kern2.bold_only_y", -50),
+                    ("public.kern2.in_both", 100),
+                ],
+            ),
+            ("B", &[("public.kern2.bold_only_z", -30)]),
+            (
+                "public.kern1.bold_only_e",
+                &[("T", -60), ("public.kern2.bold_only_y", -10)],
+            ),
+            (
+                "public.kern1.in_both",
+                &[("T", 200), ("public.kern2.in_both", 300)],
+            ),
+        ]),
+    };
+
+    // Two masters can partition glyphs into kerning groups *differently*: a
+    // glyph in one group at the default master can be in another group (or no
+    // group, or a group that only exists in that master) elsewhere. Each
+    // master's kerning must be resolved against that master's own groups, and
+    // the output classes refined into the common per-master partition, so the
+    // variable pair carries the value the source actually resolves to at every
+    // location. fontc used to read only the default master's groups.plist, so
+    // a master-specific group was dropped ("not a valid group name; ignored")
+    // and a divergent glyph silently took the default master's grouping
+    // everywhere. This mirrors the equivalent fix in ufo2ft's
+    // kernFeatureWriter and the reconciliation in fontTools' varLib merger.
+    // See https://github.com/googlefonts/fontc/issues/339 and
+    // https://github.com/googlefonts/ufo2ft/issues/992.
+    #[test]
+    fn divergent_kern_groups_resolved_against_each_master() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let tmp = tempdir().unwrap();
+        let designspace = write_kern_fixture(
+            tmp.path(),
+            "DivergentKernGroups",
+            DIVERGENT_GLYPHS,
+            &[DIVERGENT_REGULAR, DIVERGENT_BOLD],
+        );
+        let result = TestCompile::compile_source(designspace.to_str().unwrap());
+        let kerns = dump_kern_adjustments(&result);
+
+        // Second side: Y moves out of @kern2.in_both into @kern2.bold_only_y.
+        // The refinement keeps {X, W} as @side2.in_both and splits Y into its
+        // own single-glyph class -- a class, not a bare glyph, so it stays in
+        // the class-based PairPos subtable the way the varLib.merge path
+        // compiles it. The glyph-to-class (A, @kern2.in_both) is a per-glyph
+        // exception and instead resolves member by member over the membership
+        // union: X and W carry [100, 100] while Y picks up the Bold
+        // (A, @kern2.bold_only_y) = -50. Z is grouped only at Bold; (B, Z)
+        // must surface that orphan as [0, -30].
+        //
+        // First side, the mirror case: E moves to @kern1.bold_only_e, and H
+        // joins @kern1.in_both only at Bold. {C, D} stays @side1.in_both; each
+        // refined class resolves at class level against each master's own
+        // groups, so (@side1.bold_only_e, T) picks up the Bold
+        // (@kern1.bold_only_e, T) = -60 and (@side1.in_both_1, T) is 0 at
+        // Regular, where H is in no kerned group.
+        //
+        // Both sides at once: (@kern1.in_both, @kern2.in_both) refines to the
+        // cross product of the per-side refined classes, minus
+        // (@side1.in_both_1, @side2.bold_only_y), which resolves to zero
+        // everywhere and a zero class-class pair overrides nothing.
+        // (@side1.bold_only_e, @side2.bold_only_y) resolves to [300, -10] via
+        // the Bold (@kern1.bold_only_e, @kern2.bold_only_y) exception --
+        // reached identically from both the (in_both, in_both) cross-product
+        // and the (bold_only_e, bold_only_y) key, a check on idempotent
+        // emission.
+        assert_eq!(
+            kerns,
+            vec![
+                "A W: [100, 100]".to_string(),
+                "A X: [100, 100]".to_string(),
+                "A Y: [100, -50]".to_string(),
+                "B Z: [0, -30]".to_string(),
+                "@side1.bold_only_e T: [200, -60]".to_string(),
+                "@side1.in_both T: [200, 200]".to_string(),
+                "@side1.in_both_1 T: [0, 200]".to_string(),
+                "@side1.bold_only_e @side2.bold_only_y: [300, -10]".to_string(),
+                "@side1.bold_only_e @side2.in_both: [300, 0]".to_string(),
+                "@side1.in_both @side2.bold_only_y: [300, 0]".to_string(),
+                "@side1.in_both @side2.in_both: [300, 300]".to_string(),
+                "@side1.in_both_1 @side2.in_both: [0, 300]".to_string(),
+            ]
+        );
+
+        assert_eq!(
+            dump_kern_groups(&result),
+            vec![
+                "@side1.bold_only_e = [E]".to_string(),
+                "@side1.in_both = [C D]".to_string(),
+                "@side1.in_both_1 = [H]".to_string(),
+                "@side2.bold_only_y = [Y]".to_string(),
+                "@side2.bold_only_z = [Z]".to_string(),
+                "@side2.in_both = [W X]".to_string(),
+            ]
+        );
+    }
+
+    // How the kernless-master skip
+    // (https://github.com/googlefonts/ufo2ft/issues/995) interacts with the
+    // group reconciliation above
+    // (https://github.com/googlefonts/ufo2ft/issues/992): a non-default
+    // *kernless* master with *divergent* kern groups is skipped before group
+    // reconciliation (its location never enters KerningGroups.locations, so
+    // no KernInstance is built for it), so its groups can neither zero the
+    // class kern nor make grouped glyphs look divergent. Mirrors ufo2ft's
+    // test_variable_kern_kernless_master_with_groups_matches_varlib.
+    //
+    // A kernless Medium master with deliberately divergent groups: X grouped
+    // with Y (excluding W), C isolated from D. The reconciled output must be
+    // byte-for-byte the two-master result. Parity with fontmake on the
+    // three-master build is confirmed identical via ttx_diff against
+    // ufo2ft 3.9.0, which fixes both issues.
+    const DIVERGENT_KERNLESS_MEDIUM: KernMaster = KernMaster {
+        style: "Medium",
+        xvalue: 500,
+        groups: &[
+            ("public.kern1.in_both", &["C"]),
+            ("public.kern1.medium_only_d", &["D"]),
+            ("public.kern2.in_both", &["X", "Y"]),
+            ("public.kern2.medium_only_w", &["W"]),
+        ],
+        kerning: None,
+    };
+
+    #[test]
+    fn kernless_master_divergent_groups_do_not_reach_reconciliation() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let tmp = tempdir().unwrap();
+        let two = write_kern_fixture(
+            &tmp.path().join("two"),
+            "DivergentKernGroups",
+            DIVERGENT_GLYPHS,
+            &[DIVERGENT_REGULAR, DIVERGENT_BOLD],
+        );
+        let three = write_kern_fixture(
+            &tmp.path().join("three"),
+            "DivergentKernGroups",
+            DIVERGENT_GLYPHS,
+            &[DIVERGENT_REGULAR, DIVERGENT_KERNLESS_MEDIUM, DIVERGENT_BOLD],
+        );
+        let two_master = TestCompile::compile_source(two.to_str().unwrap());
+        let with_kernless = TestCompile::compile_source(three.to_str().unwrap());
+        assert_eq!(
+            dump_kern_adjustments(&with_kernless),
+            dump_kern_adjustments(&two_master),
+            "kernless divergent-groups master must not change the reconciled adjustments"
+        );
+        assert_eq!(
+            dump_kern_groups(&with_kernless),
+            dump_kern_groups(&two_master),
+            "kernless divergent-groups master must not change the reconciled classes"
+        );
+    }
+
+    // The refinement must match the partition varLib's merger computes from
+    // the compiled per-master ClassDefs. P and Q are grouped together in
+    // every master, so they stay one class. U and V are grouped apart at
+    // Bold, but no kerning references either group: compiled ClassDefs only
+    // contain kerned glyphs, so varLib sees both as class 0 at Bold and keeps
+    // them in one class -- the refinement must too, ignoring the unkerned
+    // distinction. And the (@kern1.in_both, P) = 5 exception must stay a
+    // per-glyph pair, not smear over P's whole refined class.
+    // See https://github.com/googlefonts/fontc/issues/339 and
+    // https://github.com/googlefonts/ufo2ft/issues/992.
+    #[test]
+    fn regrouped_kern_groups_refine_by_kerned_signature() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let tmp = tempdir().unwrap();
+        let designspace = write_kern_fixture(
+            tmp.path(),
+            "RegroupedKernGroups",
+            &["C", "D", "G", "P", "Q", "U", "V", "W"],
+            &[
+                KernMaster {
+                    style: "Regular",
+                    xvalue: 0,
+                    groups: &[
+                        ("public.kern1.in_both", &["C", "D"]),
+                        ("public.kern2.in_both", &["P", "Q", "U", "V", "W"]),
+                        ("public.kern2.regular_only_g", &["G"]),
+                    ],
+                    kerning: Some(&[(
+                        "public.kern1.in_both",
+                        &[
+                            ("public.kern2.in_both", 100),
+                            ("public.kern2.regular_only_g", 0),
+                        ],
+                    )]),
+                },
+                KernMaster {
+                    style: "Bold",
+                    xvalue: 1000,
+                    groups: &[
+                        ("public.kern1.in_both", &["C", "D"]),
+                        ("public.kern2.bold_only_pq", &["P", "Q"]),
+                        ("public.kern2.bold_unkerned_u", &["U"]),
+                        ("public.kern2.bold_unkerned_v", &["V"]),
+                        ("public.kern2.in_both", &["W"]),
+                    ],
+                    kerning: Some(&[(
+                        "public.kern1.in_both",
+                        &[
+                            ("P", 5),
+                            ("public.kern2.bold_only_pq", -40),
+                            ("public.kern2.in_both", 150),
+                        ],
+                    )]),
+                },
+            ],
+        );
+        let result = TestCompile::compile_source(designspace.to_str().unwrap());
+
+        // W stays @side2.in_both; {P, Q} resolve the Bold
+        // (@kern1.in_both, @kern2.bold_only_pq) = -40 as one class, with the
+        // (@kern1.in_both, P) = 5 exception emitted as its own pair; {U, V}
+        // resolve to 0 at Bold as @side2.in_both_1.
+        //
+        // The Regular (@kern1.in_both, @kern2.regular_only_g) = 0 emits
+        // nothing: a zero class-to-class pair overrides nothing.
+        assert_eq!(
+            dump_kern_adjustments(&result),
+            vec![
+                "@side1.in_both P: [100, 5]".to_string(),
+                "@side1.in_both @side2.bold_only_pq: [100, -40]".to_string(),
+                "@side1.in_both @side2.in_both: [100, 150]".to_string(),
+                "@side1.in_both @side2.in_both_1: [100, 0]".to_string(),
+            ]
+        );
+
+        // bold_unkerned_u, bold_unkerned_v, and regular_only_g are refined but
+        // never referenced by an output pair; their refined classes sit unused
+        // in the class map and stay out of the font.
+        assert_eq!(
+            dump_kern_groups(&result),
+            vec![
+                "@side1.in_both = [C D]".to_string(),
+                "@side2.bold_only_pq = [P Q]".to_string(),
+                "@side2.bold_unkerned_u = [U]".to_string(),
+                "@side2.bold_unkerned_v = [V]".to_string(),
+                "@side2.in_both = [W]".to_string(),
+                "@side2.in_both_1 = [U V]".to_string(),
+                "@side2.regular_only_g = [G]".to_string(),
             ]
         );
     }
