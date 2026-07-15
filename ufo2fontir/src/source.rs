@@ -22,8 +22,8 @@ use fontir::{
     ir::{
         AnchorBuilder, Color, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
         DEFAULT_VENDOR_ID, FeaturesSource, GlobalMetric, GlobalMetricsBuilder, GlyphOrder,
-        KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey,
-        NamedInstance, Paint, PaintGlyph, PaintSolid, Panose, PostscriptNames,
+        KernGroup, KernSide, KerningInstance, KerningLocations, MetaTableValues, NameBuilder,
+        NameKey, NamedInstance, Paint, PaintGlyph, PaintSolid, Panose, PostscriptNames,
         PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
@@ -326,8 +326,8 @@ impl Source for DesignSpaceIrSource {
         }))
     }
 
-    fn create_kerning_group_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        Ok(Box::new(KerningGroupWork {
+    fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(KerningLocationsWork {
             designspace_or_ufo: self.designspace_or_ufo.clone(),
             designspace_dir: self.designspace_dir.clone(),
             designspace: self.designspace.clone(),
@@ -479,7 +479,7 @@ struct FeatureWork {
 }
 
 #[derive(Debug)]
-struct KerningGroupWork {
+struct KerningLocationsWork {
     designspace_or_ufo: Arc<PathBuf>,
     designspace_dir: Arc<PathBuf>,
     designspace: Arc<DesignSpaceDocument>,
@@ -1712,9 +1712,9 @@ impl KernGroupExt for KernGroup {
 }
 
 /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
-impl Work<Context, WorkId, Error> for KerningGroupWork {
+impl Work<Context, WorkId, Error> for KerningLocationsWork {
     fn id(&self) -> WorkId {
-        WorkId::KerningGroups
+        WorkId::KerningLocations
     }
 
     fn read_access(&self) -> Access<WorkId> {
@@ -1730,7 +1730,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
         let (default_master_idx, _) = default_master(&self.designspace)?;
 
-        let mut kerning_groups = KerningGroups::default();
+        let mut kerning_locations = KerningLocations::default();
 
         for (idx, source) in self
             .designspace
@@ -1747,10 +1747,10 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
                 continue;
             }
             let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
-            kerning_groups.locations.insert(pos.clone());
+            kerning_locations.locations.insert(pos.clone());
         }
 
-        context.kerning_groups.set(kerning_groups);
+        context.kerning_locations.set(kerning_locations);
         Ok(())
     }
 }
@@ -1762,8 +1762,8 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        // No KerningGroups dependency: each instance loads its own source's
-        // groups. Instances are still only spawned once KerningGroupWork
+        // No KerningLocations dependency: each instance loads its own source's
+        // groups. Instances are still only spawned once KerningLocationsWork
         // completes -- workload.rs reacts to its success by creating one
         // KernInstance work per participating location.
         AccessBuilder::new()
@@ -2376,11 +2376,11 @@ mod tests {
             .glyph_order
             .set((*context.preliminary_glyph_order.get()).clone());
 
-        let work = source.create_kerning_group_ir_work().unwrap();
+        let work = source.create_kerning_locations_ir_work().unwrap();
         work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
             .unwrap();
 
-        for location in context.kerning_groups.get().locations.iter() {
+        for location in context.kerning_locations.get().locations.iter() {
             let work = source
                 .create_kerning_instance_ir_work(location.clone())
                 .unwrap();
@@ -2755,9 +2755,9 @@ mod tests {
         // interpolating across. Regular (the default) and Bold kern, Medium does
         // not, so exactly those two locations survive.
         let (_, context) = build_kerning("KernlessMid.designspace");
-        let groups = context.kerning_groups.get();
+        let kerning = context.kerning_locations.get();
         assert_eq!(
-            groups.locations.len(),
+            kerning.locations.len(),
             2,
             "the kernless non-default Medium master should be skipped"
         );

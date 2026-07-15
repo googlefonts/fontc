@@ -161,7 +161,7 @@ pub type KernPair = (KernSide, KernSide);
 /// [KerningInstance]: sources in a designspace can partition glyphs into
 /// groups differently, so there is no font-wide group map.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-pub struct KerningGroups {
+pub struct KerningLocations {
     /// The locations participating in the kerning variation model: every
     /// source that kerns, plus the default, which anchors the model even
     /// when kernless.
@@ -1658,7 +1658,7 @@ impl Persistable for FeaturesSource {
     }
 }
 
-impl Persistable for KerningGroups {
+impl Persistable for KerningLocations {
     fn read(from: &mut dyn Read) -> Self {
         serde_yaml::from_reader(from).unwrap()
     }

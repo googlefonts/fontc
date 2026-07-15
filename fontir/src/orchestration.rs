@@ -320,7 +320,7 @@ pub enum WorkId {
     /// Computed after anchor propagation, entries updated based on anchor presence.
     GdefCategories,
     Features,
-    KerningGroups,
+    KerningLocations,
     KernInstance(NormalizedLocation),
     Anchor(GlyphName),
     /// CPAL data
@@ -347,7 +347,7 @@ impl Identifier for WorkId {
             WorkId::PreliminaryGdefCategories => "IrPreliminaryGdefCategories",
             WorkId::GdefCategories => "IrGdefCategories",
             WorkId::Features => "IrFeatures",
-            WorkId::KerningGroups => "IrKerningGroups",
+            WorkId::KerningLocations => "IrKerningLocations",
             WorkId::KernInstance(..) => "IrKernInstance",
             WorkId::Anchor(..) => "IrAnchor",
             WorkId::ColorPalettes => "IrPalettes",
@@ -430,7 +430,7 @@ pub struct Context {
     pub global_metrics: FeContextItem<ir::GlobalMetrics>,
     pub glyphs: FeContextMap<ir::Glyph>,
     pub features: FeContextItem<ir::FeaturesSource>,
-    pub kerning_groups: FeContextItem<ir::KerningGroups>,
+    pub kerning_locations: FeContextItem<ir::KerningLocations>,
     pub kerning_at: FeContextMap<ir::KerningInstance>,
     pub anchors: FeContextMap<ir::GlyphAnchors>,
     pub colors: FeContextItem<ir::ColorPalettes>,
@@ -458,7 +458,7 @@ impl Context {
             global_metrics: self.global_metrics.clone_with_acl(acl.clone()),
             glyphs: self.glyphs.clone_with_acl(acl.clone()),
             features: self.features.clone_with_acl(acl.clone()),
-            kerning_groups: self.kerning_groups.clone_with_acl(acl.clone()),
+            kerning_locations: self.kerning_locations.clone_with_acl(acl.clone()),
             kerning_at: self.kerning_at.clone_with_acl(acl.clone()),
             anchors: self.anchors.clone_with_acl(acl.clone()),
             colors: self.colors.clone_with_acl(acl.clone()),
@@ -504,8 +504,8 @@ impl Context {
             ),
             glyphs: ContextMap::new(acl.clone(), persistent_storage.clone()),
             features: ContextItem::new(WorkId::Features, acl.clone(), persistent_storage.clone()),
-            kerning_groups: ContextItem::new(
-                WorkId::KerningGroups,
+            kerning_locations: ContextItem::new(
+                WorkId::KerningLocations,
                 acl.clone(),
                 persistent_storage.clone(),
             ),

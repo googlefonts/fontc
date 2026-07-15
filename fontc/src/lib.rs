@@ -568,7 +568,7 @@ mod tests {
             FeWorkIdentifier::GlyphOrder.into(),
             FeWorkIdentifier::PreliminaryGdefCategories.into(),
             FeWorkIdentifier::Features.into(),
-            FeWorkIdentifier::KerningGroups.into(),
+            FeWorkIdentifier::KerningLocations.into(),
             FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 0.0)])).into(),
             FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 1.0)])).into(),
             BeWorkIdentifier::Features.into(),
@@ -2208,7 +2208,7 @@ mod tests {
     fn assert_simple_kerning(source: &str) {
         let result = TestCompile::compile_source(source);
 
-        let kerning_groups = result.fe_context.kerning_groups.get();
+        let kerning_locations = result.fe_context.kerning_locations.get();
 
         let expected_groups = vec![
             (
@@ -2231,7 +2231,7 @@ mod tests {
 
         let wght = Tag::new(b"wght");
         let mut kerns: HashMap<KernPair, Vec<(String, f64)>> = HashMap::new();
-        for kern_loc in kerning_groups.locations.iter() {
+        for kern_loc in kerning_locations.locations.iter() {
             assert_eq!(
                 vec![wght],
                 kern_loc.axis_tags().cloned().collect::<Vec<_>>()
@@ -2785,7 +2785,7 @@ mod tests {
     // group reconciliation above
     // (https://github.com/googlefonts/ufo2ft/issues/992): a non-default
     // *kernless* master with *divergent* kern groups is skipped before group
-    // reconciliation (its location never enters KerningGroups.locations, so
+    // reconciliation (its location never enters KerningLocations, so
     // no KernInstance is built for it), so its groups can neither zero the
     // class kern nor make grouped glyphs look divergent. Mirrors ufo2ft's
     // test_variable_kern_kernless_master_with_groups_matches_varlib.

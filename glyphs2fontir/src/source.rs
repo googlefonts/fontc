@@ -19,7 +19,7 @@ use fontir::{
     ir::{
         self, AnchorBuilder, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
         DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphAnchors,
-        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningInstance, KerningLocations,
         MetaTableValues, NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames,
         PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
     },
@@ -117,8 +117,8 @@ impl Source for GlyphsIrSource {
         }))
     }
 
-    fn create_kerning_group_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        Ok(Box::new(KerningGroupWork(self.font_info.clone())))
+    fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(KerningLocationsWork(self.font_info.clone())))
     }
 
     fn create_kerning_instance_ir_work(
@@ -1034,7 +1034,7 @@ const SIDE1_PREFIX: &str = "@MMK_L_";
 const SIDE2_PREFIX: &str = "@MMK_R_";
 
 #[derive(Debug)]
-struct KerningGroupWork(Arc<FontInfo>);
+struct KerningLocationsWork(Arc<FontInfo>);
 
 #[derive(Debug)]
 struct KerningInstanceWork {
@@ -1071,9 +1071,9 @@ fn kern_participant(
     }
 }
 
-impl Work<Context, WorkId, Error> for KerningGroupWork {
+impl Work<Context, WorkId, Error> for KerningLocationsWork {
     fn id(&self) -> WorkId {
-        WorkId::KerningGroups
+        WorkId::KerningLocations
     }
 
     fn read_access(&self) -> Access<WorkId> {
@@ -1085,7 +1085,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         let font_info = self.0.as_ref();
         let font = &font_info.font;
 
-        let mut groups = KerningGroups::default();
+        let mut kerning_locations = KerningLocations::default();
 
         // ufo2ft#995: keep the default master (it anchors the variation model)
         // and any master that actually kerns; drop non-default masters with no
@@ -1093,7 +1093,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         // toward 0. Check both LTR and RTL kerning -- a master that kerns only
         // RTL is not kernless (fontc#1857 was exactly that miss).
         let default_master_id = font.default_master().id.clone();
-        groups.locations = font_info
+        kerning_locations.locations = font_info
             .master_positions
             .iter()
             .filter_map(|(master_id, pos)| {
@@ -1103,7 +1103,7 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
             })
             .collect();
 
-        context.kerning_groups.set(groups);
+        context.kerning_locations.set(kerning_locations);
         Ok(())
     }
 }
@@ -1210,9 +1210,9 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        // No KerningGroups dependency: instances share the partition
+        // No KerningLocations dependency: instances share the partition
         // derived once on FontInfo. Instances are still only spawned once
-        // KerningGroupWork completes -- workload.rs reacts to its success by
+        // KerningLocationsWork completes -- workload.rs reacts to its success by
         // creating one KernInstance work per participating location.
         AccessBuilder::new().variant(WorkId::GlyphOrder).build()
     }
@@ -2258,11 +2258,11 @@ mod tests {
             .glyph_order
             .set((*context.preliminary_glyph_order.get()).clone());
 
-        let work = source.create_kerning_group_ir_work().unwrap();
+        let work = source.create_kerning_locations_ir_work().unwrap();
         work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
             .unwrap();
 
-        for location in context.kerning_groups.get().locations.iter() {
+        for location in context.kerning_locations.get().locations.iter() {
             let work = source
                 .create_kerning_instance_ir_work(location.clone())
                 .unwrap();
@@ -3100,12 +3100,12 @@ mod tests {
         // case, realigning fontc with ufo2ft main after ufo2ft#997. It does NOT
         // regress fontc#1857 (NotoSansHebrew): that font's masters all carry RTL
         // kerning, so they are not kernless -- see combine_ltr_and_rtl_kerning
-        // and the kerning_ltr/kerning_rtl check in KerningGroupWork.
+        // and the kerning_ltr/kerning_rtl check in KerningLocationsWork.
         let (_, context) = build_kerning(glyphs3_dir().join("KerningEmptyMaster.glyphs"));
 
-        let groups = context.kerning_groups.get();
+        let kerning = context.kerning_locations.get();
         assert_eq!(
-            groups.locations.len(),
+            kerning.locations.len(),
             1,
             "the empty non-default master should be skipped"
         );
@@ -3129,9 +3129,9 @@ mod tests {
         // non-default) has only RTL kerning here; a kernless check that looked at
         // kerning_ltr alone -- the original #1857 miss -- would wrongly skip it.
         let (_, context) = build_kerning(glyphs3_dir().join("KerningRtlOnlyMaster.glyphs"));
-        let groups = context.kerning_groups.get();
+        let kerning = context.kerning_locations.get();
         assert_eq!(
-            groups.locations.len(),
+            kerning.locations.len(),
             2,
             "the RTL-only non-default master must be kept"
         );
