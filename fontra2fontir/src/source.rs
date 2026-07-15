@@ -1,7 +1,5 @@
 use std::{
     collections::BTreeMap,
-    fs::File,
-    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -16,82 +14,13 @@ use fontir::{
 use log::debug;
 
 use crate::{
-    fontra::{self, Font},
+    fontra::{Font, parse_glyph_info},
     toir::to_ir_static_metadata,
 };
 
 pub struct FontraIrSource {
     fontdata_file: PathBuf,
     glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>>,
-}
-
-fn parse_glyph_info(fontra_dir: &Path) -> Result<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>, Error> {
-    let glyphinfo_file = fontra_dir.join("glyph-info.csv");
-    if !glyphinfo_file.is_file() {
-        return Err(BadSource::new(glyphinfo_file, BadSourceKind::ExpectedFile).into());
-    }
-
-    // Read the glyph-info file
-    let file = File::open(&glyphinfo_file).map_err(|e| BadSource::new(&glyphinfo_file, e))?;
-
-    let glyph_dir = fontra_dir.join("glyphs");
-    if !glyph_dir.is_dir() {
-        return Err(BadSource::new(glyph_dir, BadSourceKind::ExpectedDirectory).into());
-    }
-
-    // Example files suggest the first line is just the column headers. Hopefully always :)
-    // This file is tool generated so it shouldn't be full of human error. Fail if we don't understand.
-    let mut glyph_info = BTreeMap::default();
-    for (i, line) in BufReader::new(file).lines().enumerate().skip(1) {
-        let line = line.map_err(|e| BadSource::new(&glyphinfo_file, BadSourceKind::Io(e)))?;
-        let parts: Vec<_> = line.split(';').collect();
-        if parts.len() != 2 {
-            return Err(BadSource::custom(
-                &glyphinfo_file,
-                format!("Expected two parts in line {i} separated by ;"),
-            )
-            .into());
-        }
-        let glyph_name = GlyphName::new(parts[0].trim());
-        let codepoints = parts[1]
-            .split(',')
-            .filter_map(|codepoint| {
-                let codepoint = codepoint.trim();
-                if codepoint.is_empty() {
-                    return None;
-                }
-                let Some(codepoint) = codepoint.strip_prefix("U+") else {
-                    return Some(Err(BadSource::custom(
-                        &glyphinfo_file,
-                        format!("Unintelligible codepoint {codepoint:?} at line {i}"),
-                    )));
-                };
-                Some(u32::from_str_radix(codepoint, 16).map_err(|e| {
-                    BadSource::custom(
-                        &glyphinfo_file,
-                        format!("Unintelligible codepoint {codepoint:?} at line {i}: {e}"),
-                    )
-                }))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let glyph_file = fontra::glyph_file(&glyph_dir, glyph_name.clone());
-        if !glyph_file.is_file() {
-            return Err(BadSource::new(glyph_file, BadSourceKind::ExpectedFile).into());
-        }
-
-        if glyph_info
-            .insert(glyph_name.clone(), (glyph_file, codepoints))
-            .is_some()
-        {
-            return Err(BadSource::custom(
-                &glyphinfo_file,
-                format!("Multiple definitions of '{glyph_name}'"),
-            )
-            .into());
-        }
-    }
-
-    Ok(glyph_info)
 }
 
 impl Source for FontraIrSource {
