@@ -137,7 +137,7 @@ impl Source for FontraIrSource {
         todo!()
     }
 
-    fn create_kerning_group_ir_work(
+    fn create_kerning_locations_ir_work(
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         todo!()

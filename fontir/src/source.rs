@@ -43,10 +43,10 @@ pub trait Source {
     /// When run work should update [crate::orchestration::Context] with [crate::ir::FeaturesSource].
     fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error>;
 
-    /// Create a function that could be called to produce kerning groups.
+    /// Create a function that could be called to produce the kerning locations.
     ///
-    /// When run work should update [crate::orchestration::Context] with [crate::ir::KerningGroups].
-    fn create_kerning_group_ir_work(&self) -> Result<Box<IrWork>, Error>;
+    /// When run work should update [crate::orchestration::Context] with [crate::ir::KerningLocations].
+    fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error>;
 
     /// Create a function that could be called to generate or identify kerning for a location.
     ///

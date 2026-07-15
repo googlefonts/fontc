@@ -22,8 +22,8 @@ use fontir::{
     ir::{
         AnchorBuilder, Color, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
         DEFAULT_VENDOR_ID, FeaturesSource, GlobalMetric, GlobalMetricsBuilder, GlyphOrder,
-        KernGroup, KernSide, KerningGroups, KerningInstance, MetaTableValues, NameBuilder, NameKey,
-        NamedInstance, Paint, PaintGlyph, PaintSolid, Panose, PostscriptNames,
+        KernGroup, KernSide, KerningInstance, KerningLocations, MetaTableValues, NameBuilder,
+        NameKey, NamedInstance, Paint, PaintGlyph, PaintSolid, Panose, PostscriptNames,
         PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
@@ -326,8 +326,8 @@ impl Source for DesignSpaceIrSource {
         }))
     }
 
-    fn create_kerning_group_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        Ok(Box::new(KerningGroupWork {
+    fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(KerningLocationsWork {
             designspace_or_ufo: self.designspace_or_ufo.clone(),
             designspace_dir: self.designspace_dir.clone(),
             designspace: self.designspace.clone(),
@@ -479,7 +479,7 @@ struct FeatureWork {
 }
 
 #[derive(Debug)]
-struct KerningGroupWork {
+struct KerningLocationsWork {
     designspace_or_ufo: Arc<PathBuf>,
     designspace_dir: Arc<PathBuf>,
     designspace: Arc<DesignSpaceDocument>,
@@ -1658,18 +1658,6 @@ impl Work<Context, WorkId, Error> for FeatureWork {
     }
 }
 
-fn kerning_groups_for(
-    designspace_dir: &Path,
-    glyph_order: &GlyphOrder,
-    source: &norad::designspace::Source,
-) -> Result<BTreeMap<KernGroup, BTreeSet<GlyphName>>, Error> {
-    let ufo_dir = designspace_dir.join(&source.filename);
-    let data_request = norad::DataRequest::none().groups(true);
-    let font = norad::Font::load_requested_data(&ufo_dir, data_request)
-        .map_err(|e| BadSource::custom(ufo_dir, e))?;
-    Ok(kern_groups_from_norad(&font.groups, glyph_order))
-}
-
 /// Build the kern-group partition for a single source.
 ///
 /// Keep only kern1/kern2 groups, prune members to the glyph order, and drop the
@@ -1724,36 +1712,25 @@ impl KernGroupExt for KernGroup {
 }
 
 /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
-impl Work<Context, WorkId, Error> for KerningGroupWork {
+impl Work<Context, WorkId, Error> for KerningLocationsWork {
     fn id(&self) -> WorkId {
-        WorkId::KerningGroups
+        WorkId::KerningLocations
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        AccessBuilder::new()
-            .variant(WorkId::StaticMetadata)
-            .variant(WorkId::GlyphOrder)
-            .build()
+        AccessBuilder::new().variant(WorkId::StaticMetadata).build()
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Kerning groups for {:#?}", self.designspace_or_ufo);
 
         let designspace_dir = self.designspace_dir.as_ref();
-        let glyph_order = context.glyph_order.get();
         let static_metadata = context.static_metadata.get();
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
-        let (default_master_idx, default_master) = default_master(&self.designspace)?;
+        let (default_master_idx, _) = default_master(&self.designspace)?;
 
-        // Step 1: find the groups
-
-        // Based on discussion on https://github.com/googlefonts/ufo2ft/pull/635, take the groups of
-        // the default master as the authoritative source on groups
-        let mut kerning_groups = KerningGroups {
-            groups: kerning_groups_for(designspace_dir, glyph_order.as_ref(), default_master)?,
-            ..Default::default()
-        };
+        let mut kerning_locations = KerningLocations::default();
 
         for (idx, source) in self
             .designspace
@@ -1770,10 +1747,10 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
                 continue;
             }
             let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
-            kerning_groups.locations.insert(pos.clone());
+            kerning_locations.locations.insert(pos.clone());
         }
 
-        context.kerning_groups.set(kerning_groups);
+        context.kerning_locations.set(kerning_locations);
         Ok(())
     }
 }
@@ -1785,8 +1762,8 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        // No KerningGroups dependency: each instance loads its own source's
-        // groups. Instances are still only spawned once KerningGroupWork
+        // No KerningLocations dependency: each instance loads its own source's
+        // groups. Instances are still only spawned once KerningLocationsWork
         // completes -- workload.rs reacts to its success by creating one
         // KernInstance work per participating location.
         AccessBuilder::new()
@@ -2399,11 +2376,11 @@ mod tests {
             .glyph_order
             .set((*context.preliminary_glyph_order.get()).clone());
 
-        let work = source.create_kerning_group_ir_work().unwrap();
+        let work = source.create_kerning_locations_ir_work().unwrap();
         work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
             .unwrap();
 
-        for location in context.kerning_groups.get().locations.iter() {
+        for location in context.kerning_locations.get().locations.iter() {
             let work = source
                 .create_kerning_instance_ir_work(location.clone())
                 .unwrap();
@@ -2770,30 +2747,6 @@ mod tests {
         );
     }
 
-    // The merged map is built from the default master alone; non-default
-    // masters' groups (e.g. Bold's renamed the_WrOng_name, #338) never appear.
-    #[test]
-    fn groups_come_from_default_master() {
-        let (_, context) = build_kerning("wght_var.designspace");
-        let kerning = context.kerning_groups.get();
-
-        let mut groups: Vec<_> = kerning
-            .groups
-            .iter()
-            .map(|(name, entries)| {
-                let mut entries: Vec<_> = entries.iter().map(|e| e.as_str()).collect();
-                entries.sort();
-                (name.clone(), entries)
-            })
-            .collect();
-        groups.sort();
-
-        assert_eq!(
-            groups,
-            vec![(KernGroup::Side1("correct_name".into()), vec!["bar", "plus"],),],
-        );
-    }
-
     #[test]
     fn non_default_kernless_source_skipped_from_variation() {
         // ufo2ft#995 port: KernlessMid has 3 masters; the middle Medium master
@@ -2802,9 +2755,9 @@ mod tests {
         // interpolating across. Regular (the default) and Bold kern, Medium does
         // not, so exactly those two locations survive.
         let (_, context) = build_kerning("KernlessMid.designspace");
-        let groups = context.kerning_groups.get();
+        let kerning = context.kerning_locations.get();
         assert_eq!(
-            groups.locations.len(),
+            kerning.locations.len(),
             2,
             "the kernless non-default Medium master should be skipped"
         );
@@ -2817,10 +2770,14 @@ mod tests {
     #[test]
     fn ufo2_mmk_kerning_groups_upconverted() {
         let (_, context) = build_kerning("ufo2_kern.designspace");
-        let kerning = context.kerning_groups.get();
+
+        let location = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let kern_instance = context
+            .kerning_at
+            .get(&fontir::orchestration::WorkId::KernInstance(location));
 
         // @MMK_L_A and @MMK_R_V should be upconverted to public.kern1.A / public.kern2.V
-        let mut groups: Vec<_> = kerning
+        let mut groups: Vec<_> = kern_instance
             .groups
             .iter()
             .map(|(name, entries)| {
@@ -2841,10 +2798,6 @@ mod tests {
         );
 
         // Verify the group-to-group kern pair is present in the kerning instance
-        let location = NormalizedLocation::for_pos(&[("wght", 0.0)]);
-        let kern_instance = context
-            .kerning_at
-            .get(&fontir::orchestration::WorkId::KernInstance(location));
         let group_pairs: Vec<_> = kern_instance
             .kerns
             .iter()

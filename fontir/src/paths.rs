@@ -48,7 +48,7 @@ impl Paths {
             WorkId::GlobalMetrics => dir.join("global_metrics.yml"),
             WorkId::Glyph(name) => Paths::glyph_ir_file(dir, name.as_str()),
             WorkId::Features => dir.join("features.yml"),
-            WorkId::KerningGroups => dir.join("kern_groups.yml"),
+            WorkId::KerningLocations => dir.join("kern_locations.yml"),
             WorkId::KernInstance(location) => Paths::kern_ir_file(dir, location),
             WorkId::ColorPalettes => dir.join("colors.yml"),
             WorkId::PaintGraph => dir.join("paint_graph.yml"),

@@ -15,7 +15,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, GdefCategories, GlyphOrder, KernGroup, KerningGroups, KerningInstance},
+    ir::{self, GdefCategories, GlyphOrder, KernGroup, KerningInstance, KerningLocations},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::props::BidiClass;
@@ -114,7 +114,7 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
     /// Generate kerning data structures.
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let glyph_order = context.ir.glyph_order.get();
-        let ir_groups = context.ir.kerning_groups.get();
+        let ir_groups = context.ir.kerning_locations.get();
         let ir_kerns = context.ir.kerning_at.all();
 
         // Add IR kerns to builder. IR kerns are split by location so put them back together again.
@@ -581,7 +581,7 @@ const MAX_LOGGED_DIVERGENT_GLYPHS: usize = 10;
 /// Returns the refined group partition (the output classes) alongside the
 /// resolved adjustments.
 fn build_variable_kern_adjustments(
-    ir_groups: &KerningGroups,
+    ir_groups: &KerningLocations,
     kern_by_pos: &HashMap<NormalizedLocation, KerningInstance>,
 ) -> (
     BTreeMap<KernGroup, BTreeSet<GlyphName>>,

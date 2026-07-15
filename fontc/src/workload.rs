@@ -105,7 +105,7 @@ enum RecvType {
 fn priority(id: &AnyWorkId) -> u32 {
     match id {
         AnyWorkId::Fe(FeWorkIdentifier::Features) => 99,
-        AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) => 99,
+        AnyWorkId::Fe(FeWorkIdentifier::KerningLocations) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::KernInstance(..)) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => 99,
@@ -152,7 +152,7 @@ impl Workload {
         workload.add(workload.source.create_static_metadata_work()?);
         workload.add(workload.source.create_global_metric_work()?);
         workload.add(workload.source.create_feature_ir_work()?);
-        workload.add_skippable_feature_work(workload.source.create_kerning_group_ir_work()?);
+        workload.add_skippable_feature_work(workload.source.create_kerning_locations_ir_work()?);
         workload
             .source
             .create_glyph_ir_work()?
@@ -424,8 +424,8 @@ impl Workload {
             gvar_job.read_access = gvar_deps.build().into();
         }
 
-        if let AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) = success {
-            if let Some(groups) = fe_root.kerning_groups.try_get() {
+        if let AnyWorkId::Fe(FeWorkIdentifier::KerningLocations) = success {
+            if let Some(groups) = fe_root.kerning_locations.try_get() {
                 for location in groups.locations.iter() {
                     self.add(
                         self.source
@@ -440,7 +440,7 @@ impl Workload {
                 .expect("Gather IR Kerning has to be pending")
                 .read_access = AccessBuilder::<AnyWorkId>::new()
                 .variant(FeWorkIdentifier::GlyphOrder)
-                .variant(FeWorkIdentifier::KerningGroups)
+                .variant(FeWorkIdentifier::KerningLocations)
                 .variant(FeWorkIdentifier::KernInstance(NormalizedLocation::default()))
                 .build()
                 .into();

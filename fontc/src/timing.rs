@@ -221,7 +221,7 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => "metrics",
         AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)) => "glyph",
         AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => "glyphorder",
-        AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) => "kerngrps",
+        AnyWorkId::Fe(FeWorkIdentifier::KerningLocations) => "kernlocs",
         AnyWorkId::Fe(FeWorkIdentifier::KernInstance(..)) => "kernat",
         AnyWorkId::Fe(FeWorkIdentifier::PaintGraph) => "colr",
         AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => "pre-go",
