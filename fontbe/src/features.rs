@@ -25,8 +25,8 @@ use fea_rs::{
 
 use fontir::{
     ir::{
-        FeatureWriterMode, FeatureWriterPlan, FeatureWriterSettings, FeaturesSource,
-        GdefCategories, GlyphOrder, StaticMetadata, resolve_feature_writers,
+        FeatureGenerationPlan, FeatureGenerationSettings, FeatureWriterMode, FeaturesSource,
+        GdefCategories, GlyphOrder, StaticMetadata, resolve_feature_generation,
     },
     orchestration::WorkId as FeWorkId,
 };
@@ -416,7 +416,7 @@ impl FeatureCompilationWork {
         ast: &FeaFirstPassOutput,
         kerns: &FeaRsKerns,
         marks: &FeaRsMarks,
-        plan: &FeatureWriterPlan,
+        plan: &FeatureGenerationPlan,
         compile_debg: bool,
     ) -> Result<Compilation, Error> {
         let feature_variations = static_metadata
@@ -622,7 +622,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
 
         // Resolve the plan once for this work unit; separate work units (kern,
         // marks) resolve their own, since the work graph precludes threading one.
-        let plan = resolve_feature_writers(&static_metadata.misc.feature_writers);
+        let plan = resolve_feature_generation(&static_metadata.misc.feature_generation);
         let mut result = self.compile(
             &static_metadata,
             &glyph_order,
@@ -745,7 +745,7 @@ fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec
 }
 
 /// The effective tags a writer generates, applying its `features` subset option.
-fn settings_tags(settings: &FeatureWriterSettings, all: &[Tag]) -> Vec<Tag> {
+fn settings_tags(settings: &FeatureGenerationSettings, all: &[Tag]) -> Vec<Tag> {
     match &settings.features {
         Some(subset) => all.iter().copied().filter(|t| subset.contains(t)).collect(),
         None => all.to_vec(),
@@ -756,7 +756,7 @@ fn settings_tags(settings: &FeatureWriterSettings, all: &[Tag]) -> Vec<Tag> {
 ///
 /// A tag is force-appended exactly when its writer is enabled in `append` mode;
 /// this is independent of the FEA, so it needs no AST.
-fn append_forced_tags(plan: &FeatureWriterPlan) -> Vec<Tag> {
+fn append_forced_tags(plan: &FeatureGenerationPlan) -> Vec<Tag> {
     let mut tags = Vec::new();
     for (settings, all) in [
         (&plan.curs, &[CURS][..]),
@@ -780,7 +780,7 @@ fn append_forced_tags(plan: &FeatureWriterPlan) -> Vec<Tag> {
 /// tag to whether its lookups must be appended after all user lookups.
 fn feature_writer_todo_list(
     tags: &[Tag],
-    settings: Option<&FeatureWriterSettings>,
+    settings: Option<&FeatureGenerationSettings>,
     ast: &ParseTree,
 ) -> BTreeMap<Tag, bool> {
     use fea_rs::typed;
@@ -896,8 +896,8 @@ mod tests {
         fea_rs::parse::parse_string(fea.to_string()).0
     }
 
-    fn settings(mode: FeatureWriterMode) -> FeatureWriterSettings {
-        FeatureWriterSettings {
+    fn settings(mode: FeatureWriterMode) -> FeatureGenerationSettings {
+        FeatureGenerationSettings {
             mode,
             features: None,
         }
@@ -966,7 +966,7 @@ mod tests {
     #[test]
     fn todo_respects_features_subset() {
         let ast = parse_fea("languagesystem DFLT dflt;");
-        let settings = FeatureWriterSettings {
+        let settings = FeatureGenerationSettings {
             mode: FeatureWriterMode::Skip,
             features: Some(vec![KERN]),
         };
@@ -977,11 +977,11 @@ mod tests {
     #[test]
     fn append_forced_tags_only_for_append_writers() {
         // key absent -> everything enabled in skip mode -> nothing appended.
-        let plan = resolve_feature_writers(&None);
+        let plan = resolve_feature_generation(&None);
         assert!(append_forced_tags(&plan).is_empty());
 
         // kern in append mode -> its tags are forced; disabled writers contribute none.
-        let plan = resolve_feature_writers(&Some(vec![
+        let plan = resolve_feature_generation(&Some(vec![
             fontir::ir::FeatureWriterSpec {
                 writer: fontir::ir::KnownFeatureWriter::Kern,
                 mode: FeatureWriterMode::Append,

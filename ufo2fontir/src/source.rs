@@ -1260,7 +1260,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .get("public.openTypeMeta")
             .and_then(parse_meta_table_values);
 
-        static_metadata.misc.feature_writers = feature_writers_from_lib(&self.designspace.lib)?;
+        static_metadata.misc.feature_generation = feature_writers_from_lib(&self.designspace.lib)?;
 
         if let Some(gasp_records) = font_info_at_default.open_type_gasp_range_records.as_ref() {
             static_metadata.misc.gasp = gasp_records
@@ -3863,7 +3863,12 @@ mod tests {
             ds.lib
                 .insert(FEATURE_WRITERS_LIB_KEY.into(), Value::Array(entries));
         });
-        context.static_metadata.get().misc.feature_writers.clone()
+        context
+            .static_metadata
+            .get()
+            .misc
+            .feature_generation
+            .clone()
     }
 
     #[test]
@@ -3962,7 +3967,7 @@ mod tests {
     #[test]
     fn absent_feature_writers_key_is_none() {
         let (_, context) = build_static_metadata("wght_var.designspace", Flags::default());
-        assert_eq!(context.static_metadata.get().misc.feature_writers, None);
+        assert_eq!(context.static_metadata.get().misc.feature_generation, None);
     }
 
     #[test]
@@ -3982,7 +3987,7 @@ mod tests {
         // key set only in a raw .ufo's lib.plist is still read.
         let (_, context) = build_static_metadata("FeatureWriters.ufo", Flags::default());
         assert_eq!(
-            context.static_metadata.get().misc.feature_writers,
+            context.static_metadata.get().misc.feature_generation,
             Some(vec![FeatureWriterSpec {
                 writer: KnownFeatureWriter::Kern,
                 mode: FeatureWriterMode::Skip,

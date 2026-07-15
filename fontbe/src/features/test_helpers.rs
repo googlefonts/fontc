@@ -18,7 +18,7 @@ pub(crate) struct LayoutOutputBuilder {
     glyph_locations: HashSet<NormalizedLocation>,
     user_fea: Arc<str>,
     glyph_order: GlyphOrder,
-    feature_writers: Option<Vec<FeatureWriterSpec>>,
+    feature_generation: Option<Vec<FeatureWriterSpec>>,
 }
 
 /// A helper for compiling layout tables (including with user-provided features)
@@ -64,11 +64,11 @@ impl LayoutOutputBuilder {
         self
     }
 
-    pub(crate) fn with_feature_writers(
+    pub(crate) fn with_feature_generation(
         &mut self,
-        feature_writers: Option<Vec<FeatureWriterSpec>>,
+        feature_generation: Option<Vec<FeatureWriterSpec>>,
     ) -> &mut Self {
-        self.feature_writers = feature_writers;
+        self.feature_generation = feature_generation;
         self
     }
 
@@ -85,7 +85,7 @@ impl LayoutOutputBuilder {
             false,
         )
         .unwrap();
-        static_metadata.misc.feature_writers = self.feature_writers.clone();
+        static_metadata.misc.feature_generation = self.feature_generation.clone();
 
         let gdef_categories = self.categories.clone().unwrap_or_default();
 
@@ -140,7 +140,7 @@ impl Default for LayoutOutputBuilder {
             glyph_locations: Default::default(),
             user_fea: "languagesystem DFLT dflt;".into(),
             glyph_order: Default::default(),
-            feature_writers: None,
+            feature_generation: None,
         }
     }
 }

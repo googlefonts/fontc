@@ -229,7 +229,7 @@ pub struct MiscMetadata {
     ///
     /// `None` means the key was absent (use the built-in defaults); `Some` fully
     /// replaces the defaults (an empty list disables all automatic features).
-    pub feature_writers: Option<Vec<FeatureWriterSpec>>,
+    pub feature_generation: Option<Vec<FeatureWriterSpec>>,
 }
 
 /// Records that will go in the '[meta]' table.
@@ -503,7 +503,7 @@ impl StaticMetadata {
                 us_weight_class: None,
                 us_width_class: None,
                 gasp: Vec::new(),
-                feature_writers: None,
+                feature_generation: None,
             },
             variations: None,
         })
@@ -664,7 +664,7 @@ mod tests {
                 us_weight_class: None,
                 us_width_class: None,
                 gasp: Vec::new(),
-                feature_writers: Some(vec![FeatureWriterSpec {
+                feature_generation: Some(vec![FeatureWriterSpec {
                     writer: KnownFeatureWriter::Kern,
                     mode: FeatureWriterMode::Append,
                     features: None,

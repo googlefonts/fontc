@@ -36,8 +36,8 @@ use crate::{
 };
 use fontir::{
     ir::{
-        self, Anchor, AnchorKind, FeatureWriterPlan, GdefCategories, GlyphAnchors, GlyphOrder,
-        StaticMetadata, resolve_feature_writers,
+        self, Anchor, AnchorKind, FeatureGenerationPlan, GdefCategories, GlyphAnchors, GlyphOrder,
+        StaticMetadata, resolve_feature_generation,
     },
     orchestration::WorkId as FeWorkId,
 };
@@ -76,7 +76,7 @@ struct MarkLookupBuilder<'a> {
     char_map: HashMap<u32, GlyphId16>,
     // marks.rs fuses ufo2ft's Mark and Curs writers, so we carry the whole plan
     // and gate mark/curs (and GDEF ligature carets) independently.
-    plan: FeatureWriterPlan,
+    plan: FeatureGenerationPlan,
 }
 
 /// Abstract over the difference in anchor shape between mark2lig and mark2base/mark2mark
@@ -210,7 +210,7 @@ impl<'a> MarkLookupBuilder<'a> {
         fea_first_pass: &'a FeaFirstPassOutput,
         char_map: HashMap<u32, GlyphId16>,
     ) -> Result<Self, Error> {
-        let plan = resolve_feature_writers(&static_metadata.misc.feature_writers);
+        let plan = resolve_feature_generation(&static_metadata.misc.feature_generation);
         let gdef_classes = super::get_gdef_classes(gdef_categories, fea_first_pass, glyph_order);
         // ligature carets are part of the GDEF table, which the Gdef writer owns.
         let lig_carets = if plan.gdef {
@@ -1142,7 +1142,7 @@ mod tests {
         categories: BTreeMap<GlyphName, GlyphClassDef>,
         char_map: HashMap<u32, GlyphName>,
         user_fea: &'static str,
-        feature_writers: Option<Vec<FeatureWriterSpec>>,
+        feature_generation: Option<Vec<FeatureWriterSpec>>,
     }
 
     struct AnchorBuilder<const N: usize> {
@@ -1228,7 +1228,7 @@ mod tests {
                 anchors: Default::default(),
                 categories: Default::default(),
                 char_map: Default::default(),
-                feature_writers: None,
+                feature_generation: None,
             }
         }
 
@@ -1241,8 +1241,8 @@ mod tests {
         }
 
         /// Set the `featureWriters` config (`None` = key absent = defaults).
-        fn set_feature_writers(&mut self, specs: Option<Vec<FeatureWriterSpec>>) -> &mut Self {
-            self.feature_writers = specs;
+        fn set_feature_generation(&mut self, specs: Option<Vec<FeatureWriterSpec>>) -> &mut Self {
+            self.feature_generation = specs;
             self
         }
 
@@ -1310,7 +1310,7 @@ mod tests {
                 .with_categories(categories)
                 .with_user_fea(self.user_fea)
                 .with_glyph_order(self.anchors.keys().cloned().collect())
-                .with_feature_writers(self.feature_writers.clone())
+                .with_feature_generation(self.feature_generation.clone())
                 .build()
         }
 
@@ -2087,7 +2087,7 @@ mod tests {
 
         // Mark writer only: no curs, even though the anchors are present.
         let out = input
-            .set_feature_writers(Some(vec![spec(KnownFeatureWriter::Mark)]))
+            .set_feature_generation(Some(vec![spec(KnownFeatureWriter::Mark)]))
             .get_normalized_output();
         assert!(
             !out.contains("curs"),
@@ -2096,7 +2096,7 @@ mod tests {
 
         // Curs writer only: curs is generated.
         let out = input
-            .set_feature_writers(Some(vec![spec(KnownFeatureWriter::Curs)]))
+            .set_feature_generation(Some(vec![spec(KnownFeatureWriter::Curs)]))
             .get_normalized_output();
         assert!(
             out.contains("curs"),
@@ -2109,7 +2109,7 @@ mod tests {
     #[test]
     fn gdef_writer_disabled_skips_lig_carets() {
         let out = MarksInput::default()
-            .set_feature_writers(Some(vec![spec(KnownFeatureWriter::Mark)]))
+            .set_feature_generation(Some(vec![spec(KnownFeatureWriter::Mark)]))
             .add_glyph("f_i", None, |anchors| {
                 anchors.add("caret_1", [(100, 0)]);
             })

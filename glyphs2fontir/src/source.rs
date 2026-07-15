@@ -571,7 +571,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
-        static_metadata.misc.feature_writers = feature_writers_from_user_data(&font.user_data)?;
+        static_metadata.misc.feature_generation = feature_writers_from_user_data(&font.user_data)?;
         static_metadata.variations = variations;
         // treat  empty string or all spaces as equivalent to no value; it means
         // 'null', per the spec
@@ -4296,7 +4296,7 @@ mode = skip;
             .exec(&task_context)
             .unwrap();
         assert_eq!(
-            context.static_metadata.get().misc.feature_writers,
+            context.static_metadata.get().misc.feature_generation,
             Some(vec![
                 FeatureWriterSpec {
                     writer: KnownFeatureWriter::Curs,
@@ -4379,7 +4379,12 @@ ignoreMarks = 0;
             .unwrap()
             .exec(&task_context)
             .unwrap();
-        context.static_metadata.get().misc.feature_writers.clone()
+        context
+            .static_metadata
+            .get()
+            .misc
+            .feature_generation
+            .clone()
     }
 
     #[test]

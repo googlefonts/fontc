@@ -294,9 +294,9 @@ fn parse_features(
     Some(tags)
 }
 
-/// Per-writer settings in the resolved [`FeatureWriterPlan`].
+/// Per-writer settings in the resolved [`FeatureGenerationPlan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureWriterSettings {
+pub struct FeatureGenerationSettings {
     pub mode: FeatureWriterMode,
     /// Restrict generation to this subset of the writer's tags; `None` = all.
     pub features: Option<Vec<Tag>>,
@@ -308,43 +308,43 @@ pub struct FeatureWriterSettings {
 /// be generated. Note ufo2ft's Mark writer covers mark/mkmk/abvm/blwm while Curs
 /// is a separate writer, so `curs` is gated independently.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureWriterPlan {
-    pub curs: Option<FeatureWriterSettings>,
-    pub kern: Option<FeatureWriterSettings>,
-    pub mark: Option<FeatureWriterSettings>,
+pub struct FeatureGenerationPlan {
+    pub curs: Option<FeatureGenerationSettings>,
+    pub kern: Option<FeatureGenerationSettings>,
+    pub mark: Option<FeatureGenerationSettings>,
     pub gdef: bool,
 }
 
 impl FeatureWriterSpec {
-    fn settings(&self) -> FeatureWriterSettings {
-        FeatureWriterSettings {
+    fn settings(&self) -> FeatureGenerationSettings {
+        FeatureGenerationSettings {
             mode: self.mode,
             features: self.features.clone(),
         }
     }
 }
 
-/// Resolve the `feature_writers` config into a per-writer plan.
+/// Resolve the featureWriters config into a per-writer plan.
 ///
 /// `None` (key absent) enables everything in [`Skip`] mode -- the compiler's
 /// historical behavior. `Some(list)` fully replaces the defaults: only listed
 /// writers are enabled; an empty list disables all automatic features.
 ///
 /// [`Skip`]: FeatureWriterMode::Skip
-pub fn resolve_feature_writers(specs: &Option<Vec<FeatureWriterSpec>>) -> FeatureWriterPlan {
+pub fn resolve_feature_generation(specs: &Option<Vec<FeatureWriterSpec>>) -> FeatureGenerationPlan {
     let Some(specs) = specs else {
-        let enabled = FeatureWriterSettings {
+        let enabled = FeatureGenerationSettings {
             mode: FeatureWriterMode::Skip,
             features: None,
         };
-        return FeatureWriterPlan {
+        return FeatureGenerationPlan {
             curs: Some(enabled.clone()),
             kern: Some(enabled.clone()),
             mark: Some(enabled),
             gdef: true,
         };
     };
-    let mut plan = FeatureWriterPlan {
+    let mut plan = FeatureGenerationPlan {
         curs: None,
         kern: None,
         mark: None,
@@ -732,7 +732,7 @@ mod tests {
 
     #[test]
     fn resolve_absent_enables_everything_in_skip() {
-        let plan = resolve_feature_writers(&None);
+        let plan = resolve_feature_generation(&None);
         assert_eq!(plan.curs.as_ref().unwrap().mode, FeatureWriterMode::Skip);
         assert_eq!(plan.kern.as_ref().unwrap().mode, FeatureWriterMode::Skip);
         assert_eq!(plan.mark.as_ref().unwrap().mode, FeatureWriterMode::Skip);
@@ -746,7 +746,7 @@ mod tests {
             mode: FeatureWriterMode::Append,
             features: None,
         }]);
-        let plan = resolve_feature_writers(&specs);
+        let plan = resolve_feature_generation(&specs);
         assert_eq!(plan.kern.as_ref().unwrap().mode, FeatureWriterMode::Append);
         assert!(plan.curs.is_none());
         assert!(plan.mark.is_none());
@@ -755,7 +755,7 @@ mod tests {
 
     #[test]
     fn resolve_empty_disables_everything() {
-        let plan = resolve_feature_writers(&Some(vec![]));
+        let plan = resolve_feature_generation(&Some(vec![]));
         assert!(plan.curs.is_none());
         assert!(plan.kern.is_none());
         assert!(plan.mark.is_none());
