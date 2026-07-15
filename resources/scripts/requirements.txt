@@ -6,7 +6,7 @@
 #
 -e file:./ttx_diff
     # via -r resources/scripts/requirements.in
-absl-py==2.4.0
+absl-py==2.5.0
     # via
     #   gftools
     #   nanoemoji
@@ -44,16 +44,16 @@ cattrs==26.1.0
     #   ufolib2
 cdifflib==1.2.9
     # via ttx-diff
-certifi==2026.5.20
+certifi==2026.6.17
     # via requests
-cffi==2.0.0
+cffi==2.1.0
     # via
     #   cryptography
     #   pygit2
     #   pynacl
 cffsubr==0.4.0
     # via ufo2ft
-charset-normalizer==3.4.7
+charset-normalizer==3.4.9
     # via requests
 compreffor==0.6.0
     # via ufo2ft
@@ -68,7 +68,7 @@ defcon[lxml,pens]==0.12.2
     #   ufoprocessor
 ffmpeg-python==0.2.0
     # via gftools
-filelock==3.29.4
+filelock==3.29.7
     # via youseedee
 font-v==2.1.0
     # via gftools
@@ -87,7 +87,7 @@ fontmath==0.10.0
     #   mutatormath
     #   ufo2ft
     #   ufoprocessor
-fontparts==1.0.0
+fontparts==1.1.1
     # via ufoprocessor
 fontpens==0.4.0
     # via defcon
@@ -135,7 +135,7 @@ gftools==0.9.93
     #   ttx-diff
 gitdb==4.0.12
     # via gitpython
-gitpython==3.1.50
+gitpython==3.1.51
     # via font-v
 glyphsets==1.1.0
     # via gftools
@@ -193,7 +193,7 @@ paintcompiler==0.3.4
     # via -r resources/scripts/requirements.in
 picosvg==0.22.3
     # via nanoemoji
-pillow==12.2.0
+pillow==12.3.0
     # via
     #   gftools
     #   nanoemoji
@@ -229,7 +229,7 @@ pyyaml==6.0.3
     #   gftools
     #   glyphsets
     #   ttx-diff
-regex==2026.5.9
+regex==2026.7.10
     # via nanoemoji
 requests==2.34.2
     # via
@@ -263,16 +263,16 @@ tabulate==0.10.0
     #   glyphsets
 toml==0.10.2
     # via nanoemoji
-tqdm==4.68.2
+tqdm==4.68.4
     # via afdko
 ttfautohint-py==0.6.0
     # via gftools
-typing-extensions==4.15.0
+typing-extensions==4.16.0
     # via
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-ufo2ft[cffsubr,compreffor]==3.8.2
+ufo2ft[cffsubr,compreffor]==3.9.0
     # via
     #   fontmake
     #   nanoemoji
@@ -309,7 +309,7 @@ urllib3==2.7.0
     #   requests
 vharfbuzz==0.3.1
     # via gftools
-vttlib==0.12.0
+vttlib==0.12.1
     # via gftools
 youseedee==0.7.0
     # via glyphsets
