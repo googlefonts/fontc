@@ -155,14 +155,16 @@ impl IntoIterator for GlyphOrder {
 /// In logical (reading) order
 pub type KernPair = (KernSide, KernSide);
 
-/// IR representation of kerning groups.
+/// IR record of which sources participate in kerning.
 ///
-/// In UFO terms, roughly [groups.plist](https://unifiedfontobject.org/versions/ufo3/groups.plist/)
-/// plus the set of locations that can have kerning.
+/// Kerning groups themselves are per-source data, carried on each
+/// [KerningInstance]: sources in a designspace can partition glyphs into
+/// groups differently, so there is no font-wide group map.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 pub struct KerningGroups {
-    pub groups: BTreeMap<KernGroup, BTreeSet<GlyphName>>,
-    /// The locations that have kerning defined.
+    /// The locations participating in the kerning variation model: every
+    /// source that kerns, plus the default, which anchors the model even
+    /// when kernless.
     ///
     /// Must be a subset of the master locations.
     pub locations: BTreeSet<NormalizedLocation>,

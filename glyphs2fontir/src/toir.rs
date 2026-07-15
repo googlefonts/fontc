@@ -1,7 +1,8 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     path::PathBuf,
     str::FromStr,
+    sync::OnceLock,
 };
 
 use indexmap::IndexMap;
@@ -305,6 +306,10 @@ pub(crate) struct FontInfo {
     pub axes: fontdrasil::types::Axes,
     /// Name of glyph : color glyphs split from it, if any
     pub color_glyphs: IndexMap<SmolStr, Vec<SmolStr>>,
+    /// The kern-group partition, lazily derived once by the
+    /// `FontInfo::kern_groups` accessor; per-glyph attributes make it
+    /// font-global, unlike UFO sources' per-master groups.
+    pub kern_groups: OnceLock<BTreeMap<ir::KernGroup, BTreeSet<GlyphName>>>,
 }
 
 impl TryFrom<Font> for FontInfo {
@@ -366,6 +371,7 @@ impl TryFrom<Font> for FontInfo {
             locations,
             axes,
             color_glyphs,
+            kern_groups: OnceLock::new(),
         })
     }
 }

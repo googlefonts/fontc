@@ -1087,39 +1087,6 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
 
         let mut groups = KerningGroups::default();
 
-        //https://github.com/googlefonts/glyphsLib/blob/682ff4b177/Lib/glyphsLib/builder/groups.py#L114
-        let rtl_glyphs = get_glyphs_with_rtl_kerning(font);
-        // build up the kern groups; a glyph may belong to a group on either or
-        // both 'side'.
-        for (name, glyph) in font
-            .glyphs
-            .iter()
-            // ignore non-export glyphs
-            .filter(|x| x.1.export)
-        {
-            let is_rtl = rtl_glyphs.contains(name.as_str());
-            // if there are bracket layers for this glyph, make sure the
-            // generated glyphs are assigned the same groups as the parent
-            let bracket_names = bracket_glyph_names(glyph, &font_info.axes)
-                .map(|(name, _)| name)
-                .collect::<Vec<_>>();
-            let right = glyph.right_kern.clone().map(KernGroup::Side1);
-            let left = glyph.left_kern.clone().map(KernGroup::Side2);
-            let (side1, side2) = if is_rtl {
-                (right.map(KernGroup::flip), left.map(KernGroup::flip))
-            } else {
-                (right, left)
-            };
-            for group in [side1, side2].into_iter().flatten() {
-                groups.groups.entry(group).or_default().extend(
-                    bracket_names
-                        .iter()
-                        .cloned()
-                        .chain(Some(name.clone().into())),
-                );
-            }
-        }
-
         // ufo2ft#995: keep the default master (it anchors the variation model)
         // and any master that actually kerns; drop non-default masters with no
         // kerning so the kern interpolates across them instead of being pinned
@@ -1139,6 +1106,54 @@ impl Work<Context, WorkId, Error> for KerningGroupWork {
         context.kerning_groups.set(groups);
         Ok(())
     }
+}
+
+impl FontInfo {
+    /// The kern-group partition, from the font's per-glyph kern attributes.
+    ///
+    /// Glyphs kerning groups are per-glyph properties, so unlike UFO sources
+    /// every instance shares one partition: it is derived once and cached.
+    fn kern_groups(&self) -> &BTreeMap<KernGroup, BTreeSet<GlyphName>> {
+        self.kern_groups.get_or_init(|| derive_kern_groups(self))
+    }
+}
+
+//https://github.com/googlefonts/glyphsLib/blob/682ff4b177/Lib/glyphsLib/builder/groups.py#L114
+fn derive_kern_groups(font_info: &FontInfo) -> BTreeMap<KernGroup, BTreeSet<GlyphName>> {
+    let font = &font_info.font;
+    let mut groups: BTreeMap<KernGroup, BTreeSet<GlyphName>> = Default::default();
+    let rtl_glyphs = get_glyphs_with_rtl_kerning(font);
+    // build up the kern groups; a glyph may belong to a group on either or
+    // both 'side'.
+    for (name, glyph) in font
+        .glyphs
+        .iter()
+        // ignore non-export glyphs
+        .filter(|x| x.1.export)
+    {
+        let is_rtl = rtl_glyphs.contains(name.as_str());
+        // if there are bracket layers for this glyph, make sure the
+        // generated glyphs are assigned the same groups as the parent
+        let bracket_names = bracket_glyph_names(glyph, &font_info.axes)
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>();
+        let right = glyph.right_kern.clone().map(KernGroup::Side1);
+        let left = glyph.left_kern.clone().map(KernGroup::Side2);
+        let (side1, side2) = if is_rtl {
+            (right.map(KernGroup::flip), left.map(KernGroup::flip))
+        } else {
+            (right, left)
+        };
+        for group in [side1, side2].into_iter().flatten() {
+            groups.entry(group).or_default().extend(
+                bracket_names
+                    .iter()
+                    .cloned()
+                    .chain(Some(name.clone().into())),
+            );
+        }
+    }
+    groups
 }
 
 // https://github.com/googlefonts/glyphsLib/blob/682ff4b177115a/Lib/glyphsLib/builder/groups.py#L28
@@ -1162,7 +1177,6 @@ fn get_glyphs_with_rtl_kerning(font: &Font) -> HashSet<GlyphName> {
     for group in rtl_groups {
         rtl_glyphs.extend(
             groups
-                .groups
                 .get(&group)
                 .into_iter()
                 .flat_map(|x| x.iter().cloned()),
@@ -1173,8 +1187,8 @@ fn get_glyphs_with_rtl_kerning(font: &Font) -> HashSet<GlyphName> {
 }
 
 // we need to know the ltr groups in order to figure out the rtl glyphs
-fn just_ltr_groups(font: &Font) -> KerningGroups {
-    let mut groups = KerningGroups::default();
+fn just_ltr_groups(font: &Font) -> BTreeMap<KernGroup, BTreeSet<GlyphName>> {
+    let mut groups: BTreeMap<KernGroup, BTreeSet<GlyphName>> = Default::default();
     for (name, glyph) in font
         .glyphs
         .iter()
@@ -1184,11 +1198,7 @@ fn just_ltr_groups(font: &Font) -> KerningGroups {
         let right = glyph.right_kern.clone().map(KernGroup::Side1);
         let left = glyph.left_kern.clone().map(KernGroup::Side2);
         for group in [right, left].into_iter().flatten() {
-            groups
-                .groups
-                .entry(group)
-                .or_default()
-                .insert(name.clone().into());
+            groups.entry(group).or_default().insert(name.clone().into());
         }
     }
     groups
@@ -1200,16 +1210,16 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        AccessBuilder::new()
-            .variant(WorkId::GlyphOrder)
-            .variant(WorkId::KerningGroups)
-            .build()
+        // No KerningGroups dependency: instances share the partition
+        // derived once on FontInfo. Instances are still only spawned once
+        // KerningGroupWork completes -- workload.rs reacts to its success by
+        // creating one KernInstance work per participating location.
+        AccessBuilder::new().variant(WorkId::GlyphOrder).build()
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate IR for kerning at {:?}", self.location);
-        let kerning_groups = context.kerning_groups.get();
-        let groups = &kerning_groups.groups;
+        let groups = self.font_info.kern_groups();
         let arc_glyph_order = context.glyph_order.get();
         let glyph_order = arc_glyph_order.as_ref();
         let font_info = self.font_info.as_ref();
@@ -3017,9 +3027,15 @@ mod tests {
     fn expand_kerning_to_brackets() {
         // actual test:
         let (_, context) = build_kerning(glyphs2_dir().join("BracketTestFontKerning.glyphs"));
-        let groups = context.kerning_groups.get();
+        let light_location = NormalizedLocation::for_pos(&[("wdth", 0.0), ("wght", 0.0)]);
+        let all_kerns = context.kerning_at.all();
+        let light_kerns = &all_kerns
+            .iter()
+            .find(|thingie| thingie.1.location == light_location)
+            .unwrap()
+            .1;
         assert_eq!(
-            groups
+            light_kerns
                 .groups
                 .iter()
                 .map(|(name, glyphs)| (
@@ -3035,13 +3051,6 @@ mod tests {
                 ("side2.foo".to_string(), vec!["a", "a.BRACKET.varAlt01"]),
             ]
         );
-        let light_location = NormalizedLocation::for_pos(&[("wdth", 0.0), ("wght", 0.0)]);
-        let all_kerns = context.kerning_at.all();
-        let light_kerns = &all_kerns
-            .iter()
-            .find(|thingie| thingie.1.location == light_location)
-            .unwrap()
-            .1;
         assert_eq!(
             light_kerns.kerns,
             make_kerning(&[

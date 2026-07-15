@@ -2210,16 +2210,24 @@ mod tests {
 
         let kerning_groups = result.fe_context.kerning_groups.get();
 
-        let mut groups: Vec<_> = kerning_groups
-            .groups
-            .iter()
-            .map(|(name, entries)| {
-                let mut entries: Vec<_> = entries.iter().map(|e| e.as_str()).collect();
-                entries.sort();
-                (name.to_owned(), entries)
-            })
-            .collect();
-        groups.sort();
+        let expected_groups = vec![
+            (
+                KernGroup::Side1("bracketleft_R".into()),
+                vec!["bracketleft"],
+            ),
+            (
+                KernGroup::Side1("bracketright_R".into()),
+                vec!["bracketright"],
+            ),
+            (
+                KernGroup::Side2("bracketleft_L".into()),
+                vec!["bracketleft"],
+            ),
+            (
+                KernGroup::Side2("bracketright_L".into()),
+                vec!["bracketright"],
+            ),
+        ];
 
         let wght = Tag::new(b"wght");
         let mut kerns: HashMap<KernPair, Vec<(String, f64)>> = HashMap::new();
@@ -2233,6 +2241,21 @@ mod tests {
                 .fe_context
                 .kerning_at
                 .get(&FeWorkIdentifier::KernInstance(kern_loc.clone()));
+
+            // groups are per-source; in these fixtures every master declares
+            // the same ones
+            let mut groups: Vec<_> = kerns_at
+                .groups
+                .iter()
+                .map(|(name, entries)| {
+                    let mut entries: Vec<_> = entries.iter().map(|e| e.as_str()).collect();
+                    entries.sort();
+                    (name.to_owned(), entries)
+                })
+                .collect();
+            groups.sort();
+            assert_eq!(groups, expected_groups, "groups at {kern_loc:?}");
+
             for (pair, adjustment) in kerns_at.kerns.iter() {
                 kerns.entry(pair.clone()).or_default().push((
                     format!(
@@ -2253,68 +2276,48 @@ mod tests {
         kerns.sort_by_key(|(left, right, _)| (left.clone(), right.clone()));
 
         assert_eq!(
-            (groups, kerns),
-            (
-                vec![
-                    (
-                        KernGroup::Side1("bracketleft_R".into()),
-                        vec!["bracketleft"],
-                    ),
-                    (
-                        KernGroup::Side1("bracketright_R".into()),
-                        vec!["bracketright"],
-                    ),
-                    (
-                        KernGroup::Side2("bracketleft_L".into()),
-                        vec!["bracketleft"],
-                    ),
-                    (
-                        KernGroup::Side2("bracketright_L".into()),
-                        vec!["bracketright"],
-                    ),
-                ],
-                vec![
-                    (
-                        KernSide::Glyph("bracketleft".into()),
-                        KernSide::Glyph("bracketright".into()),
-                        vec![
-                            ("wght 0".to_string(), -300.0),
-                            ("wght 1".to_string(), -150.0)
-                        ],
-                    ),
-                    (
-                        KernSide::Glyph("exclam".into()),
-                        KernSide::Glyph("exclam".into()),
-                        vec![
-                            ("wght 0".to_string(), -360.0),
-                            ("wght 1".to_string(), -100.0)
-                        ],
-                    ),
-                    (
-                        KernSide::Glyph("exclam".into()),
-                        KernSide::Glyph("hyphen".into()),
-                        vec![("wght 0".to_string(), 20.0),],
-                    ),
-                    (
-                        KernSide::Glyph("exclam".into()),
-                        KernSide::Group(KernGroup::Side2("bracketright_L".into())),
-                        vec![("wght 0".to_string(), -160.0),],
-                    ),
-                    (
-                        KernSide::Glyph("hyphen".into()),
-                        KernSide::Glyph("hyphen".into()),
-                        vec![
-                            ("wght 0".to_string(), -150.0),
-                            ("wght 1".to_string(), -50.0)
-                        ],
-                    ),
-                    (
-                        KernSide::Group(KernGroup::Side1("bracketleft_R".into())),
-                        KernSide::Glyph("exclam".into()),
-                        vec![("wght 0".to_string(), -165.0),],
-                    ),
-                ],
-            )
+            kerns,
+            vec![
+                (
+                    KernSide::Glyph("bracketleft".into()),
+                    KernSide::Glyph("bracketright".into()),
+                    vec![
+                        ("wght 0".to_string(), -300.0),
+                        ("wght 1".to_string(), -150.0)
+                    ],
+                ),
+                (
+                    KernSide::Glyph("exclam".into()),
+                    KernSide::Glyph("exclam".into()),
+                    vec![
+                        ("wght 0".to_string(), -360.0),
+                        ("wght 1".to_string(), -100.0)
+                    ],
+                ),
+                (
+                    KernSide::Glyph("exclam".into()),
+                    KernSide::Glyph("hyphen".into()),
+                    vec![("wght 0".to_string(), 20.0),],
+                ),
+                (
+                    KernSide::Glyph("exclam".into()),
+                    KernSide::Group(KernGroup::Side2("bracketright_L".into())),
+                    vec![("wght 0".to_string(), -160.0),],
+                ),
+                (
+                    KernSide::Glyph("hyphen".into()),
+                    KernSide::Glyph("hyphen".into()),
+                    vec![
+                        ("wght 0".to_string(), -150.0),
+                        ("wght 1".to_string(), -50.0)
+                    ],
+                ),
+                (
+                    KernSide::Group(KernGroup::Side1("bracketleft_R".into())),
+                    KernSide::Glyph("exclam".into()),
+                    vec![("wght 0".to_string(), -165.0),],
+                ),
+            ],
         );
     }
 
