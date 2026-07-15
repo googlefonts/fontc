@@ -217,6 +217,13 @@ impl Font {
             })
             .collect::<Result<_, BadSource>>()?;
 
+        // The features live in features.txt
+        let features_file = path.join("features.txt");
+        if features_file.is_file() {
+            font.features.text = fs::read_to_string(&features_file)
+                .map_err(|e| BadSource::new(&features_file, e))?;
+        }
+
         Ok(font)
     }
 }
