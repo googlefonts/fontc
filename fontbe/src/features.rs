@@ -25,8 +25,8 @@ use fea_rs::{
 
 use fontir::{
     ir::{
-        FeatureGenerationPlan, FeatureGenerationSettings, FeatureWriterMode, FeaturesSource,
-        GdefCategories, GlyphOrder, StaticMetadata, resolve_feature_generation,
+        self, FeatureGenerationPlan, FeatureGenerationSettings, FeatureWriterMode, FeaturesSource,
+        GdefCategories, GlyphOrder, StaticMetadata,
     },
     orchestration::WorkId as FeWorkId,
 };
@@ -622,7 +622,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
 
         // Resolve the plan once for this work unit; separate work units (kern,
         // marks) resolve their own, since the work graph precludes threading one.
-        let plan = resolve_feature_generation(&static_metadata.misc.feature_generation);
+        let plan = ir::resolve_feature_generation(&static_metadata.misc.feature_generation);
         let mut result = self.compile(
             &static_metadata,
             &glyph_order,
@@ -759,9 +759,9 @@ fn settings_tags(settings: &FeatureGenerationSettings, all: &[Tag]) -> Vec<Tag> 
 fn append_forced_tags(plan: &FeatureGenerationPlan) -> Vec<Tag> {
     let mut tags = Vec::new();
     for (settings, all) in [
-        (&plan.curs, &[CURS][..]),
-        (&plan.kern, &[KERN, DIST][..]),
-        (&plan.mark, &[MARK, MKMK, ABVM, BLWM][..]),
+        (&plan.curs, [CURS].as_slice()),
+        (&plan.kern, [KERN, DIST].as_slice()),
+        (&plan.mark, [MARK, MKMK, ABVM, BLWM].as_slice()),
     ] {
         let Some(settings) = settings else { continue };
         if settings.mode == FeatureWriterMode::Append {
@@ -977,11 +977,11 @@ mod tests {
     #[test]
     fn append_forced_tags_only_for_append_writers() {
         // key absent -> everything enabled in skip mode -> nothing appended.
-        let plan = resolve_feature_generation(&None);
+        let plan = ir::resolve_feature_generation(&None);
         assert!(append_forced_tags(&plan).is_empty());
 
         // kern in append mode -> its tags are forced; disabled writers contribute none.
-        let plan = resolve_feature_generation(&Some(vec![
+        let plan = ir::resolve_feature_generation(&Some(vec![
             fontir::ir::FeatureWriterSpec {
                 writer: fontir::ir::KnownFeatureWriter::Kern,
                 mode: FeatureWriterMode::Append,

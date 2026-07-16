@@ -17,7 +17,7 @@ use fontdrasil::{
 use fontir::{
     ir::{
         self, GdefCategories, GlyphOrder, KernGroup, KerningInstance, KerningLocations,
-        StaticMetadata, resolve_feature_generation,
+        StaticMetadata,
     },
     orchestration::WorkId as FeWorkId,
 };
@@ -883,7 +883,7 @@ fn finalize_kerning(
     char_map: HashMap<u32, GlyphId16>,
     non_spacing_glyphs: HashSet<GlyphId16>,
 ) -> Result<FeaRsKerns, Error> {
-    let plan = resolve_feature_generation(&static_metadata.misc.feature_generation);
+    let plan = ir::resolve_feature_generation(&static_metadata.misc.feature_generation);
     let todo = super::feature_writer_todo_list(&[KERN, DIST], plan.kern.as_ref(), &ast.ast);
     if pairs.is_empty() || todo.is_empty() {
         log::info!("no kerning work to do");
