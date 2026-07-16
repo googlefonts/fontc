@@ -7,11 +7,13 @@ use fontdrasil::{
 };
 use fontir::{
     error::Error,
-    ir::{FeatureSources, FeaturesSource, KerningInstance, PreliminaryGdefCategories},
+    ir::{
+        AnchorBuilder, FeatureSources, FeaturesSource, KerningInstance, PreliminaryGdefCategories,
+    },
     orchestration::{Context, IrWork, WorkId},
     source::Source,
 };
-use log::{debug, warn};
+use log::{debug, trace, warn};
 
 use crate::{
     fontra::{Font, Kerning},
@@ -20,8 +22,8 @@ use crate::{
         split_kerning_by_direction,
     },
     toir::{
-        kerning_sources, to_ir_gdef_categories, to_ir_global_metrics, to_ir_kern_groups,
-        to_ir_kerning_instance, to_ir_kerning_locations, to_ir_static_metadata,
+        kerning_sources, to_ir_gdef_categories, to_ir_global_metrics, to_ir_glyph,
+        to_ir_kern_groups, to_ir_kerning_instance, to_ir_kerning_locations, to_ir_static_metadata,
     },
 };
 
@@ -86,7 +88,17 @@ impl Source for FontraIrSource {
     }
 
     fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
-        Ok(Vec::new())
+        Ok(self
+            .font_data
+            .glyphs
+            .keys()
+            .map(|glyph_name| {
+                Box::new(GlyphIrWork {
+                    glyph_name: glyph_name.clone(),
+                    font_data: self.font_data.clone(),
+                }) as Box<IrWork>
+            })
+            .collect())
     }
 
     fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
@@ -185,6 +197,17 @@ fn pin_discrete_axes(font_data: &mut Font) -> Result<(), Error> {
         .sources
         .retain(|_, source| at_default(&source.location));
     let retained: std::collections::HashSet<String> = font_data.sources.keys().cloned().collect();
+
+    for glyph in font_data.glyphs.values_mut() {
+        glyph.sources.retain(|source| {
+            source
+                .location_base
+                .as_ref()
+                .map(|base| retained.contains(base))
+                .unwrap_or(true)
+                && at_default(&source.location)
+        });
+    }
 
     for kerning in font_data.kerning.values_mut() {
         let keep: Vec<bool> = kerning
@@ -397,6 +420,59 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
     }
 }
 
+#[derive(Debug)]
+struct GlyphIrWork {
+    glyph_name: GlyphName,
+    font_data: Arc<Font>,
+}
+
+impl Work<Context, WorkId, Error> for GlyphIrWork {
+    fn id(&self) -> WorkId {
+        WorkId::Glyph(self.glyph_name.clone())
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlobalMetrics)
+            .build()
+    }
+
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::Anchor(self.glyph_name.clone())]
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        trace!("Generate IR for {:#?}", self.glyph_name);
+        let static_metadata = context.static_metadata.get();
+        let fontra_glyph = self
+            .font_data
+            .glyphs
+            .get(&self.glyph_name)
+            .ok_or_else(|| Error::NoGlyphForName(self.glyph_name.clone()))?;
+        let codepoints = self
+            .font_data
+            .glyph_map
+            .get(&self.glyph_name)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
+        let glyph_ir = to_ir_glyph(
+            &static_metadata.all_source_axes,
+            &self.font_data,
+            codepoints,
+            fontra_glyph,
+        )?;
+        context.glyphs.set(glyph_ir);
+        // TODO: parse and convert anchors
+        context
+            .anchors
+            .set(AnchorBuilder::new(self.glyph_name.clone()).build()?);
+        Ok(())
+    }
+}
+
 /// A work that produces nothing.
 #[derive(Debug)]
 struct NoopWork(WorkId);
@@ -497,6 +573,50 @@ mod tests {
             .next()
             .unwrap();
         assert_eq!(&vec![Some(-2.0), Some(-3.0)], values);
+    }
+
+    /// A glyph source at `location` on the default layer.
+    fn glyph_source(name: &str, location: &[(&str, f64)]) -> crate::fontra::GlyphSource {
+        crate::fontra::GlyphSource {
+            name: name.to_string(),
+            layer_name: "foreground".into(),
+            location: location
+                .iter()
+                .map(|(name, value)| (name.to_string(), *value))
+                .collect(),
+            location_base: None,
+            inactive: false,
+        }
+    }
+
+    #[test]
+    fn pin_discrete_axes_maps_the_default_to_design_space() {
+        // A mapped discrete axis: the user default 0 is design 200. The
+        // mapping reverses the order, so comparing in user space would keep
+        // the other source.
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        for axis in font_data.axes.axes.iter_mut() {
+            if let crate::fontra::Axis::Discrete(axis) = axis {
+                axis.mapping = vec![[0.0, 200.0], [1.0, 100.0]];
+            }
+        }
+        let name = GlyphName::new("period");
+        let glyph = font_data.glyphs.get_mut(&name).unwrap();
+        glyph.sources = vec![
+            glyph_source("at-design-100", &[("italic", 100.0)]),
+            glyph_source("at-design-200", &[("italic", 200.0)]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        let sources = &font_data.glyphs.get(&name).unwrap().sources;
+        assert_eq!(
+            vec!["at-design-200"],
+            sources
+                .iter()
+                .map(|source| source.name.as_str())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -613,5 +733,36 @@ mod tests {
             .collect::<Vec<_>>(),
             glyph_map("codepoints.fontra"),
         )
+    }
+
+    #[test]
+    fn pin_discrete_axes_interpolates_the_default() {
+        // The user default 0.5 is not a mapping key, the mapping gives
+        // design 500.
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        for axis in font_data.axes.axes.iter_mut() {
+            if let crate::fontra::Axis::Discrete(axis) = axis {
+                axis.values = vec![0.0, 0.5, 1.0];
+                axis.default_value = 0.5;
+                axis.mapping = vec![[0.0, 0.0], [1.0, 1000.0]];
+            }
+        }
+        let name = GlyphName::new("period");
+        let glyph = font_data.glyphs.get_mut(&name).unwrap();
+        glyph.sources = vec![
+            glyph_source("at-design-0", &[("italic", 0.0)]),
+            glyph_source("at-design-500", &[("italic", 500.0)]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        let sources = &font_data.glyphs.get(&name).unwrap().sources;
+        assert_eq!(
+            vec!["at-design-500"],
+            sources
+                .iter()
+                .map(|source| source.name.as_str())
+                .collect::<Vec<_>>()
+        );
     }
 }
