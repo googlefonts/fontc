@@ -527,15 +527,26 @@ impl MergeCtx<'_> {
         }
     }
 
+    /// The insertion position for a group of features' generated lookups.
+    ///
+    /// An append-forced feature ignores insertion markers entirely; otherwise
+    /// the first marker among `features` wins, and everything else falls
+    /// through to append placement.
+    fn insert_pos_for_features(&mut self, features: &[Tag]) -> InsertionPoint {
+        if features
+            .iter()
+            .any(|tag| self.append_features.contains(tag))
+        {
+            return self.insertion_point_for_append();
+        }
+        features
+            .iter()
+            .find_map(|tag| self.insert_markers.get(tag).copied())
+            .unwrap_or_else(|| self.insertion_point_for_append())
+    }
+
     fn do_curs(&mut self) {
-        let curs_pos = if self.append_features.contains(&CURS) {
-            self.insertion_point_for_append()
-        } else {
-            self.insert_markers
-                .get(&CURS)
-                .copied()
-                .unwrap_or_else(|| self.insertion_point_for_append())
-        };
+        let curs_pos = self.insert_pos_for_features(&[CURS]);
         self.finalize_lookups_for_feature(CURS, curs_pos);
     }
 
@@ -554,18 +565,11 @@ impl MergeCtx<'_> {
                     DIST => [Some(DIST), kern],
                     _ => [kern, dist],
                 });
-        // kern and dist are set together by the caller; if either is forced to
-        // append, ignore both markers.
-        let marker = if self.append_features.contains(&KERN) || self.append_features.contains(&DIST)
-        {
-            self.insertion_point_for_append()
-        } else {
-            features_we_are_writing
-                .into_iter()
-                .flatten()
-                .find_map(|k| self.insert_markers.get(&k).copied())
-                .unwrap_or_else(|| self.insertion_point_for_append())
-        };
+        // kern and dist are set together by the caller, so a forced append on
+        // either applies to whichever of them we write.
+        let features_we_are_writing: Vec<_> =
+            features_we_are_writing.into_iter().flatten().collect();
+        let marker = self.insert_pos_for_features(&features_we_are_writing);
 
         let lookups = self.take_lookups_for_features(&[KERN, DIST]);
         if !lookups.is_empty() {
