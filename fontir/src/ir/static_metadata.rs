@@ -21,6 +21,7 @@ use fontdrasil::{
     variations::{VariationModel, VariationModelError},
 };
 
+use super::feature_writers::FeatureWriterSpec;
 use crate::orchestration::Persistable;
 
 /// Glyph names mapped to postscript names
@@ -223,6 +224,12 @@ pub struct MiscMetadata {
 
     // <https://learn.microsoft.com/en-us/typography/opentype/spec/gasp>
     pub gasp: Vec<GaspRange>,
+
+    /// The `com.github.googlei18n.ufo2ft.featureWriters` config.
+    ///
+    /// `None` means the key was absent (use the built-in defaults); `Some` fully
+    /// replaces the defaults (an empty list disables all automatic features).
+    pub feature_generation: Option<Vec<FeatureWriterSpec>>,
 }
 
 /// Records that will go in the '[meta]' table.
@@ -496,6 +503,7 @@ impl StaticMetadata {
                 us_weight_class: None,
                 us_width_class: None,
                 gasp: Vec::new(),
+                feature_generation: None,
             },
             variations: None,
         })
@@ -590,6 +598,8 @@ impl Persistable for PreliminaryGdefCategories {
 mod tests {
     use fontdrasil::coords::UserCoord;
 
+    use crate::ir::{FeatureWriterMode, KnownFeatureWriter};
+
     use super::*;
 
     fn test_static_metadata() -> StaticMetadata {
@@ -654,6 +664,11 @@ mod tests {
                 us_weight_class: None,
                 us_width_class: None,
                 gasp: Vec::new(),
+                feature_generation: Some(vec![FeatureWriterSpec {
+                    writer: KnownFeatureWriter::Kern,
+                    mode: FeatureWriterMode::Append,
+                    features: None,
+                }]),
             },
             number_values: Default::default(),
             variations: None,

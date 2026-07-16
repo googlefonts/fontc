@@ -18,10 +18,12 @@ use fontir::{
     feature_variations::{NBox, overlay_feature_variations},
     ir::{
         self, AnchorBuilder, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
-        DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphAnchors,
-        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningInstance, KerningLocations,
-        MetaTableValues, NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames,
-        PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
+        DEFAULT_VENDOR_ID, FEATURE_WRITERS_LIB_KEY, FeatureWriterOptionValue, FeatureWriterSpec,
+        GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphAnchors, GlyphInstance, GlyphOrder,
+        KernGroup, KernSide, KerningInstance, KerningLocations, MetaTableValues, NameBuilder,
+        NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames, PreliminaryGdefCategories,
+        Rule, StaticMetadata, Substitution, VariableFeature, reject_duplicate_writers,
+        validate_feature_writer,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -328,6 +330,89 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     names
 }
 
+/// Read the `com.github.googlei18n.ufo2ft.featureWriters` config from font userData.
+///
+/// glyphsLib round-trips the key at the font level, so this mirrors ufo2fontir's
+/// designspace-lib read but against the glyphs plist types. `None` means the key is
+/// absent (use the defaults); `Some` (including an empty list, or one where every
+/// entry was dropped) fully replaces them. Malformed entries warn and drop; a
+/// malformed key or module and duplicate writers are hard errors.
+fn feature_writers_from_user_data(
+    user_data: &BTreeMap<SmolStr, Plist>,
+) -> Result<Option<Vec<FeatureWriterSpec>>, Error> {
+    let Some(value) = user_data.get(FEATURE_WRITERS_LIB_KEY) else {
+        return Ok(None);
+    };
+    let Some(entries) = value.as_array() else {
+        // ufo2ft iterates whatever it finds and drops every element, silently
+        // building a font with no automatic features. A non-list value is always
+        // an authoring mistake; refusing loudly beats shipping a featureless font.
+        return Err(Error::UnsupportedFeatureWriters(
+            "featureWriters userData key is not a list".into(),
+        ));
+    };
+    let mut specs = Vec::new();
+    for entry in entries {
+        let Some(dict) = entry.as_dict() else {
+            warn!("featureWriters entry is not a dict; dropping");
+            continue;
+        };
+        let Some(class) = dict.get("class").and_then(Plist::as_str) else {
+            warn!("featureWriters entry has no 'class'; dropping");
+            continue;
+        };
+        let module = match dict.get("module") {
+            None => None,
+            Some(value) => match value.as_str() {
+                Some(module) => Some(module),
+                // ufo2ft would fail the import and drop the entry; a non-string
+                // module is always an authoring mistake, so refuse loudly.
+                None => {
+                    return Err(Error::UnsupportedFeatureWriters(
+                        "featureWriters 'module' is not a string".into(),
+                    ));
+                }
+            },
+        };
+        let options = match dict.get("options") {
+            None => Vec::new(),
+            Some(Plist::Dictionary(opts)) => opts
+                .iter()
+                .map(|(k, v)| (k.to_string(), plist_to_feature_writer_option(k, v)))
+                .collect(),
+            Some(_) => {
+                warn!("featureWriters 'options' is not a dict; dropping");
+                continue;
+            }
+        };
+        if let Some(spec) = validate_feature_writer(class, module, &options)? {
+            specs.push(spec);
+        }
+    }
+    reject_duplicate_writers(&specs)?;
+    Ok(Some(specs))
+}
+
+fn plist_to_feature_writer_option(key: &str, value: &Plist) -> FeatureWriterOptionValue {
+    match value {
+        // glyphs plist has no boolean type: booleans round-trip as integers. The
+        // bool-valued options must map back to Boolean so the shared validator can
+        // hard-error on their non-default values instead of silently dropping them.
+        Plist::Integer(i @ (0 | 1)) if matches!(key, "ignoreMarks" | "groupMarkClasses") => {
+            FeatureWriterOptionValue::Boolean(*i == 1)
+        }
+        Plist::Integer(i) => FeatureWriterOptionValue::Integer(*i),
+        Plist::String(s) => FeatureWriterOptionValue::String(s.clone()),
+        Plist::Array(items) => items
+            .iter()
+            .map(|v| v.as_str().map(str::to_string))
+            .collect::<Option<Vec<_>>>()
+            .map(FeatureWriterOptionValue::Array)
+            .unwrap_or(FeatureWriterOptionValue::Other),
+        _ => FeatureWriterOptionValue::Other,
+    }
+}
+
 #[derive(Debug)]
 struct StaticMetadataWork(GlyphsIrSource);
 
@@ -486,6 +571,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
+        static_metadata.misc.feature_generation = feature_writers_from_user_data(&font.user_data)?;
         static_metadata.variations = variations;
         // treat  empty string or all spaces as equivalent to no value; it means
         // 'null', per the spec
@@ -1970,7 +2056,10 @@ mod tests {
     };
     use fontir::{
         error::Error,
-        ir::{AnchorKind, Color, GlobalMetricsInstance, Glyph, GlyphOrder, NameKey},
+        ir::{
+            AnchorKind, Color, FeatureWriterMode, GlobalMetricsInstance, Glyph, GlyphOrder,
+            KnownFeatureWriter, NameKey,
+        },
         orchestration::{Context, Flags, WorkId},
         source::Source,
     };
@@ -4152,5 +4241,161 @@ unitsPerEm = 1000;
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             "decomposeTransformedComponents in userData should set DECOMPOSE_TRANSFORMED_COMPONENTS flag"
         );
+    }
+
+    #[test]
+    fn reads_feature_writers_from_font_user_data() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        // NotoMusic-shaped config: curs+kern appended, mark skipped, no Gdef writer.
+        let source = GlyphsIrSource::new_from_memory(
+            r#"{
+.formatVersion = 3;
+fontMaster = (
+{
+id = "m01";
+}
+);
+unitsPerEm = 1000;
+userData = {
+com.github.googlei18n.ufo2ft.featureWriters = (
+{
+class = CursFeatureWriter;
+options = {
+mode = append;
+};
+},
+{
+class = KernFeatureWriter;
+options = {
+mode = append;
+};
+},
+{
+class = MarkFeatureWriter;
+options = {
+mode = skip;
+};
+}
+);
+};
+}"#,
+        )
+        .unwrap();
+        let context = Context::new_root(Flags::default(), None);
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        assert_eq!(
+            context.static_metadata.get().misc.feature_generation,
+            Some(vec![
+                FeatureWriterSpec {
+                    writer: KnownFeatureWriter::Curs,
+                    mode: FeatureWriterMode::Append,
+                    features: None,
+                },
+                FeatureWriterSpec {
+                    writer: KnownFeatureWriter::Kern,
+                    mode: FeatureWriterMode::Append,
+                    features: None,
+                },
+                FeatureWriterSpec {
+                    writer: KnownFeatureWriter::Mark,
+                    mode: FeatureWriterMode::Skip,
+                    features: None,
+                },
+            ])
+        );
+    }
+
+    /// Exec the static metadata work over an in-memory glyphs source, returning
+    /// the error it is expected to produce.
+    fn feature_writers_error_from_glyphs_source(source: &str) -> Error {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let source = GlyphsIrSource::new_from_memory(source).unwrap();
+        let context = Context::new_root(Flags::default(), None);
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap_err()
+    }
+
+    #[test]
+    fn unsupported_feature_writer_option_is_error() {
+        // glyphs stores the bool as an integer; ignoreMarks=false is honoured by
+        // ufo2ft but fontc can't match it, so it must be a hard error not a drop.
+        let error = feature_writers_error_from_glyphs_source(
+            r#"{
+.formatVersion = 3;
+fontMaster = ( { id = "m01"; } );
+unitsPerEm = 1000;
+userData = {
+com.github.googlei18n.ufo2ft.featureWriters = (
+{
+class = KernFeatureWriter;
+options = {
+ignoreMarks = 0;
+};
+}
+);
+};
+}"#,
+        );
+        assert!(matches!(error, Error::UnsupportedFeatureWriters(_)));
+    }
+
+    fn feature_writers_from_glyphs_source(source: &str) -> Option<Vec<FeatureWriterSpec>> {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let source = GlyphsIrSource::new_from_memory(source).unwrap();
+        let context = Context::new_root(Flags::default(), None);
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        context
+            .static_metadata
+            .get()
+            .misc
+            .feature_generation
+            .clone()
+    }
+
+    #[test]
+    fn absent_feature_writers_key_is_none_from_user_data() {
+        let writers = feature_writers_from_glyphs_source(
+            r#"{
+.formatVersion = 3;
+fontMaster = ( { id = "m01"; } );
+unitsPerEm = 1000;
+}"#,
+        );
+        assert_eq!(writers, None);
     }
 }

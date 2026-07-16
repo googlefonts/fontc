@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>public.glyphOrder</key>
+    <array>
+      <string>bar</string>
+      <string>plus</string>
+    </array>
+    <key>com.github.googlei18n.ufo2ft.featureWriters</key>
+    <array>
+      <dict>
+        <key>class</key>
+        <string>KernFeatureWriter</string>
+        <key>module</key>
+        <string>ufo2ft.featureWriters.kernFeatureWriter</string>
+        <key>options</key>
+        <dict>
+          <key>mode</key>
+          <string>append</string>
+        </dict>
+      </dict>
+    </array>
+  </dict>
+</plist>
