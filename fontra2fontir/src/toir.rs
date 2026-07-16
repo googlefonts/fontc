@@ -7,14 +7,14 @@ use std::{
 
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
-    types::{Axis, GlyphName},
+    types::{Axes, Axis, GlyphName},
 };
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{
-        DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph, GlyphInstance,
-        GlyphOrder, GlyphPathBuilder, KernGroup, KernSide, KerningInstance, KerningLocations,
-        NameBuilder, NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
+        Component, DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph,
+        GlyphInstance, GlyphOrder, GlyphPathBuilder, KernGroup, KernSide, KerningInstance,
+        KerningLocations, NameBuilder, NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
     },
 };
 use kurbo::BezPath;
@@ -26,7 +26,7 @@ use write_fonts::{
 };
 
 use crate::fontra::{
-    AxisName, Contour, Font, FontSource, GlyphInfos, Kerning, Point, PointType, VariableGlyph,
+    self, AxisName, Contour, Font, FontSource, GlyphInfos, Kerning, Point, PointType, VariableGlyph,
 };
 
 /// Normalize a design value against a font axis, clamped into the axis range
@@ -424,46 +424,49 @@ pub(crate) fn to_ir_global_metrics(
     metrics.build(&static_metadata.axes)
 }
 
-#[allow(dead_code)] // TEMPORARY
-fn to_ir_glyph(
-    global_axes: HashMap<AxisName, Tag>,
+pub(crate) fn to_ir_glyph(
+    axes: &Axes,
+    font_data: &Font,
     codepoints: HashSet<u32>,
     fontra_glyph: &VariableGlyph,
 ) -> Result<Glyph, BadGlyph> {
-    let _local_axes: HashMap<_, _> = fontra_glyph
-        .axes
-        .iter()
-        .map(|a| (a.name.as_str(), a))
-        .collect();
-
-    let layer_locations: HashMap<_, _> = fontra_glyph
-        .sources
-        .iter()
-        .map(|s| (&s.layer_name, &s.location))
-        .collect();
+    // TODO: convert glyph-local axes into IR glyph axes
+    if !fontra_glyph.axes.is_empty() {
+        todo!("Support local axes");
+    }
 
     let mut instances = HashMap::new();
-    for (layer_name, layer) in fontra_glyph.layers.iter() {
-        // TODO: we need IR VARC support to proceed
-        if !fontra_glyph.axes.is_empty() {
-            todo!("Support local axes");
-        }
-
-        let Some(location) = layer_locations.get(layer_name) else {
+    // Layers not referenced by any active source, e.g. backgrounds, do not
+    // contribute to the final font.
+    for source in fontra_glyph.sources.iter().filter(|s| !s.inactive) {
+        let Some(layer) = fontra_glyph.layers.get(&source.layer_name) else {
             return Err(BadGlyph::new(
                 fontra_glyph.name.clone(),
-                BadGlyphKind::MissingLayer(layer_name.clone()),
+                BadGlyphKind::MissingLayer(source.layer_name.clone()),
             ));
         };
-        let global_location: NormalizedLocation = global_axes
-            .iter()
-            .map(|(name, tag)| {
-                (
-                    *tag,
-                    NormalizedCoord::new(location.get(name).copied().unwrap_or_default()),
-                )
-            })
-            .collect();
+
+        // The glyph source location is the location of its base font source,
+        // overridden by the glyph source's own location entries. Missing axes
+        // are at their default.
+        let mut design_location = source
+            .location_base
+            .as_ref()
+            .and_then(|base| font_data.sources.get(base))
+            .map(|font_source| font_source.location.clone())
+            .unwrap_or_default();
+        design_location.extend(source.location.iter().map(|(name, v)| (name.clone(), *v)));
+
+        let global_location = to_ir_location(axes.iter(), &design_location);
+
+        // Keep the first of multiple sources at the same location.
+        if instances.contains_key(&global_location) {
+            warn!(
+                "'{}': ignoring source '{}' at duplicate location {global_location:?}",
+                fontra_glyph.name, source.name
+            );
+            continue;
+        }
 
         let contours: Vec<_> = layer
             .glyph
@@ -472,22 +475,19 @@ fn to_ir_glyph(
             .iter()
             .map(|c| to_ir_path(fontra_glyph.name.clone(), c))
             .collect::<Result<_, _>>()?;
-        if instances
-            .insert(
-                global_location.clone(),
-                GlyphInstance {
-                    width: layer.glyph.x_advance,
-                    contours,
-                    ..Default::default()
-                },
-            )
-            .is_some()
-        {
-            return Err(BadGlyph::new(
-                fontra_glyph.name.clone(),
-                BadGlyphKind::DuplicateLocation(global_location),
-            ));
-        };
+
+        let components: Vec<_> = layer.glyph.components.iter().map(to_ir_component).collect();
+
+        instances.insert(
+            global_location,
+            GlyphInstance {
+                width: layer.glyph.x_advance,
+                height: layer.glyph.y_advance,
+                vertical_origin: layer.glyph.vertical_origin,
+                contours,
+                components,
+            },
+        );
     }
 
     Glyph::new(fontra_glyph.name.clone(), true, codepoints, instances)
@@ -636,10 +636,18 @@ pub(crate) fn to_ir_kerning_instance(
     instance
 }
 
-#[allow(dead_code)] // TEMPORARY
+fn to_ir_component(component: &fontra::Component) -> Component {
+    // TODO: convert components with a location into IR variable components
+    if !component.location.is_empty() {
+        todo!("Support variable components");
+    }
+    Component::new(component.name.clone(), component.transformation.to_affine())
+}
+
 fn add_to_path<'a>(
     path_builder: &'a mut GlyphPathBuilder,
     points: impl Iterator<Item = &'a Point>,
+    mut segment_type: Option<PointType>,
 ) -> Result<(), PathConversionError> {
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/pens.py#L92
@@ -648,10 +656,16 @@ fn add_to_path<'a>(
         // Smooth is only relevant to editors so ignore here
         match point_type {
             PointType::OnCurve | PointType::OnCurveSmooth => {
-                path_builder.curve_to((point.x, point.y))?
+                if segment_type == Some(PointType::OffCurveQuad) {
+                    path_builder.qcurve_to((point.x, point.y))?
+                } else {
+                    path_builder.curve_to((point.x, point.y))?
+                }
+                segment_type = None;
             }
             PointType::OffCurveQuad | PointType::OffCurveCubic => {
-                path_builder.offcurve((point.x, point.y))?
+                path_builder.offcurve((point.x, point.y))?;
+                segment_type = Some(point_type);
             }
         }
     }
@@ -668,23 +682,33 @@ fn to_ir_path(glyph_name: GlyphName, contour: &Contour) -> Result<BezPath, BadGl
     let mut path_builder = GlyphPathBuilder::new(contour.points.len());
 
     if !contour.is_closed {
-        let first = contour.points.first().unwrap();
-        let first_type = first
-            .point_type()
+        // Fontra strips the leading and trailing off-curve points of an open
+        // contour:
+        // https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/core/path.py#L202-L214
+        let point_types = contour
+            .points
+            .iter()
+            .map(Point::point_type)
+            .collect::<Result<Vec<_>, _>>()
             .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
-        if first_type.is_off_curve() {
-            return Err(BadGlyph::new(
-                glyph_name.clone(),
-                PathConversionError::Parse("Open path starts with off-curve points".into()),
-            ));
-        }
+        let Some(first) = point_types.iter().position(|t| !t.is_off_curve()) else {
+            return Ok(BezPath::new());
+        };
+        let last = point_types.iter().rposition(|t| !t.is_off_curve()).unwrap();
+        let points = &contour.points[first..=last];
         path_builder
-            .move_to((first.x, first.y))
+            .move_to((points[0].x, points[0].y))
             .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
-        add_to_path(&mut path_builder, contour.points[1..].iter())
+        add_to_path(&mut path_builder, points[1..].iter(), None)
             .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
     } else {
-        add_to_path(&mut path_builder, contour.points.iter())
+        // https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/core/path.py#L218-L222
+        let segment_type = contour
+            .points
+            .last()
+            .and_then(|point| point.point_type().ok())
+            .filter(|point_type| point_type.is_off_curve());
+        add_to_path(&mut path_builder, contour.points.iter(), segment_type)
             .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
     }
 
@@ -745,7 +769,7 @@ mod tests {
     };
 
     use crate::{
-        fontra::{Font, Kerning, VariableGlyph},
+        fontra::{self, Font, Kerning, VariableGlyph},
         source::HORIZONTAL_KERNING_TYPE,
         test::testdata_dir,
         toir::to_ir_static_metadata,
@@ -753,7 +777,7 @@ mod tests {
 
     use super::{
         Error, NameKey, normalize_axis_value, to_ir_global_metrics, to_ir_glyph,
-        to_ir_kerning_instance, to_ir_kerning_locations, to_ir_names,
+        to_ir_kerning_instance, to_ir_kerning_locations, to_ir_names, to_ir_path,
     };
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
@@ -814,11 +838,72 @@ mod tests {
     }
 
     #[test]
+    fn quad_points_make_quadratic_segments() {
+        let contour = packed_contour(
+            &[
+                (0.0, 0.0, 0),
+                (50.0, 100.0, 1),
+                (150.0, 100.0, 1),
+                (200.0, 0.0, 0),
+            ],
+            true,
+        );
+        let path = to_ir_path(GlyphName::new("test"), &contour).unwrap();
+        assert_eq!("M0,0 Q50,100 100,100 Q150,100 200,0 L0,0 Z", path.to_svg());
+    }
+
+    #[test]
+    fn an_open_contour_loses_its_leading_and_trailing_off_curve_points() {
+        let contour = packed_contour(
+            &[
+                (-10.0, 0.0, 2),
+                (0.0, 0.0, 0),
+                (50.0, 100.0, 2),
+                (150.0, 100.0, 2),
+                (200.0, 0.0, 0),
+                (210.0, 0.0, 2),
+            ],
+            false,
+        );
+        let path = to_ir_path(GlyphName::new("test"), &contour).unwrap();
+        assert_eq!("M0,0 C50,100 150,100 200,0", path.to_svg());
+
+        let contour = packed_contour(&[(-10.0, 0.0, 2), (210.0, 0.0, 1)], false);
+        let path = to_ir_path(GlyphName::new("test"), &contour).unwrap();
+        assert!(path.elements().is_empty());
+    }
+
+    #[test]
+    fn trailing_quad_points_lead_to_the_first_point() {
+        let contour = packed_contour(&[(0.0, 0.0, 0), (50.0, 100.0, 1), (150.0, 100.0, 1)], true);
+        let path = to_ir_path(GlyphName::new("test"), &contour).unwrap();
+        assert_eq!("M0,0 Q50,100 100,100 Q150,100 0,0 Z", path.to_svg());
+    }
+
+    fn packed_contour(points: &[(f64, f64, u8)], is_closed: bool) -> fontra::Contour {
+        let packed = fontra::PackedPath {
+            coordinates: points.iter().flat_map(|(x, y, _)| [*x, *y]).collect(),
+            point_types: points
+                .iter()
+                .map(|(_, _, point_type)| *point_type)
+                .collect(),
+            contour_info: vec![fontra::ContourInfo {
+                end_point: points.len() - 1,
+                is_closed,
+            }],
+        };
+        packed.unpacked_contours().remove(0)
+    }
+
+    #[test]
     fn ir_of_glyph_u20089() {
+        let font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
         let glyph_file = testdata_dir().join("2glyphs.fontra/glyphs/u20089.json");
         let fontra_glyph = VariableGlyph::from_file(&glyph_file).unwrap();
         let glyph = to_ir_glyph(
-            HashMap::from([("Weight".to_string(), Tag::new(b"wght"))]),
+            &static_metadata.all_source_axes,
+            &font_data,
             Default::default(),
             &fontra_glyph,
         )
@@ -936,6 +1021,29 @@ mod tests {
             to_ir_static_metadata(&font_data),
             Err(Error::InconsistentAxisDefinitions(_))
         ));
+    }
+
+    #[test]
+    fn source_locations_clamp_to_the_axis_range() {
+        // behDotless-ar has a source at Mashq 0, below the axis minimum of 7.
+        let font_data = Font::load(&testdata_dir().join("Raqq.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let name = GlyphName::new("behDotless-ar");
+        let fontra_glyph = font_data.glyphs.get(&name).unwrap();
+        let glyph = to_ir_glyph(
+            &static_metadata.all_source_axes,
+            &font_data,
+            Default::default(),
+            fontra_glyph,
+        )
+        .unwrap();
+        let mut mashq: Vec<f64> = glyph
+            .sources()
+            .keys()
+            .map(|loc| loc.get(Tag::new(b"MSHQ")).unwrap().to_f64())
+            .collect();
+        mashq.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(vec![-1.0, 0.0, 1.0], mashq);
     }
 
     #[test]
