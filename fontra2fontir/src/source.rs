@@ -3,29 +3,37 @@ use std::{path::Path, sync::Arc};
 use fontdrasil::{coords::NormalizedLocation, orchestration::Work};
 use fontir::{
     error::Error,
+    ir::PreliminaryGdefCategories,
     orchestration::{Context, IrWork, WorkId},
     source::Source,
 };
 use log::debug;
 
-use crate::{fontra::Font, toir::to_ir_static_metadata};
+use crate::{
+    fontra::Font,
+    toir::{to_ir_gdef_categories, to_ir_static_metadata},
+};
 
 pub struct FontraIrSource {
     font_data: Arc<Font>,
+    gdef_categories: Arc<PreliminaryGdefCategories>,
 }
 
 impl Source for FontraIrSource {
     fn new(fontra_dir: &Path) -> Result<Self, Error> {
         let font_data = Font::load(fontra_dir)?;
+        let gdef_categories = to_ir_gdef_categories(&font_data.glyph_infos);
 
         Ok(FontraIrSource {
             font_data: Arc::new(font_data),
+            gdef_categories: Arc::new(gdef_categories),
         })
     }
 
     fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork {
             font_data: self.font_data.clone(),
+            gdef_categories: self.gdef_categories.clone(),
         }))
     }
 
@@ -64,6 +72,7 @@ impl Source for FontraIrSource {
 #[derive(Debug)]
 struct StaticMetadataWork {
     font_data: Arc<Font>,
+    gdef_categories: Arc<PreliminaryGdefCategories>,
 }
 
 impl Work<Context, WorkId, Error> for StaticMetadataWork {
@@ -72,7 +81,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::PreliminaryGlyphOrder]
+        vec![
+            WorkId::PreliminaryGlyphOrder,
+            WorkId::PreliminaryGdefCategories,
+        ]
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
@@ -87,6 +99,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         context
             .preliminary_glyph_order
             .set(self.font_data.glyph_map.keys().cloned().collect());
+        context
+            .preliminary_gdef_categories
+            .set(self.gdef_categories.as_ref().clone());
         context
             .static_metadata
             .set(to_ir_static_metadata(&self.font_data)?);
@@ -116,7 +131,7 @@ mod tests {
     };
     use fontir::orchestration::Flags;
     use pretty_assertions::assert_eq;
-    use write_fonts::types::Tag;
+    use write_fonts::{tables::gdef::GlyphClassDef, types::Tag};
 
     use crate::test::testdata_dir;
 
@@ -159,6 +174,21 @@ mod tests {
         let glyph_order = context.preliminary_glyph_order.get();
         assert!(glyph_order.contains(&GlyphName::new(".notdef")));
         assert!(glyph_order.contains(&GlyphName::new("beh-ar")));
+
+        let gdef = context.preliminary_gdef_categories.get();
+        assert!(gdef.infer_from_anchors);
+        assert_eq!(
+            Some(&GlyphClassDef::Mark),
+            gdef.categories.get(&GlyphName::new("dammatan-ar"))
+        );
+        assert_eq!(
+            Some(&GlyphClassDef::Ligature),
+            gdef.categories.get(&GlyphName::new("fehDotless_alef-ar"))
+        );
+        assert!(
+            gdef.mark_category_glyphs
+                .contains(&GlyphName::new("dammatan-ar"))
+        );
     }
 
     fn glyph_map(fontra_dir: &str) -> Vec<(GlyphName, Vec<u32>)> {
