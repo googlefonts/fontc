@@ -8,13 +8,13 @@ use fontdrasil::{
 };
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
-    ir::{Glyph, GlyphInstance, GlyphPathBuilder, StaticMetadata},
+    ir::{Glyph, GlyphInstance, GlyphPathBuilder, PreliminaryGdefCategories, StaticMetadata},
 };
 use kurbo::BezPath;
 use log::trace;
-use write_fonts::types::Tag;
+use write_fonts::{tables::gdef::GlyphClassDef, types::Tag};
 
-use crate::fontra::{AxisName, Contour, Font, Point, PointType, VariableGlyph};
+use crate::fontra::{AxisName, Contour, Font, GlyphInfos, Point, PointType, VariableGlyph};
 
 pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, Error> {
     let axes = font_data
@@ -214,6 +214,36 @@ fn to_ir_path(glyph_name: GlyphName, contour: &Contour) -> Result<BezPath, BadGl
         glyph_name
     );
     Ok(path)
+}
+
+pub(crate) fn to_ir_gdef_categories(glyph_infos: &GlyphInfos) -> PreliminaryGdefCategories {
+    let mark_category_glyphs = glyph_infos
+        .iter()
+        .filter(|(_, info)| info.category.as_deref() == Some("Mark"))
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    let categories = glyph_infos
+        .iter()
+        .filter_map(|(name, info)| {
+            gdef_class(info.category.as_deref(), info.sub_category.as_deref())
+                .map(|class| (name.clone(), class))
+        })
+        .collect();
+
+    PreliminaryGdefCategories {
+        categories,
+        infer_from_anchors: true,
+        mark_category_glyphs,
+    }
+}
+
+fn gdef_class(category: Option<&str>, subcategory: Option<&str>) -> Option<GlyphClassDef> {
+    match (category, subcategory) {
+        (Some("Mark"), Some("Nonspacing" | "Spacing Combining")) => Some(GlyphClassDef::Mark),
+        (_, Some("Ligature")) => Some(GlyphClassDef::Ligature),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
