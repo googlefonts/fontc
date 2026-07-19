@@ -1,0 +1,27 @@
+{
+"name": ".notdef",
+"sources": [
+{
+"name": "",
+"layerName": "UUID0",
+"locationBase": "UUID0"
+},
+{
+"name": "",
+"layerName": "UUID1",
+"locationBase": "UUID1"
+}
+],
+"layers": {
+"UUID0": {
+"glyph": {
+"xAdvance": 600
+}
+},
+"UUID1": {
+"glyph": {
+"xAdvance": 600
+}
+}
+}
+}

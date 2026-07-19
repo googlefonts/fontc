@@ -1,0 +1,51 @@
+{
+"name": "space",
+"sources": [
+{
+"name": "",
+"layerName": "light-condensed",
+"locationBase": "light-condensed"
+},
+{
+"name": "",
+"layerName": "bold-condensed",
+"locationBase": "bold-condensed"
+},
+{
+"name": "",
+"layerName": "light-wide",
+"locationBase": "light-wide"
+},
+{
+"name": "",
+"layerName": "bold-wide",
+"locationBase": "bold-wide"
+}
+],
+"layers": {
+"bold-condensed": {
+"glyph": {
+"xAdvance": 250
+}
+},
+"bold-wide": {
+"glyph": {
+"xAdvance": 250
+}
+},
+"light-condensed": {
+"glyph": {
+"xAdvance": 250
+}
+},
+"light-wide": {
+"glyph": {
+"xAdvance": 250
+}
+}
+},
+"customData": {
+"fontra.glyph.locked": true,
+"fontra.glyph.note": "This is a glyph note"
+}
+}

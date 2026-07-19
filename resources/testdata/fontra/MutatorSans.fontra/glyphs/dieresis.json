@@ -1,0 +1,108 @@
+{
+"name": "dieresis",
+"sources": [
+{
+"name": "",
+"layerName": "light-condensed",
+"locationBase": "light-condensed"
+},
+{
+"name": "",
+"layerName": "bold-condensed",
+"locationBase": "bold-condensed"
+},
+{
+"name": "",
+"layerName": "light-wide",
+"locationBase": "light-wide"
+},
+{
+"name": "",
+"layerName": "bold-wide",
+"locationBase": "bold-wide"
+}
+],
+"layers": {
+"bold-condensed": {
+"glyph": {
+"components": [
+{
+"name": "dot",
+"transformation": {
+"translateX": -10,
+"translateY": -10
+}
+},
+{
+"name": "dot",
+"transformation": {
+"translateX": 220,
+"translateY": -10
+}
+}
+],
+"xAdvance": 520
+}
+},
+"bold-wide": {
+"glyph": {
+"components": [
+{
+"name": "dot",
+"transformation": {
+"translateY": -10
+}
+},
+{
+"name": "dot",
+"transformation": {
+"translateX": 250,
+"translateY": -10
+}
+}
+],
+"xAdvance": 560
+}
+},
+"light-condensed": {
+"glyph": {
+"components": [
+{
+"name": "dot",
+"transformation": {
+"translateY": -10
+}
+},
+{
+"name": "dot",
+"transformation": {
+"translateX": 80,
+"translateY": -10
+}
+}
+],
+"xAdvance": 250
+}
+},
+"light-wide": {
+"glyph": {
+"components": [
+{
+"name": "dot",
+"transformation": {
+"translateY": -10
+}
+},
+{
+"name": "dot",
+"transformation": {
+"translateX": 205,
+"translateY": -10
+}
+}
+],
+"xAdvance": 345
+}
+}
+}
+}

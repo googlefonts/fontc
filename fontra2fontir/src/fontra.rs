@@ -1153,4 +1153,162 @@ mod tests {
         }
         assert_eq!(0, errors.len(), "{errors:#?}");
     }
+
+    fn groups(entries: &[(&str, &[&str])]) -> HashMap<String, Vec<String>> {
+        entries
+            .iter()
+            .map(|(name, members)| {
+                (
+                    name.to_string(),
+                    members.iter().map(|m| m.to_string()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    fn load_font(fontra_dir: &str) -> Font {
+        let dir = testdata_dir().join(fontra_dir);
+        Font::load(&dir).unwrap_or_else(|e| panic!("Unable to load {dir:?}: {e}"))
+    }
+
+    #[test]
+    fn kerning_of_mutatorsans() {
+        // A single "kern" table with five sources and many missing (empty) cells.
+        let font = load_font("MutatorSans.fontra");
+        assert_eq!(
+            vec!["kern"],
+            font.kerning.keys().map(String::as_str).collect::<Vec<_>>()
+        );
+        let kern = &font.kerning["kern"];
+        assert_eq!(
+            vec![
+                "light-condensed",
+                "bold-condensed",
+                "light-wide",
+                "bold-wide",
+                "light-condensed-italic",
+            ],
+            kern.source_identifiers
+        );
+        assert_eq!(
+            groups(&[("A", &["A", "Aacute", "Adieresis"])]),
+            kern.groups_side1
+        );
+        assert_eq!(
+            groups(&[("A", &["A", "Aacute", "Adieresis"])]),
+            kern.groups_side2
+        );
+        // "T;@A;-75;;-215;-150;" and "T;A;;-65;;;": missing values become None,
+        // and the value references the group "A" by its "@A" name.
+        assert_eq!(
+            vec![Some(-75.0), None, Some(-215.0), Some(-150.0), None],
+            kern.values["T"]["@A"]
+        );
+        assert_eq!(
+            vec![None, Some(-65.0), None, None, None],
+            kern.values["T"]["A"]
+        );
+    }
+
+    #[test]
+    fn kerning_of_glyphs_unit_test_sans() {
+        // Two kerning tables in one file: horizontal "kern" and vertical "vkrn".
+        let font = load_font("GlyphsUnitTestSans3.fontra");
+        assert_eq!(
+            vec!["kern", "vkrn"],
+            font.kerning.keys().map(String::as_str).collect::<Vec<_>>()
+        );
+
+        let kern = &font.kerning["kern"];
+        assert_eq!(3, kern.source_identifiers.len());
+        assert_eq!(5, kern.groups_side1.len());
+        assert_eq!(vec!["h", "m", "n"], kern.groups_side1["nKernRight"]);
+        assert_eq!(vec!["n"], kern.groups_side2["n"]);
+        assert_eq!(
+            vec![Some(-30.0), Some(-20.0), Some(-10.0)],
+            kern.values["@A"]["@J"]
+        );
+        assert_eq!(vec![None, None, Some(-10.0)], kern.values["@B"]["@y"]);
+
+        let vkrn = &font.kerning["vkrn"];
+        assert_eq!(
+            groups(&[("ABottom", &["A"]), ("VBottom", &["V"])]),
+            vkrn.groups_side1
+        );
+        assert_eq!(
+            groups(&[("ATop", &["A"]), ("VTop", &["V"])]),
+            vkrn.groups_side2
+        );
+        assert_eq!(
+            vec![Some(-301.0), Some(-302.0), Some(-303.0)],
+            vkrn.values["@ABottom"]["@VTop"]
+        );
+        assert_eq!(
+            vec![Some(-301.0), Some(-302.0), Some(-303.0)],
+            vkrn.values["Adieresis"]["@VTop"]
+        );
+    }
+
+    #[test]
+    fn glyph_info_of_raqq() {
+        // glyph-info.csv here has both the "category" and "subcategory" columns.
+        let font = load_font("Raqq.fontra");
+
+        let codepoints = |name: &str| font.glyph_map[&GlyphName::new(name)].clone();
+        assert_eq!(vec![0x0639], codepoints("ain-ar"));
+        // Multiple code points.
+        assert_eq!(vec![0x064C, 0x08F1], codepoints("dammatan-ar"));
+        assert_eq!(Vec::<u32>::new(), codepoints("fehDotless_alef-ar"));
+        assert_eq!(Vec::<u32>::new(), codepoints(".notdef"));
+
+        let info = |name: &str| font.glyph_infos[&GlyphName::new(name)].clone();
+        let glyph_info = |category: &str, sub: Option<&str>| GlyphInfo {
+            category: Some(category.to_string()),
+            sub_category: sub.map(str::to_string),
+        };
+        assert_eq!(glyph_info("Letter", None), info("ain-ar"));
+        assert_eq!(
+            glyph_info("Letter", Some("Ligature")),
+            info("fehDotless_alef-ar")
+        );
+        assert_eq!(glyph_info("Mark", Some("Nonspacing")), info("dammatan-ar"));
+        assert_eq!(glyph_info("Number", Some("Decimal Digit")), info("eight"));
+        assert_eq!(glyph_info("Punctuation", None), info("endofayah-ar"));
+        assert_eq!(glyph_info("Symbol", None), info("dottedCircle"));
+        assert_eq!(glyph_info("Separator", Some("Space")), info("hairspace"));
+        assert_eq!(glyph_info("Separator", None), info(".notdef"));
+        // Columns present but with empty cells leave the info blank.
+        assert_eq!(GlyphInfo::default(), info("_ayah.005"));
+    }
+
+    #[test]
+    fn glyph_info_of_mutatorsans() {
+        // glyph-info.csv without category columns: only the code points populate.
+        let font = load_font("MutatorSans.fontra");
+        let codepoints = |name: &str| font.glyph_map[&GlyphName::new(name)].clone();
+        assert_eq!(vec![0x0041, 0x0061], codepoints("A"));
+        assert_eq!(vec![0x00B4], codepoints("acute"));
+        assert_eq!(Vec::<u32>::new(), codepoints("I.narrow"));
+        // No category/subcategory columns, so the infos are empty.
+        assert_eq!(GlyphInfo::default(), font.glyph_infos[&GlyphName::new("A")]);
+    }
+
+    #[test]
+    fn glyph_info_of_glyphs_smart_components() {
+        // glyph-info.csv here has a "category" column but no "subcategory".
+        let font = load_font("GlyphsSmartComponents.fontra");
+        let info = |name: &str| font.glyph_infos[&GlyphName::new(name)].clone();
+        // Category is resolved by column name; subcategory stays None as its
+        // column is absent.
+        assert_eq!(
+            GlyphInfo {
+                category: Some("Letter".to_string()),
+                sub_category: None,
+            },
+            info("uni2E8A-CN")
+        );
+        // An empty category cell leaves the info blank.
+        assert_eq!(GlyphInfo::default(), info(".notdef"));
+        assert_eq!(GlyphInfo::default(), info("_part.Bar_H_2x"));
+    }
 }
