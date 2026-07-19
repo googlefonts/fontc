@@ -2,7 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use fontdrasil::orchestration::Work;
 use fontir::{
-    error::{BadSource, BadSourceKind, Error},
+    error::Error,
     orchestration::{Context, WorkId},
     source::Source,
 };
@@ -16,12 +16,7 @@ pub struct FontraIrSource {
 
 impl Source for FontraIrSource {
     fn new(fontra_dir: &Path) -> Result<Self, Error> {
-        let fontdata_file = fontra_dir.join("font-data.json");
-        if !fontdata_file.is_file() {
-            return Err(BadSource::new(fontdata_file, BadSourceKind::ExpectedFile).into());
-        }
-
-        let font_data = Font::from_file(&fontdata_file)?;
+        let font_data = Font::load(fontra_dir)?;
 
         Ok(FontraIrSource {
             font_data: Arc::new(font_data),

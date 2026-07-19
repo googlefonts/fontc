@@ -197,14 +197,19 @@ pub(crate) struct Font {
 }
 
 impl Font {
-    pub(crate) fn from_file(p: &path::Path) -> Result<Self, BadSource> {
-        let mut font: Font = from_file(p)?;
-        if let Some(dir) = p.parent() {
-            // The glyph map and infos live in glyph-info.csv.
-            let (glyph_map, glyph_infos) = parse_glyph_info(dir)?;
-            font.glyph_map = glyph_map;
-            font.glyph_infos = glyph_infos;
+    pub(crate) fn load(path: &path::Path) -> Result<Self, BadSource> {
+        // The font metadata lives in font-data.json
+        let fontdata_file = path.join("font-data.json");
+        if !fontdata_file.is_file() {
+            return Err(BadSource::new(fontdata_file, BadSourceKind::ExpectedFile));
         }
+        let mut font: Font = from_file(&fontdata_file)?;
+
+        // The glyph map and infos live in glyph-info.csv.
+        let (glyph_map, glyph_infos) = parse_glyph_info(path)?;
+        font.glyph_map = glyph_map;
+        font.glyph_infos = glyph_infos;
+
         Ok(font)
     }
 }
@@ -757,8 +762,7 @@ mod tests {
 
     #[test]
     fn fontdata_of_minimal() {
-        let font_data =
-            Font::from_file(&testdata_dir().join("minimal.fontra/font-data.json")).unwrap();
+        let font_data = Font::load(&testdata_dir().join("minimal.fontra")).unwrap();
         assert_eq!(1000, font_data.units_per_em);
         assert_eq!(
             vec![("Weight", Tag::new(b"wght"), 200.0, 200.0, 900.0),],
@@ -768,8 +772,7 @@ mod tests {
 
     #[test]
     fn fontdata_of_2glyphs() {
-        let font_data =
-            Font::from_file(&testdata_dir().join("2glyphs.fontra/font-data.json")).unwrap();
+        let font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
         assert_eq!(1000, font_data.units_per_em);
         assert_eq!(
             vec![

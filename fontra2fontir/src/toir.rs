@@ -278,8 +278,7 @@ mod tests {
 
     #[test]
     fn static_metadata_of_2glyphs() {
-        let fontdata_file = testdata_dir().join("2glyphs.fontra/font-data.json");
-        let font_data = Font::from_file(&fontdata_file).unwrap();
+        let font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
         let static_metadata = to_ir_static_metadata(&font_data).unwrap();
         assert_eq!(1000, static_metadata.units_per_em);
         assert_eq!(
