@@ -20,7 +20,9 @@ use write_fonts::{
     types::{NameId, Tag},
 };
 
-use crate::fontra::{AxisName, Contour, Font, GlyphInfos, Point, PointType, VariableGlyph};
+use crate::fontra::{
+    AxisName, Contour, Font, FontSource, GlyphInfos, Point, PointType, VariableGlyph,
+};
 
 /// Normalize a design value against a font axis, clamped into the axis range
 /// like Fontra's
@@ -29,6 +31,24 @@ fn normalize_axis_value(value: f64, axis: &Axis) -> NormalizedCoord {
     let min = axis.min.to_design(&axis.converter).to_f64();
     let max = axis.max.to_design(&axis.converter).to_f64();
     DesignCoord::new(value.clamp(min, max)).to_normalized(&axis.converter)
+}
+
+fn default_source<'a>(font_data: &'a Font, axes: &[Axis]) -> Result<&'a FontSource, Error> {
+    font_data
+        .sources
+        .values()
+        .find(|source| {
+            axes.iter().all(|axis| {
+                let at_default = axis.default.to_normalized(&axis.converter);
+                let coord = source
+                    .location
+                    .get(&axis.name)
+                    .map(|v| normalize_axis_value(*v, axis))
+                    .unwrap_or(at_default);
+                coord == at_default
+            })
+        })
+        .ok_or(Error::NoDefaultMaster)
 }
 
 fn to_ir_names(font_data: &Font) -> HashMap<NameKey, String> {
@@ -135,6 +155,8 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         .map(|source| to_ir_location(&axes, &source.location))
         .collect();
 
+    let italic_angle = default_source(font_data, &axes)?.italic_angle;
+
     StaticMetadata::new(
         font_data.units_per_em,
         to_ir_names(font_data),
@@ -142,7 +164,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         Default::default(),
         global_locations,
         Default::default(),
-        Default::default(),
+        italic_angle,
         None,
         false, // TODO: Determine this properly.
     )
