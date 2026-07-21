@@ -21,8 +21,26 @@ use write_fonts::{
 };
 
 use crate::fontra::{
-    AxisName, Contour, Font, FontInfo, GlyphInfos, Point, PointType, VariableGlyph,
+    AxisName, Contour, Font, FontInfo, FontSource, GlyphInfos, Point, PointType, VariableGlyph,
 };
+
+fn default_source<'a>(font_data: &'a Font, axes: &[Axis]) -> Result<&'a FontSource, Error> {
+    font_data
+        .sources
+        .values()
+        .find(|source| {
+            axes.iter().all(|axis| {
+                let at_default = axis.default.to_normalized(&axis.converter);
+                let coord = source
+                    .location
+                    .get(&axis.name)
+                    .map(|v| DesignCoord::new(*v).to_normalized(&axis.converter))
+                    .unwrap_or(at_default);
+                coord == at_default
+            })
+        })
+        .ok_or(Error::NoDefaultMaster)
+}
 
 fn to_ir_names(font_info: &FontInfo) -> HashMap<NameKey, String> {
     let mut builder = NameBuilder::default();
@@ -114,6 +132,8 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         })
         .collect();
 
+    let italic_angle = default_source(font_data, &axes)?.italic_angle;
+
     StaticMetadata::new(
         font_data.units_per_em,
         to_ir_names(&font_data.font_info),
@@ -121,7 +141,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         Default::default(),
         global_locations,
         Default::default(),
-        Default::default(),
+        italic_angle,
         None,
         false, // TODO: Determine this properly.
     )
