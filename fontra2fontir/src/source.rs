@@ -1,13 +1,16 @@
 use std::{path::Path, sync::Arc};
 
-use fontdrasil::{coords::NormalizedLocation, orchestration::Work};
+use fontdrasil::{
+    coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
+    orchestration::Work,
+};
 use fontir::{
     error::Error,
     ir::PreliminaryGdefCategories,
     orchestration::{Context, IrWork, WorkId},
     source::Source,
 };
-use log::debug;
+use log::{debug, warn};
 
 use crate::{
     fontra::Font,
@@ -21,7 +24,8 @@ pub struct FontraIrSource {
 
 impl Source for FontraIrSource {
     fn new(fontra_dir: &Path) -> Result<Self, Error> {
-        let font_data = Font::load(fontra_dir)?;
+        let mut font_data = Font::load(fontra_dir)?;
+        pin_discrete_axes(&mut font_data)?;
         let gdef_categories = to_ir_gdef_categories(&font_data.glyph_infos);
 
         Ok(FontraIrSource {
@@ -67,6 +71,56 @@ impl Source for FontraIrSource {
     fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(NoopWork(WorkId::PaintGraph)))
     }
+}
+
+/// Pin every discrete axis to its default value like Fontra's
+/// [`subset-axes`](https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/workflow/actions/axes.py#L231-L300)
+/// filter.
+fn pin_discrete_axes(font_data: &mut Font) -> Result<(), Error> {
+    let mut pinned: Vec<(String, f64)> = Vec::new();
+    for axis in font_data.axes.axes.iter() {
+        let crate::fontra::Axis::Discrete(axis) = axis else {
+            continue;
+        };
+        // Source locations are in design space, the axis default is in
+        // user space, so map it through the axis mapping, like Fontra's
+        // getDefaultSourceLocation:
+        // https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/workflow/actions/axes.py#L385-L393
+        let default = if axis.mapping.is_empty() {
+            axis.default_value
+        } else {
+            let examples = axis
+                .mapping
+                .iter()
+                .map(|[user, design]| (UserCoord::new(*user), DesignCoord::new(*design)))
+                .collect();
+            let converter = CoordConverter::new(examples, 0)?;
+            UserCoord::new(axis.default_value)
+                .to_design(&converter)
+                .to_f64()
+        };
+        pinned.push((axis.name.to_string(), default));
+    }
+    if pinned.is_empty() {
+        return Ok(());
+    }
+    for (name, default) in &pinned {
+        warn!("pinning discrete axis {name:?} to its default {default}");
+    }
+    font_data
+        .axes
+        .axes
+        .retain(|axis| matches!(axis, crate::fontra::Axis::Continuous(_)));
+
+    let at_default = |location: &crate::fontra::Location| {
+        pinned
+            .iter()
+            .all(|(name, default)| location.get(name).map(|v| v == default).unwrap_or(true))
+    };
+    font_data
+        .sources
+        .retain(|_, source| at_default(&source.location));
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -144,6 +198,26 @@ mod tests {
     fn context_for(fontra_dir: &str) -> (FontraIrSource, Context) {
         let source = FontraIrSource::new(&testdata_dir().join(fontra_dir)).unwrap();
         (source, Context::new_root(Flags::empty()))
+    }
+
+    #[test]
+    fn pin_discrete_axes_drops_off_default_sources() {
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        assert_eq!(3, font_data.axes.axes.len());
+        assert!(font_data.sources.contains_key("light-condensed-italic"));
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        assert_eq!(
+            vec!["weight", "width"],
+            font_data
+                .axes
+                .axes
+                .iter()
+                .map(|a| a.name().as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(!font_data.sources.contains_key("light-condensed-italic"));
     }
 
     #[test]
