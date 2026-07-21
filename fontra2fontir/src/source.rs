@@ -1,9 +1,9 @@
 use std::{path::Path, sync::Arc};
 
-use fontdrasil::orchestration::Work;
+use fontdrasil::{coords::NormalizedLocation, orchestration::Work};
 use fontir::{
     error::Error,
-    orchestration::{Context, WorkId},
+    orchestration::{Context, IrWork, WorkId},
     source::Source,
 };
 use log::debug;
@@ -23,55 +23,41 @@ impl Source for FontraIrSource {
         })
     }
 
-    fn create_static_metadata_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+    fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork {
             font_data: self.font_data.clone(),
         }))
     }
 
-    fn create_global_metric_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_global_metric_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::GlobalMetrics)))
     }
 
-    fn create_glyph_ir_work(
-        &self,
-    ) -> Result<Vec<Box<fontir::orchestration::IrWork>>, fontir::error::Error> {
-        todo!()
+    fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
+        Ok(Vec::new())
     }
 
-    fn create_feature_ir_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::Features)))
     }
 
-    fn create_kerning_locations_ir_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::KerningLocations)))
     }
 
     fn create_kerning_instance_ir_work(
         &self,
-        _at: fontdrasil::coords::NormalizedLocation,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+        at: NormalizedLocation,
+    ) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::KernInstance(at))))
     }
 
-    fn create_color_palette_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::ColorPalettes)))
     }
 
-    fn create_color_glyphs_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::PaintGraph)))
     }
 }
 
@@ -108,14 +94,72 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     }
 }
 
+/// A work that produces nothing.
+#[derive(Debug)]
+struct NoopWork(WorkId);
+
+impl Work<Context, WorkId, Error> for NoopWork {
+    fn id(&self) -> WorkId {
+        self.0.clone()
+    }
+
+    fn exec(&self, _context: &Context) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use fontdrasil::types::GlyphName;
+    use fontdrasil::{
+        orchestration::{Access, AccessBuilder},
+        types::GlyphName,
+    };
+    use fontir::orchestration::Flags;
     use pretty_assertions::assert_eq;
+    use write_fonts::types::Tag;
 
     use crate::test::testdata_dir;
 
     use super::*;
+
+    fn context_for(fontra_dir: &str) -> (FontraIrSource, Context) {
+        let source = FontraIrSource::new(&testdata_dir().join(fontra_dir)).unwrap();
+        (source, Context::new_root(Flags::empty(), None))
+    }
+
+    #[test]
+    fn compile_raqq() {
+        let (source, context) = context_for("Raqq.fontra");
+
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(800, static_metadata.units_per_em);
+        assert_eq!(
+            vec![Tag::new(b"SPAC"), Tag::new(b"MSHQ")],
+            static_metadata
+                .axes
+                .iter()
+                .map(|a| a.tag)
+                .collect::<Vec<_>>()
+        );
+
+        let glyph_order = context.preliminary_glyph_order.get();
+        assert!(glyph_order.contains(&GlyphName::new(".notdef")));
+        assert!(glyph_order.contains(&GlyphName::new("beh-ar")));
+    }
 
     fn glyph_map(fontra_dir: &str) -> Vec<(GlyphName, Vec<u32>)> {
         let source = FontraIrSource::new(&testdata_dir().join(fontra_dir)).unwrap();
