@@ -8,13 +8,56 @@ use fontdrasil::{
 };
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
-    ir::{Glyph, GlyphInstance, GlyphPathBuilder, PreliminaryGdefCategories, StaticMetadata},
+    ir::{
+        DEFAULT_VENDOR_ID, Glyph, GlyphInstance, GlyphPathBuilder, NameBuilder, NameKey,
+        PreliminaryGdefCategories, StaticMetadata,
+    },
 };
 use kurbo::BezPath;
 use log::trace;
-use write_fonts::{tables::gdef::GlyphClassDef, types::Tag};
+use write_fonts::{
+    tables::gdef::GlyphClassDef,
+    types::{NameId, Tag},
+};
 
 use crate::fontra::{AxisName, Contour, Font, GlyphInfos, Point, PointType, VariableGlyph};
+
+fn to_ir_names(font_data: &Font) -> HashMap<NameKey, String> {
+    let font_info = &font_data.font_info;
+    let mut builder = NameBuilder::default();
+    if let Some(major) = font_info.version_major {
+        builder.set_version(major, font_info.version_minor.unwrap_or(0).max(0) as u32);
+    }
+    builder.add_if_present(NameId::FAMILY_NAME, &font_info.family_name);
+    builder.add_if_present(NameId::COPYRIGHT_NOTICE, &font_info.copyright);
+    builder.add_if_present(NameId::TRADEMARK, &font_info.trademark);
+    builder.add_if_present(NameId::DESCRIPTION, &font_info.description);
+    builder.add_if_present(NameId::SAMPLE_TEXT, &font_info.sample_text);
+    builder.add_if_present(NameId::DESIGNER, &font_info.designer);
+    builder.add_if_present(NameId::DESIGNER_URL, &font_info.designer_url);
+    builder.add_if_present(NameId::MANUFACTURER, &font_info.manufacturer);
+    builder.add_if_present(NameId::VENDOR_URL, &font_info.manufacturer_url);
+    builder.add_if_present(NameId::LICENSE_DESCRIPTION, &font_info.license_description);
+    builder.add_if_present(NameId::LICENSE_URL, &font_info.license_info_url);
+    let custom_data = |key: &str| {
+        font_info
+            .custom_data
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
+    builder.add_if_present(NameId::UNIQUE_ID, &custom_data("openTypeNameUniqueID"));
+    builder.add_if_present(NameId::VERSION_STRING, &custom_data("openTypeNameVersion"));
+    builder.add_if_present(
+        NameId::TYPOGRAPHIC_FAMILY_NAME,
+        &custom_data("openTypeNamePreferredFamilyName"),
+    );
+    builder.add_if_present(
+        NameId::WWS_FAMILY_NAME,
+        &custom_data("openTypeNameWWSFamilyName"),
+    );
+    builder.build(font_info.vendor_id.as_deref().unwrap_or(DEFAULT_VENDOR_ID))
+}
 
 pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, Error> {
     let axes = font_data
@@ -72,7 +115,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
 
     StaticMetadata::new(
         font_data.units_per_em,
-        Default::default(),
+        to_ir_names(font_data),
         axes,
         Default::default(),
         Default::default(), // TODO: glyph locations we really do need
@@ -253,7 +296,7 @@ mod tests {
     use fontdrasil::types::Axes;
     use fontir::ir::Glyph;
     use kurbo::{BezPath, PathEl};
-    use write_fonts::types::Tag;
+    use write_fonts::types::{NameId, Tag};
 
     use crate::{
         fontra::{Font, VariableGlyph},
@@ -261,7 +304,7 @@ mod tests {
         toir::to_ir_static_metadata,
     };
 
-    use super::to_ir_glyph;
+    use super::{to_ir_glyph, to_ir_names};
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
         axes.iter()
@@ -339,5 +382,33 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_contour_compatibility(&glyph);
+    }
+
+    #[test]
+    fn names_from_custom_data() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        font_data.font_info.family_name = Some("Family".to_string());
+        for (key, value) in [
+            ("openTypeNameUniqueID", "unique-id"),
+            ("openTypeNameVersion", "Version 9.876"),
+            ("openTypeNamePreferredFamilyName", "Pref"),
+            ("openTypeNameWWSFamilyName", "WWS"),
+        ] {
+            font_data
+                .font_info
+                .custom_data
+                .insert(key.to_string(), serde_json::json!(value));
+        }
+        let names = to_ir_names(&font_data);
+        let name = |id: NameId| {
+            names
+                .iter()
+                .find(|(key, _)| key.name_id == id)
+                .map(|(_, value)| value.as_str())
+        };
+        assert_eq!(Some("unique-id"), name(NameId::UNIQUE_ID));
+        assert_eq!(Some("Version 9.876"), name(NameId::VERSION_STRING));
+        assert_eq!(Some("Pref"), name(NameId::TYPOGRAPHIC_FAMILY_NAME));
+        assert_eq!(Some("WWS"), name(NameId::WWS_FAMILY_NAME));
     }
 }
