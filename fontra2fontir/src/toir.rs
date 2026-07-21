@@ -176,6 +176,13 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
 
     let default_source = default_source(font_data, &axes)?;
     let italic_angle = default_source.italic_angle;
+    let vertical_metrics = &default_source.line_metrics_vertical_layout;
+    let build_vertical = vertical_metrics.contains_key("ascender")
+        && vertical_metrics.contains_key("descender")
+        && (vertical_metrics.contains_key("lineGap")
+            || default_source
+                .custom_data
+                .contains_key("openTypeVheaVertTypoLineGap"));
 
     StaticMetadata::new(
         font_data.units_per_em,
@@ -186,7 +193,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         Default::default(),
         italic_angle,
         None,
-        false, // TODO: Determine this properly.
+        build_vertical,
     )
     .map_err(Error::VariationModelError)
 }
