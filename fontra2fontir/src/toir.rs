@@ -8,13 +8,40 @@ use fontdrasil::{
 };
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
-    ir::{Glyph, GlyphInstance, GlyphPathBuilder, PreliminaryGdefCategories, StaticMetadata},
+    ir::{
+        DEFAULT_VENDOR_ID, Glyph, GlyphInstance, GlyphPathBuilder, NameBuilder, NameKey,
+        PreliminaryGdefCategories, StaticMetadata,
+    },
 };
 use kurbo::BezPath;
 use log::trace;
-use write_fonts::{tables::gdef::GlyphClassDef, types::Tag};
+use write_fonts::{
+    tables::gdef::GlyphClassDef,
+    types::{NameId, Tag},
+};
 
-use crate::fontra::{AxisName, Contour, Font, GlyphInfos, Point, PointType, VariableGlyph};
+use crate::fontra::{
+    AxisName, Contour, Font, FontInfo, GlyphInfos, Point, PointType, VariableGlyph,
+};
+
+fn to_ir_names(font_info: &FontInfo) -> HashMap<NameKey, String> {
+    let mut builder = NameBuilder::default();
+    if let Some(major) = font_info.version_major {
+        builder.set_version(major, font_info.version_minor.unwrap_or(0).max(0) as u32);
+    }
+    builder.add_if_present(NameId::FAMILY_NAME, &font_info.family_name);
+    builder.add_if_present(NameId::COPYRIGHT_NOTICE, &font_info.copyright);
+    builder.add_if_present(NameId::TRADEMARK, &font_info.trademark);
+    builder.add_if_present(NameId::DESCRIPTION, &font_info.description);
+    builder.add_if_present(NameId::SAMPLE_TEXT, &font_info.sample_text);
+    builder.add_if_present(NameId::DESIGNER, &font_info.designer);
+    builder.add_if_present(NameId::DESIGNER_URL, &font_info.designer_url);
+    builder.add_if_present(NameId::MANUFACTURER, &font_info.manufacturer);
+    builder.add_if_present(NameId::VENDOR_URL, &font_info.manufacturer_url);
+    builder.add_if_present(NameId::LICENSE_DESCRIPTION, &font_info.license_description);
+    builder.add_if_present(NameId::LICENSE_URL, &font_info.license_info_url);
+    builder.build(font_info.vendor_id.as_deref().unwrap_or(DEFAULT_VENDOR_ID))
+}
 
 pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, Error> {
     let axes = font_data
@@ -72,7 +99,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
 
     StaticMetadata::new(
         font_data.units_per_em,
-        Default::default(),
+        to_ir_names(&font_data.font_info),
         axes,
         Default::default(),
         Default::default(), // TODO: glyph locations we really do need
