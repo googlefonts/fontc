@@ -132,7 +132,9 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         })
         .collect();
 
-    let italic_angle = default_source(font_data, &axes)?.italic_angle;
+    let default_source = default_source(font_data, &axes)?;
+    let italic_angle = default_source.italic_angle;
+    let build_vertical = !default_source.line_metrics_vertical_layout.is_empty();
 
     StaticMetadata::new(
         font_data.units_per_em,
@@ -143,7 +145,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         Default::default(),
         italic_angle,
         None,
-        false, // TODO: Determine this properly.
+        build_vertical,
     )
     .map_err(Error::VariationModelError)
 }
