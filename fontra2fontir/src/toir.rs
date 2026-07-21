@@ -22,6 +22,15 @@ use write_fonts::{
 
 use crate::fontra::{AxisName, Contour, Font, GlyphInfos, Point, PointType, VariableGlyph};
 
+/// Normalize a design value against a font axis, clamped into the axis range
+/// like Fontra's
+/// [`normalizeValue`](https://github.com/fontra/fontra/blob/2a19b8bd1/src-js/fontra-core/src/var-model.js#L307-L323).
+fn normalize_axis_value(value: f64, axis: &Axis) -> NormalizedCoord {
+    let min = axis.min.to_design(&axis.converter).to_f64();
+    let max = axis.max.to_design(&axis.converter).to_f64();
+    DesignCoord::new(value.clamp(min, max)).to_normalized(&axis.converter)
+}
+
 fn to_ir_names(font_data: &Font) -> HashMap<NameKey, String> {
     let font_info = &font_data.font_info;
     let mut builder = NameBuilder::default();
@@ -95,7 +104,14 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
                     .position(|(u, _)| *u == default)
                     .filter(|_| has_min_max)
                     .ok_or(Error::MissingAxisMapping(a.tag))?;
-                CoordConverter::new(examples, default_idx)?
+                let converter = CoordConverter::new(examples, default_idx)?;
+                if min.to_design(&converter) > max.to_design(&converter) {
+                    return Err(Error::InconsistentAxisDefinitions(format!(
+                        "the mapping of axis {:?} is not ascending",
+                        a.name
+                    )));
+                }
+                converter
             } else {
                 CoordConverter::unmapped(min, default, max)
             };
@@ -111,20 +127,42 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
                 localized_names: Default::default(),
             })
         })
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let global_locations = font_data
+        .sources
+        .values()
+        .map(|source| to_ir_location(&axes, &source.location))
+        .collect();
 
     StaticMetadata::new(
         font_data.units_per_em,
         to_ir_names(font_data),
         axes,
         Default::default(),
-        Default::default(), // TODO: glyph locations we really do need
+        global_locations,
         Default::default(),
         Default::default(),
         None,
         false, // TODO: Determine this properly.
     )
     .map_err(Error::VariationModelError)
+}
+
+/// Normalize a design-space location, filling missing axes with their default.
+fn to_ir_location<'a>(
+    axes: impl IntoIterator<Item = &'a Axis>,
+    design_location: &HashMap<AxisName, f64>,
+) -> NormalizedLocation {
+    axes.into_iter()
+        .map(|axis| {
+            let coord = design_location
+                .get(&axis.name)
+                .map(|v| normalize_axis_value(*v, axis))
+                .unwrap_or_else(|| axis.default.to_normalized(&axis.converter));
+            (axis.tag, coord)
+        })
+        .collect()
 }
 
 #[allow(dead_code)] // TEMPORARY
@@ -293,7 +331,10 @@ fn gdef_class(category: Option<&str>, subcategory: Option<&str>) -> Option<Glyph
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use fontdrasil::types::Axes;
+    use fontdrasil::{
+        coords::{CoordConverter, DesignCoord, UserCoord},
+        types::{Axes, Axis},
+    };
     use fontir::ir::Glyph;
     use kurbo::{BezPath, PathEl};
     use write_fonts::types::{NameId, Tag};
@@ -304,7 +345,7 @@ mod tests {
         toir::to_ir_static_metadata,
     };
 
-    use super::{to_ir_glyph, to_ir_names};
+    use super::{Error, normalize_axis_value, to_ir_glyph, to_ir_names};
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
         axes.iter()
@@ -410,5 +451,55 @@ mod tests {
         assert_eq!(Some("Version 9.876"), name(NameId::VERSION_STRING));
         assert_eq!(Some("Pref"), name(NameId::TYPOGRAPHIC_FAMILY_NAME));
         assert_eq!(Some("WWS"), name(NameId::WWS_FAMILY_NAME));
+    }
+
+    #[test]
+    fn out_of_range_values_clamp_to_the_default_of_a_one_sided_axis() {
+        // An axis whose default is its minimum has no normalized value below
+        // 0, so a value under the minimum belongs at the default.
+        let (min, default, max) = (
+            UserCoord::new(100.0),
+            UserCoord::new(100.0),
+            UserCoord::new(900.0),
+        );
+        let axis = Axis {
+            tag: Tag::new(b"wght"),
+            name: "weight".into(),
+            hidden: false,
+            min,
+            default,
+            max,
+            converter: CoordConverter::new(
+                vec![
+                    (min, DesignCoord::new(150.0)),
+                    (max, DesignCoord::new(850.0)),
+                ],
+                0,
+            )
+            .unwrap(),
+            localized_names: Default::default(),
+        };
+        assert_eq!(
+            vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            [0.0, 150.0, 500.0, 850.0, 1000.0]
+                .map(|v| normalize_axis_value(v, &axis).to_f64())
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn a_decreasing_axis_mapping_is_an_error() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        for axis in font_data.axes.axes.iter_mut() {
+            if let crate::fontra::Axis::Continuous(axis) = axis
+                && axis.tag == Tag::new(b"wght")
+            {
+                axis.mapping = vec![[200.0, 1.0], [300.018, 0.095], [900.0, 0.0]];
+            }
+        }
+        assert!(matches!(
+            to_ir_static_metadata(&font_data),
+            Err(Error::InconsistentAxisDefinitions(_))
+        ));
     }
 }
