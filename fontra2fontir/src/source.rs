@@ -129,9 +129,12 @@ mod tests {
         orchestration::{Access, AccessBuilder},
         types::GlyphName,
     };
-    use fontir::orchestration::Flags;
+    use fontir::{ir::NameKey, orchestration::Flags};
     use pretty_assertions::assert_eq;
-    use write_fonts::{tables::gdef::GlyphClassDef, types::Tag};
+    use write_fonts::{
+        tables::gdef::GlyphClassDef,
+        types::{NameId, Tag},
+    };
 
     use crate::test::testdata_dir;
 
@@ -170,6 +173,24 @@ mod tests {
                 .map(|a| a.tag)
                 .collect::<Vec<_>>()
         );
+        let name = |id: NameId| {
+            static_metadata
+                .names
+                .get(&NameKey::new_bmp_only(id))
+                .map(String::as_str)
+        };
+        assert_eq!(Some("Raqq"), name(NameId::FAMILY_NAME));
+        assert_eq!(Some("Regular"), name(NameId::SUBFAMILY_NAME));
+        assert_eq!(
+            Some("Copyright 2021–2024 The Raqq Project Authors (github.com/aliftype/raqq)"),
+            name(NameId::COPYRIGHT_NOTICE)
+        );
+        assert_eq!(Some("Khaled Hosny"), name(NameId::DESIGNER));
+        assert_eq!(Some("Alif Type"), name(NameId::MANUFACTURER));
+        assert_eq!(Some("https://aliftype.com"), name(NameId::VENDOR_URL));
+        // Synthesized from versionMajor/versionMinor and vendorID.
+        assert_eq!(Some("Version 0.000"), name(NameId::VERSION_STRING));
+        assert_eq!(Some("0.000;ALIF;Raqq-Regular"), name(NameId::UNIQUE_ID));
 
         let glyph_order = context.preliminary_glyph_order.get();
         assert!(glyph_order.contains(&GlyphName::new(".notdef")));
