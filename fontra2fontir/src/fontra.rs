@@ -15,6 +15,7 @@ use std::{
 use fontdrasil::{paths::string_to_filename, types::GlyphName};
 use fontir::error::{BadSource, BadSourceKind, PathConversionError};
 use serde::Deserialize;
+use smol_str::SmolStr;
 use write_fonts::types::Tag;
 
 pub(crate) type AxisName = String;
@@ -38,8 +39,8 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct GlyphInfo {
-    pub(crate) category: Option<String>,
-    pub(crate) sub_category: Option<String>,
+    pub(crate) category: Option<SmolStr>,
+    pub(crate) sub_category: Option<SmolStr>,
 }
 
 /// Corresponds to a Fontra FontInfo
@@ -158,15 +159,15 @@ impl Default for ConditionalSubstitutions {
     }
 }
 
-type KerningValues = HashMap<String, HashMap<String, Vec<Option<f64>>>>;
+type KerningValues = HashMap<SmolStr, HashMap<SmolStr, Vec<Option<f64>>>>;
 
 /// Corresponds to a Fontra Kerning
 /// <https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/classes.py#L93>
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Kerning {
-    pub(crate) groups_side1: HashMap<String, Vec<String>>,
-    pub(crate) groups_side2: HashMap<String, Vec<String>>,
+    pub(crate) groups_side1: HashMap<SmolStr, Vec<SmolStr>>,
+    pub(crate) groups_side2: HashMap<SmolStr, Vec<SmolStr>>,
     pub(crate) source_identifiers: Vec<String>,
     /// left glyph/group -> right glyph/group -> source index -> value
     pub(crate) values: KerningValues,
@@ -295,7 +296,7 @@ fn parse_glyph_info(fontra_dir: &path::Path) -> Result<(GlyphMap, GlyphInfos), B
             col.and_then(|c| parts.get(c))
                 .map(|s| s.trim())
                 .filter(|s| !s.is_empty())
-                .map(str::to_string)
+                .map(SmolStr::from)
         };
         let info = GlyphInfo {
             category: cell(category_col),
@@ -403,7 +404,7 @@ fn kerning_read_groups<'a>(
     row_iter: &mut impl Iterator<Item = (usize, Vec<&'a str>)>,
     kerning_file: &path::Path,
     keyword: &str,
-) -> Result<HashMap<String, Vec<String>>, BadSource> {
+) -> Result<HashMap<SmolStr, Vec<SmolStr>>, BadSource> {
     let (line_number, row) = next_non_blank_row(row_iter);
     if row.is_empty() || row[0] != keyword {
         return Err(BadSource::custom(
@@ -417,8 +418,8 @@ fn kerning_read_groups<'a>(
         if row[0].is_empty() {
             break;
         }
-        let members = row[1..].iter().map(|s| s.to_string()).collect();
-        groups.insert(row[0].to_string(), members);
+        let members = row[1..].iter().map(|&s| s.into()).collect();
+        groups.insert(row[0].into(), members);
     }
 
     Ok(groups)
@@ -472,9 +473,9 @@ fn kerning_read_values<'a>(
             })
             .collect::<Result<Vec<_>, _>>()?;
         values
-            .entry(left.to_string())
+            .entry(left.into())
             .or_default()
-            .insert(right.to_string(), kerns);
+            .insert(right.into(), kerns);
     }
     Ok((source_identifiers, values))
 }
@@ -697,7 +698,7 @@ pub(crate) struct Component {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Anchor {
-    pub(crate) name: Option<String>,
+    pub(crate) name: Option<SmolStr>,
     pub(crate) x: f64,
     pub(crate) y: f64,
 }
@@ -1154,13 +1155,13 @@ mod tests {
         assert_eq!(0, errors.len(), "{errors:#?}");
     }
 
-    fn groups(entries: &[(&str, &[&str])]) -> HashMap<String, Vec<String>> {
+    fn groups(entries: &[(&str, &[&str])]) -> HashMap<SmolStr, Vec<SmolStr>> {
         entries
             .iter()
             .map(|(name, members)| {
                 (
-                    name.to_string(),
-                    members.iter().map(|m| m.to_string()).collect(),
+                    SmolStr::from(*name),
+                    members.iter().map(|m| SmolStr::from(*m)).collect(),
                 )
             })
             .collect()
@@ -1263,8 +1264,8 @@ mod tests {
 
         let info = |name: &str| font.glyph_infos[&GlyphName::new(name)].clone();
         let glyph_info = |category: &str, sub: Option<&str>| GlyphInfo {
-            category: Some(category.to_string()),
-            sub_category: sub.map(str::to_string),
+            category: Some(category.into()),
+            sub_category: sub.map(SmolStr::from),
         };
         assert_eq!(glyph_info("Letter", None), info("ain-ar"));
         assert_eq!(
@@ -1302,7 +1303,7 @@ mod tests {
         // column is absent.
         assert_eq!(
             GlyphInfo {
-                category: Some("Letter".to_string()),
+                category: Some("Letter".into()),
                 sub_category: None,
             },
             info("uni2E8A-CN")
