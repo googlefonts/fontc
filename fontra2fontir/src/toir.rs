@@ -95,14 +95,31 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
                 localized_names: Default::default(),
             })
         })
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let global_locations = font_data
+        .sources
+        .values()
+        .map(|source| {
+            axes.iter()
+                .map(|axis| {
+                    let coord = source
+                        .location
+                        .get(&axis.name)
+                        .map(|v| DesignCoord::new(*v).to_normalized(&axis.converter))
+                        .unwrap_or_else(|| axis.default.to_normalized(&axis.converter));
+                    (axis.tag, coord)
+                })
+                .collect::<NormalizedLocation>()
+        })
+        .collect();
 
     StaticMetadata::new(
         font_data.units_per_em,
         to_ir_names(&font_data.font_info),
         axes,
         Default::default(),
-        Default::default(), // TODO: glyph locations we really do need
+        global_locations,
         Default::default(),
         Default::default(),
         None,
