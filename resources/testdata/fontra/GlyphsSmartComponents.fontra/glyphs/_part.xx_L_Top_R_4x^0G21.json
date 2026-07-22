@@ -1,0 +1,794 @@
+{
+"name": "_part.xx_L_Top_R_4x",
+"axes": [
+{
+"name": "Axis_0",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 1000
+},
+{
+"name": "Axis_1",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 1000
+},
+{
+"name": "Axis_2",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 1000
+},
+{
+"name": "Axis_3",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 1000
+}
+],
+"sources": [
+{
+"name": "",
+"layerName": "UUID0",
+"locationBase": "UUID0"
+},
+{
+"name": "ExtraLight / 2.0_1_0_0",
+"layerName": "4C4EFCEA-7857-4F87-BB42-9742A2267D33",
+"location": {
+"Axis_1": 1000
+},
+"locationBase": "UUID0"
+},
+{
+"name": "ExtraLight / 4.0_0_1_0",
+"layerName": "03BBCF2F-C529-4D34-AD3B-D43181CBD41A",
+"location": {
+"Axis_2": 1000
+},
+"locationBase": "UUID0"
+},
+{
+"name": "ExtraLight / 6.0_1_1_0",
+"layerName": "9076225B-4F68-4AE6-AA09-39521BE71E10",
+"location": {
+"Axis_1": 1000,
+"Axis_2": 1000
+},
+"locationBase": "UUID0"
+},
+{
+"name": "ExtraLight / 8.0_0_0_1",
+"layerName": "2900356D-2A4A-4E4A-B108-C013EAC874FD",
+"location": {
+"Axis_3": 1000
+},
+"locationBase": "UUID0"
+},
+{
+"name": "ExtraLight / 10.0_1_0_1",
+"layerName": "17196063-106E-4B55-9449-1D51301C6A99",
+"location": {
+"Axis_1": 1000,
+"Axis_3": 1000
+},
+"locationBase": "UUID0"
+},
+{
+"name": "ExtraLight / 12.0_0_1_1",
+"layerName": "4B34671E-80DE-485F-8C26-699B7CC9C3C4",
+"location": {
+"Axis_2": 1000,
+"Axis_3": 1000
+},
+"locationBase": "UUID0"
+},
+{
+"name": "ExtraLight / 14.0_1_1_1",
+"layerName": "0E7F3834-A6AE-4016-9CB8-02FF4649BADA",
+"location": {
+"Axis_1": 1000,
+"Axis_2": 1000,
+"Axis_3": 1000
+},
+"locationBase": "UUID0"
+},
+{
+"name": "Heavy / Heavy",
+"layerName": "UUID1",
+"location": {
+"Axis_0": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+},
+{
+"name": "Heavy / 3.1_1_0_0",
+"layerName": "DE344A28-5B24-430D-BCD8-C54501D908E1",
+"location": {
+"Axis_0": 1000,
+"Axis_1": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+},
+{
+"name": "Heavy / 5.1_0_1_0",
+"layerName": "4F493FF2-A083-4C95-86BB-2D3BCA2577F4",
+"location": {
+"Axis_0": 1000,
+"Axis_2": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+},
+{
+"name": "Heavy / 7.1_1_1_0",
+"layerName": "07AC27BB-9545-4C25-A833-DFF90A24EE32",
+"location": {
+"Axis_0": 1000,
+"Axis_1": 1000,
+"Axis_2": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+},
+{
+"name": "Heavy / 9.1_0_0_1",
+"layerName": "FF3AC121-AF5C-4BD1-A82D-E15C7E1AC931",
+"location": {
+"Axis_0": 1000,
+"Axis_3": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+},
+{
+"name": "Heavy / 11.1_1_0_1",
+"layerName": "C8B57F25-68B9-4240-89B5-3B682809BE2D",
+"location": {
+"Axis_0": 1000,
+"Axis_1": 1000,
+"Axis_3": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+},
+{
+"name": "Heavy / 13.1_0_1_1",
+"layerName": "6A5775F2-3F5B-4DA4-80AA-69A443BFAB6D",
+"location": {
+"Axis_0": 1000,
+"Axis_2": 1000,
+"Axis_3": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+},
+{
+"name": "Heavy / 15.1_1_1_1",
+"layerName": "DB90F9CF-C118-41AC-AE9B-01909D147179",
+"location": {
+"Axis_0": 1000,
+"Axis_1": 1000,
+"Axis_2": 1000,
+"Axis_3": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+}
+],
+"layers": {
+"03BBCF2F-C529-4D34-AD3B-D43181CBD41A": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 231,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -27
+},
+{
+"x": 44,
+"y": -27
+},
+{
+"x": 44,
+"y": -78
+},
+{
+"x": 231,
+"y": -78
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"07AC27BB-9545-4C25-A833-DFF90A24EE32": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 987,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -27
+},
+{
+"x": 800,
+"y": -27
+},
+{
+"x": 800,
+"y": -851
+},
+{
+"x": 987,
+"y": -851
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"0E7F3834-A6AE-4016-9CB8-02FF4649BADA": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 231,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -157
+},
+{
+"x": 44,
+"y": -157
+},
+{
+"x": 44,
+"y": -982
+},
+{
+"x": 231,
+"y": -982
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"17196063-106E-4B55-9449-1D51301C6A99": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 69,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -157
+},
+{
+"x": 44,
+"y": -157
+},
+{
+"x": 44,
+"y": -982
+},
+{
+"x": 69,
+"y": -982
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"2900356D-2A4A-4E4A-B108-C013EAC874FD": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 69,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -157
+},
+{
+"x": 44,
+"y": -157
+},
+{
+"x": 44,
+"y": -208
+},
+{
+"x": 69,
+"y": -208
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"4B34671E-80DE-485F-8C26-699B7CC9C3C4": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 231,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -157
+},
+{
+"x": 44,
+"y": -157
+},
+{
+"x": 44,
+"y": -208
+},
+{
+"x": 231,
+"y": -208
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"4C4EFCEA-7857-4F87-BB42-9742A2267D33": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 69,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -27
+},
+{
+"x": 44,
+"y": -27
+},
+{
+"x": 44,
+"y": -851
+},
+{
+"x": 69,
+"y": -851
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"4F493FF2-A083-4C95-86BB-2D3BCA2577F4": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 987,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -27
+},
+{
+"x": 800,
+"y": -27
+},
+{
+"x": 800,
+"y": -78
+},
+{
+"x": 987,
+"y": -78
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"6A5775F2-3F5B-4DA4-80AA-69A443BFAB6D": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 987,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -157
+},
+{
+"x": 800,
+"y": -157
+},
+{
+"x": 800,
+"y": -208
+},
+{
+"x": 987,
+"y": -208
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"9076225B-4F68-4AE6-AA09-39521BE71E10": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 231,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -27
+},
+{
+"x": 44,
+"y": -27
+},
+{
+"x": 44,
+"y": -851
+},
+{
+"x": 231,
+"y": -851
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"C8B57F25-68B9-4240-89B5-3B682809BE2D": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 825,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -157
+},
+{
+"x": 800,
+"y": -157
+},
+{
+"x": 800,
+"y": -982
+},
+{
+"x": 825,
+"y": -982
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"DB90F9CF-C118-41AC-AE9B-01909D147179": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 987,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -157
+},
+{
+"x": 800,
+"y": -157
+},
+{
+"x": 800,
+"y": -982
+},
+{
+"x": 987,
+"y": -982
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"DE344A28-5B24-430D-BCD8-C54501D908E1": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 825,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -27
+},
+{
+"x": 800,
+"y": -27
+},
+{
+"x": 800,
+"y": -851
+},
+{
+"x": 825,
+"y": -851
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"FF3AC121-AF5C-4BD1-A82D-E15C7E1AC931": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 825,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -157
+},
+{
+"x": 800,
+"y": -157
+},
+{
+"x": 800,
+"y": -208
+},
+{
+"x": 825,
+"y": -208
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"UUID0": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 69,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -27
+},
+{
+"x": 44,
+"y": -27
+},
+{
+"x": 44,
+"y": -78
+},
+{
+"x": 69,
+"y": -78
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"UUID1": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 825,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -27
+},
+{
+"x": 800,
+"y": -27
+},
+{
+"x": 800,
+"y": -78
+},
+{
+"x": 825,
+"y": -78
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+}
+},
+"customData": {
+"com.glyphsapp.glyph-color": 5
+}
+}
