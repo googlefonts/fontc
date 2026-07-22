@@ -1,0 +1,95 @@
+{
+"name": "quotedblbase",
+"sources": [
+{
+"name": "",
+"layerName": "light-condensed",
+"locationBase": "light-condensed"
+},
+{
+"name": "",
+"layerName": "bold-condensed",
+"locationBase": "bold-condensed"
+},
+{
+"name": "",
+"layerName": "light-wide",
+"locationBase": "light-wide"
+},
+{
+"name": "",
+"layerName": "bold-wide",
+"locationBase": "bold-wide"
+}
+],
+"layers": {
+"bold-condensed": {
+"glyph": {
+"components": [
+{
+"name": "comma"
+},
+{
+"name": "comma",
+"transformation": {
+"translateX": 230
+}
+}
+],
+"xAdvance": 480
+}
+},
+"bold-wide": {
+"glyph": {
+"components": [
+{
+"name": "comma",
+"transformation": {
+"translateY": 1
+}
+},
+{
+"name": "comma",
+"transformation": {
+"translateX": 250,
+"translateY": 1
+}
+}
+],
+"xAdvance": 560
+}
+},
+"light-condensed": {
+"glyph": {
+"components": [
+{
+"name": "comma"
+},
+{
+"name": "comma",
+"transformation": {
+"translateX": 130
+}
+}
+],
+"xAdvance": 301
+}
+},
+"light-wide": {
+"glyph": {
+"components": [
+{
+"name": "comma"
+},
+{
+"name": "comma",
+"transformation": {
+"translateX": 130
+}
+}
+],
+"xAdvance": 421
+}
+}
+}
+}

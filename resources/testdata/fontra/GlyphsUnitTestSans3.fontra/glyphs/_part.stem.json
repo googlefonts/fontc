@@ -1,0 +1,324 @@
+{
+"name": "_part.stem",
+"axes": [
+{
+"name": "height",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 100
+}
+],
+"sources": [
+{
+"name": "",
+"layerName": "C4872ECA-A3A9-40AB-960A-1DB2202F16DE",
+"locationBase": "C4872ECA-A3A9-40AB-960A-1DB2202F16DE"
+},
+{
+"name": "Light / TallStem",
+"layerName": "0D68D3E9-A0B2-4D78-A161-EB65D8511F0A",
+"location": {
+"height": 100
+},
+"locationBase": "C4872ECA-A3A9-40AB-960A-1DB2202F16DE"
+},
+{
+"name": "",
+"layerName": "3E7589AA-8194-470F-8E2F-13C1C581BE24",
+"locationBase": "3E7589AA-8194-470F-8E2F-13C1C581BE24"
+},
+{
+"name": "Regular / TallStem",
+"layerName": "3E1733D9-3B83-4E6A-B1E9-6381BBE1BD3A",
+"location": {
+"height": 100
+},
+"locationBase": "3E7589AA-8194-470F-8E2F-13C1C581BE24"
+},
+{
+"name": "",
+"layerName": "BFFFD157-90D3-4B85-B99D-9A2F366F03CA",
+"locationBase": "BFFFD157-90D3-4B85-B99D-9A2F366F03CA"
+},
+{
+"name": "Bold / TallStem",
+"layerName": "FD65D427-9013-43E2-9F74-398D99AA4763",
+"location": {
+"height": 100
+},
+"locationBase": "BFFFD157-90D3-4B85-B99D-9A2F366F03CA"
+}
+],
+"layers": {
+"0D68D3E9-A0B2-4D78-A161-EB65D8511F0A": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 117,
+"y": 306
+},
+{
+"x": 117,
+"y": 368
+},
+{
+"x": 117,
+"y": 800
+},
+{
+"x": 100,
+"y": 800
+},
+{
+"x": 100,
+"y": 0
+},
+{
+"x": 117,
+"y": 0
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 600,
+"anchors": [
+{
+"name": "connect",
+"x": 117,
+"y": 0
+}
+]
+}
+},
+"3E1733D9-3B83-4E6A-B1E9-6381BBE1BD3A": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 167,
+"y": 286
+},
+{
+"x": 167,
+"y": 393
+},
+{
+"x": 167,
+"y": 800
+},
+{
+"x": 77,
+"y": 800
+},
+{
+"x": 77,
+"y": 0
+},
+{
+"x": 167,
+"y": 0
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 600,
+"anchors": [
+{
+"name": "connect",
+"x": 167,
+"y": 0
+}
+]
+}
+},
+"3E7589AA-8194-470F-8E2F-13C1C581BE24": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 167,
+"y": 286
+},
+{
+"x": 149,
+"y": 393
+},
+{
+"x": 139,
+"y": 480
+},
+{
+"x": 77,
+"y": 480
+},
+{
+"x": 77,
+"y": 0
+},
+{
+"x": 167,
+"y": 0
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 600,
+"anchors": [
+{
+"name": "connect",
+"x": 167,
+"y": 0
+}
+]
+}
+},
+"BFFFD157-90D3-4B85-B99D-9A2F366F03CA": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 250,
+"y": 256
+},
+{
+"x": 181,
+"y": 385
+},
+{
+"x": 162,
+"y": 490
+},
+{
+"x": 30,
+"y": 490
+},
+{
+"x": 30,
+"y": 0
+},
+{
+"x": 250,
+"y": 0
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 600,
+"anchors": [
+{
+"name": "connect",
+"x": 250,
+"y": 0
+}
+]
+}
+},
+"C4872ECA-A3A9-40AB-960A-1DB2202F16DE": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 117,
+"y": 306
+},
+{
+"x": 119,
+"y": 368
+},
+{
+"x": 115,
+"y": 470
+},
+{
+"x": 100,
+"y": 470
+},
+{
+"x": 100,
+"y": 0
+},
+{
+"x": 117,
+"y": 0
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 600,
+"anchors": [
+{
+"name": "connect",
+"x": 117,
+"y": 0
+}
+]
+}
+},
+"FD65D427-9013-43E2-9F74-398D99AA4763": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 250,
+"y": 256
+},
+{
+"x": 250,
+"y": 385
+},
+{
+"x": 250,
+"y": 800
+},
+{
+"x": 30,
+"y": 800
+},
+{
+"x": 30,
+"y": 0
+},
+{
+"x": 250,
+"y": 0
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 600,
+"anchors": [
+{
+"name": "connect",
+"x": 250,
+"y": 0
+}
+]
+}
+}
+}
+}

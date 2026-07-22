@@ -8,23 +8,69 @@ use fontdrasil::{
 };
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
-    ir::{Glyph, GlyphInstance, GlyphPathBuilder, StaticMetadata},
+    ir::{
+        DEFAULT_VENDOR_ID, Glyph, GlyphInstance, GlyphPathBuilder, NameBuilder, NameKey,
+        PreliminaryGdefCategories, StaticMetadata,
+    },
 };
 use kurbo::BezPath;
 use log::trace;
-use write_fonts::types::Tag;
+use write_fonts::{
+    tables::gdef::GlyphClassDef,
+    types::{NameId, Tag},
+};
 
-use crate::fontra::{AxisName, FontraContour, FontraFontData, FontraGlyph, FontraPoint, PointType};
+use crate::fontra::{
+    AxisName, Contour, Font, FontInfo, FontSource, GlyphInfos, Point, PointType, VariableGlyph,
+};
 
-pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<StaticMetadata, Error> {
+fn default_source<'a>(font_data: &'a Font, axes: &[Axis]) -> Result<&'a FontSource, Error> {
+    font_data
+        .sources
+        .values()
+        .find(|source| {
+            axes.iter().all(|axis| {
+                let at_default = axis.default.to_normalized(&axis.converter);
+                let coord = source
+                    .location
+                    .get(&axis.name)
+                    .map(|v| DesignCoord::new(*v).to_normalized(&axis.converter))
+                    .unwrap_or(at_default);
+                coord == at_default
+            })
+        })
+        .ok_or(Error::NoDefaultMaster)
+}
+
+fn to_ir_names(font_info: &FontInfo) -> HashMap<NameKey, String> {
+    let mut builder = NameBuilder::default();
+    if let Some(major) = font_info.version_major {
+        builder.set_version(major, font_info.version_minor.unwrap_or(0).max(0) as u32);
+    }
+    builder.add_if_present(NameId::FAMILY_NAME, &font_info.family_name);
+    builder.add_if_present(NameId::COPYRIGHT_NOTICE, &font_info.copyright);
+    builder.add_if_present(NameId::TRADEMARK, &font_info.trademark);
+    builder.add_if_present(NameId::DESCRIPTION, &font_info.description);
+    builder.add_if_present(NameId::SAMPLE_TEXT, &font_info.sample_text);
+    builder.add_if_present(NameId::DESIGNER, &font_info.designer);
+    builder.add_if_present(NameId::DESIGNER_URL, &font_info.designer_url);
+    builder.add_if_present(NameId::MANUFACTURER, &font_info.manufacturer);
+    builder.add_if_present(NameId::VENDOR_URL, &font_info.manufacturer_url);
+    builder.add_if_present(NameId::LICENSE_DESCRIPTION, &font_info.license_description);
+    builder.add_if_present(NameId::LICENSE_URL, &font_info.license_info_url);
+    builder.build(font_info.vendor_id.as_deref().unwrap_or(DEFAULT_VENDOR_ID))
+}
+
+pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, Error> {
     let axes = font_data
+        .axes
         .axes
         .iter()
         .map(|a| match a {
-            crate::fontra::FontraAxis::Discrete(_) => {
+            crate::fontra::Axis::Discrete(_) => {
                 Err(Error::UnsupportedConstruct(format!("discrete axis {a:?}")))
             }
-            crate::fontra::FontraAxis::Continuous(a) => Ok(a),
+            crate::fontra::Axis::Continuous(a) => Ok(a),
         })
         .map(|a| {
             let a = a?;
@@ -67,18 +113,39 @@ pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<Static
                 localized_names: Default::default(),
             })
         })
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let global_locations = font_data
+        .sources
+        .values()
+        .map(|source| {
+            axes.iter()
+                .map(|axis| {
+                    let coord = source
+                        .location
+                        .get(&axis.name)
+                        .map(|v| DesignCoord::new(*v).to_normalized(&axis.converter))
+                        .unwrap_or_else(|| axis.default.to_normalized(&axis.converter));
+                    (axis.tag, coord)
+                })
+                .collect::<NormalizedLocation>()
+        })
+        .collect();
+
+    let default_source = default_source(font_data, &axes)?;
+    let italic_angle = default_source.italic_angle;
+    let build_vertical = !default_source.line_metrics_vertical_layout.is_empty();
 
     StaticMetadata::new(
         font_data.units_per_em,
-        Default::default(),
+        to_ir_names(&font_data.font_info),
         axes,
         Default::default(),
-        Default::default(), // TODO: glyph locations we really do need
+        global_locations,
         Default::default(),
-        Default::default(),
+        italic_angle,
         None,
-        false, // TODO: Determine this properly.
+        build_vertical,
     )
     .map_err(Error::VariationModelError)
 }
@@ -87,7 +154,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<Static
 fn to_ir_glyph(
     global_axes: HashMap<AxisName, Tag>,
     codepoints: HashSet<u32>,
-    fontra_glyph: &FontraGlyph,
+    fontra_glyph: &VariableGlyph,
 ) -> Result<Glyph, BadGlyph> {
     let _local_axes: HashMap<_, _> = fontra_glyph
         .axes
@@ -127,7 +194,7 @@ fn to_ir_glyph(
         let contours: Vec<_> = layer
             .glyph
             .path
-            .contours
+            .contours()
             .iter()
             .map(|c| to_ir_path(fontra_glyph.name.clone(), c))
             .collect::<Result<_, _>>()?;
@@ -155,7 +222,7 @@ fn to_ir_glyph(
 #[allow(dead_code)] // TEMPORARY
 fn add_to_path<'a>(
     path_builder: &'a mut GlyphPathBuilder,
-    points: impl Iterator<Item = &'a FontraPoint>,
+    points: impl Iterator<Item = &'a Point>,
 ) -> Result<(), PathConversionError> {
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/pens.py#L92
@@ -174,7 +241,7 @@ fn add_to_path<'a>(
     Ok(())
 }
 
-fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath, BadGlyph> {
+fn to_ir_path(glyph_name: GlyphName, contour: &Contour) -> Result<BezPath, BadGlyph> {
     // Based on glyphs2fontir/src/toir.rs to_ir_path
     // TODO(https://github.com/googlefonts/fontc/issues/700): share code
     if contour.points.is_empty() {
@@ -215,6 +282,36 @@ fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath,
     Ok(path)
 }
 
+pub(crate) fn to_ir_gdef_categories(glyph_infos: &GlyphInfos) -> PreliminaryGdefCategories {
+    let mark_category_glyphs = glyph_infos
+        .iter()
+        .filter(|(_, info)| info.category.as_deref() == Some("Mark"))
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    let categories = glyph_infos
+        .iter()
+        .filter_map(|(name, info)| {
+            gdef_class(info.category.as_deref(), info.sub_category.as_deref())
+                .map(|class| (name.clone(), class))
+        })
+        .collect();
+
+    PreliminaryGdefCategories {
+        categories,
+        infer_from_anchors: true,
+        mark_category_glyphs,
+    }
+}
+
+fn gdef_class(category: Option<&str>, subcategory: Option<&str>) -> Option<GlyphClassDef> {
+    match (category, subcategory) {
+        (Some("Mark"), Some("Nonspacing" | "Spacing Combining")) => Some(GlyphClassDef::Mark),
+        (_, Some("Ligature")) => Some(GlyphClassDef::Ligature),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
@@ -225,7 +322,7 @@ mod tests {
     use write_fonts::types::Tag;
 
     use crate::{
-        fontra::{FontraFontData, FontraGlyph},
+        fontra::{Font, VariableGlyph},
         test::testdata_dir,
         toir::to_ir_static_metadata,
     };
@@ -277,8 +374,7 @@ mod tests {
 
     #[test]
     fn static_metadata_of_2glyphs() {
-        let fontdata_file = testdata_dir().join("2glyphs.fontra/font-data.json");
-        let font_data = FontraFontData::from_file(&fontdata_file).unwrap();
+        let font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
         let static_metadata = to_ir_static_metadata(&font_data).unwrap();
         assert_eq!(1000, static_metadata.units_per_em);
         assert_eq!(
@@ -293,7 +389,7 @@ mod tests {
     #[test]
     fn ir_of_glyph_u20089() {
         let glyph_file = testdata_dir().join("2glyphs.fontra/glyphs/u20089.json");
-        let fontra_glyph = FontraGlyph::from_file(&glyph_file).unwrap();
+        let fontra_glyph = VariableGlyph::from_file(&glyph_file).unwrap();
         let glyph = to_ir_glyph(
             HashMap::from([("Weight".to_string(), Tag::new(b"wght"))]),
             Default::default(),

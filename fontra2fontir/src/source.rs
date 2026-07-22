@@ -1,178 +1,78 @@
-use std::{
-    collections::BTreeMap,
-    fs::File,
-    io::{BufRead, BufReader},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::Path, sync::Arc};
 
-use fontdrasil::{orchestration::Work, types::GlyphName};
+use fontdrasil::{coords::NormalizedLocation, orchestration::Work};
 use fontir::{
-    error::{BadSource, BadSourceKind, Error},
-    ir::StaticMetadata,
-    orchestration::{Context, WorkId},
+    error::Error,
+    ir::PreliminaryGdefCategories,
+    orchestration::{Context, IrWork, WorkId},
     source::Source,
 };
 use log::debug;
 
 use crate::{
-    fontra::{self, FontraFontData},
-    toir::to_ir_static_metadata,
+    fontra::Font,
+    toir::{to_ir_gdef_categories, to_ir_static_metadata},
 };
 
 pub struct FontraIrSource {
-    fontdata_file: PathBuf,
-    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>>,
-}
-
-fn parse_glyph_info(fontra_dir: &Path) -> Result<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>, Error> {
-    let glyphinfo_file = fontra_dir.join("glyph-info.csv");
-    if !glyphinfo_file.is_file() {
-        return Err(BadSource::new(glyphinfo_file, BadSourceKind::ExpectedFile).into());
-    }
-
-    // Read the glyph-info file
-    let file = File::open(&glyphinfo_file).map_err(|e| BadSource::new(&glyphinfo_file, e))?;
-
-    let glyph_dir = fontra_dir.join("glyphs");
-    if !glyph_dir.is_dir() {
-        return Err(BadSource::new(glyph_dir, BadSourceKind::ExpectedDirectory).into());
-    }
-
-    // Example files suggest the first line is just the column headers. Hopefully always :)
-    // This file is tool generated so it shouldn't be full of human error. Fail if we don't understand.
-    let mut glyph_info = BTreeMap::default();
-    for (i, line) in BufReader::new(file).lines().enumerate().skip(1) {
-        let line = line.map_err(|e| BadSource::new(&glyphinfo_file, BadSourceKind::Io(e)))?;
-        let parts: Vec<_> = line.split(';').collect();
-        if parts.len() != 2 {
-            return Err(BadSource::custom(
-                &glyphinfo_file,
-                format!("Expected two parts in line {i} separated by ;"),
-            )
-            .into());
-        }
-        let glyph_name = GlyphName::new(parts[0].trim());
-        let codepoints = parts[1]
-            .split(',')
-            .filter_map(|codepoint| {
-                let codepoint = codepoint.trim();
-                if codepoint.is_empty() {
-                    return None;
-                }
-                let Some(codepoint) = codepoint.strip_prefix("U+") else {
-                    return Some(Err(BadSource::custom(
-                        &glyphinfo_file,
-                        format!("Unintelligible codepoint {codepoint:?} at line {i}"),
-                    )));
-                };
-                Some(u32::from_str_radix(codepoint, 16).map_err(|e| {
-                    BadSource::custom(
-                        &glyphinfo_file,
-                        format!("Unintelligible codepoint {codepoint:?} at line {i}: {e}"),
-                    )
-                }))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let glyph_file = fontra::glyph_file(&glyph_dir, glyph_name.clone());
-        if !glyph_file.is_file() {
-            return Err(BadSource::new(glyph_file, BadSourceKind::ExpectedFile).into());
-        }
-
-        if glyph_info
-            .insert(glyph_name.clone(), (glyph_file, codepoints))
-            .is_some()
-        {
-            return Err(BadSource::custom(
-                &glyphinfo_file,
-                format!("Multiple definitions of '{glyph_name}'"),
-            )
-            .into());
-        }
-    }
-
-    Ok(glyph_info)
+    font_data: Arc<Font>,
+    gdef_categories: Arc<PreliminaryGdefCategories>,
 }
 
 impl Source for FontraIrSource {
     fn new(fontra_dir: &Path) -> Result<Self, Error> {
-        let fontdata_file = fontra_dir.join("font-data.json");
-        if !fontdata_file.is_file() {
-            return Err(BadSource::new(fontdata_file, BadSourceKind::ExpectedFile).into());
-        }
-
-        let glyph_info = parse_glyph_info(fontra_dir)?;
+        let font_data = Font::load(fontra_dir)?;
+        let gdef_categories = to_ir_gdef_categories(&font_data.glyph_infos);
 
         Ok(FontraIrSource {
-            fontdata_file,
-            glyph_info: Arc::new(glyph_info),
+            font_data: Arc::new(font_data),
+            gdef_categories: Arc::new(gdef_categories),
         })
     }
 
-    fn create_static_metadata_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        FontraFontData::from_file(&self.fontdata_file)?;
+    fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork {
-            fontdata_file: self.fontdata_file.clone(),
-            glyph_info: self.glyph_info.clone(),
+            font_data: self.font_data.clone(),
+            gdef_categories: self.gdef_categories.clone(),
         }))
     }
 
-    fn create_global_metric_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_global_metric_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::GlobalMetrics)))
     }
 
-    fn create_glyph_ir_work(
-        &self,
-    ) -> Result<Vec<Box<fontir::orchestration::IrWork>>, fontir::error::Error> {
-        todo!()
+    fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
+        Ok(Vec::new())
     }
 
-    fn create_feature_ir_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::Features)))
     }
 
-    fn create_kerning_locations_ir_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::KerningLocations)))
     }
 
     fn create_kerning_instance_ir_work(
         &self,
-        _at: fontdrasil::coords::NormalizedLocation,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+        at: NormalizedLocation,
+    ) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::KernInstance(at))))
     }
 
-    fn create_color_palette_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::ColorPalettes)))
     }
 
-    fn create_color_glyphs_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::PaintGraph)))
     }
 }
 
 #[derive(Debug)]
 struct StaticMetadataWork {
-    fontdata_file: PathBuf,
-    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>>,
-}
-
-fn create_static_metadata(fontdata_file: &Path) -> Result<StaticMetadata, Error> {
-    debug!("Static metadata for {fontdata_file:#?}");
-    let font_data = FontraFontData::from_file(fontdata_file)?;
-    to_ir_static_metadata(&font_data)
+    font_data: Arc<Font>,
+    gdef_categories: Arc<PreliminaryGdefCategories>,
 }
 
 impl Work<Context, WorkId, Error> for StaticMetadataWork {
@@ -181,80 +81,168 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::PreliminaryGlyphOrder]
+        vec![
+            WorkId::PreliminaryGlyphOrder,
+            WorkId::PreliminaryGdefCategories,
+        ]
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        debug!("Static metadata for {:#?}", self.fontdata_file);
+        debug!(
+            "Static metadata for {}",
+            self.font_data
+                .font_info
+                .family_name
+                .as_deref()
+                .unwrap_or("<nameless family>")
+        );
         context
             .preliminary_glyph_order
-            .set(self.glyph_info.keys().cloned().collect());
+            .set(self.font_data.glyph_map.keys().cloned().collect());
+        context
+            .preliminary_gdef_categories
+            .set(self.gdef_categories.as_ref().clone());
         context
             .static_metadata
-            .set(create_static_metadata(&self.fontdata_file)?);
+            .set(to_ir_static_metadata(&self.font_data)?);
+        Ok(())
+    }
+}
+
+/// A work that produces nothing.
+#[derive(Debug)]
+struct NoopWork(WorkId);
+
+impl Work<Context, WorkId, Error> for NoopWork {
+    fn id(&self) -> WorkId {
+        self.0.clone()
+    }
+
+    fn exec(&self, _context: &Context) -> Result<(), Error> {
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use fontdrasil::types::GlyphName;
+    use fontdrasil::{
+        orchestration::{Access, AccessBuilder},
+        types::GlyphName,
+    };
+    use fontir::{ir::NameKey, orchestration::Flags};
     use pretty_assertions::assert_eq;
+    use write_fonts::{
+        tables::gdef::GlyphClassDef,
+        types::{NameId, Tag},
+    };
 
     use crate::test::testdata_dir;
 
     use super::*;
 
+    fn context_for(fontra_dir: &str) -> (FontraIrSource, Context) {
+        let source = FontraIrSource::new(&testdata_dir().join(fontra_dir)).unwrap();
+        (source, Context::new_root(Flags::empty(), None))
+    }
+
     #[test]
-    fn glyph_info_of_minimal() {
-        let source = FontraIrSource::new(&testdata_dir().join("minimal.fontra")).unwrap();
+    fn compile_raqq() {
+        let (source, context) = context_for("Raqq.fontra");
+
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(800, static_metadata.units_per_em);
         assert_eq!(
-            Arc::new(
-                vec![(
-                    GlyphName::new(".notdef"),
-                    (
-                        testdata_dir().join("minimal.fontra/glyphs/%2Enotdef.json"),
-                        vec![]
-                    )
-                )]
-                .into_iter()
-                .collect::<BTreeMap<_, _>>()
-            ),
-            source.glyph_info
+            vec![Tag::new(b"SPAC"), Tag::new(b"MSHQ")],
+            static_metadata
+                .axes
+                .iter()
+                .map(|a| a.tag)
+                .collect::<Vec<_>>()
+        );
+        let name = |id: NameId| {
+            static_metadata
+                .names
+                .get(&NameKey::new_bmp_only(id))
+                .map(String::as_str)
+        };
+        assert_eq!(Some("Raqq"), name(NameId::FAMILY_NAME));
+        assert_eq!(Some("Regular"), name(NameId::SUBFAMILY_NAME));
+        assert_eq!(
+            Some("Copyright 2021–2024 The Raqq Project Authors (github.com/aliftype/raqq)"),
+            name(NameId::COPYRIGHT_NOTICE)
+        );
+        assert_eq!(Some("Khaled Hosny"), name(NameId::DESIGNER));
+        assert_eq!(Some("Alif Type"), name(NameId::MANUFACTURER));
+        assert_eq!(Some("https://aliftype.com"), name(NameId::VENDOR_URL));
+        // Synthesized from versionMajor/versionMinor and vendorID.
+        assert_eq!(Some("Version 0.000"), name(NameId::VERSION_STRING));
+        assert_eq!(Some("0.000;ALIF;Raqq-Regular"), name(NameId::UNIQUE_ID));
+
+        let glyph_order = context.preliminary_glyph_order.get();
+        assert!(glyph_order.contains(&GlyphName::new(".notdef")));
+        assert!(glyph_order.contains(&GlyphName::new("beh-ar")));
+
+        let gdef = context.preliminary_gdef_categories.get();
+        assert!(gdef.infer_from_anchors);
+        assert_eq!(
+            Some(&GlyphClassDef::Mark),
+            gdef.categories.get(&GlyphName::new("dammatan-ar"))
+        );
+        assert_eq!(
+            Some(&GlyphClassDef::Ligature),
+            gdef.categories.get(&GlyphName::new("fehDotless_alef-ar"))
+        );
+        assert!(
+            gdef.mark_category_glyphs
+                .contains(&GlyphName::new("dammatan-ar"))
+        );
+    }
+
+    fn glyph_map(fontra_dir: &str) -> Vec<(GlyphName, Vec<u32>)> {
+        let source = FontraIrSource::new(&testdata_dir().join(fontra_dir)).unwrap();
+        source
+            .font_data
+            .glyph_map
+            .iter()
+            .map(|(name, codepoints)| (name.clone(), codepoints.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn glyph_map_of_minimal() {
+        assert_eq!(
+            vec![(GlyphName::new(".notdef"), vec![])],
+            glyph_map("minimal.fontra")
         );
     }
 
     #[test]
-    fn glyph_info_of_2glyphs() {
-        let source = FontraIrSource::new(&testdata_dir().join("2glyphs.fontra")).unwrap();
+    fn glyph_map_of_2glyphs() {
         assert_eq!(
-            Arc::new(
-                [
-                    (
-                        GlyphName::new(".notdef"),
-                        (
-                            testdata_dir().join("2glyphs.fontra/glyphs/%2Enotdef.json"),
-                            vec![]
-                        )
-                    ),
-                    (
-                        GlyphName::new("u20089"),
-                        (
-                            testdata_dir().join("2glyphs.fontra/glyphs/u20089.json"),
-                            vec![0x20089]
-                        )
-                    )
-                ]
-                .into_iter()
-                .collect::<BTreeMap<_, _>>()
-            ),
-            source.glyph_info
+            vec![
+                (GlyphName::new(".notdef"), vec![]),
+                (GlyphName::new("u20089"), vec![0x20089]),
+            ],
+            glyph_map("2glyphs.fontra")
         );
     }
 
     #[test]
-    fn glyph_info_0_1_n_codepoints() {
-        let source = FontraIrSource::new(&testdata_dir().join("codepoints.fontra")).unwrap();
+    fn glyph_map_0_1_n_codepoints() {
         assert_eq!(
             vec![
                 (".notdef", vec![]),
@@ -269,11 +257,7 @@ mod tests {
             .into_iter()
             .map(|(name, codepoints)| (GlyphName::new(name), codepoints))
             .collect::<Vec<_>>(),
-            source
-                .glyph_info
-                .iter()
-                .map(|(name, (_, codepoints))| (name.clone(), codepoints.clone()))
-                .collect::<Vec<_>>()
+            glyph_map("codepoints.fontra"),
         )
     }
 }

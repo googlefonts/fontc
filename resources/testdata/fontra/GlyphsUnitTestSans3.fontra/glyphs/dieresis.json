@@ -1,0 +1,211 @@
+{
+"name": "dieresis",
+"sources": [
+{
+"name": "",
+"layerName": "C4872ECA-A3A9-40AB-960A-1DB2202F16DE",
+"locationBase": "C4872ECA-A3A9-40AB-960A-1DB2202F16DE"
+},
+{
+"name": "",
+"layerName": "3E7589AA-8194-470F-8E2F-13C1C581BE24",
+"locationBase": "3E7589AA-8194-470F-8E2F-13C1C581BE24"
+},
+{
+"name": "",
+"layerName": "BFFFD157-90D3-4B85-B99D-9A2F366F03CA",
+"locationBase": "BFFFD157-90D3-4B85-B99D-9A2F366F03CA"
+}
+],
+"layers": {
+"3E7589AA-8194-470F-8E2F-13C1C581BE24": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 349,
+"y": 700
+},
+{
+"x": 252,
+"y": 700
+},
+{
+"x": 252,
+"y": 601
+},
+{
+"x": 349,
+"y": 601
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 149,
+"y": 700
+},
+{
+"x": 52,
+"y": 700
+},
+{
+"x": 52,
+"y": 601
+},
+{
+"x": 149,
+"y": 601
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 600,
+"anchors": [
+{
+"name": "_top",
+"x": 201,
+"y": 480
+},
+{
+"name": "top",
+"x": 201,
+"y": 700
+}
+]
+}
+},
+"BFFFD157-90D3-4B85-B99D-9A2F366F03CA": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 482,
+"y": 735
+},
+{
+"x": 298,
+"y": 735
+},
+{
+"x": 298,
+"y": 547
+},
+{
+"x": 482,
+"y": 547
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 232,
+"y": 735
+},
+{
+"x": 48,
+"y": 735
+},
+{
+"x": 48,
+"y": 547
+},
+{
+"x": 232,
+"y": 547
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 600,
+"anchors": [
+{
+"name": "_top",
+"x": 267,
+"y": 490
+},
+{
+"name": "top",
+"x": 267,
+"y": 740
+}
+]
+}
+},
+"C4872ECA-A3A9-40AB-960A-1DB2202F16DE": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 289,
+"y": 650
+},
+{
+"x": 261,
+"y": 650
+},
+{
+"x": 261,
+"y": 621
+},
+{
+"x": 289,
+"y": 621
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 116,
+"y": 650
+},
+{
+"x": 88,
+"y": 650
+},
+{
+"x": 88,
+"y": 621
+},
+{
+"x": 116,
+"y": 621
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 600,
+"anchors": [
+{
+"name": "_top",
+"x": 187,
+"y": 470
+},
+{
+"name": "top",
+"x": 188,
+"y": 650
+}
+]
+}
+}
+}
+}
