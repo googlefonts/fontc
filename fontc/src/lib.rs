@@ -357,7 +357,7 @@ mod tests {
     use write_fonts::{
         dump_table,
         read::{
-            FontData, FontRead, FontReadWithArgs, FontRef, TableProvider,
+            FontData, FontRead, FontRef, TableProvider,
             tables::{
                 cmap::{Cmap, CmapSubtable},
                 colr::{Colr, Paint, PaintGlyph},
@@ -1208,7 +1208,7 @@ mod tests {
         let result = TestCompile::compile_source("glyphs2/NotDef.glyphs");
 
         let raw_hmtx = result.be_context.hmtx.get();
-        let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &1).unwrap();
+        let hmtx = Hmtx::read(FontData::new(raw_hmtx.get()), 1).unwrap();
         assert_eq!(
             vec![(600, 250)],
             hmtx.h_metrics()
@@ -1236,8 +1236,7 @@ mod tests {
         assert_eq!(Some(1), maxp.max_contours);
 
         let raw_hmtx = result.be_context.hmtx.get();
-        let hmtx =
-            Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &hhea.number_of_h_metrics).unwrap();
+        let hmtx = Hmtx::read(FontData::new(raw_hmtx.get()), hhea.number_of_h_metrics).unwrap();
         assert_eq!(
             vec![(425, 175)],
             hmtx.h_metrics()
