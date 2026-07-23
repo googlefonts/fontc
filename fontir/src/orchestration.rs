@@ -393,7 +393,7 @@ impl PersistentStorage<WorkId> for IrPersistentStorage {
 
 impl<T> Persistable for T
 where
-    for<'a> T: FontRead<'a> + FontWrite + Validate,
+    for<'a> T: FontRead<'a, Args = ()> + FontWrite + Validate,
 {
     fn read(from: &mut dyn Read) -> Self {
         let mut buf = Vec::new();
