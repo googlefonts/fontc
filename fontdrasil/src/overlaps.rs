@@ -60,23 +60,7 @@ mod tests {
     use super::*;
     use kurbo::{PathEl, Point};
 
-    #[test]
-    fn combine_combines() {
-        let full_path = vec![
-            PathEl::MoveTo(Point::new(5., 5.)),
-            PathEl::LineTo(Point::new(15.0, 15.0)),
-            PathEl::MoveTo(Point::new(10., 10.)),
-            PathEl::LineTo(Point::new(15.0, 15.0)),
-        ];
-        let a = BezPath::from_iter(full_path[..2].iter().copied());
-        let b = BezPath::from_iter(full_path[2..].iter().copied());
-
-        let ab = combine_paths(&[a, b]);
-        assert_eq!(ab, BezPath::from_vec(full_path));
-    }
-
-    #[test]
-    fn detects_overlaps() {
+    fn overlapping_squares() -> (BezPath, BezPath) {
         // Artist's rendition:
         //      ┌────────┐
         //      │        │
@@ -101,7 +85,64 @@ mod tests {
             PathEl::LineTo(Point::new(5.0, 5.0)),
             PathEl::ClosePath,
         ]);
+        (square_a, square_b)
+    }
 
+    #[test]
+    fn combine_combines() {
+        let full_path = vec![
+            PathEl::MoveTo(Point::new(5., 5.)),
+            PathEl::LineTo(Point::new(15.0, 15.0)),
+            PathEl::MoveTo(Point::new(10., 10.)),
+            PathEl::LineTo(Point::new(15.0, 15.0)),
+        ];
+        let a = BezPath::from_iter(full_path[..2].iter().copied());
+        let b = BezPath::from_iter(full_path[2..].iter().copied());
+
+        let ab = combine_paths(&[a, b]);
+        assert_eq!(ab, BezPath::from_vec(full_path));
+    }
+
+    #[test]
+    fn merges_paths() {
+        let (square_a, square_b) = overlapping_squares();
+        let combined = combine_paths([&square_a, &square_b]);
+
+        let beziers = remove_overlaps(&combined, FillRule::NonZero)
+            .expect("linesweeper should remove overlaps");
+        let [bezier] = beziers.as_slice() else {
+            panic!(
+                "removing overlaps from two squares with non-zero fill should produce a single BezPath"
+            );
+        };
+
+        // Artist's rendition:
+        //      ┌────────┐
+        //      │        │
+        //  ┌───┘        │
+        //  │   A <3 B   │
+        //  │        ┌───┘
+        //  │        │
+        //  └────────┘
+        let expected = BezPath::from_vec(vec![
+            PathEl::MoveTo(Point::new(0.0, 10.0)),
+            PathEl::LineTo(Point::new(0.0, 0.0)),
+            PathEl::LineTo(Point::new(10.0, 0.0)),
+            PathEl::LineTo(Point::new(10.0, 5.0)),
+            PathEl::LineTo(Point::new(15.0, 5.0)),
+            PathEl::LineTo(Point::new(15.0, 15.0)),
+            PathEl::LineTo(Point::new(5.0, 15.0)),
+            PathEl::LineTo(Point::new(5.0, 10.0)),
+            PathEl::LineTo(Point::new(0.0, 10.0)),
+            PathEl::ClosePath,
+        ]);
+
+        assert_eq!(bezier, &expected);
+    }
+
+    #[test]
+    fn detects_overlaps() {
+        let (square_a, square_b) = overlapping_squares();
         let combined = combine_paths([&square_a, &square_b]);
 
         let res = has_overlaps(&combined).expect("linesweeper should detect overlaps");
