@@ -1,10 +1,14 @@
 use kurbo::BezPath;
 use linesweeper::{BinaryOp, FillRule};
 
+/// Combines one or more [`BezPath`]s into a single one by concatenating their elements.
 pub fn combine_paths<'a>(bez_paths: impl IntoIterator<Item = &'a BezPath>) -> BezPath {
     bez_paths.into_iter().flat_map(|path| path.iter()).collect()
 }
 
+/// Removes overlaps from a single [`BezPath`] using the given [`FillRule`].
+///
+/// If you have multiple beziers, you will need to [combine them](combine_paths) first.
 pub fn remove_overlaps(
     bez_path: &BezPath,
     fill_rule: FillRule,
@@ -20,6 +24,13 @@ pub fn remove_overlaps(
     Ok(beziers)
 }
 
+/// Checks if the given [`BezPath`] overlaps itself.
+///
+/// This is done by removing overlaps with [non-zero](FillRule::NonZero) and
+/// [even-odd](FillRule::EvenOdd) fill rules and seeing if the results are different, as these two
+/// algorithms handle overlapping areas differently.
+///
+/// If you have multiple beziers, you will need to [combine them](combine_paths) first.
 pub fn has_overlaps(bez_path: &BezPath) -> Result<bool, linesweeper::Error> {
     let non_zero_beziers = linesweeper::binary_op(
         bez_path,
