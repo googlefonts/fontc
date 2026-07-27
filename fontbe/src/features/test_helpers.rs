@@ -4,7 +4,7 @@ use std::{collections::HashSet, path::Path, sync::Arc};
 
 use fea_rs::compile::{Compilation, FeatureProvider};
 use fontdrasil::{coords::NormalizedLocation, types::Axes};
-use fontir::ir::{GdefCategories, GlyphOrder, NamedInstance, StaticMetadata};
+use fontir::ir::{FeatureWriterSpec, GdefCategories, GlyphOrder, NamedInstance, StaticMetadata};
 
 use crate::orchestration::FeaFirstPassOutput;
 
@@ -18,6 +18,7 @@ pub(crate) struct LayoutOutputBuilder {
     glyph_locations: HashSet<NormalizedLocation>,
     user_fea: Arc<str>,
     glyph_order: GlyphOrder,
+    feature_generation: Option<Vec<FeatureWriterSpec>>,
 }
 
 /// A helper for compiling layout tables (including with user-provided features)
@@ -63,8 +64,16 @@ impl LayoutOutputBuilder {
         self
     }
 
+    pub(crate) fn with_feature_generation(
+        &mut self,
+        feature_generation: Option<Vec<FeatureWriterSpec>>,
+    ) -> &mut Self {
+        self.feature_generation = feature_generation;
+        self
+    }
+
     pub(crate) fn build(&self) -> LayoutOutput {
-        let static_metadata = StaticMetadata::new(
+        let mut static_metadata = StaticMetadata::new(
             1000,
             Default::default(),
             self.axes.clone().into_inner(),
@@ -76,6 +85,7 @@ impl LayoutOutputBuilder {
             false,
         )
         .unwrap();
+        static_metadata.misc.feature_generation = self.feature_generation.clone();
 
         let gdef_categories = self.categories.clone().unwrap_or_default();
 
@@ -130,6 +140,7 @@ impl Default for LayoutOutputBuilder {
             glyph_locations: Default::default(),
             user_fea: "languagesystem DFLT dflt;".into(),
             glyph_order: Default::default(),
+            feature_generation: None,
         }
     }
 }

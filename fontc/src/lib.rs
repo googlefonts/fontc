@@ -6226,4 +6226,94 @@ mod tests {
         assert_eq!(250, os2.us_win_descent());
         assert_eq!(700, os2.us_weight_class());
     }
+
+    fn gpos_feature_tags(font: &FontRef) -> Vec<Tag> {
+        let gpos = font.gpos().unwrap();
+        let feature_list = gpos.feature_list().unwrap();
+        feature_list
+            .feature_records()
+            .iter()
+            .map(|r| r.feature_tag())
+            .collect()
+    }
+
+    // The FeatureWriters*.glyphs fixtures below share the same glyph content (an
+    // A/V kern pair, a base+combining-mark pair, and a glyph with a ligature
+    // caret) and differ only in the featureWriters userData key. This keyless
+    // control proves the fixture *does* produce kern, mark, GDEF glyph classes
+    // and a ligature caret list, so the suppression asserted by the other tests
+    // is not vacuous.
+    #[test]
+    fn feature_writers_absent_generates_defaults() {
+        let compile = TestCompile::compile_source("glyphs3/FeatureWritersDefault.glyphs");
+        let font = compile.font();
+        let tags = gpos_feature_tags(&font);
+        assert!(tags.contains(&Tag::new(b"kern")), "{tags:?}");
+        assert!(tags.contains(&Tag::new(b"mark")), "{tags:?}");
+
+        let gdef = font.gdef().unwrap();
+        let classdef = gdef.glyph_class_def().unwrap().unwrap();
+        let gravecomb = compile.get_gid("gravecomb");
+        assert_eq!(
+            classdef.get(gravecomb),
+            GlyphClassDef::Mark as u16,
+            "the combining mark should get GDEF class Mark"
+        );
+        assert!(
+            gdef.lig_caret_list().is_some(),
+            "GdefFeatureWriter should emit a ligature caret list"
+        );
+    }
+
+    // An empty featureWriters list disables every automatic feature: no kern,
+    // no mark, no GDEF.
+    #[test]
+    fn feature_writers_empty_list_disables_everything() {
+        let compile = TestCompile::compile_source("glyphs3/FeatureWritersEmpty.glyphs");
+        let font = compile.font();
+        assert!(font.gpos().is_err(), "expected no GPOS");
+        assert!(font.gdef().is_err(), "expected no GDEF");
+    }
+
+    // NotoMusic shape read from .glyphs font userData: Curs(append), Kern(append),
+    // Mark(skip), Gdef omitted. The cursive feature is generated from the font's
+    // entry/exit anchors alongside kern.
+    #[test]
+    fn feature_writers_curs_from_glyphs_user_data() {
+        let compile = TestCompile::compile_source("glyphs3/FeatureWritersCurs.glyphs");
+        let font = compile.font();
+        let tags = gpos_feature_tags(&font);
+        assert!(tags.contains(&Tag::new(b"curs")), "{tags:?}");
+        assert!(tags.contains(&Tag::new(b"kern")), "{tags:?}");
+    }
+
+    // OpenSans shape: KernFeatureWriter(append) with a manual `feature kern`
+    // block that has no insertion marker (the key lives in the default master
+    // UFO lib). In skip mode fontc drops the source-derived kern; append keeps
+    // it and lands its lookup after the manual one. Here the manual block emits
+    // lookup 0 (bar/plus) and the generated kern emits lookup 1 (bar/bar).
+    #[test]
+    fn feature_writers_kern_append_keeps_source_kerning() {
+        let compile = TestCompile::compile_source("fw_append.designspace");
+        let font = compile.font();
+        let gpos = font.gpos().unwrap();
+        assert_eq!(
+            gpos.lookup_list().unwrap().lookup_count(),
+            2,
+            "manual plus appended source kern lookups"
+        );
+        let feature_list = gpos.feature_list().unwrap();
+        let appended = feature_list.feature_records().iter().any(|r| {
+            r.feature_tag() == Tag::new(b"kern")
+                && r.feature(feature_list.offset_data())
+                    .unwrap()
+                    .lookup_list_indices()
+                    .iter()
+                    .any(|i| i.get() == 1)
+        });
+        assert!(
+            appended,
+            "the source-derived kern lookup should be appended to the kern feature"
+        );
+    }
 }

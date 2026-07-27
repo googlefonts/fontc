@@ -88,6 +88,7 @@ pub struct Font {
     pub kerning_rtl: Kerning,
 
     pub custom_parameters: CustomParameters,
+    pub user_data: BTreeMap<SmolStr, Plist>,
 }
 
 /// Custom parameter options that can be set on a glyphs font
@@ -854,6 +855,7 @@ struct RawFont {
     kerning_RTL: Kerning,
     custom_parameters: RawCustomParameters,
     numbers: Vec<NumberName>,
+    user_data: BTreeMap<SmolStr, Plist>,
 }
 
 #[derive(Default, Debug, PartialEq, FromPlist)]
@@ -3791,6 +3793,7 @@ impl TryFrom<RawFont> for Font {
             kerning_ltr: from.kerning_LTR,
             kerning_rtl: from.kerning_RTL,
             custom_parameters,
+            user_data: from.user_data,
         })
     }
 }
@@ -6555,6 +6558,44 @@ name = _corner.hi;
                         .collect::<Vec<_>>()
                 ))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn retains_font_level_user_data() {
+        // Font-level userData is retained verbatim; glyphs2fontir interprets the
+        // featureWriters key from it.
+        let font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+fontMaster = (
+{
+id = "m01";
+}
+);
+unitsPerEm = 1000;
+userData = {
+com.github.googlei18n.ufo2ft.featureWriters = (
+{
+class = KernFeatureWriter;
+options = {
+mode = append;
+};
+}
+);
+};
+}"#,
+        )
+        .unwrap();
+        let writers = font
+            .user_data
+            .get("com.github.googlei18n.ufo2ft.featureWriters")
+            .and_then(Plist::as_array)
+            .expect("featureWriters retained as an array");
+        assert_eq!(writers.len(), 1);
+        assert_eq!(
+            writers[0].get("class").and_then(Plist::as_str),
+            Some("KernFeatureWriter")
         );
     }
 }

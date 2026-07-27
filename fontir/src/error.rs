@@ -95,6 +95,8 @@ pub enum Error {
     MetricDeltaError(GlobalMetric, #[source] DeltaError),
     #[error("Coordinate conversion error: {0}")]
     CoordinateConversionError(#[from] fontdrasil::error::Error),
+    #[error("Unsupported featureWriters configuration: {0}")]
+    UnsupportedFeatureWriters(String),
 }
 
 /// An error related to loading source input files

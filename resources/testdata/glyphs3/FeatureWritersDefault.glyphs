@@ -1,0 +1,67 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+familyName = FeatureWritersDefault;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+anchors = (
+{
+name = top;
+pos = (250,700);
+}
+);
+layerId = m01;
+width = 500;
+}
+);
+},
+{
+glyphname = gravecomb;
+unicode = 768;
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (250,0);
+}
+);
+layerId = m01;
+width = 0;
+}
+);
+},
+{
+glyphname = f_f;
+layers = (
+{
+anchors = (
+{
+name = caret_1;
+pos = (300,0);
+}
+);
+layerId = m01;
+width = 600;
+}
+);
+}
+);
+kerningLTR = {
+m01 = {
+A = {
+A = -50;
+};
+};
+};
+unitsPerEm = 1000;
+}

@@ -31,10 +31,16 @@ use crate::{
 
 // just public so we publish the docs
 mod erase_open_corners;
+mod feature_writers;
 mod path_builder;
 mod static_metadata;
 
 pub use erase_open_corners::erase_open_corners;
+pub use feature_writers::{
+    FEATURE_WRITERS_LIB_KEY, FeatureGenerationPlan, FeatureGenerationSettings, FeatureWriterMode,
+    FeatureWriterOptionValue, FeatureWriterSpec, KnownFeatureWriter, reject_duplicate_writers,
+    resolve_feature_generation, validate_feature_writer,
+};
 pub use path_builder::GlyphPathBuilder;
 pub use static_metadata::{
     Condition, ConditionSet, GdefCategories, MetaTableValues, MiscMetadata, NameKey, NamedInstance,
