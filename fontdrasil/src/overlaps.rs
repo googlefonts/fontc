@@ -56,7 +56,7 @@ pub fn has_overlaps(bez_path: &BezPath) -> Result<bool, linesweeper::Error> {
 
 #[cfg(test)]
 mod tests {
-    #![expect(clippy::indexing_slicing)]
+    #![expect(clippy::indexing_slicing, clippy::expect_used)]
     use super::*;
     use kurbo::{PathEl, Point};
 
@@ -73,5 +73,38 @@ mod tests {
 
         let ab = combine_paths(&[a, b]);
         assert_eq!(ab, BezPath::from_vec(full_path));
+    }
+
+    #[test]
+    fn detects_overlaps() {
+        // Artist's rendition:
+        //      ┌────────┐
+        //      │        │
+        //  ┌───┼────┐   │
+        //  │ A │    │ B │
+        //  │   └────┼───┘
+        //  │        │
+        //  └────────┘
+        let square_a = BezPath::from_vec(vec![
+            PathEl::MoveTo(Point::new(0.0, 0.0)),
+            PathEl::LineTo(Point::new(10.0, 0.0)),
+            PathEl::LineTo(Point::new(10.0, 10.0)),
+            PathEl::LineTo(Point::new(0.0, 10.0)),
+            PathEl::LineTo(Point::new(0.0, 0.0)),
+            PathEl::ClosePath,
+        ]);
+        let square_b = BezPath::from_vec(vec![
+            PathEl::MoveTo(Point::new(5.0, 5.0)),
+            PathEl::LineTo(Point::new(15.0, 5.0)),
+            PathEl::LineTo(Point::new(15.0, 15.0)),
+            PathEl::LineTo(Point::new(5.0, 15.0)),
+            PathEl::LineTo(Point::new(5.0, 5.0)),
+            PathEl::ClosePath,
+        ]);
+
+        let combined = combine_paths([&square_a, &square_b]);
+
+        let res = has_overlaps(&combined).expect("linesweeper should detect overlaps");
+        assert!(res, "overlaps should have been found");
     }
 }
