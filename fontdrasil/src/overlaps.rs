@@ -53,3 +53,25 @@ pub fn has_overlaps(bez_path: &BezPath) -> Result<bool, linesweeper::Error> {
     );
     Ok(has_overlaps)
 }
+
+#[cfg(test)]
+mod tests {
+    #![expect(clippy::indexing_slicing)]
+    use super::*;
+    use kurbo::{PathEl, Point};
+
+    #[test]
+    fn combine_combines() {
+        let full_path = vec![
+            PathEl::MoveTo(Point::new(5., 5.)),
+            PathEl::LineTo(Point::new(15.0, 15.0)),
+            PathEl::MoveTo(Point::new(10., 10.)),
+            PathEl::LineTo(Point::new(15.0, 15.0)),
+        ];
+        let a = BezPath::from_iter(full_path[..2].iter().copied());
+        let b = BezPath::from_iter(full_path[2..].iter().copied());
+
+        let ab = combine_paths(&[a, b]);
+        assert_eq!(ab, BezPath::from_vec(full_path));
+    }
+}
