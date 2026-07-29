@@ -1,0 +1,81 @@
+{
+.appVersion = "3436";
+.formatVersion = 3;
+familyName = "Component Slant";
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = 700;
+},
+{
+pos = -200;
+},
+{
+pos = 500;
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = square;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,0,l),
+(400,0,l),
+(400,300,l),
+(100,300,l)
+);
+}
+);
+width = 600;
+}
+);
+},
+{
+glyphname = slanted_square;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+angle = 20;
+ref = square;
+scale = (0.8,0.8);
+slant = (10,0);
+}
+);
+width = 600;
+}
+);
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = descender;
+},
+{
+type = "x-height";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
