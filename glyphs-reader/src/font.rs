@@ -96,6 +96,9 @@ pub struct Font {
 pub struct CustomParameters {
     pub propagate_anchors: Option<bool>,
     pub use_typo_metrics: Option<bool>,
+    pub export_stat_table: Option<bool>,
+    pub elidable_stat_axis_value_names: Vec<SmolStr>,
+    pub style_names_as_stat_entries: Vec<SmolStr>,
     pub is_fixed_pitch: Option<bool>,
     pub fs_type: Option<u16>,
     pub has_wws_names: Option<bool>,
@@ -1157,12 +1160,28 @@ impl RawCustomParameters {
             }
 
             if *disabled == Some(true) {
+                // Glyphs.app also ignores disabled repeatable STAT parameters.
+                // glyphsLib currently includes those while iterating its
+                // custom-parameter proxy, but that is not native behavior.
                 log::debug!("skipping disabled custom param '{name}'");
                 continue;
             }
             match name.as_str() {
                 "Propagate Anchors" => add_and_report_issues!(propagate_anchors, Plist::as_bool),
                 "Use Typo Metrics" => add_and_report_issues!(use_typo_metrics, Plist::as_bool),
+                "Export STAT Table" => {
+                    add_and_report_issues!(export_stat_table, Plist::as_bool)
+                }
+                "Elidable STAT Axis Value Name" => match value.as_str() {
+                    Some(value) => params.elidable_stat_axis_value_names.push(value.into()),
+                    None => {
+                        log::warn!("failed to parse param for 'elidable_stat_axis_value_names'")
+                    }
+                },
+                "Style Name as STAT entry" => match value.as_str() {
+                    Some(value) => params.style_names_as_stat_entries.push(value.into()),
+                    None => log::warn!("failed to parse param for 'style_names_as_stat_entries'"),
+                },
                 // <https://github.com/googlefonts/glyphsLib/blob/52c982399ba20dc96a2c2195df6fc6cea1f9a906/Lib/glyphsLib/builder/custom_params.py#L356>
                 "postscriptIsFixedPitch" | "isFixedPitch" => {
                     add_and_report_issues!(is_fixed_pitch, Plist::as_bool)
@@ -1894,6 +1913,8 @@ impl From<RawMetricValue> for MetricValue {
 pub struct Instance {
     pub name: String,
     pub active: bool,
+    pub is_bold: bool,
+    pub is_italic: bool,
     // So named to let FromPlist populate it from a field called "type"
     pub type_: InstanceType,
     pub axis_mappings: BTreeMap<String, AxisUserToDesignMap>,
@@ -1930,6 +1951,8 @@ struct RawInstance {
     name: String,
     exports: Option<i64>,
     active: Option<i64>,
+    is_bold: Option<bool>,
+    is_italic: Option<bool>,
     type_: Option<String>,
     axes_values: Vec<OrderedFloat<f64>>,
 
@@ -3590,6 +3613,8 @@ impl Instance {
         Ok(Instance {
             name: value.name.clone(),
             active,
+            is_bold: value.is_bold.unwrap_or_default(),
+            is_italic: value.is_italic.unwrap_or_default(),
             type_: value
                 .type_
                 .as_ref()
@@ -4359,6 +4384,86 @@ mod tests {
         let font = RawFont::load(&v3_font).unwrap();
         // falls back to default
         assert_eq!(font.format_version, FormatVersion::V3);
+    }
+
+    #[test]
+    fn loads_stat_instance_metadata() {
+        let font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+familyName = Test;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+instances = (
+{
+customParameters = (
+{
+disabled = 1;
+name = "Export STAT Table";
+value = 1;
+},
+{
+name = "Export STAT Table";
+value = 0;
+},
+{
+name = "Elidable STAT Axis Value Name";
+value = Regular;
+},
+{
+disabled = 1;
+name = "Elidable STAT Axis Value Name";
+value = Ignored;
+},
+{
+name = "Elidable STAT Axis Value Name";
+value = Regular;
+},
+{
+name = "Style Name as STAT entry";
+value = Bold;
+},
+{
+name = "Style Name as STAT entry";
+value = "Bold Italic";
+}
+);
+isBold = 1;
+isItalic = 1;
+name = "Bold Italic Variable";
+type = variable;
+},
+{
+isBold = 0;
+name = Upright;
+type = variable;
+}
+);
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+
+        let bold_italic = &font.instances[0];
+        assert!(bold_italic.is_bold);
+        assert!(bold_italic.is_italic);
+        assert_eq!(bold_italic.custom_parameters.export_stat_table, Some(false));
+        assert_eq!(
+            bold_italic.custom_parameters.elidable_stat_axis_value_names,
+            ["Regular", "Regular"]
+        );
+        assert_eq!(
+            bold_italic.custom_parameters.style_names_as_stat_entries,
+            ["Bold", "Bold Italic"]
+        );
+
+        let upright = &font.instances[1];
+        assert!(!upright.is_bold);
+        assert!(!upright.is_italic);
     }
 
     #[test]
