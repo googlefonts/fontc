@@ -2205,6 +2205,71 @@ mod tests {
         );
     }
 
+    #[test]
+    fn generates_glyphs_stat_labels() {
+        use write_fonts::read::tables::stat::AxisValue;
+
+        let result = TestCompile::compile_source("glyphs3/WghtVarInstancePanose.glyphs");
+        let font = result.font();
+        let name = font.name().unwrap();
+        let stat = font.stat().unwrap();
+
+        assert_eq!(
+            stat.design_axes()
+                .unwrap()
+                .iter()
+                .map(|axis| axis.axis_tag())
+                .collect::<Vec<_>>(),
+            [Tag::new(b"wght"), Tag::new(b"ital")]
+        );
+        assert_eq!(
+            resolve_name(&name, stat.elided_fallback_name_id().unwrap()).unwrap(),
+            "Regular"
+        );
+
+        let values = stat.offset_to_axis_values().unwrap().unwrap();
+        assert_eq!(values.axis_values().len(), 3);
+
+        let AxisValue::Format3(regular) = values.axis_values().get(0).unwrap() else {
+            panic!("expected style-linked Regular weight");
+        };
+        assert_eq!(regular.axis_index(), 0);
+        assert_eq!(
+            resolve_name(&name, regular.value_name_id()).unwrap(),
+            "Regular"
+        );
+        assert_eq!(regular.value().to_f64(), 400.0);
+        assert_eq!(regular.linked_value().to_f64(), 700.0);
+
+        let AxisValue::Format1(bold) = values.axis_values().get(1).unwrap() else {
+            panic!("expected unlinked Bold weight");
+        };
+        assert_eq!(bold.axis_index(), 0);
+        assert_eq!(resolve_name(&name, bold.value_name_id()).unwrap(), "Bold");
+        assert_eq!(bold.value().to_f64(), 700.0);
+
+        let AxisValue::Format3(roman) = values.axis_values().get(2).unwrap() else {
+            panic!("expected style-linked synthetic Roman value");
+        };
+        assert_eq!(roman.axis_index(), 1);
+        assert_eq!(resolve_name(&name, roman.value_name_id()).unwrap(), "Roman");
+        assert_eq!(roman.value().to_f64(), 0.0);
+        assert_eq!(roman.linked_value().to_f64(), 1.0);
+    }
+
+    #[test]
+    fn glyphs_stat_registers_a_new_elided_fallback_name() {
+        let result = TestCompile::compile_source("glyphs3/StatElidedFallback.glyphs");
+        let font = result.font();
+        let name = font.name().unwrap();
+        let stat = font.stat().unwrap();
+
+        assert_eq!(resolve_name(&name, NameId::SUBFAMILY_NAME).unwrap(), "Bold");
+        let fallback_id = stat.elided_fallback_name_id().unwrap();
+        assert!(fallback_id.to_u16() >= 256);
+        assert_eq!(resolve_name(&name, fallback_id).unwrap(), "Regular");
+    }
+
     fn assert_simple_kerning(source: &str) {
         let result = TestCompile::compile_source(source);
 

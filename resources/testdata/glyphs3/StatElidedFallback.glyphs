@@ -1,0 +1,146 @@
+{
+.appVersion = "895";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = ElidedProbe;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = "6567042A-435D-4B14-AEF3-CDEE5D20C28E";
+metricValues = (
+{
+over = 0;
+pos = 800;
+},
+{
+over = 0;
+pos = 700;
+},
+{
+over = 0;
+pos = 500;
+},
+{
+over = 0;
+},
+{
+over = 0;
+pos = -200;
+}
+);
+name = Bold;
+},
+{
+axesValues = (
+900
+);
+id = "8AFC1572-7044-4866-B37A-366E0B81C28F";
+metricValues = (
+{
+over = 0;
+pos = 800;
+},
+{
+over = 0;
+pos = 700;
+},
+{
+over = 0;
+pos = 500;
+},
+{
+over = 0;
+},
+{
+over = 0;
+pos = -200;
+}
+);
+name = Black;
+}
+);
+glyphs = (
+{
+glyphname = .notdef;
+layers = (
+{
+layerId = "6567042A-435D-4B14-AEF3-CDEE5D20C28E";
+width = 500;
+},
+{
+layerId = "8AFC1572-7044-4866-B37A-366E0B81C28F";
+width = 500;
+}
+);
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = "6567042A-435D-4B14-AEF3-CDEE5D20C28E";
+width = 500;
+},
+{
+layerId = "8AFC1572-7044-4866-B37A-366E0B81C28F";
+width = 500;
+}
+);
+unicode = 32;
+}
+);
+instances = (
+{
+axesValues = (
+400
+);
+isBold = 1;
+name = Bold;
+weightClass = Bold;
+},
+{
+axesValues = (
+900
+);
+name = Black;
+weightClass = Black;
+},
+{
+name = VF;
+type = variable;
+}
+);
+kerningLTR = {
+};
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+stems = (
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
