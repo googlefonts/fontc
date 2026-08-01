@@ -16,7 +16,7 @@ use write_fonts::{
 };
 
 use fontdrasil::{
-    coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserLocation},
+    coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
     types::{Axes, Axis, GlyphName},
     variations::{VariationModel, VariationModelError},
 };
@@ -82,6 +82,13 @@ pub struct StaticMetadata {
 
     /// Feature variation rules
     pub variations: Option<VariableFeature>,
+
+    /// Source-provided labels used to build the STAT table.
+    ///
+    /// Install these through [`StaticMetadata::set_stat`] so all referenced
+    /// names are registered before the backend resolves their IDs.
+    #[serde(default)]
+    pub stat: Option<StatLabels>,
 }
 
 /// IR for a named position in variation space
@@ -90,6 +97,31 @@ pub struct NamedInstance {
     pub name: String,
     pub postscript_name: Option<String>,
     pub location: UserLocation,
+}
+
+/// Source-provided labels used to build a STAT table.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct StatLabels {
+    pub elided_fallback_name: String,
+    pub axes: Vec<StatAxis>,
+}
+
+/// A design axis and its labels in a STAT table.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct StatAxis {
+    pub tag: Tag,
+    pub name: String,
+    pub labels: Vec<AxisLabel>,
+}
+
+/// A named value on a STAT design axis.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct AxisLabel {
+    pub name: String,
+    pub user_value: UserCoord,
+    pub elidable: bool,
+    pub older_sibling: bool,
+    pub linked_user_value: Option<UserCoord>,
 }
 
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>
@@ -506,6 +538,7 @@ impl StaticMetadata {
                 feature_generation: None,
             },
             variations: None,
+            stat: None,
         })
     }
 
@@ -516,6 +549,59 @@ impl StaticMetadata {
 
     pub fn axis(&self, tag: &Tag) -> Option<&Axis> {
         self.axes.iter().find(|a| &a.tag == tag)
+    }
+
+    /// Install source-provided STAT labels and register all names they reference.
+    ///
+    /// Names are registered in the same order as fontTools: the elided fallback
+    /// first, followed by each axis name and that axis's value names. Axis names
+    /// may only reuse font-specific name IDs (>= 256); value and fallback names
+    /// may reuse any existing name ID.
+    pub fn set_stat(&mut self, stat: StatLabels) {
+        let mut reusable_names: HashMap<String, BTreeSet<NameId>> =
+            self.names
+                .iter()
+                .fold(HashMap::new(), |mut accum, (key, name)| {
+                    accum.entry(name.clone()).or_default().insert(key.name_id);
+                    accum
+                });
+        let mut name_id_gen = self
+            .names
+            .keys()
+            .map(|key| key.name_id.to_u16())
+            .max()
+            .unwrap_or(NameId::LAST_RESERVED_NAME_ID.to_u16())
+            .max(NameId::LAST_RESERVED_NAME_ID.to_u16());
+
+        let names = &mut self.names;
+        let mut register_name = |name: &str, min_name_id: NameId| {
+            if reusable_names
+                .get(name)
+                .and_then(|ids| ids.iter().find(|&&id| id >= min_name_id))
+                .is_some()
+            {
+                return;
+            }
+
+            name_id_gen = name_id_gen
+                .checked_add(1)
+                .expect("exhausted name IDs while registering STAT labels");
+            let name_id = NameId::new(name_id_gen);
+            names.insert(NameKey::new(name_id, name), name.to_owned());
+            reusable_names
+                .entry(name.to_owned())
+                .or_default()
+                .insert(name_id);
+        };
+
+        register_name(&stat.elided_fallback_name, NameId::new(0));
+        for axis in &stat.axes {
+            register_name(&axis.name, NameId::new(256));
+            for label in &axis.labels {
+                register_name(&label.name, NameId::new(0));
+            }
+        }
+        self.stat = Some(stat);
     }
 
     /// Calculate a mapping of existing name text to the sorted set of name ID(s) that provide it.
@@ -673,6 +759,46 @@ mod tests {
             number_values: Default::default(),
             variations: None,
             build_vertical: false,
+            stat: None,
+        }
+    }
+
+    fn test_stat_labels() -> StatLabels {
+        StatLabels {
+            elided_fallback_name: "Regular".to_string(),
+            axes: vec![
+                StatAxis {
+                    tag: WGHT,
+                    name: "Weight".to_string(),
+                    labels: vec![AxisLabel {
+                        name: "Thin".to_string(),
+                        user_value: UserCoord::new(100.0),
+                        elidable: false,
+                        older_sibling: false,
+                        linked_user_value: Some(UserCoord::new(400.0)),
+                    }],
+                },
+                StatAxis {
+                    tag: Tag::new(b"ital"),
+                    name: "Italic".to_string(),
+                    labels: vec![
+                        AxisLabel {
+                            name: "Roman".to_string(),
+                            user_value: UserCoord::new(0.0),
+                            elidable: true,
+                            older_sibling: true,
+                            linked_user_value: Some(UserCoord::new(1.0)),
+                        },
+                        AxisLabel {
+                            name: "Italic".to_string(),
+                            user_value: UserCoord::new(1.0),
+                            elidable: false,
+                            older_sibling: false,
+                            linked_user_value: None,
+                        },
+                    ],
+                },
+            ],
         }
     }
 
@@ -712,6 +838,39 @@ mod tests {
     #[test]
     fn static_metadata_bincode() {
         assert_bincode_round_trip(test_static_metadata());
+    }
+
+    #[test]
+    fn stat_labels_yaml() {
+        assert_yml_round_trip(test_stat_labels());
+    }
+
+    #[test]
+    fn stat_labels_bincode() {
+        assert_bincode_round_trip(test_stat_labels());
+    }
+
+    #[test]
+    fn set_stat_registers_names_in_fonttools_order() {
+        let mut static_metadata = test_static_metadata();
+        static_metadata.names.insert(
+            NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+            "Italic".to_string(),
+        );
+        let stat = test_stat_labels();
+
+        static_metadata.set_stat(stat.clone());
+
+        assert_eq!(static_metadata.stat, Some(stat));
+        let reverse_names = static_metadata.reverse_names();
+        assert_eq!(reverse_names["Regular"], BTreeSet::from([NameId::new(258)]));
+        assert_eq!(reverse_names["Weight"], BTreeSet::from([NameId::new(256)]));
+        assert_eq!(reverse_names["Thin"], BTreeSet::from([NameId::new(259)]));
+        assert_eq!(
+            reverse_names["Italic"],
+            BTreeSet::from([NameId::TYPOGRAPHIC_SUBFAMILY_NAME, NameId::new(260),])
+        );
+        assert_eq!(reverse_names["Roman"], BTreeSet::from([NameId::new(261)]));
     }
 
     #[test]
