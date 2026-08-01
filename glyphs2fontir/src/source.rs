@@ -45,6 +45,7 @@ use write_fonts::{
     types::{NameId, Tag},
 };
 
+use crate::stat::to_stat_labels;
 use crate::toir::{
     FontInfo, design_location, to_ir_color, to_ir_contours_and_components, to_ir_features,
     to_ir_paint,
@@ -462,6 +463,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .collect();
 
         let number_values = get_number_values(font_info, font);
+        let stat_labels = to_stat_labels(font, &axes);
 
         // negate the italic angle because it's clockwise in Glyphs.app whereas it's
         // counter-clockwise in UFO/OpenType and our GlobalMetrics follow the latter
@@ -571,6 +573,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
+        if let Some(stat_labels) = stat_labels {
+            static_metadata.set_stat(stat_labels);
+        }
         static_metadata.misc.feature_generation = feature_writers_from_user_data(&font.user_data)?;
         static_metadata.variations = variations;
         // treat  empty string or all spaces as equivalent to no value; it means
@@ -4314,6 +4319,231 @@ mode = skip;
                     features: None,
                 },
             ])
+        );
+    }
+
+    fn stat_labels_from_glyphs_source(source_text: &str) -> fontir::ir::StatLabels {
+        let source = GlyphsIrSource::new_from_memory(source_text).unwrap();
+        let context = Context::new_root(Flags::default(), None);
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        context.static_metadata.get().stat.clone().unwrap()
+    }
+
+    #[test]
+    fn static_metadata_installs_glyphs_stat_labels() {
+        let stat = stat_labels_from_glyphs_source(
+            r#"{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = Test;
+fontMaster = (
+{
+axesValues = (400);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (700);
+id = m02;
+name = Bold;
+}
+);
+glyphs = ();
+instances = (
+{
+axesValues = (400);
+name = Regular;
+weightClass = 400;
+},
+{
+axesValues = (700);
+isBold = 1;
+name = Bold;
+weightClass = 700;
+},
+{
+name = VF;
+type = variable;
+}
+);
+unitsPerEm = 1000;
+}"#,
+        );
+        let wght = stat
+            .axes
+            .iter()
+            .find(|axis| axis.tag == Tag::new(b"wght"))
+            .unwrap();
+        assert_eq!(
+            wght.labels
+                .iter()
+                .map(|label| (
+                    label.name.as_str(),
+                    label.user_value.to_f64(),
+                    label.elidable,
+                    label.linked_user_value.map(|value| value.to_f64()),
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("Regular", 400.0, true, Some(700.0)),
+                ("Bold", 700.0, false, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn stat_uses_instance_weight_class_over_font_axis_mapping() {
+        let stat = stat_labels_from_glyphs_source(
+            r#"{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Axis Mappings";
+value = {
+wght = {
+400 = 0;
+700 = 100;
+};
+};
+}
+);
+familyName = Test;
+fontMaster = (
+{
+axesValues = (0);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (100);
+id = m02;
+name = Bold;
+}
+);
+glyphs = ();
+instances = (
+{
+axesValues = (0);
+name = Regular;
+weightClass = 400;
+},
+{
+axesValues = (60);
+name = Semibold;
+weightClass = 600;
+},
+{
+axesValues = (100);
+isBold = 1;
+name = Bold;
+weightClass = 700;
+},
+{
+name = VF;
+type = variable;
+}
+);
+unitsPerEm = 1000;
+}"#,
+        );
+        let wght = stat
+            .axes
+            .iter()
+            .find(|axis| axis.tag == Tag::new(b"wght"))
+            .unwrap();
+        assert_eq!(
+            wght.labels
+                .iter()
+                .map(|label| (label.name.as_str(), label.user_value.to_f64()))
+                .collect::<Vec<_>>(),
+            [("Regular", 400.0), ("Semibold", 600.0), ("Bold", 700.0)]
+        );
+    }
+
+    #[test]
+    fn stat_merges_instances_with_duplicate_weight_classes() {
+        let stat = stat_labels_from_glyphs_source(
+            r#"{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = Test;
+fontMaster = (
+{
+axesValues = (60);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (100);
+id = m02;
+name = Bold;
+}
+);
+glyphs = ();
+instances = (
+{
+axesValues = (80);
+name = Regular;
+weightClass = 400;
+},
+{
+axesValues = (60);
+name = Alternate;
+weightClass = 400;
+},
+{
+axesValues = (100);
+isBold = 1;
+name = Bold;
+weightClass = 700;
+},
+{
+name = VF;
+type = variable;
+}
+);
+unitsPerEm = 1000;
+}"#,
+        );
+        let wght = stat
+            .axes
+            .iter()
+            .find(|axis| axis.tag == Tag::new(b"wght"))
+            .unwrap();
+        assert_eq!(
+            wght.labels
+                .iter()
+                .map(|label| (label.name.as_str(), label.user_value.to_f64()))
+                .collect::<Vec<_>>(),
+            [("Regular", 400.0), ("Bold", 700.0)]
         );
     }
 
