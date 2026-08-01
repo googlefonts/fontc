@@ -1898,6 +1898,12 @@ pub struct Instance {
     pub type_: InstanceType,
     pub axis_mappings: BTreeMap<String, AxisUserToDesignMap>,
     pub axes_values: Vec<OrderedFloat<f64>>,
+    /// Per-axis user coordinates as Glyphs derives them for this instance.
+    ///
+    /// Unlike mapping raw design coordinates through the font-wide axis map,
+    /// these preserve instance `weightClass`/`widthClass` values and explicit
+    /// `Axis Location` overrides.
+    pub user_locations: Vec<OrderedFloat<f64>>,
     pub custom_parameters: CustomParameters,
     properties: Vec<RawName>, // used for name resolution
 }
@@ -3388,7 +3394,7 @@ fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<u16> {
         ("wdth", "extracondensed") => Some(2),
         ("wdth", "condensed") => Some(3),
         ("wdth", "semicondensed") => Some(4),
-        ("wdth", "" | "Medium (normal)") => Some(5),
+        ("wdth", "" | "medium(normal)") => Some(5),
         ("wdth", "semiexpanded") => Some(6),
         ("wdth", "expanded") => Some(7),
         ("wdth", "extraexpanded") => Some(8),
@@ -3421,6 +3427,56 @@ fn add_mapping_if_new(
         .add_if_new(value.into(), *design);
 }
 
+fn instance_class_user_location(axis_tag: &str, value: Option<&str>) -> OrderedFloat<f64> {
+    let default = match axis_tag {
+        "wght" => 400.0,
+        "wdth" => 100.0,
+        _ => unreachable!("only weight and width have class-based user locations"),
+    };
+    let Some(value) = value else {
+        return default.into();
+    };
+    let Some(class_value) = f64::from_str(value)
+        .ok()
+        .or_else(|| lookup_class_value(axis_tag, value).map(f64::from))
+    else {
+        return default.into();
+    };
+    if axis_tag == "wght" {
+        return class_value.into();
+    }
+    WidthClass::try_from(class_value as u16)
+        .map(|width| width.to_percent())
+        .unwrap_or(default)
+        .into()
+}
+
+fn take_instance_class_user_location(
+    params: &mut RawCustomParameters,
+    axis_tag: &str,
+    field_value: Option<&str>,
+) -> OrderedFloat<f64> {
+    let param_name = match axis_tag {
+        "wght" => "weightClass",
+        "wdth" => "widthClass",
+        _ => unreachable!("only weight and width have class-based user locations"),
+    };
+    let custom_value = params.take(param_name).and_then(|value| {
+        value
+            .as_str()
+            .map(str::to_owned)
+            .or_else(|| value.as_f64().map(|value| value.to_string()))
+    });
+    instance_class_user_location(axis_tag, custom_value.as_deref().or(field_value))
+}
+
+fn glyphs_default_instance_design_location(axis_index: usize) -> OrderedFloat<f64> {
+    // GSInstance initializes the first two legacy axis slots to 100 and any
+    // subsequent slots to 0. `_get_axis_value` returns these when axesValues is
+    // short; AxisDefinition.get_user_loc uses that result for custom axes.
+    (if axis_index < 2 { 100.0 } else { 0.0 }).into()
+}
+
 impl Instance {
     /// Glyphs 2 instances have fun fields.
     ///
@@ -3433,6 +3489,32 @@ impl Instance {
     ) -> Result<Self, Error> {
         let active = value.is_active();
         let mut axis_mappings: BTreeMap<String, AxisUserToDesignMap> = BTreeMap::new();
+        // Glyphs' legacy class custom parameters override the instance fields;
+        // an Axis Location parameter, handled below, overrides both.
+        let weight_user_location = take_instance_class_user_location(
+            &mut value.custom_parameters,
+            "wght",
+            value.weight_class.as_deref(),
+        );
+        let width_user_location = take_instance_class_user_location(
+            &mut value.custom_parameters,
+            "wdth",
+            value.width_class.as_deref(),
+        );
+
+        let mut user_locations = axes
+            .iter()
+            .enumerate()
+            .map(|(axis_index, axis)| match axis.tag.as_str() {
+                "wght" => weight_user_location,
+                "wdth" => width_user_location,
+                _ => value
+                    .axes_values
+                    .get(axis_index)
+                    .copied()
+                    .unwrap_or_else(|| glyphs_default_instance_design_location(axis_index)),
+            })
+            .collect::<Vec<_>>();
 
         // Instances can also have "Axis Location" custom parameters, complementing the ones
         // from the masters: https://github.com/googlefonts/fontc/issues/918
@@ -3451,12 +3533,13 @@ impl Instance {
                 continue;
             };
             let user = axis_location.location;
-            let design = value.axes_values[axis_index];
-
-            axis_mappings
-                .entry(axis_location.axis_name.clone())
-                .or_default()
-                .add_if_new(user, design);
+            user_locations[axis_index] = user;
+            if let Some(&design) = value.axes_values.get(axis_index) {
+                axis_mappings
+                    .entry(axis_location.axis_name.clone())
+                    .or_default()
+                    .add_if_new(user, design);
+            }
 
             tags_done.insert(axes[axis_index].tag.as_str());
         }
@@ -3488,11 +3571,7 @@ impl Instance {
                 axes,
                 "wght",
                 &value.axes_values,
-                value
-                    .weight_class
-                    .as_ref()
-                    .map(|v| f64::from_str(v).unwrap())
-                    .unwrap_or(400.0),
+                weight_user_location.into_inner(),
             );
         }
 
@@ -3504,17 +3583,7 @@ impl Instance {
                 axes,
                 "wdth",
                 value.axes_values.as_ref(),
-                value
-                    .width_class
-                    .as_ref()
-                    .map(|v| match WidthClass::try_from(u16::from_str(v).unwrap()) {
-                        Ok(width_class) => width_class.to_percent(),
-                        Err(err) => {
-                            warn!("{err}");
-                            100.0
-                        }
-                    })
-                    .unwrap_or(100.0),
+                width_user_location.into_inner(),
             );
         }
 
@@ -3528,6 +3597,7 @@ impl Instance {
                 .unwrap_or(InstanceType::Single),
             axis_mappings,
             axes_values: value.axes_values.clone(),
+            user_locations,
             properties: value.properties.clone(),
             custom_parameters: value.custom_parameters.to_custom_params()?,
         })
@@ -4289,6 +4359,186 @@ mod tests {
         let font = RawFont::load(&v3_font).unwrap();
         // falls back to default
         assert_eq!(font.format_version, FormatVersion::V3);
+    }
+
+    #[test]
+    fn instance_user_locations_preserve_classes_overrides_and_short_axes() {
+        let font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = Test;
+fontMaster = (
+{
+axesValues = (0);
+id = m01;
+name = Regular;
+}
+);
+instances = (
+{
+axesValues = (60);
+name = Semibold;
+weightClass = SemiBold;
+},
+{
+axesValues = (80);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 650;
+}
+);
+}
+);
+name = Override;
+weightClass = Bold;
+},
+{
+name = Short;
+weightClass = Black;
+}
+);
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+
+        assert_eq!(font.instances[0].user_locations, [OrderedFloat(600.0)]);
+        assert_eq!(font.instances[1].user_locations, [OrderedFloat(650.0)]);
+        assert_eq!(font.instances[2].user_locations, [OrderedFloat(900.0)]);
+    }
+
+    #[test]
+    fn instance_class_custom_parameters_override_fields_before_axis_location() {
+        let font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+},
+{
+name = Width;
+tag = wdth;
+}
+);
+familyName = Test;
+fontMaster = (
+{
+axesValues = (0, 100);
+id = m01;
+name = Regular;
+}
+);
+instances = (
+{
+axesValues = (60, 80);
+customParameters = (
+{
+name = weightClass;
+value = 650;
+},
+{
+name = widthClass;
+value = 3;
+}
+);
+name = Custom;
+weightClass = Regular;
+widthClass = "Medium (normal)";
+},
+{
+axesValues = (70, 90);
+customParameters = (
+{
+name = weightClass;
+value = 650;
+},
+{
+name = widthClass;
+value = 3;
+},
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 675;
+}
+);
+}
+);
+name = Override;
+weightClass = Regular;
+widthClass = "Medium (normal)";
+}
+);
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            font.instances[0].user_locations,
+            [OrderedFloat(650.0), OrderedFloat(75.0)]
+        );
+        assert_eq!(
+            font.instances[1].user_locations,
+            [OrderedFloat(675.0), OrderedFloat(75.0)]
+        );
+    }
+
+    #[test]
+    fn short_custom_axis_arrays_use_glyphs_instance_slot_defaults() {
+        let font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+axes = (
+{
+name = Spacing;
+tag = SPAC;
+},
+{
+name = Mashq;
+tag = MSHQ;
+},
+{
+name = Optical;
+tag = opsz;
+}
+);
+familyName = Test;
+fontMaster = (
+{
+axesValues = (100, 100, 0);
+id = m01;
+name = Regular;
+}
+);
+instances = (
+{
+name = Short;
+}
+);
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            font.instances[0].user_locations,
+            [OrderedFloat(100.0), OrderedFloat(100.0), OrderedFloat(0.0)]
+        );
     }
 
     #[test]
