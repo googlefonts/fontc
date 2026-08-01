@@ -1,0 +1,56 @@
+{
+.formatVersion = 3;
+familyName = Test;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+instances = (
+{
+customParameters = (
+{
+disabled = 1;
+name = "Export STAT Table";
+value = 1;
+},
+{
+name = "Export STAT Table";
+value = 0;
+},
+{
+name = "Elidable STAT Axis Value Name";
+value = Regular;
+},
+{
+disabled = 1;
+name = "Elidable STAT Axis Value Name";
+value = Ignored;
+},
+{
+name = "Elidable STAT Axis Value Name";
+value = Regular;
+},
+{
+name = "Style Name as STAT entry";
+value = Bold;
+},
+{
+name = "Style Name as STAT entry";
+value = "Bold Italic";
+}
+);
+isBold = 1;
+isItalic = 1;
+name = "Bold Italic Variable";
+type = variable;
+},
+{
+isBold = 0;
+name = Upright;
+type = variable;
+}
+);
+unitsPerEm = 1000;
+}
