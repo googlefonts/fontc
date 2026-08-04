@@ -1,0 +1,43 @@
+@c2sc_source = [ A
+];
+
+@c2sc_target = [ a.sc
+];
+
+@smcp_source = [ a
+];
+
+@smcp_target = [ a.sc
+];
+
+# Prefix: Languagesystems
+# Dancing Shoes 0.1.4 OpenType feature code generator by Yanone, Copyright 2009
+# Code generated for AFDKO version 2.5
+
+
+languagesystem DFLT dflt; # Default, Default
+languagesystem latn dflt; # Latin, Default
+
+
+
+
+
+
+feature aalt {
+# automatic
+feature c2sc;
+feature smcp;
+
+} aalt;
+
+feature c2sc {
+# Small Capitals From Capitals
+
+    sub @c2sc_source by @c2sc_target;
+} c2sc;
+
+feature smcp {
+# Small Capitals
+
+    sub @smcp_source by @smcp_target;
+} smcp;

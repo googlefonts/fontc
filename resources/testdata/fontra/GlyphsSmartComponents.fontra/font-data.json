@@ -1,0 +1,97 @@
+{
+"fontInfo": {
+"familyName": "Glyphs3SmartComponents",
+"versionMajor": 1,
+"versionMinor": 0
+},
+"axes": {
+"axes": [
+{
+"name": "Weight",
+"label": "Weight",
+"tag": "wght",
+"minValue": 250,
+"defaultValue": 250,
+"maxValue": 900,
+"mapping": [
+[
+250,
+0
+],
+[
+300,
+160
+],
+[
+350,
+320
+],
+[
+400,
+390
+],
+[
+500,
+560
+],
+[
+700,
+780
+],
+[
+900,
+1000
+]
+]
+}
+]
+},
+"sources": {
+"UUID0": {
+"name": "ExtraLight",
+"location": {
+"Weight": 0
+},
+"lineMetricsHorizontalLayout": {
+"ascender": {
+"value": 880
+},
+"capHeight": {
+"value": 700
+},
+"xHeight": {
+"value": 500
+},
+"baseline": {
+"value": 0
+},
+"descender": {
+"value": -120
+}
+}
+},
+"UUID1": {
+"name": "Heavy",
+"location": {
+"Weight": 1000
+},
+"lineMetricsHorizontalLayout": {
+"ascender": {
+"value": 880
+},
+"capHeight": {
+"value": 700
+},
+"xHeight": {
+"value": 500
+},
+"baseline": {
+"value": 0
+},
+"descender": {
+"value": -120
+}
+}
+}
+}
+}

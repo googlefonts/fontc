@@ -1,0 +1,291 @@
+{
+"name": "uni2E95-JP",
+"sources": [
+{
+"name": "",
+"layerName": "UUID0",
+"locationBase": "UUID0"
+},
+{
+"name": "",
+"layerName": "UUID1",
+"locationBase": "UUID1"
+}
+],
+"layers": {
+"UUID0": {
+"glyph": {
+"components": [
+{
+"name": "_part.xx_L_Top_R_4x",
+"transformation": {
+"translateX": 125,
+"translateY": 766,
+"scaleX": 0.98,
+"scaleY": 0.98
+},
+"location": {
+"Axis_0": 764,
+"Axis_1": 1000,
+"Axis_2": 32,
+"Axis_3": 25
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+},
+{
+"name": "_part.Bar_H_2x",
+"transformation": {
+"translateX": 55,
+"translateY": 405,
+"scaleX": 0.98,
+"scaleY": 0.98
+},
+"location": {
+"Axis_0": 832,
+"Axis_1": 61
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+},
+{
+"name": "_part.Bar_H_2x",
+"transformation": {
+"translateX": 102,
+"translateY": 13,
+"scaleX": 0.98,
+"scaleY": 0.98
+},
+"location": {
+"Axis_0": 595,
+"Axis_1": 61
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+}
+],
+"xAdvance": 1000
+}
+},
+"UUID0^background": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 764,
+"y": 767
+},
+{
+"x": 125,
+"y": 767
+},
+{
+"x": 125,
+"y": 737
+},
+{
+"x": 734,
+"y": 737
+},
+{
+"x": 734,
+"y": 405
+},
+{
+"x": 55,
+"y": 405
+},
+{
+"x": 55,
+"y": 376
+},
+{
+"x": 734,
+"y": 376
+},
+{
+"x": 734,
+"y": 14
+},
+{
+"x": 102,
+"y": 14
+},
+{
+"x": 102,
+"y": -16
+},
+{
+"x": 734,
+"y": -16
+},
+{
+"x": 734,
+"y": -70
+},
+{
+"x": 764,
+"y": -70
+},
+{
+"x": 764,
+"y": 376
+},
+{
+"x": 947,
+"y": 376
+},
+{
+"x": 947,
+"y": 405
+},
+{
+"x": 764,
+"y": 405
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"UUID1": {
+"glyph": {
+"components": [
+{
+"name": "_part.xx_L_Top_R_4x",
+"transformation": {
+"translateX": 174,
+"translateY": 795
+},
+"location": {
+"Axis_0": 583,
+"Axis_1": 900,
+"Axis_2": 803,
+"Axis_3": 886
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+},
+{
+"name": "_part.Bar_H_2x",
+"transformation": {
+"translateX": 31,
+"translateY": 451
+},
+"location": {
+"Axis_0": 858,
+"Axis_1": 779
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+},
+{
+"name": "_part.Bar_H_2x",
+"transformation": {
+"translateX": 158,
+"translateY": 86
+},
+"location": {
+"Axis_0": 522,
+"Axis_1": 754
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+}
+],
+"xAdvance": 1000
+}
+},
+"UUID1^background": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 744,
+"y": 86
+},
+{
+"x": 158,
+"y": 86
+},
+{
+"x": 158,
+"y": -54
+},
+{
+"x": 744,
+"y": -54
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 968,
+"y": 451
+},
+{
+"x": 31,
+"y": 451
+},
+{
+"x": 31,
+"y": 307
+},
+{
+"x": 968,
+"y": 307
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 814,
+"y": 795
+},
+{
+"x": 174,
+"y": 795
+},
+{
+"x": 174,
+"y": 653
+},
+{
+"x": 659,
+"y": 653
+},
+{
+"x": 659,
+"y": -95
+},
+{
+"x": 814,
+"y": -95
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+}
+}
+}

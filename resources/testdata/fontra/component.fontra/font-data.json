@@ -1,5 +1,6 @@
 {
 "unitsPerEm": 1000,
+"axes": {
 "axes": [
 {
 "name": "wght",
@@ -40,6 +41,7 @@
 ],
 "hidden": false
 }
-],
-"sources": []
+]
+},
+"sources": {}
 }

@@ -1,0 +1,184 @@
+{
+"name": "uni2E8A-CN",
+"sources": [
+{
+"name": "",
+"layerName": "UUID0",
+"locationBase": "UUID0"
+},
+{
+"name": "",
+"layerName": "UUID1",
+"locationBase": "UUID1"
+}
+],
+"layers": {
+"UUID0": {
+"glyph": {
+"components": [
+{
+"name": "_part.Bar_V_Serif_2x",
+"transformation": {
+"translateX": 400,
+"translateY": 831
+},
+"location": {
+"Axis_0": 37,
+"Axis_1": 809
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+},
+{
+"name": "_part.Bar_H_2x",
+"transformation": {
+"translateX": 416,
+"translateY": 404
+},
+"location": {
+"Axis_0": 309,
+"Axis_1": 61
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+}
+],
+"xAdvance": 1000
+}
+},
+"UUID0^background": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 429,
+"y": 831
+},
+{
+"x": 400,
+"y": 831
+},
+{
+"x": 400,
+"y": -68
+},
+{
+"x": 429,
+"y": -68
+},
+{
+"x": 429,
+"y": 375
+},
+{
+"x": 780,
+"y": 375
+},
+{
+"x": 780,
+"y": 404
+},
+{
+"x": 429,
+"y": 404
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"UUID1": {
+"glyph": {
+"components": [
+{
+"name": "_part.Bar_V_Serif_2x",
+"transformation": {
+"translateX": 337,
+"translateY": 850
+},
+"location": {
+"Axis_0": 770,
+"Axis_1": 852
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+},
+{
+"name": "_part.Bar_H_2x",
+"transformation": {
+"translateX": 429,
+"translateY": 482
+},
+"location": {
+"Axis_0": 371,
+"Axis_1": 848
+},
+"customData": {
+"com.glyphsapp.component.alignment": -1
+}
+}
+],
+"xAdvance": 1000
+}
+},
+"UUID1^background": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 496,
+"y": 850
+},
+{
+"x": 337,
+"y": 850
+},
+{
+"x": 337,
+"y": -95
+},
+{
+"x": 496,
+"y": -95
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 857,
+"y": 482
+},
+{
+"x": 429,
+"y": 482
+},
+{
+"x": 429,
+"y": 327
+},
+{
+"x": 857,
+"y": 327
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+}
+}
+}

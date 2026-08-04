@@ -15,6 +15,7 @@
 }
 ]
 },
+"axes": {
 "axes": [
 {
 "name": "Weight",
@@ -48,6 +49,7 @@
     "maxValue": 125.0,
     "hidden": false
 }
-],
-"sources": []
+]
+},
+"sources": {}
 }

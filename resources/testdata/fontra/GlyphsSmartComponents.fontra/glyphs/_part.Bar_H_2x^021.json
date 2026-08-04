@@ -1,0 +1,176 @@
+{
+"name": "_part.Bar_H_2x",
+"axes": [
+{
+"name": "Axis_0",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 1000
+},
+{
+"name": "Axis_1",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 1000
+}
+],
+"sources": [
+{
+"name": "",
+"layerName": "UUID0",
+"locationBase": "UUID0"
+},
+{
+"name": "ExtraLight / 2.0_1",
+"layerName": "0BB99C51-133F-4FA2-95A2-35D187D9486A",
+"location": {
+"Axis_1": 1000
+},
+"locationBase": "UUID0"
+},
+{
+"name": "Heavy / Heavy",
+"layerName": "UUID1",
+"location": {
+"Axis_0": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+},
+{
+"name": "Heavy / 3.1_1",
+"layerName": "4D3E26F9-ECCC-4C95-94D6-7E8A1C08D215",
+"location": {
+"Axis_0": 1000,
+"Axis_1": 1000,
+"Weight": 0
+},
+"locationBase": "UUID1"
+}
+],
+"layers": {
+"0BB99C51-133F-4FA2-95A2-35D187D9486A": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 41,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -179
+},
+{
+"x": 41,
+"y": -179
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"4D3E26F9-ECCC-4C95-94D6-7E8A1C08D215": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 1085,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -179
+},
+{
+"x": 1085,
+"y": -179
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"UUID0": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 41,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -20
+},
+{
+"x": 41,
+"y": -20
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+},
+"UUID1": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 1085,
+"y": 0
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 0,
+"y": -20
+},
+{
+"x": 1085,
+"y": -20
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1000
+}
+}
+},
+"customData": {
+"com.glyphsapp.glyph-color": 5
+}
+}

@@ -1,0 +1,221 @@
+{
+"fontInfo": {
+"familyName": "Glyphs Unit Test Sans",
+"versionMajor": 1,
+"versionMinor": 0
+},
+"axes": {
+"axes": [
+{
+"name": "Weight",
+"label": "Weight",
+"tag": "wght",
+"minValue": 100,
+"defaultValue": 400,
+"maxValue": 900,
+"mapping": [
+[
+100,
+17
+],
+[
+200,
+30
+],
+[
+300,
+55
+],
+[
+357,
+75
+],
+[
+400,
+90
+],
+[
+500,
+133
+],
+[
+700,
+179
+],
+[
+900,
+220
+]
+]
+}
+]
+},
+"sources": {
+"3E7589AA-8194-470F-8E2F-13C1C581BE24": {
+"name": "Regular",
+"location": {
+"Weight": 90
+},
+"lineMetricsHorizontalLayout": {
+"ascender": {
+"value": 800,
+"zone": 12
+},
+"capHeight": {
+"value": 700,
+"zone": 12
+},
+"xHeight": {
+"value": 480,
+"zone": 12
+},
+"baseline": {
+"value": 0,
+"zone": -12
+},
+"descender": {
+"value": -200,
+"zone": -12
+}
+},
+"guidelines": [
+{
+"name": "",
+"x": -126,
+"y": 593
+},
+{
+"name": "",
+"x": -126,
+"y": 90,
+"locked": true
+},
+{
+"name": "",
+"x": -113,
+"y": 773
+},
+{
+"name": "",
+"x": 524,
+"y": -133
+},
+{
+"name": "",
+"x": -126,
+"y": 321
+},
+{
+"name": "",
+"x": -113,
+"y": 959
+}
+]
+},
+"BFFFD157-90D3-4B85-B99D-9A2F366F03CA": {
+"name": "Bold",
+"location": {
+"Weight": 220
+},
+"lineMetricsHorizontalLayout": {
+"ascender": {
+"value": 800,
+"zone": 15
+},
+"capHeight": {
+"value": 700,
+"zone": 15
+},
+"xHeight": {
+"value": 490,
+"zone": 15
+},
+"baseline": {
+"value": 0,
+"zone": -15
+},
+"descender": {
+"value": -200,
+"zone": -15
+}
+},
+"guidelines": [
+{
+"name": "",
+"x": 10,
+"y": 660
+},
+{
+"name": "",
+"x": 524,
+"y": 44
+},
+{
+"name": "",
+"x": -113,
+"y": 800
+},
+{
+"name": "",
+"x": 524,
+"y": -200
+},
+{
+"name": "",
+"x": 998,
+"y": -212
+}
+]
+},
+"C4872ECA-A3A9-40AB-960A-1DB2202F16DE": {
+"name": "Light",
+"location": {
+"Weight": 17
+},
+"lineMetricsHorizontalLayout": {
+"ascender": {
+"value": 800,
+"zone": 10
+},
+"capHeight": {
+"value": 700,
+"zone": 10
+},
+"xHeight": {
+"value": 470,
+"zone": 10
+},
+"baseline": {
+"value": 0,
+"zone": -10
+},
+"descender": {
+"value": -200,
+"zone": -10
+}
+},
+"guidelines": [
+{
+"name": "",
+"x": -113,
+"y": 574
+},
+{
+"name": "",
+"x": 524,
+"y": 141
+},
+{
+"name": "",
+"x": -113,
+"y": 765
+},
+{
+"name": "",
+"x": 524,
+"y": -122
+}
+]
+}
+}
+}

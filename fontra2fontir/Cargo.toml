@@ -24,6 +24,7 @@ thiserror.workspace = true
 kurbo.workspace = true
 ordered-float.workspace = true
 indexmap.workspace = true
+smol_str.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true

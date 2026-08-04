@@ -1,0 +1,97 @@
+{
+"name": "semicolon",
+"sources": [
+{
+"name": "",
+"layerName": "light-condensed",
+"locationBase": "light-condensed"
+},
+{
+"name": "",
+"layerName": "bold-condensed",
+"locationBase": "bold-condensed"
+},
+{
+"name": "",
+"layerName": "light-wide",
+"locationBase": "light-wide"
+},
+{
+"name": "",
+"layerName": "bold-wide",
+"locationBase": "bold-wide"
+}
+],
+"layers": {
+"bold-condensed": {
+"glyph": {
+"components": [
+{
+"name": "comma",
+"transformation": {
+"translateY": 2
+}
+},
+{
+"name": "period",
+"transformation": {
+"translateY": 372
+}
+}
+],
+"xAdvance": 250
+}
+},
+"bold-wide": {
+"glyph": {
+"components": [
+{
+"name": "comma",
+"transformation": {
+"translateY": 2
+}
+},
+{
+"name": "period",
+"transformation": {
+"translateY": 372
+}
+}
+],
+"xAdvance": 310
+}
+},
+"light-condensed": {
+"glyph": {
+"components": [
+{
+"name": "comma"
+},
+{
+"name": "period",
+"transformation": {
+"translateY": 360
+}
+}
+],
+"xAdvance": 171
+}
+},
+"light-wide": {
+"glyph": {
+"components": [
+{
+"name": "comma"
+},
+{
+"name": "period",
+"transformation": {
+"translateY": 360
+}
+}
+],
+"xAdvance": 291
+}
+}
+}
+}

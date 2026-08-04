@@ -1,0 +1,234 @@
+{
+"name": "varcotest2",
+"axes": [
+{
+"name": "flip",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 100
+},
+{
+"name": "flop",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 100
+}
+],
+"sources": [
+{
+"name": "",
+"layerName": "light-condensed",
+"locationBase": "light-condensed"
+},
+{
+"name": "varco_flip",
+"layerName": "varco_flip",
+"location": {
+"flip": 100
+},
+"locationBase": "light-condensed"
+},
+{
+"name": "varco_flop",
+"layerName": "varco_flop",
+"location": {
+"flop": 100
+},
+"locationBase": "light-condensed"
+},
+{
+"name": "weight=850,flip=100",
+"layerName": "weight=850,flip=100",
+"location": {
+"flip": 100
+},
+"locationBase": "bold-condensed"
+}
+],
+"layers": {
+"light-condensed": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 70,
+"y": 278
+},
+{
+"x": 309,
+"y": 278
+},
+{
+"x": 309,
+"y": 380
+},
+{
+"x": 379,
+"y": 380
+},
+{
+"x": 379,
+"y": 664
+},
+{
+"x": 204,
+"y": 664
+},
+{
+"x": 204,
+"y": 588
+},
+{
+"x": 70,
+"y": 588
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 500
+}
+},
+"varco_flip": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 70,
+"y": 278
+},
+{
+"x": 452,
+"y": 278
+},
+{
+"x": 452,
+"y": 380
+},
+{
+"x": 522,
+"y": 380
+},
+{
+"x": 522,
+"y": 664
+},
+{
+"x": 204,
+"y": 664
+},
+{
+"x": 204,
+"y": 588
+},
+{
+"x": 70,
+"y": 588
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 500
+}
+},
+"varco_flop": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 70,
+"y": 37
+},
+{
+"x": 309,
+"y": 37
+},
+{
+"x": 309,
+"y": 139
+},
+{
+"x": 379,
+"y": 139
+},
+{
+"x": 379,
+"y": 664
+},
+{
+"x": 204,
+"y": 664
+},
+{
+"x": 204,
+"y": 588
+},
+{
+"x": 70,
+"y": 588
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 500
+}
+},
+"weight=850,flip=100": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 70,
+"y": 278
+},
+{
+"x": 452,
+"y": 278
+},
+{
+"x": 522,
+"y": 278
+},
+{
+"x": 522,
+"y": 380
+},
+{
+"x": 522,
+"y": 664
+},
+{
+"x": 204,
+"y": 664
+},
+{
+"x": 204,
+"y": 588
+},
+{
+"x": 70,
+"y": 588
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 500
+}
+}
+}
+}

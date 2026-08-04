@@ -1,0 +1,127 @@
+{
+"name": "quotedblleft",
+"sources": [
+{
+"name": "",
+"layerName": "light-condensed",
+"locationBase": "light-condensed"
+},
+{
+"name": "",
+"layerName": "bold-condensed",
+"locationBase": "bold-condensed"
+},
+{
+"name": "",
+"layerName": "light-wide",
+"locationBase": "light-wide"
+},
+{
+"name": "",
+"layerName": "bold-wide",
+"locationBase": "bold-wide"
+}
+],
+"layers": {
+"bold-condensed": {
+"glyph": {
+"components": [
+{
+"name": "comma",
+"transformation": {
+"translateX": 250,
+"translateY": 657,
+"scaleX": -1,
+"scaleY": -1
+}
+},
+{
+"name": "comma",
+"transformation": {
+"translateX": 480,
+"translateY": 657,
+"scaleX": -1,
+"scaleY": -1
+}
+}
+],
+"xAdvance": 480
+}
+},
+"bold-wide": {
+"glyph": {
+"components": [
+{
+"name": "comma",
+"transformation": {
+"translateX": 310,
+"translateY": 657,
+"scaleX": -1,
+"scaleY": -1
+}
+},
+{
+"name": "comma",
+"transformation": {
+"translateX": 540,
+"translateY": 657,
+"scaleX": -1,
+"scaleY": -1
+}
+}
+],
+"xAdvance": 540
+}
+},
+"light-condensed": {
+"glyph": {
+"components": [
+{
+"name": "comma",
+"transformation": {
+"translateX": 171,
+"translateY": 607,
+"scaleX": -1,
+"scaleY": -1
+}
+},
+{
+"name": "comma",
+"transformation": {
+"translateX": 301,
+"translateY": 607,
+"scaleX": -1,
+"scaleY": -1
+}
+}
+],
+"xAdvance": 301
+}
+},
+"light-wide": {
+"glyph": {
+"components": [
+{
+"name": "comma",
+"transformation": {
+"translateX": 291,
+"translateY": 607,
+"scaleX": -1,
+"scaleY": -1
+}
+},
+{
+"name": "comma",
+"transformation": {
+"translateX": 421,
+"translateY": 607,
+"scaleX": -1,
+"scaleY": -1
+}
+}
+],
+"xAdvance": 421
+}
+}
+}
+}

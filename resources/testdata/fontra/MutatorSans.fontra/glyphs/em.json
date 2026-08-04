@@ -1,0 +1,27 @@
+{
+"name": "em",
+"sources": [
+{
+"name": "",
+"layerName": "light-condensed",
+"locationBase": "light-condensed"
+},
+{
+"name": "",
+"layerName": "bold-wide",
+"locationBase": "bold-wide"
+}
+],
+"layers": {
+"bold-wide": {
+"glyph": {
+"xAdvance": 0
+}
+},
+"light-condensed": {
+"glyph": {
+"xAdvance": 500
+}
+}
+}
+}

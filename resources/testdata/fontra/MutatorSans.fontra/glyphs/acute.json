@@ -1,0 +1,147 @@
+{
+"name": "acute",
+"sources": [
+{
+"name": "",
+"layerName": "light-condensed",
+"locationBase": "light-condensed"
+},
+{
+"name": "",
+"layerName": "bold-condensed",
+"locationBase": "bold-condensed"
+},
+{
+"name": "",
+"layerName": "light-wide",
+"locationBase": "light-wide"
+},
+{
+"name": "",
+"layerName": "bold-wide",
+"locationBase": "bold-wide"
+}
+],
+"layers": {
+"bold-condensed": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 20,
+"y": 830
+},
+{
+"x": 290,
+"y": 830
+},
+{
+"x": 290,
+"y": 950
+},
+{
+"x": 20,
+"y": 920
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 310
+}
+},
+"bold-wide": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 20,
+"y": 830
+},
+{
+"x": 370,
+"y": 830
+},
+{
+"x": 370,
+"y": 950
+},
+{
+"x": 20,
+"y": 920
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 390
+}
+},
+"light-condensed": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 50,
+"y": 730
+},
+{
+"x": 200,
+"y": 738
+},
+{
+"x": 200,
+"y": 770
+},
+{
+"x": 50,
+"y": 760
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 250
+}
+},
+"light-wide": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 30,
+"y": 730
+},
+{
+"x": 220,
+"y": 738
+},
+{
+"x": 220,
+"y": 770
+},
+{
+"x": 30,
+"y": 760
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 250
+}
+}
+}
+}
