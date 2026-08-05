@@ -382,7 +382,7 @@ mod tests {
             loca::LocaFormat,
             meta::{DataMapRecord, Metadata, ScriptLangTag},
         },
-        types::{F2Dot14, GlyphId, GlyphId16, NameId, Tag},
+        types::{F2Dot14, GlyphId, GlyphId16, NameId, Tag, Version16Dot16},
     };
 
     use super::*;
@@ -5854,6 +5854,7 @@ mod tests {
         let vhea = font.vhea().expect("should include vertical table");
 
         // Explicit global metrics in sources.
+        assert_eq!(vhea.version(), Version16Dot16::VERSION_1_1);
         assert_eq!(vhea.ascender().to_i16(), 3456);
         assert_eq!(vhea.descender().to_i16(), -789);
         assert_eq!(vhea.line_gap().to_i16(), 12);
