@@ -1,13 +1,60 @@
 use std::io::Write;
 
 use clap::Parser;
+use tracing::{error, warn};
+use tracing_log::NormalizeEvent;
+use tracing_subscriber::{
+    EnvFilter,
+    fmt::{FmtContext, FormatEvent, FormatFields, format::Writer},
+    registry::LookupSpan,
+};
 
 mod args;
 
 use args::Args;
 use fontbe::orchestration::AnyWorkId;
 use fontc::{Error, JobTimer};
-use log::{error, warn};
+
+struct LogFormatter;
+
+impl<S, N> FormatEvent<S, N> for LogFormatter
+where
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> std::fmt::Result {
+        let normalized_meta = event.normalized_metadata();
+        let meta = normalized_meta.as_ref().unwrap_or_else(|| event.metadata());
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
+        let thread_id = std::thread::current().id();
+        let target = meta.target();
+        let level = meta.level();
+
+        if writer.has_ansi_escapes() {
+            let (style_start, style_end) = match *level {
+                tracing::Level::ERROR => ("\x1b[1;31m", "\x1b[0m"),
+                tracing::Level::WARN => ("\x1b[33m", "\x1b[0m"),
+                tracing::Level::INFO => ("\x1b[32m", "\x1b[0m"),
+                tracing::Level::DEBUG => ("\x1b[34m", "\x1b[0m"),
+                tracing::Level::TRACE => ("\x1b[36m", "\x1b[0m"),
+            };
+            write!(
+                writer,
+                "[{ts} {thread_id:?} {target} {style_start}{level}{style_end}] "
+            )?;
+        } else {
+            write!(writer, "[{ts} {thread_id:?} {target} {level}] ")?;
+        }
+
+        ctx.format_fields(writer.by_ref(), event)?;
+        writeln!(writer)
+    }
+}
 
 fn main() {
     let args = Args::parse();
@@ -18,7 +65,7 @@ fn main() {
         let mut error_displayed = false;
         let mut additional = "";
         if let Error::Backend(fontbe::error::Error::FeaCompileError(e)) = &e {
-            if log::log_enabled!(log::Level::Warn) {
+            if tracing::enabled!(tracing::Level::WARN) {
                 error!("{e}");
                 if let Some(diagnostic) = e.diagnostics() {
                     warn!("{}", diagnostic.display());
@@ -47,24 +94,19 @@ fn run(args: Args) -> Result<(), Error> {
         .queued()
         .run();
     // default to WARN; RUST_LOG or --log can still override
-    let mut log_cfg =
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"));
-    log_cfg.format(|buf, record| {
-        let ts = buf.timestamp_micros();
-        let style = buf.default_level_style(record.level());
-        writeln!(
-            buf,
-            "[{ts} {:?} {} {style}{}{style:#}] {}",
-            std::thread::current().id(),
-            record.target(),
-            record.level(),
-            record.args()
-        )
-    });
-    if let Some(log_filters) = &args.log {
-        log_cfg.parse_filters(log_filters);
-    }
-    log_cfg.init();
+    let filter = if let Some(log_filters) = &args.log {
+        EnvFilter::builder()
+            .with_default_directive(tracing::level_filters::LevelFilter::WARN.into())
+            .parse_lossy(log_filters)
+    } else {
+        EnvFilter::builder()
+            .with_default_directive(tracing::level_filters::LevelFilter::WARN.into())
+            .from_env_lossy()
+    };
+    tracing_subscriber::fmt()
+        .event_format(LogFormatter)
+        .with_env_filter(filter)
+        .init();
     timer.add(time.complete());
 
     let input = args.source()?;

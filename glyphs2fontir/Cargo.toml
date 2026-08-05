@@ -17,7 +17,6 @@ glyphs-reader = { version = "0.5.0", path = "../glyphs-reader" }
 
 smol_str.workspace = true
 log.workspace = true
-env_logger.workspace = true
 
 thiserror.workspace = true
 
@@ -33,3 +32,4 @@ chrono.workspace = true
 diff.workspace = true
 tempfile.workspace = true
 pretty_assertions.workspace = true
+tracing-subscriber.workspace = true

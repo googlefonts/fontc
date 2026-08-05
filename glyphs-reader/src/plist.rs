@@ -1065,7 +1065,7 @@ mod tests {
     // in arrays the trailing comma is optional but supported
     #[test]
     fn array_optional_trailing_comma() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         // we include a list that is not parsed in derive because that
         // takes a second codepath.
         let trailing = r#"

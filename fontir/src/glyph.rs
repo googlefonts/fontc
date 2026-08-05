@@ -2008,7 +2008,7 @@ mod tests {
 
     #[test]
     fn non_export_component_has_intermediate_layer() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         // https://github.com/googlefonts/fontc/issues/1592
         let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
 
@@ -2110,7 +2110,7 @@ mod tests {
     // this tests that we also interpolate the component transform.
     #[test]
     fn nested_composite_with_intermediate_layer_not_present_in_component() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
 
         let mut composite = TestGlyph::new("a");
@@ -2163,7 +2163,7 @@ mod tests {
     fn composite_with_intermediate_component_layer_and_another_nested_compoonent_without_intermediates()
      {
         // based on ecaron in Savate.glyphs
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let [loc1, intermediate, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
         let mut ecaron = TestGlyph::new("ecaron");

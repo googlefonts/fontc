@@ -46,5 +46,5 @@ more-asserts.workspace = true
 temp-env.workspace = true
 rstest.workspace = true
 pretty_assertions.workspace = true
-env_logger.workspace = true
+tracing-subscriber.workspace = true
 otl-normalizer = { version = "0.3.0", path = "../otl-normalizer" }

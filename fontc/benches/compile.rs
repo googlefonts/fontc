@@ -35,7 +35,7 @@ const DEFAULT_FONT_SOURCES: &[FontSource<'static>] = &[
 ];
 
 fn compile_benchmark(c: &mut Criterion) {
-    env_logger::builder().is_test(true).try_init().ok();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let mut bench_group = c.benchmark_group("fontc-compile");
     // Criterion requires at least 10 samples. The compile time of fonts is large enough that 10
     // samples is enough to get an idea of acceptable performance.

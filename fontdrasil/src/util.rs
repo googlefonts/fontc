@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn composite_cycle() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let glyphs = GlyphSetBuilder::default()
             .add("A", &["B"])
             .add("B", &["A"])
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn composite_not_a_cycle() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let glyphs = GlyphSetBuilder::default()
             .add("A", &[])
             .add("B", &["A", "D"])

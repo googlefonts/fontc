@@ -875,7 +875,7 @@ mod tests {
 
     #[test]
     fn resolve_kern() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let wght = Tag::new(b"wght");
         let static_metadata = weight_variable_static_metadata();
         let var_info = FeaVariationInfo::new(&static_metadata);

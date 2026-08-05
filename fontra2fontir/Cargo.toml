@@ -17,7 +17,6 @@ fontir = { version = "0.5.0", path = "../fontir" }
 write-fonts.workspace = true
 
 log.workspace = true
-env_logger.workspace = true
 
 thiserror.workspace = true
 

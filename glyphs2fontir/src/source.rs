@@ -2289,7 +2289,7 @@ mod tests {
     }
 
     fn build_static_metadata(glyphs_file: PathBuf) -> (impl Source, Context) {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let (source, context) = context_for(&glyphs_file);
         let task_context = context.copy_for_work(
             Access::None,
@@ -4245,7 +4245,7 @@ unitsPerEm = 1000;
 
     #[test]
     fn reads_feature_writers_from_font_user_data() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         // NotoMusic-shaped config: curs+kern appended, mark skipped, no Gdef writer.
         let source = GlyphsIrSource::new_from_memory(
             r#"{
@@ -4320,7 +4320,7 @@ mode = skip;
     /// Exec the static metadata work over an in-memory glyphs source, returning
     /// the error it is expected to produce.
     fn feature_writers_error_from_glyphs_source(source: &str) -> Error {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let source = GlyphsIrSource::new_from_memory(source).unwrap();
         let context = Context::new_root(Flags::default(), None);
         let task_context = context.copy_for_work(
@@ -4363,7 +4363,7 @@ ignoreMarks = 0;
     }
 
     fn feature_writers_from_glyphs_source(source: &str) -> Option<Vec<FeatureWriterSpec>> {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let source = GlyphsIrSource::new_from_memory(source).unwrap();
         let context = Context::new_root(Flags::default(), None);
         let task_context = context.copy_for_work(

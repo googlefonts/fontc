@@ -24,7 +24,6 @@ thiserror.workspace = true
 icu_properties.workspace = true
 
 log.workspace = true
-env_logger.workspace = true
 
 regex.workspace = true
 
@@ -35,3 +34,4 @@ serde.workspace = true
 [dev-dependencies]
 pretty_assertions.workspace = true
 rstest.workspace = true
+tracing-subscriber.workspace = true
