@@ -270,7 +270,7 @@ impl From<Compilation> for ExtraFeaTables {
 // we can use fontwrite on each table, and then serialize an array of Option<Vec<u8>>
 impl Persistable for ExtraFeaTables {
     fn read(from: &mut dyn Read) -> Self {
-        fn read_table<'a, T: FontRead<'a>>(bytes: Option<&'a Vec<u8>>) -> Option<T> {
+        fn read_table<'a, T: FontRead<'a, Args = ()>>(bytes: Option<&'a Vec<u8>>) -> Option<T> {
             let bytes = bytes?.as_slice();
             Some(T::read(bytes.into()).unwrap())
         }

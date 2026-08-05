@@ -99,6 +99,7 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
 
         // Build and send vertical metrics tables out into the world
         let mut vhea = Vhea {
+            version: Default::default(),
             ascender: FWord::new(default_metrics.vhea_ascender.into_inner().ot_round()),
             descender: FWord::new(default_metrics.vhea_descender.into_inner().ot_round()),
             line_gap: FWord::new(default_metrics.vhea_line_gap.into_inner().ot_round()),
