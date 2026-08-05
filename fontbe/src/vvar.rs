@@ -40,6 +40,7 @@ impl Work<Context, AnyWorkId, Error> for VvarWork {
     }
 
     /// Generate [VVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/VVAR)
+    #[tracing::instrument(name = "fontbe::VvarWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         if static_metadata.axes.is_empty() {

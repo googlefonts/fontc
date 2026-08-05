@@ -1022,6 +1022,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         ]
     }
 
+    #[tracing::instrument(name = "ufo2fontir::StaticMetadataWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Static metadata for {:#?}", self.designspace_or_ufo);
         let designspace_dir = self.designspace_dir.as_ref();
@@ -1506,6 +1507,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         Access::Variant(WorkId::StaticMetadata)
     }
 
+    #[tracing::instrument(name = "ufo2fontir::GlobalMetricsWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Global metrics for {:#?}", self.designspace_or_ufo);
         let static_metadata = context.static_metadata.get();
@@ -1707,6 +1709,7 @@ impl Work<Context, WorkId, Error> for FeatureWork {
         WorkId::Features
     }
 
+    #[tracing::instrument(name = "ufo2fontir::FeatureWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Features for {:#?}", self.designspace_or_ufo);
 
@@ -1806,6 +1809,7 @@ impl Work<Context, WorkId, Error> for KerningLocationsWork {
         AccessBuilder::new().variant(WorkId::StaticMetadata).build()
     }
 
+    #[tracing::instrument(name = "ufo2fontir::KerningLocationsWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Kerning groups for {:#?}", self.designspace_or_ufo);
 
@@ -1857,6 +1861,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
             .build()
     }
 
+    #[tracing::instrument(name = "ufo2fontir::KerningInstanceWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!(
             "Kerning for {:#?} at {:?}",
@@ -1973,6 +1978,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         vec![WorkId::Anchor(self.glyph_name.clone())]
     }
 
+    #[tracing::instrument(name = "ufo2fontir::GlyphIrWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!(
             "Generate glyph IR for {:?} from {:#?}",
@@ -2211,6 +2217,7 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
         Access::Variant(WorkId::ColorPalettes)
     }
 
+    #[tracing::instrument(name = "ufo2fontir::ColorPaletteWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let Some(raw_palettes) = self.lib.get(UFO2FT_COLOR_PALETTES) else {
             return Ok(());
@@ -2240,6 +2247,7 @@ impl Work<Context, WorkId, Error> for PaintGraphWork {
         Access::Variant(WorkId::PaintGraph)
     }
 
+    #[tracing::instrument(name = "ufo2fontir::PaintGraphWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let Some(raw_layers) = self.lib.get(UFO2FT_COLOR_LAYERS) else {
             return Ok(());

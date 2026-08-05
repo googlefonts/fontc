@@ -527,6 +527,7 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
     }
 
     /// Generate [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2)
+    #[tracing::instrument(name = "fontbe::Os2Work::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
 

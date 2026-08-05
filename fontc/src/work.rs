@@ -144,11 +144,11 @@ impl AnyAccess {
                 Access::Unknown => Access::Unknown,
                 Access::Variant(id) => match id {
                     AnyWorkId::Fe(id) => Access::Variant(id.clone()),
-                    AnyWorkId::Be(..) | AnyWorkId::InternalTiming(..) => Access::None,
+                    AnyWorkId::Be(..) => Access::None,
                 },
                 Access::SpecificInstanceOfVariant(id) => match id {
                     AnyWorkId::Fe(id) => Access::SpecificInstanceOfVariant(id.clone()),
-                    AnyWorkId::Be(..) | AnyWorkId::InternalTiming(..) => Access::None,
+                    AnyWorkId::Be(..) => Access::None,
                 },
                 Access::Set(ids) => Access::Set(
                     ids.iter()
@@ -157,11 +157,11 @@ impl AnyAccess {
                                 AnyWorkId::Fe(id) => {
                                     Some(AccessType::SpecificInstanceOfVariant(id.clone()))
                                 }
-                                AnyWorkId::Be(..) | AnyWorkId::InternalTiming(..) => None,
+                                AnyWorkId::Be(..) => None,
                             },
                             AccessType::Variant(exemplar) => match exemplar {
                                 AnyWorkId::Fe(id) => Some(AccessType::Variant(id.clone())),
-                                AnyWorkId::Be(..) | AnyWorkId::InternalTiming(..) => None,
+                                AnyWorkId::Be(..) => None,
                             },
                         })
                         .collect(),
@@ -195,9 +195,6 @@ impl AnyContext {
                     .copy_for_work(read_access.to_fe(), write_access.to_fe())
                     .into(),
             ),
-            AnyWorkId::InternalTiming(..) => {
-                panic!("Should never create a context for internal timing")
-            }
         }
     }
 

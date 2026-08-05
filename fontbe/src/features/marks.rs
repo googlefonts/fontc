@@ -801,6 +801,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
     }
 
     /// Generate mark data structures.
+    #[tracing::instrument(name = "fontbe::MarkWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();

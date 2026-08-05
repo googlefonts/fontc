@@ -48,6 +48,7 @@ use fontir::{
     source::Source,
 };
 use log::{debug, trace, warn};
+use tracing::info_span;
 
 #[cfg(not(feature = "rayon"))]
 use crate::norayon::SequentialScope as Scope;
@@ -56,7 +57,6 @@ use rayon::Scope;
 
 use crate::{
     Error,
-    timing::{JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork},
 };
 
@@ -74,8 +74,6 @@ pub struct Workload {
     also_completes: HashMap<AnyWorkId, Vec<AnyWorkId>>,
     pub(crate) jobs_pending: HashMap<AnyWorkId, Job>,
     pub(crate) count_pending: HashMap<IdentifierDiscriminant, Arc<AtomicUsize>>,
-
-    pub(crate) timer: JobTimer,
 }
 
 /// A unit of executable work plus the identifiers of work that it depends on
@@ -121,16 +119,7 @@ fn priority(id: &AnyWorkId) -> u32 {
 }
 
 impl Workload {
-    // Pass in timer to enable t0 to be as early as possible
-    pub fn new(
-        source: Box<dyn Source>,
-        timer: JobTimer,
-        skip_features: bool,
-    ) -> Result<Self, Error> {
-        let time = timer
-            .create_timer(AnyWorkId::InternalTiming("Create workload"), 0)
-            .run();
-
+    pub fn new(source: Box<dyn Source>, skip_features: bool) -> Result<Self, Error> {
         let mut workload = Self {
             source,
             job_count: 0,
@@ -141,7 +130,6 @@ impl Workload {
             jobs_pending: Default::default(),
             count_pending: Default::default(),
             skip_features,
-            timer,
         };
 
         // Create work roughly in the order it would typically occur
@@ -201,8 +189,6 @@ impl Workload {
 
         // Make a damn font
         workload.add(create_font_work());
-
-        workload.timer.add(time.complete());
 
         Ok(workload)
     }
@@ -374,11 +360,8 @@ impl Workload {
         fe_root: &FeContext,
         be_root: &BeContext,
         success: AnyWorkId,
-        timing: JobTime,
     ) -> Result<(), Error> {
         log::debug!("{success:?} successful");
-
-        self.timer.add(timing);
 
         self.complete_one(success.clone());
         self.mark_also_completed(&success);
@@ -538,11 +521,6 @@ impl Workload {
 
     /// Populate launchable with jobs ready to run from highest to lowest priority
     pub fn update_launchable(&mut self, launchable: &mut Vec<AnyWorkId>) {
-        let timing = self
-            .timer
-            .create_timer(AnyWorkId::InternalTiming("Launchable"), 0)
-            .run();
-
         launchable.clear();
         for id in self.jobs_pending.iter().filter_map(|(id, job)| {
             (!matches!(job.work, AnyWork::AlsoComplete(..)) && !job.running && self.can_run(job))
@@ -550,8 +528,6 @@ impl Workload {
         }) {
             launchable.push(id.clone());
         }
-
-        self.timer.add(timing.complete());
     }
 
     fn counters(&self, id: &AnyWorkId) -> Vec<Arc<AtomicUsize>> {
@@ -577,17 +553,16 @@ impl Workload {
         counters
     }
 
-    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
+    #[tracing::instrument(name = "fontc::Workload::exec", skip_all)]
+    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<(), Error> {
         // Async work will send us it's ID on completion
-        let (send, recv) =
-            crossbeam_channel::unbounded::<(AnyWorkId, Result<(), Error>, JobTime)>();
+        let (send, recv) = crossbeam_channel::unbounded::<(AnyWorkId, Result<(), Error>)>();
 
         // a flag we set if we panic
         let abort_queued_jobs = Arc::new(AtomicBool::new(false));
 
         let run_queue = Arc::new(Mutex::new(Vec::<(
             AnyWork,
-            JobTime,
             AnyContext,
             Vec<Arc<AtomicUsize>>,
         )>::with_capacity(512)));
@@ -601,7 +576,7 @@ impl Workload {
 
             // To avoid allocation every poll for work
             let mut launchable = Vec::with_capacity(512.min(self.job_count));
-            let mut successes: Vec<(AnyWorkId, JobTime)> = Vec::with_capacity(64);
+            let mut successes: Vec<AnyWorkId> = Vec::with_capacity(64);
             let mut nth_wave = 0;
 
             while self.success.len() < self.job_count {
@@ -625,17 +600,11 @@ impl Workload {
                 // Get launchables ready to run
                 if !launchable.is_empty() {
                     nth_wave += 1;
-                    let timing = self
-                        .timer
-                        .create_timer(AnyWorkId::InternalTiming("run_q"), nth_wave)
-                        .run();
 
                     {
                         let mut run_queue = run_queue.lock().unwrap();
 
                         for id in launchable.iter() {
-                            let timing = self.timer.create_timer(id.clone(), nth_wave);
-
                             let job = self.jobs_pending.get_mut(id).unwrap();
                             log::trace!("Start {id:?}");
                             job.running = true;
@@ -652,21 +621,15 @@ impl Workload {
                             );
 
                             let counters = self.counters(id);
-                            let timing = timing.queued();
-                            run_queue.push((work, timing, work_context, counters));
+                            run_queue.push((work, work_context, counters));
                         }
 
                         // Try to prioritize the critical path based on --emit-timing observation
                         // <https://github.com/googlefonts/fontc/issues/456>, <https://github.com/googlefonts/fontc/pull/565>
                         run_queue.sort_by_cached_key(|(work, ..)| priority(&work.id()));
                     }
-                    self.timer.add(timing.complete());
 
                     // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
-                    let timing = self
-                        .timer
-                        .create_timer(AnyWorkId::InternalTiming("spawn"), nth_wave)
-                        .run();
                     for _ in 0..launchable.len() {
                         let send = send.clone();
                         let run_queue = run_queue.clone();
@@ -674,11 +637,12 @@ impl Workload {
 
                         scope.spawn(move |_| {
                             let runnable = { run_queue.lock().unwrap().pop() };
-                            let Some((work, timing, work_context, counters)) = runnable else {
+                            let Some((work, work_context, counters)) = runnable else {
                                 panic!("Spawned more jobs than items available to run");
                             };
                             let id = work.id();
-                            let timing = timing.run();
+                            let work_span = create_work_span(&id, nth_wave);
+                            let _enter = work_span.enter();
                             if abort.load(Ordering::Relaxed) {
                                 log::trace!("Aborting {id:?}");
                                 return;
@@ -717,32 +681,20 @@ impl Workload {
                                     counter.fetch_sub(1, Ordering::AcqRel);
                                 }
                             }
-                            let timing = timing.complete();
 
-                            if let Err(e) = send.send((id.clone(), result, timing)) {
+                            if let Err(e) = send.send((id.clone(), result)) {
                                 log::error!("Unable to write {id:?} to completion channel: {e}");
                             }
                         })
                     }
-                    self.timer.add(timing.complete());
                 }
 
                 // Complete everything that has reported since our last check
                 if successes.is_empty() {
-                    let timing = self
-                        .timer
-                        .create_timer(AnyWorkId::InternalTiming("rc"), nth_wave)
-                        .run();
                     self.read_completions(&mut successes, &recv, RecvType::Blocking)?;
-                    self.timer.add(timing.complete());
-                    let timing = self
-                        .timer
-                        .create_timer(AnyWorkId::InternalTiming("hs"), nth_wave)
-                        .run();
-                    for (success, timing) in successes.iter() {
-                        self.handle_success(fe_root, be_root, success.clone(), timing.clone())?;
+                    for success in successes.iter() {
+                        self.handle_success(fe_root, be_root, success.clone())?;
                     }
-                    self.timer.add(timing.complete());
                 }
 
                 if launchable.is_empty() && successes.is_empty() {
@@ -790,13 +742,13 @@ impl Workload {
             }
         }
 
-        Ok(self.timer)
+        Ok(())
     }
 
     fn read_completions(
         &mut self,
-        successes: &mut Vec<(AnyWorkId, JobTime)>,
-        recv: &Receiver<(AnyWorkId, Result<(), Error>, JobTime)>,
+        successes: &mut Vec<AnyWorkId>,
+        recv: &Receiver<(AnyWorkId, Result<(), Error>)>,
         initial_read: RecvType,
     ) -> Result<(), Error> {
         successes.clear();
@@ -813,11 +765,11 @@ impl Workload {
                 }
             },
         };
-        while let Some((completed_id, result, timing)) = opt_complete.take() {
+        while let Some((completed_id, result)) = opt_complete.take() {
             if !match result {
                 Ok(..) => {
                     if !self.success.contains(&completed_id) {
-                        successes.push((completed_id.clone(), timing));
+                        successes.push(completed_id.clone());
                         true
                     } else {
                         false
@@ -919,10 +871,8 @@ impl Workload {
             }
 
             let id = &launchable[0];
-            let timing = self.timer.create_timer(id.clone(), 0);
             let job = self.jobs_pending.get(id).unwrap();
 
-            let timing = timing.queued();
             let context = AnyContext::for_work(
                 fe_root,
                 be_root,
@@ -931,7 +881,6 @@ impl Workload {
                 job.write_access.clone(),
             );
             log::debug!("Exec {id:?}");
-            let timing = timing.run();
             job.work
                 .exec(context)
                 .unwrap_or_else(|e| panic!("{id:?} failed: {e:?}"));
@@ -940,8 +889,7 @@ impl Workload {
                 counter.fetch_sub(1, Ordering::AcqRel);
             }
 
-            let timing = timing.complete();
-            self.handle_success(fe_root, be_root, id.clone(), timing)
+            self.handle_success(fe_root, be_root, id.clone())
                 .unwrap_or_else(|e| panic!("Failed to handle success for {id:?}: {e}"));
         }
         self.success.difference(&pre_success).cloned().collect()
@@ -957,5 +905,22 @@ fn get_panic_message(msg: Box<dyn std::any::Any + Send + 'static>) -> String {
             Some(s) => s.to_owned(),
             None => "Box<dyn Any>".to_owned(),
         },
+    }
+}
+
+fn create_work_span(id: &AnyWorkId, nth_wave: usize) -> tracing::Span {
+    match id {
+        AnyWorkId::Fe(fe) => info_span!(
+            "FeWork",
+            kind = fe.discriminant(),
+            id = ?id,
+            nth_wave,
+        ),
+        AnyWorkId::Be(be) => info_span!(
+            "BeWork",
+            kind = be.discriminant(),
+            id = ?id,
+            nth_wave,
+        ),
     }
 }

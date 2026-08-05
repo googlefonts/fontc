@@ -350,6 +350,7 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
     }
 
     /// Generate [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr)
+    #[tracing::instrument(name = "fontbe::ColrWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let Some(paint_graph) = context.ir.paint_graph.try_get() else {
             return Ok(());

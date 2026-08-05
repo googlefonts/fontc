@@ -489,6 +489,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureFirstPassWork {
             .build()
     }
 
+    #[tracing::instrument(name = "fontbe::FeatureFirstPassWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let features = context.ir.features.get();
         let glyph_order = context.ir.glyph_order.get();
@@ -612,6 +613,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
         ]
     }
 
+    #[tracing::instrument(name = "fontbe::FeatureCompilationWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let gdef_categories = context.ir.gdef_categories.get();

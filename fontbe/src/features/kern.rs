@@ -115,6 +115,7 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
     }
 
     /// Generate kerning data structures.
+    #[tracing::instrument(name = "fontbe::GatherIrKerningWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let glyph_order = context.ir.glyph_order.get();
         let ir_groups = context.ir.kerning_locations.get();
@@ -774,6 +775,7 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
             .build()
     }
 
+    #[tracing::instrument(name = "fontbe::KernSegmentWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
@@ -826,6 +828,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
         Access::Unknown // https://github.com/googlefonts/fontc/issues/647: don't enable until KernFragment's spawn
     }
 
+    #[tracing::instrument(name = "fontbe::KernsWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Gather be kerning");
         let arc_fragments = context.kern_fragments.all();

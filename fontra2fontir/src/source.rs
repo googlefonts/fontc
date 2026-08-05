@@ -89,6 +89,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         vec![WorkId::PreliminaryGlyphOrder]
     }
 
+    #[tracing::instrument(name = "fontra2fontir::StaticMetadataWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!(
             "Static metadata for {}",

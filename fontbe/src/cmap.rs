@@ -30,6 +30,7 @@ impl Work<Context, AnyWorkId, Error> for CmapWork {
     }
 
     /// Generate [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap)
+    #[tracing::instrument(name = "fontbe::CmapWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // cmap only accomodates single codepoint : glyph mappings; collect all of those
         let glyph_order = context.ir.glyph_order.get();

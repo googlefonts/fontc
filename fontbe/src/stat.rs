@@ -39,6 +39,7 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
     ///
     /// See <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/builder.py#L2688-L2810>
     /// Note that we support only a very simple STAT at time of writing.
+    #[tracing::instrument(name = "fontbe::StatWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let stat = match context

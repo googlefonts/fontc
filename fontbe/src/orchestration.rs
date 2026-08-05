@@ -177,8 +177,6 @@ impl Identifier for WorkId {
 pub enum AnyWorkId {
     Fe(FeWorkIdentifier),
     Be(WorkId),
-    /// Used to capture timing not associated with work
-    InternalTiming(&'static str),
 }
 
 impl Identifier for AnyWorkId {
@@ -186,7 +184,6 @@ impl Identifier for AnyWorkId {
         match self {
             AnyWorkId::Fe(id) => id.discriminant(),
             AnyWorkId::Be(id) => id.discriminant(),
-            AnyWorkId::InternalTiming(..) => "InternalTiming",
         }
     }
 }

@@ -134,6 +134,7 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
     /// Generate [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar)
     ///
     /// See also <https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview#CSN>
+    #[tracing::instrument(name = "fontbe::AvarWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         // Guard clause: don't produce avar for a static font

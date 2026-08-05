@@ -175,6 +175,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
     }
 
     /// Glue binary tables into a font
+    #[tracing::instrument(name = "fontbe::FontWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // Lets go right ahead and believe those bytes are a font
         let mut builder = FontBuilder::default();
