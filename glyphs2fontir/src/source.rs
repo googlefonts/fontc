@@ -428,6 +428,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         ]
     }
 
+    #[tracing::instrument(name = "glyphs2fontir::StaticMetadataWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let font_info = self.0.font_info.as_ref();
         let font = &font_info.font;
@@ -935,6 +936,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
         Access::Variant(WorkId::StaticMetadata)
     }
 
+    #[tracing::instrument(name = "glyphs2fontir::GlobalMetricWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let font_info = self.0.as_ref();
         let font = &font_info.font;
@@ -1088,6 +1090,7 @@ impl Work<Context, WorkId, Error> for FeatureWork {
         WorkId::Features
     }
 
+    #[tracing::instrument(name = "glyphs2fontir::FeatureWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate features");
         let font_info = self.font_info.as_ref();
@@ -1166,6 +1169,7 @@ impl Work<Context, WorkId, Error> for KerningLocationsWork {
         Access::None
     }
 
+    #[tracing::instrument(name = "glyphs2fontir::KerningLocationsWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate IR for kerning");
         let font_info = self.0.as_ref();
@@ -1303,6 +1307,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
         AccessBuilder::new().variant(WorkId::GlyphOrder).build()
     }
 
+    #[tracing::instrument(name = "glyphs2fontir::KerningInstanceWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate IR for kerning at {:?}", self.location);
         let groups = self.font_info.kern_groups();
@@ -1513,6 +1518,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         vec![WorkId::Anchor(self.glyph_name.clone())]
     }
 
+    #[tracing::instrument(name = "glyphs2fontir::GlyphIrWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate IR for '{}'", self.glyph_name.as_str());
         let font_info = self.font_info.as_ref();
@@ -1841,6 +1847,7 @@ impl Work<Context, WorkId, Error> for ColorPaletteWork {
         Access::Variant(WorkId::ColorPalettes)
     }
 
+    #[tracing::instrument(name = "glyphs2fontir::ColorPaletteWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // Directly declared palette(s), preferring master to global
         let mut palettes = if let Some(declared_palettes) = self.font_info.font.color_palettes() {
@@ -1961,6 +1968,7 @@ impl Work<Context, WorkId, Error> for ColorGlyphsWork {
         Access::Variant(WorkId::PaintGraph)
     }
 
+    #[tracing::instrument(name = "glyphs2fontir::ColorGlyphsWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let default_master_id = self.font_info.font.default_master().id.as_str();
 

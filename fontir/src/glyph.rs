@@ -819,6 +819,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
             .build()
     }
 
+    #[tracing::instrument(name = "fontir::GlyphOrderWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // We should now have access to *all* the glyph IR
         // Some of it may need to be massaged to produce BE glyphs

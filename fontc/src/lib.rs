@@ -3,7 +3,6 @@
 mod error;
 #[cfg(not(feature = "rayon"))]
 mod norayon;
-mod timing;
 mod version;
 pub mod work;
 mod workload;
@@ -13,11 +12,9 @@ pub use error::Error;
 pub use fontir::orchestration::Flags; // Re-export for library users
 use fontra2fontir::source::FontraIrSource;
 use glyphs2fontir::source::GlyphsIrSource;
-pub use timing::JobTimer;
 use ufo2fontir::source::DesignSpaceIrSource;
 use workload::Workload;
 
-use fontbe::orchestration::AnyWorkId;
 use std::{
     ffi::OsStr,
     fs,
@@ -67,6 +64,7 @@ impl Input {
     }
 
     /// Creates the implementation of [`Source`] to feed to fontir.
+    #[tracing::instrument(skip_all)]
     pub fn create_source(&self) -> Result<Box<dyn Source>, Error> {
         match self {
             Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path)?)),
@@ -143,7 +141,6 @@ pub struct Options {
     pub skip_features: bool,
     pub compile_debg: bool,
     pub output_file: Option<PathBuf>,
-    pub timing_file: Option<PathBuf>,
     pub ir_dir: Option<PathBuf>,
     pub debug_dir: Option<PathBuf>,
 }
@@ -156,35 +153,15 @@ pub struct Options {
 ///
 /// Returns [`Error::NoOutputFile`] if `options.output_file` is `None`.
 #[cfg(feature = "cli")]
-pub fn run(input: Input, options: Options, mut timer: JobTimer) -> Result<(), Error> {
+#[tracing::instrument(skip_all)]
+pub fn run(input: Input, options: Options) -> Result<(), Error> {
     if options.output_file.is_none() {
         return Err(Error::NoOutputFile);
     }
 
-    let time = timer
-        .create_timer(AnyWorkId::InternalTiming("create_source"), 0)
-        .run();
     let source = input.create_source()?;
-    timer.add(time.complete());
 
-    let (_fe_root, be_root, mut timer) = generate_font_internal(source, &options, timer)?;
-
-    if let Some(timing_file) = options.timing_file.as_ref() {
-        let out_file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(timing_file)
-            .map_err(|source| Error::FileIo {
-                path: timing_file.clone(),
-                source,
-            })?;
-        let mut buf = std::io::BufWriter::new(out_file);
-        timer.write_svg(&mut buf).map_err(|source| Error::FileIo {
-            path: timing_file.clone(),
-            source,
-        })?;
-    }
+    let (_fe_root, be_root) = generate_font_internal(source, &options)?;
 
     // At long last!
     write_font_file(&options, &be_root)
@@ -205,26 +182,20 @@ fn merge_compilation_flags(options: &Options, source: &dyn Source) -> Flags {
 /// This is the library entry point to fontc.
 /// The font is returned as bytes and `output_file` is ignored.
 pub fn generate_font(source: Box<dyn Source>, options: Options) -> Result<Vec<u8>, Error> {
-    let (_fe_root, be_root, _timer) =
-        generate_font_internal(source, &options, JobTimer::default())?;
+    let (_fe_root, be_root) = generate_font_internal(source, &options)?;
     Ok(be_root.font.get().get().to_vec())
 }
 
 fn generate_font_internal(
     source: Box<dyn Source>,
     options: &Options,
-    mut timer: JobTimer,
-) -> Result<(FeContext, BeContext, JobTimer), Error> {
+) -> Result<(FeContext, BeContext), Error> {
     debug!("Running with options {options:#?}");
-    let time = timer
-        .create_timer(AnyWorkId::InternalTiming("Init config"), 0)
-        .run();
     init_paths(options)?;
-    timer.add(time.complete());
 
     let flags = merge_compilation_flags(options, &*source);
 
-    let workload = Workload::new(source, timer, options.skip_features)?;
+    let workload = Workload::new(source, options.skip_features)?;
     let fe_root = FeContext::new_root(flags, options.ir_dir.clone());
     let be_root = BeContext::new_root(
         flags,
@@ -234,8 +205,8 @@ fn generate_font_internal(
         options.compile_debg,
         &fe_root,
     );
-    let timer = workload.exec(&fe_root, &be_root)?;
-    Ok((fe_root, be_root, timer))
+    workload.exec(&fe_root, &be_root)?;
+    Ok((fe_root, be_root))
 }
 
 pub fn require_dir(dir: &Path) -> Result<(), Error> {
@@ -277,6 +248,7 @@ pub fn init_paths(options: &Options) -> Result<(), Error> {
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 pub fn write_font_file(options: &Options, be_context: &BeContext) -> Result<(), Error> {
     // Not much to do if no output file is desired
     let Some(output_file) = options.output_file.as_ref() else {
@@ -413,7 +385,6 @@ mod tests {
 
     impl TestCompile {
         fn new(source_file: &str, adjust_options: impl Fn(Options) -> Options) -> TestCompile {
-            let timer = JobTimer::new();
             let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
             let temp_dir = tempdir().unwrap();
@@ -436,7 +407,7 @@ mod tests {
                 options.compile_debg,
                 &fe_context.read_only(),
             );
-            let workload = Workload::new(source, timer, options.skip_features).unwrap();
+            let workload = Workload::new(source, options.skip_features).unwrap();
 
             TestCompile {
                 temp: temp_dir,
@@ -6162,7 +6133,6 @@ mod tests {
             args.ir_dir = None;
             args.debug_dir = None;
             args.output_file = None;
-            args.timing_file = None;
             args
         });
 

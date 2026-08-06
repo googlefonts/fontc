@@ -35,6 +35,7 @@ impl Work<Context, AnyWorkId, Error> for CpalWork {
     }
 
     /// Generate [CPAL](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal)
+    #[tracing::instrument(name = "fontbe::CpalWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // Guard clause: no colors
         let Some(colors) = context.ir.colors.try_get() else {

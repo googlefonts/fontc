@@ -35,6 +35,7 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
     }
 
     /// Generate [post](https://learn.microsoft.com/en-us/typography/opentype/spec/post)
+    #[tracing::instrument(name = "fontbe::PostWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // For now we build a v2 table by default, like fontmake does.
         // TODO optionally drop glyph names with format 3.0.

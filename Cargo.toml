@@ -14,7 +14,9 @@ smol_str = { version = "0.3.0", features = ["serde"] }
 regex = "1.7.1"
 thiserror = "2.0"
 log = "0.4"
-tracing = "0.1"
+# attributes allows us to use the #instrument #[instrument()] macro.
+tracing = { version = "0.1", features = ["attributes"] }
+tracing-chrome = "0.7.2"
 tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 parking_lot = "0.12.1"

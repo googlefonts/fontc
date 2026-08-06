@@ -112,6 +112,7 @@ impl Work<Context, AnyWorkId, Error> for MvarWork {
     }
 
     /// Generate [MVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/MVAR)
+    #[tracing::instrument(name = "fontbe::MvarWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // for reference, fontTools MVAR building code can be found here:
         // https://github.com/fonttools/fonttools/blob/2dc887c/Lib/fontTools/varLib/__init__.py#L661-L736

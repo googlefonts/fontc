@@ -141,6 +141,7 @@ impl Work<Context, AnyWorkId, Error> for FvarWork {
     }
 
     /// Generate [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar)
+    #[tracing::instrument(name = "fontbe::FvarWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         if let Some(fvar) = generate_fvar(&context.ir.static_metadata.get()) {
             context.fvar.set(fvar);

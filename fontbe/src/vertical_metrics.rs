@@ -55,6 +55,7 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
     ///
     /// * [vmtx](https://learn.microsoft.com/en-us/typography/opentype/spec/vmtx)
     /// * [vhea](https://learn.microsoft.com/en-us/typography/opentype/spec/vhea)
+    #[tracing::instrument(name = "fontbe::VerticalMetricsWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
 

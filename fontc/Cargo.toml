@@ -39,6 +39,7 @@ serde_yaml.workspace = true
 chrono.workspace = true
 log.workspace = true
 thiserror.workspace = true
+tracing-chrome.workspace = true
 tracing-log.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true

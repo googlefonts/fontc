@@ -40,6 +40,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
     }
 
     /// Generate [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR)
+    #[tracing::instrument(name = "fontbe::HvarWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         if static_metadata.axes.is_empty() {

@@ -29,6 +29,7 @@ impl Work<Context, AnyWorkId, Error> for GaspWork {
     }
 
     /// Generate [gasp](https://learn.microsoft.com/en-us/typography/opentype/spec/gasp) if necessary
+    #[tracing::instrument(name = "fontbe::GaspWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let mut gasp_ranges = static_metadata.misc.gasp.clone();

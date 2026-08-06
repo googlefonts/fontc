@@ -25,6 +25,7 @@ ordered-float.workspace = true
 indexmap.workspace = true
 
 log.workspace = true
+tracing.workspace = true
 
 write-fonts.workspace = true
 

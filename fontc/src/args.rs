@@ -71,9 +71,9 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub decompose_components: bool,
 
-    /// Whether to out timing data, notably a visualization of threadpool execution of tasks.
+    /// Whether to output timing data in Chrome trace format (written to trace.json in build dir).
     ///
-    /// See <https://github.com/googlefonts/fontc/pull/443>
+    /// The generated JSON file can be viewed at https://ui.perfetto.dev/.
     #[arg(long, default_value = "false")]
     pub emit_timing: bool,
 
@@ -188,6 +188,11 @@ impl Args {
             .unwrap_or_else(|| self.input_source.as_ref().unwrap());
         Input::try_from(path.as_path())
     }
+
+    /// Returns the trace path if timing output is enabled.
+    pub fn trace_path(&self) -> Option<PathBuf> {
+        self.emit_timing.then(|| self.build_dir.join("trace.json"))
+    }
 }
 
 impl ValidatedRegex {
@@ -233,7 +238,6 @@ impl TryInto<Options> for Args {
     fn try_into(self) -> Result<Options, Self::Error> {
         let flags = self.flags();
         let flags_to_disable = self.flags_to_disable();
-        let timing_file = self.emit_timing.then(|| self.build_dir.join("threads.svg"));
         let debug_dir = self.emit_debug.then(|| self.build_dir.join("debug/"));
         let ir_dir = self.emit_ir.then(|| self.build_dir.clone());
         Ok(Options {
@@ -244,7 +248,6 @@ impl TryInto<Options> for Args {
             output_file: self
                 .output_file
                 .or_else(|| Some(self.build_dir.join("font.ttf"))),
-            timing_file,
             debug_dir,
             ir_dir,
         })

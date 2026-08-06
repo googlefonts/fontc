@@ -32,6 +32,7 @@ impl Work<Context, AnyWorkId, Error> for MetaWork {
         Access::Variant(FeWorkId::StaticMetadata.into())
     }
 
+    #[tracing::instrument(name = "fontbe::MetaWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let Some(meta_table) = static_metadata.misc.meta_table.as_ref() else {

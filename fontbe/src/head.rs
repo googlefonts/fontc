@@ -114,6 +114,7 @@ impl Work<Context, AnyWorkId, Error> for HeadWork {
     }
 
     /// Generate [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)
+    #[tracing::instrument(name = "fontbe::HeadWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let loca_format = (*context.loca_format.get().as_ref()).into();

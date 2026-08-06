@@ -35,6 +35,7 @@ impl Work<Context, AnyWorkId, Error> for NameWork {
     }
 
     /// Generate [name](https://learn.microsoft.com/en-us/typography/opentype/spec/name)
+    #[tracing::instrument(name = "fontbe::NameWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let extra_tables = context.extra_fea_tables.try_get();

@@ -25,7 +25,7 @@ const DEFAULT_FONT_SOURCES: &[FontSource<'static>] = &[
         git_url: Some("https://github.com/googlefonts/OswaldFont.git"),
         source_path: "sources/Oswald.glyphs",
     },
-    // May take a few seconds. Based on threads.svg from --emit-timing, bottlenecked on kern-be,
+    // May take a few seconds. Based on trace from --emit-timing, bottlenecked on kern-be,
     // kern-gather-be, fea, and font.
     FontSource {
         dir: "/tmp/fontc-bench/merriweather4",
