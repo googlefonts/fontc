@@ -117,7 +117,7 @@ pub struct Args {
 
     /// Set the log level, either globally or per module. Defaults to warn.
     ///
-    /// See <https://docs.rs/env_logger/latest/env_logger/#enabling-logging> for format.
+    /// See <https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives> for format.
     #[arg(long)]
     pub log: Option<String>,
 }

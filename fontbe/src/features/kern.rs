@@ -2394,7 +2394,7 @@ mod tests {
     //https://github.com/googlefonts/ufo2ft/blob/01d3faee/tests/featureWriters/kernFeatureWriter_test.py#L1531
     #[test]
     fn kern_split_and_drop() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         const ALPHA: char = 'α';
         const A_ORYA: char = '\u{B05}';
 

@@ -26,7 +26,7 @@ use error::Error;
 use target::{BuildType, Target};
 
 fn main() {
-    env_logger::init();
+    tracing_subscriber::fmt().init();
     let args = Args::parse();
     if let Err(e) = run(&args) {
         eprintln!("{e}");

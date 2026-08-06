@@ -875,7 +875,7 @@ mod tests {
     // hit (in this case fonttools returns the hit with the lowest `t0`)
     #[test]
     fn seg_seg_intersect_order() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let seg1 = PathSeg::Cubic(CubicBez::new(
             (21.0, 34.0),
             (21.0, 33.0),
@@ -913,7 +913,7 @@ mod tests {
     // operation order of the divide/conquer calls in curve_curve_intersection_py
     #[test]
     fn curve_curve_intersect_order() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let seg1 = CubicBez::new(
             (336.0, 150.0),
             (340.0, 151.0),
@@ -936,7 +936,7 @@ mod tests {
 
     #[test]
     fn corner_with_t() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let mut path = BezPath::new();
         path.move_to((11.0, 4.0));
         path.line_to((17.0, 34.0));

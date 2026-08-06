@@ -14,7 +14,9 @@ smol_str = { version = "0.3.0", features = ["serde"] }
 regex = "1.7.1"
 thiserror = "2.0"
 log = "0.4"
-env_logger = "0.11.0"
+tracing = "0.1"
+tracing-log = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 parking_lot = "0.12.1"
 # "string" lets us pass a runtime-built version string to #[command(version = ...)]
 clap = { version = "4.0.32", features = ["derive", "string"] }

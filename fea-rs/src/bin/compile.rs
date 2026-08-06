@@ -24,7 +24,7 @@ fn main() {
 }
 
 fn run() -> Result<(), Error> {
-    env_logger::init();
+    tracing_subscriber::fmt().init();
     let args = Args::parse();
     let (fea, glyph_names) = args.get_inputs()?;
     if !fea.exists() {

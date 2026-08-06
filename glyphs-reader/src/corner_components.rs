@@ -586,7 +586,7 @@ mod tests {
     #[case::ax_curved_instroke2("ax_curved_instroke2")]
     // ported from glyphsLib: https://github.com/googlefonts/glyphsLib/blob/f90e4060ba/tests/corner_components_test.py#L14
     fn test_corner_components(#[case] glyph_name: &str) {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         // Skip glyphs with left_anchor as noted in the Python test
         if glyph_name.contains("left_anchor") {
             // In rstest we can't easily skip tests, so we just return early

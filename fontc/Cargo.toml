@@ -36,9 +36,12 @@ bitflags.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 
+chrono.workspace = true
 log.workspace = true
-env_logger.workspace = true
 thiserror.workspace = true
+tracing-log.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true
 
 indexmap.workspace = true
 regex.workspace = true

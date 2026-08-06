@@ -4392,7 +4392,7 @@ mod tests {
 
     fn assert_load_v2_matches_load_v3(name: &str, compare: LoadCompare) {
         let has_package = matches!(compare, LoadCompare::GlyphsAndPackage);
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let filename = format!("{name}.glyphs");
         let pkgname = format!("{name}.glyphspackage");
         let g2_file = glyphs2_dir().join(filename.clone());
@@ -4671,7 +4671,7 @@ mod tests {
 
     #[test]
     fn glyph_order_override_obeyed() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let font = Font::load(&glyphs3_dir().join("WghtVar_GlyphOrder.glyphs")).unwrap();
         assert_eq!(vec!["hyphen", "space", "exclam"], font.glyph_order);
     }
@@ -5925,7 +5925,7 @@ etc;
 
     #[test]
     fn user_to_design_with_no_axes() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let mut myfont = RawFont {
             font_master: vec![RawFontMaster {
                 custom_parameters: RawCustomParameters(vec![make_axis_location_params(&[(
@@ -5941,7 +5941,7 @@ etc;
 
     #[test]
     fn user_to_design_with_unknown_axis_location() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let mut myfont = RawFont {
             axes: vec![Axis {
                 name: "Weight".into(),

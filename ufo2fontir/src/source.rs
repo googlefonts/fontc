@@ -2405,7 +2405,7 @@ mod tests {
         flags: Flags,
         modify: F,
     ) -> (DesignSpaceIrSource, Context) {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let mut source = load_designspace(name);
         modify(&mut source);
         let context = Context::new_root(flags, None);
@@ -3972,7 +3972,7 @@ mod tests {
 
     #[test]
     fn unsupported_feature_writer_option_is_error() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let entry = plist_dict! {
             "class" => "KernFeatureWriter",
             "options" => plist_dict! { "quantization" => 2i64 },

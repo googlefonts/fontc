@@ -414,7 +414,7 @@ mod tests {
     impl TestCompile {
         fn new(source_file: &str, adjust_options: impl Fn(Options) -> Options) -> TestCompile {
             let timer = JobTimer::new();
-            let _ = env_logger::builder().is_test(true).try_init();
+            let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
             let temp_dir = tempdir().unwrap();
             let options = adjust_options(Options::for_test(temp_dir.path()));
@@ -2711,7 +2711,7 @@ mod tests {
     // https://github.com/googlefonts/ufo2ft/issues/992.
     #[test]
     fn divergent_kern_groups_resolved_against_each_master() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let tmp = tempdir().unwrap();
         let designspace = write_kern_fixture(
             tmp.path(),
@@ -2808,7 +2808,7 @@ mod tests {
 
     #[test]
     fn kernless_master_divergent_groups_do_not_reach_reconciliation() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let tmp = tempdir().unwrap();
         let two = write_kern_fixture(
             &tmp.path().join("two"),
@@ -2848,7 +2848,7 @@ mod tests {
     // https://github.com/googlefonts/ufo2ft/issues/992.
     #[test]
     fn regrouped_kern_groups_refine_by_kerned_signature() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let tmp = tempdir().unwrap();
         let designspace = write_kern_fixture(
             tmp.path(),
@@ -4792,7 +4792,7 @@ mod tests {
 
     #[test]
     fn use_base_table_from_fea() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let result = TestCompile::compile_source("CustomBaseTableInFea.ufo");
         let font = result.font();
         let base = font.base().unwrap();
@@ -5542,7 +5542,7 @@ mod tests {
         // (in the lookup list) to be ordered like fontmake, which means sorted
         // by the glyphnames of the rules, not the GIDs.
 
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
         let gsub = result.font().gsub().unwrap();
         let features = gsub.feature_list().unwrap();
@@ -5587,7 +5587,7 @@ mod tests {
         // do we put lookups in the right order?
         // - aalt goes at the front
         // - except for rvrn, which goes at the front-front
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
         let gsub = result.font().gsub().unwrap();
         let feature_list = gsub.feature_list().unwrap();
@@ -5641,7 +5641,7 @@ mod tests {
     #[test]
     fn designspace_rvrn_feature_variation() {
         // do we create a feature variation record, pointing at the expected values?
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let result = TestCompile::compile_source("dspace_rules/Basic.designspace");
         let gsub = result.font().gsub().unwrap();
         let feature_list = gsub.feature_list().unwrap();
@@ -5666,7 +5666,7 @@ mod tests {
 
     #[test]
     fn glyphs_feature_variations() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let result = TestCompile::compile_source("glyphs3/LibreFranklin-bracketlayer.glyphs");
         let gsub = result.font().gsub().unwrap();
         let lookup_list = gsub.lookup_list().unwrap();
@@ -5694,7 +5694,7 @@ mod tests {
     #[test]
     fn glyphs_feature_variations_custom_feature() {
         // honor the 'Feature for Feature Variations' key
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let result = TestCompile::compile_source("glyphs2/WorkSans-minimal-bracketlayer.glyphs");
         let gsub = result.font().gsub().unwrap();
         let lookup_list = gsub.lookup_list().unwrap();
@@ -5710,7 +5710,7 @@ mod tests {
     #[test]
     fn glyphs_fea_include_file() {
         // ensure that we resolve inclue statements in glyphs sources
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let result = TestCompile::compile_source("glyphs_fea_include/glyphs_include.glyphs");
         let gsub = result.font().gsub().unwrap();
         let feature_list = gsub.feature_list().unwrap();
