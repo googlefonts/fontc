@@ -233,8 +233,12 @@ fn prune_missing_components(context: &Context) {
         let missing: BTreeSet<GlyphName> = glyph
             .sources()
             .values()
-            .flat_map(|inst| inst.components.iter())
-            .map(|component| &component.base)
+            .flat_map(|inst| {
+                inst.components
+                    .iter()
+                    .map(|component| &component.base)
+                    .chain(inst.variable_components.iter().map(|vc| &vc.base))
+            })
             .filter(|base| context.try_get_glyph(base.as_str()).is_none())
             .cloned()
             .collect();
@@ -250,6 +254,9 @@ fn prune_missing_components(context: &Context) {
         let mut new_glyph = (*glyph).clone();
         for instance in new_glyph.sources_mut().values_mut() {
             instance.components.retain(|c| !missing.contains(&c.base));
+            instance
+                .variable_components
+                .retain(|c| !missing.contains(&c.base));
         }
         context.glyphs.set(new_glyph);
     }
@@ -301,6 +308,7 @@ fn flatten_non_export_components_for_glyph(
             vertical_origin: instance.vertical_origin,
             contours: instance.contours.clone(),
             components: Vec::with_capacity(instance.components.len()),
+            variable_components: instance.variable_components.clone(),
         };
 
         let mut non_export_has_location = false;
@@ -538,9 +546,36 @@ fn instantiate_instance(
         .deltas_with_rounding(&point_seqs, RoundingBehaviour::None)
         .map_err(|e| BadGlyph::new(&glyph.name, e))?;
     let points = model.interpolate_from_deltas(loc, &deltas);
-    Ok(glyph
-        .default_instance()
-        .new_with_interpolated_values(&points))
+    Ok(interpolation_template(glyph).new_with_interpolated_values(&points))
+}
+
+/// The default instance, with a variable component transform field set if any
+/// source sets it.
+///
+/// [`GlyphInstance::new_with_interpolated_values`] keeps only fields set in
+/// the template, which would drop the interpolated value of a field another
+/// source sets. The VARC table stores such a field too, with the identity for
+/// sources that do not set it.
+fn interpolation_template(glyph: &Glyph) -> GlyphInstance {
+    let mut template = glyph.default_instance().clone();
+    for (idx, vc) in template.variable_components.iter_mut().enumerate() {
+        for inst in glyph.sources().values() {
+            let Some(other) = inst.variable_components.get(idx).map(|vc| &vc.transform) else {
+                continue;
+            };
+            let t = &mut vc.transform;
+            t.translate_x = t.translate_x.or(other.translate_x);
+            t.translate_y = t.translate_y.or(other.translate_y);
+            t.rotation = t.rotation.or(other.rotation);
+            t.scale_x = t.scale_x.or(other.scale_x);
+            t.scale_y = t.scale_y.or(other.scale_y);
+            t.skew_x = t.skew_x.or(other.skew_x);
+            t.skew_y = t.skew_y.or(other.skew_y);
+            t.center_x = t.center_x.or(other.center_x);
+            t.center_y = t.center_y.or(other.center_y);
+        }
+    }
+    template
 }
 
 fn variation_model_for_glyph<'a>(
@@ -560,9 +595,11 @@ fn variation_model_for_glyph<'a>(
     // otherwise we need a special model for this glyph.
     // This code is duplicated in various places (hvar, e.g.)
     // and maybe we can share it? or cache these models more globally?
+    let mut axis_order: Vec<_> = meta.axes.iter().map(|ax| ax.tag).collect();
+    axis_order.extend(glyph.axes().axis_order());
     Cow::Owned(VariationModel::new(
         glyph.sources().keys().cloned().collect(),
-        meta.axes.iter().map(|ax| ax.tag).collect(),
+        axis_order,
     ))
 }
 
@@ -1025,15 +1062,16 @@ mod tests {
 
     use fontdrasil::{
         orchestration::Access,
-        types::{Axis, GlyphName},
+        types::{Axes, Axis, GlyphName},
     };
     use kurbo::{Affine, BezPath, Rect, Shape};
     use rstest::rstest;
 
     use crate::{
         ir::{
-            AnchorBuilder, Component, GdefCategories, GlobalMetric, GlobalMetricsBuilder, Glyph,
-            GlyphBuilder, GlyphInstance, GlyphOrder, PreliminaryGdefCategories, StaticMetadata,
+            AnchorBuilder, Component, DecomposedTransform, GdefCategories, GlobalMetric,
+            GlobalMetricsBuilder, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
+            PreliminaryGdefCategories, StaticMetadata, VariableComponent,
         },
         orchestration::{Context, Flags, WorkId},
     };
@@ -1348,6 +1386,131 @@ mod tests {
                 "At {loc:?}"
             );
         }
+    }
+
+    #[test]
+    fn interpolates_variable_components() {
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+
+        let vc = |translate_x: f64| VariableComponent {
+            base: "base".into(),
+            location: NormalizedLocation::for_pos(&[("wght", 0.0)]),
+            transform: DecomposedTransform {
+                translate_x: Some(translate_x),
+                ..Default::default()
+            },
+            reset_unspecified_axes: false,
+        };
+        let mut composite = GlyphBuilder::new("composite".into());
+        composite
+            .try_add_source(
+                &loc0,
+                GlyphInstance {
+                    variable_components: vec![vc(0.0)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        composite
+            .try_add_source(
+                &loc1,
+                GlyphInstance {
+                    variable_components: vec![vc(100.0)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let composite = composite.build().unwrap();
+
+        // A synthesized mid instance carries the interpolated variable component.
+        let mid = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let inst = instantiate_instance(&composite, &mid, &context).unwrap();
+        assert_eq!(1, inst.variable_components.len());
+        assert_eq!("base", inst.variable_components[0].base.as_str());
+        assert_eq!(
+            Some(50.0),
+            inst.variable_components[0].transform.translate_x
+        );
+    }
+
+    #[test]
+    fn interpolation_keeps_fields_set_in_any_source() {
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+
+        let vc = |transform: DecomposedTransform| VariableComponent {
+            base: "base".into(),
+            location: NormalizedLocation::for_pos(&[("wght", 0.0)]),
+            transform,
+            reset_unspecified_axes: false,
+        };
+        // translate_y is only set in the non-default source.
+        let mut composite = GlyphBuilder::new("composite".into());
+        composite
+            .try_add_source(
+                &loc0,
+                GlyphInstance {
+                    variable_components: vec![vc(DecomposedTransform::default())],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        composite
+            .try_add_source(
+                &loc1,
+                GlyphInstance {
+                    variable_components: vec![vc(DecomposedTransform {
+                        translate_y: Some(100.0),
+                        ..Default::default()
+                    })],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let composite = composite.build().unwrap();
+
+        let mid = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let inst = instantiate_instance(&composite, &mid, &context).unwrap();
+        assert_eq!(
+            Some(50.0),
+            inst.variable_components[0].transform.translate_y
+        );
+    }
+
+    #[test]
+    fn interpolates_glyph_local_axes() {
+        // `foo` is an axis of the glyph, not of the font.
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0), ("foo", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 0.0), ("foo", 1.0)]);
+        let context =
+            test_context_with_locations(vec![NormalizedLocation::for_pos(&[("wght", 0.0)])]);
+
+        let square_at = |x: f64| {
+            let mut path = BezPath::new();
+            path.move_to((x, 0.0));
+            path.line_to((x + 1.0, 0.0));
+            path.line_to((x + 1.0, 1.0));
+            path.close_path();
+            GlyphInstance {
+                contours: vec![path],
+                ..Default::default()
+            }
+        };
+        let mut glyph = GlyphBuilder::new("base".into());
+        glyph.try_add_source(&loc0, square_at(0.0)).unwrap();
+        glyph.try_add_source(&loc1, square_at(100.0)).unwrap();
+        let mut glyph = glyph.build().unwrap();
+        glyph.set_axes(Axes::for_test(&["foo"]));
+
+        let mid = NormalizedLocation::for_pos(&[("wght", 0.0), ("foo", 0.5)]);
+        let inst = instantiate_instance(&glyph, &mid, &context).unwrap();
+        assert_eq!(
+            vec!["M50,0 L51,0 L51,1 Z"],
+            inst.contours.iter().map(|b| b.to_svg()).collect::<Vec<_>>(),
+        );
     }
 
     #[test]
@@ -1822,6 +1985,34 @@ mod tests {
         let a = context.get_glyph("a");
         assert!(a.default_instance().components.is_empty());
         assert!(a.default_instance().contours.is_empty());
+    }
+
+    #[test]
+    fn prune_missing_components_prunes_variable_components() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("g", |g| {
+            let vc = |base: &str| VariableComponent {
+                base: base.into(),
+                location: NormalizedLocation::new(),
+                transform: DecomposedTransform::default(),
+                reset_unspecified_axes: false,
+            };
+            g.default_instance_mut().variable_components.push(vc("a"));
+            g.default_instance_mut()
+                .variable_components
+                .push(vc("missing"));
+        });
+        let context = builder.into_context();
+
+        prune_missing_components(&context);
+
+        let g = context.get_glyph("g");
+        let vcs = &g.default_instance().variable_components;
+        assert_eq!(1, vcs.len());
+        assert_eq!("a", vcs[0].base.as_str());
     }
 
     #[test]

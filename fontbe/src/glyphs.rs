@@ -1172,6 +1172,7 @@ mod tests {
                 vertical_origin: None,
                 contours,
                 components,
+                variable_components: Vec::new(),
             };
             glyph_builder.try_add_source(loc, instance).unwrap();
         }
