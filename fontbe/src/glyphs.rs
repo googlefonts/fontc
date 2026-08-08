@@ -326,6 +326,21 @@ fn process_composite_deltas(deltas: Vec<Vec2>) -> Vec<GlyphDelta> {
         .collect()
 }
 
+/// A glyph is a variable composite (VARC) if any source has variable components.
+fn is_variable_composite(glyph: &ir::Glyph) -> bool {
+    glyph
+        .sources()
+        .values()
+        .any(|inst| !inst.variable_components.is_empty())
+}
+
+fn is_pure_variable_composite(glyph: &ir::Glyph) -> bool {
+    glyph
+        .sources()
+        .values()
+        .all(|inst| inst.contours.is_empty() && inst.components.is_empty())
+}
+
 impl Work<Context, AnyWorkId, Error> for GlyphWork {
     fn id(&self) -> AnyWorkId {
         WorkId::GlyfFragment(self.glyph_name.clone()).into()
@@ -362,6 +377,23 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
             .ir
             .glyphs
             .get(&FeWorkId::Glyph(self.glyph_name.clone()));
+
+        // Variable-composite glyphs live in the VARC table, and get empty glyf
+        // table entries and no gvar.
+        if is_variable_composite(ir_glyph) {
+            if !is_pure_variable_composite(ir_glyph) {
+                return Err(Error::MixedVariableComposite(self.glyph_name.clone()));
+            }
+            context
+                .glyphs
+                .set_unconditionally(Glyph::new(self.glyph_name.clone(), RawGlyph::Empty));
+            context.gvar_fragments.set_unconditionally(GvarFragment {
+                glyph_name: self.glyph_name.clone(),
+                deltas: Vec::new(),
+            });
+            return Ok(());
+        }
+
         let glyph = CheckedGlyph::new(ir_glyph)?;
 
         // Hopefully in time https://github.com/harfbuzz/boring-expansion-spec means we can drop this
@@ -981,6 +1013,39 @@ mod tests {
             coeffs[i] = 2.0;
             assert!(!can_reuse_metrics(&glyph, &component, &Affine::new(coeffs)));
         }
+    }
+
+    fn glyph_with_instance(name: &str, instance: ir::GlyphInstance) -> ir::Glyph {
+        let loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        ir::Glyph::new(
+            GlyphName::new(name),
+            true,
+            Default::default(),
+            HashMap::from([(loc, instance)]),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn detects_variable_composite() {
+        let vc = ir::VariableComponent {
+            base: GlyphName::new("base"),
+            location: NormalizedLocation::for_pos(&[("wght", 0.0)]),
+            transform: ir::DecomposedTransform::default(),
+            reset_unspecified_axes: false,
+        };
+        let composite = glyph_with_instance(
+            "varc",
+            ir::GlyphInstance {
+                variable_components: vec![vc],
+                ..Default::default()
+            },
+        );
+        assert!(is_variable_composite(&composite));
+        assert!(!is_variable_composite(&glyph_with_instance(
+            "plain",
+            ir::GlyphInstance::default()
+        )));
     }
 
     #[test]
