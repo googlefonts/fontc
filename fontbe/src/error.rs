@@ -107,6 +107,10 @@ pub enum Error {
     NoGlobalMetricsInstance(NormalizedLocation),
     #[error("No palette entry for '{0:?}'")]
     MissingPaletteEntry(Color),
+    #[error(
+        "Glyph '{0}' mixes variable components with contours or ordinary components, which is not supported"
+    )]
+    MixedVariableComposite(GlyphName),
 }
 
 #[derive(Debug)]
