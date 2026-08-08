@@ -18,7 +18,7 @@ use write_fonts::{
 };
 
 use fontdrasil::{
-    coords::{DesignLocation, NormalizedLocation},
+    coords::{DesignLocation, NormalizedCoord, NormalizedLocation},
     types::{Axes, GlyphName},
     variations::{ModelDeltas, VariationModel},
 };
@@ -1514,6 +1514,8 @@ pub struct Glyph {
     /// Whether to "export" in source terms
     pub emit_to_binary: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
+    #[serde(default, skip_serializing_if = "Axes::is_empty")]
+    axes: Axes, // Glyph-local axes for variable components.
     default_location: NormalizedLocation,
     sources: HashMap<NormalizedLocation, GlyphInstance>,
     has_consistent_2x2_transforms: bool,
@@ -1607,11 +1609,20 @@ impl Glyph {
             name,
             emit_to_binary,
             codepoints,
+            axes: Axes::default(),
             default_location,
             sources: instances,
             has_consistent_2x2_transforms,
             has_overflowing_2x2_transforms,
         })
+    }
+
+    pub fn axes(&self) -> &Axes {
+        &self.axes
+    }
+
+    pub fn set_axes(&mut self, axes: Axes) {
+        self.axes = axes;
     }
 
     pub fn default_instance(&self) -> &GlyphInstance {
@@ -1730,6 +1741,8 @@ pub struct GlyphBuilder {
     pub emit_to_binary: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     pub sources: HashMap<NormalizedLocation, GlyphInstance>,
+    #[serde(default, skip_serializing_if = "Axes::is_empty")]
+    pub axes: Axes, // Glyph-local axes for variable components.
 }
 
 impl GlyphBuilder {
@@ -1739,6 +1752,7 @@ impl GlyphBuilder {
             emit_to_binary: true,
             codepoints: HashSet::new(),
             sources: HashMap::new(),
+            axes: Axes::default(),
         }
     }
 
@@ -1764,12 +1778,14 @@ impl GlyphBuilder {
     }
 
     pub fn build(self) -> Result<Glyph, BadGlyph> {
-        Glyph::new(
+        let mut glyph = Glyph::new(
             self.name,
             self.emit_to_binary,
             self.codepoints,
             self.sources,
-        )
+        )?;
+        glyph.axes = self.axes;
+        Ok(glyph)
     }
 }
 
@@ -1780,6 +1796,7 @@ impl From<Glyph> for GlyphBuilder {
             emit_to_binary: value.emit_to_binary,
             codepoints: value.codepoints,
             sources: value.sources,
+            axes: value.axes,
         }
     }
 }
@@ -1797,6 +1814,9 @@ pub struct GlyphInstance {
     pub contours: Vec<BezPath>,
     /// List of glyph components.
     pub components: Vec<Component>,
+    /// List of variable components.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variable_components: Vec<VariableComponent>,
 }
 
 impl GlyphInstance {
@@ -1888,6 +1908,9 @@ impl GlyphInstance {
     /// - the (x,y) values of points in any contours, in order
     /// - the decomposed transform of any components, in order
     /// - the width, height, and vertical origin (if present).
+    /// - for any variable components, in order: the nine transform fields (a
+    ///   field that is not set is fed as 0, or 1 for scale), then the location
+    ///   coordinates by tag.
     ///
     /// These values are used to generate a `VariationModel`; after interpolation
     /// a new instance can be constructed with [`Self::new_with_interpolated_values`].
@@ -1922,6 +1945,11 @@ impl GlyphInstance {
             .chain(Some(self.width))
             .chain(self.height)
             .chain(self.vertical_origin)
+            .chain(
+                self.variable_components
+                    .iter()
+                    .flat_map(variable_component_interpolation_values),
+            )
             .collect()
     }
 
@@ -1957,6 +1985,37 @@ impl GlyphInstance {
             values = &values[1..];
         }
 
+        // Variable components: nine transform fields, then one coordinate per
+        // location axis. Fields not set in the template stay unset.
+        let mut variable_components = Vec::with_capacity(self.variable_components.len());
+        for vc in &self.variable_components {
+            let fields = &values[..9];
+            values = &values[9..];
+            let take = |present: bool, v: f64| present.then_some(v);
+            let transform = DecomposedTransform {
+                translate_x: take(vc.transform.translate_x.is_some(), fields[0]),
+                translate_y: take(vc.transform.translate_y.is_some(), fields[1]),
+                rotation: take(vc.transform.rotation.is_some(), fields[2]),
+                scale_x: take(vc.transform.scale_x.is_some(), fields[3]),
+                scale_y: take(vc.transform.scale_y.is_some(), fields[4]),
+                skew_x: take(vc.transform.skew_x.is_some(), fields[5]),
+                skew_y: take(vc.transform.skew_y.is_some(), fields[6]),
+                center_x: take(vc.transform.center_x.is_some(), fields[7]),
+                center_y: take(vc.transform.center_y.is_some(), fields[8]),
+            };
+            let mut location = NormalizedLocation::new();
+            for (tag, _) in vc.location.iter() {
+                location.insert(*tag, NormalizedCoord::new(values[0]));
+                values = &values[1..];
+            }
+            variable_components.push(VariableComponent {
+                base: vc.base.clone(),
+                location,
+                transform,
+                reset_unspecified_axes: vc.reset_unspecified_axes,
+            });
+        }
+
         assert!(
             values.is_empty(),
             "this fn can only be passed exactly the number of values required"
@@ -1968,8 +2027,30 @@ impl GlyphInstance {
             vertical_origin,
             contours,
             components,
+            variable_components,
         }
     }
+}
+
+/// The nine transform fields (a field that is not set is fed as 0, or 1 for
+/// scale), then the location coordinates by tag.
+fn variable_component_interpolation_values(
+    vc: &VariableComponent,
+) -> impl Iterator<Item = f64> + '_ {
+    let t = &vc.transform;
+    [
+        t.translate_x.unwrap_or(0.0),
+        t.translate_y.unwrap_or(0.0),
+        t.rotation.unwrap_or(0.0),
+        t.scale_x.unwrap_or(1.0),
+        t.scale_y.unwrap_or(1.0),
+        t.skew_x.unwrap_or(0.0),
+        t.skew_y.unwrap_or(0.0),
+        t.center_x.unwrap_or(0.0),
+        t.center_y.unwrap_or(0.0),
+    ]
+    .into_iter()
+    .chain(vc.location.iter().map(|(_, coord)| coord.to_f64()))
 }
 
 /// Create a new contour from raw points.
@@ -2063,6 +2144,53 @@ impl Component {
     pub(crate) fn has_nonidentity_2x2(&self) -> bool {
         self.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0]
     }
+}
+
+/// <https://github.com/fonttools/fonttools/blob/5e6b12d12fa08abafbeb7570f47707fbedf69a45/Lib/fontTools/misc/transform.py#L410>
+///
+/// The field aliases accept the fontTools attribute names, which Fontra
+/// also uses in its JSON.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[serde(default)]
+pub struct DecomposedTransform {
+    #[serde(alias = "translateX")]
+    pub translate_x: Option<f64>,
+    #[serde(alias = "translateY")]
+    pub translate_y: Option<f64>,
+    pub rotation: Option<f64>, // in degrees, counter-clockwise
+    #[serde(alias = "scaleX")]
+    pub scale_x: Option<f64>,
+    #[serde(alias = "scaleY")]
+    pub scale_y: Option<f64>,
+    #[serde(alias = "skewX")]
+    pub skew_x: Option<f64>, // in degrees, clockwise
+    #[serde(alias = "skewY")]
+    pub skew_y: Option<f64>, // in degrees, counter-clockwise
+    #[serde(alias = "tCenterX")]
+    pub center_x: Option<f64>,
+    #[serde(alias = "tCenterY")]
+    pub center_y: Option<f64>,
+}
+
+/// A variable component: a reference to another glyph, positioned in that glyph's
+/// own axis space with a (variable) decomposed transform.
+///
+/// For
+/// [VARC](https://github.com/harfbuzz/boring-expansion-spec/blob/main/VARC.md)
+/// (Variable Composites) table.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct VariableComponent {
+    /// The name of the referenced glyph.
+    pub base: GlyphName,
+    /// Location in the *referenced* glyph's axis space.
+    pub location: NormalizedLocation,
+    /// Decomposed transform to apply to the referenced glyph.
+    pub transform: DecomposedTransform,
+    /// If `true`, axes of the referenced glyph not present in
+    /// [`location`](Self::location) take the font's current variation settings.
+    /// If `false` they inherit the enclosing glyph's location. See
+    /// <https://github.com/harfbuzz/boring-expansion-spec/blob/main/VARC.md#processing>
+    pub reset_unspecified_axes: bool,
 }
 
 /// Data to inform construction of [CPAL](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal#palette-table-header)
@@ -2194,6 +2322,16 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn decomposed_transform_parses_fonttools_field_names() {
+        let transform: DecomposedTransform =
+            serde_yaml::from_str("{scaleX: 2.0, tCenterX: 100.0, tCenterY: -50.0}").unwrap();
+        assert_eq!(
+            (Some(2.0), Some(100.0), Some(-50.0)),
+            (transform.scale_x, transform.center_x, transform.center_y)
+        );
+    }
 
     // from
     // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/tests/featureWriters/markFeatureWriter_test.py#L34>
@@ -2617,6 +2755,26 @@ mod tests {
     }
 
     #[test]
+    fn variable_component_serde_round_trip() {
+        let vc = VariableComponent {
+            base: GlyphName::new("radical"),
+            location: NormalizedLocation::for_pos(&[("wght", 0.5)]),
+            transform: DecomposedTransform {
+                translate_x: Some(100.0),
+                rotation: Some(15.0),
+                ..Default::default()
+            },
+            reset_unspecified_axes: true,
+        };
+        let yaml = serde_yaml::to_string(&vc).unwrap();
+        let back: VariableComponent = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(vc, back);
+        // Absent transform fields stay absent (VARC HAVE_* semantics).
+        assert!(back.transform.scale_x.is_none());
+        assert_eq!(Some(15.0), back.transform.rotation);
+    }
+
+    #[test]
     fn instance_from_deltas() {
         let z = Point::ZERO;
         let mut path1 = BezPath::new();
@@ -2640,6 +2798,7 @@ mod tests {
             vertical_origin: Some(42.),
             contours,
             components,
+            variable_components: Vec::new(),
         };
 
         let deltas = (0..9)

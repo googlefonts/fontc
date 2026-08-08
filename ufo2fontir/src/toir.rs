@@ -233,6 +233,7 @@ fn to_ir_glyph_instance(
         vertical_origin,
         contours,
         components,
+        variable_components: Vec::new(),
     })
 }
 
