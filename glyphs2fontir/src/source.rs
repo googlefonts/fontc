@@ -4291,6 +4291,31 @@ unitsPerEm = 1000;
         );
     }
 
+    trait ExecForTest {
+        fn try_create_static_metadata(
+            &self,
+            source: &impl Source,
+        ) -> Result<Arc<StaticMetadata>, Error>;
+        fn create_static_metadata(&self, source: &impl Source) -> Arc<StaticMetadata>;
+    }
+
+    impl ExecForTest for Context {
+        fn try_create_static_metadata(
+            &self,
+            source: &impl Source,
+        ) -> Result<Arc<StaticMetadata>, Error> {
+            let work = source
+                .create_static_metadata_work()
+                .expect("To create static metadata work");
+            let task_context = self.copy_for_work(work.read_access(), work.write_access());
+            work.exec(&task_context).map(|_| self.static_metadata.get())
+        }
+
+        fn create_static_metadata(&self, source: &impl Source) -> Arc<StaticMetadata> {
+            self.try_create_static_metadata(source).unwrap()
+        }
+    }
+
     #[test]
     fn reads_feature_writers_from_font_user_data() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -4330,21 +4355,9 @@ mode = skip;
         )
         .unwrap();
         let context = Context::new_root(Flags::default(), None);
-        let task_context = context.copy_for_work(
-            Access::None,
-            AccessBuilder::new()
-                .variant(WorkId::StaticMetadata)
-                .variant(WorkId::PreliminaryGlyphOrder)
-                .variant(WorkId::PreliminaryGdefCategories)
-                .build(),
-        );
-        source
-            .create_static_metadata_work()
-            .unwrap()
-            .exec(&task_context)
-            .unwrap();
+        let static_metadata = context.create_static_metadata(&source);
         assert_eq!(
-            context.static_metadata.get().misc.feature_generation,
+            static_metadata.misc.feature_generation,
             Some(vec![
                 FeatureWriterSpec {
                     writer: KnownFeatureWriter::Curs,
@@ -4371,19 +4384,7 @@ mode = skip;
         let _ = env_logger::builder().is_test(true).try_init();
         let source = GlyphsIrSource::new_from_memory(source).unwrap();
         let context = Context::new_root(Flags::default(), None);
-        let task_context = context.copy_for_work(
-            Access::None,
-            AccessBuilder::new()
-                .variant(WorkId::StaticMetadata)
-                .variant(WorkId::PreliminaryGlyphOrder)
-                .variant(WorkId::PreliminaryGdefCategories)
-                .build(),
-        );
-        source
-            .create_static_metadata_work()
-            .unwrap()
-            .exec(&task_context)
-            .unwrap_err()
+        context.try_create_static_metadata(&source).unwrap_err()
     }
 
     #[test]
@@ -4414,22 +4415,8 @@ ignoreMarks = 0;
         let _ = env_logger::builder().is_test(true).try_init();
         let source = GlyphsIrSource::new_from_memory(source).unwrap();
         let context = Context::new_root(Flags::default(), None);
-        let task_context = context.copy_for_work(
-            Access::None,
-            AccessBuilder::new()
-                .variant(WorkId::StaticMetadata)
-                .variant(WorkId::PreliminaryGlyphOrder)
-                .variant(WorkId::PreliminaryGdefCategories)
-                .build(),
-        );
-        source
-            .create_static_metadata_work()
-            .unwrap()
-            .exec(&task_context)
-            .unwrap();
         context
-            .static_metadata
-            .get()
+            .create_static_metadata(&source)
             .misc
             .feature_generation
             .clone()
@@ -4594,19 +4581,8 @@ unitsPerEm = 1000;
         .unwrap();
 
         let context = Context::new_root(Flags::default(), None);
-        let task_context = context.copy_for_work(
-            Access::None,
-            AccessBuilder::new()
-                .variant(WorkId::StaticMetadata)
-                .variant(WorkId::PreliminaryGlyphOrder)
-                .variant(WorkId::PreliminaryGdefCategories)
-                .build(),
-        );
-        source
-            .create_static_metadata_work()
-            .unwrap()
-            .exec(&task_context)
-            .unwrap();
+
+        let static_metadata = context.create_static_metadata(&source);
 
         let task_context = context.copy_for_work(
             Access::Variant(WorkId::StaticMetadata),
@@ -4621,7 +4597,6 @@ unitsPerEm = 1000;
         build_glyphs(&source, &context).unwrap();
 
         let glyph = context.get_glyph("composite");
-        let static_metadata = context.static_metadata.get();
         let default_loc = static_metadata.default_location();
         let instance = glyph.sources().get(default_loc).unwrap();
 
