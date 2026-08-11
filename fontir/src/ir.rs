@@ -1544,6 +1544,10 @@ impl Glyph {
         self.sources.get(&self.default_location).unwrap()
     }
 
+    pub fn default_location(&self) -> &NormalizedLocation {
+        &self.default_location
+    }
+
     #[cfg(test)]
     pub fn default_instance_mut(&mut self) -> &mut GlyphInstance {
         self.sources.get_mut(&self.default_location).unwrap()
@@ -2074,6 +2078,34 @@ pub struct DecomposedTransform {
     pub skew_y: Option<f64>, // in degrees, counter-clockwise
     pub center_x: Option<f64>,
     pub center_y: Option<f64>,
+}
+
+impl DecomposedTransform {
+    /// Compose the fields into an affine transform.
+    ///
+    /// Mirrors fontTools'
+    /// [`DecomposedTransform.toTransform`](https://github.com/fonttools/fonttools/blob/5e6b12d12fa08abafbeb7570f47707fbedf69a45/Lib/fontTools/misc/transform.py#L484):
+    /// translate by (translate + center), rotate, scale, skew, then translate back
+    /// by -center. Absent fields take their identity default (`0`, or `1` for scale).
+    pub fn to_affine(&self) -> Affine {
+        let translate_x = self.translate_x.unwrap_or(0.0);
+        let translate_y = self.translate_y.unwrap_or(0.0);
+        let rotation = self.rotation.unwrap_or(0.0).to_radians();
+        let scale_x = self.scale_x.unwrap_or(1.0);
+        let scale_y = self.scale_y.unwrap_or(1.0);
+        let skew_x = self.skew_x.unwrap_or(0.0).to_radians();
+        let skew_y = self.skew_y.unwrap_or(0.0).to_radians();
+        let center_x = self.center_x.unwrap_or(0.0);
+        let center_y = self.center_y.unwrap_or(0.0);
+
+        // fontTools skew matrix is (1, tan(skewY), tan(skewX), 1, 0, 0).
+        let skew = Affine::new([1.0, skew_y.tan(), skew_x.tan(), 1.0, 0.0, 0.0]);
+        Affine::translate((translate_x + center_x, translate_y + center_y))
+            * Affine::rotate(rotation)
+            * Affine::scale_non_uniform(scale_x, scale_y)
+            * skew
+            * Affine::translate((-center_x, -center_y))
+    }
 }
 
 /// A variable component: a reference to another glyph, positioned in that glyph's
