@@ -345,10 +345,15 @@ impl Workload {
                 has_components = true;
                 deps = deps.specific_instance(FeWorkIdentifier::Glyph(component.base.clone()));
             }
+            for component in inst.variable_components.iter() {
+                has_components = true;
+                deps = deps.specific_instance(FeWorkIdentifier::Glyph(component.base.clone()));
+            }
         }
 
-        // We don't *have* to wait on glyph order, but if we don't it delays the critical path
-        if has_components {
+        // We don't *have* to wait on glyph order, but if we don't it delays the critical path.
+        // A glyph with local axes must wait, the glyph order work drops the axes.
+        if has_components || !glyph.axes().is_empty() {
             deps = deps.variant(FeWorkIdentifier::GlyphOrder);
         }
 
