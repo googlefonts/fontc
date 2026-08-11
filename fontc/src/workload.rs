@@ -110,6 +110,8 @@ fn priority(id: &AnyWorkId) -> u32 {
         AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => 99,
         AnyWorkId::Be(BeWorkIdentifier::GatherIrKerning) => 99,
+        // the default master's fea gates marks and kerning; other masters don't
+        AnyWorkId::Be(BeWorkIdentifier::DEFAULT_FEATURES_AST) => 99,
         AnyWorkId::Be(BeWorkIdentifier::Features) => 99,
         AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..)) => 0,
         AnyWorkId::Be(BeWorkIdentifier::GvarFragment(..)) => 0,
@@ -151,7 +153,8 @@ impl Workload {
         workload.add(workload.source.create_color_glyphs_work()?);
 
         // BE: f(IR, maybe other BE work) => binary
-        workload.add_skippable_feature_work(FeatureFirstPassWork::create());
+        // the default master's fea; any others are added when IR features complete
+        workload.add_skippable_feature_work(FeatureFirstPassWork::create(0));
         workload.add_skippable_feature_work(FeatureCompilationWork::create());
         workload.add(create_gasp_work());
         let ir_glyphs = workload
@@ -407,6 +410,20 @@ impl Workload {
             gvar_job.read_access = gvar_deps.build().into();
         }
 
+        // A designspace can have a features.fea per master; we only know how
+        // many there are once the IR for features exists. The default master's
+        // job is added when we build the graph, so the FeaturesAst variant is
+        // never empty before we get here: anything that depends on it cannot
+        // have run yet.
+        if let AnyWorkId::Fe(FeWorkIdentifier::Features) = success
+            && let Some(features) = fe_root.features.try_get()
+        {
+            for idx in 1..features.n_sources() {
+                debug!("Generating a BE job for fea source {idx}");
+                self.add_skippable_feature_work(FeatureFirstPassWork::create(idx));
+            }
+        }
+
         if let AnyWorkId::Fe(FeWorkIdentifier::KerningLocations) = success {
             if let Some(groups) = fe_root.kerning_locations.try_get() {
                 for location in groups.locations.iter() {
@@ -442,7 +459,7 @@ impl Workload {
                 .expect("Gather BE Kerning has to be pending")
                 .read_access = AccessBuilder::<AnyWorkId>::new()
                 .variant(BeWorkIdentifier::KernFragment(0))
-                .variant(BeWorkIdentifier::FeaturesAst)
+                .specific_instance(BeWorkIdentifier::DEFAULT_FEATURES_AST)
                 .variant(FeWorkIdentifier::Glyph(GlyphName::NOTDEF))
                 .variant(FeWorkIdentifier::StaticMetadata)
                 .build()
@@ -829,7 +846,11 @@ impl Workload {
     ///
     /// Returns the set of ids for tasks that executed as a result of this run.
     #[cfg(test)]
-    pub fn run_for_test(&mut self, fe_root: &FeContext, be_root: &BeContext) -> HashSet<AnyWorkId> {
+    pub fn run_for_test(
+        &mut self,
+        fe_root: &FeContext,
+        be_root: &BeContext,
+    ) -> Result<HashSet<AnyWorkId>, Error> {
         let pre_success = self.success.clone();
         let mut sorted_pre_success = pre_success.iter().collect::<Vec<_>>();
         sorted_pre_success.sort();
@@ -881,9 +902,10 @@ impl Workload {
                 job.write_access.clone(),
             );
             log::debug!("Exec {id:?}");
-            job.work
-                .exec(context)
-                .unwrap_or_else(|e| panic!("{id:?} failed: {e:?}"));
+            job.work.exec(context).map_err(|e| {
+                log::error!("{id:?} failed: {e:?}");
+                e
+            })?;
 
             for counter in self.counters(id) {
                 counter.fetch_sub(1, Ordering::AcqRel);
@@ -892,7 +914,7 @@ impl Workload {
             self.handle_success(fe_root, be_root, id.clone())
                 .unwrap_or_else(|e| panic!("Failed to handle success for {id:?}: {e}"));
         }
-        self.success.difference(&pre_success).cloned().collect()
+        Ok(self.success.difference(&pre_success).cloned().collect())
     }
 }
 
