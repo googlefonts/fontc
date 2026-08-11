@@ -390,7 +390,8 @@ mod tests {
         fn run(&mut self) {
             let completed = self
                 .workload
-                .run_for_test(&self.fe_context, &self.be_context);
+                .run_for_test(&self.fe_context, &self.be_context)
+                .expect("compile failed");
 
             self.work_executed = completed;
 
@@ -401,6 +402,16 @@ mod tests {
 
         fn compile_source(source: &str) -> TestCompile {
             TestCompile::compile(source, |options| options)
+        }
+
+        /// Run a compile we expect to fail, and return the error
+        ///
+        /// Unlike [`TestCompile::run`] this leaves the contexts intact, so the
+        /// state we got to before failing can be inspected.
+        fn run_expect_err(&mut self) -> Error {
+            self.workload
+                .run_for_test(&self.fe_context, &self.be_context)
+                .expect_err("compile should have failed")
         }
 
         fn compile(source: &str, adjust_options: impl Fn(Options) -> Options) -> TestCompile {
@@ -495,7 +506,7 @@ mod tests {
             FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 0.0)])).into(),
             FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 1.0)])).into(),
             BeWorkIdentifier::Features.into(),
-            BeWorkIdentifier::FeaturesAst.into(),
+            BeWorkIdentifier::DEFAULT_FEATURES_AST.into(),
             BeWorkIdentifier::Avar.into(),
             BeWorkIdentifier::Cmap.into(),
             BeWorkIdentifier::Colr.into(),
@@ -614,6 +625,32 @@ mod tests {
     #[test]
     fn compile_fea_with_includes_resolved() {
         assert_compiles_with_gpos_and_gsub("fea_include_resolve.designspace", |o| o);
+    }
+
+    #[test]
+    fn masters_with_differing_fea_are_compiled_then_rejected() {
+        // each master's fea is compiled by its own job; we just can't merge
+        // them yet. The error must come from the BE, after both compiled.
+        let mut result = TestCompile::new("variable_fea/VarFea.designspace", |options| options);
+        let error = result.run_expect_err();
+        let Error::Backend(fontbe::error::Error::VariableFeaUnsupported(sources)) = &error else {
+            panic!("expected VariableFeaUnsupported, got {error:?}");
+        };
+        assert_eq!(sources.len(), 2);
+
+        // both masters' fea got compiled, in their own jobs, before we gave up
+        let mut compiled = result
+            .be_context
+            .fea_asts
+            .all()
+            .iter()
+            .map(|(id, ast)| {
+                assert_eq!(*id, BeWorkIdentifier::FeaturesAst(ast.idx).into());
+                ast.idx
+            })
+            .collect::<Vec<_>>();
+        compiled.sort();
+        assert_eq!(compiled, vec![0, 1]);
     }
 
     #[test]

@@ -795,7 +795,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
             .variant(FeWorkId::StaticMetadata)
             .variant(FeWorkId::GlyphOrder)
             .variant(FeWorkId::GdefCategories)
-            .variant(WorkId::FeaturesAst)
+            .specific_instance(WorkId::DEFAULT_FEATURES_AST)
             .variant(FeWorkId::ALL_ANCHORS)
             .build()
     }
@@ -807,7 +807,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         let glyph_order = context.ir.glyph_order.get();
         let gdef_categories = context.ir.gdef_categories.get();
         let raw_anchors = context.ir.anchors.all();
-        let fea_first_pass = context.fea_ast.get();
+        let fea_first_pass = context.default_fea_ast();
 
         let anchors = raw_anchors
             .iter()

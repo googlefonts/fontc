@@ -28,6 +28,8 @@ pub enum Error {
     IoError(#[from] io::Error),
     #[error(transparent)]
     FeaCompileError(#[from] CompilerError),
+    #[error("masters have non-identical features, which is not yet supported: {0:?}")]
+    VariableFeaUnsupported(Vec<String>),
     #[error(transparent)]
     GlyphOrderError(#[from] GlyphOrderError),
     #[error("'{0}' {1}")]

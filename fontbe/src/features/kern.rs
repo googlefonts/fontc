@@ -832,7 +832,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Gather be kerning");
         let arc_fragments = context.kern_fragments.all();
-        let ast = context.fea_ast.get();
+        let ast = context.default_fea_ast();
         let glyph_order = context.ir.glyph_order.get();
         let gdef_categories = context.ir.gdef_categories.get();
         let static_metadata = context.ir.static_metadata.get();

@@ -48,7 +48,7 @@ use crate::{
     error::Error,
     orchestration::{
         AnyWorkId, BeWork, Context, ExtraFeaTables, FeaFirstPassOutput, FeaRsKerns, FeaRsMarks,
-        WorkId,
+        FeaSourceIdx, WorkId,
     },
 };
 
@@ -74,8 +74,16 @@ const MKMK: Tag = Tag::new(b"mkmk");
 const ABVM: Tag = Tag::new(b"abvm");
 const BLWM: Tag = Tag::new(b"blwm");
 
+/// Parse, validate, and first-pass compile one of the font's FEA sources.
+///
+/// A designspace can have a features.fea per master; each distinct source is
+/// compiled by its own instance of this work. Only the default master's output
+/// ([`WorkId::DEFAULT_FEATURES_AST`]) is consumed today, see
+/// [`FeatureCompilationWork`].
 #[derive(Debug)]
-pub struct FeatureFirstPassWork {}
+pub struct FeatureFirstPassWork {
+    idx: FeaSourceIdx,
+}
 
 #[derive(Debug)]
 pub struct FeatureCompilationWork {}
@@ -414,14 +422,24 @@ fn write_debug_glyph_order(debug_dir: &Path, glyphs: &GlyphOrder) {
     }
 }
 
-fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &str) {
+fn write_debug_fea(
+    context: &Context,
+    is_error: bool,
+    why: &str,
+    fea_content: &str,
+    idx: FeaSourceIdx,
+) {
     let Some(debug_dir) = context.debug_dir.as_ref() else {
         if is_error {
             warn!("Debug fea not written for '{why}' because --emit-debug is off");
         }
         return;
     };
-    let debug_file = debug_dir.join("features.fea");
+    // one file per source; the default master keeps the historical name
+    let debug_file = match idx {
+        0 => debug_dir.join("features.fea"),
+        idx => debug_dir.join(format!("features_{idx}.fea")),
+    };
     match fs::write(&debug_file, fea_content) {
         Ok(_) if is_error => warn!("{why}; fea written to {debug_file:?}"),
         Ok(_) => debug!("fea written to {debug_file:?}"),
@@ -431,7 +449,7 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
 
 impl Work<Context, AnyWorkId, Error> for FeatureFirstPassWork {
     fn id(&self) -> AnyWorkId {
-        WorkId::FeaturesAst.into()
+        WorkId::FeaturesAst(self.idx).into()
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
@@ -444,18 +462,30 @@ impl Work<Context, AnyWorkId, Error> for FeatureFirstPassWork {
 
     #[tracing::instrument(name = "fontbe::FeatureFirstPassWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let features = context.ir.features.get();
+        let all_features = context.ir.features.get();
+        let features = &all_features
+            .get(self.idx)
+            .unwrap_or_else(|| panic!("no fea source {}", self.idx))
+            .source;
         let glyph_order = context.ir.glyph_order.get();
         let static_metadata = context.ir.static_metadata.get();
         let glyph_map = GlyphMap::new(glyph_order.names().cloned())?;
 
-        let result = self.parse(&features, &glyph_map);
+        let result = self.parse(features, &glyph_map);
 
-        if let Some(debug_dir) = context.debug_dir.as_ref() {
+        if self.is_default()
+            && let Some(debug_dir) = context.debug_dir.as_ref()
+        {
             write_debug_glyph_order(debug_dir, &glyph_order);
         }
-        if let FeaturesSource::Memory { fea_content, .. } = features.as_ref() {
-            write_debug_fea(context, result.is_err(), "compile failed", fea_content);
+        if let FeaturesSource::Memory { fea_content, .. } = features {
+            write_debug_fea(
+                context,
+                result.is_err(),
+                "compile failed",
+                fea_content,
+                self.idx,
+            );
         }
 
         let ast = result?;
@@ -475,15 +505,20 @@ impl Work<Context, AnyWorkId, Error> for FeatureFirstPassWork {
             Error::FeaCompileError(fea_rs::compile::error::CompilerError::CompilationFail(err))
         })?;
         context
-            .fea_ast
-            .set(FeaFirstPassOutput::new(ast, compilation)?);
+            .fea_asts
+            .set(FeaFirstPassOutput::new(self.idx, ast, compilation)?);
         Ok(())
     }
 }
 
 impl FeatureFirstPassWork {
-    pub fn create() -> Box<BeWork> {
-        Box::new(Self {})
+    pub fn create(idx: FeaSourceIdx) -> Box<BeWork> {
+        Box::new(Self { idx })
+    }
+
+    /// True if this is the default master's source
+    fn is_default(&self) -> bool {
+        WorkId::FeaturesAst(self.idx) == WorkId::DEFAULT_FEATURES_AST
     }
 
     fn parse(&self, features: &FeaturesSource, glyph_map: &GlyphMap) -> Result<ParseTree, Error> {
@@ -551,7 +586,10 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
     fn read_access(&self) -> Access<AnyWorkId> {
         AccessBuilder::new()
             .variant(FeWorkId::GlyphOrder)
-            .variant(WorkId::FeaturesAst)
+            .variant(FeWorkId::Features)
+            // every master's fea, not just the default's: they must all
+            // compile, and we need to know if they disagree
+            .variant(WorkId::ALL_FEATURE_ASTS)
             .variant(WorkId::GatherBeKerning)
             .variant(WorkId::Marks)
             .build()
@@ -570,7 +608,16 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let gdef_categories = context.ir.gdef_categories.get();
-        let ast = context.fea_ast.get();
+        let features = context.ir.features.get();
+        // Every master's fea has been compiled by now, but we have nothing to
+        // do with any but the default's: merging them is not yet implemented.
+        // https://github.com/googlefonts/fontc/issues/1204
+        if features.n_sources() > 1 {
+            return Err(Error::VariableFeaUnsupported(
+                features.iter().map(|s| s.source.to_string()).collect(),
+            ));
+        }
+        let ast = context.default_fea_ast();
         let glyph_order = context.ir.glyph_order.get();
         let kerns = context.fea_rs_kerns.get();
         let marks = context.fea_rs_marks.get();
