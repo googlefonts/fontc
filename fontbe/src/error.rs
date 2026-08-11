@@ -97,6 +97,8 @@ pub enum Error {
     DeltaError(DeltaError),
     #[error("No glyph id for '{0}'")]
     MissingGlyphId(GlyphName),
+    #[error("Unable to store VARC deltas for '{0}': {1}")]
+    VarcDeltaStoreError(GlyphName, write_fonts::error::Error),
     #[error("Error making CMap: {0}")]
     CmapConflict(#[from] CmapConflict),
     #[error("Progress stalled computing composite bbox: {0:?}")]
@@ -111,6 +113,12 @@ pub enum Error {
         "Glyph '{0}' mixes variable components with contours or ordinary components, which is not supported"
     )]
     MixedVariableComposite(GlyphName),
+    #[error("Glyph '{glyph}' has inconsistent variable components across sources: {detail}")]
+    InconsistentVariableComponents { glyph: GlyphName, detail: String },
+    #[error("Variable component axis '{tag}' of glyph '{glyph}' is not a font axis")]
+    VariableComponentUnknownAxis { glyph: GlyphName, tag: Tag },
+    #[error("'{glyph}' references non-export glyph '{base}' as a variable component")]
+    VariableComponentBaseNotInGlyphOrder { glyph: GlyphName, base: GlyphName },
 }
 
 #[derive(Debug)]
