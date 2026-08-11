@@ -24,7 +24,7 @@ fn main() {
 }
 
 fn run() -> Result<(), Error> {
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
     let (fea, glyph_names) = args.get_inputs()?;
     if !fea.exists() {
