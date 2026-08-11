@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- As wght_var.designspace, but with an axis that extends well past the outermost
+     master: wght runs to 900 while the heaviest master is at 700, so no master lands
+     on normalized 1.0. Variation regions should still reach it. -->
+<designspace format="4.1">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="400" maximum="900" default="400"/>
+  </axes>
+  <sources>
+    <source filename="WghtVar-Regular.ufo" name="Wght Var Regular" familyname="Wght Var" stylename="Regular">
+      <lib copy="1"/>
+      <groups copy="1"/>
+      <features copy="1"/>
+      <info copy="1"/>
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </source>
+    <source filename="WghtVar-Regular.ufo" name="Wght Var Regular {600}" layer="{600}">
+      <location>
+        <dimension name="Weight" xvalue="600"/>
+      </location>
+    </source>
+    <source filename="WghtVar-Bold.ufo" name="Wght Var Bold" familyname="Wght Var" stylename="Bold">
+      <location>
+        <dimension name="Weight" xvalue="700"/>
+      </location>
+    </source>
+  </sources>
+</designspace>

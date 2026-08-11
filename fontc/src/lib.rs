@@ -4365,6 +4365,51 @@ mod tests {
         );
     }
 
+    /// Variation regions reach the end of the axis, not the outermost master.
+    ///
+    /// The test font's wght axis runs 400..900 but its heaviest master is at 700, so
+    /// nothing sits at normalized 1.0; masters land at 0, 0.4 (a sparse brace layer)
+    /// and 0.6. We used to stop each region at the outermost master, which cut variation
+    /// off entirely past wght 700: <https://github.com/googlefonts/fontc/issues/2012>
+    #[test]
+    fn variation_regions_reach_end_of_axis() {
+        let result = TestCompile::compile_source("wght_var_wide_axis.designspace");
+        let font = result.font();
+        let gvar = font.gvar().unwrap();
+
+        let var_data = gvar
+            .glyph_variation_data(result.get_gid("bar").into())
+            .unwrap()
+            .expect("'bar' varies at every master");
+
+        // an absent intermediate region means the implied one, per
+        // https://learn.microsoft.com/en-us/typography/opentype/spec/otvarcommonformats#tuple-variation-store-header
+        let regions = var_data
+            .tuples()
+            .map(|tuple| {
+                let peak = tuple.peak().get(0).unwrap();
+                let start = tuple
+                    .intermediate_start()
+                    .map(|t| t.get(0).unwrap())
+                    .unwrap_or_else(|| peak.min(F2Dot14::ZERO));
+                let end = tuple
+                    .intermediate_end()
+                    .map(|t| t.get(0).unwrap())
+                    .unwrap_or_else(|| peak.max(F2Dot14::ZERO));
+                (start, peak, end)
+            })
+            .collect::<Vec<_>>();
+
+        let f2dot14 = |v| F2Dot14::from_f32(v);
+        assert_eq!(
+            vec![
+                (f2dot14(0.0), f2dot14(0.4), f2dot14(1.0)),
+                (f2dot14(0.4), f2dot14(0.6), f2dot14(1.0)),
+            ],
+            regions
+        );
+    }
+
     #[test]
     fn compile_empty_gvar_with_correct_axis_count() {
         // The test font contains a 'wght' axis and only 1 UFO source with a variable

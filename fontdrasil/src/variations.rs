@@ -85,6 +85,7 @@ impl RoundTiesEven for kurbo::Vec2 {
     }
 }
 
+const MINUS_ONE: OrderedFloat<f64> = OrderedFloat(-1.0);
 const ZERO: OrderedFloat<f64> = OrderedFloat(0.0);
 const ONE: OrderedFloat<f64> = OrderedFloat(1.0);
 
@@ -107,7 +108,12 @@ pub type ModelDeltas<V> = Vec<(VariationRegion, Vec<V>)>;
 /// Given a set of master locations, figures out a set of regions and the weights each
 /// region assigns to each master. This enables us to compute deltas for variation stores.
 ///
-/// See `class VariationModel` in <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/varLib/models.py>
+/// Unless the model extrapolates, values are assumed to be normalized to the OpenType
+/// range `[-1, 1]`; the outermost master does *not* have to sit at ±1 for a region to
+/// reach it.
+///
+/// See `class VariationModel` in
+/// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/models.py#L225>
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct VariationModel {
     pub default: NormalizedLocation,
@@ -123,9 +129,15 @@ pub struct VariationModel {
 
     // [n] gives a vec of (master index, scale for deltas from that master)
     delta_weights: Vec<Vec<(usize, OrderedFloat<f64>)>>,
-    // if the model supports extrapolation, these are the min/max supported positions,
-    // per-tag.
-    axis_ranges_for_extrapolation: Option<HashMap<Tag, RangeInclusive<OrderedFloat<f64>>>>,
+
+    /// The min/max input position of each axis.
+    ///
+    /// Populated for every axis in `axis_order`. This is -1.0..=1.0` for an
+    /// ordinary model, or the extremes of the master locations if extrapolating.
+    axis_ranges: HashMap<Tag, RangeInclusive<OrderedFloat<f64>>>,
+
+    /// `true` if the model supports extrapolation.
+    extrapolate: bool,
 }
 
 impl VariationModel {
@@ -136,7 +148,34 @@ impl VariationModel {
     ///
     /// Axis order should not include point axes. (In general it should come
     /// from a call to [`Axes::axis_order`] which guarantees there are no point axes).
+    ///
+    /// Positions are assumed to be normalized to the range `[-1, 1]`, and created
+    /// regions will reflect that range. Use [`Self::new_extrapolating`] to
+    /// instead derive the reach from the master locations.
+    ///
+    /// Rust version of `VariationModel.__init__`
+    /// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/models.py#L275>
     pub fn new(locations: HashSet<NormalizedLocation>, axis_order: Vec<Tag>) -> Self {
+        Self::new_impl(locations, axis_order, false)
+    }
+
+    /// A variation model that supports extrapolation
+    ///
+    /// Unlike [`Self::new`], the reach of each region is derived from the
+    /// master locations rather than assumed to be `[-1, 1]`.
+    ///
+    /// Equivalent to Python's `VariationModel(..., extrapolate=True)`, which computes
+    /// its axis ranges with `VariationModel.computeAxisRanges`
+    /// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/models.py#L327>
+    pub fn new_extrapolating(locations: HashSet<NormalizedLocation>, axis_order: Vec<Tag>) -> Self {
+        Self::new_impl(locations, axis_order, true)
+    }
+
+    fn new_impl(
+        locations: HashSet<NormalizedLocation>,
+        axis_order: Vec<Tag>,
+        extrapolate: bool,
+    ) -> Self {
         let default = axis_order
             .iter()
             .map(|axis| (*axis, NormalizedCoord::new(ZERO)))
@@ -162,7 +201,17 @@ impl VariationModel {
         let sorting_hat = LocationSortingHat::new(&locations, &axis_order);
         locations.sort_by_cached_key(|loc| sorting_hat.key_for(loc));
 
-        let regions = regions_for(&axis_order, &locations);
+        // https://github.com/fonttools/fonttools/blob/34be2443/Lib/fontTools/varLib/models.py#L287
+        let axis_ranges = if extrapolate {
+            compute_axis_ranges(&axis_order, &locations)
+        } else {
+            axis_order
+                .iter()
+                .map(|tag| (*tag, MINUS_ONE..=ONE))
+                .collect()
+        };
+
+        let regions = regions_for(&axis_order, &locations, &axis_ranges);
         let influence = master_influence(&axis_order, &regions);
         let delta_weights = delta_weights(&locations, &influence);
 
@@ -179,39 +228,9 @@ impl VariationModel {
             locations,
             influence,
             delta_weights,
-            axis_ranges_for_extrapolation: None,
+            axis_ranges,
+            extrapolate,
         }
-    }
-
-    /// A variation model that supports extrapolation
-    pub fn new_extrapolating(locations: HashSet<NormalizedLocation>, axis_order: Vec<Tag>) -> Self {
-        // compute axis ranges
-        // https://github.com/googlefonts/glyphsLib/blob/52c98239/venv/lib/python3.13/site-packages/fontTools/varLib/models.py#L306
-
-        let all_axes = locations
-            .iter()
-            .flat_map(|loc| loc.axis_tags().copied())
-            .collect::<HashSet<_>>();
-
-        let ranges = all_axes
-            .iter()
-            .map(|axis| {
-                let (min, max) = locations
-                    .iter()
-                    .fold((f64::MAX, f64::MIN), |(min, max), loc| {
-                        match loc.get(*axis) {
-                            Some(val) => (min.min(val.to_f64()), max.max(val.to_f64())),
-                            None => (min, max),
-                        }
-                    });
-                (*axis, min.into()..=max.into())
-            })
-            .collect();
-
-        let mut this = Self::new(locations, axis_order);
-        this.axis_ranges_for_extrapolation = Some(ranges);
-
-        this
     }
 
     pub fn empty() -> Self {
@@ -399,7 +418,10 @@ impl VariationModel {
             .map(|(region, deltas)| {
                 (
                     region
-                        .scalar_at_with_args(location, self.axis_ranges_for_extrapolation.as_ref())
+                        .scalar_at_with_args(
+                            location,
+                            self.extrapolate.then_some(&self.axis_ranges),
+                        )
                         .0,
                     deltas,
                 )
@@ -607,11 +629,13 @@ impl VariationRegion {
     /// Based on varLib.supportScalar, although we do not support all the
     /// arguments there yet.
     ///
-    /// Specifically, the `axis_ranges` argument implies extrapolation: it is
-    /// a map of the allowed ranges for input values. If it is `None`, then we
-    /// will only allow values in the range `-1.0..=1.0`.
+    /// Specifically, the `axis_ranges` argument implies extrapolation: it is a map of
+    /// the allowed ranges for input values, and is only passed by models built with
+    /// [`VariationModel::new_extrapolating`]. In Python the equivalent branch is gated
+    /// on `extrapolate` rather than on `axisRanges` being present, because there
+    /// `axisRanges` is always populated (defaulting to `[-1, 1]`).
     ///
-    /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e/Lib/fontTools/varLib/models.py#L123>.
+    /// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/models.py#L144>.
     pub(crate) fn scalar_at_with_args(
         &self,
         location: &NormalizedLocation,
@@ -811,33 +835,54 @@ impl From<Tent> for gvar::Tent {
     }
 }
 
+/// The min/max position of each axis across the given locations.
+///
+/// An axis missing from a location counts as 0 there; because locations are expanded to
+/// cover every axis in `axis_order` before we get here that falls out for free, matching
+/// Python's `loc.get(axis, 0)`.
+///
+/// VariationModel.computeAxisRanges in Python.
+/// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/models.py#L327>
+fn compute_axis_ranges(
+    axis_order: &[Tag],
+    locations: &[NormalizedLocation],
+) -> HashMap<Tag, RangeInclusive<OrderedFloat<f64>>> {
+    axis_order
+        .iter()
+        .map(|tag| {
+            let mut values = locations
+                .iter()
+                .map(|loc| loc.get(*tag).map(|v| v.into_inner()).unwrap_or(ZERO));
+            // as in Python, the range is seeded from the first location, not from 0
+            let first = values.next().unwrap_or(ZERO);
+            let (min, max) = values.fold((first, first), |(min, max), value| {
+                (min.min(value), max.max(value))
+            });
+            (*tag, min..=max)
+        })
+        .collect()
+}
+
 /// Split space into regions.
 ///
+/// Each region reaches as far as the corresponding axis range allows; for a model that
+/// doesn't extrapolate that is the OpenType normalized range `[-1, 1]`, *not* the extent
+/// of the master locations.
+///
 /// VariationModel::_locationsToRegions in Python.
-/// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L416>
-fn regions_for(axis_order: &[Tag], locations: &[NormalizedLocation]) -> Vec<VariationRegion> {
-    let mut minmax = HashMap::<Tag, (NormalizedCoord, NormalizedCoord)>::new();
-    for location in locations.iter() {
-        for (tag, value) in location.iter() {
-            let (min, max) = minmax.entry(*tag).or_default();
-            if value < min {
-                *min = *value;
-            }
-            if value > max {
-                *max = *value;
-            }
-        }
-    }
-
+/// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/models.py#L459>
+fn regions_for(
+    axis_order: &[Tag],
+    locations: &[NormalizedLocation],
+    axis_ranges: &HashMap<Tag, RangeInclusive<OrderedFloat<f64>>>,
+) -> Vec<VariationRegion> {
     locations
         .iter()
         .map(|location| {
             let mut region = VariationRegion::new();
             for tag in axis_order {
-                assert!(
-                    minmax.contains_key(tag),
-                    "axis_order contained axes not in locations"
-                );
+                #[allow(clippy::unwrap_used)] // axis_ranges is built from axis_order
+                let axis_range = axis_ranges.get(tag).unwrap();
                 #[allow(clippy::unwrap_used)]
                 // We expand locations to cover all axes so this is safe
                 let value = location.get(*tag).unwrap();
@@ -846,8 +891,10 @@ fn regions_for(axis_order: &[Tag], locations: &[NormalizedLocation]) -> Vec<Vari
                 let (min, max) = if value.into_inner() == ZERO {
                     (NormalizedCoord::new(ZERO), NormalizedCoord::new(ZERO))
                 } else {
-                    #[allow(clippy::unwrap_used)] // We asserted above
-                    *minmax.get(tag).unwrap()
+                    (
+                        NormalizedCoord::new(*axis_range.start()),
+                        NormalizedCoord::new(*axis_range.end()),
+                    )
                 };
                 region.insert(*tag, Tent::new(min, value, max));
             }
@@ -1445,9 +1492,103 @@ mod tests {
     fn region(spec: &[(&str, f64, f64, f64)]) -> VariationRegion {
         let mut region = VariationRegion::new();
         for (tag, min, peak, max) in spec {
-            region.insert(Tag::from_str(tag).unwrap(), (*min, *peak, *max).into());
+            // deliberately not Tent::new, which zeroes the unused side; master_influence
+            // narrows tents in place so expectations have to be expressible verbatim
+            let tent = Tent {
+                min: NormalizedCoord::new(*min),
+                peak: NormalizedCoord::new(*peak),
+                max: NormalizedCoord::new(*max),
+            };
+            region.insert(Tag::from_str(tag).unwrap(), tent);
         }
         region
+    }
+
+    /// Regions reach the ends of the normalized space, not the outermost master.
+    ///
+    /// The masters here are those of GeistPixel's ELSH axis, which runs 0..100 in user
+    /// space with no master past 80, so nothing is at normalized 1.0. We used to derive
+    /// the reach of each tent from the master extremes, which cut them all off at 0.8:
+    /// <https://github.com/googlefonts/fontc/issues/2012>
+    #[test]
+    fn regions_span_full_normalized_range() {
+        let locations = HashSet::from([
+            NormalizedLocation::for_pos(&[("ELSH", 0.0)]),
+            NormalizedLocation::for_pos(&[("ELSH", 0.01)]),
+            NormalizedLocation::for_pos(&[("ELSH", 0.2)]),
+            NormalizedLocation::for_pos(&[("ELSH", 0.4)]),
+            NormalizedLocation::for_pos(&[("ELSH", 0.6)]),
+            NormalizedLocation::for_pos(&[("ELSH", 0.8)]),
+        ]);
+        let model = VariationModel::new(locations, axis_order(&["ELSH"]));
+
+        assert_eq!(
+            vec![
+                region(&[("ELSH", 0.0, 0.0, 0.0)]),
+                region(&[("ELSH", 0.0, 0.01, 1.0)]),
+                region(&[("ELSH", 0.01, 0.2, 1.0)]),
+                region(&[("ELSH", 0.2, 0.4, 1.0)]),
+                region(&[("ELSH", 0.4, 0.6, 1.0)]),
+                region(&[("ELSH", 0.6, 0.8, 1.0)]),
+            ],
+            model.influence
+        );
+    }
+
+    /// As [regions_span_full_normalized_range], for the negative half of the axis.
+    #[test]
+    fn regions_span_full_normalized_range_negative() {
+        let locations = HashSet::from([
+            NormalizedLocation::for_pos(&[("wght", 0.0)]),
+            NormalizedLocation::for_pos(&[("wght", -0.5)]),
+        ]);
+        let model = VariationModel::new(locations, axis_order(&["wght"]));
+
+        assert_eq!(
+            vec![
+                region(&[("wght", 0.0, 0.0, 0.0)]),
+                region(&[("wght", -1.0, -0.5, 0.0)]),
+            ],
+            model.influence
+        );
+    }
+
+    /// <https://github.com/fonttools/fonttools/blob/34be2443/Tests/feaLib/builder_test.py#L1299>
+    #[test]
+    fn regions_for_fealib_variable_scalar() {
+        let locations = HashSet::from([
+            NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]),
+            NormalizedLocation::for_pos(&[("wght", 0.875), ("wdth", 0.0)]),
+            NormalizedLocation::for_pos(&[("wght", 0.875), ("wdth", 0.5)]),
+        ]);
+        let model = VariationModel::new(locations, axis_order(&["wght", "wdth"]));
+
+        assert_eq!(
+            vec![
+                region(&[("wght", 0.0, 0.0, 0.0), ("wdth", 0.0, 0.0, 0.0)]),
+                region(&[("wght", 0.0, 0.875, 1.0), ("wdth", 0.0, 0.0, 0.0)]),
+                region(&[("wght", 0.0, 0.875, 1.0), ("wdth", 0.0, 0.5, 1.0)]),
+            ],
+            model.influence
+        );
+    }
+
+    /// An extrapolating model still takes its reach from the masters, not from [-1, 1].
+    #[test]
+    fn extrapolating_regions_use_master_extremes() {
+        let locations = HashSet::from([
+            NormalizedLocation::for_pos(&[("a", 0.0)]),
+            NormalizedLocation::for_pos(&[("a", 0.5)]),
+        ]);
+        let model = VariationModel::new_extrapolating(locations, axis_order(&["a"]));
+
+        assert_eq!(
+            vec![
+                region(&[("a", 0.0, 0.0, 0.0)]),
+                region(&[("a", 0.0, 0.5, 0.5)]),
+            ],
+            model.influence
+        );
     }
 
     #[test]
