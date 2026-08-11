@@ -9,7 +9,7 @@ use fea_rs::util::ttx;
 static WIP_DIFF_DIR: &str = "./wip";
 
 fn main() {
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
 
     let results = ttx::run_fonttools_tests(args.test_filter);

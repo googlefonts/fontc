@@ -26,7 +26,8 @@ use error::Error;
 use target::{BuildType, Target};
 
 fn main() {
-    tracing_subscriber::fmt().init();
+    // note: the free fn, not `fmt().init()`; only this one reads RUST_LOG
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
     if let Err(e) = run(&args) {
         eprintln!("{e}");
