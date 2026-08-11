@@ -445,12 +445,10 @@ impl Work<Context, AnyWorkId, Error> for VarcWork {
             return Ok(());
         };
 
-        let raw_varc = dump_table(&varc)
-            .map_err(|e| Error::DumpTableError {
-                e,
-                context: "VARC".into(),
-            })?
-            .into();
+        let raw_varc = dump_table(&varc).map_err(|e| Error::DumpTableError {
+            e,
+            context: "VARC".into(),
+        })?;
         context.varc.set(raw_varc);
         Ok(())
     }
