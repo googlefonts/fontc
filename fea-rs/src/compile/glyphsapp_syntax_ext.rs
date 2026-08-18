@@ -1,5 +1,8 @@
 //! Handling glyphsapp syntax extensions
 
+#[allow(dead_code)]
+pub(crate) mod predicate;
+
 use std::{
     collections::HashMap,
     ops::{AddAssign, DivAssign, MulAssign, SubAssign},
