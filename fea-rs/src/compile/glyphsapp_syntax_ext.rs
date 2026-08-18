@@ -1,7 +1,8 @@
 //! Handling glyphsapp syntax extensions
 
-#[allow(dead_code)]
 pub(crate) mod predicate;
+
+pub(crate) use predicate::Predicate;
 
 use std::{
     collections::HashMap,

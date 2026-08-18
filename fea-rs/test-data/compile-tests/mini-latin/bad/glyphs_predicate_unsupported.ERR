@@ -1,5 +1,0 @@
-error: glyphs predicate tokens are not yet supported at compile time (see fontc#92)
-in ./test-data/compile-tests/mini-latin/bad/glyphs_predicate_unsupported.fea at 1:14
-  | 
-1 | @predicate = [$[name == "A"]];
-  |               ^^^^^^^^^^^^^^

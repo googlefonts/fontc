@@ -3,9 +3,9 @@
 # "good" here means only that every predicate below PARSES into the tree in the
 # sibling .PARSE_TREE file. Many of them are then REJECTED at validation (compile
 # time): Phase 1 of fontc#92 supports only the `name` attribute with a limited
-# set of operators and quoted/bare string values. Those cases are collected in
-# the "parse-only" section below; their rejection is pinned by the compile-test
-# fixture test-data/compile-tests/mini-latin/bad/glyphs_predicate_unsupported.
+# set of operators and quoted string values. Those cases are collected in
+# the "parse-only" section below; their rejection is pinned by the validation
+# tests in src/tests/compile.rs and src/compile/glyphsapp_syntax_ext/predicate.rs.
 @other = [A B];
 @vertical_bars = [a|b a||b];
 
@@ -13,19 +13,18 @@
 @predicate = [
     A $[name == "double"] $[name = "single"] $[name != "not-equal"]
     $[name <> "angle-not-equal"] $[name beginswith "begin"]
-    $[name endswith 'end'] $[name contains bare]
-    $[name == café] $[name == "a.alt"]
+    $[name endswith 'end'] $[name == "a.alt"]
     $[name!="unspaced"]
     $[name == "a" or name == "b" or name == "c"]
     $[name == "a" and name == "b" and name == "c"]
     $[name ENDSWITH "case-insensitive" Or name contains "operator"]
-    $[name == NULL] $[name == mark]
     @other B
 ];
 
 # -- parse-only: rejected at validation, see compile tests --
 @predicate_parse_only = [
-    $[name == 123]
+    $[name == 123] $[name contains bare]
+    $[name == café] $[name == NULL] $[name == mark]
     $[name matches "matches"] $[name MATCHES "case-insensitive-operator"]
     $[name == "a" && name == "b" || name == "c"]
     $[category like "x"] $[script == "latn"] $[language == "x"]
