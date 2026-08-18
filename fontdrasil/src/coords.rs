@@ -176,8 +176,6 @@ impl Coord<NormalizedSpace> {
 // suggest <= 10 mappings is typical, we can afford the bytes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CoordConverter {
-    /// Indexes the caller's mappings, not `user_to_design`, which is sorted and deduped.
-    pub(crate) default_idx: usize,
     pub(crate) user_to_design: PiecewiseLinearMap,
     design_to_user: PiecewiseLinearMap,
     design_to_normalized: PiecewiseLinearMap,
@@ -223,7 +221,6 @@ impl CoordConverter {
         let normalized_to_design = design_to_normalized.reverse();
 
         Ok(CoordConverter {
-            default_idx,
             user_to_design,
             design_to_user,
             design_to_normalized,
@@ -709,46 +706,26 @@ mod tests {
 
     #[test]
     fn unmapped_coords_get_deduped() {
-        // min==default==max
-        assert_eq!(
-            CoordConverter::unmapped(
-                UserCoord::new(100.0),
-                UserCoord::new(100.0),
-                UserCoord::new(100.0),
-            )
-            .default_idx,
-            0
-        );
-        // min==default<max
-        assert_eq!(
-            CoordConverter::unmapped(
-                UserCoord::new(0.0),
-                UserCoord::new(0.0),
-                UserCoord::new(100.0),
-            )
-            .default_idx,
-            0
-        );
-        // min<default==max
-        assert_eq!(
-            CoordConverter::unmapped(
-                UserCoord::new(0.0),
-                UserCoord::new(100.0),
-                UserCoord::new(100.0),
-            )
-            .default_idx,
-            1
-        );
-        // min<default<max
-        assert_eq!(
-            CoordConverter::unmapped(
-                UserCoord::new(0.0),
-                UserCoord::new(50.0),
-                UserCoord::new(100.0),
-            )
-            .default_idx,
-            1
-        );
+        // min, default, max, and how many mapping points survive deduping
+        for (min, default, max, len) in [
+            (100.0, 100.0, 100.0, 1), // min==default==max
+            (0.0, 0.0, 100.0, 2),     // min==default<max
+            (0.0, 100.0, 100.0, 2),   // min<default==max
+            (0.0, 50.0, 100.0, 3),    // min<default<max
+        ] {
+            let converter = CoordConverter::unmapped(
+                UserCoord::new(min),
+                UserCoord::new(default),
+                UserCoord::new(max),
+            );
+            assert_eq!(converter.len(), len, "{min}/{default}/{max}");
+            // whichever point survived, the default must still normalize to 0
+            assert_eq!(
+                UserCoord::new(default).to_normalized(&converter),
+                NormalizedCoord::new(0.0),
+                "{min}/{default}/{max}"
+            );
+        }
     }
 
     #[test]
@@ -760,7 +737,6 @@ mod tests {
         );
 
         assert_eq!(converter.len(), 3);
-        assert_eq!(converter.default_idx, 1);
         assert_eq!(
             UserCoord::new(50.0).to_normalized(&converter),
             NormalizedCoord::new(-1.0)
@@ -785,7 +761,6 @@ mod tests {
         );
 
         assert_eq!(converter.len(), 2);
-        assert_eq!(converter.default_idx, 0);
         assert_eq!(
             UserCoord::new(50.0).to_normalized(&converter),
             NormalizedCoord::new(0.0)
@@ -919,7 +894,6 @@ mod tests {
         );
 
         assert_eq!(converter.len(), 2);
-        assert_eq!(converter.default_idx, 1);
         assert_eq!(
             UserCoord::new(50.0).to_normalized(&converter),
             NormalizedCoord::new(-1.0)
