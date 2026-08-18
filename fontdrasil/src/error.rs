@@ -11,4 +11,6 @@ pub enum Error {
     DefaultNotFoundInMappings(Coord<UserSpace>),
     #[error("Location involved undefined axis {0}")]
     UnknownAxis(Tag),
+    #[error("Mappings contain more than one entry for input value {0}")]
+    DuplicateMapInput(f64),
 }

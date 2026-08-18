@@ -176,6 +176,7 @@ impl Coord<NormalizedSpace> {
 // suggest <= 10 mappings is typical, we can afford the bytes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CoordConverter {
+    /// Indexes the caller's mappings, not `user_to_design`, which is sorted and deduped.
     pub(crate) default_idx: usize,
     pub(crate) user_to_design: PiecewiseLinearMap,
     design_to_user: PiecewiseLinearMap,
@@ -197,7 +198,7 @@ impl CoordConverter {
                 .iter()
                 .map(|(u, d)| (u.into_inner(), d.into_inner()))
                 .collect(),
-        );
+        )?;
 
         let design_coords: Vec<_> = mappings.iter().map(|(_, d)| d).collect();
         #[allow(clippy::unwrap_used)] // We checked above that mappings is not empty
@@ -216,7 +217,7 @@ impl CoordConverter {
         if *design_max > design_default {
             examples.push((design_max.into_inner(), 1.0.into())); // right of default *must* be +1
         }
-        let design_to_normalized = PiecewiseLinearMap::new(examples);
+        let design_to_normalized = PiecewiseLinearMap::new(examples)?;
 
         let design_to_user = user_to_design.reverse();
         let normalized_to_design = design_to_normalized.reverse();
@@ -587,6 +588,7 @@ mod tests {
     #![allow(clippy::unwrap_used)] // test code
 
     use super::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord};
+    use crate::error::Error;
     use write_fonts::types::Tag;
 
     // From <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
@@ -628,6 +630,37 @@ mod tests {
         assert_eq!(-1.0, DesignCoord::new(26.0).to_normalized(&converter));
         assert_eq!(0.0, DesignCoord::new(90.0).to_normalized(&converter));
         assert_eq!(1.0, DesignCoord::new(190.0).to_normalized(&converter));
+    }
+
+    #[test]
+    pub fn duplicate_user_coords() {
+        // Two design coords for user=400 are ambiguous; one gets silently dropped.
+        let ambiguous = vec![
+            (UserCoord::new(100.0), DesignCoord::new(26.0)),
+            (UserCoord::new(400.0), DesignCoord::new(90.0)),
+            (UserCoord::new(400.0), DesignCoord::new(108.0)),
+        ];
+        let result = CoordConverter::new(ambiguous, 1);
+        assert!(
+            matches!(result, Err(Error::DuplicateMapInput(user)) if user == 400.0),
+            "{result:?}"
+        );
+
+        // ...but duplicate *design* coords are a legal many-to-one mapping
+        let many_to_one = vec![
+            (UserCoord::new(100.0), DesignCoord::new(26.0)),
+            (UserCoord::new(400.0), DesignCoord::new(90.0)),
+            (UserCoord::new(900.0), DesignCoord::new(90.0)),
+        ];
+        CoordConverter::new(many_to_one, 1).unwrap();
+
+        // ...and so is repeating a mapping, as an axis with min == default does
+        let min_is_default = vec![
+            (UserCoord::new(400.0), DesignCoord::new(90.0)),
+            (UserCoord::new(400.0), DesignCoord::new(90.0)),
+            (UserCoord::new(900.0), DesignCoord::new(190.0)),
+        ];
+        CoordConverter::new(min_is_default, 0).unwrap();
     }
 
     #[test]
