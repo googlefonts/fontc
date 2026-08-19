@@ -7,6 +7,8 @@
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
+use crate::error::Error;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PiecewiseLinearMap {
     // these two mappings have identical lengths, by construction
@@ -16,8 +18,25 @@ pub struct PiecewiseLinearMap {
 
 impl PiecewiseLinearMap {
     /// Create a new map from a series of (from, to) values.
-    pub fn new(mut mappings: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>) -> PiecewiseLinearMap {
+    ///
+    /// Exact duplicate mappings are collapsed. Two mappings sharing a `from` but
+    /// disagreeing on `to` are ambiguous and rejected; duplicate `to` values are
+    /// fine, they make a legal many-to-one map.
+    /// <https://github.com/googlefonts/fontc/issues/937>
+    pub fn new(
+        mut mappings: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>,
+    ) -> Result<PiecewiseLinearMap, Error> {
         mappings.sort();
+        mappings.dedup();
+        // sorting grouped equal 'from' values, and any that outlived the dedup disagree on 'to'
+        mappings.windows(2).try_for_each(|pair| match pair {
+            [(lhs, _), (rhs, _)] if lhs == rhs => Err(Error::DuplicateMapInput(lhs.into_inner())),
+            _ => Ok(()),
+        })?;
+        Ok(PiecewiseLinearMap::from_sorted(mappings))
+    }
+
+    fn from_sorted(mappings: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>) -> PiecewiseLinearMap {
         let (from, to): (Vec<_>, Vec<_>) = mappings.into_iter().unzip();
         PiecewiseLinearMap { from, to }
     }
@@ -31,13 +50,16 @@ impl PiecewiseLinearMap {
     }
 
     pub fn reverse(&self) -> PiecewiseLinearMap {
-        let mappings = self
+        // Reversing a many-to-one map yields duplicate 'from' values, which map()
+        // resolves to the first match, so this skips new()'s ambiguity check.
+        let mut mappings: Vec<_> = self
             .to
             .iter()
             .copied()
             .zip(self.from.iter().copied())
             .collect();
-        PiecewiseLinearMap::new(mappings)
+        mappings.sort();
+        PiecewiseLinearMap::from_sorted(mappings)
     }
 
     /// An iterator over (from, to) values.
@@ -102,10 +124,13 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)] // test code
+
     use ordered_float::OrderedFloat;
     use write_fonts::types::Fixed;
 
     use super::PiecewiseLinearMap;
+    use crate::error::Error;
 
     #[test]
     fn single_segment_map() {
@@ -114,7 +139,7 @@ mod tests {
             (OrderedFloat(0_f64), OrderedFloat(0_f64)),
             (OrderedFloat(10_f64), OrderedFloat(1000_f64)),
         ];
-        let plm = PiecewiseLinearMap::new(from_to);
+        let plm = PiecewiseLinearMap::new(from_to).unwrap();
 
         assert_eq!(plm.map(OrderedFloat(0_f64)), OrderedFloat(0_f64));
         assert_eq!(plm.map(OrderedFloat(5_f64)), OrderedFloat(500_f64));
@@ -133,7 +158,7 @@ mod tests {
             (OrderedFloat(0_f64), OrderedFloat(400_f64)),
             (OrderedFloat(10_f64), OrderedFloat(700_f64)),
         ];
-        let plm = PiecewiseLinearMap::new(from_to);
+        let plm = PiecewiseLinearMap::new(from_to).unwrap();
 
         assert_eq!(plm.map(OrderedFloat(-1_f64)), OrderedFloat(100_f64));
         assert_eq!(plm.map(OrderedFloat(0_f64)), OrderedFloat(400_f64));
@@ -150,7 +175,8 @@ mod tests {
             (OrderedFloat(800_f64), OrderedFloat(780_f64)),
             (OrderedFloat(900_f64), OrderedFloat(1000_f64)),
             (OrderedFloat(1000_f64), OrderedFloat(1000_f64)),
-        ]);
+        ])
+        .unwrap();
         let design_to_user = user_to_design.reverse();
 
         // Exact match at the flat value should return the first user value
@@ -177,7 +203,8 @@ mod tests {
             (OrderedFloat(500_f64), OrderedFloat(50_f64)),
             (OrderedFloat(700_f64), OrderedFloat(80_f64)),
             (OrderedFloat(900_f64), OrderedFloat(100_f64)),
-        ]);
+        ])
+        .unwrap();
         let design_to_user = user_to_design.reverse();
 
         // Before the flat segment
@@ -198,6 +225,37 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_from_is_rejected() {
+        // https://github.com/googlefonts/fontc/issues/937
+        // Deliberately out of order; the duplicates only become adjacent once sorted.
+        let result = PiecewiseLinearMap::new(vec![
+            (OrderedFloat(10_f64), OrderedFloat(999_f64)),
+            (OrderedFloat(0_f64), OrderedFloat(0_f64)),
+            (OrderedFloat(10_f64), OrderedFloat(100_f64)),
+        ]);
+
+        assert!(
+            matches!(result, Err(Error::DuplicateMapInput(from)) if from == 10.0),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn identical_mappings_are_collapsed() {
+        // Repeating a mapping isn't ambiguous, just redundant. Sources do this,
+        // e.g. an axis whose min and default are the same value.
+        let plm = PiecewiseLinearMap::new(vec![
+            (OrderedFloat(0_f64), OrderedFloat(0_f64)),
+            (OrderedFloat(10_f64), OrderedFloat(100_f64)),
+            (OrderedFloat(10_f64), OrderedFloat(100_f64)),
+        ])
+        .unwrap();
+
+        assert_eq!(2, plm.len());
+        assert_eq!(OrderedFloat(100_f64), plm.map(OrderedFloat(10_f64)));
+    }
+
+    #[test]
     fn float_precision() {
         // https://github.com/googlefonts/fontc/issues/1117
         let from_to = vec![
@@ -205,7 +263,7 @@ mod tests {
             (OrderedFloat(400_f64), OrderedFloat(0_f64)),
             (OrderedFloat(900_f64), OrderedFloat(1_f64)),
         ];
-        let plm = PiecewiseLinearMap::new(from_to);
+        let plm = PiecewiseLinearMap::new(from_to).unwrap();
 
         let map_to = plm.map(OrderedFloat(200_f64));
         assert_eq!(Fixed::from_f64(map_to.0), Fixed::from_f64(-2f64 / 3f64));
