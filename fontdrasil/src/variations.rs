@@ -379,14 +379,14 @@ impl VariationModel {
         let seqs = if seqs.keys().all(|loc| loc.has_exact_axes(self.axis_order())) {
             Cow::Borrowed(seqs)
         } else {
-            let normalized = seqs
-                .iter()
-                .map(|(k, v)| {
-                    let mut k = k.to_owned();
-                    k.fit_to_axes(self.axis_order());
-                    (k, v.clone())
-                })
-                .collect();
+            let mut normalized = HashMap::with_capacity(seqs.len());
+            for (location, value) in seqs {
+                let mut location = location.to_owned();
+                location.fit_to_axes(self.axis_order());
+                if normalized.insert(location.clone(), value.clone()).is_some() {
+                    return Err(DeltaError::DuplicateLocation(location));
+                }
+            }
             Cow::Owned(normalized)
         };
 
@@ -448,6 +448,8 @@ impl VariationModel {
 pub enum DeltaError {
     #[error("The default must have a point sequence")]
     DefaultUndefined,
+    #[error("Multiple values have the same normalized location {0:?}")]
+    DuplicateLocation(NormalizedLocation),
     #[error("Every point sequence must have the same length")]
     InconsistentNumbersOfPoints,
     #[error("{0:?} is not present in the variation model")]
@@ -1571,6 +1573,28 @@ mod tests {
             ],
             model.influence
         );
+    }
+
+    #[test]
+    fn reject_locations_that_collide_after_fitting_to_axes() {
+        let default = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let redundant_default = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]);
+        let max = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let model = VariationModel::new(
+            HashSet::from([default.clone(), max.clone()]),
+            axis_order(&["wght"]),
+        );
+        let point_seqs = HashMap::from([
+            (default.clone(), vec![10.0]),
+            (redundant_default, vec![20.0]),
+            (max, vec![30.0]),
+        ]);
+
+        // Dropping the non-model `wdth` axis makes the two defaults collide.
+        assert!(matches!(
+            model.deltas(&point_seqs),
+            Err(DeltaError::DuplicateLocation(location)) if location == default
+        ));
     }
 
     /// An extrapolating model still takes its reach from the masters, not from [-1, 1].
