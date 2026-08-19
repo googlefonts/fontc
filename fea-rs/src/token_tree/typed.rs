@@ -1960,14 +1960,9 @@ impl GlyphsAppPredicateValue {
         match self {
             Self::Bare(token) => token.text().to_string(),
             Self::Number(token) => token.text().to_string(),
-            // strip the surrounding quotes; `get` avoids panicking on a
-            // malformed short token (e.g. a lone `"` recovered from an
-            // unterminated string) or a non-char-boundary slice.
-            Self::DoubleQuoted(token) => token
-                .text()
-                .get(1..token.text().len().saturating_sub(1))
-                .unwrap_or_default()
-                .to_owned(),
+            // the lexer has no escape sequences, so trimming the delimiter
+            // quotes is exact
+            Self::DoubleQuoted(token) => token.text().trim_matches('"').to_owned(),
             Self::SingleQuoted(node) => {
                 let mut found_open_quote = false;
                 let mut text = String::new();

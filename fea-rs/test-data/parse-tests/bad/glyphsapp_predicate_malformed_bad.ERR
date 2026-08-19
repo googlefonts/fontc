@@ -52,17 +52,11 @@ in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 9:33
 9 | @spaced_dollar = [$ [name == "x"]];
   |                                  ^
 
-error: Expected glyph or glyph class
+error: glyphs predicates are only supported inside a glyph class
 in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 11:8
    | 
 11 |     sub $[name == "not-a-class-member"] by B;
-   |         ^
-
-warning: ';' should only follow a statement
-in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 11:44
-   | 
-11 |     sub $[name == "not-a-class-member"] by B;
-   |                                             ^
+   |         ^^
 
 error: Expected ] found EOF
 in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 15:0
