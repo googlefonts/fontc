@@ -1362,8 +1362,8 @@ impl VariableMetric {
 }
 
 impl LocationValue {
-    pub(crate) fn location(&self) -> LocationSpec {
-        self.iter().find_map(LocationSpec::cast).unwrap()
+    pub(crate) fn location(&self) -> Option<LocationSpec> {
+        self.iter().find_map(LocationSpec::cast)
     }
 
     pub(crate) fn value(&self) -> Number {

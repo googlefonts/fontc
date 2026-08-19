@@ -1377,8 +1377,19 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             return;
         };
 
+        let mut bare_default_seen = false;
         for location_val in metric.location_values() {
-            for item in location_val.location().items() {
+            let Some(location) = location_val.location() else {
+                if bare_default_seen {
+                    self.error(
+                        location_val.range(),
+                        "duplicate value for the default location",
+                    );
+                }
+                bare_default_seen = true;
+                continue;
+            };
+            for item in location.items() {
                 let Some((_, axis)) = var_info.axis(item.axis_tag().to_raw()) else {
                     self.error(item.axis_tag().range(), "unknown axis");
                     continue;

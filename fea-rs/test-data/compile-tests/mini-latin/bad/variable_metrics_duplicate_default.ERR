@@ -1,0 +1,5 @@
+error: duplicate value for the default location
+in ./test-data/compile-tests/mini-latin/bad/variable_metrics_duplicate_default.fea at 2:16
+  | 
+2 |     pos p y (10 20 wght=900:30);
+  |                 ^^

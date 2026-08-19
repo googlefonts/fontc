@@ -114,7 +114,7 @@ pub(crate) fn expect_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
 /// (<https://glyphsapp.com/learn/tokens#g-number-values>)
 ///
 /// A variable metric has the syntax `(<location_value>+)`
-/// where `<location_value>` is `<location_spec>:<number>`
+/// where `<location_value>` is `<location_spec>:<number>` or a bare default `<number>`
 /// and a `<location_spec>` is `<axis_tag>=<number>,+`
 ///
 /// a number value has the syntax $ident or ${expr}
@@ -292,6 +292,10 @@ fn expect_variation_location_and_value(parser: &mut Parser, recovery: TokenSet) 
 }
 
 fn eat_variation_location_and_value(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if parser.eat(Kind::Number) {
+        return true;
+    }
+
     if !parser.matches(0, TokenSet::TAG_LIKE) {
         return false;
     }

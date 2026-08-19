@@ -1338,20 +1338,22 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let mut locations = HashMap::new();
         for metric_loc in metric.location_values() {
             let mut pos = NormalizedLocation::new();
-            for axis_value in metric_loc.location().items() {
-                let tag = axis_value.axis_tag().to_raw();
-                // All the tags are valid if we made it here, safe to unwrap
-                let (_, axis) = var_info.axis(tag).unwrap();
-                let coord = match axis_value.value().parse() {
-                    super::AxisLocation::Normalized(value) => NormalizedCoord::new(value),
-                    super::AxisLocation::User(value) => {
-                        UserCoord::new(value).to_normalized(&axis.converter)
-                    }
-                    super::AxisLocation::Design(value) => {
-                        DesignCoord::new(value).to_normalized(&axis.converter)
-                    }
-                };
-                pos.insert(tag, coord);
+            if let Some(location) = metric_loc.location() {
+                for axis_value in location.items() {
+                    let tag = axis_value.axis_tag().to_raw();
+                    // All the tags are valid if we made it here, safe to unwrap
+                    let (_, axis) = var_info.axis(tag).unwrap();
+                    let coord = match axis_value.value().parse() {
+                        super::AxisLocation::Normalized(value) => NormalizedCoord::new(value),
+                        super::AxisLocation::User(value) => {
+                            UserCoord::new(value).to_normalized(&axis.converter)
+                        }
+                        super::AxisLocation::Design(value) => {
+                            DesignCoord::new(value).to_normalized(&axis.converter)
+                        }
+                    };
+                    pos.insert(tag, coord);
+                }
             }
             locations.insert(pos, metric_loc.value().parse_signed());
         }
