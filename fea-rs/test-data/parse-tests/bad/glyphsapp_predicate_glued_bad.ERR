@@ -1,0 +1,71 @@
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 6:13
+  | 
+6 |     $[name = = "x"] $[name ! = "x"] $[name < > "x"]
+  |              ^
+
+error: expected predicate operator
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 6:27
+  | 
+6 |     $[name = = "x"] $[name ! = "x"] $[name < > "x"]
+  |                            ^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 6:45
+  | 
+6 |     $[name = = "x"] $[name ! = "x"] $[name < > "x"]
+  |                                              ^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 7:13
+  | 
+7 |     $[name < = "x"] $[name > = "x"]
+  |              ^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 7:29
+  | 
+7 |     $[name < = "x"] $[name > = "x"]
+  |                              ^
+
+error: expected predicate operator
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 9:28
+  | 
+9 | @glued_keyword_op = [$[name contains"x"]];
+  |                             ^^^^^^^^^^^
+
+error: expected predicate connective or ']'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 10:41
+   | 
+10 | @glued_connective_quoted = [$[name == "x"&&name == "y"||name == "z"]];
+   |                                          ^^^^^^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 11:36
+   | 
+11 | @glued_connective_bare = [$[name == x&&name == y||name == z]];
+   |                                     ^^^^^^^
+
+error: expected predicate connective or ']'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 12:39
+   | 
+12 | @glued_connective_number = [$[name == 1&&name == "one"]];
+   |                                        ^^^^^^
+
+error: expected predicate connective or ']'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 13:35
+   | 
+13 | @lexer_split_numeric = [$[name == 09] $[name == 078] $[name == 123abc]];
+   |                                    ^
+
+error: expected predicate connective or ']'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 13:50
+   | 
+13 | @lexer_split_numeric = [$[name == 09] $[name == 078] $[name == 123abc]];
+   |                                                   ^
+
+error: expected predicate connective or ']'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_glued_bad.fea at 13:66
+   | 
+13 | @lexer_split_numeric = [$[name == 09] $[name == 078] $[name == 123abc]];
+   |                                                                   ^^^

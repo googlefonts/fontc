@@ -4,8 +4,8 @@
 # sibling .PARSE_TREE file. Many of them are then REJECTED at validation (compile
 # time): Phase 1 of fontc#92 supports only the `name` attribute with a limited
 # set of operators and quoted/bare string values. Those cases are collected in
-# the "parse-only" section below; their rejection is pinned by the compile tests
-# in src/compile/glyphsapp_syntax_ext/predicate.rs and src/tests/compile.rs.
+# the "parse-only" section below; their rejection is pinned by the compile-test
+# fixture test-data/compile-tests/mini-latin/bad/glyphs_predicate_unsupported.
 @other = [A B];
 @vertical_bars = [a|b a||b];
 
@@ -26,10 +26,10 @@
 # -- parse-only: rejected at validation, see compile tests --
 @predicate_parse_only = [
     $[name == 123]
-    $[name matches "matches"]
+    $[name matches "matches"] $[name MATCHES "case-insensitive-operator"]
     $[name == "a" && name == "b" || name == "c"]
     $[category like "x"] $[script == "latn"] $[language == "x"]
-    $[mark == "x"] $[name sub "x"]
+    $[mark == "x"] $[language == NULL && mark == mark]
     $[NAME == "uppercase"]
     $[name < 1] $[name <= 2] $[name > 4] $[name >= 5]
     $[name =< 3] $[name => 6]

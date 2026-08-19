@@ -1,0 +1,13 @@
+# operators and connectives must be whole tokens of their own: a spelling that
+# the FEA lexer splits or glues differently than glyphsLib's regexes is an
+# error, not a silently different glyph set (see the divergence notes in
+# src/parse/grammar/glyph.rs)
+@spaced_symbolic_ops = [
+    $[name = = "x"] $[name ! = "x"] $[name < > "x"]
+    $[name < = "x"] $[name > = "x"]
+];
+@glued_keyword_op = [$[name contains"x"]];
+@glued_connective_quoted = [$[name == "x"&&name == "y"||name == "z"]];
+@glued_connective_bare = [$[name == x&&name == y||name == z]];
+@glued_connective_number = [$[name == 1&&name == "one"]];
+@lexer_split_numeric = [$[name == 09] $[name == 078] $[name == 123abc]];

@@ -1,0 +1,5 @@
+# predicate constructs that are structurally foreign to the phase-1 grammar and
+# are deferred to fontc#2052
+@not = [$[not name == "x"]];
+@bang_negation = [$[! name == "x"] $[!name == "x"]];
+@parenthesized = [$[(name == "x")]];

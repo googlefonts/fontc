@@ -1,0 +1,14 @@
+# predicates whose clause structure is incomplete or unrecognized
+@missing_value = [$[name == ]];
+@missing_operator = [$[name "x"]];
+@empty = [$[]];
+@unknown_operator = [$[name sub "x"]];
+# glyphsLib's value-first `"x" in name` spelling: a value cannot open a clause
+@value_first_in = [$["A" in name]];
+@relational_garbage = [$[name >= "x" garbage]];
+@spaced_dollar = [$ [name == "x"]];
+feature test {
+    sub $[name == "not-a-class-member"] by B;
+} test;
+# must come last: the unterminated class swallows the rest of the file
+@unterminated = [$[name == "at-eof"

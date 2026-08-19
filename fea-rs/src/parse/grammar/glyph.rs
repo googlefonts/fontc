@@ -116,8 +116,9 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
 }
 
 // A Glyphs.app glyph predicate is valid only as a member of a glyph class in
-// this phase. Predicate validation deliberately owns the supported subset;
-// this grammar only accepts its structural surface, one whole token at a time.
+// this phase. The grammar accepts the structural surface one whole token at a
+// time and classifies the operators it knows; which attributes, values and
+// known operators are actually supported is validation's to decide.
 //
 // Known divergences from glyphsLib (whose regex `\$\[([^\]]+)\]` captures the
 // body opaquely, whereas we run it through the FEA lexer):
@@ -133,6 +134,11 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
 //    though glyphsLib's boundary-free regexes accept some of them. Every
 //    operator example in the Glyphs token docs is spaced, so no real source is
 //    affected.
+//  - glyphsLib also accepts the `in` and `between` operators, including the
+//    value-first spelling that flips `"x" in name` into `name contains "x"`.
+//    Both are deferred with the rest of #2052 and rejected here at parse time:
+//    `in`/`between` as an unknown operator, and the flipped spelling as a
+//    missing attribute, since a value cannot open a clause.
 //  - Trailing tokens after a complete clause are a parse error; glyphsLib
 //    silently drops whatever its capture leaves unconsumed. fontc reports the
 //    problem rather than quietly selecting a different set.
@@ -147,11 +153,9 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
 fn eat_glyphs_predicate(parser: &mut Parser, recovery: TokenSet) -> bool {
     let recovery = recovery.add(Kind::RSquare);
     parser.in_node(AstKind::GlyphsPredicateNode, |parser| {
-        // The caller only enters on an adjacent `$[`; pin that invariant in
-        // debug builds but eat gracefully so a drifted guard cannot panic.
-        debug_assert!(parser.matches(0, Kind::Dollar) && parser.matches(1, Kind::LSquare));
-        parser.eat(Kind::Dollar);
-        parser.eat(Kind::LSquare);
+        // the caller only enters on an adjacent `$[`
+        assert!(parser.eat(Kind::Dollar));
+        assert!(parser.eat(Kind::LSquare));
 
         if !eat_glyphs_predicate_clause(parser, recovery) {
             parser.eat_until(recovery);
@@ -189,114 +193,96 @@ fn eat_glyphs_predicate_clause(parser: &mut Parser, recovery: TokenSet) -> bool 
     // idents), so the single Bang check covers both spellings.
     if parser.current_token_text().eq_ignore_ascii_case("not") || parser.matches(0, Kind::Bang) {
         parser.err_recover(
-            "not predicates are not yet supported (see fontc#2052)",
+            "negation (not/!) is not yet supported in predicates (see fontc#2052)",
             recovery,
         );
         return false;
     }
 
     parser.in_node(AstKind::GlyphsPredicateClauseNode, |parser| {
-        if !eat_glyphs_predicate_attr(parser) {
-            parser.err("expected predicate attribute");
-            return false;
-        }
-        if !eat_glyphs_predicate_op(parser, recovery) {
-            parser.err("expected predicate operator");
-            return false;
-        }
-        if !eat_glyphs_predicate_value(parser, recovery) {
-            parser.err("expected predicate value");
-            return false;
-        }
-        true
+        expect_glyphs_predicate_attr(parser)
+            && expect_glyphs_predicate_op(parser, recovery)
+            && expect_glyphs_predicate_value(parser, recovery)
     })
 }
 
-fn eat_glyphs_predicate_attr(parser: &mut Parser) -> bool {
+fn expect_glyphs_predicate_attr(parser: &mut Parser) -> bool {
     if !is_glyphs_predicate_word(parser.current_token_text()) {
+        parser.err("expected predicate attribute");
         return false;
     }
     parser.eat_remap(parser.nth(0).kind, AstKind::GlyphsPredicateAttr)
 }
 
-fn eat_glyphs_predicate_op(parser: &mut Parser, _recovery: TokenSet) -> bool {
-    let is_word = is_glyphs_predicate_word(parser.current_token_text());
-    let is_symbol = parser.matches(
-        0,
-        TokenSet::new(&[Kind::Eq, Kind::Bang, Kind::LAngle, Kind::RAngle]),
-    );
-    if !is_word && !is_symbol {
-        return false;
-    }
-    // A `!` is an operator only as the start of an adjacent `!=`.
-    if parser.matches(0, Kind::Bang)
-        && !(parser.matches(1, Kind::Eq) && glyphs_predicate_tokens_are_adjacent(parser, 0, 1))
-    {
-        return false;
+/// Either the name of an operation (`beginswith`, `endswith`, `contains`,
+/// `like` or `matches`, in any ASCII case) or one of `==`, `=`, `!=`, `<>`,
+/// `<=`, `=<`, `>=`, `=>`, `<`, `>`.
+///
+/// Each spelling becomes a single token of its own kind, so the synonyms
+/// (`=`/`==`, `!=`/`<>`, `<=`/`=<`, `>=`/`=>`) are classified in the tree while
+/// the token text keeps what was written.
+fn expect_glyphs_predicate_op(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if is_glyphs_predicate_word(parser.current_token_text()) {
+        return expect_glyphs_predicate_op_name(parser);
     }
 
-    // Composite symbolic operators are two adjacent tokens; check adjacency of
-    // the pair (as the `!=` guard above does) before eating, so all sites share
-    // `glyphs_predicate_tokens_are_adjacent` rather than re-deriving offsets.
-    parser.in_node(AstKind::GlyphsPredicateOpNode, |parser| {
-        if is_word {
-            parser.eat_raw();
-            true
-        } else if parser.matches(0, Kind::Eq) {
-            // `==`, or `=>`/`=<` as the NSPredicate spellings of `>=`/`<=`.
-            let composite = parser
-                .matches(1, TokenSet::new(&[Kind::Eq, Kind::RAngle, Kind::LAngle]))
-                && glyphs_predicate_tokens_are_adjacent(parser, 0, 1);
-            parser.eat(Kind::Eq);
-            if composite {
-                parser.eat_raw();
-            }
-            true
-        } else if parser.matches(0, Kind::Bang) {
-            // `!=`; adjacency was checked in the guard above.
-            parser.eat(Kind::Bang);
-            parser.eat(Kind::Eq)
-        } else if parser.matches(0, Kind::LAngle) {
-            // `<`, `<=`, or `<>`.
-            let composite = parser.matches(1, TokenSet::new(&[Kind::Eq, Kind::RAngle]))
-                && glyphs_predicate_tokens_are_adjacent(parser, 0, 1);
-            parser.eat(Kind::LAngle);
-            if composite {
-                parser.eat_raw();
-            }
-            true
-        } else {
-            // `>` or `>=`.
-            debug_assert!(parser.matches(0, Kind::RAngle));
-            let composite =
-                parser.matches(1, Kind::Eq) && glyphs_predicate_tokens_are_adjacent(parser, 0, 1);
-            parser.eat(Kind::RAngle);
-            if composite {
-                parser.eat(Kind::Eq);
-            }
-            true
-        }
-    })
+    // a symbolic operator is one or two adjacent lexemes; `=<` and `=>` are the
+    // NSPredicate spellings of `<=` and `>=`. glyphsLib rejects those two (a
+    // bug: its comparator regex consumes the leading `=` first), but Glyphs.app
+    // accepts them, and being more permissive than glyphsLib on inputs it
+    // rejects cannot make the two toolchains select different glyphs.
+    if parser.eat_adjacent_remap(Kind::Eq, Kind::Eq, AstKind::GlyphsPredicateOpEq)
+        || parser.eat_adjacent_remap(Kind::Bang, Kind::Eq, AstKind::GlyphsPredicateOpNe)
+        || parser.eat_adjacent_remap(Kind::LAngle, Kind::RAngle, AstKind::GlyphsPredicateOpNe)
+        || parser.eat_adjacent_remap(Kind::LAngle, Kind::Eq, AstKind::GlyphsPredicateOpLe)
+        || parser.eat_adjacent_remap(Kind::Eq, Kind::LAngle, AstKind::GlyphsPredicateOpLe)
+        || parser.eat_adjacent_remap(Kind::RAngle, Kind::Eq, AstKind::GlyphsPredicateOpGe)
+        || parser.eat_adjacent_remap(Kind::Eq, Kind::RAngle, AstKind::GlyphsPredicateOpGe)
+        || parser.eat_remap(Kind::Eq, AstKind::GlyphsPredicateOpEq)
+        || parser.eat_remap(Kind::LAngle, AstKind::GlyphsPredicateOpLt)
+        || parser.eat_remap(Kind::RAngle, AstKind::GlyphsPredicateOpGt)
+    {
+        return true;
+    }
+
+    parser.err_recover("expected predicate operator", recovery);
+    false
 }
 
-fn eat_glyphs_predicate_value(parser: &mut Parser, recovery: TokenSet) -> bool {
-    if parser.matches(0, Kind::String) || parser.matches(0, Kind::SingleQuote) {
-        return parser.in_node(AstKind::GlyphsPredicateValueNode, |parser| {
-            if parser.eat(Kind::String) {
-                return true;
-            }
-            debug_assert!(parser.matches(0, Kind::SingleQuote));
+fn expect_glyphs_predicate_op_name(parser: &mut Parser) -> bool {
+    let kind = match parser.current_token_text() {
+        text if text.eq_ignore_ascii_case("beginswith") => AstKind::GlyphsPredicateOpBeginsWith,
+        text if text.eq_ignore_ascii_case("endswith") => AstKind::GlyphsPredicateOpEndsWith,
+        text if text.eq_ignore_ascii_case("contains") => AstKind::GlyphsPredicateOpContains,
+        text if text.eq_ignore_ascii_case("like") => AstKind::GlyphsPredicateOpLike,
+        text if text.eq_ignore_ascii_case("matches") => AstKind::GlyphsPredicateOpMatches,
+        _ => {
+            parser.err_and_bump("unknown glyphs predicate operator");
+            return false;
+        }
+    };
+    parser.eat_remap(parser.nth(0).kind, kind)
+}
+
+fn expect_glyphs_predicate_value(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if parser.eat(Kind::String) {
+        return true;
+    }
+
+    if parser.matches(0, Kind::SingleQuote) {
+        // Unlike a double-quoted string, a single-quoted value is not one lexer
+        // token: `'` is FEA's glyph marker, and a `#` at a token boundary is
+        // still a comment token, which consumes the closing quote and makes the
+        // value malformed.
+        //
+        // The quoted content is otherwise opaque: scan to the closing quote
+        // with predicate-local stop points only, not the caller's
+        // statement-level recovery set, whose keywords (e.g. `by` in a GSUB
+        // rule) may legitimately appear inside the quotes. `]` still bounds
+        // the scan; glyphsLib's `$[([^\]]+)]` capture cannot contain one
+        // either.
+        return parser.in_node(AstKind::GlyphsPredicateSingleQuotedValue, |parser| {
             parser.eat(Kind::SingleQuote);
-            // A `#` at a token boundary is still a FEA comment token, unlike a
-            // double-quoted string. It therefore consumes the closing quote and
-            // makes the single-quoted predicate value malformed.
-            //
-            // The quoted content is otherwise opaque: scan to the closing quote
-            // with predicate-local stop points only, not the caller's
-            // statement-level recovery set, whose keywords (e.g. `by` in a GSUB
-            // rule) may legitimately appear inside the quotes. `]` still bounds
-            // the scan; glyphsLib's `$[([^\]]+)]` capture cannot contain one
-            // either.
             parser.eat_until(TokenSet::new(&[Kind::SingleQuote, Kind::RSquare]));
             parser.expect_recover(Kind::SingleQuote, recovery);
             true
@@ -311,25 +297,24 @@ fn eat_glyphs_predicate_value(parser: &mut Parser, recovery: TokenSet) -> bool {
     // so anything fancier is unreachable. A source value the FEA lexer split
     // across several tokens (`09`, `123abc`) is not rejoined -- see the
     // divergence note above.
-    if parser.matches(0, TokenSet::new(&[Kind::Float, Kind::Hex]))
-        || !is_glyphs_predicate_word(parser.current_token_text())
+    if !parser.matches(0, TokenSet::new(&[Kind::Float, Kind::Hex]))
+        && is_glyphs_predicate_word(parser.current_token_text())
     {
-        return false;
+        let target = if parser
+            .current_token_text()
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+        {
+            AstKind::Number
+        } else {
+            AstKind::Ident
+        };
+        return parser.eat_remap(parser.nth(0).kind, target);
     }
-    let target = if parser
-        .current_token_text()
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_digit())
-    {
-        AstKind::Number
-    } else {
-        AstKind::Ident
-    };
 
-    parser.in_node(AstKind::GlyphsPredicateValueNode, |parser| {
-        parser.eat_remap(parser.nth(0).kind, target)
-    })
+    parser.err_recover("expected predicate value", recovery);
+    false
 }
 
 fn eat_glyphs_predicate_connective(parser: &mut Parser) -> bool {
@@ -470,10 +455,7 @@ mod tests {
     use super::*;
     use crate::GlyphMap;
     use crate::parse::FileId;
-    use crate::token_tree::{
-        AstSink,
-        typed::{self, AstNode},
-    };
+    use crate::token_tree::AstSink;
 
     #[test]
     fn name_like() {
@@ -516,150 +498,6 @@ mod tests {
         let stray_bang = parser.matches(0, Kind::Bang);
         assert!(sink.errors().is_empty(), "'hi' should parse cleanly");
         assert!(stray_bang, "the stray '!' remains as Bang");
-    }
-
-    #[test]
-    fn glyphs_predicate_has_structured_children() {
-        let fea = "[a $[name != \"x\" or script == 'latn'] b]";
-        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
-        let mut parser = Parser::new(fea, &mut sink);
-        eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
-
-        let (node, errs, _) = sink.finish();
-        assert!(errs.is_empty(), "{errs:?}");
-        let class = typed::GlyphClassLiteral::try_from_node(&node).unwrap();
-        let predicate = class
-            .items()
-            .find_map(typed::GlyphsAppPredicate::cast)
-            .unwrap();
-        let clauses = predicate.clauses().collect::<Vec<_>>();
-        assert_eq!(clauses.len(), 2);
-        assert_eq!(clauses[0].attr().unwrap().text(), "name");
-        assert!(matches!(
-            clauses[0].op(),
-            Some(typed::GlyphsAppPredicateOp::NotEqual(_))
-        ));
-        assert_eq!(clauses[0].value().unwrap().text(), "x");
-        assert_eq!(clauses[1].attr().unwrap().text(), "script");
-        assert!(matches!(
-            clauses[1].op(),
-            Some(typed::GlyphsAppPredicateOp::EqualEqual(_))
-        ));
-        assert_eq!(clauses[1].value().unwrap().text(), "latn");
-        assert!(matches!(
-            predicate.connectives().next(),
-            Some(typed::GlyphsAppPredicateConnective::Or(_))
-        ));
-    }
-
-    #[test]
-    fn glyphs_predicate_accepts_keyword_words_and_connectives() {
-        // FEA keywords (`language`, `sub`, `NULL`, `mark`) are accepted as
-        // predicate attributes/operators/values by text, and `&&` is an `and`
-        // connective. (The `&&` must be its own token; a glued `NULL&&mark`
-        // would be a parse error.)
-        let fea = "[$[language sub NULL && mark == mark]]";
-        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
-        let mut parser = Parser::new(fea, &mut sink);
-        eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
-
-        let (node, errs, _) = sink.finish();
-        assert!(errs.is_empty(), "{errs:?}");
-        let class = typed::GlyphClassLiteral::try_from_node(&node).unwrap();
-        let predicate = class
-            .items()
-            .find_map(typed::GlyphsAppPredicate::cast)
-            .unwrap();
-        let clauses = predicate.clauses().collect::<Vec<_>>();
-
-        assert_eq!(clauses.len(), 2);
-        assert_eq!(clauses[0].attr().unwrap().text(), "language");
-        assert_eq!(clauses[0].attr().unwrap().range(), 3..11);
-        assert!(matches!(
-            clauses[0].op(),
-            Some(typed::GlyphsAppPredicateOp::UnknownKeyword(_))
-        ));
-        assert!(matches!(
-            clauses[0].value(),
-            Some(typed::GlyphsAppPredicateValue::Bare(_))
-        ));
-        assert_eq!(clauses[0].value().unwrap().text(), "NULL");
-        assert_eq!(clauses[0].value().unwrap().range(), 16..20);
-        assert_eq!(clauses[1].attr().unwrap().text(), "mark");
-        assert_eq!(clauses[1].value().unwrap().text(), "mark");
-        assert!(matches!(
-            predicate.connectives().next(),
-            Some(typed::GlyphsAppPredicateConnective::And(_))
-        ));
-    }
-
-    #[test]
-    fn glyphs_predicate_types_keyword_operators() {
-        let fea = "[$[name beginswith x] $[name ENDSWITH x] $[name contains x] $[name like x] $[name MATCHES x] $[name sub x]]";
-        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
-        let mut parser = Parser::new(fea, &mut sink);
-        eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
-
-        let (node, errs, _) = sink.finish();
-        assert!(errs.is_empty(), "{errs:?}");
-        let class = typed::GlyphClassLiteral::try_from_node(&node).unwrap();
-        let ops = class
-            .items()
-            .filter_map(typed::GlyphsAppPredicate::cast)
-            .map(|predicate| predicate.clauses().next().unwrap().op().unwrap())
-            .collect::<Vec<_>>();
-
-        assert!(matches!(ops[0], typed::GlyphsAppPredicateOp::BeginsWith(_)));
-        assert!(matches!(ops[1], typed::GlyphsAppPredicateOp::EndsWith(_)));
-        assert!(matches!(ops[2], typed::GlyphsAppPredicateOp::Contains(_)));
-        assert!(matches!(ops[3], typed::GlyphsAppPredicateOp::Like(_)));
-        assert!(matches!(ops[4], typed::GlyphsAppPredicateOp::Matches(_)));
-        assert!(matches!(
-            ops[5],
-            typed::GlyphsAppPredicateOp::UnknownKeyword(_)
-        ));
-    }
-
-    #[test]
-    fn glyphs_predicate_requires_contiguous_syntax() {
-        for fea in [
-            "[$ [name == \"x\"]]",
-            "[$[name = = \"x\"]]",
-            "[$[name ! = \"x\"]]",
-            "[$[name < > \"x\"]]",
-            "[$[name < = \"x\"]]",
-            "[$[name > = \"x\"]]",
-        ] {
-            let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
-            let mut parser = Parser::new(fea, &mut sink);
-            eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
-            let (_node, errs, _) = sink.finish();
-            assert!(!errs.is_empty(), "{fea}");
-        }
-    }
-
-    #[test]
-    fn glyph_names_with_vertical_bars_remain_valid() {
-        let fea = "[a|b a||b]";
-        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
-        let mut parser = Parser::new(fea, &mut sink);
-        eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
-        let (_node, errs, _) = sink.finish();
-        assert!(errs.is_empty(), "{errs:?}");
-    }
-
-    #[test]
-    fn unterminated_glyphs_predicate_errors() {
-        let fea = "[a $[name endswith \".sc\"";
-        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
-        let mut parser = Parser::new(fea, &mut sink);
-        eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
-        let (_node, errs, _) = sink.finish();
-        assert!(
-            errs.iter()
-                .any(|err| err.text().contains("Expected ] found EOF")),
-            "{errs:?}"
-        );
     }
 
     #[test]

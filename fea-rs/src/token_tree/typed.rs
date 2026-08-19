@@ -435,10 +435,42 @@ ast_enum!(GlyphsAppNumberValue {
 ast_node!(GlyphsAppPredicate, Kind::GlyphsPredicateNode);
 ast_node!(GlyphsAppPredicateClause, Kind::GlyphsPredicateClauseNode);
 ast_token!(GlyphsAppPredicateAttr, Kind::GlyphsPredicateAttr);
-ast_node!(GlyphsAppPredicateOpNode, Kind::GlyphsPredicateOpNode);
-ast_node!(GlyphsAppPredicateValueNode, Kind::GlyphsPredicateValueNode);
 ast_token!(GlyphsAppPredicateAnd, Kind::GlyphsPredicateAnd);
 ast_token!(GlyphsAppPredicateOr, Kind::GlyphsPredicateOr);
+
+// operators; the grammar fuses the multi-lexeme spellings into one token and
+// sorts the synonyms (`=`/`==`, `!=`/`<>`, `<=`/`=<`, `>=`/`=>`) into one kind
+// each, so the classification is in the tree and the spelling is preserved
+ast_token!(GlyphsAppPredicateOpEq, Kind::GlyphsPredicateOpEq);
+ast_token!(GlyphsAppPredicateOpNe, Kind::GlyphsPredicateOpNe);
+ast_token!(GlyphsAppPredicateOpLt, Kind::GlyphsPredicateOpLt);
+ast_token!(GlyphsAppPredicateOpLe, Kind::GlyphsPredicateOpLe);
+ast_token!(GlyphsAppPredicateOpGt, Kind::GlyphsPredicateOpGt);
+ast_token!(GlyphsAppPredicateOpGe, Kind::GlyphsPredicateOpGe);
+ast_token!(
+    GlyphsAppPredicateOpBeginsWith,
+    Kind::GlyphsPredicateOpBeginsWith
+);
+ast_token!(
+    GlyphsAppPredicateOpEndsWith,
+    Kind::GlyphsPredicateOpEndsWith
+);
+ast_token!(
+    GlyphsAppPredicateOpContains,
+    Kind::GlyphsPredicateOpContains
+);
+ast_token!(GlyphsAppPredicateOpLike, Kind::GlyphsPredicateOpLike);
+ast_token!(GlyphsAppPredicateOpMatches, Kind::GlyphsPredicateOpMatches);
+
+// values; bare, numeric and double-quoted values are single tokens, but a
+// single-quoted value is irreducibly several (`'` is the FEA glyph marker, so
+// the lexer cannot fuse it) and keeps a node
+ast_token!(GlyphsAppPredicateBareValue, Kind::Ident);
+ast_token!(GlyphsAppPredicateDoubleQuotedValue, Kind::String);
+ast_node!(
+    GlyphsAppPredicateSingleQuotedValue,
+    Kind::GlyphsPredicateSingleQuotedValue
+);
 
 // a connective between predicate clauses; the grammar sorts the `and`/`&&` and
 // `or`/`||` spellings into two kinds, so the classification is in the tree
@@ -447,51 +479,26 @@ ast_enum!(GlyphsAppPredicateConnective {
     Or(GlyphsAppPredicateOr),
 });
 
-/// An operator written in a Glyphs.app glyph predicate.
-#[derive(Clone, Debug)]
-pub enum GlyphsAppPredicateOp {
-    /// `beginswith`, in any ASCII case.
-    BeginsWith(GlyphsAppPredicateOpNode),
-    /// `endswith`, in any ASCII case.
-    EndsWith(GlyphsAppPredicateOpNode),
-    /// `contains`, in any ASCII case.
-    Contains(GlyphsAppPredicateOpNode),
-    /// `like`, in any ASCII case.
-    Like(GlyphsAppPredicateOpNode),
-    /// `matches`, in any ASCII case.
-    Matches(GlyphsAppPredicateOpNode),
-    /// A word operator not yet recognized by the typed predicate syntax.
-    UnknownKeyword(GlyphsAppPredicateOpNode),
-    /// `==`
-    EqualEqual(GlyphsAppPredicateOpNode),
-    /// `=`
-    Equal(GlyphsAppPredicateOpNode),
-    /// `!=`
-    NotEqual(GlyphsAppPredicateOpNode),
-    /// `<>`
-    AngleNotEqual(GlyphsAppPredicateOpNode),
-    /// `<`
-    LessThan(GlyphsAppPredicateOpNode),
-    /// `<=`
-    LessThanOrEqual(GlyphsAppPredicateOpNode),
-    /// `>`
-    GreaterThan(GlyphsAppPredicateOpNode),
-    /// `>=`
-    GreaterThanOrEqual(GlyphsAppPredicateOpNode),
-}
+ast_enum!(GlyphsAppPredicateOp {
+    Eq(GlyphsAppPredicateOpEq),
+    Ne(GlyphsAppPredicateOpNe),
+    Lt(GlyphsAppPredicateOpLt),
+    Le(GlyphsAppPredicateOpLe),
+    Gt(GlyphsAppPredicateOpGt),
+    Ge(GlyphsAppPredicateOpGe),
+    BeginsWith(GlyphsAppPredicateOpBeginsWith),
+    EndsWith(GlyphsAppPredicateOpEndsWith),
+    Contains(GlyphsAppPredicateOpContains),
+    Like(GlyphsAppPredicateOpLike),
+    Matches(GlyphsAppPredicateOpMatches),
+});
 
-/// A value written in a Glyphs.app glyph predicate.
-#[derive(Clone, Debug)]
-pub enum GlyphsAppPredicateValue {
-    /// A value delimited by double quotes.
-    DoubleQuoted(GlyphsAppPredicateValueNode),
-    /// A value delimited by single quotes.
-    SingleQuoted(GlyphsAppPredicateValueNode),
-    /// An unquoted word.
-    Bare(GlyphsAppPredicateValueNode),
-    /// A numeric literal.
-    Number(GlyphsAppPredicateValueNode),
-}
+ast_enum!(GlyphsAppPredicateValue {
+    Bare(GlyphsAppPredicateBareValue),
+    Number(Number),
+    DoubleQuoted(GlyphsAppPredicateDoubleQuotedValue),
+    SingleQuoted(GlyphsAppPredicateSingleQuotedValue),
+});
 
 /// A trait for contextual and chain contextual rule nodes.
 ///
@@ -1918,118 +1925,47 @@ impl GlyphsAppPredicateClause {
     }
 
     pub(crate) fn op(&self) -> Option<GlyphsAppPredicateOp> {
-        self.iter()
-            .find_map(GlyphsAppPredicateOpNode::cast)
-            .map(GlyphsAppPredicateOp::from_node)
+        self.iter().find_map(GlyphsAppPredicateOp::cast)
     }
 
     pub(crate) fn value(&self) -> Option<GlyphsAppPredicateValue> {
-        self.iter()
-            .find_map(GlyphsAppPredicateValueNode::cast)
-            .map(GlyphsAppPredicateValue::from_node)
+        self.iter().find_map(GlyphsAppPredicateValue::cast)
     }
 }
 
 #[allow(dead_code)]
 impl GlyphsAppPredicateOp {
-    fn from_node(node: GlyphsAppPredicateOpNode) -> Self {
-        match compact_node_text(&node).as_str() {
-            text if text.eq_ignore_ascii_case("beginswith") => Self::BeginsWith(node),
-            text if text.eq_ignore_ascii_case("endswith") => Self::EndsWith(node),
-            text if text.eq_ignore_ascii_case("contains") => Self::Contains(node),
-            text if text.eq_ignore_ascii_case("like") => Self::Like(node),
-            text if text.eq_ignore_ascii_case("matches") => Self::Matches(node),
-            "==" => Self::EqualEqual(node),
-            "=" => Self::Equal(node),
-            "!=" => Self::NotEqual(node),
-            "<>" => Self::AngleNotEqual(node),
-            "<" => Self::LessThan(node),
-            "<=" => Self::LessThanOrEqual(node),
-            ">" => Self::GreaterThan(node),
-            ">=" => Self::GreaterThanOrEqual(node),
-            // `=>`/`=<` are the NSPredicate spellings of `>=`/`<=`. glyphsLib
-            // rejects them (a bug: its comparator regex consumes the leading `=`
-            // first), but Glyphs.app itself accepts them, and its own dead
-            // normalize table maps them to `>=`/`<=`; we accept them too, since
-            // being more permissive than glyphsLib on inputs it rejects is safe.
-            "=>" => Self::GreaterThanOrEqual(node),
-            "=<" => Self::LessThanOrEqual(node),
-            _ => Self::UnknownKeyword(node),
-        }
-    }
-
-    /// The exact parsed operator node, including its source range.
-    pub(crate) fn node(&self) -> &GlyphsAppPredicateOpNode {
+    /// The operator spelling, as written in the source.
+    pub(crate) fn text(&self) -> &str {
         match self {
-            Self::BeginsWith(node)
-            | Self::EndsWith(node)
-            | Self::Contains(node)
-            | Self::Like(node)
-            | Self::Matches(node)
-            | Self::UnknownKeyword(node)
-            | Self::EqualEqual(node)
-            | Self::Equal(node)
-            | Self::NotEqual(node)
-            | Self::AngleNotEqual(node)
-            | Self::LessThan(node)
-            | Self::LessThanOrEqual(node)
-            | Self::GreaterThan(node)
-            | Self::GreaterThanOrEqual(node) => node,
+            Self::Eq(token) => token.text(),
+            Self::Ne(token) => token.text(),
+            Self::Lt(token) => token.text(),
+            Self::Le(token) => token.text(),
+            Self::Gt(token) => token.text(),
+            Self::Ge(token) => token.text(),
+            Self::BeginsWith(token) => token.text(),
+            Self::EndsWith(token) => token.text(),
+            Self::Contains(token) => token.text(),
+            Self::Like(token) => token.text(),
+            Self::Matches(token) => token.text(),
         }
-    }
-
-    /// The operator spelling, without trivia.
-    pub(crate) fn text(&self) -> String {
-        compact_node_text(self.node())
-    }
-}
-
-impl AstNode for GlyphsAppPredicateOp {
-    fn cast(node: &NodeOrToken) -> Option<Self> {
-        GlyphsAppPredicateOpNode::cast(node).map(Self::from_node)
-    }
-
-    fn range(&self) -> Range<usize> {
-        self.node().range()
     }
 }
 
 #[allow(dead_code)]
 impl GlyphsAppPredicateValue {
-    fn from_node(node: GlyphsAppPredicateValueNode) -> Self {
-        let kind = node
-            .iter()
-            .find(|item| !item.kind().is_trivia())
-            .map(|item| item.kind());
-        match kind {
-            Some(Kind::String) => Self::DoubleQuoted(node),
-            Some(Kind::SingleQuote) => Self::SingleQuoted(node),
-            Some(Kind::Number) => Self::Number(node),
-            _ => Self::Bare(node),
-        }
-    }
-
-    /// The exact parsed value node, including its source range.
-    pub(crate) fn node(&self) -> &GlyphsAppPredicateValueNode {
-        match self {
-            Self::DoubleQuoted(node)
-            | Self::SingleQuoted(node)
-            | Self::Bare(node)
-            | Self::Number(node) => node,
-        }
-    }
-
-    /// The value content without its surrounding quotes.
+    /// The value content, without its surrounding quotes.
     pub(crate) fn text(&self) -> String {
         match self {
-            Self::DoubleQuoted(node) => node
-                .iter()
-                .find(|item| item.kind() == Kind::String)
-                .and_then(NodeOrToken::token_text)
-                // strip the surrounding quotes; `get` avoids panicking on a
-                // malformed short token (e.g. a lone `"` recovered from an
-                // unterminated string) or a non-char-boundary slice.
-                .and_then(|text| text.get(1..text.len().saturating_sub(1)))
+            Self::Bare(token) => token.text().to_string(),
+            Self::Number(token) => token.text().to_string(),
+            // strip the surrounding quotes; `get` avoids panicking on a
+            // malformed short token (e.g. a lone `"` recovered from an
+            // unterminated string) or a non-char-boundary slice.
+            Self::DoubleQuoted(token) => token
+                .text()
+                .get(1..token.text().len().saturating_sub(1))
                 .unwrap_or_default()
                 .to_owned(),
             Self::SingleQuoted(node) => {
@@ -2047,25 +1983,6 @@ impl GlyphsAppPredicateValue {
                 }
                 text
             }
-            Self::Bare(node) | Self::Number(node) => compact_node_text(node),
         }
     }
-}
-
-impl AstNode for GlyphsAppPredicateValue {
-    fn cast(node: &NodeOrToken) -> Option<Self> {
-        GlyphsAppPredicateValueNode::cast(node).map(Self::from_node)
-    }
-
-    fn range(&self) -> Range<usize> {
-        self.node().range()
-    }
-}
-
-#[allow(dead_code)]
-fn compact_node_text(node: &impl AstNode) -> String {
-    node.iter()
-        .filter(|item| !item.kind().is_trivia())
-        .filter_map(NodeOrToken::token_text)
-        .collect()
 }

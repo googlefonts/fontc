@@ -1,4 +1,4 @@
-FILE@[0; 1736)
+FILE@[0; 1801)
   #@0 "# https://glyphsapp.com/learn/tokens#glyph-predicates"
   WS@53 "\n"
   #@54 "#"
@@ -11,617 +11,537 @@ FILE@[0; 1736)
   WS@296 "\n"
   #@297 "# set of operators and quoted/bare string values. Those cases are collected in"
   WS@375 "\n"
-  #@376 "# the \"parse-only\" section below; their rejection is pinned by the compile tests"
-  WS@456 "\n"
-  #@457 "# in src/compile/glyphsapp_syntax_ext/predicate.rs and src/tests/compile.rs."
-  WS@533 "\n"
-    GlyphClassDefNode@[534; 549)
-      @GlyphClass@534 "@other"
-      WS@540 " "
-      =@541 "="
-      WS@542 " "
-        GlyphClass@[543; 548)
-          [@543 "["
-          GlyphName@544 "A"
-          WS@545 " "
-          GlyphName@546 "B"
-          ]@547 "]"
-      ;@548 ";"
-  WS@549 "\n"
-    GlyphClassDefNode@[550; 578)
-      @GlyphClass@550 "@vertical_bars"
-      WS@564 " "
-      =@565 "="
-      WS@566 " "
-        GlyphClass@[567; 577)
-          [@567 "["
-          GlyphName@568 "a|b"
-          WS@571 " "
-          GlyphName@572 "a||b"
-          ]@576 "]"
-      ;@577 ";"
-  WS@578 "\n\n"
-  #@580 "# -- evaluable: parses and passes Phase 1 validation --"
-  WS@635 "\n"
-    GlyphClassDefNode@[636; 1092)
-      @GlyphClass@636 "@predicate"
-      WS@646 " "
-      =@647 "="
-      WS@648 " "
-        GlyphClass@[649; 1091)
-          [@649 "["
-          WS@650 "\n    "
-          GlyphName@655 "A"
-          WS@656 " "
-            GlyphsPredicateNode@[657; 676)
-              $@657 "$"
-              [@658 "["
-                GlyphsPredicateClauseNode@[659; 675)
-                  GlyphsPredicateAttr@659 "name"
-                  WS@663 " "
-                    GlyphsPredicateOpNode@[664; 666)
-                      =@664 "="
-                      =@665 "="
-                  WS@666 " "
-                    GlyphsPredicateValueNode@[667; 675)
-                      STR@667 ""double""
-              ]@675 "]"
-          WS@676 " "
-            GlyphsPredicateNode@[677; 695)
-              $@677 "$"
-              [@678 "["
-                GlyphsPredicateClauseNode@[679; 694)
-                  GlyphsPredicateAttr@679 "name"
-                  WS@683 " "
-                    GlyphsPredicateOpNode@[684; 685)
-                      =@684 "="
-                  WS@685 " "
-                    GlyphsPredicateValueNode@[686; 694)
-                      STR@686 ""single""
-              ]@694 "]"
-          WS@695 " "
-            GlyphsPredicateNode@[696; 718)
-              $@696 "$"
-              [@697 "["
-                GlyphsPredicateClauseNode@[698; 717)
-                  GlyphsPredicateAttr@698 "name"
-                  WS@702 " "
-                    GlyphsPredicateOpNode@[703; 705)
-                      !@703 "!"
-                      =@704 "="
-                  WS@705 " "
-                    GlyphsPredicateValueNode@[706; 717)
-                      STR@706 ""not-equal""
-              ]@717 "]"
-          WS@718 "\n    "
-            GlyphsPredicateNode@[723; 751)
-              $@723 "$"
-              [@724 "["
-                GlyphsPredicateClauseNode@[725; 750)
-                  GlyphsPredicateAttr@725 "name"
-                  WS@729 " "
-                    GlyphsPredicateOpNode@[730; 732)
-                      <@730 "<"
-                      >@731 ">"
-                  WS@732 " "
-                    GlyphsPredicateValueNode@[733; 750)
-                      STR@733 ""angle-not-equal""
-              ]@750 "]"
-          WS@751 " "
-            GlyphsPredicateNode@[752; 778)
-              $@752 "$"
-              [@753 "["
-                GlyphsPredicateClauseNode@[754; 777)
-                  GlyphsPredicateAttr@754 "name"
-                  WS@758 " "
-                    GlyphsPredicateOpNode@[759; 769)
-                      ID@759 "beginswith"
-                  WS@769 " "
-                    GlyphsPredicateValueNode@[770; 777)
-                      STR@770 ""begin""
-              ]@777 "]"
-          WS@778 "\n    "
-            GlyphsPredicateNode@[783; 805)
-              $@783 "$"
-              [@784 "["
-                GlyphsPredicateClauseNode@[785; 804)
-                  GlyphsPredicateAttr@785 "name"
-                  WS@789 " "
-                    GlyphsPredicateOpNode@[790; 798)
-                      ID@790 "endswith"
-                  WS@798 " "
-                    GlyphsPredicateValueNode@[799; 804)
-                      '@799 "'"
-                      ID@800 "end"
-                      '@803 "'"
-              ]@804 "]"
-          WS@805 " "
-            GlyphsPredicateNode@[806; 827)
-              $@806 "$"
-              [@807 "["
-                GlyphsPredicateClauseNode@[808; 826)
-                  GlyphsPredicateAttr@808 "name"
-                  WS@812 " "
-                    GlyphsPredicateOpNode@[813; 821)
-                      ID@813 "contains"
-                  WS@821 " "
-                    GlyphsPredicateValueNode@[822; 826)
-                      ID@822 "bare"
-              ]@826 "]"
-          WS@827 "\n    "
-            GlyphsPredicateNode@[832; 848)
-              $@832 "$"
-              [@833 "["
-                GlyphsPredicateClauseNode@[834; 847)
-                  GlyphsPredicateAttr@834 "name"
-                  WS@838 " "
-                    GlyphsPredicateOpNode@[839; 841)
-                      =@839 "="
-                      =@840 "="
-                  WS@841 " "
-                    GlyphsPredicateValueNode@[842; 847)
-                      ID@842 "café"
-              ]@847 "]"
-          WS@848 "\n    "
-            GlyphsPredicateNode@[853; 872)
-              $@853 "$"
-              [@854 "["
-                GlyphsPredicateClauseNode@[855; 871)
-                  GlyphsPredicateAttr@855 "name"
-                    GlyphsPredicateOpNode@[859; 861)
-                      !@859 "!"
-                      =@860 "="
-                    GlyphsPredicateValueNode@[861; 871)
-                      STR@861 ""unspaced""
-              ]@871 "]"
-          WS@872 "\n    "
-            GlyphsPredicateNode@[877; 921)
-              $@877 "$"
-              [@878 "["
-                GlyphsPredicateClauseNode@[879; 890)
-                  GlyphsPredicateAttr@879 "name"
-                  WS@883 " "
-                    GlyphsPredicateOpNode@[884; 886)
-                      =@884 "="
-                      =@885 "="
-                  WS@886 " "
-                    GlyphsPredicateValueNode@[887; 890)
-                      STR@887 ""a""
-              WS@890 " "
-              GlyphsPredicateOr@891 "or"
-              WS@893 " "
-                GlyphsPredicateClauseNode@[894; 905)
-                  GlyphsPredicateAttr@894 "name"
-                  WS@898 " "
-                    GlyphsPredicateOpNode@[899; 901)
-                      =@899 "="
-                      =@900 "="
-                  WS@901 " "
-                    GlyphsPredicateValueNode@[902; 905)
-                      STR@902 ""b""
-              WS@905 " "
-              GlyphsPredicateOr@906 "or"
-              WS@908 " "
-                GlyphsPredicateClauseNode@[909; 920)
-                  GlyphsPredicateAttr@909 "name"
-                  WS@913 " "
-                    GlyphsPredicateOpNode@[914; 916)
-                      =@914 "="
-                      =@915 "="
-                  WS@916 " "
-                    GlyphsPredicateValueNode@[917; 920)
-                      STR@917 ""c""
-              ]@920 "]"
-          WS@921 "\n    "
-            GlyphsPredicateNode@[926; 972)
-              $@926 "$"
-              [@927 "["
-                GlyphsPredicateClauseNode@[928; 939)
-                  GlyphsPredicateAttr@928 "name"
-                  WS@932 " "
-                    GlyphsPredicateOpNode@[933; 935)
-                      =@933 "="
-                      =@934 "="
-                  WS@935 " "
-                    GlyphsPredicateValueNode@[936; 939)
-                      STR@936 ""a""
-              WS@939 " "
-              GlyphsPredicateAnd@940 "and"
-              WS@943 " "
-                GlyphsPredicateClauseNode@[944; 955)
-                  GlyphsPredicateAttr@944 "name"
-                  WS@948 " "
-                    GlyphsPredicateOpNode@[949; 951)
-                      =@949 "="
-                      =@950 "="
-                  WS@951 " "
-                    GlyphsPredicateValueNode@[952; 955)
-                      STR@952 ""b""
-              WS@955 " "
-              GlyphsPredicateAnd@956 "and"
-              WS@959 " "
-                GlyphsPredicateClauseNode@[960; 971)
-                  GlyphsPredicateAttr@960 "name"
-                  WS@964 " "
-                    GlyphsPredicateOpNode@[965; 967)
-                      =@965 "="
-                      =@966 "="
-                  WS@967 " "
-                    GlyphsPredicateValueNode@[968; 971)
-                      STR@968 ""c""
-              ]@971 "]"
-          WS@972 "\n    "
-            GlyphsPredicateNode@[977; 1040)
-              $@977 "$"
-              [@978 "["
-                GlyphsPredicateClauseNode@[979; 1011)
-                  GlyphsPredicateAttr@979 "name"
-                  WS@983 " "
-                    GlyphsPredicateOpNode@[984; 992)
-                      ID@984 "ENDSWITH"
-                  WS@992 " "
-                    GlyphsPredicateValueNode@[993; 1011)
-                      STR@993 ""case-insensitive""
-              WS@1011 " "
-              GlyphsPredicateOr@1012 "Or"
-              WS@1014 " "
-                GlyphsPredicateClauseNode@[1015; 1039)
-                  GlyphsPredicateAttr@1015 "name"
-                  WS@1019 " "
-                    GlyphsPredicateOpNode@[1020; 1028)
-                      ID@1020 "contains"
-                  WS@1028 " "
-                    GlyphsPredicateValueNode@[1029; 1039)
-                      STR@1029 ""operator""
-              ]@1039 "]"
-          WS@1040 "\n    "
-            GlyphsPredicateNode@[1045; 1060)
-              $@1045 "$"
-              [@1046 "["
-                GlyphsPredicateClauseNode@[1047; 1059)
-                  GlyphsPredicateAttr@1047 "name"
-                  WS@1051 " "
-                    GlyphsPredicateOpNode@[1052; 1054)
-                      =@1052 "="
-                      =@1053 "="
-                  WS@1054 " "
-                    GlyphsPredicateValueNode@[1055; 1059)
-                      ID@1055 "NULL"
-              ]@1059 "]"
-          WS@1060 " "
-            GlyphsPredicateNode@[1061; 1076)
-              $@1061 "$"
-              [@1062 "["
-                GlyphsPredicateClauseNode@[1063; 1075)
-                  GlyphsPredicateAttr@1063 "name"
-                  WS@1067 " "
-                    GlyphsPredicateOpNode@[1068; 1070)
-                      =@1068 "="
-                      =@1069 "="
-                  WS@1070 " "
-                    GlyphsPredicateValueNode@[1071; 1075)
-                      ID@1071 "mark"
-              ]@1075 "]"
-          WS@1076 "\n    "
-          @GlyphClass@1081 "@other"
-          WS@1087 " "
-          GlyphName@1088 "B"
-          WS@1089 "\n"
-          ]@1090 "]"
-      ;@1091 ";"
-  WS@1092 "\n\n"
-  #@1094 "# -- parse-only: rejected at validation, see compile tests --"
-  WS@1155 "\n"
-    GlyphClassDefNode@[1156; 1492)
-      @GlyphClass@1156 "@predicate_parse_only"
-      WS@1177 " "
-      =@1178 "="
-      WS@1179 " "
-        GlyphClass@[1180; 1491)
-          [@1180 "["
-          WS@1181 "\n    "
-            GlyphsPredicateNode@[1186; 1200)
-              $@1186 "$"
-              [@1187 "["
-                GlyphsPredicateClauseNode@[1188; 1199)
-                  GlyphsPredicateAttr@1188 "name"
-                  WS@1192 " "
-                    GlyphsPredicateOpNode@[1193; 1195)
-                      =@1193 "="
-                      =@1194 "="
-                  WS@1195 " "
-                    GlyphsPredicateValueNode@[1196; 1199)
-                      NUM@1196 "123"
-              ]@1199 "]"
-          WS@1200 "\n    "
-            GlyphsPredicateNode@[1205; 1230)
-              $@1205 "$"
-              [@1206 "["
-                GlyphsPredicateClauseNode@[1207; 1229)
-                  GlyphsPredicateAttr@1207 "name"
-                  WS@1211 " "
-                    GlyphsPredicateOpNode@[1212; 1219)
-                      ID@1212 "matches"
-                  WS@1219 " "
-                    GlyphsPredicateValueNode@[1220; 1229)
-                      STR@1220 ""matches""
-              ]@1229 "]"
-          WS@1230 "\n    "
-            GlyphsPredicateNode@[1235; 1279)
-              $@1235 "$"
-              [@1236 "["
-                GlyphsPredicateClauseNode@[1237; 1248)
-                  GlyphsPredicateAttr@1237 "name"
-                  WS@1241 " "
-                    GlyphsPredicateOpNode@[1242; 1244)
-                      =@1242 "="
-                      =@1243 "="
-                  WS@1244 " "
-                    GlyphsPredicateValueNode@[1245; 1248)
-                      STR@1245 ""a""
-              WS@1248 " "
-              GlyphsPredicateAnd@1249 "&&"
-              WS@1251 " "
-                GlyphsPredicateClauseNode@[1252; 1263)
-                  GlyphsPredicateAttr@1252 "name"
-                  WS@1256 " "
-                    GlyphsPredicateOpNode@[1257; 1259)
-                      =@1257 "="
-                      =@1258 "="
-                  WS@1259 " "
-                    GlyphsPredicateValueNode@[1260; 1263)
-                      STR@1260 ""b""
-              WS@1263 " "
-              GlyphsPredicateOr@1264 "||"
-              WS@1266 " "
-                GlyphsPredicateClauseNode@[1267; 1278)
-                  GlyphsPredicateAttr@1267 "name"
-                  WS@1271 " "
-                    GlyphsPredicateOpNode@[1272; 1274)
-                      =@1272 "="
-                      =@1273 "="
-                  WS@1274 " "
-                    GlyphsPredicateValueNode@[1275; 1278)
-                      STR@1275 ""c""
-              ]@1278 "]"
-          WS@1279 "\n    "
-            GlyphsPredicateNode@[1284; 1304)
-              $@1284 "$"
-              [@1285 "["
-                GlyphsPredicateClauseNode@[1286; 1303)
-                  GlyphsPredicateAttr@1286 "category"
-                  WS@1294 " "
-                    GlyphsPredicateOpNode@[1295; 1299)
-                      ID@1295 "like"
-                  WS@1299 " "
-                    GlyphsPredicateValueNode@[1300; 1303)
-                      STR@1300 ""x""
-              ]@1303 "]"
-          WS@1304 " "
-            GlyphsPredicateNode@[1305; 1324)
-              $@1305 "$"
-              [@1306 "["
-                GlyphsPredicateClauseNode@[1307; 1323)
-                  GlyphsPredicateAttr@1307 "script"
-                  WS@1313 " "
-                    GlyphsPredicateOpNode@[1314; 1316)
-                      =@1314 "="
-                      =@1315 "="
+  #@376 "# the \"parse-only\" section below; their rejection is pinned by the compile-test"
+  WS@455 "\n"
+  #@456 "# fixture test-data/compile-tests/mini-latin/bad/glyphs_predicate_unsupported."
+  WS@534 "\n"
+    GlyphClassDefNode@[535; 550)
+      @GlyphClass@535 "@other"
+      WS@541 " "
+      =@542 "="
+      WS@543 " "
+        GlyphClass@[544; 549)
+          [@544 "["
+          GlyphName@545 "A"
+          WS@546 " "
+          GlyphName@547 "B"
+          ]@548 "]"
+      ;@549 ";"
+  WS@550 "\n"
+    GlyphClassDefNode@[551; 579)
+      @GlyphClass@551 "@vertical_bars"
+      WS@565 " "
+      =@566 "="
+      WS@567 " "
+        GlyphClass@[568; 578)
+          [@568 "["
+          GlyphName@569 "a|b"
+          WS@572 " "
+          GlyphName@573 "a||b"
+          ]@577 "]"
+      ;@578 ";"
+  WS@579 "\n\n"
+  #@581 "# -- evaluable: parses and passes Phase 1 validation --"
+  WS@636 "\n"
+    GlyphClassDefNode@[637; 1093)
+      @GlyphClass@637 "@predicate"
+      WS@647 " "
+      =@648 "="
+      WS@649 " "
+        GlyphClass@[650; 1092)
+          [@650 "["
+          WS@651 "\n    "
+          GlyphName@656 "A"
+          WS@657 " "
+            GlyphsPredicateNode@[658; 677)
+              $@658 "$"
+              [@659 "["
+                GlyphsPredicateClauseNode@[660; 676)
+                  GlyphsPredicateAttr@660 "name"
+                  WS@664 " "
+                  GlyphsPredicateOpEq@665 "=="
+                  WS@667 " "
+                  STR@668 ""double""
+              ]@676 "]"
+          WS@677 " "
+            GlyphsPredicateNode@[678; 696)
+              $@678 "$"
+              [@679 "["
+                GlyphsPredicateClauseNode@[680; 695)
+                  GlyphsPredicateAttr@680 "name"
+                  WS@684 " "
+                  GlyphsPredicateOpEq@685 "="
+                  WS@686 " "
+                  STR@687 ""single""
+              ]@695 "]"
+          WS@696 " "
+            GlyphsPredicateNode@[697; 719)
+              $@697 "$"
+              [@698 "["
+                GlyphsPredicateClauseNode@[699; 718)
+                  GlyphsPredicateAttr@699 "name"
+                  WS@703 " "
+                  GlyphsPredicateOpNe@704 "!="
+                  WS@706 " "
+                  STR@707 ""not-equal""
+              ]@718 "]"
+          WS@719 "\n    "
+            GlyphsPredicateNode@[724; 752)
+              $@724 "$"
+              [@725 "["
+                GlyphsPredicateClauseNode@[726; 751)
+                  GlyphsPredicateAttr@726 "name"
+                  WS@730 " "
+                  GlyphsPredicateOpNe@731 "<>"
+                  WS@733 " "
+                  STR@734 ""angle-not-equal""
+              ]@751 "]"
+          WS@752 " "
+            GlyphsPredicateNode@[753; 779)
+              $@753 "$"
+              [@754 "["
+                GlyphsPredicateClauseNode@[755; 778)
+                  GlyphsPredicateAttr@755 "name"
+                  WS@759 " "
+                  GlyphsPredicateOpBeginsWith@760 "beginswith"
+                  WS@770 " "
+                  STR@771 ""begin""
+              ]@778 "]"
+          WS@779 "\n    "
+            GlyphsPredicateNode@[784; 806)
+              $@784 "$"
+              [@785 "["
+                GlyphsPredicateClauseNode@[786; 805)
+                  GlyphsPredicateAttr@786 "name"
+                  WS@790 " "
+                  GlyphsPredicateOpEndsWith@791 "endswith"
+                  WS@799 " "
+                    GlyphsPredicateSingleQuotedValue@[800; 805)
+                      '@800 "'"
+                      ID@801 "end"
+                      '@804 "'"
+              ]@805 "]"
+          WS@806 " "
+            GlyphsPredicateNode@[807; 828)
+              $@807 "$"
+              [@808 "["
+                GlyphsPredicateClauseNode@[809; 827)
+                  GlyphsPredicateAttr@809 "name"
+                  WS@813 " "
+                  GlyphsPredicateOpContains@814 "contains"
+                  WS@822 " "
+                  ID@823 "bare"
+              ]@827 "]"
+          WS@828 "\n    "
+            GlyphsPredicateNode@[833; 849)
+              $@833 "$"
+              [@834 "["
+                GlyphsPredicateClauseNode@[835; 848)
+                  GlyphsPredicateAttr@835 "name"
+                  WS@839 " "
+                  GlyphsPredicateOpEq@840 "=="
+                  WS@842 " "
+                  ID@843 "café"
+              ]@848 "]"
+          WS@849 "\n    "
+            GlyphsPredicateNode@[854; 873)
+              $@854 "$"
+              [@855 "["
+                GlyphsPredicateClauseNode@[856; 872)
+                  GlyphsPredicateAttr@856 "name"
+                  GlyphsPredicateOpNe@860 "!="
+                  STR@862 ""unspaced""
+              ]@872 "]"
+          WS@873 "\n    "
+            GlyphsPredicateNode@[878; 922)
+              $@878 "$"
+              [@879 "["
+                GlyphsPredicateClauseNode@[880; 891)
+                  GlyphsPredicateAttr@880 "name"
+                  WS@884 " "
+                  GlyphsPredicateOpEq@885 "=="
+                  WS@887 " "
+                  STR@888 ""a""
+              WS@891 " "
+              GlyphsPredicateOr@892 "or"
+              WS@894 " "
+                GlyphsPredicateClauseNode@[895; 906)
+                  GlyphsPredicateAttr@895 "name"
+                  WS@899 " "
+                  GlyphsPredicateOpEq@900 "=="
+                  WS@902 " "
+                  STR@903 ""b""
+              WS@906 " "
+              GlyphsPredicateOr@907 "or"
+              WS@909 " "
+                GlyphsPredicateClauseNode@[910; 921)
+                  GlyphsPredicateAttr@910 "name"
+                  WS@914 " "
+                  GlyphsPredicateOpEq@915 "=="
+                  WS@917 " "
+                  STR@918 ""c""
+              ]@921 "]"
+          WS@922 "\n    "
+            GlyphsPredicateNode@[927; 973)
+              $@927 "$"
+              [@928 "["
+                GlyphsPredicateClauseNode@[929; 940)
+                  GlyphsPredicateAttr@929 "name"
+                  WS@933 " "
+                  GlyphsPredicateOpEq@934 "=="
+                  WS@936 " "
+                  STR@937 ""a""
+              WS@940 " "
+              GlyphsPredicateAnd@941 "and"
+              WS@944 " "
+                GlyphsPredicateClauseNode@[945; 956)
+                  GlyphsPredicateAttr@945 "name"
+                  WS@949 " "
+                  GlyphsPredicateOpEq@950 "=="
+                  WS@952 " "
+                  STR@953 ""b""
+              WS@956 " "
+              GlyphsPredicateAnd@957 "and"
+              WS@960 " "
+                GlyphsPredicateClauseNode@[961; 972)
+                  GlyphsPredicateAttr@961 "name"
+                  WS@965 " "
+                  GlyphsPredicateOpEq@966 "=="
+                  WS@968 " "
+                  STR@969 ""c""
+              ]@972 "]"
+          WS@973 "\n    "
+            GlyphsPredicateNode@[978; 1041)
+              $@978 "$"
+              [@979 "["
+                GlyphsPredicateClauseNode@[980; 1012)
+                  GlyphsPredicateAttr@980 "name"
+                  WS@984 " "
+                  GlyphsPredicateOpEndsWith@985 "ENDSWITH"
+                  WS@993 " "
+                  STR@994 ""case-insensitive""
+              WS@1012 " "
+              GlyphsPredicateOr@1013 "Or"
+              WS@1015 " "
+                GlyphsPredicateClauseNode@[1016; 1040)
+                  GlyphsPredicateAttr@1016 "name"
+                  WS@1020 " "
+                  GlyphsPredicateOpContains@1021 "contains"
+                  WS@1029 " "
+                  STR@1030 ""operator""
+              ]@1040 "]"
+          WS@1041 "\n    "
+            GlyphsPredicateNode@[1046; 1061)
+              $@1046 "$"
+              [@1047 "["
+                GlyphsPredicateClauseNode@[1048; 1060)
+                  GlyphsPredicateAttr@1048 "name"
+                  WS@1052 " "
+                  GlyphsPredicateOpEq@1053 "=="
+                  WS@1055 " "
+                  ID@1056 "NULL"
+              ]@1060 "]"
+          WS@1061 " "
+            GlyphsPredicateNode@[1062; 1077)
+              $@1062 "$"
+              [@1063 "["
+                GlyphsPredicateClauseNode@[1064; 1076)
+                  GlyphsPredicateAttr@1064 "name"
+                  WS@1068 " "
+                  GlyphsPredicateOpEq@1069 "=="
+                  WS@1071 " "
+                  ID@1072 "mark"
+              ]@1076 "]"
+          WS@1077 "\n    "
+          @GlyphClass@1082 "@other"
+          WS@1088 " "
+          GlyphName@1089 "B"
+          WS@1090 "\n"
+          ]@1091 "]"
+      ;@1092 ";"
+  WS@1093 "\n\n"
+  #@1095 "# -- parse-only: rejected at validation, see compile tests --"
+  WS@1156 "\n"
+    GlyphClassDefNode@[1157; 1557)
+      @GlyphClass@1157 "@predicate_parse_only"
+      WS@1178 " "
+      =@1179 "="
+      WS@1180 " "
+        GlyphClass@[1181; 1556)
+          [@1181 "["
+          WS@1182 "\n    "
+            GlyphsPredicateNode@[1187; 1201)
+              $@1187 "$"
+              [@1188 "["
+                GlyphsPredicateClauseNode@[1189; 1200)
+                  GlyphsPredicateAttr@1189 "name"
+                  WS@1193 " "
+                  GlyphsPredicateOpEq@1194 "=="
+                  WS@1196 " "
+                  NUM@1197 "123"
+              ]@1200 "]"
+          WS@1201 "\n    "
+            GlyphsPredicateNode@[1206; 1231)
+              $@1206 "$"
+              [@1207 "["
+                GlyphsPredicateClauseNode@[1208; 1230)
+                  GlyphsPredicateAttr@1208 "name"
+                  WS@1212 " "
+                  GlyphsPredicateOpMatches@1213 "matches"
+                  WS@1220 " "
+                  STR@1221 ""matches""
+              ]@1230 "]"
+          WS@1231 " "
+            GlyphsPredicateNode@[1232; 1275)
+              $@1232 "$"
+              [@1233 "["
+                GlyphsPredicateClauseNode@[1234; 1274)
+                  GlyphsPredicateAttr@1234 "name"
+                  WS@1238 " "
+                  GlyphsPredicateOpMatches@1239 "MATCHES"
+                  WS@1246 " "
+                  STR@1247 ""case-insensitive-operator""
+              ]@1274 "]"
+          WS@1275 "\n    "
+            GlyphsPredicateNode@[1280; 1324)
+              $@1280 "$"
+              [@1281 "["
+                GlyphsPredicateClauseNode@[1282; 1293)
+                  GlyphsPredicateAttr@1282 "name"
+                  WS@1286 " "
+                  GlyphsPredicateOpEq@1287 "=="
+                  WS@1289 " "
+                  STR@1290 ""a""
+              WS@1293 " "
+              GlyphsPredicateAnd@1294 "&&"
+              WS@1296 " "
+                GlyphsPredicateClauseNode@[1297; 1308)
+                  GlyphsPredicateAttr@1297 "name"
+                  WS@1301 " "
+                  GlyphsPredicateOpEq@1302 "=="
+                  WS@1304 " "
+                  STR@1305 ""b""
+              WS@1308 " "
+              GlyphsPredicateOr@1309 "||"
+              WS@1311 " "
+                GlyphsPredicateClauseNode@[1312; 1323)
+                  GlyphsPredicateAttr@1312 "name"
                   WS@1316 " "
-                    GlyphsPredicateValueNode@[1317; 1323)
-                      STR@1317 ""latn""
+                  GlyphsPredicateOpEq@1317 "=="
+                  WS@1319 " "
+                  STR@1320 ""c""
               ]@1323 "]"
-          WS@1324 " "
-            GlyphsPredicateNode@[1325; 1343)
-              $@1325 "$"
-              [@1326 "["
-                GlyphsPredicateClauseNode@[1327; 1342)
-                  GlyphsPredicateAttr@1327 "language"
-                  WS@1335 " "
-                    GlyphsPredicateOpNode@[1336; 1338)
-                      =@1336 "="
-                      =@1337 "="
-                  WS@1338 " "
-                    GlyphsPredicateValueNode@[1339; 1342)
-                      STR@1339 ""x""
-              ]@1342 "]"
-          WS@1343 "\n    "
-            GlyphsPredicateNode@[1348; 1362)
-              $@1348 "$"
-              [@1349 "["
-                GlyphsPredicateClauseNode@[1350; 1361)
-                  GlyphsPredicateAttr@1350 "mark"
-                  WS@1354 " "
-                    GlyphsPredicateOpNode@[1355; 1357)
-                      =@1355 "="
-                      =@1356 "="
-                  WS@1357 " "
-                    GlyphsPredicateValueNode@[1358; 1361)
-                      STR@1358 ""x""
-              ]@1361 "]"
-          WS@1362 " "
-            GlyphsPredicateNode@[1363; 1378)
-              $@1363 "$"
-              [@1364 "["
-                GlyphsPredicateClauseNode@[1365; 1377)
-                  GlyphsPredicateAttr@1365 "name"
-                  WS@1369 " "
-                    GlyphsPredicateOpNode@[1370; 1373)
-                      SubKw@1370 "sub"
-                  WS@1373 " "
-                    GlyphsPredicateValueNode@[1374; 1377)
-                      STR@1374 ""x""
-              ]@1377 "]"
-          WS@1378 "\n    "
-            GlyphsPredicateNode@[1383; 1405)
-              $@1383 "$"
-              [@1384 "["
-                GlyphsPredicateClauseNode@[1385; 1404)
-                  GlyphsPredicateAttr@1385 "NAME"
-                  WS@1389 " "
-                    GlyphsPredicateOpNode@[1390; 1392)
-                      =@1390 "="
-                      =@1391 "="
-                  WS@1392 " "
-                    GlyphsPredicateValueNode@[1393; 1404)
-                      STR@1393 ""uppercase""
-              ]@1404 "]"
-          WS@1405 "\n    "
-            GlyphsPredicateNode@[1410; 1421)
-              $@1410 "$"
-              [@1411 "["
-                GlyphsPredicateClauseNode@[1412; 1420)
-                  GlyphsPredicateAttr@1412 "name"
-                  WS@1416 " "
-                    GlyphsPredicateOpNode@[1417; 1418)
-                      <@1417 "<"
+          WS@1324 "\n    "
+            GlyphsPredicateNode@[1329; 1349)
+              $@1329 "$"
+              [@1330 "["
+                GlyphsPredicateClauseNode@[1331; 1348)
+                  GlyphsPredicateAttr@1331 "category"
+                  WS@1339 " "
+                  GlyphsPredicateOpLike@1340 "like"
+                  WS@1344 " "
+                  STR@1345 ""x""
+              ]@1348 "]"
+          WS@1349 " "
+            GlyphsPredicateNode@[1350; 1369)
+              $@1350 "$"
+              [@1351 "["
+                GlyphsPredicateClauseNode@[1352; 1368)
+                  GlyphsPredicateAttr@1352 "script"
+                  WS@1358 " "
+                  GlyphsPredicateOpEq@1359 "=="
+                  WS@1361 " "
+                  STR@1362 ""latn""
+              ]@1368 "]"
+          WS@1369 " "
+            GlyphsPredicateNode@[1370; 1388)
+              $@1370 "$"
+              [@1371 "["
+                GlyphsPredicateClauseNode@[1372; 1387)
+                  GlyphsPredicateAttr@1372 "language"
+                  WS@1380 " "
+                  GlyphsPredicateOpEq@1381 "=="
+                  WS@1383 " "
+                  STR@1384 ""x""
+              ]@1387 "]"
+          WS@1388 "\n    "
+            GlyphsPredicateNode@[1393; 1407)
+              $@1393 "$"
+              [@1394 "["
+                GlyphsPredicateClauseNode@[1395; 1406)
+                  GlyphsPredicateAttr@1395 "mark"
+                  WS@1399 " "
+                  GlyphsPredicateOpEq@1400 "=="
+                  WS@1402 " "
+                  STR@1403 ""x""
+              ]@1406 "]"
+          WS@1407 " "
+            GlyphsPredicateNode@[1408; 1443)
+              $@1408 "$"
+              [@1409 "["
+                GlyphsPredicateClauseNode@[1410; 1426)
+                  GlyphsPredicateAttr@1410 "language"
                   WS@1418 " "
-                    GlyphsPredicateValueNode@[1419; 1420)
-                      NUM@1419 "1"
-              ]@1420 "]"
-          WS@1421 " "
-            GlyphsPredicateNode@[1422; 1434)
-              $@1422 "$"
-              [@1423 "["
-                GlyphsPredicateClauseNode@[1424; 1433)
-                  GlyphsPredicateAttr@1424 "name"
-                  WS@1428 " "
-                    GlyphsPredicateOpNode@[1429; 1431)
-                      <@1429 "<"
-                      =@1430 "="
-                  WS@1431 " "
-                    GlyphsPredicateValueNode@[1432; 1433)
-                      NUM@1432 "2"
-              ]@1433 "]"
-          WS@1434 " "
-            GlyphsPredicateNode@[1435; 1446)
-              $@1435 "$"
-              [@1436 "["
-                GlyphsPredicateClauseNode@[1437; 1445)
-                  GlyphsPredicateAttr@1437 "name"
-                  WS@1441 " "
-                    GlyphsPredicateOpNode@[1442; 1443)
-                      >@1442 ">"
-                  WS@1443 " "
-                    GlyphsPredicateValueNode@[1444; 1445)
-                      NUM@1444 "4"
-              ]@1445 "]"
-          WS@1446 " "
-            GlyphsPredicateNode@[1447; 1459)
-              $@1447 "$"
-              [@1448 "["
-                GlyphsPredicateClauseNode@[1449; 1458)
-                  GlyphsPredicateAttr@1449 "name"
-                  WS@1453 " "
-                    GlyphsPredicateOpNode@[1454; 1456)
-                      >@1454 ">"
-                      =@1455 "="
-                  WS@1456 " "
-                    GlyphsPredicateValueNode@[1457; 1458)
-                      NUM@1457 "5"
-              ]@1458 "]"
-          WS@1459 "\n    "
-            GlyphsPredicateNode@[1464; 1476)
-              $@1464 "$"
-              [@1465 "["
-                GlyphsPredicateClauseNode@[1466; 1475)
-                  GlyphsPredicateAttr@1466 "name"
-                  WS@1470 " "
-                    GlyphsPredicateOpNode@[1471; 1473)
-                      =@1471 "="
-                      <@1472 "<"
-                  WS@1473 " "
-                    GlyphsPredicateValueNode@[1474; 1475)
-                      NUM@1474 "3"
-              ]@1475 "]"
-          WS@1476 " "
-            GlyphsPredicateNode@[1477; 1489)
-              $@1477 "$"
-              [@1478 "["
-                GlyphsPredicateClauseNode@[1479; 1488)
-                  GlyphsPredicateAttr@1479 "name"
+                  GlyphsPredicateOpEq@1419 "=="
+                  WS@1421 " "
+                  ID@1422 "NULL"
+              WS@1426 " "
+              GlyphsPredicateAnd@1427 "&&"
+              WS@1429 " "
+                GlyphsPredicateClauseNode@[1430; 1442)
+                  GlyphsPredicateAttr@1430 "mark"
+                  WS@1434 " "
+                  GlyphsPredicateOpEq@1435 "=="
+                  WS@1437 " "
+                  ID@1438 "mark"
+              ]@1442 "]"
+          WS@1443 "\n    "
+            GlyphsPredicateNode@[1448; 1470)
+              $@1448 "$"
+              [@1449 "["
+                GlyphsPredicateClauseNode@[1450; 1469)
+                  GlyphsPredicateAttr@1450 "NAME"
+                  WS@1454 " "
+                  GlyphsPredicateOpEq@1455 "=="
+                  WS@1457 " "
+                  STR@1458 ""uppercase""
+              ]@1469 "]"
+          WS@1470 "\n    "
+            GlyphsPredicateNode@[1475; 1486)
+              $@1475 "$"
+              [@1476 "["
+                GlyphsPredicateClauseNode@[1477; 1485)
+                  GlyphsPredicateAttr@1477 "name"
+                  WS@1481 " "
+                  GlyphsPredicateOpLt@1482 "<"
                   WS@1483 " "
-                    GlyphsPredicateOpNode@[1484; 1486)
-                      =@1484 "="
-                      >@1485 ">"
-                  WS@1486 " "
-                    GlyphsPredicateValueNode@[1487; 1488)
-                      NUM@1487 "6"
-              ]@1488 "]"
-          WS@1489 "\n"
-          ]@1490 "]"
-      ;@1491 ";"
-  WS@1492 "\n\n"
-    FeatureNode@[1494; 1735)
-      FeatureKw@1494 "feature"
-      WS@1501 " "
-      Tag@1502 "test"
-      WS@1506 " "
-      {@1507 "{"
-      WS@1508 "\n    "
-        GsubType1@[1513; 1559)
-          SubKw@1513 "sub"
-          WS@1516 " "
-            GlyphClass@[1517; 1553)
-              [@1517 "["
-              GlyphName@1518 "A"
-              WS@1519 " "
-                GlyphsPredicateNode@[1520; 1545)
-                  $@1520 "$"
-                  [@1521 "["
-                    GlyphsPredicateClauseNode@[1522; 1544)
-                      GlyphsPredicateAttr@1522 "name"
-                      WS@1526 " "
-                        GlyphsPredicateOpNode@[1527; 1535)
-                          ID@1527 "contains"
-                      WS@1535 " "
-                        GlyphsPredicateValueNode@[1536; 1544)
-                          STR@1536 ""inline""
-                  ]@1544 "]"
-              WS@1545 " "
-              @GlyphClass@1546 "@other"
-              ]@1552 "]"
-          WS@1553 " "
-          ByKw@1554 "by"
-          WS@1556 " "
-          GlyphName@1557 "B"
-          ;@1558 ";"
-      WS@1559 "\n    "
-      #@1564 "# a single-quoted value whose content is a keyword of the enclosing"
-      WS@1631 "\n    "
-      #@1636 "# rule\'s grammar (`by`) must not terminate the value scan"
-      WS@1693 "\n    "
-        GsubType1@[1698; 1727)
-          SubKw@1698 "sub"
-          WS@1701 " "
-            GlyphClass@[1702; 1721)
-              [@1702 "["
-              GlyphName@1703 "C"
-              WS@1704 " "
-                GlyphsPredicateNode@[1705; 1720)
-                  $@1705 "$"
-                  [@1706 "["
-                    GlyphsPredicateClauseNode@[1707; 1719)
-                      GlyphsPredicateAttr@1707 "name"
-                      WS@1711 " "
-                        GlyphsPredicateOpNode@[1712; 1714)
-                          =@1712 "="
-                          =@1713 "="
-                      WS@1714 " "
-                        GlyphsPredicateValueNode@[1715; 1719)
-                          '@1715 "'"
-                          ByKw@1716 "by"
-                          '@1718 "'"
-                  ]@1719 "]"
-              ]@1720 "]"
-          WS@1721 " "
-          ByKw@1722 "by"
-          WS@1724 " "
-          GlyphName@1725 "D"
-          ;@1726 ";"
-      WS@1727 "\n"
-      }@1728 "}"
-      WS@1729 " "
-      Tag@1730 "test"
-      ;@1734 ";"
-  WS@1735 "\n"
+                  NUM@1484 "1"
+              ]@1485 "]"
+          WS@1486 " "
+            GlyphsPredicateNode@[1487; 1499)
+              $@1487 "$"
+              [@1488 "["
+                GlyphsPredicateClauseNode@[1489; 1498)
+                  GlyphsPredicateAttr@1489 "name"
+                  WS@1493 " "
+                  GlyphsPredicateOpLe@1494 "<="
+                  WS@1496 " "
+                  NUM@1497 "2"
+              ]@1498 "]"
+          WS@1499 " "
+            GlyphsPredicateNode@[1500; 1511)
+              $@1500 "$"
+              [@1501 "["
+                GlyphsPredicateClauseNode@[1502; 1510)
+                  GlyphsPredicateAttr@1502 "name"
+                  WS@1506 " "
+                  GlyphsPredicateOpGt@1507 ">"
+                  WS@1508 " "
+                  NUM@1509 "4"
+              ]@1510 "]"
+          WS@1511 " "
+            GlyphsPredicateNode@[1512; 1524)
+              $@1512 "$"
+              [@1513 "["
+                GlyphsPredicateClauseNode@[1514; 1523)
+                  GlyphsPredicateAttr@1514 "name"
+                  WS@1518 " "
+                  GlyphsPredicateOpGe@1519 ">="
+                  WS@1521 " "
+                  NUM@1522 "5"
+              ]@1523 "]"
+          WS@1524 "\n    "
+            GlyphsPredicateNode@[1529; 1541)
+              $@1529 "$"
+              [@1530 "["
+                GlyphsPredicateClauseNode@[1531; 1540)
+                  GlyphsPredicateAttr@1531 "name"
+                  WS@1535 " "
+                  GlyphsPredicateOpLe@1536 "=<"
+                  WS@1538 " "
+                  NUM@1539 "3"
+              ]@1540 "]"
+          WS@1541 " "
+            GlyphsPredicateNode@[1542; 1554)
+              $@1542 "$"
+              [@1543 "["
+                GlyphsPredicateClauseNode@[1544; 1553)
+                  GlyphsPredicateAttr@1544 "name"
+                  WS@1548 " "
+                  GlyphsPredicateOpGe@1549 "=>"
+                  WS@1551 " "
+                  NUM@1552 "6"
+              ]@1553 "]"
+          WS@1554 "\n"
+          ]@1555 "]"
+      ;@1556 ";"
+  WS@1557 "\n\n"
+    FeatureNode@[1559; 1800)
+      FeatureKw@1559 "feature"
+      WS@1566 " "
+      Tag@1567 "test"
+      WS@1571 " "
+      {@1572 "{"
+      WS@1573 "\n    "
+        GsubType1@[1578; 1624)
+          SubKw@1578 "sub"
+          WS@1581 " "
+            GlyphClass@[1582; 1618)
+              [@1582 "["
+              GlyphName@1583 "A"
+              WS@1584 " "
+                GlyphsPredicateNode@[1585; 1610)
+                  $@1585 "$"
+                  [@1586 "["
+                    GlyphsPredicateClauseNode@[1587; 1609)
+                      GlyphsPredicateAttr@1587 "name"
+                      WS@1591 " "
+                      GlyphsPredicateOpContains@1592 "contains"
+                      WS@1600 " "
+                      STR@1601 ""inline""
+                  ]@1609 "]"
+              WS@1610 " "
+              @GlyphClass@1611 "@other"
+              ]@1617 "]"
+          WS@1618 " "
+          ByKw@1619 "by"
+          WS@1621 " "
+          GlyphName@1622 "B"
+          ;@1623 ";"
+      WS@1624 "\n    "
+      #@1629 "# a single-quoted value whose content is a keyword of the enclosing"
+      WS@1696 "\n    "
+      #@1701 "# rule\'s grammar (`by`) must not terminate the value scan"
+      WS@1758 "\n    "
+        GsubType1@[1763; 1792)
+          SubKw@1763 "sub"
+          WS@1766 " "
+            GlyphClass@[1767; 1786)
+              [@1767 "["
+              GlyphName@1768 "C"
+              WS@1769 " "
+                GlyphsPredicateNode@[1770; 1785)
+                  $@1770 "$"
+                  [@1771 "["
+                    GlyphsPredicateClauseNode@[1772; 1784)
+                      GlyphsPredicateAttr@1772 "name"
+                      WS@1776 " "
+                      GlyphsPredicateOpEq@1777 "=="
+                      WS@1779 " "
+                        GlyphsPredicateSingleQuotedValue@[1780; 1784)
+                          '@1780 "'"
+                          ByKw@1781 "by"
+                          '@1783 "'"
+                  ]@1784 "]"
+              ]@1785 "]"
+          WS@1786 " "
+          ByKw@1787 "by"
+          WS@1789 " "
+          GlyphName@1790 "D"
+          ;@1791 ";"
+      WS@1792 "\n"
+      }@1793 "}"
+      WS@1794 " "
+      Tag@1795 "test"
+      ;@1799 ";"
+  WS@1800 "\n"

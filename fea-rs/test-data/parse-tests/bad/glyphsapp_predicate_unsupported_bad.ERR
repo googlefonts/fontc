@@ -1,0 +1,23 @@
+error: negation (not/!) is not yet supported in predicates (see fontc#2052)
+in ./test-data/parse-tests/bad/glyphsapp_predicate_unsupported_bad.fea at 3:10
+  | 
+3 | @not = [$[not name == "x"]];
+  |           ^^^
+
+error: negation (not/!) is not yet supported in predicates (see fontc#2052)
+in ./test-data/parse-tests/bad/glyphsapp_predicate_unsupported_bad.fea at 4:20
+  | 
+4 | @bang_negation = [$[! name == "x"] $[!name == "x"]];
+  |                     ^
+
+error: negation (not/!) is not yet supported in predicates (see fontc#2052)
+in ./test-data/parse-tests/bad/glyphsapp_predicate_unsupported_bad.fea at 4:37
+  | 
+4 | @bang_negation = [$[! name == "x"] $[!name == "x"]];
+  |                                      ^
+
+error: parenthesized predicates are not yet supported (see fontc#2052)
+in ./test-data/parse-tests/bad/glyphsapp_predicate_unsupported_bad.fea at 5:20
+  | 
+5 | @parenthesized = [$[(name == "x")]];
+  |                     ^
