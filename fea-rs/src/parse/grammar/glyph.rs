@@ -40,29 +40,7 @@ pub(crate) fn named_glyph_class_decl(parser: &mut Parser, recovery: TokenSet) {
 
 // B @class [a b]
 pub(crate) fn eat_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
-    eat_glyph_name_like(parser)
-        || eat_named_or_unnamed_glyph_class(parser, recovery)
-        || eat_misplaced_glyphs_predicate(parser, recovery)
-}
-
-/// A `$[...]` glyphs predicate outside a glyph class.
-///
-/// Parse it in full so recovery resumes cleanly after it, but report that it
-/// is not valid in this position.
-fn eat_misplaced_glyphs_predicate(parser: &mut Parser, recovery: TokenSet) -> bool {
-    if parser.matches(0, Kind::Dollar)
-        && parser.matches(1, Kind::LSquare)
-        && glyphs_predicate_tokens_are_adjacent(parser, 0, 1)
-    {
-        let range = parser.nth_range(0).start..parser.nth_range(1).end;
-        parser.raw_error(
-            range,
-            "glyphs predicates are only supported inside a glyph class",
-        );
-        eat_glyphs_predicate(parser, recovery);
-        return true;
-    }
-    false
+    eat_glyph_name_like(parser) || eat_named_or_unnamed_glyph_class(parser, recovery)
 }
 
 pub(crate) fn expect_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
@@ -90,6 +68,18 @@ pub(crate) fn expect_named_or_unnamed_glyph_class(parser: &mut Parser, recovery:
 // [ a b a-z @hi \0-\40 ]
 pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> bool {
     let recovery = recovery.add(Kind::RSquare);
+    // a `$[...]` glyphs predicate here is outside a glyph class (only class
+    // *members* can be predicates); report that, but still parse it in full so
+    // recovery resumes cleanly after it
+    if parser.matches(0, Kind::Dollar) && parser.matches(1, Kind::LSquare) {
+        let range = parser.nth_range(0).start..parser.nth_range(1).end;
+        parser.raw_error(
+            range,
+            "glyphs predicates are only supported inside a glyph class",
+        );
+        eat_glyphs_predicate(parser, recovery);
+        return true;
+    }
     if !parser.matches(0, Kind::LSquare) {
         return false;
     }
@@ -165,8 +155,10 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
 //    silently drops whatever its capture leaves unconsumed. fontc reports the
 //    problem rather than quietly selecting a different set.
 //  - A bare value is a single word-shaped token, typed as a number when it
-//    starts with an ASCII digit. A value the FEA lexer split into several
-//    tokens (`09`, `123abc`) is not a value.
+//    starts with an ASCII digit. A dotted glyph name (`a.alt`) must be
+//    quoted -- glyphsLib's `\w+` value match stops at the dot and silently
+//    selects `a` -- and a value the FEA lexer split into several tokens
+//    (`09`, `123abc`) is not a value.
 //
 // None of these lets a predicate that both toolchains accept select different
 // glyphs: where glyphsLib silently evaluates something other than what was
@@ -175,7 +167,7 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
 fn eat_glyphs_predicate(parser: &mut Parser, recovery: TokenSet) -> bool {
     let recovery = recovery.add(Kind::RSquare);
     parser.in_node(AstKind::GlyphsPredicateNode, |parser| {
-        // the caller only enters on an adjacent `$[`
+        // the caller only enters on a `$` followed by `[`
         assert!(parser.eat(Kind::Dollar));
         assert!(parser.eat(Kind::LSquare));
 
@@ -310,13 +302,15 @@ fn expect_glyphs_predicate_value(parser: &mut Parser, recovery: TokenSet) -> boo
         });
     }
 
-    // A bare word or bare number value is a single word-shaped token. Float and
-    // hex lexemes (`1.5`, `0x10`) are not values -- a bare digit run is the
-    // only numeric form, since glyphsLib's `\d+` typing would silently
-    // truncate anything else (`1.5` -> `1`, `0x10` -> `0`). A token starting
-    // with an ASCII digit is a number; no glyph name can start with a digit,
-    // so anything fancier is unreachable. A source value the FEA lexer split
-    // across several tokens (`09`, `123abc`) is not rejoined -- see the
+    // A bare value is a single word-shaped token, matched on its text and
+    // remapped rather than eaten by kind: the parity target is glyphsLib's
+    // `\w+` (Unicode-aware), and the lexer may have typed the spelling as
+    // something other than Ident/Number (keywords like `mark` and `NULL`;
+    // `077` lexes as Octal). Digit-first tokens remap to Number, the rest to
+    // Ident (no glyph name starts with a digit). Float and hex lexemes
+    // (`1.5`, `0x10`) are not values: glyphsLib's `\d+` typing would silently
+    // truncate them, so a bare digit run is the only numeric form. Spellings
+    // the FEA lexer split apart (`09`, `123abc`) are not rejoined -- see the
     // divergence note above.
     if !parser.matches(0, TokenSet::new(&[Kind::Float, Kind::Hex]))
         && is_glyphs_predicate_word(parser.current_token_text())

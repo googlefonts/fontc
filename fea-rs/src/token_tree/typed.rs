@@ -1934,26 +1934,6 @@ impl GlyphsAppPredicateClause {
 }
 
 #[allow(dead_code)]
-impl GlyphsAppPredicateOp {
-    /// The operator spelling, as written in the source.
-    pub(crate) fn text(&self) -> &str {
-        match self {
-            Self::Eq(token) => token.text(),
-            Self::Ne(token) => token.text(),
-            Self::Lt(token) => token.text(),
-            Self::Le(token) => token.text(),
-            Self::Gt(token) => token.text(),
-            Self::Ge(token) => token.text(),
-            Self::BeginsWith(token) => token.text(),
-            Self::EndsWith(token) => token.text(),
-            Self::Contains(token) => token.text(),
-            Self::Like(token) => token.text(),
-            Self::Matches(token) => token.text(),
-        }
-    }
-}
-
-#[allow(dead_code)]
 impl GlyphsAppPredicateValue {
     /// The value content, without its surrounding quotes.
     pub(crate) fn text(&self) -> String {

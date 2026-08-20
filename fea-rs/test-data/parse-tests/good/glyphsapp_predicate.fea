@@ -14,7 +14,7 @@
     A $[name == "double"] $[name = "single"] $[name != "not-equal"]
     $[name <> "angle-not-equal"] $[name beginswith "begin"]
     $[name endswith 'end'] $[name contains bare]
-    $[name == café]
+    $[name == café] $[name == "a.alt"]
     $[name!="unspaced"]
     $[name == "a" or name == "b" or name == "c"]
     $[name == "a" and name == "b" and name == "c"]
