@@ -301,9 +301,27 @@ pub enum Kind {
     Plus,
     Asterisk,
     Slash,
+    Bang,
     GlyphsNumberValueNode,
     GlyphsNumberValueExprNode,
     GlyphsNumberIdent,
+    GlyphsPredicateNode,
+    GlyphsPredicateClauseNode,
+    GlyphsPredicateAttr,
+    GlyphsPredicateOpEq,
+    GlyphsPredicateOpNe,
+    GlyphsPredicateOpLt,
+    GlyphsPredicateOpLe,
+    GlyphsPredicateOpGt,
+    GlyphsPredicateOpGe,
+    GlyphsPredicateOpBeginsWith,
+    GlyphsPredicateOpEndsWith,
+    GlyphsPredicateOpContains,
+    GlyphsPredicateOpLike,
+    GlyphsPredicateOpMatches,
+    GlyphsPredicateSingleQuotedValue,
+    GlyphsPredicateAnd,
+    GlyphsPredicateOr,
 }
 
 impl Kind {
@@ -579,9 +597,29 @@ impl std::fmt::Display for Kind {
             Self::Plus => write!(f, "+"),
             Self::Slash => write!(f, "/"),
             Self::Asterisk => write!(f, "*"),
+            Self::Bang => write!(f, "!"),
             Self::GlyphsNumberValueNode => write!(f, "GlyphsNumberValueNode"),
             Self::GlyphsNumberValueExprNode => write!(f, "GlyphsNumberValueExprNode"),
             Self::GlyphsNumberIdent => write!(f, "GlyphsNumberIdent"),
+            Self::GlyphsPredicateNode => write!(f, "GlyphsPredicateNode"),
+            Self::GlyphsPredicateClauseNode => write!(f, "GlyphsPredicateClauseNode"),
+            Self::GlyphsPredicateAttr => write!(f, "GlyphsPredicateAttr"),
+            Self::GlyphsPredicateOpEq => write!(f, "GlyphsPredicateOpEq"),
+            Self::GlyphsPredicateOpNe => write!(f, "GlyphsPredicateOpNe"),
+            Self::GlyphsPredicateOpLt => write!(f, "GlyphsPredicateOpLt"),
+            Self::GlyphsPredicateOpLe => write!(f, "GlyphsPredicateOpLe"),
+            Self::GlyphsPredicateOpGt => write!(f, "GlyphsPredicateOpGt"),
+            Self::GlyphsPredicateOpGe => write!(f, "GlyphsPredicateOpGe"),
+            Self::GlyphsPredicateOpBeginsWith => write!(f, "GlyphsPredicateOpBeginsWith"),
+            Self::GlyphsPredicateOpEndsWith => write!(f, "GlyphsPredicateOpEndsWith"),
+            Self::GlyphsPredicateOpContains => write!(f, "GlyphsPredicateOpContains"),
+            Self::GlyphsPredicateOpLike => write!(f, "GlyphsPredicateOpLike"),
+            Self::GlyphsPredicateOpMatches => write!(f, "GlyphsPredicateOpMatches"),
+            Self::GlyphsPredicateSingleQuotedValue => {
+                write!(f, "GlyphsPredicateSingleQuotedValue")
+            }
+            Self::GlyphsPredicateAnd => write!(f, "GlyphsPredicateAnd"),
+            Self::GlyphsPredicateOr => write!(f, "GlyphsPredicateOr"),
         }
     }
 }

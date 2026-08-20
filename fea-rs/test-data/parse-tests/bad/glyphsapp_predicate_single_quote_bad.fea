@@ -1,0 +1,16 @@
+# Two failure modes of single-quoted predicate values, which go through the FEA
+# lexer token by token (unlike glyphsLib's opaque regex capture, and unlike a
+# double-quoted value, which is one String lexeme):
+#
+# 1. An unterminated quote: the value scanner stops at `]`, so the damage stays
+#    local -- one error, and the NEXT statement must parse clean (that is what
+#    the second class below asserts).
+# 2. A `#` inside the quotes starts a FEA comment that swallows the closing
+#    quote, brackets and semicolon, cascading one error per enclosing construct
+#    to EOF. This is the divergence documented at the top of the predicate
+#    grammar in parse/grammar/glyph.rs. It must stay LAST in this file (and in
+#    a file of its own, separate from glyphsapp_predicate_bad.fea, which ends
+#    with its own at-EOF case): everything after it would be swallowed too.
+@single_quote_recovery = [$[name == 'x] B];
+@after_single_quote_recovery = [C];
+@single_quote_comment = [$[name == 'a #the comment consumes the closing quote and brackets ']];

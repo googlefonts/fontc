@@ -101,6 +101,9 @@ impl<'a> Lexer<'a> {
             b'\\' => Kind::Backslash,
             b'-' => self.hyphen_or_minus(),
             b'=' => Kind::Eq,
+            // `!` is `Bang` and an ident delimiter (see `is_special`), so
+            // `name!="x"` lexes as separate tokens
+            b'!' => Kind::Bang,
             b'{' => Kind::LBrace,
             b'}' => Kind::RBrace,
             b'[' => Kind::LSquare,
@@ -280,13 +283,14 @@ pub(crate) fn iter_tokens(text: &str) -> impl Iterator<Item = Lexeme> + '_ {
     })
 }
 
-// [\ , ' - ; < = > @ \ ( ) [ ] { }]
+// [! ' ( ) * + , - ; < = > ? @ [ \ ] { }]
 fn is_special(byte: u8) -> bool {
     (39..=45).contains(&byte)
         || (59..=64).contains(&byte)
         || (91..=93).contains(&byte)
         || byte == 123
         || byte == 125
+        || byte == b'!'
 }
 
 fn is_ascii_whitespace(byte: u8) -> bool {

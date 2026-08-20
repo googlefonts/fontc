@@ -1,0 +1,83 @@
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 2:28
+  | 
+2 | @missing_value = [$[name == ]];
+  |                             ^
+
+error: expected predicate operator
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 3:28
+  | 
+3 | @missing_operator = [$[name "x"]];
+  |                             ^^^
+
+error: expected predicate attribute
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 4:12
+  | 
+4 | @empty = [$[]];
+  |             ^
+
+error: unknown glyphs predicate operator
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 5:28
+  | 
+5 | @unknown_operator = [$[name sub "x"]];
+  |                             ^^^
+
+error: expected predicate attribute
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 7:21
+  | 
+7 | @value_first_in = [$["A" in name]];
+  |                      ^^^
+
+error: expected predicate connective or ']'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 8:37
+  | 
+8 | @relational_garbage = [$[name >= "x" garbage]];
+  |                                      ^^^^^^^
+
+error: Unexpected token, expected glyph or glyph class
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 9:18
+  | 
+9 | @spaced_dollar = [$ [name == "x"]];
+  |                   ^
+
+error: Expected ';'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 9:33
+  | 
+9 | @spaced_dollar = [$ [name == "x"]];
+  |                                  ^
+
+error: Unexpected token ']', expected global keyword.
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 9:33
+  | 
+9 | @spaced_dollar = [$ [name == "x"]];
+  |                                  ^
+
+error: glyphs predicates are only supported inside a glyph class
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 11:8
+   | 
+11 |     sub $[name == "not-a-class-member"] by B;
+   |         ^^
+
+error: Expected ] found EOF
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 15:0
+   | 
+15 | 
+   | 
+
+error: Unexpected token, expected glyph or glyph class
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 15:0
+   | 
+15 | 
+   | 
+
+error: Unclosed glyph class.
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 14:16
+   | 
+14 | @unterminated = [$[name == "at-eof"
+   |                 ^
+
+error: Expected ';'
+in ./test-data/parse-tests/bad/glyphsapp_predicate_malformed_bad.fea at 15:0
+   | 
+15 | 
+   | ^

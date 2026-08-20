@@ -431,6 +431,75 @@ ast_enum!(GlyphsAppNumberValue {
     Ident(GlyphsAppNumberName),
 });
 
+// Glyphs.app glyph predicates: https://glyphsapp.com/learn/tokens#glyph-predicates
+ast_node!(GlyphsAppPredicate, Kind::GlyphsPredicateNode);
+ast_node!(GlyphsAppPredicateClause, Kind::GlyphsPredicateClauseNode);
+ast_token!(GlyphsAppPredicateAttr, Kind::GlyphsPredicateAttr);
+ast_token!(GlyphsAppPredicateAnd, Kind::GlyphsPredicateAnd);
+ast_token!(GlyphsAppPredicateOr, Kind::GlyphsPredicateOr);
+
+// operators; the grammar fuses the multi-lexeme spellings into one token and
+// sorts the synonyms (`=`/`==`, `!=`/`<>`, `<=`/`=<`, `>=`/`=>`) into one kind
+// each, so the classification is in the tree and the spelling is preserved
+ast_token!(GlyphsAppPredicateOpEq, Kind::GlyphsPredicateOpEq);
+ast_token!(GlyphsAppPredicateOpNe, Kind::GlyphsPredicateOpNe);
+ast_token!(GlyphsAppPredicateOpLt, Kind::GlyphsPredicateOpLt);
+ast_token!(GlyphsAppPredicateOpLe, Kind::GlyphsPredicateOpLe);
+ast_token!(GlyphsAppPredicateOpGt, Kind::GlyphsPredicateOpGt);
+ast_token!(GlyphsAppPredicateOpGe, Kind::GlyphsPredicateOpGe);
+ast_token!(
+    GlyphsAppPredicateOpBeginsWith,
+    Kind::GlyphsPredicateOpBeginsWith
+);
+ast_token!(
+    GlyphsAppPredicateOpEndsWith,
+    Kind::GlyphsPredicateOpEndsWith
+);
+ast_token!(
+    GlyphsAppPredicateOpContains,
+    Kind::GlyphsPredicateOpContains
+);
+ast_token!(GlyphsAppPredicateOpLike, Kind::GlyphsPredicateOpLike);
+ast_token!(GlyphsAppPredicateOpMatches, Kind::GlyphsPredicateOpMatches);
+
+// values; bare, numeric and double-quoted values are single tokens, but a
+// single-quoted value is irreducibly several (`'` is the FEA glyph marker, so
+// the lexer cannot fuse it) and keeps a node
+ast_token!(GlyphsAppPredicateBareValue, Kind::Ident);
+ast_token!(GlyphsAppPredicateDoubleQuotedValue, Kind::String);
+ast_node!(
+    GlyphsAppPredicateSingleQuotedValue,
+    Kind::GlyphsPredicateSingleQuotedValue
+);
+
+// a connective between predicate clauses; the grammar sorts the `and`/`&&` and
+// `or`/`||` spellings into two kinds, so the classification is in the tree
+ast_enum!(GlyphsAppPredicateConnective {
+    And(GlyphsAppPredicateAnd),
+    Or(GlyphsAppPredicateOr),
+});
+
+ast_enum!(GlyphsAppPredicateOp {
+    Eq(GlyphsAppPredicateOpEq),
+    Ne(GlyphsAppPredicateOpNe),
+    Lt(GlyphsAppPredicateOpLt),
+    Le(GlyphsAppPredicateOpLe),
+    Gt(GlyphsAppPredicateOpGt),
+    Ge(GlyphsAppPredicateOpGe),
+    BeginsWith(GlyphsAppPredicateOpBeginsWith),
+    EndsWith(GlyphsAppPredicateOpEndsWith),
+    Contains(GlyphsAppPredicateOpContains),
+    Like(GlyphsAppPredicateOpLike),
+    Matches(GlyphsAppPredicateOpMatches),
+});
+
+ast_enum!(GlyphsAppPredicateValue {
+    Bare(GlyphsAppPredicateBareValue),
+    Number(Number),
+    DoubleQuoted(GlyphsAppPredicateDoubleQuotedValue),
+    SingleQuoted(GlyphsAppPredicateSingleQuotedValue),
+});
+
 /// A trait for contextual and chain contextual rule nodes.
 ///
 /// These types share a common implementation, and this lets us reuse code
@@ -1835,5 +1904,60 @@ impl GlyphsAppNumber {
 impl GlyphsAppNumberExpr {
     pub(crate) fn items(&self) -> impl Iterator<Item = GlyphsAppExprItem> + '_ {
         self.iter().filter_map(GlyphsAppExprItem::cast)
+    }
+}
+
+#[allow(dead_code)]
+impl GlyphsAppPredicate {
+    pub(crate) fn clauses(&self) -> impl Iterator<Item = GlyphsAppPredicateClause> + '_ {
+        self.iter().filter_map(GlyphsAppPredicateClause::cast)
+    }
+
+    pub(crate) fn connectives(&self) -> impl Iterator<Item = GlyphsAppPredicateConnective> + '_ {
+        self.iter().filter_map(GlyphsAppPredicateConnective::cast)
+    }
+}
+
+#[allow(dead_code)]
+impl GlyphsAppPredicateClause {
+    pub(crate) fn attr(&self) -> Option<GlyphsAppPredicateAttr> {
+        self.iter().find_map(GlyphsAppPredicateAttr::cast)
+    }
+
+    pub(crate) fn op(&self) -> Option<GlyphsAppPredicateOp> {
+        self.iter().find_map(GlyphsAppPredicateOp::cast)
+    }
+
+    pub(crate) fn value(&self) -> Option<GlyphsAppPredicateValue> {
+        self.iter().find_map(GlyphsAppPredicateValue::cast)
+    }
+}
+
+#[allow(dead_code)]
+impl GlyphsAppPredicateValue {
+    /// The value content, without its surrounding quotes.
+    pub(crate) fn text(&self) -> String {
+        match self {
+            Self::Bare(token) => token.text().to_string(),
+            Self::Number(token) => token.text().to_string(),
+            // the lexer has no escape sequences, so trimming the delimiter
+            // quotes is exact
+            Self::DoubleQuoted(token) => token.text().trim_matches('"').to_owned(),
+            Self::SingleQuoted(node) => {
+                let mut found_open_quote = false;
+                let mut text = String::new();
+                for item in node.iter() {
+                    if item.kind() == Kind::SingleQuote {
+                        if found_open_quote {
+                            break;
+                        }
+                        found_open_quote = true;
+                    } else if found_open_quote {
+                        text.push_str(item.token_text().unwrap_or_default());
+                    }
+                }
+                text
+            }
+        }
     }
 }

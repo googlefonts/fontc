@@ -1,0 +1,7 @@
+# numeric value forms that glyphsLib's `\d+` typing would silently truncate
+@float_value = [$[name == 1.5]];
+@negative_value = [$[name == -1]];
+@hex_value = [$[name == 0x10]];
+# a dotted glyph name must be quoted: glyphsLib's `\w+` value match stops at
+# the dot and silently selects `a`
+@dotted_value = [$[name == a.alt]];

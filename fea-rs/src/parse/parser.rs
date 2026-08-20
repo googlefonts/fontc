@@ -289,6 +289,25 @@ impl<'b, 'a> Parser<'a, 'b> {
         false
     }
 
+    /// Eat the next two tokens as a *single* token of kind `remap`.
+    ///
+    /// The two tokens must not be separated by whitespace.
+    pub(crate) fn eat_adjacent_remap(
+        &mut self,
+        first: impl TokenComparable,
+        second: impl TokenComparable,
+        remap: Kind,
+    ) -> bool {
+        if self.matches(0, first)
+            && self.matches(1, second)
+            && self.nth_range(0).end == self.nth_range(1).start
+        {
+            self.do_bump::<2>(remap);
+            return true;
+        }
+        false
+    }
+
     pub(crate) fn at_eof(&self) -> bool {
         self.nth(0).kind == LexemeKind::Eof
     }

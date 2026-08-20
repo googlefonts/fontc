@@ -1,0 +1,23 @@
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_value_bad.fea at 2:26
+  | 
+2 | @float_value = [$[name == 1.5]];
+  |                           ^^^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_value_bad.fea at 3:29
+  | 
+3 | @negative_value = [$[name == -1]];
+  |                              ^^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_value_bad.fea at 4:24
+  | 
+4 | @hex_value = [$[name == 0x10]];
+  |                         ^^^^
+
+error: expected predicate value
+in ./test-data/parse-tests/bad/glyphsapp_predicate_value_bad.fea at 7:27
+  | 
+7 | @dotted_value = [$[name == a.alt]];
+  |                            ^^^^^
