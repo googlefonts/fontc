@@ -1,0 +1,8 @@
+# A Glyphs.app '$[...]' predicate expands to the matching glyphs in glyph
+# order: @old_style is equivalent to writing [zero.osf one.osf ... nine.osf].
+@digits = [zero one two three four five six seven eight nine];
+@old_style = [ $[name endswith ".osf"] ];
+
+feature onum {
+    sub @digits by @old_style;
+} onum;

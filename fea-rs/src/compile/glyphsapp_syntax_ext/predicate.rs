@@ -39,9 +39,11 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 
+use smol_str::SmolStr;
+
 use crate::typed;
 
-/// A comparison operator over a glyph's name.
+/// A comparison operator in a predicate clause.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Op {
     BeginsWith,
@@ -89,7 +91,7 @@ enum Connective {
 #[derive(Clone, Debug)]
 struct Clause {
     op: Op,
-    value: String,
+    value: SmolStr,
 }
 
 impl Clause {
@@ -102,8 +104,8 @@ impl Clause {
 #[derive(Clone, Debug)]
 pub(crate) struct Predicate {
     clauses: Vec<Clause>,
-    // `None` when there is a single clause.
-    connective: Option<Connective>,
+    // `And` when there is a single clause (the two are equivalent).
+    connective: Connective,
 }
 
 impl Predicate {
@@ -119,18 +121,17 @@ impl Predicate {
             .collect();
         assert!(!clauses.is_empty(), "empty predicates are a parse error");
 
-        let mut connective: Option<Connective> = None;
-        for conn in node.connectives() {
-            let this = match conn {
+        let connective = node
+            .connectives()
+            .map(|conn| match conn {
                 typed::GlyphsAppPredicateConnective::And(_) => Connective::And,
                 typed::GlyphsAppPredicateConnective::Or(_) => Connective::Or,
-            };
-            assert!(
-                connective.is_none() || connective == Some(this),
-                "mixed connectives are rejected by validation"
-            );
-            connective = Some(this);
-        }
+            })
+            .reduce(|prev, this| {
+                assert_eq!(prev, this, "mixed connectives are rejected by validation");
+                this
+            })
+            .unwrap_or(Connective::And);
         Predicate {
             clauses,
             connective,
@@ -157,7 +158,7 @@ impl Predicate {
             // glyphsLib appends each clause's matches in turn, so a glyph that
             // matches an earlier clause keeps its earlier position. A single
             // glyph-order pass would re-interleave them; this does not.
-            Some(Connective::Or) => {
+            Connective::Or => {
                 let mut seen = HashSet::new();
                 let mut out = Vec::new();
                 for clause in &self.clauses {
@@ -173,7 +174,7 @@ impl Predicate {
             // clause matches. Iterating once in glyph order matches glyphsLib's
             // ordering for `and` (which preserves first-clause order) and
             // naturally de-duplicates.
-            None | Some(Connective::And) => glyphs
+            Connective::And => glyphs
                 .iter()
                 .filter(|(_, name)| self.clauses.iter().all(|clause| clause.matches(name)))
                 .map(|(id, _)| *id)
@@ -183,17 +184,16 @@ impl Predicate {
 }
 
 fn clause_from_typed(clause: &typed::GlyphsAppPredicateClause) -> Clause {
-    // a clause missing any of its parts is a parse error and never compiles
-    let attr = clause.attr().expect("checked by the grammar");
     // glyphsLib's object regex is case-sensitive: `name` is valid, `NAME` is not.
     assert_eq!(
-        attr.text(),
+        clause.attr().text(),
         "name",
         "non-'name' attributes are rejected by validation"
     );
-    let op = op_from_typed(&clause.op().expect("checked by the grammar"));
-    let value = value_from_typed(&clause.value().expect("checked by the grammar"));
-    Clause { op, value }
+    Clause {
+        op: op_from_typed(&clause.op()),
+        value: clause.value().text().into(),
+    }
 }
 
 fn op_from_typed(op: &typed::GlyphsAppPredicateOp) -> Op {
@@ -214,20 +214,6 @@ fn op_from_typed(op: &typed::GlyphsAppPredicateOp) -> Op {
     }
 }
 
-fn value_from_typed(value: &typed::GlyphsAppPredicateValue) -> String {
-    use typed::GlyphsAppPredicateValue as T;
-    let text = value.text();
-    match value {
-        T::Bare(_) | T::Number(_) => {
-            unreachable!("unquoted values are rejected by validation")
-        }
-        _ => {
-            assert!(!text.is_empty(), "empty values are rejected by validation");
-            text
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,31 +222,18 @@ mod tests {
     /// Parse `$[inner]` through the real lexer + grammar and convert the typed
     /// node, so these tests exercise the same path the compiler uses.
     fn convert(inner: &str) -> Predicate {
-        let src = format!("@t = [$[{inner}]];\n");
-        let (tree, diags) = crate::parse::parse_string(src);
+        let src = format!("$[{inner}]");
+        let (node, diags, err_str) = crate::parse::grammar::debug_parse_output(&src, |parser| {
+            crate::parse::grammar::eat_glyphs_predicate(parser, crate::TokenSet::EMPTY);
+        });
         assert!(
-            !diags.has_errors(),
+            !diags.iter().any(|diag| diag.is_error()),
             "`{inner}` produced parse errors that would stop real compilation, so \
-             this evaluator test would be exercising a recovered parse: {}",
-            diags.to_string(false)
+             this evaluator test would be exercising a recovered parse:\n{err_str}"
         );
-        let node = find_predicate(tree.root())
+        let node = typed::GlyphsAppPredicate::cast(&node)
             .unwrap_or_else(|| panic!("`{inner}` did not parse as a predicate"));
         Predicate::from_typed(&node)
-    }
-
-    fn find_predicate(node: &crate::Node) -> Option<typed::GlyphsAppPredicate> {
-        for child in node.iter_children() {
-            if let Some(pred) = typed::GlyphsAppPredicate::cast(child) {
-                return Some(pred);
-            }
-            if let Some(inner) = child.as_node()
-                && let Some(found) = find_predicate(inner)
-            {
-                return Some(found);
-            }
-        }
-        None
     }
 
     // evaluate against a list of (id, name) pairs given in glyph order.

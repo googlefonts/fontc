@@ -164,7 +164,7 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
 // glyphs: where glyphsLib silently evaluates something other than what was
 // written (dropped trailing input, boolean/integer typing of bare words),
 // fontc reports an error instead. They are documented, not fixed.
-fn eat_glyphs_predicate(parser: &mut Parser, recovery: TokenSet) -> bool {
+pub(crate) fn eat_glyphs_predicate(parser: &mut Parser, recovery: TokenSet) -> bool {
     let recovery = recovery.add(Kind::RSquare);
     parser.in_node(AstKind::GlyphsPredicateNode, |parser| {
         // the caller only enters on a `$` followed by `[`

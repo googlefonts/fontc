@@ -1918,16 +1918,16 @@ impl GlyphsAppPredicate {
 }
 
 impl GlyphsAppPredicateClause {
-    pub(crate) fn attr(&self) -> Option<GlyphsAppPredicateAttr> {
-        self.iter().find_map(GlyphsAppPredicateAttr::cast)
+    pub(crate) fn attr(&self) -> GlyphsAppPredicateAttr {
+        self.iter().find_map(GlyphsAppPredicateAttr::cast).unwrap()
     }
 
-    pub(crate) fn op(&self) -> Option<GlyphsAppPredicateOp> {
-        self.iter().find_map(GlyphsAppPredicateOp::cast)
+    pub(crate) fn op(&self) -> GlyphsAppPredicateOp {
+        self.iter().find_map(GlyphsAppPredicateOp::cast).unwrap()
     }
 
-    pub(crate) fn value(&self) -> Option<GlyphsAppPredicateValue> {
-        self.iter().find_map(GlyphsAppPredicateValue::cast)
+    pub(crate) fn value(&self) -> GlyphsAppPredicateValue {
+        self.iter().find_map(GlyphsAppPredicateValue::cast).unwrap()
     }
 }
 

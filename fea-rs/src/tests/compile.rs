@@ -812,27 +812,6 @@ fn compile_fea_with_glyphs(
         .compile_binary()
 }
 
-// A Glyphs.app '$[...]' predicate inside a class compiles to the same thing as
-// the equivalent explicit class. This exercises the full lexer -> grammar ->
-// compile path (the predicate unit tests cover the evaluator in isolation).
-#[test]
-fn glyphs_predicate_matches_explicit_class() {
-    let glyphs = ["a", "b", "a.sc", "b.sc", "c"];
-    let with_predicate = compile_fea_with_glyphs(
-        "feature test { sub [ $[name endswith \".sc\"] ] by a; } test;",
-        &glyphs,
-        "glyphs_predicate_sc",
-    )
-    .unwrap();
-    let explicit = compile_fea_with_glyphs(
-        "feature test { sub [ a.sc b.sc ] by a; } test;",
-        &glyphs,
-        "glyphs_predicate_sc_explicit",
-    )
-    .unwrap();
-    assert_eq!(with_predicate, explicit);
-}
-
 // Compile a predicate-bearing source that must be rejected at validation, and
 // return the (message, source-range) of each error diagnostic. Panics on any
 // other outcome: an out-of-scope predicate has to fail *validation*, not parse,

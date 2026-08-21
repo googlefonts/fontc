@@ -2234,7 +2234,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
     /// Expand a Glyphs.app glyph predicate token (`$[...]`) into glyphs.
     ///
-    /// See [`crate::compile::glyphsapp_syntax_ext::predicate`]. We evaluate the
+    /// See [`crate::compile::glyphsapp_syntax_ext::Predicate`]. We evaluate the
     /// predicate against the (export-filtered) glyph order fontc hands us, in
     /// GID order, which matches glyphsLib's source-order, exported-glyphs-only
     /// output. The glyph set may also contain synthesized glyphs (bracket

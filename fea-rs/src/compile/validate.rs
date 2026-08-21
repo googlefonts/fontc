@@ -1273,51 +1273,47 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     /// constructs deferred to fontc#2052, attaching each diagnostic to the
     /// offending attribute/operator/value/connective child rather than the whole
     /// predicate. Conversion and evaluation live in
-    /// [`crate::compile::glyphsapp_syntax_ext::predicate`].
+    /// [`crate::compile::glyphsapp_syntax_ext::Predicate`].
     fn validate_glyphs_predicate(&mut self, predicate: &typed::GlyphsAppPredicate) {
         for clause in predicate.clauses() {
-            if let Some(attr) = clause.attr() {
-                // glyphsLib's object regex is case-sensitive: `name` is the only
-                // supported object, and `NAME` is a different (unknown) one.
-                if attr.text() != "name" {
-                    self.error(
-                        attr.range(),
-                        format!(
-                            "unsupported glyphs predicate attribute '{}': only 'name' \
-                             is supported (see fontc#2052)",
-                            attr.text()
-                        ),
-                    );
-                }
-            }
-            if let Some(op) = clause.op() {
-                use typed::GlyphsAppPredicateOp as Op;
-                match op {
-                    Op::BeginsWith(_)
-                    | Op::EndsWith(_)
-                    | Op::Contains(_)
-                    | Op::Eq(_)
-                    | Op::Ne(_)
-                    | Op::Lt(_)
-                    | Op::Le(_)
-                    | Op::Gt(_)
-                    | Op::Ge(_) => (),
-                    Op::Like(_) | Op::Matches(_) => self.error(
-                        op.range(),
-                        "unsupported glyphs predicate operator (see fontc#2052)",
+            // glyphsLib's object regex is case-sensitive: `name` is the only
+            // supported object, and `NAME` is a different (unknown) one.
+            let attr = clause.attr();
+            if attr.text() != "name" {
+                self.error(
+                    attr.range(),
+                    format!(
+                        "unsupported glyphs predicate attribute '{}': only 'name' \
+                         is supported (see fontc#2052)",
+                        attr.text()
                     ),
-                }
+                );
             }
-            if let Some(value) = clause.value() {
-                use typed::GlyphsAppPredicateValue as Value;
-                if matches!(value, Value::Bare(_) | Value::Number(_)) {
-                    self.error(
-                        value.range(),
-                        "glyphs predicate values must be quoted (see fontc#2052)",
-                    );
-                } else if value.text().is_empty() {
-                    self.error(value.range(), "empty value in glyphs predicate");
-                }
+            use typed::GlyphsAppPredicateOp as Op;
+            match clause.op() {
+                Op::BeginsWith(_)
+                | Op::EndsWith(_)
+                | Op::Contains(_)
+                | Op::Eq(_)
+                | Op::Ne(_)
+                | Op::Lt(_)
+                | Op::Le(_)
+                | Op::Gt(_)
+                | Op::Ge(_) => (),
+                op @ (Op::Like(_) | Op::Matches(_)) => self.error(
+                    op.range(),
+                    "unsupported glyphs predicate operator (see fontc#2052)",
+                ),
+            }
+            use typed::GlyphsAppPredicateValue as Value;
+            let value = clause.value();
+            if matches!(value, Value::Bare(_) | Value::Number(_)) {
+                self.error(
+                    value.range(),
+                    "glyphs predicate values must be quoted (see fontc#2052)",
+                );
+            } else if value.text().is_empty() {
+                self.error(value.range(), "empty value in glyphs predicate");
             }
         }
 

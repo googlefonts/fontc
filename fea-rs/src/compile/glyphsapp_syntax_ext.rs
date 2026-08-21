@@ -1,6 +1,6 @@
 //! Handling glyphsapp syntax extensions
 
-pub(crate) mod predicate;
+mod predicate;
 
 pub(crate) use predicate::Predicate;
 
