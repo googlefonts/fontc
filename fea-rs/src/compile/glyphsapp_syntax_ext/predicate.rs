@@ -1,4 +1,4 @@
-//! Conversion and evaluation of Glyphs.app glyph predicate tokens (`$[...]`).
+//! Evaluation of Glyphs.app glyph predicate tokens (`$[...]`).
 //!
 //! Glyphs.app sources can use a predicate token inside a FEA glyph class to
 //! select glyphs by an `NSPredicate`-style expression, e.g.
@@ -17,10 +17,10 @@
 //!
 //! The grammar builds a typed [`typed::GlyphsAppPredicate`] AST; validation
 //! (`compile::validate`) enforces the Phase 1 subset with diagnostics attached
-//! to the offending child, and [`Predicate::from_typed`] converts the
-//! already-validated tree into the little evaluator below. Like the rest of
-//! the compiler, conversion trusts validation: an out-of-scope predicate that
-//! reaches it is a bug, and panics.
+//! to the offending child, and [`evaluate_predicate`] runs the
+//! already-validated tree directly. Like the rest of the compiler, evaluation
+//! trusts validation: an out-of-scope predicate that reaches it is a bug, and
+//! panics.
 //!
 //! The reference implementation is glyphsLib's `TokenExpander`
 //! (`Lib/glyphsLib/builder/tokens.py`); we mirror its semantics: operator
@@ -43,172 +43,119 @@ use smol_str::SmolStr;
 
 use crate::typed;
 
-/// A comparison operator in a predicate clause.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Op {
-    BeginsWith,
-    EndsWith,
-    Contains,
-    Eq,
-    NotEq,
-    LessThan,
-    LessThanOrEqual,
-    GreaterThan,
-    GreaterThanOrEqual,
-}
-
-impl Op {
-    fn matches(self, name: &str, value: &str) -> bool {
-        match self {
-            Op::BeginsWith => name.starts_with(value),
-            Op::EndsWith => name.ends_with(value),
-            Op::Contains => name.contains(value),
-            Op::Eq => name == value,
-            Op::NotEq => name != value,
-            // glyphsLib compares `name` (a string) against the value with
-            // Python's `<`/`<=`/`>`/`>=`, i.e. lexicographic string ordering.
-            // Rust's `str` ordering is UTF-8 byte order, which equals Unicode
-            // code point order, matching Python for every valid string.
-            Op::LessThan => name < value,
-            Op::LessThanOrEqual => name <= value,
-            Op::GreaterThan => name > value,
-            Op::GreaterThanOrEqual => name >= value,
-        }
-    }
-}
-
-/// The boolean connective joining the clauses of a predicate.
+/// The boolean connective joining the clauses of a predicate, reduced to the
+/// single evaluation strategy it implies.
 ///
 /// Phase 1 only supports a flat chain of a single connective; mixing `and` and
-/// `or` is rejected during validation.
+/// `or` is rejected during validation. A single clause evaluates as `And`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Connective {
     And,
     Or,
 }
 
-/// A single `name <op> "value"` comparison.
-#[derive(Clone, Debug)]
-struct Clause {
-    op: Op,
-    value: SmolStr,
-}
+/// Evaluate a validated predicate against a glyph set.
+///
+/// `glyphs` yields `(id, name)` pairs and MUST be in glyph (GID) order; the
+/// returned ids preserve that order. Results are de-duplicated.
+///
+/// Validation (`compile::validate`) has already rejected anything outside the
+/// Phase 1 subset, so evaluation trusts its input like the rest of the
+/// compiler; a predicate that violates that invariant is a bug and panics.
+///
+/// glyphsLib emits predicate matches in *source* glyph order. We only have
+/// the GID-ordered glyph map, which equals source order in the common case
+/// but not for a source with a custom `glyphOrder` parameter that reorders
+/// glyphs relative to the source; in that case a class whose member order is
+/// observable (e.g. a parallel class-to-class substitution) could diverge.
+/// Resolving this would require threading source order through to fea-rs.
+pub(crate) fn evaluate_predicate<'a, T>(
+    node: &typed::GlyphsAppPredicate,
+    glyphs: impl IntoIterator<Item = (T, &'a str)>,
+) -> Vec<T>
+where
+    T: Copy + Eq + Hash,
+{
+    // Hoist each clause's operator and value out of the per-glyph loops;
+    // `value.text()` allocates, so compute it exactly once per clause.
+    let clauses: Vec<(typed::GlyphsAppPredicateOp, SmolStr)> = node
+        .clauses()
+        .map(|clause| {
+            // glyphsLib's object regex is case-sensitive: `name` is valid,
+            // `NAME` is not.
+            assert_eq!(
+                clause.attr().text(),
+                "name",
+                "non-'name' attributes are rejected by validation"
+            );
+            (clause.op(), clause.value().text().into())
+        })
+        .collect();
+    assert!(!clauses.is_empty(), "empty predicates are a parse error");
 
-impl Clause {
-    fn matches(&self, name: &str) -> bool {
-        self.op.matches(name, &self.value)
-    }
-}
+    let connective = node
+        .connectives()
+        .map(|conn| match conn {
+            typed::GlyphsAppPredicateConnective::And(_) => Connective::And,
+            typed::GlyphsAppPredicateConnective::Or(_) => Connective::Or,
+        })
+        .reduce(|prev, this| {
+            assert_eq!(prev, this, "mixed connectives are rejected by validation");
+            this
+        })
+        .unwrap_or(Connective::And);
 
-/// A parsed, name-only Glyphs.app glyph predicate.
-#[derive(Clone, Debug)]
-pub(crate) struct Predicate {
-    clauses: Vec<Clause>,
-    // `And` when there is a single clause (the two are equivalent).
-    connective: Connective,
-}
-
-impl Predicate {
-    /// Convert a validated typed predicate node into an evaluable [`Predicate`].
-    ///
-    /// Validation (`compile::validate`) has already rejected anything outside
-    /// the Phase 1 subset, so conversion trusts its input like the rest of the
-    /// compiler; a predicate that violates that invariant is a bug and panics.
-    pub(crate) fn from_typed(node: &typed::GlyphsAppPredicate) -> Self {
-        let clauses: Vec<_> = node
-            .clauses()
-            .map(|clause| clause_from_typed(&clause))
-            .collect();
-        assert!(!clauses.is_empty(), "empty predicates are a parse error");
-
-        let connective = node
-            .connectives()
-            .map(|conn| match conn {
-                typed::GlyphsAppPredicateConnective::And(_) => Connective::And,
-                typed::GlyphsAppPredicateConnective::Or(_) => Connective::Or,
-            })
-            .reduce(|prev, this| {
-                assert_eq!(prev, this, "mixed connectives are rejected by validation");
-                this
-            })
-            .unwrap_or(Connective::And);
-        Predicate {
-            clauses,
-            connective,
-        }
-    }
-
-    /// Evaluate the predicate against a glyph set.
-    ///
-    /// `glyphs` yields `(id, name)` pairs and MUST be in glyph (GID) order; the
-    /// returned ids preserve that order. Results are de-duplicated.
-    ///
-    /// glyphsLib emits predicate matches in *source* glyph order. We only have
-    /// the GID-ordered glyph map, which equals source order in the common case
-    /// but not for a source with a custom `glyphOrder` parameter that reorders
-    /// glyphs relative to the source; in that case a class whose member order is
-    /// observable (e.g. a parallel class-to-class substitution) could diverge.
-    /// Resolving this would require threading source order through to fea-rs.
-    pub(crate) fn evaluate<'a, T>(&self, glyphs: impl IntoIterator<Item = (T, &'a str)>) -> Vec<T>
-    where
-        T: Copy + Eq + Hash,
-    {
-        let glyphs: Vec<(T, &str)> = glyphs.into_iter().collect();
-        match self.connective {
-            // glyphsLib appends each clause's matches in turn, so a glyph that
-            // matches an earlier clause keeps its earlier position. A single
-            // glyph-order pass would re-interleave them; this does not.
-            Connective::Or => {
-                let mut seen = HashSet::new();
-                let mut out = Vec::new();
-                for clause in &self.clauses {
-                    for (id, name) in &glyphs {
-                        if clause.matches(name) && seen.insert(*id) {
-                            out.push(*id);
-                        }
+    let glyphs: Vec<(T, &str)> = glyphs.into_iter().collect();
+    match connective {
+        // glyphsLib appends each clause's matches in turn, so a glyph that
+        // matches an earlier clause keeps its earlier position. A single
+        // glyph-order pass would re-interleave them; this does not.
+        Connective::Or => {
+            let mut seen = HashSet::new();
+            let mut out = Vec::new();
+            for (op, value) in &clauses {
+                for (id, name) in &glyphs {
+                    if op_matches(op, name, value) && seen.insert(*id) {
+                        out.push(*id);
                     }
                 }
-                out
             }
-            // A single clause, or an `and` chain: a glyph is included iff every
-            // clause matches. Iterating once in glyph order matches glyphsLib's
-            // ordering for `and` (which preserves first-clause order) and
-            // naturally de-duplicates.
-            Connective::And => glyphs
-                .iter()
-                .filter(|(_, name)| self.clauses.iter().all(|clause| clause.matches(name)))
-                .map(|(id, _)| *id)
-                .collect(),
+            out
         }
+        // A single clause, or an `and` chain: a glyph is included iff every
+        // clause matches. Iterating once in glyph order matches glyphsLib's
+        // ordering for `and` (which preserves first-clause order) and
+        // naturally de-duplicates.
+        Connective::And => glyphs
+            .iter()
+            .filter(|(_, name)| {
+                clauses
+                    .iter()
+                    .all(|(op, value)| op_matches(op, name, value))
+            })
+            .map(|(id, _)| *id)
+            .collect(),
     }
 }
 
-fn clause_from_typed(clause: &typed::GlyphsAppPredicateClause) -> Clause {
-    // glyphsLib's object regex is case-sensitive: `name` is valid, `NAME` is not.
-    assert_eq!(
-        clause.attr().text(),
-        "name",
-        "non-'name' attributes are rejected by validation"
-    );
-    Clause {
-        op: op_from_typed(&clause.op()),
-        value: clause.value().text().into(),
-    }
-}
-
-fn op_from_typed(op: &typed::GlyphsAppPredicateOp) -> Op {
-    use typed::GlyphsAppPredicateOp as T;
+/// Whether `name` satisfies `name <op> "value"`.
+fn op_matches(op: &typed::GlyphsAppPredicateOp, name: &str, value: &str) -> bool {
+    use typed::GlyphsAppPredicateOp as Op;
     match op {
-        T::BeginsWith(_) => Op::BeginsWith,
-        T::EndsWith(_) => Op::EndsWith,
-        T::Contains(_) => Op::Contains,
-        T::Eq(_) => Op::Eq,
-        T::Ne(_) => Op::NotEq,
-        T::Lt(_) => Op::LessThan,
-        T::Le(_) => Op::LessThanOrEqual,
-        T::Gt(_) => Op::GreaterThan,
-        T::Ge(_) => Op::GreaterThanOrEqual,
-        T::Like(_) | T::Matches(_) => {
+        Op::BeginsWith(_) => name.starts_with(value),
+        Op::EndsWith(_) => name.ends_with(value),
+        Op::Contains(_) => name.contains(value),
+        Op::Eq(_) => name == value,
+        Op::Ne(_) => name != value,
+        // glyphsLib compares `name` (a string) against the value with
+        // Python's `<`/`<=`/`>`/`>=`, i.e. lexicographic string ordering.
+        // Rust's `str` ordering is UTF-8 byte order, which equals Unicode
+        // code point order, matching Python for every valid string.
+        Op::Lt(_) => name < value,
+        Op::Le(_) => name <= value,
+        Op::Gt(_) => name > value,
+        Op::Ge(_) => name >= value,
+        Op::Like(_) | Op::Matches(_) => {
             unreachable!("like/matches are rejected by validation")
         }
     }
@@ -219,9 +166,9 @@ mod tests {
     use super::*;
     use crate::token_tree::typed::AstNode;
 
-    /// Parse `$[inner]` through the real lexer + grammar and convert the typed
-    /// node, so these tests exercise the same path the compiler uses.
-    fn convert(inner: &str) -> Predicate {
+    /// Parse `$[inner]` through the real lexer + grammar, so these tests
+    /// exercise the same path the compiler uses.
+    fn parse_predicate(inner: &str) -> typed::GlyphsAppPredicate {
         let src = format!("$[{inner}]");
         let (node, diags, err_str) = crate::parse::grammar::debug_parse_output(&src, |parser| {
             crate::parse::grammar::eat_glyphs_predicate(parser, crate::TokenSet::EMPTY);
@@ -231,14 +178,16 @@ mod tests {
             "`{inner}` produced parse errors that would stop real compilation, so \
              this evaluator test would be exercising a recovered parse:\n{err_str}"
         );
-        let node = typed::GlyphsAppPredicate::cast(&node)
-            .unwrap_or_else(|| panic!("`{inner}` did not parse as a predicate"));
-        Predicate::from_typed(&node)
+        typed::GlyphsAppPredicate::cast(&node)
+            .unwrap_or_else(|| panic!("`{inner}` did not parse as a predicate"))
     }
 
     // evaluate against a list of (id, name) pairs given in glyph order.
     fn eval(inner: &str, glyphs: &[(u16, &str)]) -> Vec<u16> {
-        convert(inner).evaluate(glyphs.iter().map(|(id, name)| (*id, *name)))
+        evaluate_predicate(
+            &parse_predicate(inner),
+            glyphs.iter().map(|(id, name)| (*id, *name)),
+        )
     }
 
     fn names<'a>(inner: &str, glyphs: &[(u16, &'a str)]) -> Vec<&'a str> {

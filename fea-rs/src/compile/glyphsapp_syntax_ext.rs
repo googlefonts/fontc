@@ -2,7 +2,7 @@
 
 mod predicate;
 
-pub(crate) use predicate::Predicate;
+pub(crate) use predicate::evaluate_predicate;
 
 use std::{
     collections::HashMap,

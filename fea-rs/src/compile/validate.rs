@@ -1272,8 +1272,8 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     /// The grammar accepts the structural predicate surface; here we reject the
     /// constructs deferred to fontc#2052, attaching each diagnostic to the
     /// offending attribute/operator/value/connective child rather than the whole
-    /// predicate. Conversion and evaluation live in
-    /// [`crate::compile::glyphsapp_syntax_ext::Predicate`].
+    /// predicate. Evaluation lives in
+    /// [`crate::compile::glyphsapp_syntax_ext::evaluate_predicate`].
     fn validate_glyphs_predicate(&mut self, predicate: &typed::GlyphsAppPredicate) {
         for clause in predicate.clauses() {
             // glyphsLib's object regex is case-sensitive: `name` is the only
