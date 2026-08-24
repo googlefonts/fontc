@@ -451,12 +451,13 @@ impl<'a> Token<'a> {
                         .iter()
                         .position(|b| *b == b'>')
                         .ok_or(Error::UnclosedData)?;
-                let chunks = s.as_bytes()[data_start..data_end].chunks_exact(2);
-                if !chunks.remainder().is_empty() {
+                let (chunks, remainder) = s.as_bytes()[data_start..data_end].as_chunks::<2>();
+                if !remainder.is_empty() {
                     return Err(Error::BadData);
                 }
                 let data = chunks
-                    .map(|x| byte_from_hex(x.try_into().unwrap()))
+                    .iter()
+                    .map(|x| byte_from_hex(*x))
                     .collect::<Result<_, _>>()?;
                 Ok((Token::Data(data), data_end + 1))
             }
