@@ -1,5 +1,11 @@
 use kurbo::BezPath;
 use linesweeper::{BinaryOp, FillRule};
+use thiserror::Error;
+
+/// An error from an overlap operation.
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct OverlapError(#[from] linesweeper::Error);
 
 /// Combines one or more [`BezPath`]s into a single one by concatenating their elements.
 pub fn combine_paths<'a>(bez_paths: impl IntoIterator<Item = &'a BezPath>) -> BezPath {
@@ -12,7 +18,7 @@ pub fn combine_paths<'a>(bez_paths: impl IntoIterator<Item = &'a BezPath>) -> Be
 pub fn remove_overlaps(
     bez_path: &BezPath,
     fill_rule: FillRule,
-) -> Result<Vec<BezPath>, linesweeper::Error> {
+) -> Result<Vec<BezPath>, OverlapError> {
     // TODO: if linesweeper gave us an owned iterator, we could just have this method return a
     //       Contour iterator instead of a Vec<BezPath>, and then re-use it in has_overlaps without
     //       incurring allocation overhead
@@ -31,7 +37,7 @@ pub fn remove_overlaps(
 /// algorithms handle overlapping areas differently.
 ///
 /// If you have multiple beziers, you will need to [combine them](combine_paths) first.
-pub fn has_overlaps(bez_path: &BezPath) -> Result<bool, linesweeper::Error> {
+pub fn has_overlaps(bez_path: &BezPath) -> Result<bool, OverlapError> {
     let non_zero_beziers = linesweeper::binary_op(
         bez_path,
         &BezPath::new(),
