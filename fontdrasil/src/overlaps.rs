@@ -1,11 +1,29 @@
 use kurbo::BezPath;
-use linesweeper::{BinaryOp, FillRule};
+use linesweeper::{BinaryOp, FillRule as LsFillRule};
 use thiserror::Error;
 
 /// An error from an overlap operation.
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub struct OverlapError(#[from] linesweeper::Error);
+
+/// Fill rule for interpreting which regions of a path are inside.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FillRule {
+    /// Non-zero winding rule.
+    NonZero,
+    /// Even-odd winding rule.
+    EvenOdd,
+}
+
+impl From<FillRule> for LsFillRule {
+    fn from(fill_rule: FillRule) -> Self {
+        match fill_rule {
+            FillRule::NonZero => Self::NonZero,
+            FillRule::EvenOdd => Self::EvenOdd,
+        }
+    }
+}
 
 /// Combines one or more [`BezPath`]s into a single one by concatenating their elements.
 pub fn combine_paths<'a>(bez_paths: impl IntoIterator<Item = &'a BezPath>) -> BezPath {
@@ -22,11 +40,12 @@ pub fn remove_overlaps(
     // TODO: if linesweeper gave us an owned iterator, we could just have this method return a
     //       Contour iterator instead of a Vec<BezPath>, and then re-use it in has_overlaps without
     //       incurring allocation overhead
-    let beziers = linesweeper::binary_op(bez_path, &BezPath::new(), fill_rule, BinaryOp::Union)?
-        .contours()
-        .cloned()
-        .map(|contour| contour.path)
-        .collect::<Vec<_>>();
+    let beziers =
+        linesweeper::binary_op(bez_path, &BezPath::new(), fill_rule.into(), BinaryOp::Union)?
+            .contours()
+            .cloned()
+            .map(|contour| contour.path)
+            .collect::<Vec<_>>();
     Ok(beziers)
 }
 
@@ -41,13 +60,13 @@ pub fn has_overlaps(bez_path: &BezPath) -> Result<bool, OverlapError> {
     let non_zero_beziers = linesweeper::binary_op(
         bez_path,
         &BezPath::new(),
-        FillRule::NonZero,
+        FillRule::NonZero.into(),
         BinaryOp::Union,
     )?;
     let even_odd_beziers = linesweeper::binary_op(
         bez_path,
         &BezPath::new(),
-        FillRule::EvenOdd,
+        FillRule::EvenOdd.into(),
         BinaryOp::Union,
     )?;
 
