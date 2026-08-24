@@ -1907,7 +1907,6 @@ impl GlyphsAppNumberExpr {
     }
 }
 
-#[allow(dead_code)]
 impl GlyphsAppPredicate {
     pub(crate) fn clauses(&self) -> impl Iterator<Item = GlyphsAppPredicateClause> + '_ {
         self.iter().filter_map(GlyphsAppPredicateClause::cast)
@@ -1918,22 +1917,20 @@ impl GlyphsAppPredicate {
     }
 }
 
-#[allow(dead_code)]
 impl GlyphsAppPredicateClause {
-    pub(crate) fn attr(&self) -> Option<GlyphsAppPredicateAttr> {
-        self.iter().find_map(GlyphsAppPredicateAttr::cast)
+    pub(crate) fn attr(&self) -> GlyphsAppPredicateAttr {
+        self.iter().find_map(GlyphsAppPredicateAttr::cast).unwrap()
     }
 
-    pub(crate) fn op(&self) -> Option<GlyphsAppPredicateOp> {
-        self.iter().find_map(GlyphsAppPredicateOp::cast)
+    pub(crate) fn op(&self) -> GlyphsAppPredicateOp {
+        self.iter().find_map(GlyphsAppPredicateOp::cast).unwrap()
     }
 
-    pub(crate) fn value(&self) -> Option<GlyphsAppPredicateValue> {
-        self.iter().find_map(GlyphsAppPredicateValue::cast)
+    pub(crate) fn value(&self) -> GlyphsAppPredicateValue {
+        self.iter().find_map(GlyphsAppPredicateValue::cast).unwrap()
     }
 }
 
-#[allow(dead_code)]
 impl GlyphsAppPredicateValue {
     /// The value content, without its surrounding quotes.
     pub(crate) fn text(&self) -> String {

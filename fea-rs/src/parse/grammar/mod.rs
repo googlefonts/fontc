@@ -12,7 +12,9 @@ mod variations;
 
 // we use these in tests in various places
 #[cfg(test)]
-pub(crate) use self::{gsub::gsub_rule, metrics::expect_glyphs_number_value};
+pub(crate) use self::{
+    glyph::eat_glyphs_predicate, gsub::gsub_rule, metrics::expect_glyphs_number_value,
+};
 
 // for parsing include statements that occur inside feature blocks.
 pub(crate) use feature::eat_feature_block_items;
@@ -349,7 +351,7 @@ fn greedy<F: FnMut(&mut Parser, TokenSet) -> bool>(
 }
 
 #[cfg(test)]
-fn debug_parse_output(
+pub(crate) fn debug_parse_output(
     text: &str,
     f: impl FnOnce(&mut Parser),
 ) -> (crate::NodeOrToken, Vec<crate::Diagnostic>, String) {
