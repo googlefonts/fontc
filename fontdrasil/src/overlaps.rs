@@ -60,6 +60,17 @@ mod tests {
     use super::*;
     use kurbo::{PathEl, Point};
 
+    fn square(x0: f64, y0: f64, x1: f64, y1: f64) -> BezPath {
+        BezPath::from_vec(vec![
+            PathEl::MoveTo(Point::new(x0, y0)),
+            PathEl::LineTo(Point::new(x1, y0)),
+            PathEl::LineTo(Point::new(x1, y1)),
+            PathEl::LineTo(Point::new(x0, y1)),
+            PathEl::LineTo(Point::new(x0, y0)),
+            PathEl::ClosePath,
+        ])
+    }
+
     fn overlapping_squares() -> (BezPath, BezPath) {
         // Artist's rendition:
         //      ┌────────┐
@@ -69,23 +80,7 @@ mod tests {
         //  │   └────┼───┘
         //  │        │
         //  └────────┘
-        let square_a = BezPath::from_vec(vec![
-            PathEl::MoveTo(Point::new(0.0, 0.0)),
-            PathEl::LineTo(Point::new(10.0, 0.0)),
-            PathEl::LineTo(Point::new(10.0, 10.0)),
-            PathEl::LineTo(Point::new(0.0, 10.0)),
-            PathEl::LineTo(Point::new(0.0, 0.0)),
-            PathEl::ClosePath,
-        ]);
-        let square_b = BezPath::from_vec(vec![
-            PathEl::MoveTo(Point::new(5.0, 5.0)),
-            PathEl::LineTo(Point::new(15.0, 5.0)),
-            PathEl::LineTo(Point::new(15.0, 15.0)),
-            PathEl::LineTo(Point::new(5.0, 15.0)),
-            PathEl::LineTo(Point::new(5.0, 5.0)),
-            PathEl::ClosePath,
-        ]);
-        (square_a, square_b)
+        (square(0.0, 0.0, 10.0, 10.0), square(5.0, 5.0, 15.0, 15.0))
     }
 
     #[test]
@@ -147,5 +142,46 @@ mod tests {
 
         let res = has_overlaps(&combined).expect("linesweeper should detect overlaps");
         assert!(res, "overlaps should have been found");
+    }
+
+    #[test]
+    fn no_overlaps_in_disjoint_squares() {
+        //  ┌────────┐          ┌────────┐
+        //  │   A    │          │   B    │
+        //  └────────┘          └────────┘
+        let square_a = square(0.0, 0.0, 10.0, 10.0);
+        let far_square = square(20.0, 20.0, 30.0, 30.0);
+        let combined = combine_paths([&square_a, &far_square]);
+
+        let res = has_overlaps(&combined).expect("linesweeper should not error");
+        assert!(!res, "disjoint contours are not overlapping");
+    }
+
+    #[test]
+    fn no_overlaps_in_square_with_counter() {
+        // 'O'-style glyph: outer contour with an opposite-winding inner counter
+        //  ┌──────────────┐
+        //  │    outer     │
+        //  │  ┌────────┐  │
+        //  │  │counter │  │
+        //  │  └────────┘  │
+        //  └──────────────┘
+        let outer = square(0.0, 0.0, 10.0, 10.0);
+        let counter = square(2.0, 2.0, 8.0, 8.0).reverse_subpaths();
+        let combined = combine_paths([&outer, &counter]);
+
+        let res = has_overlaps(&combined).expect("linesweeper should not error");
+        assert!(!res, "a counter is not an overlap");
+    }
+
+    #[test]
+    fn detects_duplicate_contours() {
+        // identical contour twice: even-odd cancels them out, non-zero keeps one,
+        // so the two results differ in length
+        let square_a = square(0.0, 0.0, 10.0, 10.0);
+        let combined = combine_paths([&square_a, &square_a]);
+
+        let res = has_overlaps(&combined).expect("linesweeper should not error");
+        assert!(res, "duplicate contours are overlapping");
     }
 }
