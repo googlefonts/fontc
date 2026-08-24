@@ -146,13 +146,16 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
         );
         ctx.compile(&tree.typed_root());
 
-        // we 'take' the errors here because it's easier for us to handle the
-        // warnings using our helper method.
-        let messages = std::mem::take(&mut ctx.errors);
+        // diagnostics are handled in one place, after build: the feature
+        // provider and the finalizers run during build, so they can contribute
+        // messages of their own.
+        let (compilation, messages) = ctx.build().map_err(|errors| {
+            CompilerError::CompilationFail(DiagnosticSet::new(errors, &tree, self.max_n_errors))
+        })?;
         let diagnostics = DiagnosticSet::new(messages, &tree, self.max_n_errors);
         print_warnings_return_errors(diagnostics, self.print_warnings, self.max_n_errors)
             .map_err(CompilerError::CompilationFail)?;
-        Ok(ctx.build().unwrap().0) // we've taken the errors, so this can't fail
+        Ok(compilation)
     }
 
     /// Compile to a binary font.
