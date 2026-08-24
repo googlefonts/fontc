@@ -58,7 +58,7 @@ pub fn has_overlaps(bez_path: &BezPath) -> Result<bool, linesweeper::Error> {
 mod tests {
     #![expect(clippy::indexing_slicing, clippy::expect_used)]
     use super::*;
-    use kurbo::{PathEl, Point};
+    use kurbo::{Circle, PathEl, Point, Shape};
 
     fn square(x0: f64, y0: f64, x1: f64, y1: f64) -> BezPath {
         BezPath::from_vec(vec![
@@ -69,6 +69,12 @@ mod tests {
             PathEl::LineTo(Point::new(x0, y0)),
             PathEl::ClosePath,
         ])
+    }
+
+    fn curve_count(path: &BezPath) -> usize {
+        path.iter()
+            .filter(|element| matches!(element, PathEl::CurveTo(..)))
+            .count()
     }
 
     fn overlapping_squares() -> (BezPath, BezPath) {
@@ -183,5 +189,72 @@ mod tests {
 
         let res = has_overlaps(&combined).expect("linesweeper should not error");
         assert!(res, "duplicate contours are overlapping");
+    }
+
+    #[test]
+    fn remove_overlaps_preserves_curves() {
+        let circle_a = Circle::new((0.0, 0.0), 100.0).to_path(0.01);
+        let input_curve_count = curve_count(&circle_a);
+        assert!(
+            input_curve_count > 0,
+            "the input circle should contain curves"
+        );
+
+        let result = remove_overlaps(&circle_a, FillRule::NonZero)
+            .expect("linesweeper should process a circle");
+        let [result] = result.as_slice() else {
+            panic!("a circle should remain a single contour");
+        };
+        assert_eq!(curve_count(result), input_curve_count);
+
+        //    .-"-.-"-.           .-"""""-.
+        //   ( A ( ) B )    ->   (  A ~ B  )
+        //    `-.-`-.-'           `-.....-'
+        let circle_b = Circle::new((80.0, 0.0), 100.0).to_path(0.01);
+        let combined = combine_paths([&circle_a, &circle_b]);
+        let input_curve_count = curve_count(&combined);
+        let result = remove_overlaps(&combined, FillRule::NonZero)
+            .expect("linesweeper should union overlapping circles");
+        let [result] = result.as_slice() else {
+            panic!("overlapping circles should produce a single contour");
+        };
+        assert!(
+            curve_count(result) >= input_curve_count - 2,
+            "unioning circles should preserve their curves"
+        );
+    }
+
+    #[test]
+    fn remove_overlaps_removes_all_overlaps() {
+        // removal must be complete: recombining its output and running detection
+        // on it should find nothing left to remove
+        let (square_a, square_b) = overlapping_squares();
+        let far_square = square(20.0, 20.0, 30.0, 30.0);
+        let counter = square(2.0, 2.0, 8.0, 8.0).reverse_subpaths();
+        let third_square = square(2.5, -5.0, 12.5, 5.0);
+        let circle_a = Circle::new((0.0, 0.0), 100.0).to_path(0.01);
+        let circle_b = Circle::new((80.0, 0.0), 100.0).to_path(0.01);
+        let fixtures = [
+            ("overlapping squares", combine_paths([&square_a, &square_b])),
+            ("disjoint squares", combine_paths([&square_a, &far_square])),
+            ("square with counter", combine_paths([&square_a, &counter])),
+            ("duplicate contours", combine_paths([&square_a, &square_a])),
+            ("single circle", circle_a.clone()),
+            ("overlapping circles", combine_paths([&circle_a, &circle_b])),
+            (
+                "triple overlap",
+                combine_paths([&square_a, &square_b, &third_square]),
+            ),
+        ];
+
+        for (name, input) in fixtures {
+            let result = remove_overlaps(&input, FillRule::NonZero)
+                .expect("linesweeper should remove overlaps");
+            let combined = combine_paths(&result);
+            let has_overlaps =
+                has_overlaps(&combined).expect("linesweeper should inspect the result");
+
+            assert!(!has_overlaps, "{name} still has overlaps after removal");
+        }
     }
 }
