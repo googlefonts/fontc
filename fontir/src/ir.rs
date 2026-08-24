@@ -1941,10 +1941,10 @@ impl GlyphInstance {
         let components = self
             .components
             .iter()
-            .zip(values.chunks_exact(6))
+            .zip(values.as_chunks::<6>().0)
             .map(|(comp, coeffs)| Component {
                 base: comp.base.clone(),
-                transform: Affine::new(coeffs.try_into().unwrap()),
+                transform: Affine::new(*coeffs),
                 anchor: comp.anchor.clone(),
             })
             .collect();
