@@ -5,7 +5,7 @@ use thiserror::Error;
 /// An error from an overlap operation.
 #[derive(Debug, Error)]
 #[error(transparent)]
-pub struct OverlapError(#[from] linesweeper::Error);
+pub struct OverlapError(linesweeper::Error);
 
 /// Fill rule for interpreting which regions of a path are inside.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,11 +16,11 @@ pub enum FillRule {
     EvenOdd,
 }
 
-impl From<FillRule> for LsFillRule {
-    fn from(fill_rule: FillRule) -> Self {
-        match fill_rule {
-            FillRule::NonZero => Self::NonZero,
-            FillRule::EvenOdd => Self::EvenOdd,
+impl FillRule {
+    fn to_linesweeper(self) -> LsFillRule {
+        match self {
+            FillRule::NonZero => LsFillRule::NonZero,
+            FillRule::EvenOdd => LsFillRule::EvenOdd,
         }
     }
 }
@@ -40,12 +40,17 @@ pub fn remove_overlaps(
     // TODO: if linesweeper gave us an owned iterator, we could just have this method return a
     //       Contour iterator instead of a Vec<BezPath>, and then re-use it in has_overlaps without
     //       incurring allocation overhead
-    let beziers =
-        linesweeper::binary_op(bez_path, &BezPath::new(), fill_rule.into(), BinaryOp::Union)?
-            .contours()
-            .cloned()
-            .map(|contour| contour.path)
-            .collect::<Vec<_>>();
+    let beziers = linesweeper::binary_op(
+        bez_path,
+        &BezPath::new(),
+        fill_rule.to_linesweeper(),
+        BinaryOp::Union,
+    )
+    .map_err(OverlapError)?
+    .contours()
+    .cloned()
+    .map(|contour| contour.path)
+    .collect::<Vec<_>>();
     Ok(beziers)
 }
 
@@ -60,15 +65,17 @@ pub fn has_overlaps(bez_path: &BezPath) -> Result<bool, OverlapError> {
     let non_zero_beziers = linesweeper::binary_op(
         bez_path,
         &BezPath::new(),
-        FillRule::NonZero.into(),
+        LsFillRule::NonZero,
         BinaryOp::Union,
-    )?;
+    )
+    .map_err(OverlapError)?;
     let even_odd_beziers = linesweeper::binary_op(
         bez_path,
         &BezPath::new(),
-        FillRule::EvenOdd.into(),
+        LsFillRule::EvenOdd,
         BinaryOp::Union,
-    )?;
+    )
+    .map_err(OverlapError)?;
 
     // TODO: Could Contours implement PartialEq?
     //       Ok(non_zero_beziers != even_odd_beziers)
