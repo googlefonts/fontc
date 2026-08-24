@@ -11,7 +11,7 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-linesweeper = "0.4.0"
+linesweeper.workspace = true
 
 ordered-float.workspace = true
 smol_str.workspace = true
