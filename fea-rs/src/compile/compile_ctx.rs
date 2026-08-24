@@ -21,12 +21,10 @@ use write_fonts::{
             },
         },
         layout::{
-            ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag,
+            ConditionFormat1, ConditionSet, LookupFlag,
             builders::{CaretValueBuilder as CaretValue, DeviceOrDeltas, Metric},
         },
-        variations::{
-            VariationRegion, common_builder::RemapVarStore, ivs_builder::VariationStoreBuilder,
-        },
+        variations::VariationRegion,
     },
     types::{NameId, Tag},
 };
@@ -34,6 +32,7 @@ use write_fonts::{
 use crate::{
     Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken, Opts,
     common::{GlyphClass, GlyphId16, GlyphOrClass, GlyphSet, MarkClass},
+    compile::output::PendingCompilation,
     parse::ParseTree,
     token_tree::{
         Token,
@@ -44,7 +43,7 @@ use crate::{
 
 use super::{
     VariationInfo,
-    feature_writer::{FeatureBuilder, FeatureProvider, InsertionPoint},
+    feature_writer::{FeatureProvider, InsertionPoint},
     features::{
         AaltFeature, ActiveFeature, AllFeatures, ConditionSetMap, CvParams, SizeFeature,
         SpecialVerticalFeatureState,
@@ -176,213 +175,38 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 self.error(span, format!("unhandled top-level item: '{}'", item.kind()));
             }
         }
-
-        // NOTE: this is the easiest place for us to do this, but we
-        // could potentially be more performant by running this in parallel,
-        // immediately after parsing?
-        let lig_carets = self.run_feature_writer_if_present();
-
-        self.finalize_gdef_table(lig_carets);
-        self.features
-            .finalize_aalt(&mut self.lookups, &self.default_lang_systems);
-        self.features.dedupe_lookups();
     }
 
-    pub(crate) fn build(&mut self) -> Result<(Compilation, Vec<Diagnostic>), Vec<Diagnostic>> {
-        if self.errors.iter().any(Diagnostic::is_error) {
-            return Err(self.errors.clone());
+    pub(crate) fn get_pending_compilation(self) -> PendingCompilation {
+        PendingCompilation {
+            tree: self.tree.clone(),
+            features: self.features,
+            lookups: self.lookups,
+            tables: self.tables,
+            default_lang_systems: self.default_lang_systems,
+            conditionset_defs: self.conditionset_defs,
+            insert_markers: self.insert_markers,
+            mark_filter_sets: self.mark_filter_sets,
+            mark_classes: self.mark_classes,
+            mark_attach_class_id: self.mark_attach_class_id,
+            errors: self.errors,
+            opts: self.opts,
+            lig_carets_from_feature_writer: Default::default(),
+
+            axis_count: self
+                .variation_info
+                .map(|info| info.axis_count())
+                .unwrap_or_default(),
         }
-
-        let mut name_builder = self.tables.name.clone();
-        let stat = self
-            .tables
-            .stat
-            .as_ref()
-            .map(|raw| raw.build(&mut name_builder));
-
-        // the var store builder is required so that variable metrics/anchors
-        // in the GPOS table can be collected into an ItemVariationStore
-        let axis_count = self
-            .variation_info
-            .map(|info| info.axis_count())
-            .unwrap_or_default();
-        let mut ivs = VariationStoreBuilder::new(axis_count);
-
-        let (mut gsub, mut gpos) = self.lookups.build(&self.features, &mut ivs, &self.opts);
-        // if ivs hasn't been used, we don't want to create a GDEF table just for it.
-        if !ivs.is_empty() {
-            self.tables
-                .gdef
-                .get_or_insert_with(|| {
-                    // If we're creating a new GdefBuilder here, it means
-                    // finalize_gdef_table() discarded the previous one because
-                    // it was empty. That means no explicit glyph classes were
-                    // declared in the FEA, so mark the classes as inferred.
-                    // https://github.com/googlefonts/fontc/issues/1847
-                    super::tables::GdefBuilder {
-                        glyph_classes_were_inferred: true,
-                        ..Default::default()
-                    }
-                })
-                .var_store = Some(ivs);
-        // but if we _do_ have a gdef table, always add the var store,
-        // since we might still add ligature carets to it
-        } else if let Some(gdef) = self.tables.gdef.as_mut() {
-            gdef.var_store = Some(ivs);
-        }
-
-        let (gdef, key_map) = match self.tables.gdef.as_ref().map(|raw| raw.build()) {
-            Some((gdef, key_map)) => (Some(gdef), key_map),
-            None => (None, None),
-        };
-
-        let feature_params = self.features.build_feature_params(&mut name_builder);
-
-        if let Some(gsub) = gsub.as_mut() {
-            if let Some(variations) = gsub.feature_variations.as_mut() {
-                sort_feature_variations(variations, |condset| {
-                    self.conditionset_defs.sort_order(condset)
-                });
-            }
-            for record in gsub.feature_list.feature_records.iter_mut() {
-                if let Some(params) = feature_params.get(&record.feature_tag) {
-                    record.feature.feature_params = params.clone().into();
-                }
-            }
-        }
-        if let Some(gpos) = gpos.as_mut() {
-            if let Some(key_map) = key_map {
-                // all VariationIndex tables (in value records and anchors)
-                // currently have temporary indices; now that we've built the
-                // ItemVariationStore we need to go and update them all.
-                gpos.remap_variation_indices(&key_map);
-            }
-            if let Some(variations) = gpos.feature_variations.as_mut() {
-                sort_feature_variations(variations, |condset| {
-                    self.conditionset_defs.sort_order(condset)
-                });
-            }
-
-            for record in gpos.feature_list.feature_records.iter_mut() {
-                if let Some(params) = feature_params.get(&record.feature_tag) {
-                    record.feature.feature_params = params.clone().into();
-                }
-            }
-        }
-
-        let gdef_classes = self.tables.gdef.as_ref().and_then(|gdef| {
-            (!gdef.glyph_classes_were_inferred).then(|| gdef.glyph_classes.clone())
-        });
-
-        if self.opts.compile_debg {
-            let (gsub_info, gpos_info) = self.lookups.debug_info();
-            self.tables.debg = Some(super::tables::DebgBuilder::new(
-                gsub_info.to_vec(),
-                gpos_info.to_vec(),
-            ));
-        }
-
-        Ok((
-            Compilation {
-                head: self.tables.head.as_ref().map(|raw| raw.build(None)),
-                hhea: self.tables.hhea.clone(),
-                vhea: self.tables.vhea.clone(),
-                os2: self.tables.os2.as_ref().map(|raw| raw.build()),
-                os2_builder: self.tables.os2.clone(),
-                gdef,
-                base: self.tables.base.as_ref().map(|raw| raw.build()),
-                name: name_builder.build(),
-                stat,
-                gsub,
-                gpos,
-                opts: self.opts.clone(),
-                gdef_classes,
-                insert_markers: self.insert_markers.clone(),
-                debg: self.tables.debg.as_ref().map(|d| d.build(self.tree)),
-            },
-            self.errors.clone(),
-        ))
     }
 
-    // returns the ligcaret values; we add them after finalizing gdef
-    fn run_feature_writer_if_present(&mut self) -> BTreeMap<GlyphId16, Vec<CaretValue>> {
-        let Some(writer) = self.feature_writer else {
-            return Default::default();
-        };
-
-        let mut builder = FeatureBuilder::new(
-            &self.default_lang_systems,
-            &mut self.tables,
-            &mut self.mark_filter_sets,
-        );
-        writer.add_features(&mut builder);
-        let mut external_features = builder.finish();
-
-        // we need to register any ConditionSets here, because we want a
-        // stable sort order when we compile
-        if let Some(conditions) = external_features.feature_variations.as_ref() {
-            for conditionset in conditions.conditions.iter().map(|(cs, _)| cs) {
-                self.conditionset_defs.register_use(conditionset);
-            }
+    pub(crate) fn build(mut self) -> Result<(Compilation, Vec<Diagnostic>), Vec<Diagnostic>> {
+        let feature_provider = self.feature_writer.take();
+        let mut pending = self.get_pending_compilation();
+        if let Some(provider) = feature_provider {
+            pending.run_feature_provider(provider);
         }
-        external_features.merge_into(&mut self.lookups, &mut self.features, &self.insert_markers);
-        external_features.lig_carets
-    }
-
-    /// Infer/update GDEF table as required.
-    ///
-    /// If a GDEF table is not explicitly defined, we are supposed to create one,
-    /// and even if a GDEF table *is* defined, we are supposed to compute certain
-    /// of its subtables based on other items encountered in the feature file
-    ///
-    /// References:
-    ///
-    /// <http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#4f-markclass>
-    /// <http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#9b-gdef-table>
-    fn finalize_gdef_table(&mut self, generated_lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>) {
-        // if the FEA included a GDEF block, use that, otherwise create an empty table
-        let mut gdef = self.tables.gdef.take().unwrap_or_default();
-        // infer glyph classes, if they were not declared explicitly
-        if gdef.glyph_classes.is_empty() {
-            gdef.glyph_classes_were_inferred = true;
-            self.lookups.infer_glyph_classes(|glyph, class_id| {
-                gdef.glyph_classes.insert(glyph, class_id);
-            });
-            for glyph in self
-                .mark_classes
-                .values()
-                .flat_map(|class| class.members.iter().map(|(cls, _)| cls.iter()))
-                .flatten()
-            {
-                gdef.glyph_classes.insert(glyph, GlyphClassDef::Mark);
-            }
-        }
-
-        if !self.mark_attach_class_id.is_empty() {
-            gdef.mark_attach_class.extend(
-                self.mark_attach_class_id
-                    .iter()
-                    .flat_map(|(cls, id)| cls.iter().map(|gid| (gid, *id))),
-            );
-        }
-
-        if !self.mark_filter_sets.is_empty() {
-            let mut sorted = self
-                .mark_filter_sets
-                .iter()
-                .map(|(cls, id)| (*id, cls.clone()))
-                .collect::<Vec<_>>();
-            sorted.sort_unstable();
-            gdef.mark_glyph_sets = sorted.into_iter().map(|(_, cls)| cls).collect();
-        }
-
-        if gdef.ligature_pos.is_empty() {
-            gdef.ligature_pos = generated_lig_carets;
-        }
-
-        if !gdef.is_empty() {
-            self.tables.gdef = Some(gdef);
-        }
+        pending.build()
     }
 
     fn error(&mut self, range: Range<usize>, message: impl Into<String>) {
@@ -2420,18 +2244,6 @@ fn sequence_enumerator_impl(
             None => acc.push(prefix),
         }
     }
-}
-
-fn sort_feature_variations(
-    variations: &mut FeatureVariations,
-    order_fn: impl Fn(&ConditionSet) -> usize,
-) {
-    variations
-        .feature_variation_records
-        .sort_by_key(|record| match record.condition_set.as_ref() {
-            Some(condition) => order_fn(condition),
-            None => order_fn(&Default::default()),
-        })
 }
 
 /// Returns a span suitable for associating an error.
