@@ -1101,7 +1101,7 @@ mod tests {
         )
         .unwrap();
         // No ir_dir, we don't want to write anything down
-        let ctx = Context::new_root(Flags::default(), None).copy_for_work(Access::All, Access::All);
+        let ctx = Context::new_root(Flags::default()).copy_for_work(Access::All, Access::All);
         ctx.static_metadata.set(meta);
         ctx
     }

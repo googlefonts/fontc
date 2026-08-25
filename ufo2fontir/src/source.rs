@@ -2416,7 +2416,7 @@ mod tests {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let mut source = load_designspace(name);
         modify(&mut source);
-        let context = Context::new_root(flags, None);
+        let context = Context::new_root(flags);
         let task_context = context.copy_for_work(
             Access::None,
             AccessBuilder::new()
@@ -3263,7 +3263,7 @@ mod tests {
             font.save(&tmp_ufo).unwrap();
 
             let source = DesignSpaceIrSource::new(&tmp_ufo).unwrap();
-            let context = Context::new_root(Flags::default(), None);
+            let context = Context::new_root(Flags::default());
             let task_context = context.copy_for_work(
                 Access::None,
                 AccessBuilder::new()
@@ -3927,7 +3927,7 @@ mod tests {
         let mut source = load_designspace("wght_var.designspace");
         let ds = Arc::get_mut(&mut source.designspace).unwrap();
         ds.lib.insert(FEATURE_WRITERS_LIB_KEY.into(), value);
-        let context = Context::new_root(Flags::default(), None);
+        let context = Context::new_root(Flags::default());
         let task_context = context.copy_for_work(
             Access::None,
             AccessBuilder::new()

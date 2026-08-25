@@ -141,7 +141,6 @@ pub struct Options {
     pub skip_features: bool,
     pub compile_debg: bool,
     pub output_file: Option<PathBuf>,
-    pub ir_dir: Option<PathBuf>,
     pub debug_dir: Option<PathBuf>,
 }
 
@@ -196,11 +195,10 @@ fn generate_font_internal(
     let flags = merge_compilation_flags(options, &*source);
 
     let workload = Workload::new(source, options.skip_features)?;
-    let fe_root = FeContext::new_root(flags, options.ir_dir.clone());
+    let fe_root = FeContext::new_root(flags);
     let be_root = BeContext::new_root(
         flags,
         Some(version().into()),
-        options.ir_dir.clone(),
         options.debug_dir.clone(),
         options.compile_debg,
         &fe_root,
@@ -237,11 +235,6 @@ pub fn init_paths(options: &Options) -> Result<(), Error> {
         require_dir(parent)?;
     }
 
-    if let Some(ir_dir) = options.ir_dir.as_ref() {
-        require_dir(&fontir::paths::Paths::anchor_ir_dir(ir_dir))?;
-        require_dir(&fontir::paths::Paths::glyph_ir_dir(ir_dir))?;
-        require_dir(&fontbe::paths::Paths::glyph_dir(ir_dir))?;
-    }
     if let Some(debug_dir) = options.debug_dir.as_ref() {
         require_dir(debug_dir)?;
     }
@@ -254,30 +247,10 @@ pub fn write_font_file(options: &Options, be_context: &BeContext) -> Result<(), 
     let Some(output_file) = options.output_file.as_ref() else {
         return Ok(());
     };
-    let ir_font_path = options
-        .ir_dir
-        .as_ref()
-        .map(|d| fontbe::paths::Paths::target_file(d, &fontbe::orchestration::WorkId::Font));
-    match ir_font_path {
-        Some(ref ir_path) if ir_path != output_file => {
-            // IR enabled with custom output path: move from IR location
-            fs::rename(ir_path, output_file).map_err(|source| Error::FileIo {
-                path: output_file.clone(),
-                source,
-            })?;
-        }
-        None => {
-            // No IR: write from memory
-            fs::write(output_file, be_context.font.get().get()).map_err(|source| {
-                Error::FileIo {
-                    path: output_file.clone(),
-                    source,
-                }
-            })?;
-        }
-        _ => {} // IR path == output_file, already written by persistence
-    }
-    Ok(())
+    fs::write(output_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
+        path: output_file.clone(),
+        source,
+    })
 }
 
 #[cfg(test)]
@@ -297,27 +270,23 @@ pub fn testdata_dir() -> std::path::PathBuf {
 mod tests {
 
     use std::{
-        collections::{HashMap, HashSet, VecDeque},
-        fs::{self, File},
-        io::Read,
+        collections::{HashMap, HashSet},
+        fs,
         path::Path,
         sync::Arc,
     };
 
     use chrono::{Duration, TimeZone, Utc};
-    use fontbe::orchestration::{
-        AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
-    };
+    use fontbe::orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier};
     use fontdrasil::{
         coords::{NormalizedCoord, NormalizedLocation},
         orchestration::Access,
-        paths::string_to_filename,
         types::{GlyphName, WidthClass},
         variations::{Tent, VariationRegion},
     };
     use fontir::{
         ir::{self, GlobalMetric, GlyphOrder, KernGroup, KernPair, KernSide},
-        orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
+        orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     };
     use kurbo::{Point, Rect};
     use log::info;
@@ -377,7 +346,6 @@ mod tests {
         fn for_test(build_dir: &Path) -> Options {
             Options {
                 output_file: Some(build_dir.join("font.ttf")),
-                ir_dir: Some(build_dir.to_path_buf()),
                 ..Default::default()
             }
         }
@@ -398,11 +366,10 @@ mod tests {
 
             init_paths(&options).unwrap();
 
-            let fe_context = FeContext::new_root(flags, options.ir_dir.clone());
+            let fe_context = FeContext::new_root(flags);
             let be_context = BeContext::new_root(
                 flags,
                 Some(crate::version().into()),
-                options.ir_dir.clone(),
                 options.debug_dir.clone(),
                 options.compile_debg,
                 &fe_context.read_only(),
@@ -469,7 +436,11 @@ mod tests {
         }
 
         fn glyphs(&self) -> Glyphs {
-            Glyphs::new(self.temp.path())
+            Glyphs {
+                loca_format: *self.be_context.loca_format.get(),
+                raw_glyf: self.be_context.glyf.get().get().to_vec(),
+                raw_loca: self.be_context.loca.get().get().to_vec(),
+            }
         }
 
         fn font(&self) -> FontRef<'_> {
@@ -477,20 +448,12 @@ mod tests {
         }
 
         fn read_be_glyph(&self, name: &str) -> RawGlyph {
-            let raw_glyph = read_file(
-                self.temp.path(),
-                &Path::new("glyphs").join(string_to_filename(name, ".glyf")),
-            );
-            let read: &mut dyn Read = &mut raw_glyph.as_slice();
-            Glyph::read(read).data
+            let id = AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(name.into()));
+            self.be_context.glyphs.get(&id).data.clone()
         }
 
         fn read_ir_glyph(&self, name: &str) -> ir::Glyph {
-            let raw_glyph = read_file(
-                self.temp.path(),
-                &Path::new("glyph_ir").join(string_to_filename(name, ".yml")),
-            );
-            ir::Glyph::read(&mut raw_glyph.as_slice())
+            (*self.fe_context.get_glyph(name)).clone()
         }
     }
 
@@ -501,17 +464,6 @@ mod tests {
     }
 
     impl Glyphs {
-        fn new(build_dir: &Path) -> Self {
-            Glyphs {
-                loca_format: LocaFormatWrapper::read(
-                    &mut File::open(build_dir.join("loca.format")).unwrap(),
-                )
-                .into(),
-                raw_glyf: read_file(build_dir, Path::new("glyf.table")),
-                raw_loca: read_file(build_dir, Path::new("loca.table")),
-            }
-        }
-
         fn read(&self) -> Vec<Option<glyf::Glyph<'_>>> {
             let glyf = Glyf::read(FontData::new(&self.raw_glyf)).unwrap();
             let loca = Loca::read(
@@ -663,15 +615,6 @@ mod tests {
     }
 
     #[test]
-    fn compile_fea_with_includes_no_ir() {
-        assert_compiles_with_gpos_and_gsub("fea_include.designspace", |mut args| {
-            args.ir_dir = None;
-            args.debug_dir = None;
-            args
-        });
-    }
-
-    #[test]
     fn compile_debg_emits_debg_table() {
         let result = TestCompile::compile("static.designspace", |mut args| {
             args.compile_debg = true;
@@ -720,29 +663,6 @@ mod tests {
 
         assert_eq!(1, glyph.sources().len());
         (result, (*glyph).clone())
-    }
-
-    fn read_file(build_dir: &Path, path: &Path) -> Vec<u8> {
-        assert!(build_dir.is_dir(), "{build_dir:?} isn't a directory?!");
-        let path = build_dir.join(path);
-        if !path.exists() {
-            // When a path is missing it's very helpful to know what's present
-            use std::io::Write;
-            let mut stderr = std::io::stderr().lock();
-            writeln!(stderr, "Build dir tree").unwrap();
-            let mut pending = VecDeque::new();
-            pending.push_back(build_dir);
-            while let Some(pending_dir) = pending.pop_front() {
-                for entry in fs::read_dir(pending_dir).unwrap() {
-                    let entry = entry.unwrap();
-                    writeln!(stderr, "{}", entry.path().to_str().unwrap()).unwrap();
-                }
-            }
-        }
-        assert!(path.exists(), "{path:?} not found");
-        let mut buf = Vec::new();
-        File::open(path).unwrap().read_to_end(&mut buf).unwrap();
-        buf
     }
 
     #[test]
@@ -1502,11 +1422,8 @@ mod tests {
     }
 
     #[test]
-    fn compile_without_ir() {
-        let result = TestCompile::compile("glyphs2/WghtVar.glyphs", |mut args| {
-            args.ir_dir = None;
-            args
-        });
+    fn compile_writes_only_the_font() {
+        let result = TestCompile::compile_source("glyphs2/WghtVar.glyphs");
 
         let outputs = fs::read_dir(result.temp.path())
             .unwrap()
@@ -6175,7 +6092,6 @@ mod tests {
     fn compile_in_memory() {
         // In memory and no paths
         let result = TestCompile::compile("glyphs3/WghtVar.glyphs", |mut args| {
-            args.ir_dir = None;
             args.debug_dir = None;
             args.output_file = None;
             args
