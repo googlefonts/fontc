@@ -51,8 +51,8 @@ $ cargo run -p fontc -- resources/testdata/wght_var.designspace
 # Build a .glyphs file
 $ cargo run -p fontc -- resources/testdata/glyphs3/WghtVar.glyphs
 
-# Build a .fontra file
-$ cargo run -p fontc -- resources/testdata/fontra/minimal.fontra
+# Build a .fontra file; fontra support is experimental and incomplete
+$ cargo run -p fontc --features fontra -- resources/testdata/fontra/minimal.fontra
 ```
 
 ### Emit IR

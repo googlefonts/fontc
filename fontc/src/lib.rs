@@ -10,6 +10,7 @@ mod workload;
 pub use error::Error;
 
 pub use fontir::orchestration::Flags; // Re-export for library users
+#[cfg(feature = "fontra")]
 use fontra2fontir::source::FontraIrSource;
 use glyphs2fontir::source::GlyphsIrSource;
 use ufo2fontir::source::DesignSpaceIrSource;
@@ -35,6 +36,7 @@ use log::debug;
 pub enum Input {
     DesignSpacePath(PathBuf),
     GlyphsPath(PathBuf),
+    #[cfg(feature = "fontra")]
     FontraPath(PathBuf),
     GlyphsMemory(String),
 }
@@ -53,7 +55,10 @@ impl Input {
             "ufo" => Ok(Input::DesignSpacePath(path.to_path_buf())),
             "glyphs" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "glyphspackage" => Ok(Input::GlyphsPath(path.to_path_buf())),
+            #[cfg(feature = "fontra")]
             "fontra" => Ok(Input::FontraPath(path.to_path_buf())),
+            #[cfg(not(feature = "fontra"))]
+            "fontra" => Err(Error::FontraNotEnabled(path.to_path_buf())),
             _ => Err(Error::UnrecognizedSource(path.to_path_buf())),
         }
     }
@@ -69,6 +74,7 @@ impl Input {
         match self {
             Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path)?)),
             Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(path)?)),
+            #[cfg(feature = "fontra")]
             Input::FontraPath(path) => Ok(Box::new(FontraIrSource::new(path)?)),
             Input::GlyphsMemory(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
         }

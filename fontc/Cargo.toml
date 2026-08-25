@@ -22,13 +22,15 @@ harness = false
 [features]
 default = ["cli", "rayon"]
 cli = ["clap"]
+# .fontra source support; experimental and incomplete, hence off by default
+fontra = ["dep:fontra2fontir"]
 
 [dependencies]
 fontdrasil = { version = "0.4.0", path = "../fontdrasil" }
 fontbe = { version = "0.5.0", path = "../fontbe" }
 fontir = { version = "0.5.0", path = "../fontir" }
 glyphs2fontir = { version = "0.6.0", path = "../glyphs2fontir" }
-fontra2fontir = { version = "0.4.0", path = "../fontra2fontir" }
+fontra2fontir = { version = "0.4.0", path = "../fontra2fontir", optional = true }
 ufo2fontir = { version = "0.4.0", path = "../ufo2fontir" }
 
 bitflags.workspace = true

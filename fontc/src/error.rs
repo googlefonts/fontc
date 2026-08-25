@@ -16,6 +16,8 @@ pub enum Error {
     StdioWriteFail(#[source] io::Error),
     #[error("Unrecognized source {0}")]
     UnrecognizedSource(PathBuf),
+    #[error("Cannot compile {0}: fontra support is not enabled, rebuild with --features fontra")]
+    FontraNotEnabled(PathBuf),
     #[error(transparent)]
     YamlSerError(#[from] serde_yaml::Error),
     #[error(transparent)]
