@@ -111,14 +111,14 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
         WorkId::Fvar => to_bytes(context.fvar.get().as_ref()),
         WorkId::Head => to_bytes(context.head.get().as_ref()),
         WorkId::Hhea => to_bytes(context.hhea.get().as_ref()),
-        WorkId::Hmtx => Some(context.hmtx.get().as_ref().get().to_vec()),
+        WorkId::Hmtx => Some(context.hmtx.get().to_vec()),
         WorkId::Gasp => to_bytes(context.gasp.get().as_ref()),
-        WorkId::Glyf => Some(context.glyf.get().as_ref().get().to_vec()),
+        WorkId::Glyf => Some(context.glyf.get().to_vec()),
         WorkId::Gpos => to_bytes(context.gpos.get().as_ref()),
         WorkId::Gsub => to_bytes(context.gsub.get().as_ref()),
         WorkId::Gdef => to_bytes(context.gdef.get().as_ref()),
-        WorkId::Gvar => Some(context.gvar.get().as_ref().get().to_vec()),
-        WorkId::Loca => Some(context.loca.get().as_ref().get().to_vec()),
+        WorkId::Gvar => Some(context.gvar.get().to_vec()),
+        WorkId::Loca => Some(context.loca.get().to_vec()),
         WorkId::Maxp => to_bytes(context.maxp.get().as_ref()),
         WorkId::Name => to_bytes(context.name.get().as_ref()),
         WorkId::Os2 => to_bytes(context.os2.get().as_ref()),
@@ -128,7 +128,7 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
         WorkId::Mvar => to_bytes(context.mvar.get().as_ref()),
         WorkId::Meta => to_bytes(context.meta.get().as_ref()),
         WorkId::Vhea => to_bytes(context.vhea.get().as_ref()),
-        WorkId::Vmtx => Some(context.vmtx.get().as_ref().get().to_vec()),
+        WorkId::Vmtx => Some(context.vmtx.get().to_vec()),
         WorkId::Vvar => to_bytes(context.vvar.get().as_ref()),
         _ => panic!("Missing a match for {id:?}"),
     };
@@ -233,7 +233,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
         debug!("Building font");
         let font = builder.build();
         debug!("Assembled {} byte font", font.len());
-        context.font.set(font.into());
+        context.font.set(font);
         Ok(())
     }
 }

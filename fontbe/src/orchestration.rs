@@ -185,22 +185,6 @@ impl Identifier for AnyWorkId {
     }
 }
 
-impl AnyWorkId {
-    pub fn unwrap_be(&self) -> &WorkId {
-        match self {
-            AnyWorkId::Be(id) => id,
-            _ => panic!("Not a BE identifier"),
-        }
-    }
-
-    pub fn unwrap_fe(&self) -> &FeWorkIdentifier {
-        match self {
-            AnyWorkId::Fe(id) => id,
-            _ => panic!("Not a FE identifier"),
-        }
-    }
-}
-
 impl From<FeWorkIdentifier> for AnyWorkId {
     fn from(id: FeWorkIdentifier) -> Self {
         AnyWorkId::Fe(id)
@@ -258,8 +242,6 @@ impl From<Compilation> for ExtraFeaTables {
     }
 }
 
-// we could use serde here but it produces really big outputs; so instead
-// we can use fontwrite on each table, and then serialize an array of Option<Vec<u8>>
 /// A glyph and its associated name
 ///
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
@@ -679,25 +661,25 @@ pub struct Context {
     pub cpal: BeContextItem<Cpal>,
     pub fvar: BeContextItem<Fvar>,
     pub gasp: BeContextItem<Gasp>,
-    pub glyf: BeContextItem<Bytes>,
+    pub glyf: BeContextItem<Vec<u8>>,
     pub gsub: BeContextItem<Gsub>,
     pub gpos: BeContextItem<Gpos>,
     pub gdef: BeContextItem<Gdef>,
-    pub gvar: BeContextItem<Bytes>,
+    pub gvar: BeContextItem<Vec<u8>>,
     pub post: BeContextItem<Post>,
     pub meta: BeContextItem<Meta>,
-    pub loca: BeContextItem<Bytes>,
+    pub loca: BeContextItem<Vec<u8>>,
     pub loca_format: BeContextItem<LocaFormat>,
     pub maxp: BeContextItem<Maxp>,
     pub name: BeContextItem<Name>,
     pub os2: BeContextItem<Os2>,
     pub head: BeContextItem<Head>,
     pub hhea: BeContextItem<Hhea>,
-    pub hmtx: BeContextItem<Bytes>,
+    pub hmtx: BeContextItem<Vec<u8>>,
     pub hvar: BeContextItem<Hvar>,
     pub mvar: BeContextItem<Mvar>,
     pub vhea: BeContextItem<Vhea>,
-    pub vmtx: BeContextItem<Bytes>,
+    pub vmtx: BeContextItem<Vec<u8>>,
     pub vvar: BeContextItem<Vvar>,
     pub all_kerning_pairs: BeContextItem<AllKerningPairs>,
     pub kern_fragments: BeContextMap<KernFragment>,
@@ -706,7 +688,7 @@ pub struct Context {
     pub fea_rs_marks: BeContextItem<FeaRsMarks>,
     pub extra_fea_tables: BeContextItem<ExtraFeaTables>,
     pub stat: BeContextItem<Stat>,
-    pub font: BeContextItem<Bytes>,
+    pub font: BeContextItem<Vec<u8>>,
 }
 
 impl Context {
@@ -820,23 +802,6 @@ impl Context {
 
     pub fn copy_read_only(&self) -> Context {
         self.copy(AccessControlList::read_only())
-    }
-}
-
-#[derive(PartialEq)]
-pub struct Bytes {
-    buf: Vec<u8>,
-}
-
-impl Bytes {
-    pub fn get(&self) -> &[u8] {
-        &self.buf
-    }
-}
-
-impl From<Vec<u8>> for Bytes {
-    fn from(buf: Vec<u8>) -> Self {
-        Bytes { buf }
     }
 }
 

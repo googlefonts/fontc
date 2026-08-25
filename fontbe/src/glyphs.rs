@@ -903,8 +903,8 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
         let raw_loca = write_fonts::dump_table(&loca).unwrap();
         let raw_glyf = write_fonts::dump_table(&glyf).unwrap();
         context.loca_format.set(loca_format);
-        context.glyf.set(raw_glyf.into());
-        context.loca.set(raw_loca.into());
+        context.glyf.set(raw_glyf);
+        context.loca.set(raw_loca);
 
         Ok(())
     }

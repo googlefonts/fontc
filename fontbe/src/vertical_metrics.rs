@@ -133,12 +133,10 @@ impl Work<Context, AnyWorkId, Error> for VerticalMetricsWork {
         context.vhea.set(vhea);
 
         let vmtx = Vmtx::new(metrics.long_metrics, metrics.first_side_bearings);
-        let raw_vmtx = dump_table(&vmtx)
-            .map_err(|e| Error::DumpTableError {
-                e,
-                context: "vmtx".into(),
-            })?
-            .into();
+        let raw_vmtx = dump_table(&vmtx).map_err(|e| Error::DumpTableError {
+            e,
+            context: "vmtx".into(),
+        })?;
         context.vmtx.set(raw_vmtx);
 
         Ok(())

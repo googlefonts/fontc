@@ -182,7 +182,7 @@ fn merge_compilation_flags(options: &Options, source: &dyn Source) -> Flags {
 /// The font is returned as bytes and `output_file` is ignored.
 pub fn generate_font(source: Box<dyn Source>, options: Options) -> Result<Vec<u8>, Error> {
     let (_fe_root, be_root) = generate_font_internal(source, &options)?;
-    Ok(be_root.font.get().get().to_vec())
+    Ok(be_root.font.get().to_vec())
 }
 
 fn generate_font_internal(
@@ -247,7 +247,7 @@ pub fn write_font_file(options: &Options, be_context: &BeContext) -> Result<(), 
     let Some(output_file) = options.output_file.as_ref() else {
         return Ok(());
     };
-    fs::write(output_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
+    fs::write(output_file, &*be_context.font.get()).map_err(|source| Error::FileIo {
         path: output_file.clone(),
         source,
     })
@@ -396,7 +396,7 @@ mod tests {
 
             write_font_file(&self.options, &self.be_context).unwrap();
 
-            self.raw_font = self.be_context.font.get().get().to_vec();
+            self.raw_font = self.be_context.font.get().to_vec();
         }
 
         fn compile_source(source: &str) -> TestCompile {
@@ -438,8 +438,8 @@ mod tests {
         fn glyphs(&self) -> Glyphs {
             Glyphs {
                 loca_format: *self.be_context.loca_format.get(),
-                raw_glyf: self.be_context.glyf.get().get().to_vec(),
-                raw_loca: self.be_context.loca.get().get().to_vec(),
+                raw_glyf: self.be_context.glyf.get().to_vec(),
+                raw_loca: self.be_context.loca.get().to_vec(),
             }
         }
 
@@ -1099,7 +1099,7 @@ mod tests {
         let result = TestCompile::compile_source("glyphs2/NotDef.glyphs");
 
         let raw_hmtx = result.be_context.hmtx.get();
-        let hmtx = Hmtx::read(FontData::new(raw_hmtx.get()), 1).unwrap();
+        let hmtx = Hmtx::read(FontData::new(&raw_hmtx), 1).unwrap();
         assert_eq!(
             vec![(600, 250)],
             hmtx.h_metrics()
@@ -1127,7 +1127,7 @@ mod tests {
         assert_eq!(Some(1), maxp.max_contours);
 
         let raw_hmtx = result.be_context.hmtx.get();
-        let hmtx = Hmtx::read(FontData::new(raw_hmtx.get()), hhea.number_of_h_metrics).unwrap();
+        let hmtx = Hmtx::read(FontData::new(&raw_hmtx), hhea.number_of_h_metrics).unwrap();
         assert_eq!(
             vec![(425, 175)],
             hmtx.h_metrics()
@@ -6099,7 +6099,7 @@ mod tests {
 
         assert_ne!(
             0,
-            result.be_context.font.get().get().len(),
+            result.be_context.font.get().len(),
             "We should still produce a font"
         );
         let temp_files = result.temp.path().read_dir().unwrap().collect::<Vec<_>>();
