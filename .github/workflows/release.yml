@@ -100,15 +100,18 @@ jobs:
     env:
       TOOL: ${{ needs.detect.outputs.tool }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.13"
           architecture: ${{ matrix.platform.python-architecture }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.platform.target }}
 
       # Install gnu-tar because BSD tar is buggy
@@ -121,7 +124,7 @@ jobs:
 
       - name: Build wheel (macOS universal2) and sdist
         if: matrix.platform.target == 'x86_64-apple-darwin'
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: universal2-apple-darwin
           args: --release -o dist --sdist
@@ -129,7 +132,7 @@ jobs:
 
       - name: Build wheel (without sdist)
         if: matrix.platform.target != 'x86_64-apple-darwin'
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{matrix.platform.target}}
           args: --release -o dist
@@ -170,13 +173,13 @@ jobs:
           cd -
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheels-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: ${{ needs.detect.outputs.working-directory }}/dist
 
       - name: Upload binary artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: binaries-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: |
@@ -198,10 +201,12 @@ jobs:
           - target: "aarch64-unknown-linux-gnu"
             manylinux: "2014"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Build Wheels
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.manylinux }}
@@ -220,13 +225,13 @@ jobs:
         run: tar czvf target/release/${TOOL}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${TOOL}
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheels-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: ${{ needs.detect.outputs.working-directory }}/dist
 
       - name: Upload binary artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: binaries-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz
@@ -252,10 +257,12 @@ jobs:
     steps:
       # checkout@v3 doesn't work inside the manylinux container:
       # https://github.com/actions/checkout/issues/1487
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Build Wheels
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.compatibility }}
@@ -267,13 +274,13 @@ jobs:
         run: tar czvf target/release/${TOOL}-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release ${TOOL}
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheels-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: ${{ needs.detect.outputs.working-directory }}/dist
 
       - name: Upload binary artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: binaries-${{ env.TOOL }}-${{ matrix.platform.target }}
           path: target/release/${{ env.TOOL }}-${{ matrix.platform.target }}.tar.gz
@@ -289,14 +296,14 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: wheels-${{ needs.detect.outputs.tool }}-*
           # so that all artifacts are downloaded in the same directory specified by 'path'
           merge-multiple: true
           path: dist
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           skip-existing: true
 
@@ -311,12 +318,12 @@ jobs:
     env:
       TOOL: ${{ needs.detect.outputs.tool }}
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: binaries-${{ needs.detect.outputs.tool }}-*
           merge-multiple: true
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: wheels-${{ needs.detect.outputs.tool }}-*
           merge-multiple: true
@@ -366,7 +373,7 @@ jobs:
           fi
 
       - name: Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           name: ${{ steps.before_release.outputs.release_title }}
           files: |
