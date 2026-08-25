@@ -92,6 +92,33 @@ mod tests {
     }
 
     #[test]
+    fn past_a_prerelease_tag() {
+        // Past a pre-release tag the identifiers extend (`rc.1` -> `rc.1.dev.5`),
+        // sorting after the tag and before the final. A patch bump here would
+        // produce `1.0.1-dev.5`, wrongly sorting above the unreleased `1.0.0`.
+        assert_eq!(
+            version_string("fontc-v1.0.0-rc.1-5-gabc1234", "1.0.0-rc.1"),
+            "1.0.0-rc.1.dev.5+gabc1234"
+        );
+        assert_eq!(
+            version_string("fontc-v1.0.0-rc.1-5-gabc1234-dirty", "1.0.0-rc.1"),
+            "1.0.0-rc.1.dev.5+gabc1234.dirty"
+        );
+    }
+
+    #[test]
+    fn on_a_prerelease_tag() {
+        assert_eq!(
+            version_string("fontc-v1.0.0-rc.1", "1.0.0-rc.1"),
+            "1.0.0-rc.1"
+        );
+        assert_eq!(
+            version_string("fontc-v1.0.0-rc.1-dirty", "1.0.0-rc.1"),
+            "1.0.0-rc.1+dirty"
+        );
+    }
+
+    #[test]
     fn without_git() {
         // `cargo install`, source tarball, shallow clone with no reachable tag.
         // The describe is empty or a vergen sentinel; fall back to crate version.
@@ -107,10 +134,14 @@ mod tests {
     // strings *themselves* against the SemVer crate -- an independent oracle --
     // so we're checking our own format, not git's.
     const EMITTED: &[&str] = &[
-        "0.6.1-dev.394+gd62ba016",       // past a release tag
-        "0.6.1-dev.394+gd62ba016.dirty", // ...from a dirty tree
-        "0.6.0",                         // exactly on a release tag
-        "0.6.0+dirty",                   // ...from a dirty tree
+        "0.6.1-dev.394+gd62ba016",         // past a release tag
+        "0.6.1-dev.394+gd62ba016.dirty",   // ...from a dirty tree
+        "0.6.0",                           // exactly on a release tag
+        "0.6.0+dirty",                     // ...from a dirty tree
+        "1.0.0-rc.1.dev.5+gabc1234",       // past a pre-release tag
+        "1.0.0-rc.1.dev.5+gabc1234.dirty", // ...from a dirty tree
+        "1.0.0-rc.1",                      // exactly on a pre-release tag
+        "1.0.0-rc.1+dirty",                // ...from a dirty tree
     ];
 
     /// Each string we emit parses under the SemVer 2.0.0 grammar and round-trips.
@@ -160,6 +191,15 @@ mod tests {
             snapshot.cmp_precedence(&v("0.6.1-dev.394+gd62ba016.dirty")),
             Ordering::Equal
         );
+
+        // A dev build past a pre-release tag extends its identifiers, so it
+        // sits above that pre-release and below both the next pre-release and
+        // the final (SemVer §11: with an equal prefix, the larger set of
+        // pre-release fields has higher precedence).
+        let rc_dev = v("1.0.0-rc.1.dev.5+gabc1234");
+        assert_eq!(v("1.0.0-rc.1").cmp_precedence(&rc_dev), Ordering::Less);
+        assert_eq!(rc_dev.cmp_precedence(&v("1.0.0-rc.2")), Ordering::Less);
+        assert_eq!(rc_dev.cmp_precedence(&v("1.0.0")), Ordering::Less);
     }
 
     #[test]
