@@ -1646,6 +1646,8 @@ struct RawShape {
     pos: Vec<f64>,             // v3
     angle: Option<f64>,        // v3
     scale: Vec<f64>,           // v3
+    /// Horizontal and vertical slant, in degrees (v3)
+    slant: Vec<f64>,
 
     #[fromplist(alt_name = "attr")]
     attributes: ShapeAttributes,
@@ -2976,22 +2978,36 @@ impl TryFrom<RawShape> for Shape {
         let shape = if let Some(glyph_name) = from.glyph_name {
             assert!(!glyph_name.is_empty(), "A pointless component");
 
-            // V3 vs v2: The transform entry has been replaced by angle, pos and scale entries.
+            // V3 vs v2: The transform entry has been replaced by angle, pos, scale and slant.
             let mut transform = if let Some(transform) = from.transform {
                 Affine::parse_plist(&transform)?
             } else {
                 Affine::IDENTITY
             };
 
-            // Glyphs 3 gives us {angle, pos, scale}. Glyphs 2 gives us the standard 2x3 matrix.
-            // The matrix is more general and less ambiguous (what order do you apply the angle, pos, scale?)
-            // so convert Glyphs 3 to that. Order based on saving the same transformed comonent as
+            // Glyphs 3 gives us {angle, pos, scale, slant}. Glyphs 2 gives us the standard 2x3 matrix.
+            // The matrix is more general and less ambiguous (what order do you apply the angle, pos, scale, slant?)
+            // so convert Glyphs 3 to that. Order based on saving the same transformed component as
             // Glyphs 2 and Glyphs 3 then trying to convert one to the other.
             if !from.pos.is_empty() {
                 if from.pos.len() != 2 {
                     return Err(Error::StructuralError(format!("Bad pos: {:?}", from.pos)));
                 }
                 transform *= Affine::translate((from.pos[0], from.pos[1]));
+            }
+            if !from.slant.is_empty() {
+                if from.slant.len() != 2 {
+                    return Err(Error::StructuralError(format!(
+                        "Bad slant: {:?}",
+                        from.slant
+                    )));
+                }
+                // Glyphs stores slant as angles in degrees; Affine::skew wants the
+                // shear factors, i.e. the tangent of those angles.
+                transform *= Affine::skew(
+                    from.slant[0].to_radians().tan(),
+                    from.slant[1].to_radians().tan(),
+                );
             }
             if let Some(angle) = from.angle {
                 transform *= normalized_rotation(angle);
@@ -4503,6 +4519,144 @@ mod tests {
     fn read_transformed_component_2_and_3_nonuniform_scale() {
         let expected = Affine::new([0.8452, 0.5892, -1.1611, 1.6655, -233.0, -129.0]);
         check_v2_to_v3_transform("Component.glyphs", "non_uniform_scale", expected);
+    }
+
+    /// A slanted component must load the same from a Glyphs 2 matrix and Glyphs 3 fields.
+    ///
+    /// Both fixture files were written by Glyphs 3.4.1 (3436) from the same in-memory
+    /// font: v3 stores angle=20, scale=(0.8,0.8), slant=(10,0), while v2 stores the
+    /// equivalent raw `transform` matrix.
+    ///
+    /// The rotation makes the case discriminate slant-then-rotate from rotate-then-slant.
+    #[test]
+    fn read_component_slant_2_and_3() {
+        let expected = Affine::new([0.8, 0.2736, -0.1411, 0.7518, 0.0, 0.0]);
+        check_v2_to_v3_transform("ComponentSlant.glyphs", "slanted_square", expected);
+    }
+
+    /// Parse a Glyphs 3 component plist fragment and return its transform.
+    fn component_transform(shape_plist: &str) -> Affine {
+        let shape: Shape = RawShape::parse_plist(shape_plist)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let Shape::Component(component) = shape else {
+            panic!("{shape:?} should be a component");
+        };
+        component.transform
+    }
+
+    #[test]
+    fn parse_component_slant_key() {
+        let raw = RawShape::parse_plist(
+            r#"
+{
+ref = A;
+pos = (5,21);
+scale = (1,0.94);
+slant = (-0.7,0);
+}
+        "#,
+        )
+        .unwrap();
+        assert_eq!(raw.slant, vec![-0.7, 0.0]);
+    }
+
+    // Slant is in degrees; the shear factor is its tangent. The component transform is
+    // translate * slant * rotate * scale, i.e. a point is scaled, then rotated, then
+    // slanted, then translated.
+    //
+    // Provenance of the expected coefficients: the first tuple comes from the linked
+    // glyphsLib#1047 issue thread; the rotated tuple is backed by a Glyphs 3.4.1 round-trip
+    // (see the ComponentSlant fixture pair exercised by read_component_slant_2_and_3).
+    #[test]
+    fn read_component_slant_x_with_scale() {
+        let transform = component_transform(
+            r#"
+{
+ref = A;
+pos = (5,21);
+scale = (1,0.94);
+slant = (-0.7,0);
+}
+        "#,
+        );
+        assert_eq!(
+            round(transform, 9),
+            round(
+                Affine::new([1.0, 0.0, -0.011484837902484654, 0.94, 5.0, 21.0]),
+                9
+            )
+        );
+    }
+
+    #[test]
+    fn read_component_slant_with_rotation_and_scale() {
+        let transform = component_transform(
+            r#"
+{
+ref = A;
+angle = 20;
+scale = (0.8,0.8);
+slant = (10,0);
+}
+        "#,
+        );
+        assert_eq!(
+            round(transform, 9),
+            round(
+                Affine::new([
+                    0.8,
+                    0.273616114660535,
+                    -0.14106158456677195,
+                    0.7517540966287268,
+                    0.0,
+                    0.0
+                ]),
+                9
+            )
+        );
+    }
+
+    /// Vertical slant lands in the 'b' coefficient as tan(degrees).
+    ///
+    /// Unlike the two cases above this expectation is derived from the documented
+    /// conversion rather than from a Glyphs.app-produced reference file.
+    #[test]
+    fn read_component_slant_y() {
+        let transform = component_transform(
+            r#"
+{
+ref = A;
+slant = (0,5);
+}
+        "#,
+        );
+        assert_eq!(
+            round(transform, 9),
+            round(
+                Affine::new([1.0, 5f64.to_radians().tan(), 0.0, 1.0, 0.0, 0.0]),
+                9
+            )
+        );
+    }
+
+    #[test]
+    fn reject_malformed_component_slant() {
+        let raw = RawShape::parse_plist(
+            r#"
+{
+ref = A;
+slant = (10);
+}
+        "#,
+        )
+        .unwrap();
+        let result = Shape::try_from(raw);
+        assert!(
+            matches!(&result, Err(Error::StructuralError(msg)) if msg.starts_with("Bad slant")),
+            "{result:?}"
+        );
     }
 
     #[test]
