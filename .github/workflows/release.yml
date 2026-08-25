@@ -339,17 +339,19 @@ jobs:
       - name: Detect if tag is a pre-release
         id: before_release
         env:
-          # e.g. fontc-v0.1.0a1 or otl-normalizer-v1.2.0b2, but not fontc-v1.0.0
-          PRERELEASE_TAG_PATTERN: "(fontc|otl-normalizer)-v[[:digit:]]+\\.[[:digit:]]+\\.[[:digit:]]+([ab]|rc)[[:digit:]]+"
+          # A full release tag is exactly <tool>-v<MAJOR>.<MINOR>.<PATCH>, e.g.
+          # fontc-v1.0.0; anything else (fontc-v1.0.0-rc.1, ...) is a pre-release,
+          # so an unanticipated tag shape fails safe.
+          RELEASE_TAG_PATTERN: "^(fontc|otl-normalizer)-v[[:digit:]]+\\.[[:digit:]]+\\.[[:digit:]]+$"
         run: |
           # strip leading 'refs/tags/' to get the tag name
           TAG_NAME="${GITHUB_REF##*/}"
-          if egrep -q "$PRERELEASE_TAG_PATTERN" <<< "$TAG_NAME"; then
-            echo "Tag ${TAG_NAME} contains a pre-release suffix"
-            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Tag ${TAG_NAME} does not contain a pre-release suffix"
+          if egrep -q "$RELEASE_TAG_PATTERN" <<< "$TAG_NAME"; then
+            echo "Tag ${TAG_NAME} is a full release tag"
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag ${TAG_NAME} is not a plain <tool>-vX.Y.Z tag; marking as pre-release"
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
           fi
           # Create descriptive release title with tool name
           # e.g. fontc-v0.3.2 -> fontc 0.3.2, otl-normalizer-v0.0.1 -> otl-normalizer 0.0.1
