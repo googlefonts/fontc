@@ -1,0 +1,3 @@
+feature kern {
+    pos p y (-12 wght=900:22);
+} kern;

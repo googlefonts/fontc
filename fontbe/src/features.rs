@@ -894,6 +894,47 @@ mod tests {
         assert_eq!((15, vec![10, 20]), (default, region_values));
     }
 
+    #[test]
+    fn variable_metric_bare_default_matches_explicit_default() {
+        fn compile_layout_tables(fea: &str) -> Result<(Vec<u8>, Vec<u8>), DiagnosticSet> {
+            let ast = parse_fea(fea);
+            let static_metadata = weight_variable_static_metadata();
+            let var_info = FeaVariationInfo::new(&static_metadata);
+            let glyph_map = fea_rs::GlyphMap::new([".notdef", "p", "y"]).unwrap();
+
+            let diagnostics = fea_rs::compile::validate(&ast, &glyph_map, Some(&var_info));
+            assert!(!diagnostics.has_errors(), "{diagnostics:?}");
+
+            let (compilation, _) = fea_rs::compile::compile::<
+                _,
+                fea_rs::compile::NopFeatureProvider,
+            >(
+                &ast, &glyph_map, Some(&var_info), None, Default::default()
+            )?;
+            Ok((
+                write_fonts::dump_table(compilation.gpos.as_ref().unwrap()).unwrap(),
+                write_fonts::dump_table(compilation.gdef.as_ref().unwrap()).unwrap(),
+            ))
+        }
+
+        let bare_default =
+            compile_layout_tables("feature kern {\n    pos p y (-12 wght=700:22);\n} kern;\n")
+                .unwrap();
+        let explicit_default = compile_layout_tables(
+            "feature kern {\n    pos p y (wght=400:-12 wght=700:22);\n} kern;\n",
+        )
+        .unwrap();
+
+        assert_eq!(bare_default, explicit_default);
+        // Both `10` and `wght=400:20` target the default; reject rather than choose one.
+        assert!(
+            compile_layout_tables(
+                "feature kern {\n    pos p y (10 wght=400:20 wght=700:30);\n} kern;\n",
+            )
+            .is_err()
+        );
+    }
+
     fn parse_fea(fea: &str) -> ParseTree {
         fea_rs::parse::parse_string(fea.to_string()).0
     }
