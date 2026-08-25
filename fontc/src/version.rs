@@ -5,6 +5,9 @@
 //! It's `git describe` rendered as SemVer: a build past a release tag is a dev
 //! pre-release of the *next* patch, e.g. `0.6.1-dev.394+gd62ba016.dirty` (394
 //! commits past `fontc-v0.6.0`, dirty tree); on the tag itself, just `0.6.0`.
+//! Past a pre-release tag like `fontc-v1.0.0-rc.1` the pre-release identifiers
+//! extend instead (`1.0.0-rc.1.dev.394+g...`), sorting after the tag and
+//! before the final it precedes.
 //!
 //! Two details are deliberate, both for ordering (see the sort test below):
 //! bumping to `0.6.1` rather than `0.6.0-dev.N`, since a pre-release sorts
@@ -34,7 +37,18 @@ pub(crate) fn version_string(describe: &str, crate_version: &str) -> String {
         && !distance.is_empty()
         && distance.bytes().all(|b| b.is_ascii_digit())
     {
-        let mut version = format!("{}-dev.{distance}+g{sha}", bump_patch(tag));
+        // Past a plain release tag, a dev build is a pre-release of the *next*
+        // patch (`0.6.0` -> `0.6.1-dev.N`): a `-dev` suffix on the tag's own
+        // version would sort below the release it follows. Past a pre-release
+        // tag, the identifiers extend instead (`1.0.0-rc.1` -> `1.0.0-rc.1.dev.N`),
+        // which SemVer §11 orders after the tag and before the final; a patch
+        // bump there would wrongly sort above the unreleased final.
+        let base = if tag.contains('-') {
+            format!("{tag}.dev")
+        } else {
+            format!("{}-dev", bump_patch(tag))
+        };
+        let mut version = format!("{base}.{distance}+g{sha}");
         if dirty {
             version.push_str(".dirty");
         }
@@ -52,10 +66,10 @@ pub(crate) fn version_string(describe: &str, crate_version: &str) -> String {
 /// bumps the patch (`0.6.0` -> `0.6.1`), or returns `tag` unchanged if it isn't
 /// `MAJOR.MINOR.PATCH`.
 ///
-/// Assumes plain `MAJOR.MINOR.PATCH` release tags, the only kind fontc cuts
-/// today. A pre-release tag like `0.6.0-rc.1` would wrongly become `0.6.1`,
-/// sorting *above* the eventual `0.6.0` -- that path is currently unreachable,
-/// and should be handled if/when fontc starts tagging pre-releases.
+/// Only plain `MAJOR.MINOR.PATCH` tags reach this: `version_string` routes
+/// pre-release tags to the identifier-extension path instead. Should one slip
+/// through anyway, its pre-release part is dropped before bumping (defensive;
+/// pinned by the `patch_bump` test).
 fn bump_patch(tag: &str) -> String {
     let release = tag.split('-').next().unwrap_or(tag);
     let parts: Vec<&str> = release.split('.').collect();
