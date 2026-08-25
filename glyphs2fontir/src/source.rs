@@ -33,6 +33,7 @@ use glyphs_reader::{
     glyphdata::{Category, Subcategory},
 };
 use indexmap::IndexMap;
+use kurbo::Affine;
 use ordered_float::OrderedFloat;
 use smol_str::{SmolStr, format_smolstr};
 use write_fonts::{
@@ -1594,8 +1595,13 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             // Collect anchors from all glyphs (including non-exporting) so that
             // anchor propagation can copy them into composites. Non-exporting glyphs
             // may have invalid anchors (issue #1397) so we handle errors gracefully.
+            let origin = layer_origin_shift(layer);
             for anchor in layer.anchors.iter() {
-                if let Err(e) = ir_anchors.add(anchor.name.clone(), location.clone(), anchor.pos) {
+                if anchor.name == GLYPHS_ORIGIN_ANCHOR {
+                    continue;
+                }
+                let pos = anchor.pos - origin;
+                if let Err(e) = ir_anchors.add(anchor.name.clone(), location.clone(), pos) {
                     if glyph.export {
                         return Err(e.into());
                     }
@@ -1643,9 +1649,13 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                         axis_positions.entry(*tag).or_default().insert(*coord);
                     }
                     // See comment above about handling non-exporting glyphs
+                    let origin = layer_origin_shift(layer);
                     for anchor in layer.anchors.iter() {
-                        if let Err(e) = ir_anchors.add(anchor.name.clone(), loc.clone(), anchor.pos)
-                        {
+                        if anchor.name == GLYPHS_ORIGIN_ANCHOR {
+                            continue;
+                        }
+                        let pos = anchor.pos - origin;
+                        if let Err(e) = ir_anchors.add(anchor.name.clone(), loc.clone(), pos) {
                             if glyph.export {
                                 return Err(e.into());
                             }
@@ -1699,6 +1709,30 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         context.glyphs.set(ir_glyph);
         Ok(())
     }
+}
+
+/// A special anchor Glyphs.app uses to shift a layer's geometry and ordinary anchors.
+///
+/// The layer is drawn as if the origin anchor were at (0, 0), so contours,
+/// components and every other anchor are translated by -origin. Advance
+/// width and metrics are unaffected.
+///
+/// See <https://github.com/googlefonts/glyphsLib/pull/1155> for a reference
+/// implementation (glyphsLib applies this before anchor propagation).
+const GLYPHS_ORIGIN_ANCHOR: &str = "*origin";
+
+/// The `*origin` anchor's position, if the layer has one.
+fn layer_origin(layer: &Layer) -> Option<kurbo::Point> {
+    layer
+        .anchors
+        .iter()
+        .find(|a| a.name == GLYPHS_ORIGIN_ANCHOR)
+        .map(|a| a.pos)
+}
+
+/// The shift to apply to everything else on the layer, or zero if unset.
+fn layer_origin_shift(layer: &Layer) -> kurbo::Vec2 {
+    layer_origin(layer).map(|p| p.to_vec2()).unwrap_or_default()
 }
 
 fn process_layer(
@@ -1772,11 +1806,24 @@ fn process_layer(
         .into_inner();
 
     // TODO populate width and height properly
-    let (contours, components) = to_ir_contours_and_components(
+    let (mut contours, mut components) = to_ir_contours_and_components(
         glyph.name.clone().into(),
         &instance.shapes,
         erase_open_corners,
     )?;
+
+    // See GLYPHS_ORIGIN_ANCHOR. Anchors are shifted where layer.anchors is read.
+    if let Some(origin) = layer_origin(instance) {
+        let shift = Affine::translate(-origin.to_vec2());
+        for contour in contours.iter_mut() {
+            contour.apply_affine(shift);
+        }
+        for component in components.iter_mut() {
+            // left-multiply: apply the component's own transform first, then shift
+            component.transform = shift * component.transform;
+        }
+    }
+
     let glyph_instance = GlyphInstance {
         // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
         width: if glyph.is_nonspacing_mark() {
@@ -2074,6 +2121,7 @@ mod tests {
     use glyphs_reader::{AxisRule, Font, glyphdata::Category};
 
     use ir::{Panose, test_helpers::Round2};
+    use kurbo::{Rect, Shape};
     use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
@@ -4251,6 +4299,31 @@ unitsPerEm = 1000;
         );
     }
 
+    trait ExecForTest {
+        fn try_create_static_metadata(
+            &self,
+            source: &impl Source,
+        ) -> Result<Arc<StaticMetadata>, Error>;
+        fn create_static_metadata(&self, source: &impl Source) -> Arc<StaticMetadata>;
+    }
+
+    impl ExecForTest for Context {
+        fn try_create_static_metadata(
+            &self,
+            source: &impl Source,
+        ) -> Result<Arc<StaticMetadata>, Error> {
+            let work = source
+                .create_static_metadata_work()
+                .expect("To create static metadata work");
+            let task_context = self.copy_for_work(work.read_access(), work.write_access());
+            work.exec(&task_context).map(|_| self.static_metadata.get())
+        }
+
+        fn create_static_metadata(&self, source: &impl Source) -> Arc<StaticMetadata> {
+            self.try_create_static_metadata(source).unwrap()
+        }
+    }
+
     #[test]
     fn reads_feature_writers_from_font_user_data() {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
@@ -4290,21 +4363,9 @@ mode = skip;
         )
         .unwrap();
         let context = Context::new_root(Flags::default(), None);
-        let task_context = context.copy_for_work(
-            Access::None,
-            AccessBuilder::new()
-                .variant(WorkId::StaticMetadata)
-                .variant(WorkId::PreliminaryGlyphOrder)
-                .variant(WorkId::PreliminaryGdefCategories)
-                .build(),
-        );
-        source
-            .create_static_metadata_work()
-            .unwrap()
-            .exec(&task_context)
-            .unwrap();
+        let static_metadata = context.create_static_metadata(&source);
         assert_eq!(
-            context.static_metadata.get().misc.feature_generation,
+            static_metadata.misc.feature_generation,
             Some(vec![
                 FeatureWriterSpec {
                     writer: KnownFeatureWriter::Curs,
@@ -4331,19 +4392,7 @@ mode = skip;
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let source = GlyphsIrSource::new_from_memory(source).unwrap();
         let context = Context::new_root(Flags::default(), None);
-        let task_context = context.copy_for_work(
-            Access::None,
-            AccessBuilder::new()
-                .variant(WorkId::StaticMetadata)
-                .variant(WorkId::PreliminaryGlyphOrder)
-                .variant(WorkId::PreliminaryGdefCategories)
-                .build(),
-        );
-        source
-            .create_static_metadata_work()
-            .unwrap()
-            .exec(&task_context)
-            .unwrap_err()
+        context.try_create_static_metadata(&source).unwrap_err()
     }
 
     #[test]
@@ -4374,22 +4423,8 @@ ignoreMarks = 0;
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let source = GlyphsIrSource::new_from_memory(source).unwrap();
         let context = Context::new_root(Flags::default(), None);
-        let task_context = context.copy_for_work(
-            Access::None,
-            AccessBuilder::new()
-                .variant(WorkId::StaticMetadata)
-                .variant(WorkId::PreliminaryGlyphOrder)
-                .variant(WorkId::PreliminaryGdefCategories)
-                .build(),
-        );
-        source
-            .create_static_metadata_work()
-            .unwrap()
-            .exec(&task_context)
-            .unwrap();
         context
-            .static_metadata
-            .get()
+            .create_static_metadata(&source)
             .misc
             .feature_generation
             .clone()
@@ -4405,5 +4440,181 @@ unitsPerEm = 1000;
 }"#,
         );
         assert_eq!(writers, None);
+    }
+
+    /// Glyphs.app treats a "*origin" anchor as a layer-wide coordinate shift:
+    /// everything else on that layer (contours, components, other anchors) is
+    /// drawn as if "*origin" were at (0, 0), then translated back by -origin.
+    ///
+    /// The "a" glyph in this fixture has different "*origin" positions on its
+    /// two masters, so this also guards that the shift is applied per-source
+    /// rather than e.g. only at the default location.
+    #[test]
+    fn origin_anchor_shifts_glyph_geometry_and_anchors() {
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("PropagateAnchorsTest.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+
+        let glyph = context.get_glyph("a");
+        let static_metadata = context.static_metadata.get();
+        let default_loc = static_metadata.default_location();
+
+        let sources = glyph.sources();
+        assert_eq!(sources.len(), 2, "glyph 'a' should have exactly 2 masters");
+
+        // default master: *origin = (-20, 0); unshifted contour bounds were 47..448
+        let default_instance = sources.get(default_loc).unwrap();
+        let default_contour = default_instance.contours.first().unwrap();
+        assert_eq!(
+            default_contour.bounding_box(),
+            Rect::new(67.0, 0.0, 468.0, 517.0),
+            "contour should be shifted by -(-20, 0) = (20, 0), matching Glyphs.app's native export"
+        );
+        assert_eq!(
+            default_instance.width, 500.0,
+            "advance width must not be affected by the origin shift"
+        );
+
+        // the other master: *origin = (-10, 0); unshifted contour bounds were 47..508
+        let (other_loc, other_instance) = sources
+            .iter()
+            .find(|(loc, _)| *loc != default_loc)
+            .expect("should have a non-default source");
+        let other_contour = other_instance.contours.first().unwrap();
+        assert_eq!(
+            other_contour.bounding_box(),
+            Rect::new(57.0, 0.0, 518.0, 517.0),
+            "the other master has a different origin (-10, 0) and must be shifted independently"
+        );
+
+        let anchors = context.anchors.get(&WorkId::Anchor("a".into()));
+        assert!(
+            anchors.anchors.iter().all(|a| a.original_name != "*origin"),
+            "the *origin pseudo-anchor must never surface as a real anchor"
+        );
+
+        let anchor_pos = |name: &str| {
+            anchors
+                .anchors
+                .iter()
+                .find(|a| a.original_name == name)
+                .unwrap_or_else(|| panic!("no anchor named '{name}'"))
+        };
+
+        // one anchor is enough; they all take the same code path
+        let top = anchor_pos("top");
+        assert_eq!(top.default_pos(), (266.0, 548.0).into());
+        assert_eq!(
+            *top.positions.get(other_loc).unwrap(),
+            (287.0, 559.0).into()
+        );
+    }
+
+    /// The component transform shift must be `shift * component.transform`
+    /// (apply the component's own transform first, then the layer shift) --
+    /// getting this backwards is invisible for pure-translation transforms, so
+    /// this uses a transform with non-uniform scale to catch the reversed
+    /// composition.
+    #[test]
+    fn origin_anchor_shifts_component_transform_with_correct_multiplication_order() {
+        let source = GlyphsIrSource::new_from_memory(
+            r#"{
+.appVersion = "3227";
+.formatVersion = 3;
+fontMaster = (
+{
+id = "m01";
+}
+);
+glyphs = (
+{
+glyphname = base;
+layers = (
+{
+layerId = "m01";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(0,10,l),
+(10,10,l),
+(10,0,l)
+);
+}
+);
+width = 10;
+}
+);
+},
+{
+glyphname = composite;
+layers = (
+{
+layerId = "m01";
+anchors = (
+{
+name = "*origin";
+pos = (-20,10);
+},
+{
+name = top;
+pos = (30,40);
+}
+);
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(0,10,l),
+(10,10,l),
+(10,0,l)
+);
+},
+{
+ref = base;
+pos = (100,50);
+scale = (2,3);
+}
+);
+width = 200;
+}
+);
+}
+);
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+
+        let context = Context::new_root(Flags::default(), None);
+
+        let static_metadata = context.create_static_metadata(&source);
+
+        let task_context = context.copy_for_work(
+            Access::Variant(WorkId::StaticMetadata),
+            Access::Variant(WorkId::GlobalMetrics),
+        );
+        source
+            .create_global_metric_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+
+        build_glyphs(&source, &context).unwrap();
+
+        let glyph = context.get_glyph("composite");
+        let default_loc = static_metadata.default_location();
+        let instance = glyph.sources().get(default_loc).unwrap();
+
+        let shift = Affine::translate((20.0, -10.0)); // -(-20, 10)
+        let base_transform = Affine::new([2.0, 0.0, 0.0, 3.0, 100.0, 50.0]);
+        let expected = shift * base_transform;
+        let component = instance.components.first().unwrap();
+        assert_eq!(
+            component.transform, expected,
+            "component transform must be shift * transform (left-multiply), not the reverse"
+        );
     }
 }
