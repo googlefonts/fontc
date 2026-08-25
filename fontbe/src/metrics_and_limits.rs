@@ -383,12 +383,10 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
         context.hhea.set(hhea);
 
         let hmtx = Hmtx::new(metrics.long_metrics, metrics.first_side_bearings);
-        let raw_hmtx = dump_table(&hmtx)
-            .map_err(|e| Error::DumpTableError {
-                e,
-                context: "hmtx".into(),
-            })?
-            .into();
+        let raw_hmtx = dump_table(&hmtx).map_err(|e| Error::DumpTableError {
+            e,
+            context: "hmtx".into(),
+        })?;
         context.hmtx.set(raw_hmtx);
 
         let mut max_builder =

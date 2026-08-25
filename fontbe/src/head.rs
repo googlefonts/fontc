@@ -117,7 +117,7 @@ impl Work<Context, AnyWorkId, Error> for HeadWork {
     #[tracing::instrument(name = "fontbe::HeadWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
-        let loca_format = (*context.loca_format.get().as_ref()).into();
+        let loca_format = *context.loca_format.get();
         let mut head = init_head(
             static_metadata.units_per_em,
             loca_format,

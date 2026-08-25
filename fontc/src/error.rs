@@ -17,8 +17,6 @@ pub enum Error {
     #[error("Unrecognized source {0}")]
     UnrecognizedSource(PathBuf),
     #[error(transparent)]
-    YamlSerError(#[from] serde_yaml::Error),
-    #[error(transparent)]
     FontIrError(#[from] fontir::error::Error),
     #[error(transparent)]
     Backend(#[from] fontbe::error::Error),

@@ -34,7 +34,6 @@ ufo2fontir = { version = "0.4.0", path = "../ufo2fontir" }
 bitflags.workspace = true
 
 serde.workspace = true
-serde_yaml.workspace = true
 
 chrono.workspace = true
 log.workspace = true

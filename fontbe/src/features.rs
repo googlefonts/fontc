@@ -50,7 +50,6 @@ use crate::{
         AnyWorkId, BeWork, Context, ExtraFeaTables, FeaFirstPassOutput, FeaRsKerns, FeaRsMarks,
         WorkId,
     },
-    paths::Paths,
 };
 
 mod feature_variations;
@@ -689,11 +688,6 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
             context.extra_fea_tables.set(ExtraFeaTables::from(result));
         }
 
-        // Enables the assumption that if the file exists features were compiled
-        if let Some(ir_dir) = context.ir_dir.as_ref() {
-            fs::write(Paths::target_file(ir_dir, &WorkId::Features), "1")
-                .map_err(Error::IoError)?;
-        }
         Ok(())
     }
 }

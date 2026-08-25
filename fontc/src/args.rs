@@ -27,10 +27,6 @@ pub struct Args {
     #[arg(short, long)]
     source: Option<PathBuf>,
 
-    /// Whether to write IR to disk.
-    #[arg(short, long, default_value = "false")]
-    pub emit_ir: bool,
-
     /// Output file name (default: build/font.ttf)
     #[arg(short, long)]
     pub output_file: Option<PathBuf>,
@@ -77,7 +73,7 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub emit_timing: bool,
 
-    /// Working directory for the build process. If emit-ir is on, written here.
+    /// Working directory for the build process.
     #[arg(short, long, default_value = "build")]
     pub build_dir: PathBuf,
 
@@ -239,7 +235,6 @@ impl TryInto<Options> for Args {
         let flags = self.flags();
         let flags_to_disable = self.flags_to_disable();
         let debug_dir = self.emit_debug.then(|| self.build_dir.join("debug/"));
-        let ir_dir = self.emit_ir.then(|| self.build_dir.clone());
         Ok(Options {
             flags,
             flags_to_disable,
@@ -249,7 +244,6 @@ impl TryInto<Options> for Args {
                 .output_file
                 .or_else(|| Some(self.build_dir.join("font.ttf"))),
             debug_dir,
-            ir_dir,
         })
     }
 }

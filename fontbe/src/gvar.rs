@@ -85,12 +85,10 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
         });
         let gvar = Gvar::new(variations, axis_count).map_err(Error::GvarError)?;
 
-        let raw_gvar = dump_table(&gvar)
-            .map_err(|e| Error::DumpTableError {
-                e,
-                context: "gvar".into(),
-            })?
-            .into();
+        let raw_gvar = dump_table(&gvar).map_err(|e| Error::DumpTableError {
+            e,
+            context: "gvar".into(),
+        })?;
         context.gvar.set(raw_gvar);
 
         Ok(())

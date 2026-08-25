@@ -55,14 +55,15 @@ $ cargo run -p fontc -- resources/testdata/glyphs3/WghtVar.glyphs
 $ cargo run -p fontc -- resources/testdata/fontra/minimal.fontra
 ```
 
-### Emit IR
+### Emit debug output
 
-If you pass the `--emit-ir` option, the IR will be written to disk inside
-the build working directory. This can be helpful when troubleshooting.
+If you pass the `--emit-debug` option, additional files that can be helpful
+when troubleshooting are written to a `debug` directory inside the build
+working directory.
 
 ```shell
-$ cargo run -p fontc -- --emit-ir resources/testdata/wght_var.designspace
-$ ls build/
+$ cargo run -p fontc -- --emit-debug resources/testdata/wght_var.designspace
+$ ls build/debug/
 ```
 
 ### Sources to play with

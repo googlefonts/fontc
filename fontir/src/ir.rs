@@ -2,7 +2,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map::RandomState},
     fmt::{Debug, Display},
-    io::Read,
     path::PathBuf,
 };
 
@@ -26,7 +25,7 @@ use fontdrasil::{
 
 use crate::{
     error::{BadAnchor, BadAnchorReason, BadGlyph, BadGlyphKind, Error},
-    orchestration::{IdAware, Persistable, WorkId},
+    orchestration::{IdAware, WorkId},
 };
 
 // just public so we publish the docs
@@ -1624,66 +1623,6 @@ impl IdAware<WorkId> for Glyph {
     }
 }
 
-impl Persistable for Glyph {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
-    }
-}
-
-impl Persistable for GlyphOrder {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
-    }
-}
-
-impl Persistable for GlobalMetrics {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
-    }
-}
-
-impl Persistable for FeaturesSource {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
-    }
-}
-
-impl Persistable for KerningLocations {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
-    }
-}
-
-impl Persistable for KerningInstance {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
-    }
-}
-
 impl IdAware<WorkId> for KerningInstance {
     fn id(&self) -> WorkId {
         WorkId::KernInstance(self.location.clone())
@@ -1693,36 +1632,6 @@ impl IdAware<WorkId> for KerningInstance {
 impl IdAware<WorkId> for GlyphAnchors {
     fn id(&self) -> WorkId {
         WorkId::Anchor(self.glyph_name.clone())
-    }
-}
-
-impl Persistable for GlyphAnchors {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
-    }
-}
-
-impl Persistable for ColorPalettes {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
-    }
-}
-
-impl Persistable for ColorGlyphs {
-    fn read(from: &mut dyn Read) -> Self {
-        serde_yaml::from_reader(from).unwrap()
-    }
-
-    fn write(&self, to: &mut dyn std::io::Write) {
-        serde_yaml::to_writer(to, self).unwrap();
     }
 }
 

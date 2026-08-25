@@ -2174,7 +2174,7 @@ mod tests {
 
     fn context_for(glyphs_file: &Path) -> (impl Source + use<>, Context) {
         let source = GlyphsIrSource::new(glyphs_file).unwrap();
-        (source, Context::new_root(Flags::default(), None))
+        (source, Context::new_root(Flags::default()))
     }
 
     #[test]
@@ -4362,7 +4362,7 @@ mode = skip;
 }"#,
         )
         .unwrap();
-        let context = Context::new_root(Flags::default(), None);
+        let context = Context::new_root(Flags::default());
         let static_metadata = context.create_static_metadata(&source);
         assert_eq!(
             static_metadata.misc.feature_generation,
@@ -4391,7 +4391,7 @@ mode = skip;
     fn feature_writers_error_from_glyphs_source(source: &str) -> Error {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let source = GlyphsIrSource::new_from_memory(source).unwrap();
-        let context = Context::new_root(Flags::default(), None);
+        let context = Context::new_root(Flags::default());
         context.try_create_static_metadata(&source).unwrap_err()
     }
 
@@ -4422,7 +4422,7 @@ ignoreMarks = 0;
     fn feature_writers_from_glyphs_source(source: &str) -> Option<Vec<FeatureWriterSpec>> {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let source = GlyphsIrSource::new_from_memory(source).unwrap();
-        let context = Context::new_root(Flags::default(), None);
+        let context = Context::new_root(Flags::default());
         context
             .create_static_metadata(&source)
             .misc
@@ -4588,7 +4588,7 @@ unitsPerEm = 1000;
         )
         .unwrap();
 
-        let context = Context::new_root(Flags::default(), None);
+        let context = Context::new_root(Flags::default());
 
         let static_metadata = context.create_static_metadata(&source);
 
