@@ -1835,7 +1835,6 @@ fn process_layer(
         vertical_origin: Some(vertical_origin),
         contours,
         components,
-        variable_components: Vec::new(),
     };
     Ok((location, glyph_instance))
 }

@@ -178,6 +178,8 @@ fn to_ir_component(component: &norad::Component, anchor: Option<SmolStr>) -> ir:
             component.transform.y_offset,
         ])),
         anchor,
+        location: NormalizedLocation::new(),
+        reset_unspecified_axes: false,
     }
 }
 
@@ -233,7 +235,6 @@ fn to_ir_glyph_instance(
         vertical_origin,
         contours,
         components,
-        variable_components: Vec::new(),
     })
 }
 
