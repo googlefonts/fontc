@@ -1,6 +1,6 @@
 [package]
 name = "fontc"
-version = "0.6.0"
+version = "1.0.0-rc.1"
 build = "build.rs"
 edition = "2024"
 license = "MIT/Apache-2.0"
