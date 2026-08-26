@@ -1820,7 +1820,7 @@ fn process_layer(
         }
         for component in components.iter_mut() {
             // left-multiply: apply the component's own transform first, then shift
-            component.transform = shift * component.transform;
+            component.transform = ir::ComponentTransform::Affine(shift * component.affine());
         }
     }
 
@@ -4614,7 +4614,8 @@ unitsPerEm = 1000;
         let expected = shift * base_transform;
         let component = instance.components.first().unwrap();
         assert_eq!(
-            component.transform, expected,
+            component.affine(),
+            expected,
             "component transform must be shift * transform (left-multiply), not the reverse"
         );
     }

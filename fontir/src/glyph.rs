@@ -26,8 +26,8 @@ use write_fonts::{
 use crate::{
     error::{BadGlyph, Error},
     ir::{
-        Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata,
-        VariableComponent,
+        Component, ComponentTransform, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
+        StaticMetadata, VariableComponent,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     propagate_anchors::propagate_all_anchors,
@@ -145,7 +145,7 @@ fn components(
         .flat_map(|(loc, inst)| inst.components.iter().map(|c| (loc.clone(), c)))
         .enumerate()
         .map(|(index, (loc, component))| {
-            let coeffs = (transform * component.transform).as_coeffs();
+            let coeffs = (transform * component.affine()).as_coeffs();
             let mut transform = [OrderedFloat(0f64); 6];
             transform
                 .iter_mut()
@@ -339,11 +339,12 @@ fn flatten_non_export_components_for_glyph(
             // okay so now we have a component that is not going to be exported,
             // and we need to flatten.
             non_export_has_location |= referenced_glyph.sources().contains_key(loc);
-            let xform = component.transform;
+            let xform = component.affine();
             let referenced_instance = get_or_instantiate_instance(&referenced_glyph, loc, context)?;
 
             for mut referenced_component in referenced_instance.components.iter().cloned() {
-                referenced_component.transform = xform * referenced_component.transform;
+                referenced_component.transform =
+                    ComponentTransform::Affine(xform * referenced_component.affine());
                 new_instance.components.push(referenced_component);
             }
 
@@ -735,7 +736,7 @@ fn resolve_instance_to_contours(
             &referenced,
             font_location,
             loc,
-            xform * component.transform,
+            xform * component.affine(),
             stack,
         )?);
     }
@@ -945,7 +946,9 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
                 for ref_component in ref_inst.components.iter().rev() {
                     frontier.push_front(Component {
                         base: ref_component.base.clone(),
-                        transform: component.transform * ref_component.transform,
+                        transform: ComponentTransform::Affine(
+                            component.affine() * ref_component.affine(),
+                        ),
                         anchor: ref_component.anchor.clone(),
                     });
                 }
@@ -2320,9 +2323,9 @@ mod tests {
             .values_mut()
             .enumerate()
             .for_each(|(i, inst)| {
-                inst.components
-                    .iter_mut()
-                    .for_each(|c| c.transform *= adjust_nth(i));
+                inst.components.iter_mut().for_each(|c| {
+                    c.transform = ComponentTransform::Affine(c.affine() * adjust_nth(i))
+                });
             });
         glyph.build().unwrap()
     }
@@ -2927,7 +2930,7 @@ mod tests {
         let comp = &instance.components[0];
 
         assert_eq!(comp.base, "a");
-        assert_eq!(comp.transform, Affine::translate((29., 13.)));
+        assert_eq!(comp.affine(), Affine::translate((29., 13.)));
     }
 
     #[test]
@@ -3018,10 +3021,7 @@ mod tests {
             inst.contours[0],
             Affine::translate((5.0, 0.)) * simple_square_path()
         );
-        assert_eq!(
-            inst.components[0].transform,
-            Affine::translate((17.0, 17.0))
-        );
+        assert_eq!(inst.components[0].affine(), Affine::translate((17.0, 17.0)));
         assert_eq!(inst.width, 500.);
         assert!(inst.height.is_none());
         assert_eq!(inst.vertical_origin, Some(150.));
@@ -3036,7 +3036,7 @@ mod tests {
         context.glyphs.set(glyph.0.clone());
 
         let inst = instantiate_instance(&glyph.0, &intermediate, &context).unwrap();
-        inst.components[0].transform
+        inst.components[0].affine()
     }
 
     #[test]

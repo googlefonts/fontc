@@ -1458,7 +1458,7 @@ fn has_consistent_2x2_transforms(
             .iter()
             .zip(inst.components.iter())
             .all(|(c1, c2)| {
-                c1.base == c2.base && c1.transform.as_coeffs()[..4] == c2.transform.as_coeffs()[..4]
+                c1.base == c2.base && c1.affine().as_coeffs()[..4] == c2.affine().as_coeffs()[..4]
             })
     });
     if log_enabled!(log::Level::Trace) && !consistent {
@@ -1476,7 +1476,7 @@ fn has_overflowing_2x2_transforms(
     // fontbe uses F2Dot14::from_f64() which saturates at MAX_F2DOT14
     let overflow_info = sources.iter().find_map(|(location, instance)| {
         instance.components.iter().find_map(|component| {
-            component.transform.as_coeffs()[..4]
+            component.affine().as_coeffs()[..4]
                 .iter()
                 .find(|&value| !(-2.0..=2.0).contains(value))
                 .map(|&value| (location.clone(), component.base.as_str(), value))
@@ -1859,7 +1859,7 @@ impl GlyphInstance {
                 // <https://github.com/googlefonts/ufo2ft/issues/949>
                 self.components
                     .iter()
-                    .flat_map(|comp| comp.transform.as_coeffs()),
+                    .flat_map(|comp| comp.transform.interpolation_values()),
             )
             .chain(Some(self.width))
             .chain(self.height)
@@ -1879,20 +1879,17 @@ impl GlyphInstance {
             contours.push(contour);
             values = remaining;
         }
-        let components = self
-            .components
-            .iter()
-            .zip(values.as_chunks::<6>().0)
-            .map(|(comp, coeffs)| Component {
+        let mut components = Vec::with_capacity(self.components.len());
+        for comp in &self.components {
+            let (transform, remaining) = comp.transform.with_interpolated_values(values);
+            values = remaining;
+            components.push(Component {
                 base: comp.base.clone(),
-                transform: Affine::new(*coeffs),
+                transform,
                 anchor: comp.anchor.clone(),
-            })
-            .collect();
+            });
+        }
 
-        // kind of silly but here i'm just manually truncating values as we
-        // consume them, just to simplify bookkeeping
-        values = &values[self.components.len() * 6..];
         let width = values[0];
         values = &values[1..];
         let height = self.height.and_then(|_| values.first().copied());
@@ -1910,18 +1907,7 @@ impl GlyphInstance {
         for vc in &self.variable_components {
             let fields = &values[..9];
             values = &values[9..];
-            let take = |present: bool, v: f64| present.then_some(v);
-            let transform = DecomposedTransform {
-                translate_x: take(vc.transform.translate_x.is_some(), fields[0]),
-                translate_y: take(vc.transform.translate_y.is_some(), fields[1]),
-                rotation: take(vc.transform.rotation.is_some(), fields[2]),
-                scale_x: take(vc.transform.scale_x.is_some(), fields[3]),
-                scale_y: take(vc.transform.scale_y.is_some(), fields[4]),
-                skew_x: take(vc.transform.skew_x.is_some(), fields[5]),
-                skew_y: take(vc.transform.skew_y.is_some(), fields[6]),
-                center_x: take(vc.transform.center_x.is_some(), fields[7]),
-                center_y: take(vc.transform.center_y.is_some(), fields[8]),
-            };
+            let transform = vc.transform.with_field_values(fields);
             let mut location = NormalizedLocation::new();
             for (tag, _) in vc.location.iter() {
                 location.insert(*tag, NormalizedCoord::new(values[0]));
@@ -1952,11 +1938,8 @@ impl GlyphInstance {
 }
 
 /// The nine transform fields (a field that is not set is fed as 0, or 1 for
-/// scale), then the location coordinates by tag.
-fn variable_component_interpolation_values(
-    vc: &VariableComponent,
-) -> impl Iterator<Item = f64> + '_ {
-    let t = &vc.transform;
+/// scale).
+fn decomposed_transform_interpolation_values(t: &DecomposedTransform) -> impl Iterator<Item = f64> {
     [
         t.translate_x.unwrap_or(0.0),
         t.translate_y.unwrap_or(0.0),
@@ -1969,7 +1952,14 @@ fn variable_component_interpolation_values(
         t.center_y.unwrap_or(0.0),
     ]
     .into_iter()
-    .chain(vc.location.iter().map(|(_, coord)| coord.to_f64()))
+}
+
+/// The nine transform fields plus location coordinates of a variable component.
+fn variable_component_interpolation_values(
+    vc: &VariableComponent,
+) -> impl Iterator<Item = f64> + '_ {
+    decomposed_transform_interpolation_values(&vc.transform)
+        .chain(vc.location.iter().map(|(_, coord)| coord.to_f64()))
 }
 
 /// Create a new contour from raw points.
@@ -2016,8 +2006,8 @@ fn copy_ponts_to_el<'a>(el: &PathEl, vals: &'a [f64]) -> (PathEl, &'a [f64]) {
 pub struct Component {
     /// The name of the referenced glyph.
     pub base: GlyphName,
-    /// Affine transformation to apply to the referenced glyph.
-    pub transform: Affine,
+    /// Transform to apply to the referenced glyph.
+    pub transform: ComponentTransform,
     /// Explicit anchor for mark component attachment.
     ///
     /// In Glyphs.app, when a base glyph has multiple anchors with the same
@@ -2046,7 +2036,7 @@ impl Component {
     pub fn new(base: impl Into<GlyphName>, transform: Affine) -> Self {
         Self {
             base: base.into(),
-            transform,
+            transform: ComponentTransform::Affine(transform),
             anchor: None,
         }
     }
@@ -2054,14 +2044,62 @@ impl Component {
     /// Create a component with an explicit attachment anchor.
     pub fn with_anchor(base: impl Into<GlyphName>, transform: Affine, anchor: SmolStr) -> Self {
         Self {
-            base: base.into(),
-            transform,
             anchor: Some(anchor),
+            ..Self::new(base, transform)
         }
     }
 
+    /// The transform as a matrix.
+    pub fn affine(&self) -> Affine {
+        self.transform.to_affine()
+    }
+
     pub(crate) fn has_nonidentity_2x2(&self) -> bool {
-        self.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0]
+        self.affine().as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0]
+    }
+}
+
+/// A component transform, stored as authored.
+///
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum ComponentTransform {
+    Affine(Affine),
+    Decomposed(DecomposedTransform),
+}
+
+impl ComponentTransform {
+    /// The transform as a matrix.
+    pub fn to_affine(&self) -> Affine {
+        match self {
+            ComponentTransform::Affine(affine) => *affine,
+            ComponentTransform::Decomposed(transform) => transform.to_affine(),
+        }
+    }
+
+    /// The values fed to interpolation: 6 affine coefficients, or the nine
+    /// decomposed fields (a field that is not set is fed as 0, or 1 for scale).
+    pub(crate) fn interpolation_values(&self) -> Vec<f64> {
+        match self {
+            ComponentTransform::Affine(affine) => affine.as_coeffs().to_vec(),
+            ComponentTransform::Decomposed(transform) => {
+                decomposed_transform_interpolation_values(transform).collect()
+            }
+        }
+    }
+
+    /// Rebuild from interpolated values, in the same order and count as
+    /// [`interpolation_values`](Self::interpolation_values).
+    pub(crate) fn with_interpolated_values<'a>(&self, values: &'a [f64]) -> (Self, &'a [f64]) {
+        match self {
+            ComponentTransform::Affine(_) => (
+                ComponentTransform::Affine(Affine::new(values[..6].try_into().unwrap())),
+                &values[6..],
+            ),
+            ComponentTransform::Decomposed(transform) => (
+                ComponentTransform::Decomposed(transform.with_field_values(&values[..9])),
+                &values[9..],
+            ),
+        }
     }
 }
 
@@ -2105,6 +2143,22 @@ impl DecomposedTransform {
             * Affine::scale_non_uniform(scale_x, scale_y)
             * skew
             * Affine::translate((-center_x, -center_y))
+    }
+
+    /// Rebuild from nine field values, keeping only the fields set in `self`.
+    pub(crate) fn with_field_values(&self, fields: &[f64]) -> DecomposedTransform {
+        let take = |present: Option<f64>, v: f64| present.map(|_| v);
+        DecomposedTransform {
+            translate_x: take(self.translate_x, fields[0]),
+            translate_y: take(self.translate_y, fields[1]),
+            rotation: take(self.rotation, fields[2]),
+            scale_x: take(self.scale_x, fields[3]),
+            scale_y: take(self.scale_y, fields[4]),
+            skew_x: take(self.skew_x, fields[5]),
+            skew_y: take(self.skew_y, fields[6]),
+            center_x: take(self.center_x, fields[7]),
+            center_y: take(self.center_y, fields[8]),
+        }
     }
 }
 
@@ -2757,7 +2811,51 @@ mod tests {
             }
         }
 
-        assert_eq!(new_instance.components[0].transform.as_coeffs(), [-1.; 6]);
+        assert_eq!(new_instance.components[0].affine().as_coeffs(), [-1.; 6]);
+    }
+
+    #[test]
+    fn instance_from_deltas_decomposed() {
+        // A decomposed transform consumes nine values in field order. Fields
+        // not set in the template stay unset.
+        let template = Component {
+            transform: ComponentTransform::Decomposed(DecomposedTransform {
+                translate_x: Some(1.),
+                rotation: Some(2.),
+                skew_x: Some(3.),
+                skew_y: Some(4.),
+                center_x: Some(5.),
+                center_y: Some(6.),
+                ..Default::default()
+            }),
+            ..Component::new("derp", Affine::IDENTITY)
+        };
+        let instance = GlyphInstance {
+            width: 600.,
+            components: vec![template],
+            ..Default::default()
+        };
+
+        let deltas = [10., 20., 45., 2., 3., 5., 6., 99., 98.]
+            .into_iter()
+            .chain([600.]) // width
+            .collect::<Vec<_>>();
+        let new_instance = instance.new_with_interpolated_values(&deltas);
+
+        assert_eq!(
+            new_instance.components[0].transform,
+            ComponentTransform::Decomposed(DecomposedTransform {
+                translate_x: Some(10.),
+                translate_y: None, // not set in the template
+                rotation: Some(45.),
+                scale_x: None,
+                scale_y: None,
+                skew_x: Some(5.),
+                skew_y: Some(6.),
+                center_x: Some(99.),
+                center_y: Some(98.),
+            })
+        );
     }
 
     #[test]
