@@ -326,20 +326,6 @@ fn process_composite_deltas(deltas: Vec<Vec2>) -> Vec<GlyphDelta> {
         .collect()
 }
 
-/// A glyph is a variable composite (VARC) if any source has variable components.
-pub(crate) fn is_variable_composite(glyph: &ir::Glyph) -> bool {
-    glyph
-        .sources()
-        .values()
-        .any(|inst| inst.components.iter().any(ir::Component::is_variable))
-}
-
-pub(crate) fn is_pure_variable_composite(glyph: &ir::Glyph) -> bool {
-    glyph.sources().values().all(|inst| {
-        inst.contours.is_empty() && inst.components.iter().all(ir::Component::is_variable)
-    })
-}
-
 impl Work<Context, AnyWorkId, Error> for GlyphWork {
     fn id(&self) -> AnyWorkId {
         WorkId::GlyfFragment(self.glyph_name.clone()).into()
@@ -377,23 +363,14 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
             .glyphs
             .get(&FeWorkId::Glyph(self.glyph_name.clone()));
 
-        // Variable-composite glyphs live in the VARC table, and get empty glyf
-        // table entries and no gvar.
-        if is_variable_composite(ir_glyph) {
-            if !is_pure_variable_composite(ir_glyph) {
-                return Err(Error::MixedVariableComposite(self.glyph_name.clone()));
-            }
-            context
-                .glyphs
-                .set_unconditionally(Glyph::new(self.glyph_name.clone(), RawGlyph::Empty));
-            context.gvar_fragments.set_unconditionally(GvarFragment {
-                glyph_name: self.glyph_name.clone(),
-                deltas: Vec::new(),
-            });
-            return Ok(());
-        }
-
-        let glyph = CheckedGlyph::new(ir_glyph)?;
+        // A variable composite's contours, if any, compile to its own glyf
+        // entry, which the VARC record draws through a self-referencing
+        // component. Its components do not reach glyf.
+        let glyph = if ir_glyph.lowering() == ir::GlyphLowering::Varc {
+            CheckedGlyph::contours_only(ir_glyph)?
+        } else {
+            CheckedGlyph::new(ir_glyph)?
+        };
 
         // Hopefully in time https://github.com/harfbuzz/boring-expansion-spec means we can drop this
         let mut glyph = cubics_to_quadratics(glyph, static_metadata.units_per_em);
@@ -700,27 +677,7 @@ impl CheckedGlyph {
         // All is well, build the result
         let name = glyph.name.clone();
         Ok(if components.is_empty() {
-            let contours = glyph
-                .sources()
-                .iter()
-                .map(|(location, instance)| {
-                    let n_contours = instance.contours.len();
-                    if n_contours > 1 {
-                        trace!("Merging {n_contours} contours to form '{name}' at {location:?}",);
-                    }
-                    let mut path = instance.contours.first().cloned().unwrap_or_default();
-                    for contour in instance.contours.iter().skip(1) {
-                        for el in contour.elements() {
-                            path.push(*el);
-                        }
-                    }
-                    (location.clone(), path)
-                })
-                .collect();
-            CheckedGlyph::Contour {
-                name,
-                paths: contours,
-            }
+            Self::contours_only(glyph)?
         } else {
             let components = glyph
                 .sources()
@@ -734,6 +691,46 @@ impl CheckedGlyph {
                 })
                 .collect();
             CheckedGlyph::Composite { name, components }
+        })
+    }
+
+    /// The glyph contours, ignoring any components.
+    fn contours_only(glyph: &ir::Glyph) -> Result<Self, Error> {
+        let name = glyph.name.clone();
+        // every instance must have consistent path element types
+        let path_els: HashSet<String> = glyph
+            .sources()
+            .values()
+            .map(|g| g.path_elements())
+            .collect();
+        if path_els.len() > 1 {
+            warn!("{name} has inconsistent path elements: {path_els:?}",);
+            return Err(Error::GlyphError(
+                name.clone(),
+                GlyphProblem::InconsistentPathElements,
+            ));
+        }
+
+        let contours = glyph
+            .sources()
+            .iter()
+            .map(|(location, instance)| {
+                let n_contours = instance.contours.len();
+                if n_contours > 1 {
+                    trace!("Merging {n_contours} contours to form '{name}' at {location:?}",);
+                }
+                let mut path = instance.contours.first().cloned().unwrap_or_default();
+                for contour in instance.contours.iter().skip(1) {
+                    for el in contour.elements() {
+                        path.push(*el);
+                    }
+                }
+                (location.clone(), path)
+            })
+            .collect();
+        Ok(CheckedGlyph::Contour {
+            name,
+            paths: contours,
         })
     }
 
@@ -1012,39 +1009,6 @@ mod tests {
             coeffs[i] = 2.0;
             assert!(!can_reuse_metrics(&glyph, &component, &Affine::new(coeffs)));
         }
-    }
-
-    fn glyph_with_instance(name: &str, instance: ir::GlyphInstance) -> ir::Glyph {
-        let loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
-        ir::Glyph::new(
-            GlyphName::new(name),
-            true,
-            Default::default(),
-            HashMap::from([(loc, instance)]),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn detects_variable_composite() {
-        let vc = ir::Component::new_variable(
-            "base",
-            ir::DecomposedTransform::default(),
-            NormalizedLocation::for_pos(&[("wght", 0.0)]),
-            false,
-        );
-        let composite = glyph_with_instance(
-            "varc",
-            ir::GlyphInstance {
-                components: vec![vc],
-                ..Default::default()
-            },
-        );
-        assert!(is_variable_composite(&composite));
-        assert!(!is_variable_composite(&glyph_with_instance(
-            "plain",
-            ir::GlyphInstance::default()
-        )));
     }
 
     #[test]
