@@ -24,7 +24,7 @@ use write_fonts::{
 };
 
 use crate::{
-    error::{BadGlyph, Error},
+    error::{BadGlyph, BadGlyphKind, Error},
     ir::{
         Component, ComponentTransform, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
         StaticMetadata,
@@ -566,6 +566,71 @@ fn has_variable_components(glyph: &Glyph) -> bool {
         .sources()
         .values()
         .any(|inst| inst.components.iter().any(Component::is_variable))
+}
+
+/// Every source of a variable composite must have the same component sequence,
+/// each with the same base, kind, reset flag, transform form, and location
+/// axes. Transform field values and axis values may vary freely.
+fn validate_variable_composites(
+    context: &Context,
+    glyph_order: &GlyphOrder,
+) -> Result<(), BadGlyph> {
+    for name in glyph_order.names() {
+        let Some(glyph) = context.try_get_glyph(name.clone()) else {
+            continue;
+        };
+        if !has_variable_components(&glyph) {
+            continue;
+        }
+        let bad = |detail: String| {
+            BadGlyph::new(
+                name.clone(),
+                BadGlyphKind::InconsistentVariableComponents(detail),
+            )
+        };
+        let default = &glyph.default_instance().components;
+        let mut locations: Vec<_> = glyph.sources().keys().collect();
+        locations.sort();
+        for loc in locations {
+            let components = &glyph.sources()[loc].components;
+            if components.len() != default.len() {
+                return Err(bad(format!(
+                    "source {loc:?} has {} components, the default has {}",
+                    components.len(),
+                    default.len()
+                )));
+            }
+            for (idx, (d, c)) in default.iter().zip(components).enumerate() {
+                if d.base != c.base {
+                    return Err(bad(format!(
+                        "component {idx} at source {loc:?} has base '{}', the default has '{}'",
+                        c.base, d.base
+                    )));
+                }
+                if d.is_variable() != c.is_variable() {
+                    return Err(bad(format!(
+                        "component {idx} at source {loc:?} differs from the default in kind (ordinary or variable)"
+                    )));
+                }
+                if d.reset_unspecified_axes != c.reset_unspecified_axes {
+                    return Err(bad(format!(
+                        "component {idx} at source {loc:?} differs from the default in reset_unspecified_axes"
+                    )));
+                }
+                if std::mem::discriminant(&d.transform) != std::mem::discriminant(&c.transform) {
+                    return Err(bad(format!(
+                        "component {idx} at source {loc:?} differs from the default in transform form (affine or decomposed)"
+                    )));
+                }
+                if !d.location.axis_tags().eq(c.location.axis_tags()) {
+                    return Err(bad(format!(
+                        "component {idx} at source {loc:?} differs from the default in location axes"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Names of glyphs that draw variable components, directly or through other
@@ -1178,6 +1243,10 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // missing component can't cause its glyph (or its siblings) to be
         // decomposed. See https://github.com/googlefonts/fontc/issues/1858
         prune_missing_components(context);
+
+        // Reject structurally inconsistent variable composites before any pass
+        // pairs their components across sources.
+        validate_variable_composites(context, &context.preliminary_glyph_order.get())?;
 
         // Propagate anchors from components to composites (if enabled)
         // This must happen BEFORE flattening non-export components, because after
@@ -2847,6 +2916,98 @@ mod tests {
         let a = context.get_glyph("a");
         assert_eq!(1, a.default_instance().components.len());
         assert_eq!("b", a.default_instance().components[0].base.as_str());
+    }
+
+    #[test]
+    fn validates_variable_composite_consistency() {
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let wght0 = || NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let vc = |location: NormalizedLocation, reset: bool| {
+            Component::new_variable("base", DecomposedTransform::default(), location, reset)
+        };
+        let validate = |c0: Vec<Component>, c1: Vec<Component>| {
+            let mut glyph = GlyphBuilder::new("composite".into());
+            glyph
+                .try_add_source(
+                    &loc0,
+                    GlyphInstance {
+                        components: c0,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            glyph
+                .try_add_source(
+                    &loc1,
+                    GlyphInstance {
+                        components: c1,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+            context.glyphs.set(glyph.build().unwrap());
+            let mut order = GlyphOrder::new();
+            order.insert("composite".into());
+            validate_variable_composites(&context, &order)
+        };
+
+        // The same shape at each source, only values differ: consistent.
+        assert!(
+            validate(
+                vec![vc(wght0(), false)],
+                vec![vc(NormalizedLocation::for_pos(&[("wght", 1.0)]), false)]
+            )
+            .is_ok()
+        );
+
+        // Component count differs.
+        assert!(validate(vec![vc(wght0(), false)], vec![]).is_err());
+
+        // Base differs.
+        assert!(
+            validate(
+                vec![vc(wght0(), false)],
+                vec![Component::new_variable(
+                    "other",
+                    DecomposedTransform::default(),
+                    wght0(),
+                    false
+                )]
+            )
+            .is_err()
+        );
+
+        // Ordinary at one source, variable at the other.
+        assert!(
+            validate(
+                vec![vc(wght0(), false)],
+                vec![Component::new("base", Affine::IDENTITY)]
+            )
+            .is_err()
+        );
+
+        // Reset flag differs.
+        assert!(validate(vec![vc(wght0(), false)], vec![vc(wght0(), true)]).is_err());
+
+        // Transform form differs.
+        let mut affine_form = vc(wght0(), false);
+        affine_form.transform = ComponentTransform::Affine(Affine::IDENTITY);
+        assert!(validate(vec![vc(wght0(), false)], vec![affine_form]).is_err());
+
+        // Location axes differ.
+        assert!(
+            validate(
+                vec![vc(wght0(), false)],
+                vec![vc(NormalizedLocation::for_pos(&[("wdth", 0.0)]), false)]
+            )
+            .is_err()
+        );
+
+        // Ordinary composites may be inconsistent, they are converted to
+        // contours later.
+        assert!(validate(vec![Component::new("base", Affine::IDENTITY)], vec![]).is_ok());
     }
 
     #[test]
