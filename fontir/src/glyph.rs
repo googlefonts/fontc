@@ -26,8 +26,8 @@ use write_fonts::{
 use crate::{
     error::{BadGlyph, BadGlyphKind, Error},
     ir::{
-        Component, ComponentTransform, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
-        StaticMetadata,
+        Component, ComponentTransform, Glyph, GlyphBuilder, GlyphInstance, GlyphLowering,
+        GlyphOrder, StaticMetadata,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     propagate_anchors::propagate_all_anchors,
@@ -582,51 +582,90 @@ fn validate_variable_composites(
         if !has_variable_components(&glyph) {
             continue;
         }
-        let bad = |detail: String| {
-            BadGlyph::new(
-                name.clone(),
-                BadGlyphKind::InconsistentVariableComponents(detail),
-            )
-        };
-        let default = &glyph.default_instance().components;
-        let mut locations: Vec<_> = glyph.sources().keys().collect();
-        locations.sort();
-        for loc in locations {
-            let components = &glyph.sources()[loc].components;
-            if components.len() != default.len() {
+        validate_composite_consistency(&glyph)?;
+    }
+    Ok(())
+}
+
+/// Interpolation and the VARC table pair glyph components across sources by
+/// index.
+fn validate_composite_consistency(glyph: &Glyph) -> Result<(), BadGlyph> {
+    let bad = |detail: String| {
+        BadGlyph::new(
+            glyph.name.clone(),
+            BadGlyphKind::InconsistentVariableComponents(detail),
+        )
+    };
+    let default = &glyph.default_instance().components;
+    let mut locations: Vec<_> = glyph.sources().keys().collect();
+    locations.sort();
+    for loc in locations {
+        let components = &glyph.sources()[loc].components;
+        if components.len() != default.len() {
+            return Err(bad(format!(
+                "source {loc:?} has {} components, the default has {}",
+                components.len(),
+                default.len()
+            )));
+        }
+        for (idx, (d, c)) in default.iter().zip(components).enumerate() {
+            if d.base != c.base {
                 return Err(bad(format!(
-                    "source {loc:?} has {} components, the default has {}",
-                    components.len(),
-                    default.len()
+                    "component {idx} at source {loc:?} has base '{}', the default has '{}'",
+                    c.base, d.base
                 )));
             }
-            for (idx, (d, c)) in default.iter().zip(components).enumerate() {
-                if d.base != c.base {
-                    return Err(bad(format!(
-                        "component {idx} at source {loc:?} has base '{}', the default has '{}'",
-                        c.base, d.base
-                    )));
-                }
-                if d.is_variable() != c.is_variable() {
-                    return Err(bad(format!(
-                        "component {idx} at source {loc:?} differs from the default in kind (ordinary or variable)"
-                    )));
-                }
-                if d.reset_unspecified_axes != c.reset_unspecified_axes {
-                    return Err(bad(format!(
-                        "component {idx} at source {loc:?} differs from the default in reset_unspecified_axes"
-                    )));
-                }
-                if std::mem::discriminant(&d.transform) != std::mem::discriminant(&c.transform) {
-                    return Err(bad(format!(
-                        "component {idx} at source {loc:?} differs from the default in transform form (affine or decomposed)"
-                    )));
-                }
-                if !d.location.axis_tags().eq(c.location.axis_tags()) {
-                    return Err(bad(format!(
-                        "component {idx} at source {loc:?} differs from the default in location axes"
-                    )));
-                }
+            if d.is_variable() != c.is_variable() {
+                return Err(bad(format!(
+                    "component {idx} at source {loc:?} differs from the default in kind (ordinary or variable)"
+                )));
+            }
+            if d.reset_unspecified_axes != c.reset_unspecified_axes {
+                return Err(bad(format!(
+                    "component {idx} at source {loc:?} differs from the default in reset_unspecified_axes"
+                )));
+            }
+            if std::mem::discriminant(&d.transform) != std::mem::discriminant(&c.transform) {
+                return Err(bad(format!(
+                    "component {idx} at source {loc:?} differs from the default in transform form (affine or decomposed)"
+                )));
+            }
+            if !d.location.axis_tags().eq(c.location.axis_tags()) {
+                return Err(bad(format!(
+                    "component {idx} at source {loc:?} differs from the default in location axes"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// An affine component of a VARC glyph must keep its 2x2 constant across
+/// sources, like a glyf composite.
+///
+/// The VARC table varies the decomposed transform fields, and decomposing
+/// each source's matrix separately gives fields that may not interpolate:
+/// rotations of 45 and 135 degrees decompose to scale 1 and -1, so the
+/// component collapses midway.
+fn validate_constant_affine_2x2(glyph: &Glyph) -> Result<(), BadGlyph> {
+    let default = &glyph.default_instance().components;
+    let mut locations: Vec<_> = glyph.sources().keys().collect();
+    locations.sort();
+    for loc in locations {
+        let components = &glyph.sources()[loc].components;
+        for (idx, (d, c)) in default.iter().zip(components).enumerate() {
+            let (ComponentTransform::Affine(d_affine), ComponentTransform::Affine(c_affine)) =
+                (&d.transform, &c.transform)
+            else {
+                continue;
+            };
+            if d_affine.as_coeffs()[..4] != c_affine.as_coeffs()[..4] {
+                return Err(BadGlyph::new(
+                    glyph.name.clone(),
+                    BadGlyphKind::InconsistentVariableComponents(format!(
+                        "component {idx} at source {loc:?} has an affine transform whose 2x2 differs from the default"
+                    )),
+                ));
             }
         }
     }
@@ -1291,6 +1330,18 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
             Default::default()
         };
 
+        // A closure member lowers to a VARC record, which also pairs its
+        // ordinary components across sources by index. Flattening non-export
+        // components may have changed the lists since the validation after
+        // pruning.
+        for name in new_glyph_order.names() {
+            if varc_glyphs.contains(name) {
+                let glyph = context.get_glyph(name.clone());
+                validate_composite_consistency(&glyph)?;
+                validate_constant_affine_2x2(&glyph)?;
+            }
+        }
+
         // Resolve component references to glyphs that are not retained by conversion to contours
         // Glyphs have to have consistent components at this point so it's safe to just check the default
         // See https://github.com/googlefonts/fontc/issues/532
@@ -1376,8 +1427,30 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
             trace!("No new glyphs, final glyph order == preliminary glyph order");
         }
 
+        // This must run after every pass that rebuilds glyphs.
+        assign_lowerings(context, &new_glyph_order, &varc_glyphs);
+
         context.glyph_order.set(new_glyph_order);
         Ok(())
+    }
+}
+
+/// Record how each glyph lowers to the binary.
+fn assign_lowerings(context: &Context, glyph_order: &GlyphOrder, varc_glyphs: &HashSet<GlyphName>) {
+    for name in glyph_order.names() {
+        let glyph = context.get_glyph(name.clone());
+        let lowering = if varc_glyphs.contains(name) {
+            GlyphLowering::Varc
+        } else if glyph.has_components() {
+            GlyphLowering::GlyfComposite
+        } else {
+            GlyphLowering::GlyfContours
+        };
+        if glyph.lowering() != lowering {
+            let mut glyph = (*glyph).clone();
+            glyph.set_lowering(lowering);
+            context.glyphs.set(glyph);
+        }
     }
 }
 
@@ -2872,9 +2945,23 @@ mod tests {
             order.insert(name.into());
         }
         // `g` draws `b`'s variable component through an ordinary component.
+        let varc_glyphs = variable_composite_closure(&context, &order);
         assert_eq!(
             HashSet::from([GlyphName::new("b"), GlyphName::new("g")]),
-            variable_composite_closure(&context, &order)
+            varc_glyphs
+        );
+
+        assign_lowerings(&context, &order, &varc_glyphs);
+        assert_eq!(
+            vec![
+                GlyphLowering::GlyfContours,
+                GlyphLowering::Varc,
+                GlyphLowering::Varc,
+                GlyphLowering::GlyfComposite,
+            ],
+            ["c", "b", "g", "x"]
+                .map(|name| context.get_glyph(name).lowering())
+                .to_vec()
         );
     }
 
@@ -3008,6 +3095,42 @@ mod tests {
         // Ordinary composites may be inconsistent, they are converted to
         // contours later.
         assert!(validate(vec![Component::new("base", Affine::IDENTITY)], vec![]).is_ok());
+    }
+
+    #[test]
+    fn rejects_varying_affine_2x2_in_variable_composites() {
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let glyph_with = |c1: Component| {
+            let mut glyph = GlyphBuilder::new("composite".into());
+            glyph
+                .try_add_source(
+                    &loc0,
+                    GlyphInstance {
+                        components: vec![Component::new("base", Affine::IDENTITY)],
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            glyph
+                .try_add_source(
+                    &loc1,
+                    GlyphInstance {
+                        components: vec![c1],
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            glyph.build().unwrap()
+        };
+
+        // Translation may vary.
+        let translated = glyph_with(Component::new("base", Affine::translate((5.0, 0.0))));
+        assert!(validate_constant_affine_2x2(&translated).is_ok());
+
+        // A varying 2x2 is rejected.
+        let rotated = glyph_with(Component::new("base", Affine::rotate(0.5)));
+        assert!(validate_constant_affine_2x2(&rotated).is_err());
     }
 
     #[test]

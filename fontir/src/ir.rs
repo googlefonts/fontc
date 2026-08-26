@@ -1435,6 +1435,21 @@ pub struct Glyph {
     sources: HashMap<NormalizedLocation, GlyphInstance>,
     has_consistent_2x2_transforms: bool,
     has_overflowing_2x2_transforms: bool,
+    #[serde(default)]
+    lowering: GlyphLowering,
+}
+
+/// How a glyph lowers to the binary. Assigned at the end of glyph order
+/// processing.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphLowering {
+    /// A glyf entry of contours, possibly empty.
+    #[default]
+    GlyfContours,
+    /// A glyf composite of ordinary components.
+    GlyfComposite,
+    /// A VARC record and a glyf entry of contours, possibly empty.
+    Varc,
 }
 
 /// Compute this during glyph processing and without allocation
@@ -1529,6 +1544,7 @@ impl Glyph {
             sources: instances,
             has_consistent_2x2_transforms,
             has_overflowing_2x2_transforms,
+            lowering: GlyphLowering::default(),
         })
     }
 
@@ -1538,6 +1554,14 @@ impl Glyph {
 
     pub fn set_axes(&mut self, axes: Axes) {
         self.axes = axes;
+    }
+
+    pub fn lowering(&self) -> GlyphLowering {
+        self.lowering
+    }
+
+    pub fn set_lowering(&mut self, lowering: GlyphLowering) {
+        self.lowering = lowering;
     }
 
     pub fn default_instance(&self) -> &GlyphInstance {

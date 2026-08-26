@@ -109,12 +109,6 @@ pub enum Error {
     NoGlobalMetricsInstance(NormalizedLocation),
     #[error("No palette entry for '{0:?}'")]
     MissingPaletteEntry(Color),
-    #[error(
-        "Glyph '{0}' mixes variable components with contours or ordinary components, which is not supported"
-    )]
-    MixedVariableComposite(GlyphName),
-    #[error("Glyph '{glyph}' has inconsistent variable components across sources: {detail}")]
-    InconsistentVariableComponents { glyph: GlyphName, detail: String },
     #[error("Variable component axis '{tag}' of glyph '{glyph}' is not a font axis")]
     VariableComponentUnknownAxis { glyph: GlyphName, tag: Tag },
     #[error("'{glyph}' references non-export glyph '{base}' as a variable component")]
