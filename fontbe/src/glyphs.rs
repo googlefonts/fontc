@@ -260,7 +260,7 @@ fn point_seqs_for_composite_glyph(
             // See https://github.com/fonttools/fonttools/blob/1c283756a5/Lib/fontTools/ttLib/tables/_g_v_a_r.py#L243
             let mut points = Vec::new();
             for component in inst.components.iter() {
-                let [.., dx, dy] = component.transform.as_coeffs();
+                let [.., dx, dy] = component.affine().as_coeffs();
                 // ensure we round now, before iup or gvar generation:
                 // https://github.com/fonttools/fonttools/blob/5ae2943a43/Lib/fontTools/pens/ttGlyphPen.py#L110
                 let point = Point::new(dx.ot_round(), dy.ot_round());
@@ -731,7 +731,7 @@ impl CheckedGlyph {
                     instance
                         .components
                         .iter()
-                        .map(|c| (c.base.clone(), location.clone(), c.transform))
+                        .map(|c| (c.base.clone(), location.clone(), c.affine()))
                 })
                 .collect();
             CheckedGlyph::Composite { name, components }
