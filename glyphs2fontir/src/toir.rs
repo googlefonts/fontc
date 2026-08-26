@@ -58,9 +58,8 @@ fn to_ir_component(glyph_name: GlyphName, component: &Component) -> ir::Componen
         glyph_name, component.name, component.transform
     );
     ir::Component {
-        base: component.name.as_str().into(),
-        transform: ir::ComponentTransform::Affine(component.transform),
         anchor: component.anchor.clone(),
+        ..ir::Component::new(component.name.as_str(), component.transform)
     }
 }
 
