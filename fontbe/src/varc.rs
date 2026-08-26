@@ -1,6 +1,9 @@
 //! Generates a [VARC](https://github.com/harfbuzz/boring-expansion-spec/blob/main/VARC.md) table.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet, HashMap},
+};
 
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -128,6 +131,19 @@ fn to_write_fonts_transform(t: &ir::DecomposedTransform) -> DecomposedTransform 
     }
 }
 
+/// The component transform as decomposed fields.
+///
+/// An ordinary component wrapped into a VARC record authors an affine, take it
+/// apart.
+fn decomposed(transform: &ir::ComponentTransform) -> Cow<'_, ir::DecomposedTransform> {
+    match transform {
+        ir::ComponentTransform::Decomposed(t) => Cow::Borrowed(t),
+        ir::ComponentTransform::Affine(affine) => {
+            Cow::Owned(ir::DecomposedTransform::from_affine(*affine))
+        }
+    }
+}
+
 /// The transform fields present across all instances of a component, in canonical
 /// order. A field is present if it is set in any instance.
 ///
@@ -136,15 +152,13 @@ fn to_write_fonts_transform(t: &ir::DecomposedTransform) -> DecomposedTransform 
 /// as *equal to scaleX* (its uniform-scale shorthand: HAVE_SCALE_X set without
 /// HAVE_SCALE_Y). Emitting scaleY explicitly keeps a non-uniform component (e.g.
 /// scaleX 2.0, scaleY identity) from round-tripping as uniform (scaleX 2.0, scaleY 2.0).
-fn present_transform_fields(
-    instances: &[(&NormalizedLocation, &ir::VariableComponent)],
-) -> Vec<Field> {
+fn present_transform_fields(instances: &[(&NormalizedLocation, &ir::Component)]) -> Vec<Field> {
     let mut present: Vec<bool> = FIELDS
         .iter()
         .map(|f| {
             instances
                 .iter()
-                .any(|(_, vc)| f.get(&vc.transform).is_some())
+                .any(|(_, vc)| f.get(decomposed(&vc.transform).as_ref()).is_some())
         })
         .collect();
     let (scale_x, scale_y) = (present[3], present[4]);
@@ -197,8 +211,8 @@ fn add_deltas(
 #[allow(clippy::too_many_arguments)]
 fn build_variable_component(
     gid: GlyphId,
-    default: &ir::VariableComponent,
-    instances: &[(&NormalizedLocation, &ir::VariableComponent)],
+    default: &ir::Component,
+    instances: &[(&NormalizedLocation, &ir::Component)],
     model: &VariationModel,
     axes: &Axes,
     axis_map: &HashMap<Tag, u16>,
@@ -253,7 +267,9 @@ fn build_variable_component(
     for field in &present {
         field.set(
             &mut base,
-            field.get(&default.transform).unwrap_or(field.identity()),
+            field
+                .get(decomposed(&default.transform).as_ref())
+                .unwrap_or(field.identity()),
         );
     }
     let transform = to_write_fonts_transform(&base);
@@ -266,7 +282,13 @@ fn build_variable_component(
             .map(|(loc, vc)| {
                 let values = present
                     .iter()
-                    .map(|field| field.encode(field.get(&vc.transform).unwrap_or(field.identity())))
+                    .map(|field| {
+                        field.encode(
+                            field
+                                .get(decomposed(&vc.transform).as_ref())
+                                .unwrap_or(field.identity()),
+                        )
+                    })
                     .collect();
                 ((*loc).clone(), values)
             })
@@ -313,12 +335,12 @@ fn validate_variable_component_topology(
     glyph: &ir::Glyph,
     axis_map: &HashMap<Tag, u16>,
 ) -> Result<(), Error> {
-    let default = &glyph.default_instance().variable_components;
+    let default = &glyph.default_instance().components;
     let mut locations: Vec<_> = glyph.sources().keys().collect();
     locations.sort();
     for loc in locations {
         let inst = &glyph.sources()[loc];
-        let vcs = &inst.variable_components;
+        let vcs = &inst.components;
         if vcs.len() != default.len() {
             return Err(Error::InconsistentVariableComponents {
                 glyph: name.clone(),
@@ -399,11 +421,11 @@ impl Work<Context, AnyWorkId, Error> for VarcWork {
         for (gid, name) in glyph_order.iter() {
             let glyph = context.ir.glyphs.get(&FeWorkId::Glyph(name.clone()));
             let default_instance = glyph.default_instance();
-            if glyph
-                .sources()
-                .values()
-                .all(|inst| inst.variable_components.is_empty())
-            {
+            if !crate::glyphs::is_variable_composite(&glyph) {
+                continue;
+            }
+            // A mixed glyph errors in GlyphWork, skip it here.
+            if !crate::glyphs::is_pure_variable_composite(&glyph) {
                 continue;
             }
             validate_variable_component_topology(name, &glyph, &axis_map)?;
@@ -411,8 +433,8 @@ impl Work<Context, AnyWorkId, Error> for VarcWork {
             let model =
                 VariationModel::new(glyph.sources().keys().cloned().collect(), axes.axis_order());
 
-            let mut components = Vec::with_capacity(default_instance.variable_components.len());
-            for (idx, component) in default_instance.variable_components.iter().enumerate() {
+            let mut components = Vec::with_capacity(default_instance.components.len());
+            for (idx, component) in default_instance.components.iter().enumerate() {
                 let component_gid =
                     GlyphId::from(glyph_order.glyph_id(&component.base).ok_or_else(|| {
                         Error::VariableComponentBaseNotInGlyphOrder {
@@ -420,10 +442,10 @@ impl Work<Context, AnyWorkId, Error> for VarcWork {
                             base: component.base.clone(),
                         }
                     })?);
-                let instances: Vec<(&NormalizedLocation, &ir::VariableComponent)> = glyph
+                let instances: Vec<(&NormalizedLocation, &ir::Component)> = glyph
                     .sources()
                     .iter()
-                    .map(|(loc, inst)| (loc, &inst.variable_components[idx]))
+                    .map(|(loc, inst)| (loc, &inst.components[idx]))
                     .collect();
                 components.push(build_variable_component(
                     component_gid,
@@ -463,17 +485,19 @@ mod tests {
         use std::collections::{HashMap, HashSet};
 
         let axis_map = HashMap::from([(Tag::new(b"wght"), 0u16)]);
-        let make_vc = |base: &str| ir::VariableComponent {
-            base: GlyphName::new(base),
-            location: NormalizedLocation::for_pos(&[("wght", 0.0)]),
-            transform: ir::DecomposedTransform::default(),
-            reset_unspecified_axes: false,
+        let make_vc = |base: &str| {
+            ir::Component::new_variable(
+                base,
+                ir::DecomposedTransform::default(),
+                NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                false,
+            )
         };
-        let source_at = |pos: f64, vcs: Vec<ir::VariableComponent>| {
+        let source_at = |pos: f64, vcs: Vec<ir::Component>| {
             (
                 NormalizedLocation::for_pos(&[("wght", pos)]),
                 ir::GlyphInstance {
-                    variable_components: vcs,
+                    components: vcs,
                     ..Default::default()
                 },
             )
@@ -500,7 +524,10 @@ mod tests {
 
         // Sparse transform fields and axis values may vary across sources.
         let mut sparse = make_vc("a");
-        sparse.transform.translate_y = Some(-10.0);
+        sparse.transform = ir::ComponentTransform::Decomposed(ir::DecomposedTransform {
+            translate_y: Some(-10.0),
+            ..Default::default()
+        });
         let glyph = glyph_with([
             source_at(0.0, vec![make_vc("a")]),
             source_at(1.0, vec![sparse]),
@@ -636,25 +663,25 @@ mod tests {
         let wght1_loc = NormalizedLocation::for_pos(&[("wght", 1.0)]);
 
         // translateX 50 -> 20, translateY absent (0) -> -10; axis value 0.0 -> 1.0.
-        let default_vc = ir::VariableComponent {
-            base: GlyphName::new("base"),
-            location: NormalizedLocation::for_pos(&[("wght", 0.0)]),
-            transform: ir::DecomposedTransform {
+        let default_vc = ir::Component::new_variable(
+            "base",
+            ir::DecomposedTransform {
                 translate_x: Some(50.0),
                 ..Default::default()
             },
-            reset_unspecified_axes: true,
-        };
-        let wght1_vc = ir::VariableComponent {
-            base: GlyphName::new("base"),
-            location: NormalizedLocation::for_pos(&[("wght", 1.0)]),
-            transform: ir::DecomposedTransform {
+            NormalizedLocation::for_pos(&[("wght", 0.0)]),
+            true,
+        );
+        let wght1_vc = ir::Component::new_variable(
+            "base",
+            ir::DecomposedTransform {
                 translate_x: Some(20.0),
                 translate_y: Some(-10.0),
                 ..Default::default()
             },
-            reset_unspecified_axes: true,
-        };
+            NormalizedLocation::for_pos(&[("wght", 1.0)]),
+            true,
+        );
         let instances = vec![(&default_loc, &default_vc), (&wght1_loc, &wght1_vc)];
 
         let model = VariationModel::new(
