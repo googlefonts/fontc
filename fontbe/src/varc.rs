@@ -145,7 +145,8 @@ fn decomposed(transform: &ir::ComponentTransform) -> Cow<'_, ir::DecomposedTrans
 }
 
 /// The transform fields present across all instances of a component, in canonical
-/// order. A field is present if it is set in any instance.
+/// order. A field is present if it is set in any instance with a value that is
+/// not the identity in every instance.
 ///
 /// Scale is special-cased: if either scaleX or scaleY is present, so is the other.
 /// An absent scale field is identity (1.0) in our IR, but VARC reads an absent scaleY
@@ -159,6 +160,11 @@ fn present_transform_fields(instances: &[(&NormalizedLocation, &ir::Component)])
             instances
                 .iter()
                 .any(|(_, vc)| f.get(decomposed(&vc.transform).as_ref()).is_some())
+                && instances.iter().any(|(_, vc)| {
+                    f.get(decomposed(&vc.transform).as_ref())
+                        .unwrap_or(f.identity())
+                        != f.identity()
+                })
         })
         .collect();
     let (scale_x, scale_y) = (present[3], present[4]);
@@ -224,8 +230,15 @@ fn build_variable_component(
     let mut axis_entries: Vec<(u16, Tag)> = instances
         .iter()
         .flat_map(|(_, vc)| vc.location.axis_tags())
-        .filter_map(|tag| axis_map.get(tag).map(|i| (*i, *tag)))
-        .collect::<BTreeSet<_>>()
+        .map(|tag| {
+            axis_map.get(tag).map(|i| (*i, *tag)).ok_or_else(|| {
+                Error::VariableComponentUnknownAxis {
+                    glyph: name.clone(),
+                    tag: *tag,
+                }
+            })
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?
         .into_iter()
         .collect();
     axis_entries.sort_by_key(|(index, _)| *index);
@@ -326,64 +339,17 @@ fn build_varc(
     ))
 }
 
-/// Every source must have the same component count, and per index the same
-/// base and reset flag. A VarComponent stores these once. Axis values and
-/// transform fields may vary freely, absent entries count as the default.
-/// Component axis tags must be font axes.
-fn validate_variable_component_topology(
-    name: &GlyphName,
-    glyph: &ir::Glyph,
-    axis_map: &HashMap<Tag, u16>,
-) -> Result<(), Error> {
-    let default = &glyph.default_instance().components;
-    let mut locations: Vec<_> = glyph.sources().keys().collect();
-    locations.sort();
-    for loc in locations {
-        let inst = &glyph.sources()[loc];
-        let vcs = &inst.components;
-        if vcs.len() != default.len() {
-            return Err(Error::InconsistentVariableComponents {
-                glyph: name.clone(),
-                detail: format!(
-                    "source {loc:?} has {} variable components, the default has {}",
-                    vcs.len(),
-                    default.len()
-                ),
-            });
-        }
-        for vc in vcs {
-            if let Some(tag) = vc
-                .location
-                .axis_tags()
-                .find(|tag| !axis_map.contains_key(*tag))
-            {
-                return Err(Error::VariableComponentUnknownAxis {
-                    glyph: name.clone(),
-                    tag: *tag,
-                });
-            }
-        }
-        for (idx, (d, v)) in default.iter().zip(vcs).enumerate() {
-            if d.base != v.base {
-                return Err(Error::InconsistentVariableComponents {
-                    glyph: name.clone(),
-                    detail: format!(
-                        "component {idx} at source {loc:?} has base '{}', the default has '{}'",
-                        v.base, d.base
-                    ),
-                });
-            }
-            if d.reset_unspecified_axes != v.reset_unspecified_axes {
-                return Err(Error::InconsistentVariableComponents {
-                    glyph: name.clone(),
-                    detail: format!(
-                        "component {idx} at source {loc:?} differs from the default in reset_unspecified_axes"
-                    ),
-                });
-            }
-        }
+/// A component referencing the glyph's own glyf entry, drawing its contours.
+fn self_reference(gid: GlyphId) -> VarComponent {
+    VarComponent {
+        reset_unspecified_axes: false,
+        gid,
+        condition_index: None,
+        axis_values: None,
+        axis_values_var_index: None,
+        transform: DecomposedTransform::default(),
+        transform_var_index: None,
     }
-    Ok(())
 }
 
 impl Work<Context, AnyWorkId, Error> for VarcWork {
@@ -420,20 +386,30 @@ impl Work<Context, AnyWorkId, Error> for VarcWork {
         // Gather variable composites in glyph-id order.
         for (gid, name) in glyph_order.iter() {
             let glyph = context.ir.glyphs.get(&FeWorkId::Glyph(name.clone()));
+            if glyph.lowering() != ir::GlyphLowering::Varc {
+                continue;
+            }
             let default_instance = glyph.default_instance();
-            if !crate::glyphs::is_variable_composite(&glyph) {
-                continue;
-            }
-            // A mixed glyph errors in GlyphWork, skip it here.
-            if !crate::glyphs::is_pure_variable_composite(&glyph) {
-                continue;
-            }
-            validate_variable_component_topology(name, &glyph, &axis_map)?;
+            debug_assert!(
+                glyph
+                    .sources()
+                    .values()
+                    .all(|inst| inst.components.len() == default_instance.components.len()),
+                "'{name}' has inconsistent components, fontir validates this"
+            );
 
             let model =
                 VariationModel::new(glyph.sources().keys().cloned().collect(), axes.axis_order());
 
-            let mut components = Vec::with_capacity(default_instance.components.len());
+            let mut components = Vec::with_capacity(default_instance.components.len() + 1);
+            // The glyph's own glyf entry holds its contours, draw them first.
+            if glyph
+                .sources()
+                .values()
+                .any(|inst| !inst.contours.is_empty())
+            {
+                components.push(self_reference(GlyphId::from(gid)));
+            }
             for (idx, component) in default_instance.components.iter().enumerate() {
                 let component_gid =
                     GlyphId::from(glyph_order.glyph_id(&component.base).ok_or_else(|| {
@@ -479,113 +455,6 @@ impl Work<Context, AnyWorkId, Error> for VarcWork {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn rejects_inconsistent_variable_components() {
-        use std::collections::{HashMap, HashSet};
-
-        let axis_map = HashMap::from([(Tag::new(b"wght"), 0u16)]);
-        let make_vc = |base: &str| {
-            ir::Component::new_variable(
-                base,
-                ir::DecomposedTransform::default(),
-                NormalizedLocation::for_pos(&[("wght", 0.0)]),
-                false,
-            )
-        };
-        let source_at = |pos: f64, vcs: Vec<ir::Component>| {
-            (
-                NormalizedLocation::for_pos(&[("wght", pos)]),
-                ir::GlyphInstance {
-                    components: vcs,
-                    ..Default::default()
-                },
-            )
-        };
-        let glyph_with = |sources: [(NormalizedLocation, ir::GlyphInstance); 2]| {
-            ir::Glyph::new(
-                GlyphName::new("g"),
-                true,
-                HashSet::new(),
-                HashMap::from(sources),
-            )
-            .unwrap()
-        };
-        let validate = |glyph: &ir::Glyph| {
-            validate_variable_component_topology(&GlyphName::new("g"), glyph, &axis_map)
-        };
-
-        // Same base at each source: consistent.
-        let glyph = glyph_with([
-            source_at(0.0, vec![make_vc("a")]),
-            source_at(1.0, vec![make_vc("a")]),
-        ]);
-        assert!(validate(&glyph).is_ok());
-
-        // Sparse transform fields and axis values may vary across sources.
-        let mut sparse = make_vc("a");
-        sparse.transform = ir::ComponentTransform::Decomposed(ir::DecomposedTransform {
-            translate_y: Some(-10.0),
-            ..Default::default()
-        });
-        let glyph = glyph_with([
-            source_at(0.0, vec![make_vc("a")]),
-            source_at(1.0, vec![sparse]),
-        ]);
-        assert!(validate(&glyph).is_ok());
-
-        // Different base at the non-default source: inconsistent.
-        let glyph = glyph_with([
-            source_at(0.0, vec![make_vc("a")]),
-            source_at(1.0, vec![make_vc("b")]),
-        ]);
-        assert!(matches!(
-            validate(&glyph),
-            Err(Error::InconsistentVariableComponents { .. })
-        ));
-
-        // Different component count, incl. an empty default: inconsistent.
-        let glyph = glyph_with([
-            source_at(0.0, vec![make_vc("a")]),
-            source_at(1.0, vec![make_vc("a"), make_vc("a")]),
-        ]);
-        assert!(matches!(
-            validate(&glyph),
-            Err(Error::InconsistentVariableComponents { .. })
-        ));
-        let glyph = glyph_with([
-            source_at(0.0, Vec::new()),
-            source_at(1.0, vec![make_vc("a")]),
-        ]);
-        assert!(matches!(
-            validate(&glyph),
-            Err(Error::InconsistentVariableComponents { .. })
-        ));
-
-        // Different reset flag: inconsistent.
-        let mut reset = make_vc("a");
-        reset.reset_unspecified_axes = true;
-        let glyph = glyph_with([
-            source_at(0.0, vec![make_vc("a")]),
-            source_at(1.0, vec![reset]),
-        ]);
-        assert!(matches!(
-            validate(&glyph),
-            Err(Error::InconsistentVariableComponents { .. })
-        ));
-
-        // An axis that is not a font axis: error.
-        let mut unknown = make_vc("a");
-        unknown.location = NormalizedLocation::for_pos(&[("SMRT", 0.5)]);
-        let glyph = glyph_with([
-            source_at(0.0, vec![make_vc("a")]),
-            source_at(1.0, vec![unknown]),
-        ]);
-        assert!(matches!(
-            validate(&glyph),
-            Err(Error::VariableComponentUnknownAxis { .. })
-        ));
-    }
 
     #[test]
     fn transform_rotation_and_skew_degrees_to_multiples_of_pi() {
@@ -719,5 +588,92 @@ mod tests {
         let parsed = read_varc::Varc::read(FontData::new(&bytes)).unwrap();
         // A multi-variation store was emitted.
         assert!(parsed.multi_var_store().is_some());
+    }
+
+    #[test]
+    fn wraps_ordinary_component_translate_only() {
+        use std::collections::HashSet;
+
+        use fontdrasil::coords::NormalizedLocation;
+        use fontir::ir::GlyphOrder;
+
+        let mut glyph_order = GlyphOrder::new();
+        glyph_order.insert(GlyphName::new(".notdef"));
+        glyph_order.insert(GlyphName::new("base"));
+        let base_gid = GlyphId::from(glyph_order.glyph_id(&GlyphName::new("base")).unwrap());
+
+        let axes = Axes::for_test(&["wght"]);
+        let axis_index = HashMap::from([(Tag::new(b"wght"), 0u16)]);
+        let default_loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let wght1_loc = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+
+        // An ordinary component wrapped into a VARC record. from_affine sets
+        // seven fields, only the non-identity translation survives.
+        let default_vc = ir::Component::new("base", kurbo::Affine::translate((10.0, 20.0)));
+        let wght1_vc = ir::Component::new("base", kurbo::Affine::translate((30.0, 20.0)));
+        let instances = vec![(&default_loc, &default_vc), (&wght1_loc, &wght1_vc)];
+
+        let model = VariationModel::new(
+            HashSet::from([default_loc.clone(), wght1_loc.clone()]),
+            axes.axis_order(),
+        );
+        let mut store_builder = MultiItemVariationStoreBuilder::new();
+        let component = build_variable_component(
+            base_gid,
+            &default_vc,
+            &instances,
+            &model,
+            &axes,
+            &axis_index,
+            &mut store_builder,
+            &GlyphName::new("composite"),
+        )
+        .unwrap();
+
+        assert_eq!(None, component.axis_values);
+        assert_eq!(Some(10.0), component.transform.translate_x);
+        assert_eq!(Some(20.0), component.transform.translate_y);
+        assert_eq!(None, component.transform.rotation);
+        assert_eq!(None, component.transform.scale_x);
+        assert_eq!(None, component.transform.scale_y);
+        assert_eq!(None, component.transform.skew_x);
+        assert_eq!(None, component.transform.skew_y);
+        // translateX varies.
+        assert!(component.transform_var_index.is_some());
+    }
+
+    #[test]
+    fn rejects_unknown_component_axis() {
+        use std::collections::HashSet;
+
+        use fontdrasil::coords::NormalizedLocation;
+
+        let axes = Axes::for_test(&["wght"]);
+        let axis_index = HashMap::from([(Tag::new(b"wght"), 0u16)]);
+        let default_loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+
+        let vc = ir::Component::new_variable(
+            "base",
+            ir::DecomposedTransform::default(),
+            NormalizedLocation::for_pos(&[("SMRT", 0.5)]),
+            false,
+        );
+        let instances = vec![(&default_loc, &vc)];
+        let model = VariationModel::new(HashSet::from([default_loc.clone()]), axes.axis_order());
+        let mut store_builder = MultiItemVariationStoreBuilder::new();
+        let result = build_variable_component(
+            GlyphId::new(1),
+            &vc,
+            &instances,
+            &model,
+            &axes,
+            &axis_index,
+            &mut store_builder,
+            &GlyphName::new("composite"),
+        );
+        assert!(matches!(
+            result,
+            Err(Error::VariableComponentUnknownAxis { .. })
+        ));
     }
 }
