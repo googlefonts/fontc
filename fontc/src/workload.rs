@@ -342,10 +342,6 @@ impl Workload {
                 has_components = true;
                 deps = deps.specific_instance(FeWorkIdentifier::Glyph(component.base.clone()));
             }
-            for component in inst.variable_components.iter() {
-                has_components = true;
-                deps = deps.specific_instance(FeWorkIdentifier::Glyph(component.base.clone()));
-            }
         }
 
         // We don't *have* to wait on glyph order, but if we don't it delays the critical path

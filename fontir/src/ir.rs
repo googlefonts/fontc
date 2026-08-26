@@ -1733,9 +1733,6 @@ pub struct GlyphInstance {
     pub contours: Vec<BezPath>,
     /// List of glyph components.
     pub components: Vec<Component>,
-    /// List of variable components.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub variable_components: Vec<VariableComponent>,
 }
 
 impl GlyphInstance {
@@ -1825,11 +1822,10 @@ impl GlyphInstance {
     /// The returned values must be provided in the following order:
     ///
     /// - the (x,y) values of points in any contours, in order
-    /// - the decomposed transform of any components, in order
+    /// - per component, in order: the transform values (see
+    ///   [`ComponentTransform::interpolation_values`]), then the location
+    ///   coordinates by tag
     /// - the width, height, and vertical origin (if present).
-    /// - for any variable components, in order: the nine transform fields (a
-    ///   field that is not set is fed as 0, or 1 for scale), then the location
-    ///   coordinates by tag.
     ///
     /// These values are used to generate a `VariationModel`; after interpolation
     /// a new instance can be constructed with [`Self::new_with_interpolated_values`].
@@ -1859,16 +1855,11 @@ impl GlyphInstance {
                 // <https://github.com/googlefonts/ufo2ft/issues/949>
                 self.components
                     .iter()
-                    .flat_map(|comp| comp.transform.interpolation_values()),
+                    .flat_map(component_interpolation_values),
             )
             .chain(Some(self.width))
             .chain(self.height)
             .chain(self.vertical_origin)
-            .chain(
-                self.variable_components
-                    .iter()
-                    .flat_map(variable_component_interpolation_values),
-            )
             .collect()
     }
 
@@ -1879,14 +1870,23 @@ impl GlyphInstance {
             contours.push(contour);
             values = remaining;
         }
+        // Per component: the transform values, then one coordinate per
+        // location axis. Fields not set in the template stay unset.
         let mut components = Vec::with_capacity(self.components.len());
         for comp in &self.components {
             let (transform, remaining) = comp.transform.with_interpolated_values(values);
             values = remaining;
+            let mut location = NormalizedLocation::new();
+            for (tag, _) in comp.location.iter() {
+                location.insert(*tag, NormalizedCoord::new(values[0]));
+                values = &values[1..];
+            }
             components.push(Component {
                 base: comp.base.clone(),
                 transform,
                 anchor: comp.anchor.clone(),
+                location,
+                reset_unspecified_axes: comp.reset_unspecified_axes,
             });
         }
 
@@ -1901,26 +1901,6 @@ impl GlyphInstance {
             values = &values[1..];
         }
 
-        // Variable components: nine transform fields, then one coordinate per
-        // location axis. Fields not set in the template stay unset.
-        let mut variable_components = Vec::with_capacity(self.variable_components.len());
-        for vc in &self.variable_components {
-            let fields = &values[..9];
-            values = &values[9..];
-            let transform = vc.transform.with_field_values(fields);
-            let mut location = NormalizedLocation::new();
-            for (tag, _) in vc.location.iter() {
-                location.insert(*tag, NormalizedCoord::new(values[0]));
-                values = &values[1..];
-            }
-            variable_components.push(VariableComponent {
-                base: vc.base.clone(),
-                location,
-                transform,
-                reset_unspecified_axes: vc.reset_unspecified_axes,
-            });
-        }
-
         assert!(
             values.is_empty(),
             "this fn can only be passed exactly the number of values required"
@@ -1932,7 +1912,6 @@ impl GlyphInstance {
             vertical_origin,
             contours,
             components,
-            variable_components,
         }
     }
 }
@@ -1954,12 +1933,12 @@ fn decomposed_transform_interpolation_values(t: &DecomposedTransform) -> impl It
     .into_iter()
 }
 
-/// The nine transform fields plus location coordinates of a variable component.
-fn variable_component_interpolation_values(
-    vc: &VariableComponent,
-) -> impl Iterator<Item = f64> + '_ {
-    decomposed_transform_interpolation_values(&vc.transform)
-        .chain(vc.location.iter().map(|(_, coord)| coord.to_f64()))
+/// The transform values plus location coordinates of a component.
+fn component_interpolation_values(comp: &Component) -> impl Iterator<Item = f64> + '_ {
+    comp.transform
+        .interpolation_values()
+        .into_iter()
+        .chain(comp.location.iter().map(|(_, coord)| coord.to_f64()))
 }
 
 /// Create a new contour from raw points.
@@ -2029,6 +2008,16 @@ pub struct Component {
     /// See: <https://handbook.glyphsapp.com/components/#reusing-shapes/anchors>
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor: Option<SmolStr>,
+    /// Location in the *referenced* glyph's axis space. Empty for an ordinary
+    /// component.
+    #[serde(default, skip_serializing_if = "NormalizedLocation::is_empty")]
+    pub location: NormalizedLocation,
+    /// If `true`, axes of the referenced glyph not present in
+    /// [`location`](Self::location) take the font's current variation settings.
+    /// If `false` they inherit the enclosing glyph's location. See
+    /// <https://github.com/harfbuzz/boring-expansion-spec/blob/main/VARC.md#processing>
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset_unspecified_axes: bool,
 }
 
 impl Component {
@@ -2038,6 +2027,8 @@ impl Component {
             base: base.into(),
             transform: ComponentTransform::Affine(transform),
             anchor: None,
+            location: NormalizedLocation::new(),
+            reset_unspecified_axes: false,
         }
     }
 
@@ -2049,9 +2040,54 @@ impl Component {
         }
     }
 
+    /// Create a variable component: one that positions the referenced glyph in
+    /// that glyph's own axis space.
+    pub fn new_variable(
+        base: impl Into<GlyphName>,
+        transform: DecomposedTransform,
+        location: NormalizedLocation,
+        reset_unspecified_axes: bool,
+    ) -> Self {
+        Self {
+            base: base.into(),
+            transform: ComponentTransform::Decomposed(transform),
+            anchor: None,
+            location,
+            reset_unspecified_axes,
+        }
+    }
+
     /// The transform as a matrix.
     pub fn affine(&self) -> Affine {
         self.transform.to_affine()
+    }
+
+    /// A variable component positions the referenced glyph in its own axis
+    /// space. An ordinary component does not, and behaves like a glyf
+    /// component.
+    pub fn is_variable(&self) -> bool {
+        !self.location.is_empty() || self.reset_unspecified_axes
+    }
+
+    /// The location the referenced glyph is sampled at inside a glyph at
+    /// `enclosing`.
+    ///
+    /// A reset component starts from the font's current location. Everything
+    /// else inherits the enclosing glyph's location.
+    pub fn location_at(
+        &self,
+        font_location: &NormalizedLocation,
+        enclosing: &NormalizedLocation,
+    ) -> NormalizedLocation {
+        let mut at = if self.reset_unspecified_axes {
+            font_location.clone()
+        } else {
+            enclosing.clone()
+        };
+        for (tag, coord) in self.location.iter() {
+            at.insert(*tag, *coord);
+        }
+        at
     }
 
     pub(crate) fn has_nonidentity_2x2(&self) -> bool {
@@ -2145,6 +2181,61 @@ impl DecomposedTransform {
             * Affine::translate((-center_x, -center_y))
     }
 
+    /// Decompose an affine into transform fields. Inverse of [`to_affine`] for
+    /// invertible matrices.
+    ///
+    /// Port of fontTools
+    /// [`DecomposedTransform.fromTransform`](https://github.com/fonttools/fonttools/blob/5e6b12d12fa08abafbeb7570f47707fbedf69a45/Lib/fontTools/misc/transform.py#L439).
+    /// Center is never set.
+    ///
+    /// [`to_affine`]: Self::to_affine
+    pub fn from_affine(affine: Affine) -> DecomposedTransform {
+        let [mut a, mut b, c, d, x, y] = affine.as_coeffs();
+
+        let sx = a.signum();
+        if sx < 0.0 {
+            a *= sx;
+            b *= sx;
+        }
+
+        let delta = a * d - b * c;
+        let mut rotation = 0.0;
+        let (mut scale_x, mut scale_y) = (0.0, 0.0);
+        let (mut skew_x, mut skew_y) = (0.0, 0.0);
+        if a != 0.0 || b != 0.0 {
+            let r = (a * a + b * b).sqrt();
+            rotation = if b >= 0.0 {
+                (a / r).acos()
+            } else {
+                -(a / r).acos()
+            };
+            (scale_x, scale_y) = (r, delta / r);
+            skew_x = ((a * c + b * d) / (r * r)).atan();
+        } else if c != 0.0 || d != 0.0 {
+            let s = (c * c + d * d).sqrt();
+            rotation = std::f64::consts::FRAC_PI_2
+                - if d >= 0.0 {
+                    (-c / s).acos()
+                } else {
+                    -(c / s).acos()
+                };
+            (scale_x, scale_y) = (delta / s, s);
+            skew_y = ((a * c + b * d) / (s * s)).atan();
+        }
+
+        DecomposedTransform {
+            translate_x: Some(x),
+            translate_y: Some(y),
+            rotation: Some(rotation.to_degrees()),
+            scale_x: Some(scale_x * sx),
+            scale_y: Some(scale_y),
+            skew_x: Some(skew_x.to_degrees() * sx),
+            skew_y: Some(skew_y.to_degrees()),
+            center_x: None,
+            center_y: None,
+        }
+    }
+
     /// Rebuild from nine field values, keeping only the fields set in `self`.
     pub(crate) fn with_field_values(&self, fields: &[f64]) -> DecomposedTransform {
         let take = |present: Option<f64>, v: f64| present.map(|_| v);
@@ -2160,27 +2251,6 @@ impl DecomposedTransform {
             center_y: take(self.center_y, fields[8]),
         }
     }
-}
-
-/// A variable component: a reference to another glyph, positioned in that glyph's
-/// own axis space with a (variable) decomposed transform.
-///
-/// For
-/// [VARC](https://github.com/harfbuzz/boring-expansion-spec/blob/main/VARC.md)
-/// (Variable Composites) table.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct VariableComponent {
-    /// The name of the referenced glyph.
-    pub base: GlyphName,
-    /// Location in the *referenced* glyph's axis space.
-    pub location: NormalizedLocation,
-    /// Decomposed transform to apply to the referenced glyph.
-    pub transform: DecomposedTransform,
-    /// If `true`, axes of the referenced glyph not present in
-    /// [`location`](Self::location) take the font's current variation settings.
-    /// If `false` they inherit the enclosing glyph's location. See
-    /// <https://github.com/harfbuzz/boring-expansion-spec/blob/main/VARC.md#processing>
-    pub reset_unspecified_axes: bool,
 }
 
 /// Data to inform construction of [CPAL](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal#palette-table-header)
@@ -2312,6 +2382,29 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn decomposed_transform_round_trips_through_affine() {
+        // from_affine inverts to_affine for invertible matrices, so wrapping an
+        // ordinary component's affine and composing it back gives the same matrix.
+        for affine in [
+            Affine::translate((10.0, -5.0)),
+            Affine::scale_non_uniform(2.0, 3.0),
+            Affine::rotate(0.7),
+            Affine::new([1.0, 0.0, 0.3, 1.0, 0.0, 0.0]), // skew
+            Affine::translate((4.0, 8.0))
+                * Affine::rotate(0.4)
+                * Affine::scale_non_uniform(1.5, 0.8),
+            Affine::new([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0]), // reflection (negative determinant)
+        ] {
+            let round = DecomposedTransform::from_affine(affine).to_affine();
+            let (got, want) = (round.as_coeffs(), affine.as_coeffs());
+            assert!(
+                got.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-9),
+                "affine {want:?} round-tripped to {got:?}"
+            );
+        }
+    }
 
     // from
     // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/tests/featureWriters/markFeatureWriter_test.py#L34>
@@ -2736,22 +2829,25 @@ mod tests {
 
     #[test]
     fn variable_component_serde_round_trip() {
-        let vc = VariableComponent {
-            base: GlyphName::new("radical"),
-            location: NormalizedLocation::for_pos(&[("wght", 0.5)]),
-            transform: DecomposedTransform {
+        let vc = Component::new_variable(
+            "radical",
+            DecomposedTransform {
                 translate_x: Some(100.0),
                 rotation: Some(15.0),
                 ..Default::default()
             },
-            reset_unspecified_axes: true,
-        };
+            NormalizedLocation::for_pos(&[("wght", 0.5)]),
+            true,
+        );
         let yaml = serde_yaml::to_string(&vc).unwrap();
-        let back: VariableComponent = serde_yaml::from_str(&yaml).unwrap();
+        let back: Component = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(vc, back);
         // Absent transform fields stay absent (VARC HAVE_* semantics).
-        assert!(back.transform.scale_x.is_none());
-        assert_eq!(Some(15.0), back.transform.rotation);
+        let ComponentTransform::Decomposed(transform) = &back.transform else {
+            panic!("expected a decomposed transform, got {:?}", back.transform);
+        };
+        assert!(transform.scale_x.is_none());
+        assert_eq!(Some(15.0), transform.rotation);
     }
 
     #[test]
@@ -2778,7 +2874,6 @@ mod tests {
             vertical_origin: Some(42.),
             contours,
             components,
-            variable_components: Vec::new(),
         };
 
         let deltas = (0..9)

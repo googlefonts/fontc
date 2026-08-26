@@ -327,18 +327,17 @@ fn process_composite_deltas(deltas: Vec<Vec2>) -> Vec<GlyphDelta> {
 }
 
 /// A glyph is a variable composite (VARC) if any source has variable components.
-fn is_variable_composite(glyph: &ir::Glyph) -> bool {
+pub(crate) fn is_variable_composite(glyph: &ir::Glyph) -> bool {
     glyph
         .sources()
         .values()
-        .any(|inst| !inst.variable_components.is_empty())
+        .any(|inst| inst.components.iter().any(ir::Component::is_variable))
 }
 
-fn is_pure_variable_composite(glyph: &ir::Glyph) -> bool {
-    glyph
-        .sources()
-        .values()
-        .all(|inst| inst.contours.is_empty() && inst.components.is_empty())
+pub(crate) fn is_pure_variable_composite(glyph: &ir::Glyph) -> bool {
+    glyph.sources().values().all(|inst| {
+        inst.contours.is_empty() && inst.components.iter().all(ir::Component::is_variable)
+    })
 }
 
 impl Work<Context, AnyWorkId, Error> for GlyphWork {
@@ -1028,16 +1027,16 @@ mod tests {
 
     #[test]
     fn detects_variable_composite() {
-        let vc = ir::VariableComponent {
-            base: GlyphName::new("base"),
-            location: NormalizedLocation::for_pos(&[("wght", 0.0)]),
-            transform: ir::DecomposedTransform::default(),
-            reset_unspecified_axes: false,
-        };
+        let vc = ir::Component::new_variable(
+            "base",
+            ir::DecomposedTransform::default(),
+            NormalizedLocation::for_pos(&[("wght", 0.0)]),
+            false,
+        );
         let composite = glyph_with_instance(
             "varc",
             ir::GlyphInstance {
-                variable_components: vec![vc],
+                components: vec![vc],
                 ..Default::default()
             },
         );
@@ -1237,7 +1236,6 @@ mod tests {
                 vertical_origin: None,
                 contours,
                 components,
-                variable_components: Vec::new(),
             };
             glyph_builder.try_add_source(loc, instance).unwrap();
         }
