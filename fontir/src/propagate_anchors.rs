@@ -379,7 +379,7 @@ fn anchors_traversing_components(
             all_anchors.retain(|name: &SmolStr, _| !name.starts_with("exit"));
         }
 
-        let scale = get_xy_rotation(component.transform);
+        let scale = get_xy_rotation(component.affine());
         for mut anchor in anchors {
             let new_has_underscore = anchor.name.starts_with('_');
             if (component_idx > 0 || has_underscore) && new_has_underscore {
@@ -400,7 +400,7 @@ fn anchors_traversing_components(
                 new_anchor_name = make_liga_anchor_name(new_anchor_name, number_of_base_glyphs);
             }
 
-            apply_transform_to_anchor(&mut anchor, component.transform);
+            apply_transform_to_anchor(&mut anchor, component.affine());
             anchor.name = new_anchor_name;
             all_anchors.insert(anchor.name.clone(), anchor);
             has_underscore |= new_has_underscore;
@@ -777,9 +777,8 @@ mod tests {
             let mut instance = GlyphInstance::default();
             for (base, transform, anchor) in &glyph.components {
                 instance.components.push(Component {
-                    base: base.clone(),
-                    transform: *transform,
                     anchor: anchor.clone(),
+                    ..Component::new(base.clone(), *transform)
                 });
             }
 
