@@ -6,6 +6,7 @@ use thiserror::Error;
 use crate::{corner_components::BadCornerComponent, smart_components::BadSmartComponent};
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("IO failure")]
     IoError(#[from] io::Error),

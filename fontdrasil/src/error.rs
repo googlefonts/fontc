@@ -4,6 +4,7 @@ use crate::coords::{Coord, UserSpace};
 use crate::types::Tag;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("Default index {0} is out of bounds for design coordinates of length {1}")]
     DefaultOutOfBounds(usize, usize),

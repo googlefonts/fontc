@@ -291,6 +291,7 @@ pub struct QueryResult {
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum GlyphDataError {
     #[error("Couldn't read user file at '{path}': '{reason}'")]
     UserFile {

@@ -60,6 +60,7 @@ pub enum GlyphOrderError {
 /// An error reported by the compiler
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
+#[non_exhaustive]
 pub enum CompilerError {
     #[error(transparent)]
     SourceLoad(#[from] SourceLoadError),

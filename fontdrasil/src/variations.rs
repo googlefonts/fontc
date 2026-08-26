@@ -21,6 +21,7 @@ use write_fonts::{
 };
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum VariationModelError {
     #[error("{axis_names:?} in {location:?} have no assigned order")]
     AxesWithoutAssignedOrder {
@@ -445,6 +446,7 @@ impl VariationModel {
 }
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum DeltaError {
     #[error("The default must have a point sequence")]
     DefaultUndefined,

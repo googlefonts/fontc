@@ -3,6 +3,7 @@ use std::{io, path::PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("'{0}' exists but is not a directory")]
     ExpectedDirectory(PathBuf),

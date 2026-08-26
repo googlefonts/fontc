@@ -22,6 +22,7 @@ use write_fonts::{
 };
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("IO failure")]
     IoError(#[from] io::Error),
@@ -109,6 +110,7 @@ pub enum Error {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum GlyphProblem {
     InconsistentComponents,
     InconsistentPathElements,
