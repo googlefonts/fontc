@@ -309,11 +309,13 @@ fn anchors_traversing_components(
     let mut all_anchors = IndexMap::new();
 
     for (component_idx, component) in components.iter().enumerate() {
-        // Get the anchors for this component at this location.
+        // Get the anchors for this component at the location it samples the
+        // base at (for an ordinary component, this location).
         // Because we process dependencies first we know that all components
         // referenced have already been propagated.
+        let component_location = component.location_at(location, location);
         let mut anchors = match done_anchors
-            .get(&(component.base.clone(), location.clone()))
+            .get(&(component.base.clone(), component_location.clone()))
             .cloned()
         {
             Some(a) => a,
@@ -324,7 +326,7 @@ fn anchors_traversing_components(
                 // See: https://github.com/googlefonts/fontc/issues/1661
                 match interpolate_component_anchors(
                     &component.base,
-                    location,
+                    &component_location,
                     done_anchors,
                     axis_order,
                     variation_models,
@@ -335,7 +337,7 @@ fn anchors_traversing_components(
                             "could not get or interpolate anchors for component '{}' \
                              at location {:?} in glyph '{}'",
                             component.base,
-                            location,
+                            component_location,
                             glyph_name
                         );
                         continue;
@@ -358,7 +360,7 @@ fn anchors_traversing_components(
         // component's locations are fully processed before the current glyph, and
         // Glyph invariants require a source at the default location.
         let component_number_of_base_glyphs = base_glyph_counts
-            .get(&(component.base.clone(), location.clone()))
+            .get(&(component.base.clone(), component_location.clone()))
             .or_else(|| {
                 base_glyph_counts
                     .iter()
