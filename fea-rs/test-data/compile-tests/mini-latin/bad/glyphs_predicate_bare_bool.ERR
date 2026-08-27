@@ -1,0 +1,5 @@
+error: glyphs predicate values must be quoted (see fontc#2052)
+in ./test-data/compile-tests/mini-latin/bad/glyphs_predicate_bare_bool.fea at 3:17
+  | 
+3 | @x = [ $[name == yes] ];
+  |                  ^^^

@@ -1,0 +1,5 @@
+error: empty value in glyphs predicate
+in ./test-data/compile-tests/mini-latin/bad/glyphs_predicate_empty_value.fea at 3:23
+  | 
+3 | @x = [ $[name contains ""] ];
+  |                        ^^

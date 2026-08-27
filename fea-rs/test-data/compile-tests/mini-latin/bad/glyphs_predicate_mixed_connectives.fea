@@ -1,0 +1,3 @@
+# Mixing `and`/`or` attaches the error to the connective that breaks the chain.
+@x = [ $[name == "a" and name == "b" or name == "c"] ];
+feature test { sub @x by a; } test;

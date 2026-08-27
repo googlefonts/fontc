@@ -1,0 +1,4 @@
+# `NAME` is rejected because glyphsLib's object regex is case-sensitive: only
+# lowercase `name` is a supported attribute.
+@x = [ $[NAME == "a"] ];
+feature test { sub @x by a; } test;
