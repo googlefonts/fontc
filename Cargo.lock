@@ -977,7 +977,7 @@ dependencies = [
  "log",
  "ordered-float",
  "pretty_assertions",
- "quick-xml 0.38.4",
+ "quick-xml 0.41.0",
  "regex",
  "rstest",
  "serde",
