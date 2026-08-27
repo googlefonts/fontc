@@ -13,6 +13,7 @@ use write_fonts::types::{InvalidTag, Tag};
 use crate::ir::GlobalMetric;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     /// A source file was not understood
     #[error(transparent)]
@@ -111,6 +112,7 @@ pub struct BadSource {
 
 /// Conditions under which we can fail to read a source file
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum BadSourceKind {
     ExpectedDirectory,
     ExpectedFile,
@@ -133,6 +135,7 @@ pub struct BadGlyph {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum BadGlyphKind {
     NoInstances,
     DuplicateLocation(NormalizedLocation),
@@ -160,6 +163,7 @@ pub struct BadAnchor {
 
 /// Reasons an anchor can be malformed
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum BadAnchorReason {
     NoDefault,
     // top_0 looks like a ligature base, but 0 is an invalid index
@@ -172,6 +176,7 @@ pub enum BadAnchorReason {
 
 /// An async work error, hence one that must be Send
 #[derive(Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum PathConversionError {
     #[error("has {num_offcurve} consecutive offcurve points {points:?}")]
     TooManyOffcurvePoints {
