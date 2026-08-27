@@ -1030,6 +1030,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             let class_name = mark_class_node.text().to_owned();
             let mark_class = self.mark_classes.get(&class_name).unwrap();
 
+            if mark_class.is_empty() {
+                continue;
+            }
+
             // access the lookup through the field, so the borrow checker
             // doesn't think we're borrowing all of self
             //TODO: we do validation here because our validation pass isn't smart
@@ -1092,6 +1096,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 let class_name = mark_class_node.text();
                 let mark_class = self.mark_classes.get(class_name).unwrap();
 
+                if mark_class.is_empty() {
+                    continue;
+                }
+
                 // access the lookup through the field, so the borrow checker
                 // doesn't think we're borrowing all of self
                 //TODO: we do validation here because our validation pass isn't smart
@@ -1138,6 +1146,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             let mark_class_node = mark.mark_class_name().expect("checked in validation");
             let class_name = mark_class_node.text();
             let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
+
+            if mark_class.is_empty() {
+                continue;
+            }
 
             //TODO: we do validation here because our validation pass isn't smart
             //enough. We need to not just validate a rule, but every rule in a lookup.
@@ -1429,7 +1441,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
     fn define_mark_class(&mut self, class_decl: typed::MarkClassDef) {
         let class_items = class_decl.glyph_class();
-        let class_items = self.resolve_glyph_or_class(&class_items).into();
+        let class_items: GlyphClass = self.resolve_glyph_or_class(&class_items).into();
+
+        if class_items.is_empty() {
+            self.error(
+                class_decl.glyph_class().range(),
+                "Empty glyph class in mark class definition",
+            );
+        }
 
         let anchor = self.resolve_anchor(&class_decl.anchor());
         let class_name = class_decl.mark_class_name();

@@ -1,0 +1,8 @@
+# an empty mark class that is never attached to anything. This cannot panic,
+# since no builder is ever reached, but feaLib rejects it at parse time and we
+# report it too: the definition is wrong whether or not anyone uses it.
+markClass [] <anchor 0 0> @TOP;
+
+feature test {
+    sub a by b;
+} test;

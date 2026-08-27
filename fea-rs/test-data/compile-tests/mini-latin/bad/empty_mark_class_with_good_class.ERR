@@ -1,0 +1,5 @@
+error: Empty glyph class in mark class definition
+in ./test-data/compile-tests/mini-latin/bad/empty_mark_class_with_good_class.fea at 3:10
+  | 
+3 | markClass [] <anchor 0 0> @TOP;
+  |           ^^

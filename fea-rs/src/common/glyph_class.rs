@@ -50,6 +50,10 @@ impl GlyphClass {
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl std::iter::FromIterator<GlyphId16> for GlyphClass {

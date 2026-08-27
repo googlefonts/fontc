@@ -1,0 +1,9 @@
+# a Glyphs.app predicate that matches zero glyphs. This is the spelling that
+# matters: no glyph in the mini-latin order ends in ".zzz", so the predicate
+# expands to an empty class, exactly as a renamed or removed suffix in a real
+# Glyphs source would.
+markClass [$[name endswith ".zzz"]] <anchor 0 0> @TOP;
+
+feature test {
+    pos base a <anchor 100 0> mark @TOP;
+} test;

@@ -42,6 +42,16 @@ pub(crate) struct MarkClass {
     pub(crate) members: Vec<(GlyphClass, Option<AnchorBuilder>)>,
 }
 
+impl MarkClass {
+    /// `true` if no member of this class contributes any glyphs.
+    ///
+    /// Such a class never registers its name with the GPOS mark builders, so
+    /// attaching to it would panic; see `CompilationCtx::define_mark_class`.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.members.iter().all(|(glyphs, _)| glyphs.is_empty())
+    }
+}
+
 impl From<u16> for GlyphIdent {
     fn from(src: u16) -> GlyphIdent {
         GlyphIdent::Cid(src)

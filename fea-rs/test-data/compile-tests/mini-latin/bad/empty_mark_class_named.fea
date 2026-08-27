@@ -1,0 +1,9 @@
+# an empty class reached through a named glyph class. The validation pass
+# tracks named classes by name only, so this spelling can only be caught once
+# the class contents have been resolved.
+@EMPTY = [];
+markClass @EMPTY <anchor 0 0> @TOP;
+
+feature test {
+    pos base a <anchor 100 0> mark @TOP;
+} test;

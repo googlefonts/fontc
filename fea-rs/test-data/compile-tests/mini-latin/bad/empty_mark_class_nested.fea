@@ -1,0 +1,8 @@
+# as empty_mark_class_named, but the emptiness is one level further down.
+@EMPTY = [];
+@ALSO_EMPTY = [@EMPTY];
+markClass @ALSO_EMPTY <anchor 0 0> @TOP;
+
+feature test {
+    pos base a <anchor 100 0> mark @TOP;
+} test;
