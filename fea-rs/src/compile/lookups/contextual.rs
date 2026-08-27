@@ -333,10 +333,10 @@ impl ContextBuilder {
         self.rules.iter().any(ContextRule::is_chain_rule)
     }
 
-    fn has_glyph_classes_with_more_than_one_glyph(&self) -> bool {
+    fn has_non_singleton_glyph_classes(&self) -> bool {
         self.rules
             .iter()
-            .any(ContextRule::has_glyph_classes_with_more_than_one_glyph)
+            .any(ContextRule::has_non_singleton_glyph_classes)
     }
 
     /// If the input sequence can be represented as a class def, return it
@@ -355,7 +355,7 @@ impl ContextBuilder {
     }
 
     fn format_1_coverage(&self) -> Option<CoverageTableBuilder> {
-        if self.has_glyph_classes_with_more_than_one_glyph() {
+        if self.has_non_singleton_glyph_classes() {
             return None;
         }
         Some(
@@ -489,12 +489,16 @@ impl ContextRule {
         !self.backtrack.is_empty() || !self.lookahead.is_empty()
     }
 
-    fn has_glyph_classes_with_more_than_one_glyph(&self) -> bool {
+    /// `true` unless every item in this rule is exactly one glyph.
+    ///
+    /// Format 1 requires single glyphs throughout, so an empty class rules it
+    /// out just as a larger one does; hence `!= 1` and not `> 1`.
+    fn has_non_singleton_glyph_classes(&self) -> bool {
         self.backtrack
             .iter()
             .chain(self.lookahead.iter())
             .chain(self.context.iter().map(|(glyphs, _)| glyphs))
-            .any(|x| x.len() > 1)
+            .any(|x| x.len() != 1)
     }
 
     fn first_input_sequence_item(&self) -> &GlyphOrClass {

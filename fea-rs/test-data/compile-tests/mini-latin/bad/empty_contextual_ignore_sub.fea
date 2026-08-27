@@ -1,0 +1,6 @@
+# an `ignore sub` rule builds the same contextual machinery, so an empty input
+# class panics there too
+feature test {
+    ignore sub []' a;
+    sub a' a by b;
+} test;

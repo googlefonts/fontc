@@ -1,0 +1,5 @@
+error: Empty glyph class in contextual rule
+in ./test-data/compile-tests/mini-latin/bad/empty_contextual_input_predicate.fea at 4:8
+  | 
+4 |     sub [$[name endswith ".zzz"]]' a by b;
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -83,6 +83,10 @@ impl GlyphOrClass {
         }
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub(crate) fn is_class(&self) -> bool {
         matches!(self, GlyphOrClass::Class(_))
     }

@@ -1,0 +1,5 @@
+error: Empty glyph class in contextual rule
+in ./test-data/compile-tests/mini-latin/bad/empty_contextual_ignore_pos.fea at 3:15
+  | 
+3 |     ignore pos []' a;
+  |                ^^
