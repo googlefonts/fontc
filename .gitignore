@@ -1,6 +1,5 @@
 /target
 build/
-Cargo.lock
 .venv/
 venv/
 .vscode/

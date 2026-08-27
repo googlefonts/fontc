@@ -189,6 +189,25 @@ changes, you can set this as your git hooksPath:
 $ git config core.hooksPath "resources/githooks"
 ```
 
+### Cargo.lock
+
+`Cargo.lock` is committed, so a given revision builds the same dependency
+graph everywhere, and CI builds with `--locked`. Dependency updates are
+deliberate: run `cargo update` and open a PR, most naturally at the start of
+a release cycle so crater validates the refreshed graph. A weekly CI job
+builds with the newest compatible dependencies to surface upstream breakage
+early.
+
+If `Cargo.lock` conflicts when merging or rebasing, don't resolve it by hand:
+take either side whole and let cargo re-sync it against the merged manifests
+(it only changes the entries it has to):
+
+```sh
+$ git checkout --theirs -- Cargo.lock  # either side works
+$ cargo check
+$ git add Cargo.lock
+```
+
 ## Releasing
 
 See https://github.com/googlefonts/fontations#releasing
