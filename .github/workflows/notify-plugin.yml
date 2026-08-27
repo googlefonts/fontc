@@ -37,7 +37,10 @@ jobs:
         env:
           GITHUB_EVENT_WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
 
-      - name: Validate version format (X.Y.Z)
+      # Only notify the plugin of full releases; pre-releases (e.g. 1.0.0-rc.1)
+      # skip the dispatch instead of failing the run.
+      - name: Check version format (X.Y.Z)
+        id: check
         run: |
           VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
           TAG_NAME="${GITHUB_EVENT_WORKFLOW_RUN_HEAD_BRANCH}"
@@ -46,18 +49,20 @@ jobs:
             echo "Expected tag format: fontc-vX.Y.Z"
             exit 1
           fi
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "ERROR: Invalid version format: $VERSION"
-            echo "Expected format: X.Y.Z (e.g., 0.5.0)"
-            exit 1
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+            echo "Version validated: $VERSION"
+          else
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "Pre-release version: $VERSION; skipping plugin notification"
           fi
-          echo "Version validated: $VERSION"
         env:
           STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
           GITHUB_EVENT_WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
 
       # https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#create-a-repository-dispatch-event
       - name: Send repository_dispatch to plugin repo
+        if: steps.check.outputs.is_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.FONTC_GLYPHS_PLUGIN_REPO_TOKEN }}
           STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
@@ -68,6 +73,7 @@ jobs:
             --raw-field client_payload="{\"version\":\"${STEPS_VERSION_OUTPUTS_VERSION}\"}"
 
       - name: Log notification
+        if: steps.check.outputs.is_release == 'true'
         run: |
           echo "Successfully notified googlefonts/fontc-export-plugin repository"
           echo "Version: ${STEPS_VERSION_OUTPUTS_VERSION}"
