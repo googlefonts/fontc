@@ -2,10 +2,17 @@ name: Notify googlefonts/fontc-export-plugin of fontc release
 
 # Trigger when the release.yml workflow completes successfully.
 # https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run
+#
+# workflow_run is safe here: this workflow checks out nothing, reuses no
+# artifacts from the triggering run, passes its inputs through env vars,
+# and only fires off Release, which itself only runs on pushed tags.
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: ["Release"]
     types: [completed]
+
+permissions:
+  contents: read
 
 jobs:
   notify-plugin:
