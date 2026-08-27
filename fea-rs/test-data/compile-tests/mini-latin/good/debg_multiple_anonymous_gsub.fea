@@ -1,0 +1,5 @@
+# Multiple anonymous GSUB rules in one feature each get valid debug info.
+feature liga {
+    sub A B by B;
+    sub A from [A B];
+} liga;

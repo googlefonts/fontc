@@ -1,0 +1,4 @@
+# A named GPOS lookup not referenced by any feature still appears in debug info.
+lookup pos_orphan {
+    pos A B -50;
+} pos_orphan;

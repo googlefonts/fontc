@@ -1,0 +1,3 @@
+# An empty feature block produces no lookup entries.
+feature liga {
+} liga;

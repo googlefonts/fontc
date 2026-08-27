@@ -1,0 +1,4 @@
+# A contextual substitution rule gets debug info.
+feature calt {
+    sub A' by B;
+} calt;
