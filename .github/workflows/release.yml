@@ -131,6 +131,10 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: universal2-apple-darwin
+          # No --locked here: this wheel is built from the extracted sdist
+          # (see CARGO_TARGET_DIR above), whose workspace is pruned to fontc's
+          # dependency closure, so cargo must drop the orphaned Cargo.lock
+          # entries (versions of the remaining pins are unaffected).
           args: --release -o dist --sdist
           working-directory: ${{ needs.detect.outputs.working-directory }}
 
@@ -139,7 +143,7 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{matrix.platform.target}}
-          args: --release -o dist
+          args: --release --locked -o dist
           working-directory: ${{ needs.detect.outputs.working-directory }}
 
       - name: Install wheel
@@ -215,7 +219,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.manylinux }}
-          args: --release -o dist
+          args: --release --locked -o dist
           working-directory: ${{ needs.detect.outputs.working-directory }}
 
       - name: Install x86_64 wheel
@@ -272,7 +276,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.compatibility }}
           container: off
-          args: --release -o dist
+          args: --release --locked -o dist
           working-directory: ${{ needs.detect.outputs.working-directory }}
 
       - name: Archive binary

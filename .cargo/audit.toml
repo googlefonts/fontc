@@ -1,0 +1,12 @@
+# cargo-audit configuration, used by the weekly audit job in
+# .github/workflows/latest-deps.yml. Entries here are triaged findings;
+# each ignore must say when it can be removed.
+
+[advisories]
+ignore = [
+    # quick-xml 0.38 DoS advisories. Our direct use (glyphs-reader) is on
+    # 0.41; the remaining 0.38 path is norad ^0.38, already fixed on norad
+    # main. Remove when a norad release after 0.18.4 ships and we bump.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]

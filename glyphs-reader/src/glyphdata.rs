@@ -423,7 +423,9 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
 
     for attr in item.attributes() {
         let attr = attr?;
-        let value = attr.unescape_value()?;
+        // GlyphData files may lack an XML declaration (and we don't track it),
+        // so per the XML spec version 1.0 is assumed.
+        let value = attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)?;
         match attr.key.as_ref() {
             b"name" => name = Some(value),
             b"category" => category = Some(value),

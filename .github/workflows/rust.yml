@@ -44,7 +44,7 @@ jobs:
 
       # ensure that docs are sane (links are reachable etc)
       - name: cargo doc
-        run: cargo doc --all-features --document-private-items --no-deps
+        run: cargo doc --locked --all-features --document-private-items --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -63,10 +63,10 @@ jobs:
           components: clippy
 
       - name: cargo clippy --all-features
-        run: cargo clippy --all-features --all-targets -- -D warnings
+        run: cargo clippy --locked --all-features --all-targets -- -D warnings
 
       - name: cargo clippy --no-default-features
-        run: cargo clippy --all-targets --no-default-features -- -D warnings
+        run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
 
 # test all packages individually to ensure deterministic resolution
 # of dependencies for each package
@@ -86,7 +86,7 @@ jobs:
           toolchain: stable
 
       - name: cargo test fontbe
-        run: cargo test -p fontbe --all-targets --all-features
+        run: cargo test --locked -p fontbe --all-targets --all-features
 
   test-stable-fontc:
     name: fontc tests
@@ -106,7 +106,7 @@ jobs:
           toolchain: stable
 
       - name: cargo test fontc
-        run: cargo test -p fontc --all-targets --all-features
+        run: cargo test --locked -p fontc --all-targets --all-features
 
   test-stable-misc-quick:
     name: tests other than fontbe,fontc
@@ -120,19 +120,19 @@ jobs:
           toolchain: stable
 
       - name: cargo test fontdrasil
-        run: cargo test -p fontdrasil --all-targets --all-features
+        run: cargo test --locked -p fontdrasil --all-targets --all-features
 
       - name: cargo test fontir
-        run: cargo test -p fontir --all-targets --all-features
+        run: cargo test --locked -p fontir --all-targets --all-features
 
       - name: cargo test glyphs-reader
-        run: cargo test -p glyphs-reader --all-targets --all-features
+        run: cargo test --locked -p glyphs-reader --all-targets --all-features
 
       - name: cargo test glyphs2fontir
-        run: cargo test -p glyphs2fontir --all-targets --all-features
+        run: cargo test --locked -p glyphs2fontir --all-targets --all-features
 
       - name: cargo test ufo2fontir
-        run: cargo test -p ufo2fontir --all-targets --all-features
+        run: cargo test --locked -p ufo2fontir --all-targets --all-features
 
   check-no-std:
     name: cargo check no std
@@ -146,22 +146,22 @@ jobs:
           toolchain: stable
 
       - name: cargo check fontdrasil
-        run: cargo check --manifest-path=fontdrasil/Cargo.toml --no-default-features
+        run: cargo check --locked --manifest-path=fontdrasil/Cargo.toml --no-default-features
 
       - name: cargo check fontir
-        run: cargo check --manifest-path=fontir/Cargo.toml --no-default-features
+        run: cargo check --locked --manifest-path=fontir/Cargo.toml --no-default-features
 
       - name: cargo check ufo2fontir
-        run: cargo check --manifest-path=ufo2fontir/Cargo.toml --no-default-features
+        run: cargo check --locked --manifest-path=ufo2fontir/Cargo.toml --no-default-features
 
       - name: cargo check glyphs2fontir
-        run: cargo check --manifest-path=glyphs2fontir/Cargo.toml --no-default-features
+        run: cargo check --locked --manifest-path=glyphs2fontir/Cargo.toml --no-default-features
 
       - name: cargo check fontbe
-        run: cargo check --manifest-path=fontbe/Cargo.toml --no-default-features
+        run: cargo check --locked --manifest-path=fontbe/Cargo.toml --no-default-features
 
       - name: cargo check fontc --lib
-        run: cargo check --manifest-path=fontc/Cargo.toml --no-default-features --lib
+        run: cargo check --locked --manifest-path=fontc/Cargo.toml --no-default-features --lib
 
   check-ots:
     name: resources/scripts/ots_test.sh
@@ -193,7 +193,7 @@ jobs:
           install-cmd: pip install -r resources/scripts/fea_ci_requirements.txt
 
       - name: cargo test fea-rs
-        run: cargo test -p fea-rs
+        run: cargo test --locked -p fea-rs
 
   # run a script that sanity checks that we're on the same version of unicode
   py-rs-unicode-properties:
@@ -212,7 +212,7 @@ jobs:
           cache-dependency-path: resources/scripts/requirements.txt
           install-cmd: pip install -r resources/scripts/requirements.txt
       - name: run check_unicode_props
-        run: cargo run -p fontbe --bin check_unicode_props
+        run: cargo run --locked -p fontbe --bin check_unicode_props
 
 
   # Check if GS builds, builds repeatably, and passes OTS
@@ -232,7 +232,7 @@ jobs:
           toolchain: stable
 
       - name: Build and install fontc (release mode)
-        run: cd fontc && pwd && cargo install --path .
+        run: cd fontc && pwd && cargo install --locked --path .
 
       - name: Fetch OTS
         run: |
@@ -299,7 +299,7 @@ jobs:
       # Which is conveniently checked by simply building fontc
 
       - name: build fontc for wasm32-unknown-unknown
-        run: cargo build -p fontc --target wasm32-unknown-unknown
+        run: cargo build --locked -p fontc --target wasm32-unknown-unknown
 
   # Make cursory effort to keep our testdata minimal
   tidy-glyphs-files:
