@@ -1,0 +1,5 @@
+# `category like` is doubly out of scope (Phase 2, fontc#2052): we expect an
+# attribute error on `category` AND an operator error on `like`, each attached
+# to the offending child rather than to the whole predicate.
+@x = [ $[category like "Letter"] ];
+feature test { sub @x by a; } test;

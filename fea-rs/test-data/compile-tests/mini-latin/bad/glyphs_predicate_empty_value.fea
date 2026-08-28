@@ -1,0 +1,4 @@
+# An empty quoted value is rejected (glyphsLib errors on it too), and under the
+# substring operators it would match every glyph name.
+@x = [ $[name contains ""] ];
+feature test { sub @x by a; } test;

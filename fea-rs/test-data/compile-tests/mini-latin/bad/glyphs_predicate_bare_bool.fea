@@ -1,0 +1,4 @@
+# Unquoted values must be quoted: glyphsLib types `yes` as a boolean rather
+# than a string.
+@x = [ $[name == yes] ];
+feature test { sub @x by a; } test;

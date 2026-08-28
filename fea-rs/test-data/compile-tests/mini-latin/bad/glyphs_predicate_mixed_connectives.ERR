@@ -1,0 +1,5 @@
+error: mixing 'and' and 'or' in a glyphs predicate is not yet supported (see fontc#2052)
+in ./test-data/compile-tests/mini-latin/bad/glyphs_predicate_mixed_connectives.fea at 2:37
+  | 
+2 | @x = [ $[name == "a" and name == "b" or name == "c"] ];
+  |                                      ^^

@@ -1,0 +1,4 @@
+# Unquoted values must be quoted, including `noon`: glyphsLib's unanchored
+# boolean regex matches its leading `no`, typing it as a boolean.
+@x = [ $[name == noon] ];
+feature test { sub @x by a; } test;

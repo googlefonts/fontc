@@ -1,0 +1,4 @@
+# Unquoted values must be quoted: glyphsLib types `123` as an integer rather
+# than a string.
+@x = [ $[name == 123] ];
+feature test { sub @x by a; } test;
