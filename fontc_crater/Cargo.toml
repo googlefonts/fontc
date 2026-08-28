@@ -8,7 +8,7 @@ repository = "https://github.com/googlefonts/fontc"
 readme = "README.md"
 
 [dependencies]
-fontc = { version = "1.0.0-rc.2", path = "../fontc" }
+fontc = { version = "1.0.0", path = "../fontc" }
 
 google-fonts-sources = "0.11.1"
 maud = "0.27.0"
