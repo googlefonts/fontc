@@ -1,0 +1,5 @@
+error: Empty glyph class in mark class definition
+in ./test-data/compile-tests/mini-latin/bad/empty_mark_class_predicate.fea at 5:10
+  | 
+5 | markClass [$[name endswith ".zzz"]] <anchor 0 0> @TOP;
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^

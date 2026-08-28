@@ -1,0 +1,10 @@
+# an empty mark class alongside a well-formed one, both used by the same rule.
+# The good class must not mask the error in the empty one.
+markClass [] <anchor 0 0> @TOP;
+markClass [brevecomb] <anchor 0 0> @BOTTOM;
+
+feature test {
+    pos base a
+        <anchor 100 0> mark @TOP
+        <anchor 100 -200> mark @BOTTOM;
+} test;

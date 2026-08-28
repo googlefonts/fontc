@@ -1,0 +1,8 @@
+# an empty glyph class literal in a markClass definition. Nobody writes this
+# by hand, but it is the simplest spelling of the bug, and it used to panic in
+# the GPOS builders instead of producing a diagnostic.
+markClass [] <anchor 0 0> @TOP;
+
+feature test {
+    pos base a <anchor 100 0> mark @TOP;
+} test;

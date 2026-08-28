@@ -1,0 +1,7 @@
+# the same empty class, attached in a mark-to-ligature rule
+markClass [] <anchor 0 0> @TOP;
+
+feature test {
+    pos ligature f_i <anchor 100 0> mark @TOP
+        ligComponent <anchor 200 0> mark @TOP;
+} test;
