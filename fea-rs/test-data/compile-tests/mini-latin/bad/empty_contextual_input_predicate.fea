@@ -1,0 +1,5 @@
+# the spelling that makes this reachable from a real Glyphs source: a predicate
+# that matches zero glyphs. No glyph in the mini-latin order ends in ".zzz".
+feature test {
+    sub [$[name endswith ".zzz"]]' a by b;
+} test;

@@ -1,0 +1,5 @@
+error: Empty glyph class in contextual rule
+in ./test-data/compile-tests/mini-latin/bad/empty_reverse_sub_named.fea at 5:9
+  | 
+5 |     rsub @EMPTY' by b;
+  |          ^^^^^^

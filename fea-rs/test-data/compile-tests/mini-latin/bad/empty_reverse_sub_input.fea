@@ -1,0 +1,6 @@
+# an empty glyph class as the input of a reverse chaining substitution.
+# Unlike the other contextual rules this never panicked; it compiled to
+# nothing at all, silently dropping the rule.
+feature test {
+    rsub []' by b;
+} test;

@@ -931,6 +931,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             })
             .collect::<Vec<_>>();
 
+        if self.report_empty_contextual_input(node, &context) {
+            return;
+        }
+
         let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
         lookup.add_contextual_rule(backtrack, context, lookahead);
     }
@@ -948,10 +952,13 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let target = input.target();
         let replacement = node.inline_rule().and_then(|r| r.replacements().next());
         //FIXME: warn if there are actual lookups here, we don't support that
-        if let Some((target, replacement)) =
+        if let Some((target_ids, replacement)) =
             self.validate_single_sub_inputs(&target, replacement.as_ref())
         {
-            let context = target
+            if self.report_empty_glyph_class(&target_ids, target.range()) {
+                return;
+            }
+            let context = target_ids
                 .iter()
                 .zip(replacement.into_iter_for_target())
                 .collect();
@@ -1232,7 +1239,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
                 (glyphs, lookups)
             })
-            .collect();
+            .collect::<Vec<_>>();
+        if self.report_empty_contextual_input(node, &context) {
+            return;
+        }
         self.ensure_current_lookup_type(Kind::GposType8, node.range())
             .add_contextual_rule(backtrack, context, lookahead);
     }
@@ -1250,9 +1260,38 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .input()
             .items()
             .map(|item| (self.resolve_glyph_or_class(&item.target()), Vec::new()))
-            .collect();
+            .collect::<Vec<_>>();
+        if self.report_empty_contextual_input(rule, &context) {
+            return;
+        }
         let lookup = self.ensure_current_lookup_type(kind, rule.range());
         lookup.add_contextual_rule(backtrack, context, lookahead);
+    }
+
+    /// Report any empty glyph class in a contextual rule's input sequence.
+    ///
+    /// Such a rule can never match, and cannot be built. Returns `true` if
+    /// anything was reported, in which case the rule must not be added.
+    fn report_empty_contextual_input(
+        &mut self,
+        node: &impl ContextualRuleNode,
+        context: &[(GlyphOrClass, Vec<LookupId>)],
+    ) -> bool {
+        let input = node.input();
+        let mut found_empty = false;
+        for (item, (glyphs, _)) in input.items().zip(context) {
+            found_empty |= self.report_empty_glyph_class(glyphs, item.target().range());
+        }
+        found_empty
+    }
+
+    /// Report `glyphs` if it is an empty class, returning whether it was.
+    fn report_empty_glyph_class(&mut self, glyphs: &GlyphOrClass, range: Range<usize>) -> bool {
+        if glyphs.is_empty() {
+            self.error(range, "Empty glyph class in contextual rule");
+            return true;
+        }
+        false
     }
 
     /// Resolve a value record, ignoring zero values

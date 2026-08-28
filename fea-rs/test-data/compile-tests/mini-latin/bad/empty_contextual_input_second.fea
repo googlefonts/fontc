@@ -1,0 +1,5 @@
+# as empty_contextual_input_sub, but the empty class is not the first item of
+# the input sequence
+feature test {
+    sub a []' by b;
+} test;

@@ -1,0 +1,4 @@
+# the same shape in a contextual positioning rule
+feature test {
+    pos []' a 5;
+} test;

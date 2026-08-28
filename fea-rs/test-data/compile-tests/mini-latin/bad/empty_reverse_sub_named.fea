@@ -1,0 +1,6 @@
+# the empty reverse-sub input reached through a named glyph class
+@EMPTY = [];
+
+feature test {
+    rsub @EMPTY' by b;
+} test;

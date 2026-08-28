@@ -1,0 +1,5 @@
+error: Empty glyph class in contextual rule
+in ./test-data/compile-tests/mini-latin/bad/empty_contextual_input_second.fea at 4:10
+  | 
+4 |     sub a []' by b;
+  |           ^^

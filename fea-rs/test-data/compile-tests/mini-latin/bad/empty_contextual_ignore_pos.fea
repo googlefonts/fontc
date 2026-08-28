@@ -1,0 +1,5 @@
+# the `ignore pos` equivalent
+feature test {
+    ignore pos []' a;
+    pos a' a 5;
+} test;

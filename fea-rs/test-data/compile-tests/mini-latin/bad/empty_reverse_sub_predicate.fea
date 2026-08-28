@@ -1,0 +1,4 @@
+# the empty reverse-sub input produced by a predicate that matches zero glyphs
+feature test {
+    rsub [$[name endswith ".zzz"]]' by b;
+} test;

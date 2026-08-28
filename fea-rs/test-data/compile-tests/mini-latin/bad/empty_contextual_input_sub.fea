@@ -1,0 +1,7 @@
+# an empty glyph class in the input sequence of a contextual substitution.
+# The rule can never match, but instead of a diagnostic it used to panic:
+# an empty class is not "more than one glyph", so format 1 was selected, and
+# format 1 requires every input item to be a single glyph.
+feature test {
+    sub []' a by b;
+} test;

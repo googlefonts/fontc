@@ -1,0 +1,6 @@
+# the empty input class reached through a named glyph class
+@EMPTY = [];
+
+feature test {
+    sub @EMPTY' a by b;
+} test;
