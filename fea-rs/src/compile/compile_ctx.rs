@@ -952,10 +952,13 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let target = input.target();
         let replacement = node.inline_rule().and_then(|r| r.replacements().next());
         //FIXME: warn if there are actual lookups here, we don't support that
-        if let Some((target, replacement)) =
+        if let Some((target_ids, replacement)) =
             self.validate_single_sub_inputs(&target, replacement.as_ref())
         {
-            let context = target
+            if self.report_empty_glyph_class(&target_ids, target.range()) {
+                return;
+            }
+            let context = target_ids
                 .iter()
                 .zip(replacement.into_iter_for_target())
                 .collect();
@@ -1265,15 +1268,18 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let input = node.input();
         let mut found_empty = false;
         for (item, (glyphs, _)) in input.items().zip(context) {
-            if glyphs.is_empty() {
-                self.error(
-                    item.target().range(),
-                    "Empty glyph class in contextual rule",
-                );
-                found_empty = true;
-            }
+            found_empty |= self.report_empty_glyph_class(glyphs, item.target().range());
         }
         found_empty
+    }
+
+    /// Report `glyphs` if it is an empty class, returning whether it was.
+    fn report_empty_glyph_class(&mut self, glyphs: &GlyphOrClass, range: Range<usize>) -> bool {
+        if glyphs.is_empty() {
+            self.error(range, "Empty glyph class in contextual rule");
+            return true;
+        }
+        false
     }
 
     /// Resolve a value record, ignoring zero values
