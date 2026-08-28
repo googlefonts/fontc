@@ -261,6 +261,14 @@ pub(crate) fn needs_feature_provider(test_path: &Path) -> bool {
     as_str.contains("provider")
 }
 
+/// Returns `true` if the test case wants us to compile the `Debg` table.
+pub(crate) fn wants_debg(test_path: &Path) -> bool {
+    test_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("debg_"))
+}
+
 /// Run the test case at the provided path.
 ///
 /// the provided fvar table will be passed through only if the path contains
@@ -274,7 +282,11 @@ pub(crate) fn run_test(
         let mut compiler: Compiler<'_, TestFeatureProvider, MockVariationInfo> =
             Compiler::new(path.clone(), glyph_map)
                 .print_warnings(std::env::var(super::VERBOSE).is_ok())
-                .with_opts(Opts::new().make_post_table(true));
+                .with_opts(
+                    Opts::new()
+                        .make_post_table(true)
+                        .compile_debg(wants_debg(&path)),
+                );
         if is_variable(&path) {
             compiler = compiler.with_variable_info(fvar);
         }
@@ -337,7 +349,7 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestResult> {
     std::fs::write(&temp_path, font_data).unwrap();
 
     const TO_WRITE: &[&str] = &[
-        "head", "name", "BASE", "GDEF", "GSUB", "GPOS", "OS/2", "STAT", "hhea", "vhea",
+        "head", "name", "BASE", "GDEF", "GSUB", "GPOS", "OS/2", "STAT", "hhea", "vhea", "Debg",
     ];
 
     let mut cmd = Command::new("ttx");

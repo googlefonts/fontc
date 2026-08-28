@@ -1,0 +1,5 @@
+# Multiple anonymous GPOS rules in one feature each get valid debug info.
+feature kern {
+    pos A B -50;
+    pos A <0 0 10 0>;
+} kern;

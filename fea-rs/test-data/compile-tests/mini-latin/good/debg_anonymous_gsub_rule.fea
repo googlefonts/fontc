@@ -1,0 +1,4 @@
+# An anonymous GSUB rule inside a feature gets debug info with null name.
+feature liga {
+    sub A B by B;
+} liga;

@@ -1,0 +1,8 @@
+# A named GSUB lookup referenced by a feature gets its name and source location.
+lookup smcp_default {
+    sub A by B;
+} smcp_default;
+
+feature smcp {
+    lookup smcp_default;
+} smcp;

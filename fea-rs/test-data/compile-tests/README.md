@@ -18,6 +18,18 @@ corresponding `.ERR` file, which contains the expected diagnostic output; this
 ensures that the error that we report for a given failure is sensible.
 
 
+## filename conventions
+
+Some per-case compiler configuration is keyed off the test's file name; see
+`is_variable`, `needs_feature_provider` and `wants_debg` in `src/util/ttx.rs`.
+
+- a name containing `variable` or `variation` is compiled with variation info
+  (a `MockVariationInfo` with `wght` & `wdth` axes)
+- a name containing `provider` is compiled with a test `FeatureProvider`, which
+  adds one lookup each to `kern` and `mark`
+- a name beginning with `debg_` is compiled with `Opts::compile_debg`, so that
+  the expected `.ttx` includes the `Debg` table
+
 ## adding new tests
 
 To add a new test, you can just add a new `.fea` file to the appropriate

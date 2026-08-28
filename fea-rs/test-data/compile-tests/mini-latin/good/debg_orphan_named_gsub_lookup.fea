@@ -1,0 +1,4 @@
+# A named GSUB lookup not referenced by any feature still appears in debug info.
+lookup sub_orphan {
+    sub B by A;
+} sub_orphan;

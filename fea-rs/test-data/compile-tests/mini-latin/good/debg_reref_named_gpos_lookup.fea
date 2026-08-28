@@ -1,0 +1,13 @@
+# Re-referencing a named GPOS lookup from a second feature block must not
+# create duplicate entries.
+lookup kern_Default {
+    pos A B -50;
+} kern_Default;
+
+feature kern {
+    lookup kern_Default;
+} kern;
+
+feature dist {
+    lookup kern_Default;
+} dist;

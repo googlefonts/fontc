@@ -1,0 +1,8 @@
+# A named GPOS lookup referenced by a feature gets its name and source location.
+lookup kern_Default {
+    pos A B -50;
+} kern_Default;
+
+feature kern {
+    lookup kern_Default;
+} kern;

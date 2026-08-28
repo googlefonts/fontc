@@ -1,0 +1,8 @@
+# A contextual positioning rule gets debug info.
+lookup kern_single {
+    pos A -50;
+} kern_single;
+
+feature kern {
+    pos A' lookup kern_single;
+} kern;

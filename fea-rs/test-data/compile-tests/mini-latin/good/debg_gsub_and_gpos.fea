@@ -1,0 +1,16 @@
+# A source with both GSUB and GPOS lookups produces entries for both tables.
+lookup smcp_default {
+    sub A by B;
+} smcp_default;
+
+feature smcp {
+    lookup smcp_default;
+} smcp;
+
+lookup kern_Default {
+    pos A B -50;
+} kern_Default;
+
+feature kern {
+    lookup kern_Default;
+} kern;

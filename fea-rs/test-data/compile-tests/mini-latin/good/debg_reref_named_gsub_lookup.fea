@@ -1,0 +1,13 @@
+# Re-referencing a named GSUB lookup from a second feature block must not
+# create duplicate entries.
+lookup smcp_default {
+    sub A by B;
+} smcp_default;
+
+feature smcp {
+    lookup smcp_default;
+} smcp;
+
+feature c2sc {
+    lookup smcp_default;
+} c2sc;

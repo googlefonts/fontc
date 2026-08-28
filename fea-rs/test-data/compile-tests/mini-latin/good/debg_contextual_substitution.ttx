@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ttFont>
+
+  <GSUB>
+    <Version value="0x00010000"/>
+    <ScriptList>
+      <!-- ScriptCount=1 -->
+      <ScriptRecord index="0">
+        <ScriptTag value="DFLT"/>
+        <Script>
+          <DefaultLangSys>
+            <ReqFeatureIndex value="65535"/>
+            <!-- FeatureCount=1 -->
+            <FeatureIndex index="0" value="0"/>
+          </DefaultLangSys>
+          <!-- LangSysCount=0 -->
+        </Script>
+      </ScriptRecord>
+    </ScriptList>
+    <FeatureList>
+      <!-- FeatureCount=1 -->
+      <FeatureRecord index="0">
+        <FeatureTag value="calt"/>
+        <Feature>
+          <!-- LookupCount=1 -->
+          <LookupListIndex index="0" value="0"/>
+        </Feature>
+      </FeatureRecord>
+    </FeatureList>
+    <LookupList>
+      <!-- LookupCount=2 -->
+      <!-- ./test-data/compile-tests/mini-latin/good/debg_contextual_substitution.fea:3:4 -->
+      <Lookup index="0">
+        <LookupType value="5"/>
+        <LookupFlag value="0"/>
+        <!-- SubTableCount=1 -->
+        <ContextSubst index="0" Format="3">
+          <!-- GlyphCount=1 -->
+          <!-- SubstCount=1 -->
+          <Coverage index="0">
+            <Glyph value="A"/>
+          </Coverage>
+          <SubstLookupRecord index="0">
+            <SequenceIndex value="0"/>
+            <LookupListIndex value="1"/>
+          </SubstLookupRecord>
+        </ContextSubst>
+      </Lookup>
+      <!-- ./test-data/compile-tests/mini-latin/good/debg_contextual_substitution.fea:3:4 -->
+      <Lookup index="1">
+        <LookupType value="1"/>
+        <LookupFlag value="0"/>
+        <!-- SubTableCount=1 -->
+        <SingleSubst index="0">
+          <Substitution in="A" out="B"/>
+        </SingleSubst>
+      </Lookup>
+    </LookupList>
+  </GSUB>
+
+  <Debg>
+    <json>
+      <![CDATA[{
+        "com.github.fonttools.feaLib": {
+          "GSUB": {
+            "0": [
+              "./test-data/compile-tests/mini-latin/good/debg_contextual_substitution.fea:3:4",
+              null,
+              null
+            ],
+            "1": [
+              "./test-data/compile-tests/mini-latin/good/debg_contextual_substitution.fea:3:4",
+              null,
+              null
+            ]
+          }
+        }
+      }]]>
+    </json>
+  </Debg>
+
+</ttFont>
