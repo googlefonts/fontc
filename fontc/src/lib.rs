@@ -5443,6 +5443,21 @@ mod tests {
     }
 
     #[test]
+    fn colr0_from_variable_glyphs() {
+        let result = TestCompile::compile_source("glyphs3/COLRv0-2masters-brace.glyphs");
+        // Same COLR structure as the single-master case
+        assert_colr0(&result, &[("A", &[("A.color0", 1), ("A.color1", 0)])]);
+        // The color glyphs interpolate between the masters instead of being
+        // frozen at the default one, and the intermediate color layer
+        // (colorPalette 1, wght 550) contributes a second gvar tuple to
+        // A.color0 only; in particular the base glyph must not absorb it as
+        // one of its own sources. Matches fontmake with glyphsLib >= 6.14.0.
+        assert_eq!(gvar_tuple_count(&result, "A"), 1);
+        assert_eq!(gvar_tuple_count(&result, "A.color0"), 2);
+        assert_eq!(gvar_tuple_count(&result, "A.color1"), 1);
+    }
+
+    #[test]
     fn colr0_from_ufo_multi_palette() {
         let result = TestCompile::compile_source("COLRv0-multi-palette.ufo");
         // Two base glyphs: "a" with 2 layers, "b" with 1 layer
