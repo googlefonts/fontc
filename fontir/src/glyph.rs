@@ -18,11 +18,17 @@ use fontdrasil::{
 use kurbo::{Affine, BezPath};
 use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
-use write_fonts::{OtRound, types::GlyphId16};
+use write_fonts::{
+    OtRound,
+    types::{GlyphId16, Tag},
+};
 
 use crate::{
-    error::{BadGlyph, Error},
-    ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
+    error::{BadGlyph, BadGlyphKind, Error},
+    ir::{
+        Component, ComponentTransform, Glyph, GlyphBuilder, GlyphInstance, GlyphLowering,
+        GlyphOrder, StaticMetadata,
+    },
     orchestration::{Context, Flags, IrWork, WorkId},
     propagate_anchors::propagate_all_anchors,
 };
@@ -139,7 +145,7 @@ fn components(
         .flat_map(|(loc, inst)| inst.components.iter().map(|c| (loc.clone(), c)))
         .enumerate()
         .map(|(index, (loc, component))| {
-            let coeffs = (transform * component.transform).as_coeffs();
+            let coeffs = (transform * component.affine()).as_coeffs();
             let mut transform = [OrderedFloat(0f64); 6];
             transform
                 .iter_mut()
@@ -233,8 +239,7 @@ fn prune_missing_components(context: &Context) {
         let missing: BTreeSet<GlyphName> = glyph
             .sources()
             .values()
-            .flat_map(|inst| inst.components.iter())
-            .map(|component| &component.base)
+            .flat_map(|inst| inst.components.iter().map(|component| &component.base))
             .filter(|base| context.try_get_glyph(base.as_str()).is_none())
             .cloned()
             .collect();
@@ -266,6 +271,15 @@ fn prune_missing_components(context: &Context) {
 /// limited scope.
 fn flatten_all_non_export_components(context: &Context) -> Result<(), BadGlyph> {
     let glyphs = context.glyphs.all();
+    // Resolve variable components from the original glyphs. A glyph flattened
+    // earlier in the loop has its variable components converted to contours
+    // at its own locations, so a reset component under it would sample the
+    // wrong location.
+    let originals: HashMap<GlyphName, Arc<Glyph>> = glyphs
+        .iter()
+        .filter(|(_, g)| glyph_has_non_export_components(g, context))
+        .map(|(_, g)| (g.name.clone(), g.clone()))
+        .collect();
     let glyphs = glyphs
         .iter()
         .map(|g| (g.1.name.clone().into_inner(), g.1.as_ref()))
@@ -278,7 +292,7 @@ fn flatten_all_non_export_components(context: &Context) -> Result<(), BadGlyph> 
     for glyph_name in depth_first {
         let glyph = glyphs.get(&glyph_name).unwrap();
         if glyph_has_non_export_components(glyph, context) {
-            let new_glyph = flatten_non_export_components_for_glyph(context, glyph)?;
+            let new_glyph = flatten_non_export_components_for_glyph(context, glyph, &originals)?;
             context.glyphs.set(new_glyph);
         }
     }
@@ -289,6 +303,7 @@ fn flatten_all_non_export_components(context: &Context) -> Result<(), BadGlyph> 
 fn flatten_non_export_components_for_glyph(
     context: &Context,
     glyph: &Glyph,
+    originals: &HashMap<GlyphName, Arc<Glyph>>,
 ) -> Result<Glyph, BadGlyph> {
     let expanded = ensure_composite_defined_at_component_locations(context, glyph)?;
     let mut new_sources = HashMap::with_capacity(expanded.sources().len());
@@ -307,7 +322,10 @@ fn flatten_non_export_components_for_glyph(
         for component in &instance.components {
             let id = WorkId::Glyph(component.base.clone());
             let referenced_glyph = context.glyphs.get(&id);
-            if referenced_glyph.emit_to_binary {
+            // Only an ordinary component composes as an affine. A variable one
+            // on a non-export base was already decomposed to contours, or
+            // errors in fontbe when the VARC table is emitted.
+            if referenced_glyph.emit_to_binary || component.is_variable() {
                 new_instance.components.push(component.clone());
                 continue;
             }
@@ -315,11 +333,15 @@ fn flatten_non_export_components_for_glyph(
             // okay so now we have a component that is not going to be exported,
             // and we need to flatten.
             non_export_has_location |= referenced_glyph.sources().contains_key(loc);
-            let xform = component.transform;
+            let xform = component.affine();
             let referenced_instance = get_or_instantiate_instance(&referenced_glyph, loc, context)?;
 
             for mut referenced_component in referenced_instance.components.iter().cloned() {
-                referenced_component.transform = xform * referenced_component.transform;
+                if referenced_component.is_variable() {
+                    continue;
+                }
+                referenced_component.transform =
+                    ComponentTransform::Affine(xform * referenced_component.affine());
                 new_instance.components.push(referenced_component);
             }
 
@@ -331,6 +353,33 @@ fn flatten_non_export_components_for_glyph(
                     contour = contour.reverse_subpaths();
                 }
                 new_instance.contours.push(contour);
+            }
+
+            // A non-export glyph can also draw variable components. Resolve
+            // them to contours, the glyph carrying them is dropped.
+            for vc in referenced_instance.components.iter() {
+                if !vc.is_variable() {
+                    continue;
+                }
+                let Some(vc_base) = original_glyph(&vc.base, originals, context) else {
+                    log::warn!(
+                        "skipping missing variable component '{}' of glyph '{}'",
+                        vc.base,
+                        referenced_glyph.name
+                    );
+                    continue;
+                };
+                let at = vc.location_at(loc, loc);
+                let mut stack = vec![referenced_glyph.name.clone()];
+                new_instance.contours.extend(resolve_instance_to_contours(
+                    context,
+                    originals,
+                    &vc_base,
+                    loc,
+                    &at,
+                    xform * vc.affine(),
+                    &mut stack,
+                )?);
             }
         }
         // Keep sources at the glyph's original locations, plus any locations
@@ -420,6 +469,11 @@ fn collect_component_locations_nested(
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcd/Lib/ufo2ft/util.py#L165>
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), BadGlyph> {
+    debug_assert!(
+        !has_variable_components(original),
+        "'{}' has variable components, callers must skip such glyphs",
+        original.name
+    );
     let original = ensure_composite_defined_at_component_locations(context, original)?;
     // Component until you can't component no more
     let mut frontier: VecDeque<_> = components(&original, Affine::IDENTITY);
@@ -484,6 +538,361 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
     Ok(())
 }
 
+/// Decompose variable components into contours.
+fn decompose_all_variable_components(context: &Context) -> Result<(), BadGlyph> {
+    // Resolve every composite from the original glyphs. A flattened glyph has
+    // lost its variable components, so a reset component under it would sample
+    // the wrong location.
+    let glyph_order = context.preliminary_glyph_order.get();
+    let originals: HashMap<GlyphName, Arc<Glyph>> = glyph_order
+        .names()
+        .filter_map(|name| {
+            context
+                .try_get_glyph(name.clone())
+                .map(|g| (name.clone(), g))
+        })
+        .filter(|(_, g)| has_variable_components(g))
+        .collect();
+    for name in glyph_order.names() {
+        if let Some(glyph) = originals.get(name) {
+            decompose_variable_components_for_glyph(context, glyph, &originals)?;
+        }
+    }
+    Ok(())
+}
+
+fn has_variable_components(glyph: &Glyph) -> bool {
+    glyph
+        .sources()
+        .values()
+        .any(|inst| inst.components.iter().any(Component::is_variable))
+}
+
+/// Every source of a variable composite must have the same component sequence,
+/// each with the same base, kind, reset flag, transform form, and location
+/// axes. Transform field values and axis values may vary freely.
+fn validate_variable_composites(
+    context: &Context,
+    glyph_order: &GlyphOrder,
+) -> Result<(), BadGlyph> {
+    for name in glyph_order.names() {
+        let Some(glyph) = context.try_get_glyph(name.clone()) else {
+            continue;
+        };
+        if !has_variable_components(&glyph) {
+            continue;
+        }
+        validate_composite_consistency(&glyph)?;
+    }
+    Ok(())
+}
+
+/// Interpolation and the VARC table pair glyph components across sources by
+/// index.
+fn validate_composite_consistency(glyph: &Glyph) -> Result<(), BadGlyph> {
+    let bad = |detail: String| {
+        BadGlyph::new(
+            glyph.name.clone(),
+            BadGlyphKind::InconsistentVariableComponents(detail),
+        )
+    };
+    let default = &glyph.default_instance().components;
+    let mut locations: Vec<_> = glyph.sources().keys().collect();
+    locations.sort();
+    for loc in locations {
+        let components = &glyph.sources()[loc].components;
+        if components.len() != default.len() {
+            return Err(bad(format!(
+                "source {loc:?} has {} components, the default has {}",
+                components.len(),
+                default.len()
+            )));
+        }
+        for (idx, (d, c)) in default.iter().zip(components).enumerate() {
+            if d.base != c.base {
+                return Err(bad(format!(
+                    "component {idx} at source {loc:?} has base '{}', the default has '{}'",
+                    c.base, d.base
+                )));
+            }
+            if d.is_variable() != c.is_variable() {
+                return Err(bad(format!(
+                    "component {idx} at source {loc:?} differs from the default in kind (ordinary or variable)"
+                )));
+            }
+            if d.reset_unspecified_axes != c.reset_unspecified_axes {
+                return Err(bad(format!(
+                    "component {idx} at source {loc:?} differs from the default in reset_unspecified_axes"
+                )));
+            }
+            if std::mem::discriminant(&d.transform) != std::mem::discriminant(&c.transform) {
+                return Err(bad(format!(
+                    "component {idx} at source {loc:?} differs from the default in transform form (affine or decomposed)"
+                )));
+            }
+            if !d.location.axis_tags().eq(c.location.axis_tags()) {
+                return Err(bad(format!(
+                    "component {idx} at source {loc:?} differs from the default in location axes"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// An affine component of a VARC glyph must keep its 2x2 constant across
+/// sources, like a glyf composite.
+///
+/// The VARC table varies the decomposed transform fields, and decomposing
+/// each source's matrix separately gives fields that may not interpolate:
+/// rotations of 45 and 135 degrees decompose to scale 1 and -1, so the
+/// component collapses midway.
+fn validate_constant_affine_2x2(glyph: &Glyph) -> Result<(), BadGlyph> {
+    let default = &glyph.default_instance().components;
+    let mut locations: Vec<_> = glyph.sources().keys().collect();
+    locations.sort();
+    for loc in locations {
+        let components = &glyph.sources()[loc].components;
+        for (idx, (d, c)) in default.iter().zip(components).enumerate() {
+            let (ComponentTransform::Affine(d_affine), ComponentTransform::Affine(c_affine)) =
+                (&d.transform, &c.transform)
+            else {
+                continue;
+            };
+            if d_affine.as_coeffs()[..4] != c_affine.as_coeffs()[..4] {
+                return Err(BadGlyph::new(
+                    glyph.name.clone(),
+                    BadGlyphKind::InconsistentVariableComponents(format!(
+                        "component {idx} at source {loc:?} has an affine transform whose 2x2 differs from the default"
+                    )),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Names of glyphs that draw variable components, directly or through other
+/// composites.
+///
+/// These lower to VARC records, so the glyf passes must not decompose or
+/// restructure them.
+fn variable_composite_closure(context: &Context, glyph_order: &GlyphOrder) -> HashSet<GlyphName> {
+    let glyphs: Vec<Arc<Glyph>> = glyph_order
+        .names()
+        .filter_map(|name| context.try_get_glyph(name.clone()))
+        .collect();
+    let mut closure: HashSet<GlyphName> = glyphs
+        .iter()
+        .filter(|g| has_variable_components(g))
+        .map(|g| g.name.clone())
+        .collect();
+    if closure.is_empty() {
+        return closure;
+    }
+    loop {
+        let mut changed = false;
+        for glyph in &glyphs {
+            if closure.contains(&glyph.name) {
+                continue;
+            }
+            if glyph.component_names().any(|name| closure.contains(name)) {
+                closure.insert(glyph.name.clone());
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    closure
+}
+
+/// The glyph as it was before this pass flattened anything.
+fn original_glyph(
+    name: &GlyphName,
+    originals: &HashMap<GlyphName, Arc<Glyph>>,
+    context: &Context,
+) -> Option<Arc<Glyph>> {
+    originals
+        .get(name)
+        .cloned()
+        .or_else(|| context.try_get_glyph(name.clone()))
+}
+
+/// Locations where a composite must have sources so that decomposing it keeps
+/// the referenced glyphs' own masters in its variation model.
+///
+/// The variable-component counterpart of
+/// [`collect_component_locations_nested`]. A referenced master location maps
+/// back onto the composite through the axes the component inherits. An axis
+/// set in a component location does not vary with the composite and cannot
+/// map back, so it stays at the composite's default.
+fn collect_variable_component_locations(
+    context: &Context,
+    originals: &HashMap<GlyphName, Arc<Glyph>>,
+    glyph: &Glyph,
+) -> HashSet<NormalizedLocation> {
+    let template = glyph.default_location();
+    let mut out = HashSet::new();
+    let mut seen = HashSet::new();
+    let mut todo: Vec<(GlyphName, BTreeSet<Tag>)> = glyph
+        .default_instance()
+        .components
+        .iter()
+        .filter(|c| c.is_variable())
+        .map(|c| (c.base.clone(), c.location.axis_tags().copied().collect()))
+        .collect();
+    while let Some((name, pinned)) = todo.pop() {
+        if !seen.insert((name.clone(), pinned.clone())) {
+            continue;
+        }
+        let Some(referenced) = original_glyph(&name, originals, context) else {
+            continue;
+        };
+        for loc in referenced.sources().keys() {
+            let mut mapped = template.clone();
+            for (tag, coord) in loc.iter() {
+                if template.contains(*tag) && !pinned.contains(tag) {
+                    mapped.insert(*tag, *coord);
+                }
+            }
+            out.insert(mapped);
+        }
+        for component in referenced.default_instance().components.iter() {
+            // A reset component samples its base from the font location, so
+            // pins accumulated above it do not apply to its subtree.
+            let mut pinned = if component.reset_unspecified_axes {
+                BTreeSet::new()
+            } else {
+                pinned.clone()
+            };
+            pinned.extend(component.location.axis_tags().copied());
+            todo.push((component.base.clone(), pinned));
+        }
+    }
+    out
+}
+
+fn decompose_variable_components_for_glyph(
+    context: &Context,
+    original: &Glyph,
+    originals: &HashMap<GlyphName, Arc<Glyph>>,
+) -> Result<(), BadGlyph> {
+    // Without sources at the referenced glyphs' master locations, gvar
+    // interpolates across those masters.
+    let mut original = original.clone();
+    let child_locations = collect_variable_component_locations(context, originals, &original);
+    batch_interpolate_missing(&mut original, child_locations.iter(), context)?;
+
+    let mut simple = GlyphBuilder::from(original.clone());
+    for (loc, instance) in original.sources().iter() {
+        let mut new_contours = Vec::new();
+        let mut kept = Vec::with_capacity(instance.components.len());
+        for component in instance.components.iter() {
+            if !component.is_variable() {
+                kept.push(component.clone());
+                continue;
+            }
+            let Some(referenced) = original_glyph(&component.base, originals, context) else {
+                log::warn!(
+                    "skipping missing variable component '{}' of glyph '{}'",
+                    component.base,
+                    original.name
+                );
+                continue;
+            };
+            // Resolve the referenced glyph into contours and place them with the
+            // component transform. Seed the stack with this glyph so a
+            // self-reference is treated as a cycle.
+            let at = component.location_at(loc, loc);
+            let mut stack = vec![original.name.clone()];
+            new_contours.extend(resolve_instance_to_contours(
+                context,
+                originals,
+                &referenced,
+                loc,
+                &at,
+                component.affine(),
+                &mut stack,
+            )?);
+        }
+        let inst = simple
+            .sources
+            .get_mut(loc)
+            .expect("simple is cloned from original, so shares its locations");
+        inst.contours.extend(new_contours);
+        inst.components = kept;
+    }
+    let simple = simple.build()?;
+    context.glyphs.set(simple);
+    Ok(())
+}
+
+/// Resolve a glyph instance at `loc` into contours, following both ordinary and
+/// variable components
+///
+/// The variable-component counterpart of [`convert_components_to_contours`]. A
+/// component may sample the referenced glyph at its own location, and component
+/// cycles are skipped with a warning.
+///
+/// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf/Lib/ufo2ft/util.py#L205>
+fn resolve_instance_to_contours(
+    context: &Context,
+    originals: &HashMap<GlyphName, Arc<Glyph>>,
+    glyph: &Glyph,
+    font_location: &NormalizedLocation,
+    loc: &NormalizedLocation,
+    xform: Affine,
+    stack: &mut Vec<GlyphName>,
+) -> Result<Vec<BezPath>, BadGlyph> {
+    if stack.contains(&glyph.name) {
+        log::warn!(
+            "skipping component cycle through '{}' while decomposing variable components",
+            glyph.name
+        );
+        return Ok(Vec::new());
+    }
+    stack.push(glyph.name.clone());
+
+    let inst = get_or_instantiate_instance(glyph, loc, context)?;
+    let mut out = Vec::new();
+
+    for contour in inst.contours.iter() {
+        let mut contour = contour.clone();
+        contour.apply_affine(xform);
+        if xform.determinant() < 0.0 {
+            out.push(contour.reverse_subpaths());
+        } else {
+            out.push(contour);
+        }
+    }
+
+    for component in inst.components.iter() {
+        let Some(referenced) = original_glyph(&component.base, originals, context) else {
+            log::warn!(
+                "skipping missing component '{}' of glyph '{}'",
+                component.base,
+                glyph.name
+            );
+            continue;
+        };
+        let at = component.location_at(font_location, loc);
+        out.extend(resolve_instance_to_contours(
+            context,
+            originals,
+            &referenced,
+            font_location,
+            &at,
+            xform * component.affine(),
+            stack,
+        )?);
+    }
+
+    stack.pop();
+    Ok(out)
+}
+
 // if any locations in base are missing in component, instantiate them.
 fn ensure_component_has_consistent_layers<'a>(
     base: &Glyph,
@@ -538,9 +947,40 @@ fn instantiate_instance(
         .deltas_with_rounding(&point_seqs, RoundingBehaviour::None)
         .map_err(|e| BadGlyph::new(&glyph.name, e))?;
     let points = model.interpolate_from_deltas(loc, &deltas);
-    Ok(glyph
-        .default_instance()
-        .new_with_interpolated_values(&points))
+    Ok(interpolation_template(glyph).new_with_interpolated_values(&points))
+}
+
+/// The default instance, with a decomposed transform field set if any source
+/// sets it.
+///
+/// [`GlyphInstance::new_with_interpolated_values`] keeps only fields set in
+/// the template, which would drop the interpolated value of a field another
+/// source sets. The VARC table stores such a field too, with the identity for
+/// sources that do not set it.
+fn interpolation_template(glyph: &Glyph) -> GlyphInstance {
+    let mut template = glyph.default_instance().clone();
+    for (idx, component) in template.components.iter_mut().enumerate() {
+        let ComponentTransform::Decomposed(t) = &mut component.transform else {
+            continue;
+        };
+        for inst in glyph.sources().values() {
+            let Some(ComponentTransform::Decomposed(other)) =
+                inst.components.get(idx).map(|c| &c.transform)
+            else {
+                continue;
+            };
+            t.translate_x = t.translate_x.or(other.translate_x);
+            t.translate_y = t.translate_y.or(other.translate_y);
+            t.rotation = t.rotation.or(other.rotation);
+            t.scale_x = t.scale_x.or(other.scale_x);
+            t.scale_y = t.scale_y.or(other.scale_y);
+            t.skew_x = t.skew_x.or(other.skew_x);
+            t.skew_y = t.skew_y.or(other.skew_y);
+            t.center_x = t.center_x.or(other.center_x);
+            t.center_y = t.center_y.or(other.center_y);
+        }
+    }
+    template
 }
 
 fn variation_model_for_glyph<'a>(
@@ -560,9 +1000,11 @@ fn variation_model_for_glyph<'a>(
     // otherwise we need a special model for this glyph.
     // This code is duplicated in various places (hvar, e.g.)
     // and maybe we can share it? or cache these models more globally?
+    let mut axis_order: Vec<_> = meta.axes.iter().map(|ax| ax.tag).collect();
+    axis_order.extend(glyph.axes().axis_order());
     Cow::Owned(VariationModel::new(
         glyph.sources().keys().cloned().collect(),
-        meta.axes.iter().map(|ax| ax.tag).collect(),
+        axis_order,
     ))
 }
 
@@ -611,14 +1053,20 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
         while let Some(component) = frontier.pop_front() {
             let ref_glyph = context.get_glyph(component.base.clone());
             let ref_inst = get_or_instantiate_instance(&ref_glyph, loc, context)?;
-            if ref_inst.components.is_empty() {
+            // Only ordinary components compose as affines. Keep anything else as is.
+            if component.is_variable()
+                || ref_inst.components.is_empty()
+                || ref_inst.components.iter().any(Component::is_variable)
+            {
                 simple.push(component.clone());
             } else {
                 for ref_component in ref_inst.components.iter().rev() {
                     frontier.push_front(Component {
-                        base: ref_component.base.clone(),
-                        transform: component.transform * ref_component.transform,
                         anchor: ref_component.anchor.clone(),
+                        ..Component::new(
+                            ref_component.base.clone(),
+                            component.affine() * ref_component.affine(),
+                        )
                     });
                 }
             }
@@ -637,12 +1085,14 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
 fn apply_optional_transformations(
     context: &Context,
     glyph_order: &GlyphOrder,
+    varc_glyphs: &HashSet<GlyphName>,
 ) -> Result<(), BadGlyph> {
     // If we are decomposing all components, the rest of the flags can be ignored
     if context.flags.contains(Flags::DECOMPOSE_COMPONENTS) {
         for glyph_name in glyph_order.names() {
             let glyph = context.get_glyph(glyph_name.clone());
-            if !glyph.default_instance().components.is_empty() {
+            if !glyph.default_instance().components.is_empty() && !varc_glyphs.contains(glyph_name)
+            {
                 convert_components_to_contours(context, &glyph)?;
             }
         }
@@ -660,7 +1110,7 @@ fn apply_optional_transformations(
     {
         for glyph_name in glyph_order.names() {
             let glyph = context.get_glyph(glyph_name.clone());
-            if glyph.has_nonidentity_2x2() {
+            if glyph.has_nonidentity_2x2() && !varc_glyphs.contains(glyph_name) {
                 convert_components_to_contours(context, &glyph)?;
             }
         }
@@ -668,6 +1118,9 @@ fn apply_optional_transformations(
 
     if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
         for glyph_name in glyph_order.names() {
+            if varc_glyphs.contains(glyph_name) {
+                continue;
+            }
             let glyph = context.get_glyph(glyph_name.clone());
             flatten_glyph(context, &glyph)?;
         }
@@ -830,11 +1283,21 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // decomposed. See https://github.com/googlefonts/fontc/issues/1858
         prune_missing_components(context);
 
+        // Reject structurally inconsistent variable composites before any pass
+        // pairs their components across sources.
+        validate_variable_composites(context, &context.preliminary_glyph_order.get())?;
+
         // Propagate anchors from components to composites (if enabled)
         // This must happen BEFORE flattening non-export components, because after
         // flattening the component references are gone and we can't propagate from them.
         if context.flags.contains(Flags::PROPAGATE_ANCHORS) {
             propagate_all_anchors(context)?;
+        }
+
+        // Decompose variable composites into contours so they compile as
+        // glyf/gvar glyphs.
+        if !context.flags.contains(Flags::EMIT_VARC_TABLE) {
+            decompose_all_variable_components(context)?;
         }
 
         flatten_all_non_export_components(context)?;
@@ -861,12 +1324,33 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
             }
         }
 
+        let varc_glyphs = if context.flags.contains(Flags::EMIT_VARC_TABLE) {
+            variable_composite_closure(context, &new_glyph_order)
+        } else {
+            Default::default()
+        };
+
+        // A closure member lowers to a VARC record, which also pairs its
+        // ordinary components across sources by index. Flattening non-export
+        // components may have changed the lists since the validation after
+        // pruning.
+        for name in new_glyph_order.names() {
+            if varc_glyphs.contains(name) {
+                let glyph = context.get_glyph(name.clone());
+                validate_composite_consistency(&glyph)?;
+                validate_constant_affine_2x2(&glyph)?;
+            }
+        }
+
         // Resolve component references to glyphs that are not retained by conversion to contours
         // Glyphs have to have consistent components at this point so it's safe to just check the default
         // See https://github.com/googlefonts/fontc/issues/532
         for glyph_name in new_glyph_order.names() {
             // We are only int
             let glyph = context.get_glyph(glyph_name.clone());
+            if varc_glyphs.contains(glyph_name) {
+                continue;
+            }
             for component in glyph.default_instance().components.iter() {
                 if !new_glyph_order.contains(&component.base) {
                     convert_components_to_contours(context, &glyph)?;
@@ -883,6 +1367,9 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         let mut todo = VecDeque::new();
         for glyph_name in new_glyph_order.names() {
             let glyph = original_glyphs.get(glyph_name).unwrap();
+            if varc_glyphs.contains(glyph_name) {
+                continue;
+            }
             if !glyph.has_consistent_components() {
                 log::debug!(
                     "Coalescing '{glyph_name}' into a simple glyph: \
@@ -920,7 +1407,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         )?;
         drop(original_glyphs); // lets not accidentally use that from here on
 
-        apply_optional_transformations(context, &new_glyph_order)?;
+        apply_optional_transformations(context, &new_glyph_order, &varc_glyphs)?;
 
         ensure_notdef_exists_and_is_gid_0(context, &mut new_glyph_order)?;
 
@@ -940,8 +1427,30 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
             trace!("No new glyphs, final glyph order == preliminary glyph order");
         }
 
+        // This must run after every pass that rebuilds glyphs.
+        assign_lowerings(context, &new_glyph_order, &varc_glyphs);
+
         context.glyph_order.set(new_glyph_order);
         Ok(())
+    }
+}
+
+/// Record how each glyph lowers to the binary.
+fn assign_lowerings(context: &Context, glyph_order: &GlyphOrder, varc_glyphs: &HashSet<GlyphName>) {
+    for name in glyph_order.names() {
+        let glyph = context.get_glyph(name.clone());
+        let lowering = if varc_glyphs.contains(name) {
+            GlyphLowering::Varc
+        } else if glyph.has_components() {
+            GlyphLowering::GlyfComposite
+        } else {
+            GlyphLowering::GlyfContours
+        };
+        if glyph.lowering() != lowering {
+            let mut glyph = (*glyph).clone();
+            glyph.set_lowering(lowering);
+            context.glyphs.set(glyph);
+        }
     }
 }
 
@@ -1025,15 +1534,16 @@ mod tests {
 
     use fontdrasil::{
         orchestration::Access,
-        types::{Axis, GlyphName},
+        types::{Axes, Axis, GlyphName},
     };
     use kurbo::{Affine, BezPath, Rect, Shape};
     use rstest::rstest;
 
     use crate::{
         ir::{
-            AnchorBuilder, Component, GdefCategories, GlobalMetric, GlobalMetricsBuilder, Glyph,
-            GlyphBuilder, GlyphInstance, GlyphOrder, PreliminaryGdefCategories, StaticMetadata,
+            AnchorBuilder, Component, DecomposedTransform, GdefCategories, GlobalMetric,
+            GlobalMetricsBuilder, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
+            PreliminaryGdefCategories, StaticMetadata,
         },
         orchestration::{Context, Flags, WorkId},
     };
@@ -1351,6 +1861,558 @@ mod tests {
     }
 
     #[test]
+    fn interpolates_variable_components() {
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+
+        let vc = |translate_x: f64| {
+            Component::new_variable(
+                "base",
+                DecomposedTransform {
+                    translate_x: Some(translate_x),
+                    ..Default::default()
+                },
+                NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                false,
+            )
+        };
+        let mut composite = GlyphBuilder::new("composite".into());
+        composite
+            .try_add_source(
+                &loc0,
+                GlyphInstance {
+                    components: vec![vc(0.0)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        composite
+            .try_add_source(
+                &loc1,
+                GlyphInstance {
+                    components: vec![vc(100.0)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let composite = composite.build().unwrap();
+
+        // A synthesized mid instance carries the interpolated variable component.
+        let mid = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let inst = instantiate_instance(&composite, &mid, &context).unwrap();
+        assert_eq!(1, inst.components.len());
+        assert_eq!("base", inst.components[0].base.as_str());
+        let ComponentTransform::Decomposed(transform) = &inst.components[0].transform else {
+            panic!(
+                "expected a decomposed transform, got {:?}",
+                inst.components[0].transform
+            );
+        };
+        assert_eq!(Some(50.0), transform.translate_x);
+    }
+
+    #[test]
+    fn interpolation_keeps_fields_set_in_any_source() {
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+
+        let vc = |transform: DecomposedTransform| {
+            Component::new_variable(
+                "base",
+                transform,
+                NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                false,
+            )
+        };
+        // translate_y is only set in the non-default source.
+        let mut composite = GlyphBuilder::new("composite".into());
+        composite
+            .try_add_source(
+                &loc0,
+                GlyphInstance {
+                    components: vec![vc(DecomposedTransform::default())],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        composite
+            .try_add_source(
+                &loc1,
+                GlyphInstance {
+                    components: vec![vc(DecomposedTransform {
+                        translate_y: Some(100.0),
+                        ..Default::default()
+                    })],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let composite = composite.build().unwrap();
+
+        let mid = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let inst = instantiate_instance(&composite, &mid, &context).unwrap();
+        let ComponentTransform::Decomposed(transform) = &inst.components[0].transform else {
+            panic!(
+                "expected a decomposed transform, got {:?}",
+                inst.components[0].transform
+            );
+        };
+        assert_eq!(Some(50.0), transform.translate_y);
+    }
+
+    #[test]
+    fn interpolates_glyph_local_axes() {
+        // `foo` is an axis of the glyph, not of the font.
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0), ("foo", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 0.0), ("foo", 1.0)]);
+        let context =
+            test_context_with_locations(vec![NormalizedLocation::for_pos(&[("wght", 0.0)])]);
+
+        let square_at = |x: f64| {
+            let mut path = BezPath::new();
+            path.move_to((x, 0.0));
+            path.line_to((x + 1.0, 0.0));
+            path.line_to((x + 1.0, 1.0));
+            path.close_path();
+            GlyphInstance {
+                contours: vec![path],
+                ..Default::default()
+            }
+        };
+        let mut glyph = GlyphBuilder::new("base".into());
+        glyph.try_add_source(&loc0, square_at(0.0)).unwrap();
+        glyph.try_add_source(&loc1, square_at(100.0)).unwrap();
+        let mut glyph = glyph.build().unwrap();
+        glyph.set_axes(Axes::for_test(&["foo"]));
+
+        let mid = NormalizedLocation::for_pos(&[("wght", 0.0), ("foo", 0.5)]);
+        let inst = instantiate_instance(&glyph, &mid, &context).unwrap();
+        assert_eq!(
+            vec!["M50,0 L51,0 L51,1 Z"],
+            inst.contours.iter().map(|b| b.to_svg()).collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn decomposed_transform_to_affine() {
+        // A translate composes to a plain translation.
+        let t = DecomposedTransform {
+            translate_x: Some(10.0),
+            translate_y: Some(-5.0),
+            ..Default::default()
+        };
+        assert_eq!(t.to_affine(), Affine::translate((10.0, -5.0)));
+        // The all-absent transform is the identity.
+        assert_eq!(DecomposedTransform::default().to_affine(), Affine::IDENTITY);
+        // A 90° (counter-clockwise) rotation sends (1, 0) to (0, 1).
+        let r = DecomposedTransform {
+            rotation: Some(90.0),
+            ..Default::default()
+        };
+        let p = r.to_affine() * kurbo::Point::new(1.0, 0.0);
+        assert!(
+            (p.x - 0.0).abs() < 1e-9 && (p.y - 1.0).abs() < 1e-9,
+            "expected ~(0, 1), got {p:?}"
+        );
+        let ss = DecomposedTransform {
+            scale_x: Some(2.0),
+            scale_y: Some(1.0),
+            skew_x: Some(45.0),
+            ..Default::default()
+        };
+        let coeffs = ss.to_affine().as_coeffs();
+        let expected = [2.0, 0.0, 2.0, 1.0, 0.0, 0.0];
+        assert!(
+            coeffs
+                .iter()
+                .zip(expected)
+                .all(|(a, b)| (a - b).abs() < 1e-9),
+            "expected ~{expected:?}, got {coeffs:?}"
+        );
+    }
+
+    #[test]
+    fn decompose_variable_component() {
+        let context = test_context();
+        // A plain contour glyph, referenced by the composite below.
+        let mut base = GlyphBuilder::new("base".into());
+        base.try_add_source(
+            &NormalizedLocation::for_pos(&[("wght", 0.0)]),
+            contour_instance(),
+        )
+        .unwrap();
+        context.glyphs.set(base.build().unwrap());
+
+        // A composite that places `base` with a translation, pinned at wght 0.
+        let mut composite = GlyphBuilder::new("composite".into());
+        composite
+            .try_add_source(
+                &NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                GlyphInstance {
+                    components: vec![Component::new_variable(
+                        "base",
+                        DecomposedTransform {
+                            translate_x: Some(10.0),
+                            translate_y: Some(20.0),
+                            ..Default::default()
+                        },
+                        NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                        false,
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let composite = composite.build().unwrap();
+
+        decompose_variable_components_for_glyph(&context, &composite, &Default::default()).unwrap();
+
+        let simple = context.get_glyph("composite");
+        assert_simple(&simple);
+        for (loc, inst) in simple.sources().iter() {
+            assert!(inst.components.is_empty(), "At {loc:?}");
+            assert_eq!(
+                // `base`'s contour, translated by (10, 20).
+                vec!["M11,21 L12,21 L12,22 Z"],
+                inst.contours.iter().map(|b| b.to_svg()).collect::<Vec<_>>(),
+                "At {loc:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn decompose_variable_component_with_composite_base() {
+        // The base is itself a plain glyf composite.
+        let context = test_context();
+        let loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+
+        let mut base = GlyphBuilder::new("base".into());
+        base.try_add_source(&loc, contour_instance()).unwrap();
+        context.glyphs.set(base.build().unwrap());
+
+        // `boxed` draws `base` through an ordinary component, no contours of its own.
+        let mut boxed = GlyphBuilder::new("boxed".into());
+        boxed
+            .try_add_source(
+                &loc,
+                GlyphInstance {
+                    components: vec![Component::new("base", Affine::translate((0.0, 5.0)))],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        context.glyphs.set(boxed.build().unwrap());
+
+        // `composite` places `boxed` with a translation via a variable component.
+        let mut composite = GlyphBuilder::new("composite".into());
+        composite
+            .try_add_source(
+                &loc,
+                GlyphInstance {
+                    components: vec![Component::new_variable(
+                        "boxed",
+                        DecomposedTransform {
+                            translate_x: Some(10.0),
+                            translate_y: Some(20.0),
+                            ..Default::default()
+                        },
+                        NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                        false,
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let composite = composite.build().unwrap();
+
+        decompose_variable_components_for_glyph(&context, &composite, &Default::default()).unwrap();
+
+        let simple = context.get_glyph("composite");
+        assert_simple(&simple);
+        // `base`'s contour, translated by (10, 20) then by (0, 5).
+        assert_eq!(
+            vec!["M11,26 L12,26 L12,27 Z"],
+            simple
+                .default_instance()
+                .contours
+                .iter()
+                .map(|b| b.to_svg())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn decompose_nested_reset_uses_font_location() {
+        // parent pins mid at wght 1. mid references base with
+        // reset_unspecified_axes and no wght of its own, so base follows the
+        // font location (wght 0), not the pin.
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+
+        let square_at = |x: f64| {
+            let mut path = BezPath::new();
+            path.move_to((x, 0.0));
+            path.line_to((x + 1.0, 0.0));
+            path.line_to((x + 1.0, 1.0));
+            path.close_path();
+            GlyphInstance {
+                contours: vec![path],
+                ..Default::default()
+            }
+        };
+        let mut base = GlyphBuilder::new("base".into());
+        base.try_add_source(&loc0, square_at(100.0)).unwrap();
+        base.try_add_source(&loc1, square_at(200.0)).unwrap();
+        context.glyphs.set(base.build().unwrap());
+
+        let reset_vc = Component::new_variable(
+            "base",
+            DecomposedTransform::default(),
+            NormalizedLocation::new(),
+            true,
+        );
+        let mut mid = GlyphBuilder::new("mid".into());
+        for loc in [&loc0, &loc1] {
+            mid.try_add_source(
+                loc,
+                GlyphInstance {
+                    components: vec![reset_vc.clone()],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        let mid = mid.build().unwrap();
+        context.glyphs.set(mid.clone());
+
+        let mut parent = GlyphBuilder::new("parent".into());
+        parent
+            .try_add_source(
+                &loc0,
+                GlyphInstance {
+                    components: vec![Component::new_variable(
+                        "mid",
+                        DecomposedTransform::default(),
+                        NormalizedLocation::for_pos(&[("wght", 1.0)]),
+                        false,
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let parent = parent.build().unwrap();
+        context.glyphs.set(parent.clone());
+
+        let originals: HashMap<GlyphName, Arc<Glyph>> = [&mid, &parent]
+            .into_iter()
+            .map(|g| (g.name.clone(), Arc::new(g.clone())))
+            .collect();
+        decompose_variable_components_for_glyph(&context, &parent, &originals).unwrap();
+
+        assert_eq!(
+            vec!["M100,0 L101,0 L101,1 Z"],
+            context
+                .get_glyph("parent")
+                .default_instance()
+                .contours
+                .iter()
+                .map(|b| b.to_svg())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn decompose_keeps_referenced_glyph_intermediate_masters() {
+        // base has an intermediate master the composite lacks. The decomposed
+        // composite must gain a source there so gvar does not interpolate
+        // across it.
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc_mid = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let context =
+            test_context_with_locations(vec![loc0.clone(), loc_mid.clone(), loc1.clone()]);
+
+        let square_at = |x: f64| {
+            let mut path = BezPath::new();
+            path.move_to((x, 0.0));
+            path.line_to((x + 1.0, 0.0));
+            path.line_to((x + 1.0, 1.0));
+            path.close_path();
+            GlyphInstance {
+                contours: vec![path],
+                ..Default::default()
+            }
+        };
+        let mut base = GlyphBuilder::new("base".into());
+        base.try_add_source(&loc0, square_at(0.0)).unwrap();
+        base.try_add_source(&loc_mid, square_at(500.0)).unwrap();
+        base.try_add_source(&loc1, square_at(100.0)).unwrap();
+        context.glyphs.set(base.build().unwrap());
+
+        let vc = Component::new_variable(
+            "base",
+            DecomposedTransform::default(),
+            NormalizedLocation::new(),
+            true,
+        );
+        let mut composite = GlyphBuilder::new("composite".into());
+        for loc in [&loc0, &loc1] {
+            composite
+                .try_add_source(
+                    loc,
+                    GlyphInstance {
+                        components: vec![vc.clone()],
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+        let composite = composite.build().unwrap();
+
+        decompose_variable_components_for_glyph(&context, &composite, &Default::default()).unwrap();
+
+        let simple = context.get_glyph("composite");
+        assert_simple(&simple);
+        let inst = simple
+            .sources()
+            .get(&loc_mid)
+            .expect("intermediate master kept");
+        assert_eq!(
+            vec!["M500,0 L501,0 L501,1 Z"],
+            inst.contours.iter().map(|b| b.to_svg()).collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn decompose_keeps_intermediate_masters_under_nested_reset() {
+        // parent pins mid at wght 1, but mid reaches base through a reset
+        // component, which samples base at the font location. base's wght 0.5
+        // master must still map back onto parent.
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc_mid = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let context =
+            test_context_with_locations(vec![loc0.clone(), loc_mid.clone(), loc1.clone()]);
+
+        let square_at = |x: f64| {
+            let mut path = BezPath::new();
+            path.move_to((x, 0.0));
+            path.line_to((x + 1.0, 0.0));
+            path.line_to((x + 1.0, 1.0));
+            path.close_path();
+            GlyphInstance {
+                contours: vec![path],
+                ..Default::default()
+            }
+        };
+        let mut base = GlyphBuilder::new("base".into());
+        base.try_add_source(&loc0, square_at(0.0)).unwrap();
+        base.try_add_source(&loc_mid, square_at(500.0)).unwrap();
+        base.try_add_source(&loc1, square_at(100.0)).unwrap();
+        context.glyphs.set(base.build().unwrap());
+
+        let reset_vc = Component::new_variable(
+            "base",
+            DecomposedTransform::default(),
+            NormalizedLocation::new(),
+            true,
+        );
+        let mut mid = GlyphBuilder::new("mid".into());
+        for loc in [&loc0, &loc1] {
+            mid.try_add_source(
+                loc,
+                GlyphInstance {
+                    components: vec![reset_vc.clone()],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        let mid = mid.build().unwrap();
+        context.glyphs.set(mid.clone());
+
+        let mut parent = GlyphBuilder::new("parent".into());
+        for loc in [&loc0, &loc1] {
+            parent
+                .try_add_source(
+                    loc,
+                    GlyphInstance {
+                        components: vec![Component::new_variable(
+                            "mid",
+                            DecomposedTransform::default(),
+                            NormalizedLocation::for_pos(&[("wght", 1.0)]),
+                            false,
+                        )],
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+        let parent = parent.build().unwrap();
+
+        let originals: HashMap<GlyphName, Arc<Glyph>> = [("mid".into(), Arc::new(mid))].into();
+        decompose_variable_components_for_glyph(&context, &parent, &originals).unwrap();
+
+        let inst = context.get_glyph("parent");
+        let inst = inst
+            .sources()
+            .get(&loc_mid)
+            .expect("intermediate master kept");
+        assert_eq!(
+            vec!["M500,0 L501,0 L501,1 Z"],
+            inst.contours.iter().map(|b| b.to_svg()).collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn decompose_variable_component_self_reference_is_skipped() {
+        // A component pointing back at its own glyph is skipped as a cycle.
+        let context = test_context();
+        let loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+
+        let mut selfref = GlyphBuilder::new("selfref".into());
+        selfref
+            .try_add_source(
+                &loc,
+                GlyphInstance {
+                    contours: vec![contour()],
+                    components: vec![Component::new_variable(
+                        "selfref",
+                        DecomposedTransform {
+                            translate_x: Some(10.0),
+                            translate_y: Some(20.0),
+                            ..Default::default()
+                        },
+                        NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                        false,
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let selfref = selfref.build().unwrap();
+        context.glyphs.set(selfref.clone());
+
+        decompose_variable_components_for_glyph(&context, &selfref, &Default::default()).unwrap();
+
+        let simple = context.get_glyph("selfref");
+        assert_simple(&simple);
+        // Only the original contour survives.
+        assert_eq!(
+            vec!["M1,1 L2,1 L2,2 Z"],
+            simple
+                .default_instance()
+                .contours
+                .iter()
+                .map(|b| b.to_svg())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
     fn components_to_contours_deep() {
         let test_data = deep_component();
         let context = test_context();
@@ -1443,9 +2505,9 @@ mod tests {
             .values_mut()
             .enumerate()
             .for_each(|(i, inst)| {
-                inst.components
-                    .iter_mut()
-                    .for_each(|c| c.transform *= adjust_nth(i));
+                inst.components.iter_mut().for_each(|c| {
+                    c.transform = ComponentTransform::Affine(c.affine() * adjust_nth(i))
+                });
             });
         glyph.build().unwrap()
     }
@@ -1545,7 +2607,8 @@ mod tests {
         context.flags.set(Flags::FLATTEN_COMPONENTS, true);
 
         test_data.write_to(&context);
-        apply_optional_transformations(&context, &test_data.glyph_order()).unwrap();
+        apply_optional_transformations(&context, &test_data.glyph_order(), &Default::default())
+            .unwrap();
         assert_is_flattened_component(&context, test_data.deep_component.name);
     }
 
@@ -1562,7 +2625,8 @@ mod tests {
         context.flags.set(Flags::FLATTEN_COMPONENTS, true);
         test_data.write_to(&context);
 
-        apply_optional_transformations(&context, &test_data.glyph_order()).unwrap();
+        apply_optional_transformations(&context, &test_data.glyph_order(), &Default::default())
+            .unwrap();
 
         // the shallow_component had a non-identity 2x2 transform so it was
         // converted to a simple glyph
@@ -1825,6 +2889,251 @@ mod tests {
     }
 
     #[test]
+    fn prune_missing_components_prunes_variable_components() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("g", |g| {
+            let vc = |base: &str| {
+                Component::new_variable(
+                    base,
+                    DecomposedTransform::default(),
+                    NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                    false,
+                )
+            };
+            g.default_instance_mut().components.push(vc("a"));
+            g.default_instance_mut().components.push(vc("missing"));
+        });
+        let context = builder.into_context();
+
+        prune_missing_components(&context);
+
+        let g = context.get_glyph("g");
+        let vcs = &g.default_instance().components;
+        assert_eq!(1, vcs.len());
+        assert_eq!("a", vcs[0].base.as_str());
+    }
+
+    #[test]
+    fn variable_composite_closure_follows_ordinary_components() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("c", |c| {
+            c.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.default_instance_mut()
+                .components
+                .push(Component::new_variable(
+                    "c",
+                    DecomposedTransform::default(),
+                    NormalizedLocation::for_pos(&[("wght", 1.0)]),
+                    false,
+                ));
+        });
+        builder.add_glyph_fancy("g", |g| {
+            g.add_component("b", (0, 0));
+        });
+        builder.add_glyph_fancy("x", |x| {
+            x.add_component("c", (0, 0));
+        });
+        let context = builder.into_context();
+
+        let mut order = GlyphOrder::new();
+        for name in ["c", "b", "g", "x"] {
+            order.insert(name.into());
+        }
+        // `g` draws `b`'s variable component through an ordinary component.
+        let varc_glyphs = variable_composite_closure(&context, &order);
+        assert_eq!(
+            HashSet::from([GlyphName::new("b"), GlyphName::new("g")]),
+            varc_glyphs
+        );
+
+        assign_lowerings(&context, &order, &varc_glyphs);
+        assert_eq!(
+            vec![
+                GlyphLowering::GlyfContours,
+                GlyphLowering::Varc,
+                GlyphLowering::Varc,
+                GlyphLowering::GlyfComposite,
+            ],
+            ["c", "b", "g", "x"]
+                .map(|name| context.get_glyph(name).lowering())
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn flatten_skips_variable_composites() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("d", |d| {
+            d.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("c", |c| {
+            c.default_instance_mut()
+                .components
+                .push(Component::new_variable(
+                    "d",
+                    DecomposedTransform::default(),
+                    NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                    false,
+                ));
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.add_contour(simple_square_path());
+            b.add_component("c", (0, 0));
+        });
+        builder.add_glyph_fancy("a", |a| {
+            a.add_component("b", (0, 0));
+        });
+        let mut context = builder.into_context();
+        context.flags.set(Flags::FLATTEN_COMPONENTS, true);
+
+        let mut order = GlyphOrder::new();
+        for name in ["d", "c", "b", "a"] {
+            order.insert(name.into());
+        }
+        let varc_glyphs = variable_composite_closure(&context, &order);
+        apply_optional_transformations(&context, &order, &varc_glyphs).unwrap();
+
+        // `b` draws its contours through its VARC record. Flattening `a` would
+        // inline `b`'s components and lose them.
+        let a = context.get_glyph("a");
+        assert_eq!(1, a.default_instance().components.len());
+        assert_eq!("b", a.default_instance().components[0].base.as_str());
+    }
+
+    #[test]
+    fn validates_variable_composite_consistency() {
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let wght0 = || NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let vc = |location: NormalizedLocation, reset: bool| {
+            Component::new_variable("base", DecomposedTransform::default(), location, reset)
+        };
+        let validate = |c0: Vec<Component>, c1: Vec<Component>| {
+            let mut glyph = GlyphBuilder::new("composite".into());
+            glyph
+                .try_add_source(
+                    &loc0,
+                    GlyphInstance {
+                        components: c0,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            glyph
+                .try_add_source(
+                    &loc1,
+                    GlyphInstance {
+                        components: c1,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+            context.glyphs.set(glyph.build().unwrap());
+            let mut order = GlyphOrder::new();
+            order.insert("composite".into());
+            validate_variable_composites(&context, &order)
+        };
+
+        // The same shape at each source, only values differ: consistent.
+        assert!(
+            validate(
+                vec![vc(wght0(), false)],
+                vec![vc(NormalizedLocation::for_pos(&[("wght", 1.0)]), false)]
+            )
+            .is_ok()
+        );
+
+        // Component count differs.
+        assert!(validate(vec![vc(wght0(), false)], vec![]).is_err());
+
+        // Base differs.
+        assert!(
+            validate(
+                vec![vc(wght0(), false)],
+                vec![Component::new_variable(
+                    "other",
+                    DecomposedTransform::default(),
+                    wght0(),
+                    false
+                )]
+            )
+            .is_err()
+        );
+
+        // Ordinary at one source, variable at the other.
+        assert!(
+            validate(
+                vec![vc(wght0(), false)],
+                vec![Component::new("base", Affine::IDENTITY)]
+            )
+            .is_err()
+        );
+
+        // Reset flag differs.
+        assert!(validate(vec![vc(wght0(), false)], vec![vc(wght0(), true)]).is_err());
+
+        // Transform form differs.
+        let mut affine_form = vc(wght0(), false);
+        affine_form.transform = ComponentTransform::Affine(Affine::IDENTITY);
+        assert!(validate(vec![vc(wght0(), false)], vec![affine_form]).is_err());
+
+        // Location axes differ.
+        assert!(
+            validate(
+                vec![vc(wght0(), false)],
+                vec![vc(NormalizedLocation::for_pos(&[("wdth", 0.0)]), false)]
+            )
+            .is_err()
+        );
+
+        // Ordinary composites may be inconsistent, they are converted to
+        // contours later.
+        assert!(validate(vec![Component::new("base", Affine::IDENTITY)], vec![]).is_ok());
+    }
+
+    #[test]
+    fn rejects_varying_affine_2x2_in_variable_composites() {
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let glyph_with = |c1: Component| {
+            let mut glyph = GlyphBuilder::new("composite".into());
+            glyph
+                .try_add_source(
+                    &loc0,
+                    GlyphInstance {
+                        components: vec![Component::new("base", Affine::IDENTITY)],
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            glyph
+                .try_add_source(
+                    &loc1,
+                    GlyphInstance {
+                        components: vec![c1],
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            glyph.build().unwrap()
+        };
+
+        // Translation may vary.
+        let translated = glyph_with(Component::new("base", Affine::translate((5.0, 0.0))));
+        assert!(validate_constant_affine_2x2(&translated).is_ok());
+
+        // A varying 2x2 is rejected.
+        let rotated = glyph_with(Component::new("base", Affine::rotate(0.5)));
+        assert!(validate_constant_affine_2x2(&rotated).is_err());
+    }
+
+    #[test]
     fn non_export_component_simple() {
         let mut builder = GlyphOrderBuilder::default();
         builder.add_glyph_fancy("a", |a| {
@@ -1847,6 +3156,154 @@ mod tests {
         let contour = &instance.contours[0];
         // simple square path, transformed by (20x, 20y)
         assert_eq!(contour.bounding_box(), Rect::new(15., 15., 25., 25.));
+    }
+
+    #[test]
+    fn non_export_component_with_variable_component() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.emit_to_binary(false);
+            b.default_instance_mut()
+                .components
+                .push(Component::new_variable(
+                    "a",
+                    DecomposedTransform {
+                        translate_x: Some(20.0),
+                        translate_y: Some(20.0),
+                        ..Default::default()
+                    },
+                    NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                    false,
+                ));
+        });
+        builder.add_glyph_fancy("c", |c| {
+            c.add_component("b", (9, -7));
+        });
+
+        let context = builder.into_context();
+        flatten_all_non_export_components(&context).unwrap();
+
+        let c = context.get_glyph("c");
+        let instance = c.default_instance();
+        assert!(instance.components.is_empty());
+        // a's square through b's variable component (20, 20) and c's (9, -7).
+        assert_eq!(instance.contours.len(), 1);
+        assert_eq!(
+            instance.contours[0].bounding_box(),
+            Rect::new(24., 8., 34., 18.)
+        );
+    }
+
+    #[test]
+    fn flatten_resolves_variable_components_from_original_glyphs() {
+        // v is flattened before e, which converts the reset component under
+        // it to contours at v's own locations. Resolving e's pinned component
+        // to v must see the original v, so the reset component still samples
+        // base at the font location.
+        let loc0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let loc1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+
+        let square_at = |x: f64| {
+            let mut path = BezPath::new();
+            path.move_to((x, 0.0));
+            path.line_to((x + 1.0, 0.0));
+            path.line_to((x + 1.0, 1.0));
+            path.close_path();
+            GlyphInstance {
+                contours: vec![path],
+                ..Default::default()
+            }
+        };
+        let mut base = GlyphBuilder::new("base".into());
+        base.try_add_source(&loc0, square_at(100.0)).unwrap();
+        base.try_add_source(&loc1, square_at(200.0)).unwrap();
+        context.glyphs.set(base.build().unwrap());
+
+        let reset_vc = Component::new_variable(
+            "base",
+            DecomposedTransform::default(),
+            NormalizedLocation::new(),
+            true,
+        );
+        let mut m = GlyphBuilder::new("m".into());
+        m.emit_to_binary = false;
+        for loc in [&loc0, &loc1] {
+            m.try_add_source(
+                loc,
+                GlyphInstance {
+                    components: vec![reset_vc.clone()],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        context.glyphs.set(m.build().unwrap());
+
+        let mut v = GlyphBuilder::new("v".into());
+        for loc in [&loc0, &loc1] {
+            v.try_add_source(
+                loc,
+                GlyphInstance {
+                    components: vec![Component::new("m", Affine::IDENTITY)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        context.glyphs.set(v.build().unwrap());
+
+        let pinned_vc = Component::new_variable(
+            "v",
+            DecomposedTransform::default(),
+            NormalizedLocation::for_pos(&[("wght", 1.0)]),
+            false,
+        );
+        let mut n = GlyphBuilder::new("n".into());
+        n.emit_to_binary = false;
+        for loc in [&loc0, &loc1] {
+            n.try_add_source(
+                loc,
+                GlyphInstance {
+                    components: vec![pinned_vc.clone()],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        context.glyphs.set(n.build().unwrap());
+
+        let mut e = GlyphBuilder::new("e".into());
+        for loc in [&loc0, &loc1] {
+            e.try_add_source(
+                loc,
+                GlyphInstance {
+                    components: vec![Component::new("n", Affine::IDENTITY)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        context.glyphs.set(e.build().unwrap());
+
+        flatten_all_non_export_components(&context).unwrap();
+
+        let e = context.get_glyph("e");
+        for (loc, expected) in [
+            (&loc0, "M100,0 L101,0 L101,1 Z"),
+            (&loc1, "M200,0 L201,0 L201,1 Z"),
+        ] {
+            let inst = e.sources().get(loc).unwrap();
+            assert!(inst.components.is_empty(), "at {loc:?}");
+            assert_eq!(
+                vec![expected],
+                inst.contours.iter().map(|b| b.to_svg()).collect::<Vec<_>>(),
+                "at {loc:?}"
+            );
+        }
     }
 
     #[test]
@@ -1874,7 +3331,7 @@ mod tests {
         let comp = &instance.components[0];
 
         assert_eq!(comp.base, "a");
-        assert_eq!(comp.transform, Affine::translate((29., 13.)));
+        assert_eq!(comp.affine(), Affine::translate((29., 13.)));
     }
 
     #[test]
@@ -1965,10 +3422,7 @@ mod tests {
             inst.contours[0],
             Affine::translate((5.0, 0.)) * simple_square_path()
         );
-        assert_eq!(
-            inst.components[0].transform,
-            Affine::translate((17.0, 17.0))
-        );
+        assert_eq!(inst.components[0].affine(), Affine::translate((17.0, 17.0)));
         assert_eq!(inst.width, 500.);
         assert!(inst.height.is_none());
         assert_eq!(inst.vertical_origin, Some(150.));
@@ -1983,7 +3437,7 @@ mod tests {
         context.glyphs.set(glyph.0.clone());
 
         let inst = instantiate_instance(&glyph.0, &intermediate, &context).unwrap();
-        inst.components[0].transform
+        inst.components[0].affine()
     }
 
     #[test]

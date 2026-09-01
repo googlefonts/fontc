@@ -739,6 +739,30 @@ impl VariationRegion {
         }
         write_fonts::tables::variations::VariationRegion { region_axes }
     }
+
+    /// Convert to a write-fonts SparseRegion, keyed by the index of each axis in
+    /// the given fvar axes.
+    ///
+    /// Only axes present in this region are emitted. An axis at its default (peak
+    /// at 0) is dropped by `SparseRegion`.
+    pub fn to_write_fonts_sparse_region(
+        &self,
+        axes: &Axes,
+    ) -> write_fonts::tables::variations::mivs_builder::SparseRegion {
+        let coords = self
+            .iter()
+            .filter_map(|(tag, tent)| {
+                let index = axes.iter().position(|a| a.tag == *tag)? as u16;
+                Some((
+                    index,
+                    tent.min.to_f2dot14(),
+                    tent.peak.to_f2dot14(),
+                    tent.max.to_f2dot14(),
+                ))
+            })
+            .collect();
+        write_fonts::tables::variations::mivs_builder::SparseRegion::new(coords)
+    }
 }
 
 /// The min/peak/max of a masters influence.
@@ -1056,6 +1080,35 @@ mod tests {
         axes.iter()
             .map(|tag| Tag::new_checked(tag.as_bytes()).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn variation_region_to_sparse_region() {
+        use write_fonts::{tables::variations::mivs_builder::SparseRegion, types::F2Dot14};
+
+        let axes = Axes::for_test(&["wght", "wdth"]);
+        let mut region = VariationRegion::new();
+        region.insert(
+            Tag::new(b"wght"),
+            Tent::new(
+                NormalizedCoord::new(0.0),
+                NormalizedCoord::new(1.0),
+                NormalizedCoord::new(1.0),
+            ),
+        );
+        // wdth stays at its default; the sparse region must drop it.
+        region.insert(Tag::new(b"wdth"), Tent::zeroes());
+
+        let sparse = region.to_write_fonts_sparse_region(&axes);
+        // Only wght (fvar index 0) survives.
+        let expected = SparseRegion::new(vec![(
+            0,
+            F2Dot14::from_f32(0.0),
+            F2Dot14::from_f32(1.0),
+            F2Dot14::from_f32(1.0),
+        )]);
+        assert_eq!(expected, sparse);
+        assert!(!sparse.is_empty());
     }
 
     /// Python

@@ -83,7 +83,7 @@ fn to_ir_contour(
 fn to_ir_component(component: &norad::Component, anchor: Option<SmolStr>) -> ir::Component {
     ir::Component {
         base: component.base.as_str().into(),
-        transform: Affine::new([
+        transform: ir::ComponentTransform::Affine(Affine::new([
             component.transform.x_scale,
             // For the 2nd and 3rd field of its 2x3 affine transformation, norad uses
             // the same labels as fonttools' Transform, respectively `xy` and `yx`.
@@ -96,8 +96,10 @@ fn to_ir_component(component: &norad::Component, anchor: Option<SmolStr>) -> ir:
             component.transform.y_scale,
             component.transform.x_offset,
             component.transform.y_offset,
-        ]),
+        ])),
         anchor,
+        location: NormalizedLocation::new(),
+        reset_unspecified_axes: false,
     }
 }
 
@@ -377,7 +379,7 @@ mod tests {
             None,
         );
         assert_eq!(
-            to_ir_component(&c, None).transform,
+            to_ir_component(&c, None).affine(),
             Affine::new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
         );
 
@@ -390,7 +392,7 @@ mod tests {
             y_offset: 10.0,
         };
         assert_eq!(
-            to_ir_component(&c, None).transform,
+            to_ir_component(&c, None).affine(),
             Affine::new([1.0, 0.0, 0.0, 1.0, 10.0, 10.0])
         );
 
@@ -405,7 +407,7 @@ mod tests {
         };
         // Switchy switchy!
         assert_eq!(
-            to_ir_component(&c, None).transform,
+            to_ir_component(&c, None).affine(),
             Affine::new([0.4366, -0.4366, 0.4415, 0.4425, 282.0, 5.0])
         );
     }

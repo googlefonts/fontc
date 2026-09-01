@@ -1,83 +1,78 @@
 use std::{path::Path, sync::Arc};
 
-use fontdrasil::orchestration::Work;
+use fontdrasil::{coords::NormalizedLocation, orchestration::Work};
 use fontir::{
     error::Error,
-    orchestration::{Context, WorkId},
+    ir::PreliminaryGdefCategories,
+    orchestration::{Context, IrWork, WorkId},
     source::Source,
 };
 use log::debug;
 
-use crate::{fontra::Font, toir::to_ir_static_metadata};
+use crate::{
+    fontra::Font,
+    toir::{to_ir_gdef_categories, to_ir_static_metadata},
+};
 
 pub struct FontraIrSource {
     font_data: Arc<Font>,
+    gdef_categories: Arc<PreliminaryGdefCategories>,
 }
 
 impl Source for FontraIrSource {
     fn new(fontra_dir: &Path) -> Result<Self, Error> {
         let font_data = Font::load(fontra_dir)?;
+        let gdef_categories = to_ir_gdef_categories(&font_data.glyph_infos);
 
         Ok(FontraIrSource {
             font_data: Arc::new(font_data),
+            gdef_categories: Arc::new(gdef_categories),
         })
     }
 
-    fn create_static_metadata_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+    fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork {
             font_data: self.font_data.clone(),
+            gdef_categories: self.gdef_categories.clone(),
         }))
     }
 
-    fn create_global_metric_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_global_metric_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::GlobalMetrics)))
     }
 
-    fn create_glyph_ir_work(
-        &self,
-    ) -> Result<Vec<Box<fontir::orchestration::IrWork>>, fontir::error::Error> {
-        todo!()
+    fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
+        Ok(Vec::new())
     }
 
-    fn create_feature_ir_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::Features)))
     }
 
-    fn create_kerning_locations_ir_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::KerningLocations)))
     }
 
     fn create_kerning_instance_ir_work(
         &self,
-        _at: fontdrasil::coords::NormalizedLocation,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+        at: NormalizedLocation,
+    ) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::KernInstance(at))))
     }
 
-    fn create_color_palette_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::ColorPalettes)))
     }
 
-    fn create_color_glyphs_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::PaintGraph)))
     }
 }
 
 #[derive(Debug)]
 struct StaticMetadataWork {
     font_data: Arc<Font>,
+    gdef_categories: Arc<PreliminaryGdefCategories>,
 }
 
 impl Work<Context, WorkId, Error> for StaticMetadataWork {
@@ -86,7 +81,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::PreliminaryGlyphOrder]
+        vec![
+            WorkId::PreliminaryGlyphOrder,
+            WorkId::PreliminaryGdefCategories,
+        ]
     }
 
     #[tracing::instrument(name = "fontra2fontir::StaticMetadataWork::exec", skip_all)]
@@ -103,20 +101,117 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .preliminary_glyph_order
             .set(self.font_data.glyph_map.keys().cloned().collect());
         context
+            .preliminary_gdef_categories
+            .set(self.gdef_categories.as_ref().clone());
+        context
             .static_metadata
             .set(to_ir_static_metadata(&self.font_data)?);
         Ok(())
     }
 }
 
+/// A work that produces nothing.
+#[derive(Debug)]
+struct NoopWork(WorkId);
+
+impl Work<Context, WorkId, Error> for NoopWork {
+    fn id(&self) -> WorkId {
+        self.0.clone()
+    }
+
+    fn exec(&self, _context: &Context) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use fontdrasil::types::GlyphName;
+    use fontdrasil::{
+        orchestration::{Access, AccessBuilder},
+        types::GlyphName,
+    };
+    use fontir::{ir::NameKey, orchestration::Flags};
     use pretty_assertions::assert_eq;
+    use write_fonts::{
+        tables::gdef::GlyphClassDef,
+        types::{NameId, Tag},
+    };
 
     use crate::test::testdata_dir;
 
     use super::*;
+
+    fn context_for(fontra_dir: &str) -> (FontraIrSource, Context) {
+        let source = FontraIrSource::new(&testdata_dir().join(fontra_dir)).unwrap();
+        (source, Context::new_root(Flags::empty()))
+    }
+
+    #[test]
+    fn compile_raqq() {
+        let (source, context) = context_for("Raqq.fontra");
+
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(800, static_metadata.units_per_em);
+        assert_eq!(
+            vec![Tag::new(b"SPAC"), Tag::new(b"MSHQ")],
+            static_metadata
+                .axes
+                .iter()
+                .map(|a| a.tag)
+                .collect::<Vec<_>>()
+        );
+        let name = |id: NameId| {
+            static_metadata
+                .names
+                .get(&NameKey::new_bmp_only(id))
+                .map(String::as_str)
+        };
+        assert_eq!(Some("Raqq"), name(NameId::FAMILY_NAME));
+        assert_eq!(Some("Regular"), name(NameId::SUBFAMILY_NAME));
+        assert_eq!(
+            Some("Copyright 2021–2024 The Raqq Project Authors (github.com/aliftype/raqq)"),
+            name(NameId::COPYRIGHT_NOTICE)
+        );
+        assert_eq!(Some("Khaled Hosny"), name(NameId::DESIGNER));
+        assert_eq!(Some("Alif Type"), name(NameId::MANUFACTURER));
+        assert_eq!(Some("https://aliftype.com"), name(NameId::VENDOR_URL));
+        // Synthesized from versionMajor/versionMinor and vendorID.
+        assert_eq!(Some("Version 0.000"), name(NameId::VERSION_STRING));
+        assert_eq!(Some("0.000;ALIF;Raqq-Regular"), name(NameId::UNIQUE_ID));
+
+        let glyph_order = context.preliminary_glyph_order.get();
+        assert!(glyph_order.contains(&GlyphName::new(".notdef")));
+        assert!(glyph_order.contains(&GlyphName::new("beh-ar")));
+
+        let gdef = context.preliminary_gdef_categories.get();
+        assert!(gdef.infer_from_anchors);
+        assert_eq!(
+            Some(&GlyphClassDef::Mark),
+            gdef.categories.get(&GlyphName::new("dammatan-ar"))
+        );
+        assert_eq!(
+            Some(&GlyphClassDef::Ligature),
+            gdef.categories.get(&GlyphName::new("fehDotless_alef-ar"))
+        );
+        assert!(
+            gdef.mark_category_glyphs
+                .contains(&GlyphName::new("dammatan-ar"))
+        );
+    }
 
     fn glyph_map(fontra_dir: &str) -> Vec<(GlyphName, Vec<u32>)> {
         let source = FontraIrSource::new(&testdata_dir().join(fontra_dir)).unwrap();
