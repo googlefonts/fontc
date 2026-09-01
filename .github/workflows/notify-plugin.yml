@@ -69,8 +69,8 @@ jobs:
         run: |
           gh api repos/googlefonts/fontc-export-plugin/dispatches \
             --method POST \
-            --field event_type='fontc-release' \
-            --raw-field client_payload="{\"version\":\"${STEPS_VERSION_OUTPUTS_VERSION}\"}"
+            --raw-field event_type='fontc-release' \
+            --raw-field "client_payload[version]=${STEPS_VERSION_OUTPUTS_VERSION}"
 
       - name: Log notification
         if: steps.check.outputs.is_release == 'true'
