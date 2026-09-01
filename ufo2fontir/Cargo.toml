@@ -1,6 +1,6 @@
 [package]
 name = "ufo2fontir"
-version = "0.4.0"
+version = "1.0.0"
 edition = "2024"
 license = "MIT/Apache-2.0"
 description = "Converts UFO or UFO+designspace to font ir for compilation."
@@ -11,10 +11,10 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-fea-rs = { version = "0.22.0", path = "../fea-rs" }
-fontdrasil = { version = "0.4.0", path = "../fontdrasil" }
-fontir = { version = "0.5.0", path = "../fontir" }
-glyphs-reader = { version = "0.5.0", path = "../glyphs-reader" }
+fea-rs = { version = "1.0.0", path = "../fea-rs" }
+fontdrasil = { version = "1.0.0", path = "../fontdrasil" }
+fontir = { version = "1.0.0", path = "../fontir" }
+glyphs-reader = { version = "1.0.0", path = "../glyphs-reader" }
 
 kurbo.workspace = true
 serde.workspace = true

@@ -105,7 +105,7 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "ascii_plist_derive"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -670,7 +670,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "fea-rs"
-version = "0.22.0"
+version = "1.0.0"
 dependencies = [
  "ansi_term",
  "clap",
@@ -743,7 +743,7 @@ dependencies = [
 
 [[package]]
 name = "fontbe"
-version = "0.5.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "diff",
@@ -772,7 +772,7 @@ dependencies = [
 
 [[package]]
 name = "fontc"
-version = "1.0.0-rc.2"
+version = "1.0.0"
 dependencies = [
  "bitflags 2.13.1",
  "chrono",
@@ -831,7 +831,7 @@ dependencies = [
 
 [[package]]
 name = "fontdrasil"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "diff",
  "kurbo",
@@ -848,7 +848,7 @@ dependencies = [
 
 [[package]]
 name = "fontir"
-version = "0.5.0"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "bitflags 2.13.1",
@@ -875,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "fontra2fontir"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "diff",
  "fontdrasil",
@@ -966,7 +966,7 @@ checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "glyphs-reader"
-version = "0.5.0"
+version = "1.0.0"
 dependencies = [
  "ascii_plist_derive",
  "chrono",
@@ -989,7 +989,7 @@ dependencies = [
 
 [[package]]
 name = "glyphs2fontir"
-version = "0.6.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "diff",
@@ -1475,7 +1475,7 @@ dependencies = [
 
 [[package]]
 name = "otl-normalizer"
-version = "0.3.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "fea-rs",
@@ -2352,7 +2352,7 @@ dependencies = [
 
 [[package]]
 name = "ufo2fontir"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "diff",
