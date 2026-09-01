@@ -24,7 +24,9 @@ use write_fonts::{
             ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag,
             builders::{CaretValueBuilder as CaretValue, DeviceOrDeltas, Metric},
         },
-        variations::{common_builder::RemapVarStore, ivs_builder::VariationStoreBuilder},
+        variations::{
+            VariationRegion, common_builder::RemapVarStore, ivs_builder::VariationStoreBuilder,
+        },
     },
     types::{NameId, Tag},
 };
@@ -1409,10 +1411,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             locations.insert(pos, metric_loc.value().parse_signed());
         }
         match var_info.resolve_variable_metric(&locations) {
-            Ok((default, deltas)) => Metric {
-                default,
-                device_or_deltas: DeviceOrDeltas::Deltas(deltas),
-            },
+            Ok((default, deltas)) => metric_from_deltas(default, deltas),
             Err(e) => {
                 self.error(metric.range(), format!("failed to compute deltas: '{e}'"));
                 Default::default()
@@ -1451,10 +1450,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let locations = var_info.resolve_variable_metric(&locations);
 
         match locations {
-            Ok((default, deltas)) => Metric {
-                default,
-                device_or_deltas: DeviceOrDeltas::Deltas(deltas),
-            },
+            Ok((default, deltas)) => metric_from_deltas(default, deltas),
             Err(e) => {
                 self.error(
                     number_value.range(),
@@ -2451,6 +2447,22 @@ fn get_reasonable_length_span(node: &NodeOrToken) -> Range<usize> {
             let end = range.end.min(range.start + MAX_SPAN_LEN_FOR_NODES);
             range.start..end
         }
+    }
+}
+
+/// A variable scalar whose value is the same at every master is just a scalar.
+///
+/// Matches feaLib's `VariableScalar.does_vary`:
+/// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/feaLib/variableScalar.py#L58-L61>
+fn metric_from_deltas(default: i16, deltas: Vec<(VariationRegion, i16)>) -> Metric {
+    let device_or_deltas = if deltas.iter().all(|(_, delta)| *delta == 0) {
+        DeviceOrDeltas::None
+    } else {
+        DeviceOrDeltas::Deltas(deltas)
+    };
+    Metric {
+        default,
+        device_or_deltas,
     }
 }
 
