@@ -16,7 +16,11 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use write_fonts::{
-    tables::{gvar, variations::RegionAxisCoordinates},
+    OtRound,
+    tables::{
+        gvar,
+        variations::{RegionAxisCoordinates, VariationRegion as WriteFontsVariationRegion},
+    },
     types::Tag,
 };
 
@@ -456,6 +460,64 @@ pub enum DeltaError {
     InconsistentNumbersOfPoints,
     #[error("{0:?} is not present in the variation model")]
     UnknownLocation(NormalizedLocation),
+}
+
+/// Resolve the default value and per-region deltas for a variable metric (an anchor
+/// position, kerning adjustment, etc.) defined at a set of normalized locations.
+///
+/// Reuses `model` when `values` is defined at exactly the model's locations; otherwise
+/// builds a sub-model over just those locations, to support sparse masters.
+pub fn resolve_variable_metric(
+    model: &VariationModel,
+    axes: &Axes,
+    values: &HashMap<NormalizedLocation, i16>,
+) -> Result<(i16, Vec<(WriteFontsVariationRegion, i16)>), DeltaError> {
+    let point_seqs: HashMap<_, _> = values
+        .iter()
+        .map(|(pos, value)| (pos.clone(), vec![*value as f64]))
+        .collect();
+
+    let locations: HashSet<_> = point_seqs.keys().collect();
+    let global_locations: HashSet<_> = model.locations().collect();
+
+    let var_model: Cow<'_, VariationModel> = if locations == global_locations {
+        Cow::Borrowed(model)
+    } else {
+        Cow::Owned(VariationModel::new(
+            locations.into_iter().cloned().collect(),
+            axes.axis_order(),
+        ))
+    };
+
+    let deltas: Vec<_> = var_model
+        .deltas(&point_seqs)?
+        .into_iter()
+        .map(|(region, values)| {
+            let [value] = values.as_slice() else {
+                panic!("{} values?!", values.len());
+            };
+            (region, *value)
+        })
+        .collect();
+
+    let default_value = deltas
+        .iter()
+        .filter_map(|(region, value)| {
+            let scaler = region.scalar_at(&var_model.default).into_inner();
+            (scaler != 0.0).then_some(*value * scaler)
+        })
+        .sum::<f64>()
+        .ot_round();
+
+    let mut fea_deltas = Vec::with_capacity(deltas.len());
+    for (region, value) in deltas.iter().filter(|(r, _)| !r.is_default()) {
+        fea_deltas.push((
+            region.to_write_fonts_variation_region(axes),
+            value.ot_round(),
+        ));
+    }
+
+    Ok((default_value, fea_deltas))
 }
 
 /// Gryffindor!
@@ -1695,6 +1757,44 @@ mod tests {
         let loc = NormalizedLocation::for_pos(&[("wght", -0.5)]);
         let expected = vec![7.5];
         assert_eq!(expected, model.interpolate_from_deltas(&loc, &deltas));
+    }
+
+    #[test]
+    fn resolve_variable_metric_dense() {
+        let axes = Axes::for_test(&["wght"]);
+        let default_loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let max_loc = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let model = VariationModel::new(
+            HashSet::from([default_loc.clone(), max_loc.clone()]),
+            axes.axis_order(),
+        );
+
+        let values = HashMap::from([(default_loc, 10), (max_loc, 30)]);
+        let (default_value, deltas) = resolve_variable_metric(&model, &axes, &values).unwrap();
+
+        assert_eq!(default_value, 10);
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].1, 20);
+    }
+
+    #[test]
+    fn resolve_variable_metric_sparse_submodel() {
+        let axes = Axes::for_test(&["wght"]);
+        let min_loc = NormalizedLocation::for_pos(&[("wght", -1.0)]);
+        let default_loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let max_loc = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let model = VariationModel::new(
+            HashSet::from([min_loc.clone(), default_loc.clone(), max_loc]),
+            axes.axis_order(),
+        );
+
+        // values only at 2 of the model's 3 locations -> exercises the sub-model branch
+        let values = HashMap::from([(default_loc, 10), (min_loc, 5)]);
+        let (default_value, deltas) = resolve_variable_metric(&model, &axes, &values).unwrap();
+
+        assert_eq!(default_value, 10);
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].1, -5);
     }
 
     #[derive(Debug, Default, Copy, Clone, PartialEq)]

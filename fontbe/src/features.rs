@@ -331,58 +331,12 @@ impl VariationInfo for FeaVariationInfo<'_> {
         &self,
         values: &HashMap<NormalizedLocation, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
-        // Compute deltas using f64 as 1d point and delta, then ship them home as i16
-        let point_seqs: HashMap<_, _> = values
-            .iter()
-            .map(|(pos, value)| (pos.clone(), vec![*value as f64]))
-            .collect();
-
-        let locations: HashSet<_> = point_seqs.keys().collect();
-        let global_locations: HashSet<_> =
-            self.static_metadata.variation_model.locations().collect();
-
-        // Try to reuse the global model, or make a new sub-model only with the locations we
-        // are asked for so we can support sparseness
-        let var_model: Cow<'_, VariationModel> = if locations == global_locations {
-            Cow::Borrowed(&self.static_metadata.variation_model)
-        } else {
-            Cow::Owned(VariationModel::new(
-                locations.into_iter().cloned().collect(),
-                self.static_metadata.axes.axis_order(),
-            ))
-        };
-
-        // Only 1 value per region for our input
-        let deltas: Vec<_> = var_model
-            .deltas(&point_seqs)
-            .map_err(Error::DeltaError)?
-            .into_iter()
-            .map(|(region, values)| {
-                assert!(values.len() == 1, "{} values?!", values.len());
-                (region, values[0])
-            })
-            .collect();
-
-        // Compute the default on the unrounded deltas
-        let default_value = deltas
-            .iter()
-            .filter_map(|(region, value)| {
-                let scaler = region.scalar_at(&var_model.default).into_inner();
-                (scaler != 0.0).then_some(*value * scaler)
-            })
-            .sum::<f64>()
-            .ot_round();
-
-        // Produce the desired delta type
-        let mut fears_deltas = Vec::with_capacity(deltas.len());
-        for (region, value) in deltas.iter().filter(|(r, _)| !r.is_default()) {
-            fears_deltas.push((
-                region.to_write_fonts_variation_region(&self.static_metadata.axes),
-                value.ot_round(),
-            ));
-        }
-
-        Ok((default_value, fears_deltas))
+        fontdrasil::variations::resolve_variable_metric(
+            &self.static_metadata.variation_model,
+            &self.static_metadata.axes,
+            values,
+        )
+        .map_err(Error::DeltaError)
     }
 
     fn axis_count(&self) -> u16 {
