@@ -27,8 +27,8 @@ icu_properties = "=2.1"
 smallvec = {version = "1.15", features = ["const_new"]}
 
 # fontations etc
-write-fonts = { version = "0.51.0", features = ["serde", "read", "tables"]  }
-skrifa = { version = "0.45.0", features = ["traversal"] }
+write-fonts = { version = "0.52.0", features = ["serde", "read", "tables"]  }
+skrifa = { version = "0.46.2", features = ["traversal"] }
 norad = { version = "0.18.4", default-features = false }
 
 # dev dependencies
