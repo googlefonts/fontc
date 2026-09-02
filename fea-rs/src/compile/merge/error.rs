@@ -1,7 +1,12 @@
 //! Errors from merging per-master compilations.
 
+use std::fmt;
+
 use smol_str::SmolStr;
 use write_fonts::{tables::gdef::GlyphClassDef, types::GlyphId16};
+
+use super::super::FeatureKey;
+use crate::Kind;
 
 /// An error encountered while merging per-master compilations.
 ///
@@ -54,12 +59,67 @@ pub enum MergeError {
         expected: SmolStr,
         found: SmolStr,
     },
-    //TODO: remove once GPOS lookups are merged
-    #[error("master {master}: GPOS lookups differ from the default master (not yet supported)")]
-    Gpos { master: usize },
+    #[error(
+        "master {master}: {found} GPOS lookups, but the default master has {expected}. \
+         Inline values in contextual rules create anonymous lookups, so this can be \
+         caused by values that differ between masters"
+    )]
+    LookupCount {
+        master: usize,
+        expected: usize,
+        found: usize,
+    },
+    #[error("master {master}: {lookup} is a different kind of lookup than in the default master")]
+    LookupType { master: usize, lookup: LookupRef },
+    #[error("master {master}: {lookup} has different lookupflags than in the default master")]
+    LookupFlags { master: usize, lookup: LookupRef },
+    #[error(
+        "master {master}: {lookup} does not use extension lookups the way the default master does"
+    )]
+    Extension { master: usize, lookup: LookupRef },
+    #[error(
+        "master {master}: {lookup} has {found} subtables, but the default master has {expected}"
+    )]
+    SubtableCount {
+        master: usize,
+        lookup: LookupRef,
+        expected: usize,
+        found: usize,
+    },
+    #[error(
+        "master {master}: {lookup} is a contextual lookup that differs from the default master"
+    )]
+    ContextualDiffers { master: usize, lookup: LookupRef },
+    //TODO: remove once every lookup type can be merged
+    #[error("{lookup} differs between masters, and merging {kind} lookups is not supported yet")]
+    Unsupported { lookup: LookupRef, kind: Kind },
     //TODO: remove once ligature carets are merged
     #[error(
         "master {master}: GDEF ligature carets differ from the default master (not yet supported)"
     )]
     LigatureCarets { master: usize },
+}
+
+/// Identifies a lookup in a [`MergeError`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct LookupRef {
+    /// The position in the GPOS lookup list.
+    pub index: usize,
+    /// The lookup's name, if it came from a named lookup block.
+    pub name: Option<SmolStr>,
+    /// A feature that references this lookup, if any does.
+    pub feature: Option<FeatureKey>,
+}
+
+impl fmt::Display for LookupRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "GPOS lookup {}", self.index)?;
+        if let Some(name) = &self.name {
+            write!(f, " ('{name}')")?;
+        }
+        if let Some(feature) = &self.feature {
+            write!(f, " in feature {feature:?}")?;
+        }
+        Ok(())
+    }
 }
