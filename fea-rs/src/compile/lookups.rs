@@ -606,6 +606,18 @@ impl AllLookups {
         }
     }
 
+    pub(crate) fn gpos(&self) -> &[PositionLookup] {
+        &self.gpos
+    }
+
+    pub(crate) fn gsub(&self) -> &[SubstitutionLookup] {
+        &self.gsub
+    }
+
+    pub(crate) fn named(&self) -> &HashMap<SmolStr, LookupId> {
+        &self.named
+    }
+
     pub(crate) fn debug_info(&self) -> (&[Option<LookupDebugInfo>], &[Option<LookupDebugInfo>]) {
         (&self.gsub_debug_info, &self.gpos_debug_info)
     }
