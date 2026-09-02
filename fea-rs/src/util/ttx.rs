@@ -38,11 +38,6 @@ static IGNORED_TESTS: &[&str] = &[
     //
     // includes syntax that is (i think) useless, and should at least be a warning
     "GSUB_8.fea",
-    // # tests of variable syntax extension #
-    "variable_bug2772.fea",
-    "variable_scalar_anchor.fea",
-    "variable_scalar_valuerecord.fea",
-    "variable_mark_anchor.fea",
     // ## new in fonttools 4.62.1, not yet supported or compare failures ##
     // inline alternate subst in contextual rules (see #1925)
     "contextual_merge_alternate.fea",

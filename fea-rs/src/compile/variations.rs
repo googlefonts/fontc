@@ -210,7 +210,7 @@ impl MockVariationInfo {
 
 #[cfg(any(test, feature = "test", feature = "cli"))]
 impl VariationInfo for MockVariationInfo {
-    type Error = NopError;
+    type Error = fontdrasil::variations::DeltaError;
 
     fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)> {
         self.axes.iter().enumerate().find_map(|(i, axis)| {
@@ -224,9 +224,14 @@ impl VariationInfo for MockVariationInfo {
 
     fn resolve_variable_metric(
         &self,
-        _locations: &HashMap<NormalizedLocation, i16>,
+        locations: &HashMap<NormalizedLocation, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), Self::Error> {
-        Ok(Default::default())
+        let axes = fontdrasil::types::Axes::new(self.axes.clone());
+        let model = fontdrasil::variations::VariationModel::new(
+            locations.keys().cloned().collect(),
+            axes.axis_order(),
+        );
+        fontdrasil::variations::resolve_variable_metric(&model, &axes, locations)
     }
 
     fn axis_count(&self) -> u16 {
@@ -236,7 +241,7 @@ impl VariationInfo for MockVariationInfo {
     fn resolve_glyphs_number_value(
         &self,
         _: &str,
-    ) -> Result<HashMap<NormalizedLocation, f64>, NopError> {
+    ) -> Result<HashMap<NormalizedLocation, f64>, Self::Error> {
         Ok(Default::default())
     }
 }
