@@ -16,6 +16,7 @@ use super::{PendingCompilation, VariationInfo};
 mod cursive;
 mod error;
 mod lookups;
+mod marks;
 mod metric;
 mod pair;
 mod single;
@@ -228,10 +229,10 @@ impl<'a, V: VariationInfo> MergeCtx<'a, V> {
 
 #[cfg(test)]
 mod tests {
-    use write_fonts::{tables::gdef::GlyphClassDef, types::Tag};
+    use write_fonts::tables::gdef::GlyphClassDef;
 
     use super::{test_helpers::*, *};
-    use crate::{Kind, compile::NopFeatureProvider};
+    use crate::compile::NopFeatureProvider;
 
     #[test]
     fn identical_masters_round_trip() {
@@ -361,14 +362,11 @@ mod tests {
     fn mark_classes_are_unioned() {
         let a = "markClass acute <anchor 0 0> @TOP; feature mark { pos base a <anchor 0 0> mark @TOP; } mark;";
         let b = "markClass [acute grave] <anchor 0 0> @TOP; feature mark { pos base a <anchor 0 0> mark @TOP; } mark;";
-        // the mark lookups differ, so this stops at the lookup merge;
-        // what matters is that the mark class union itself is accepted.
-        assert_eq!(
-            merge_masters(&[a, b]).err(),
-            Some(MergeError::Unsupported {
-                lookup: lookup_ref(0, None, Some(Tag::new(b"mark"))),
-                kind: Kind::GposType4,
-            })
-        );
+        // the class union itself is accepted; the merge then fails on the
+        // lookup, because grave has no anchor at the default master
+        assert!(matches!(
+            merge_masters(&[a, b]),
+            Err(MergeError::MissingAtDefault { .. })
+        ));
     }
 }

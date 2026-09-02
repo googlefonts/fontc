@@ -132,13 +132,13 @@ fn merge_lookup<V: VariationInfo>(
             PositionLookup::Cursive(ctx.merge_cursive(aligned!(Cursive)?, index)?)
         }
         PositionLookup::MarkToBase(_) => {
-            PositionLookup::MarkToBase(merge_indexwise(aligned!(MarkToBase)?, index, kind, ctx)?)
+            PositionLookup::MarkToBase(ctx.merge_mark_to_base(aligned!(MarkToBase)?, index)?)
         }
         PositionLookup::MarkToLig(_) => {
             PositionLookup::MarkToLig(merge_indexwise(aligned!(MarkToLig)?, index, kind, ctx)?)
         }
         PositionLookup::MarkToMark(_) => {
-            PositionLookup::MarkToMark(merge_indexwise(aligned!(MarkToMark)?, index, kind, ctx)?)
+            PositionLookup::MarkToMark(ctx.merge_mark_to_mark(aligned!(MarkToMark)?, index)?)
         }
         PositionLookup::Contextual(_) => {
             aligned!(Contextual)?;
@@ -260,13 +260,13 @@ mod tests {
 
     #[test]
     fn value_divergence_is_unsupported_for_now() {
-        let a = "markClass acute <anchor 0 0> @TOP; feature mkmk { pos mark grave <anchor 0 0> mark @TOP; } mkmk;";
-        let b = "markClass acute <anchor 0 0> @TOP; feature mkmk { pos mark grave <anchor 0 5> mark @TOP; } mkmk;";
+        let a = "markClass acute <anchor 0 0> @TOP; feature mark { pos ligature f_i <anchor 0 0> mark @TOP ligComponent <anchor 0 0> mark @TOP; } mark;";
+        let b = "markClass acute <anchor 0 0> @TOP; feature mark { pos ligature f_i <anchor 0 0> mark @TOP ligComponent <anchor 0 5> mark @TOP; } mark;";
         assert_eq!(
             merge_masters(&[a, b]).err(),
             Some(MergeError::Unsupported {
-                lookup: lookup_ref(0, None, Some(Tag::new(b"mkmk"))),
-                kind: Kind::GposType6,
+                lookup: lookup_ref(0, None, Some(Tag::new(b"mark"))),
+                kind: Kind::GposType5,
             })
         );
     }
