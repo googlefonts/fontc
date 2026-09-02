@@ -13,6 +13,7 @@ use write_fonts::types::GlyphId16;
 
 use super::{PendingCompilation, VariationInfo};
 
+mod cursive;
 mod error;
 mod lookups;
 mod metric;
