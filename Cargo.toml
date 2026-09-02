@@ -28,7 +28,7 @@ smallvec = {version = "1.15", features = ["const_new"]}
 
 # fontations etc
 write-fonts = { version = "0.52.0", features = ["serde", "read", "tables"]  }
-skrifa = { version = "0.46.2", features = ["traversal"] }
+skrifa = { version = "0.46.2" }
 norad = { version = "0.18.4", default-features = false }
 
 # dev dependencies
@@ -57,3 +57,10 @@ members = [
     "otl-normalizer",
     "fontc_crater",
 ]
+
+# Temporary, until the fea-merge accessors are in a fontations release.
+[patch.crates-io]
+font-types = { git = "https://github.com/googlefonts/fontations", rev = "e62be6fa7fd3ec88221500d373408df45ae73992" }
+read-fonts = { git = "https://github.com/googlefonts/fontations", rev = "e62be6fa7fd3ec88221500d373408df45ae73992" }
+write-fonts = { git = "https://github.com/googlefonts/fontations", rev = "e62be6fa7fd3ec88221500d373408df45ae73992" }
+skrifa = { git = "https://github.com/googlefonts/fontations", rev = "e62be6fa7fd3ec88221500d373408df45ae73992" }

@@ -594,7 +594,9 @@ mod tests {
         let gsub = font.gsub();
         assert!(
             gpos.is_ok() && gsub.is_ok(),
-            "\ngpos: {gpos:?}\ngsub: {gsub:?}"
+            "\ngpos err: {:?}\ngsub err: {:?}",
+            gpos.as_ref().err(),
+            gsub.as_ref().err()
         );
 
         result
@@ -864,7 +866,14 @@ mod tests {
         // the glyph 'O' contains several quad splines
         let uppercase_o = &glyphs[result.get_glyph_index("O").unwrap() as usize];
         let Some(glyf::Glyph::Simple(glyph)) = uppercase_o else {
-            panic!("Expected 'O' to be a simple glyph, got {uppercase_o:?}");
+            panic!(
+                "Expected 'O' to be a simple glyph, got {}",
+                if uppercase_o.is_none() {
+                    "None"
+                } else {
+                    "Composite"
+                }
+            );
         };
         assert_eq!(2, glyph.number_of_contours());
         assert_eq!(35, glyph.num_points());
@@ -923,7 +932,7 @@ mod tests {
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
         let Some(glyf::Glyph::Composite(glyph)) = &glyphs[non_uniform_scale_idx as usize] else {
-            panic!("Expected a composite\n{glyphs:#?}");
+            panic!("Expected a composite");
         };
         let component = glyph.components().next().unwrap();
         assert_eq!(period_idx, component.glyph.to_u16() as u32);
@@ -963,7 +972,7 @@ mod tests {
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
         let Some(glyf::Glyph::Composite(glyph)) = &glyphs[gid as usize] else {
-            panic!("Expected a composite\n{glyphs:#?}");
+            panic!("Expected a composite");
         };
 
         let components: Vec<_> = glyph.components().collect();
@@ -993,14 +1002,14 @@ mod tests {
         let Some(glyf::Glyph::Simple(..)) =
             &glyphs[result.get_glyph_index("simple_transform_again").unwrap() as usize]
         else {
-            panic!("Expected a simple glyph\n{glyphs:#?}");
+            panic!("Expected a simple glyph");
         };
 
         // Identity 2x2, should be left as a component
         let Some(glyf::Glyph::Composite(..)) =
             &glyphs[result.get_glyph_index("translate_only").unwrap() as usize]
         else {
-            panic!("Expected a composite glyph\n{glyphs:#?}");
+            panic!("Expected a composite glyph");
         };
     }
 
@@ -2907,7 +2916,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(region_coords, vec![[0.0, 0.0, 0.0], [0.0, 1.0, 1.0]]);
-        assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:#?}");
+        assert_eq!(varstore.item_variation_data_count(), 1);
         let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
         assert_eq!(vardata.region_indexes(), &[0]);
         assert_eq!(vec![vec![-350]], delta_sets(&vardata));
@@ -3265,7 +3274,7 @@ mod tests {
         assert_var_regions(&varstore, &vec![vec![[0.0, 1.0, 1.0]]]);
 
         // we expect one ItemVariationData and one delta set per glyph
-        assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:#?}");
+        assert_eq!(varstore.item_variation_data_count(), 1);
         let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
         assert_eq!(vardata.region_indexes(), &[0]);
         assert_eq!(
@@ -3309,7 +3318,7 @@ mod tests {
         let varstore = hvar.item_variation_store().unwrap();
         assert_var_regions(&varstore, &vec![vec![[0.0, 1.0, 1.0]]]);
         // we expect one ItemVariationData and 4 delta sets, one per glyph
-        assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:#?}");
+        assert_eq!(varstore.item_variation_data_count(), 1);
         let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
         assert_eq!(vardata.region_indexes(), &[0]);
         assert_eq!(
@@ -5086,7 +5095,7 @@ mod tests {
     ) -> PaintGlyph<'a> {
         let paint = root_paint(compile, colr, glyph_name);
         let Paint::Glyph(paint) = paint else {
-            panic!("Expected a PaintGlyph for {glyph_name}, got {paint:#?}");
+            panic!("Expected a PaintGlyph for {glyph_name}");
         };
         paint
     }
@@ -5266,18 +5275,15 @@ mod tests {
             .iter()
             .map(|p| {
                 let Ok(Paint::Glyph(paint_glyph)) = p else {
-                    panic!("Bad paint {p:?}");
+                    panic!("Bad paint");
                 };
                 paint_glyph.paint().unwrap()
             })
             .collect::<Vec<_>>();
-        assert!(
-            matches!(
-                layers.as_slice(),
-                [Paint::LinearGradient(_), Paint::Solid(_),]
-            ),
-            "{layers:#?}"
-        );
+        assert!(matches!(
+            layers.as_slice(),
+            [Paint::LinearGradient(_), Paint::Solid(_),]
+        ));
     }
 
     #[test]
@@ -5327,7 +5333,7 @@ mod tests {
             .iter()
             .map(|p| {
                 let Ok(Paint::Glyph(paint_glyph)) = p else {
-                    panic!("Bad paint {p:?}");
+                    panic!("Bad paint");
                 };
                 paint_glyph.paint().unwrap()
             })
@@ -5339,7 +5345,7 @@ mod tests {
             Paint::LinearGradient(g3),
         ] = layers.as_slice()
         else {
-            panic!("Expected 4 LinearGradients, got {layers:#?}");
+            panic!("Expected 4 LinearGradients");
         };
 
         let coords = [g0, g1, g2, g3].map(|g| {
