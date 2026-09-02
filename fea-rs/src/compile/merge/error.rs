@@ -102,6 +102,11 @@ pub enum MergeError {
     AnchorPoint { lookup: LookupRef },
     #[error("{lookup}: failed to compute deltas: {message}")]
     Deltas { lookup: LookupRef, message: String },
+    #[error(
+        "master {master}: {lookup} positions the second glyph of pairs differently from the \
+         default master (in one they are adjusted, in the other not); masters must agree"
+    )]
+    SecondGlyphPositioning { master: usize, lookup: LookupRef },
     //TODO: remove once every lookup type can be merged
     #[error("{lookup} differs between masters, and merging {kind} lookups is not supported yet")]
     Unsupported { lookup: LookupRef, kind: Kind },
