@@ -18,6 +18,7 @@ pub use feature_writer::{
 };
 pub use language_system::LanguageSystem;
 pub use lookups::{FeatureKey, LookupId};
+pub use merge::{MergeError, merge};
 pub use opts::Opts;
 pub use output::{Compilation, PendingCompilation};
 pub use tables::Os2Builder;
@@ -35,6 +36,7 @@ mod glyph_range;
 pub(crate) mod glyphsapp_syntax_ext;
 mod language_system;
 mod lookups;
+mod merge;
 mod opts;
 mod output;
 mod tables;
