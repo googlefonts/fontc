@@ -1769,8 +1769,8 @@ fn group_fea_files(fea_files: &[(DesignLocation, PathBuf)]) -> Result<FeatureSou
     }
 
     if sources.len() > 1 {
-        warn!(
-            "{} distinct feature files; compiling variable features is not yet supported",
+        debug!(
+            "{} distinct feature files; they will be merged",
             sources.len()
         );
     }

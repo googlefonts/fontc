@@ -16,8 +16,8 @@ use ordered_float::OrderedFloat;
 use fea_rs::{
     DiagnosticSet, GlyphMap, Opts, ParseTree,
     compile::{
-        Compilation, FeatureBuilder, FeatureProvider, NopFeatureProvider, PendingLookup,
-        VariationInfo, error::CompilerError,
+        Compilation, FeatureBuilder, FeatureProvider, NopFeatureProvider, PendingCompilation,
+        PendingLookup, VariationInfo, error::CompilerError,
     },
     parse::{FileSystemResolver, SourceLoadError, SourceResolver},
     typed::{AstNode, LanguageSystem},
@@ -25,8 +25,8 @@ use fea_rs::{
 
 use fontir::{
     ir::{
-        self, FeatureGenerationPlan, FeatureGenerationSettings, FeatureWriterMode, FeaturesSource,
-        GdefCategories, GlyphOrder, StaticMetadata,
+        self, FeatureGenerationPlan, FeatureGenerationSettings, FeatureSources, FeatureWriterMode,
+        FeaturesSource, GdefCategories, GlyphOrder, StaticMetadata,
     },
     orchestration::WorkId as FeWorkId,
 };
@@ -380,20 +380,9 @@ impl FeatureCompilationWork {
         plan: &FeatureGenerationPlan,
         compile_debg: bool,
     ) -> Result<Compilation, Error> {
-        let feature_variations = static_metadata
-            .variations
-            .as_ref()
-            .map(|ir_variations| {
-                feature_variations::FeatureVariationsProvider::new(
-                    ir_variations,
-                    static_metadata,
-                    glyph_order,
-                )
-            })
-            .transpose()?;
         let var_info = FeaVariationInfo::new(static_metadata);
         let feature_writer =
-            FeatureWriter::new(kerns, marks, feature_variations, append_forced_tags(plan));
+            self.feature_writer(static_metadata, glyph_order, kerns, marks, plan)?;
         // we've already validated the AST, so we only need to compile
         match fea_rs::compile::compile(
             &ast.ast,
@@ -411,6 +400,122 @@ impl FeatureCompilationWork {
             ))),
         }
     }
+
+    /// Compile each master's FEA on its own and merge the results.
+    ///
+    /// Used when the masters of a designspace do not all share a features.fea.
+    /// Every master is compiled to pre-build state, those are merged into one
+    /// variable compilation, and only then does the feature writer run: the
+    /// generated kerning and marks, the `ItemVariationStore`, and everything
+    /// else that exists once per font are produced a single time.
+    #[allow(clippy::too_many_arguments)]
+    fn compile_merged(
+        &self,
+        static_metadata: &StaticMetadata,
+        glyph_order: &GlyphOrder,
+        features: &FeatureSources,
+        asts: &HashMap<FeaSourceIdx, Arc<FeaFirstPassOutput>>,
+        kerns: &FeaRsKerns,
+        marks: &FeaRsMarks,
+        plan: &FeatureGenerationPlan,
+        compile_debg: bool,
+    ) -> Result<Compilation, Error> {
+        let opts = Opts::new().compile_debg(compile_debg);
+        let masters = master_compilations(features, asts, static_metadata, &marks.glyphmap, &opts)?;
+        let var_info = FeaVariationInfo::new(static_metadata);
+        let merged = fea_rs::compile::merge(masters, &var_info)?;
+
+        let feature_writer =
+            self.feature_writer(static_metadata, glyph_order, kerns, marks, plan)?;
+        match merged.finish(Some(&feature_writer)) {
+            Ok((result, warnings)) => {
+                log_fea_warnings("compilation", &warnings);
+                Ok(result)
+            }
+            Err(errors) => Err(Error::FeaCompileError(CompilerError::CompilationFail(
+                errors,
+            ))),
+        }
+    }
+
+    fn feature_writer<'a>(
+        &self,
+        static_metadata: &StaticMetadata,
+        glyph_order: &GlyphOrder,
+        kerns: &'a FeaRsKerns,
+        marks: &'a FeaRsMarks,
+        plan: &FeatureGenerationPlan,
+    ) -> Result<FeatureWriter<'a>, Error> {
+        let feature_variations = static_metadata
+            .variations
+            .as_ref()
+            .map(|ir_variations| {
+                feature_variations::FeatureVariationsProvider::new(
+                    ir_variations,
+                    static_metadata,
+                    glyph_order,
+                )
+            })
+            .transpose()?;
+        Ok(FeatureWriter::new(
+            kerns,
+            marks,
+            feature_variations,
+            append_forced_tags(plan),
+        ))
+    }
+}
+
+/// Compile each master's FEA into the pre-build state that [`merge`] consumes.
+///
+/// The masters that share a source each get their own compilation of it: the
+/// values in a master's feature file are that master's contribution to the
+/// variation model, not something to interpolate through. The default master
+/// comes first, as `merge` requires.
+///
+/// [`merge`]: fea_rs::compile::merge
+fn master_compilations(
+    features: &FeatureSources,
+    asts: &HashMap<FeaSourceIdx, Arc<FeaFirstPassOutput>>,
+    static_metadata: &StaticMetadata,
+    glyph_map: &GlyphMap,
+    opts: &Opts,
+) -> Result<Vec<(NormalizedLocation, PendingCompilation)>, Error> {
+    let mut masters = Vec::new();
+    for (idx, master) in features.iter().enumerate() {
+        // a source with no master is font-wide (a .glyphs file); we only get
+        // here when the sources are per-master, so this would be a bug
+        if master.locations.is_empty() {
+            return Err(Error::VariableFeaSourceWithoutMaster(
+                master.source.to_string(),
+            ));
+        }
+        let ast = asts
+            .get(&idx)
+            .unwrap_or_else(|| panic!("no first pass output for fea source {idx}"));
+        for design_location in &master.locations {
+            let location = design_location
+                .to_normalized(&static_metadata.all_source_axes)
+                .map_err(|error| Error::VariableFeaBadLocation {
+                    fea: master.source.to_string(),
+                    error,
+                })?
+                // point axes are not in the variation model
+                .subset_axes(&static_metadata.axes);
+            let pending = fea_rs::compile::compile_for_merge(&ast.ast, glyph_map, opts.clone())
+                .map_err(|errors| Error::FeaCompileError(CompilerError::CompilationFail(errors)))?;
+            masters.push((location, pending));
+        }
+    }
+
+    let Some(default) = masters
+        .iter()
+        .position(|(location, _)| location == static_metadata.default_location())
+    else {
+        return Err(Error::VariableFeaNoDefaultMaster(features.n_sources()));
+    };
+    masters.swap(0, default);
+    Ok(masters)
 }
 
 fn write_debug_glyph_order(debug_dir: &Path, glyphs: &GlyphOrder) {
@@ -609,15 +714,6 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
         let static_metadata = context.ir.static_metadata.get();
         let gdef_categories = context.ir.gdef_categories.get();
         let features = context.ir.features.get();
-        // Every master's fea has been compiled by now, but we have nothing to
-        // do with any but the default's: merging them is not yet implemented.
-        // https://github.com/googlefonts/fontc/issues/1204
-        if features.n_sources() > 1 {
-            return Err(Error::VariableFeaUnsupported(
-                features.iter().map(|s| s.source.to_string()).collect(),
-            ));
-        }
-        let ast = context.default_fea_ast();
         let glyph_order = context.ir.glyph_order.get();
         let kerns = context.fea_rs_kerns.get();
         let marks = context.fea_rs_marks.get();
@@ -625,15 +721,34 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
         // Resolve the plan once for this work unit; separate work units (kern,
         // marks) resolve their own, since the work graph precludes threading one.
         let plan = ir::resolve_feature_generation(&static_metadata.misc.feature_generation);
-        let mut result = self.compile(
-            &static_metadata,
-            &glyph_order,
-            &ast,
-            kerns.as_ref(),
-            marks.as_ref(),
-            &plan,
-            context.compile_debg,
-        )?;
+        let mut result = if features.n_sources() > 1 {
+            let asts = context
+                .fea_asts
+                .all()
+                .into_iter()
+                .map(|(_, ast)| (ast.idx, ast))
+                .collect();
+            self.compile_merged(
+                &static_metadata,
+                &glyph_order,
+                &features,
+                &asts,
+                kerns.as_ref(),
+                marks.as_ref(),
+                &plan,
+                context.compile_debg,
+            )?
+        } else {
+            self.compile(
+                &static_metadata,
+                &glyph_order,
+                &context.default_fea_ast(),
+                kerns.as_ref(),
+                marks.as_ref(),
+                &plan,
+                context.compile_debg,
+            )?
+        };
         if plan.gdef && result.gdef_classes.is_none() && !gdef_categories.categories.is_empty() {
             // the FEA did not contain an explicit GDEF block with glyph categories,
             // so let's use the ones from the source, if present (i.e. from
