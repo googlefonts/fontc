@@ -47,6 +47,7 @@ use write_fonts::{
 
 use crate::toir::{
     master_locations, to_design_location, to_instance_design_location, to_ir_axes, to_ir_glyph,
+    within_axis_ranges,
 };
 
 const UFO_KERN1_PREFIX: &str = "public.kern1.";
@@ -1053,7 +1054,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .get(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
             .map(|name| name.clone() + " ")
             .unwrap_or_default();
-        let named_instances = self
+        let named_instances: Vec<NamedInstance> = self
             .designspace
             .instances
             .iter()
@@ -1077,7 +1078,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                         .to_user(&axes)?,
                 })
             })
-            .collect::<Result<Vec<_>, Error>>()?;
+            .collect::<Result<Vec<_>, Error>>()?
+            .into_iter()
+            // fontmake silently drops instances outside the axis ranges; do the same
+            .filter(|inst| within_axis_ranges(&axes, &inst.location))
+            .collect();
 
         let global_locations = master_locations(
             &axes,
@@ -3186,6 +3191,23 @@ mod tests {
                     (Tag::new(b"wdth"), UserCoord::new(100.0)),
                 ])
             )]
+        );
+    }
+
+    #[test]
+    fn static_metadata_skips_instances_outside_axis_range() {
+        let (_, context) =
+            build_static_metadata("instance_out_of_range.designspace", Flags::default());
+        let static_metadata = context.static_metadata.get();
+
+        // "Extrapolated" sits at wght=2000 on a 400..700 axis and is dropped, as in fontmake
+        assert_eq!(
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|ni| ni.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Regular"]
         );
     }
 

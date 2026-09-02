@@ -103,6 +103,22 @@ pub(crate) fn to_instance_design_location(
     Ok(result)
 }
 
+/// Whether `loc` lies within every axis' user-space range (inclusive).
+///
+/// fontmake drops named instances located outside the variable font's axis ranges
+/// (`designspaceLib.split._extractSubSpace`); such instances can't be reached by a
+/// variable font and would only clamp to the nearest edge. Axes absent from `loc`
+/// are at their default and therefore in range.
+pub(crate) fn within_axis_ranges(
+    axes: &fontdrasil::types::Axes,
+    loc: &fontdrasil::coords::UserLocation,
+) -> bool {
+    axes.iter().all(|axis| {
+        loc.get(axis.tag)
+            .is_none_or(|coord| axis.min <= coord && coord <= axis.max)
+    })
+}
+
 fn to_ir_contour(
     glyph_name: GlyphName,
     contour: &norad::Contour,
@@ -596,6 +612,22 @@ mod tests {
             matches!(err, Error::InvalidEntry("instance location", _)),
             "{err:?}"
         );
+    }
+
+    #[test]
+    fn detects_instance_outside_axis_range() {
+        let axes = wght_axis_with_map();
+        let wght = Tag::new(b"wght");
+        let at = |v: f64| fontdrasil::coords::UserLocation::from(vec![(wght, UserCoord::new(v))]);
+        assert!(within_axis_ranges(&axes, &at(300.0)));
+        assert!(within_axis_ranges(&axes, &at(700.0)));
+        assert!(!within_axis_ranges(&axes, &at(2000.0)));
+        assert!(!within_axis_ranges(&axes, &at(100.0)));
+        // axes missing from the location are at their default
+        assert!(within_axis_ranges(
+            &axes,
+            &fontdrasil::coords::UserLocation::new()
+        ));
     }
 
     /// Test parsing component anchors from glyphsLib's ComponentInfo in glyph lib.
