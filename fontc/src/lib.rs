@@ -627,6 +627,25 @@ mod tests {
         assert_compiles_with_gpos_and_gsub("fea_include_resolve.designspace", |o| o);
     }
 
+    // The strongest check we have on the merge: two masters with their own
+    // features.fea must produce exactly what one features.fea written in
+    // variable syntax produces.
+    #[test]
+    fn merged_fea_matches_variable_syntax_fea() {
+        let merged = TestCompile::compile_source("variable_fea/VarFea.designspace");
+        let one_shot = TestCompile::compile_source("variable_fea/VarFeaOneShot.designspace");
+
+        for tag in [Tag::new(b"GPOS"), Tag::new(b"GDEF")] {
+            let merged = merged.font().table_data(tag).map(|d| d.as_bytes().to_vec());
+            let one_shot = one_shot
+                .font()
+                .table_data(tag)
+                .map(|d| d.as_bytes().to_vec());
+            assert!(merged.is_some(), "{tag} should be present");
+            assert_eq!(merged, one_shot, "{tag} differs from the one-shot compile");
+        }
+    }
+
     #[test]
     fn masters_with_unmergeable_fea_are_rejected() {
         // GSUB cannot vary: only the GsubBold master has a liga feature, so
