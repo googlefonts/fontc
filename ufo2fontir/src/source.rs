@@ -45,7 +45,9 @@ use write_fonts::{
     types::{NameId, Tag},
 };
 
-use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph};
+use crate::toir::{
+    master_locations, to_design_location, to_instance_design_location, to_ir_axes, to_ir_glyph,
+};
 
 const UFO_KERN1_PREFIX: &str = "public.kern1.";
 const UFO_KERN2_PREFIX: &str = "public.kern2.";
@@ -245,7 +247,7 @@ impl Source for DesignSpaceIrSource {
                 default_master_lib = Some(ufo.lib);
             }
 
-            let location = to_design_location(&axis_tags_by_name, &source.location);
+            let location = to_design_location(&axis_tags_by_name, &source.location)?;
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
                 if !glif_file.exists() {
                     return Err(BadSource::new(glif_file, BadSourceKind::ExpectedFile).into());
@@ -521,12 +523,12 @@ fn default_master(
             (tag, UserCoord::new(a.default as f64).to_design(converter))
         })
         .collect();
-    designspace
-        .sources
-        .iter()
-        .enumerate()
-        .find(|(_, source)| to_design_location(&tags_by_name, &source.location) == default_location)
-        .ok_or(Error::NoDefaultMaster)
+    for (idx, source) in designspace.sources.iter().enumerate() {
+        if to_design_location(&tags_by_name, &source.location)? == default_location {
+            return Ok((idx, source));
+        }
+    }
+    Err(Error::NoDefaultMaster)
 }
 
 fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, BadSource> {
@@ -1058,7 +1060,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .map(|inst| {
                 // TODO: Also support localised names, and names inferred from axis labels
                 // (also used to build STAT table)
-                NamedInstance {
+                Ok(NamedInstance {
                     name: inst.stylename.clone().unwrap_or_else(|| {
                         match inst
                             .name
@@ -1071,12 +1073,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                         }
                     }),
                     postscript_name: inst.postscriptfontname.clone(),
-                    location: to_design_location(&tags_by_name, &inst.location)
-                        .to_user(&axes)
-                        .unwrap(),
-                }
+                    location: to_instance_design_location(&axes, &tags_by_name, &inst.location)?
+                        .to_user(&axes)?,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, Error>>()?;
 
         let global_locations = master_locations(
             &axes,
@@ -1084,7 +1085,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 .sources
                 .iter()
                 .filter(|s| !is_glyph_only(s)),
-        )
+        )?
         .into_values()
         .collect();
 
@@ -1515,7 +1516,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         let designspace_dir = self.designspace_dir.as_ref();
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
         let master_locations =
-            master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
+            master_locations(&static_metadata.all_source_axes, &self.designspace.sources)?;
 
         let mut metrics = GlobalMetricsBuilder::new();
 
@@ -1816,7 +1817,7 @@ impl Work<Context, WorkId, Error> for KerningLocationsWork {
         let designspace_dir = self.designspace_dir.as_ref();
         let static_metadata = context.static_metadata.get();
         let master_locations =
-            master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
+            master_locations(&static_metadata.all_source_axes, &self.designspace.sources)?;
         let (default_master_idx, _) = default_master(&self.designspace)?;
 
         let mut kerning_locations = KerningLocations::default();
@@ -1872,7 +1873,7 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
         let static_metadata = context.static_metadata.get();
         let glyph_order = context.glyph_order.get();
         let master_locations =
-            master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
+            master_locations(&static_metadata.all_source_axes, &self.designspace.sources)?;
 
         // We know all the groups, read all the kerning
         let source = self
@@ -2273,7 +2274,10 @@ mod tests {
     };
 
     use fontdrasil::{
-        coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
+        coords::{
+            DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord,
+            UserLocation,
+        },
         orchestration::{Access, AccessBuilder},
         types::GlyphName,
         variations::Tent,
@@ -2591,6 +2595,7 @@ mod tests {
                 &tags_by_name,
                 &default_master(&source.designspace).unwrap().1.location
             )
+            .unwrap()
         );
     }
 
@@ -3156,6 +3161,31 @@ mod tests {
                 GlyphName::from("manual-component"),
                 GlyphName::from("manualcomponent")
             )])),
+        );
+    }
+
+    // https://github.com/googlefonts/fontc/issues/1649
+    #[test]
+    fn static_metadata_instances_located_by_uservalue() {
+        let (_, context) =
+            build_static_metadata("mapping_instance_uservalue.designspace", Flags::default());
+        let static_metadata = context.static_metadata.get();
+
+        // uservalue 500 goes through the wght map (400..700 -> 0..100) and back;
+        // width is omitted from the location so it takes the axis default
+        assert_eq!(
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|ni| (ni.name.as_str(), ni.location.clone()))
+                .collect::<Vec<_>>(),
+            vec![(
+                "Medium",
+                UserLocation::from(vec![
+                    (Tag::new(b"wght"), UserCoord::new(500.0)),
+                    (Tag::new(b"wdth"), UserCoord::new(100.0)),
+                ])
+            )]
         );
     }
 

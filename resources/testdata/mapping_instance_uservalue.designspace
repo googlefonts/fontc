@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='utf-8'?>
+<designspace format="5.0">
+  <!-- an instance located by uservalue on a mapped axis, see fontc#1649 -->
+  <axes>
+    <axis tag="wght" name="weight" minimum="400" default="400" maximum="700">
+      <map input="400" output="0"/>
+      <map input="700" output="100"/>
+    </axis>
+    <axis tag="wdth" name="width" minimum="75" default="100" maximum="100"/>
+  </axes>
+  <sources>
+    <source filename="WghtVar-Regular.ufo" name="Regular">
+      <location>
+        <dimension name="weight" xvalue="0"/>
+        <dimension name="width" xvalue="100"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <!-- width omitted: takes the axis default -->
+    <instance stylename="Medium">
+      <location>
+        <dimension name="weight" uservalue="500"/>
+      </location>
+    </instance>
+  </instances>
+</designspace>

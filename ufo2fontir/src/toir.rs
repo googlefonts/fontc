@@ -21,22 +21,86 @@ use crate::source::vertical_origin;
 /// See: <https://github.com/googlefonts/glyphsLib/blob/de5b4e34/Lib/glyphsLib/builder/constants.py#L27>
 const COMPONENT_INFO_KEY: &str = "com.schriftgestaltung.Glyphs.ComponentInfo";
 
+/// Convert a source location to design coordinates.
+///
+/// Source locations must use `xvalue`; `uservalue` is only meaningful for
+/// instances, see [`to_instance_design_location`].
 pub(crate) fn to_design_location(
     tags_by_name: &HashMap<&str, Tag>,
     loc: &[Dimension],
-) -> DesignLocation {
-    // TODO: what if Dimension uses uservalue? - new in DS5.0
+) -> Result<DesignLocation, Error> {
     loc.iter()
-        .filter_map(|d| match tags_by_name.get(d.name.as_str()) {
-            Some(tag) => Some((*tag, DesignCoord::new(d.xvalue.unwrap() as f64))),
-            // warn and skip dimensions with unknown axis names:
-            // https://github.com/fonttools/fonttools/blob/8e5c1bf7/Lib/fontTools/designspaceLib/__init__.py#L2424
-            None => {
+        .filter_map(|d| {
+            let Some(tag) = tags_by_name.get(d.name.as_str()) else {
+                // warn and skip dimensions with unknown axis names:
+                // https://github.com/fonttools/fonttools/blob/8e5c1bf7/Lib/fontTools/designspaceLib/__init__.py#L2424
                 log::warn!("Location with undefined axis: {:?}, skipping", d.name);
-                None
-            }
+                return None;
+            };
+            Some(match d.xvalue {
+                Some(x) => Ok((*tag, DesignCoord::new(x as f64))),
+                None => Err(Error::InvalidEntry(
+                    "source location",
+                    format!(
+                        "dimension {:?} has no xvalue{}",
+                        d.name,
+                        if d.uservalue.is_some() {
+                            " (uservalue is only supported for instances)"
+                        } else {
+                            ""
+                        }
+                    ),
+                )),
+            })
         })
         .collect()
+}
+
+/// Convert an instance location to design coordinates.
+///
+/// Mirrors fontTools' `InstanceDescriptor.getFullDesignLocation`: every axis
+/// starts at its default; each dimension then overrides its axis with the
+/// explicit design value (`xvalue`) if present, else the user value
+/// (`uservalue`) mapped forward through the axis map. A dimension with neither
+/// is an error, as in designspaceLib. Dimensions naming an unknown axis are
+/// skipped with a warning, matching [`to_design_location`].
+///
+/// <https://github.com/fonttools/fonttools/blob/8e5c1bf7/Lib/fontTools/designspaceLib/__init__.py#L819-L850>
+pub(crate) fn to_instance_design_location(
+    axes: &fontdrasil::types::Axes,
+    tags_by_name: &HashMap<&str, Tag>,
+    loc: &[Dimension],
+) -> Result<DesignLocation, Error> {
+    let mut result: DesignLocation = axes
+        .iter()
+        .map(|a| (a.tag, a.default.convert(&a.converter)))
+        .collect();
+    for d in loc {
+        let Some(tag) = tags_by_name.get(d.name.as_str()) else {
+            log::warn!("Location with undefined axis: {:?}, skipping", d.name);
+            continue;
+        };
+        let coord = match (d.xvalue, d.uservalue) {
+            (Some(x), _) => DesignCoord::new(x as f64),
+            (None, Some(u)) => {
+                let axis = axes
+                    .get(tag)
+                    .ok_or_else(|| Error::NoEntryInAxes(tag.to_string()))?;
+                UserCoord::new(u as f64).convert(&axis.converter)
+            }
+            (None, None) => {
+                return Err(Error::InvalidEntry(
+                    "instance location",
+                    format!(
+                        "dimension {:?} must have exactly one of xvalue or uservalue",
+                        d.name
+                    ),
+                ));
+            }
+        };
+        result.insert(*tag, coord);
+    }
+    Ok(result)
 }
 
 fn to_ir_contour(
@@ -160,17 +224,15 @@ fn to_ir_glyph_instance(
 pub fn master_locations<'a>(
     axes: &fontdrasil::types::Axes,
     sources: impl IntoIterator<Item = &'a designspace::Source>,
-) -> HashMap<String, NormalizedLocation> {
+) -> Result<HashMap<String, NormalizedLocation>, Error> {
     let tags_by_name: HashMap<_, _> = axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
     sources
         .into_iter()
         .map(|s| {
-            (
+            Ok((
                 s.name.clone().unwrap(),
-                to_design_location(&tags_by_name, &s.location)
-                    .to_normalized(axes)
-                    .unwrap(),
-            )
+                to_design_location(&tags_by_name, &s.location)?.to_normalized(axes)?,
+            ))
         })
         .collect()
 }
@@ -433,7 +495,7 @@ mod tests {
                 uservalue: None,
             },
         ];
-        let result = to_design_location(&tags_by_name, &loc);
+        let result = to_design_location(&tags_by_name, &loc).unwrap();
         assert_eq!(result.get(Tag::new(b"XROT")), Some(DesignCoord::new(10.0)));
         assert_eq!(result.get(Tag::new(b"YROT")), Some(DesignCoord::new(20.0)));
 
@@ -452,8 +514,88 @@ mod tests {
                 uservalue: None,
             },
         ];
-        let result = to_design_location(&tags_by_name, &loc_with_tags);
+        let result = to_design_location(&tags_by_name, &loc_with_tags).unwrap();
         assert_eq!(result.iter().count(), 0, "undefined axes should be skipped");
+    }
+
+    #[test]
+    fn to_design_location_rejects_missing_xvalue() {
+        let tags_by_name: HashMap<&str, Tag> = HashMap::from([("Weight", Tag::new(b"wght"))]);
+        // uservalue is only valid for instances
+        let loc = vec![Dimension {
+            name: "Weight".into(),
+            xvalue: None,
+            yvalue: None,
+            uservalue: Some(700.0),
+        }];
+        let err = to_design_location(&tags_by_name, &loc).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidEntry("source location", _)),
+            "{err:?}"
+        );
+    }
+
+    fn wght_axis_with_map() -> fontdrasil::types::Axes {
+        // user 300..700 maps to design 30..70, default 400 -> 40
+        fontdrasil::types::Axes::new(vec![fontdrasil::types::Axis {
+            name: "Weight".into(),
+            tag: Tag::new(b"wght"),
+            min: UserCoord::new(300.0),
+            default: UserCoord::new(400.0),
+            max: UserCoord::new(700.0),
+            hidden: false,
+            converter: CoordConverter::new(
+                vec![
+                    (UserCoord::new(300.0), DesignCoord::new(30.0)),
+                    (UserCoord::new(400.0), DesignCoord::new(40.0)),
+                    (UserCoord::new(700.0), DesignCoord::new(70.0)),
+                ],
+                1,
+            )
+            .unwrap(),
+            localized_names: Default::default(),
+        }])
+    }
+
+    fn dim(name: &str, xvalue: Option<f32>, uservalue: Option<f32>) -> Dimension {
+        Dimension {
+            name: name.into(),
+            xvalue,
+            yvalue: None,
+            uservalue,
+        }
+    }
+
+    // https://github.com/googlefonts/fontc/issues/1649
+    #[test]
+    fn instance_location_maps_uservalue_through_axis_map() {
+        let axes = wght_axis_with_map();
+        let tags_by_name = HashMap::from([("Weight", Tag::new(b"wght"))]);
+        let wght = Tag::new(b"wght");
+
+        // uservalue is mapped forward through the axis map
+        let loc =
+            to_instance_design_location(&axes, &tags_by_name, &[dim("Weight", None, Some(700.0))])
+                .unwrap();
+        assert_eq!(loc.get(wght), Some(DesignCoord::new(70.0)));
+
+        // xvalue is taken as-is
+        let loc =
+            to_instance_design_location(&axes, &tags_by_name, &[dim("Weight", Some(55.0), None)])
+                .unwrap();
+        assert_eq!(loc.get(wght), Some(DesignCoord::new(55.0)));
+
+        // an axis missing from the location gets the axis default (in design space)
+        let loc = to_instance_design_location(&axes, &tags_by_name, &[]).unwrap();
+        assert_eq!(loc.get(wght), Some(DesignCoord::new(40.0)));
+
+        // a dimension with neither value is an error, as in fontTools
+        let err = to_instance_design_location(&axes, &tags_by_name, &[dim("Weight", None, None)])
+            .unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidEntry("instance location", _)),
+            "{err:?}"
+        );
     }
 
     /// Test parsing component anchors from glyphsLib's ComponentInfo in glyph lib.
