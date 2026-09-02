@@ -1054,35 +1054,32 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .get(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
             .map(|name| name.clone() + " ")
             .unwrap_or_default();
-        let named_instances: Vec<NamedInstance> = self
-            .designspace
-            .instances
-            .iter()
-            .map(|inst| {
-                // TODO: Also support localised names, and names inferred from axis labels
-                // (also used to build STAT table)
-                Ok(NamedInstance {
-                    name: inst.stylename.clone().unwrap_or_else(|| {
-                        match inst
-                            .name
-                            .as_ref()
-                            .unwrap()
-                            .strip_prefix(family_prefix.as_str())
-                        {
-                            Some(tail) => tail.to_string(),
-                            None => inst.name.clone().unwrap(),
-                        }
-                    }),
-                    postscript_name: inst.postscriptfontname.clone(),
-                    location: to_instance_design_location(&axes, &tags_by_name, &inst.location)?
-                        .to_user(&axes)?,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?
-            .into_iter()
+        let mut named_instances = Vec::with_capacity(self.designspace.instances.len());
+        for inst in &self.designspace.instances {
+            let location = to_instance_design_location(&axes, &tags_by_name, &inst.location)?
+                .to_user(&axes)?;
             // fontmake silently drops instances outside the axis ranges; do the same
-            .filter(|inst| within_axis_ranges(&axes, &inst.location))
-            .collect();
+            if !within_axis_ranges(&axes, &location) {
+                continue;
+            }
+            // TODO: Also support localised names, and names inferred from axis labels
+            // (also used to build STAT table)
+            named_instances.push(NamedInstance {
+                name: inst.stylename.clone().unwrap_or_else(|| {
+                    match inst
+                        .name
+                        .as_ref()
+                        .unwrap()
+                        .strip_prefix(family_prefix.as_str())
+                    {
+                        Some(tail) => tail.to_string(),
+                        None => inst.name.clone().unwrap(),
+                    }
+                }),
+                postscript_name: inst.postscriptfontname.clone(),
+                location,
+            });
+        }
 
         let global_locations = master_locations(
             &axes,
