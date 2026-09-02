@@ -130,7 +130,7 @@ fn merge_lookup<V: VariationInfo>(
             return Err(ctx.unsupported(index, kind));
         }
         PositionLookup::Cursive(_) => {
-            PositionLookup::Cursive(merge_indexwise(aligned!(Cursive)?, index, kind, ctx)?)
+            PositionLookup::Cursive(ctx.merge_cursive(aligned!(Cursive)?, index)?)
         }
         PositionLookup::MarkToBase(_) => {
             PositionLookup::MarkToBase(merge_indexwise(aligned!(MarkToBase)?, index, kind, ctx)?)
@@ -201,7 +201,7 @@ impl<T> AlignedLookup<'_, T> {
     ///
     /// For lookup types where matching is per subtable this is the only
     /// correct alignment, so differing subtable counts are an error.
-    fn indexwise<V: VariationInfo>(
+    pub(super) fn indexwise<V: VariationInfo>(
         &self,
         index: usize,
         ctx: &MergeCtx<'_, V>,
