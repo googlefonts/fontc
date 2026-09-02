@@ -24,7 +24,7 @@ use super::feature_writer::InsertionPoint;
 use super::tables::DEBG_TAG;
 
 use crate::{
-    Diagnostic, GlyphMap, GlyphSet, ParseTree,
+    Diagnostic, DiagnosticSet, GlyphMap, GlyphSet, ParseTree,
     common::MarkClass,
     compile::{
         FeatureBuilder, FeatureProvider,
@@ -40,6 +40,7 @@ use crate::{
 ///
 /// This exists to support the case of merging two or more different non-variable
 /// FEA sources into a variable output, in the vein of python's varLib.
+#[derive(Debug)]
 pub struct PendingCompilation {
     pub(super) tree: ParseTree,
     pub(super) features: AllFeatures,
@@ -116,6 +117,32 @@ pub struct Compilation {
 }
 
 impl PendingCompilation {
+    pub(crate) fn has_errors(&self) -> bool {
+        self.errors.iter().any(Diagnostic::is_error)
+    }
+
+    /// Run the feature provider (if any) and build the final tables.
+    ///
+    /// This is the second half of [`compile_for_merge`]; call it once, on the
+    /// merged result, so that generated features are added a single time.
+    ///
+    /// [`compile_for_merge`]: crate::compile::compile_for_merge
+    pub fn finish<F: FeatureProvider>(
+        mut self,
+        writer: Option<&F>,
+    ) -> Result<(Compilation, DiagnosticSet), DiagnosticSet> {
+        let tree = self.tree.clone();
+        if let Some(writer) = writer {
+            self.run_feature_provider(writer);
+        }
+        match self.build() {
+            Ok((compilation, warnings)) => {
+                Ok((compilation, DiagnosticSet::new(warnings, &tree, usize::MAX)))
+            }
+            Err(errors) => Err(DiagnosticSet::new(errors, &tree, usize::MAX)),
+        }
+    }
+
     pub(crate) fn run_feature_provider<T: FeatureProvider>(&mut self, provider: &T) {
         let mut builder = FeatureBuilder::new(
             &self.default_lang_systems,
