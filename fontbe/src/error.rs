@@ -28,8 +28,20 @@ pub enum Error {
     IoError(#[from] io::Error),
     #[error(transparent)]
     FeaCompileError(#[from] CompilerError),
-    #[error("masters have non-identical features, which is not yet supported: {0:?}")]
-    VariableFeaUnsupported(Vec<String>),
+    #[error("failed to merge the masters' features: {0}")]
+    FeaMergeError(#[from] fea_rs::compile::MergeError),
+    #[error(
+        "the masters have {0} distinct feature files but none belongs to the default master; \
+         merging needs the default master's features"
+    )]
+    VariableFeaNoDefaultMaster(usize),
+    #[error("feature source '{0}' is not associated with any master")]
+    VariableFeaSourceWithoutMaster(String),
+    #[error("could not normalize the location of feature source '{fea}': {error}")]
+    VariableFeaBadLocation {
+        fea: String,
+        error: fontdrasil::error::Error,
+    },
     #[error(transparent)]
     GlyphOrderError(#[from] GlyphOrderError),
     #[error("'{0}' {1}")]

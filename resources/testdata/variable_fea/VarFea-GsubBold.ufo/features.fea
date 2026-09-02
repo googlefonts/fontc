@@ -1,0 +1,7 @@
+feature ss01 {
+    pos A <30 0 40 0>;
+} ss01;
+
+feature liga {
+    sub A by space;
+} liga;

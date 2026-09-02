@@ -305,7 +305,7 @@ mod tests {
                 cpal::ColorRecord,
                 gasp::GaspRangeBehavior,
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
-                gpos::{AnchorTable, Gpos, MarkBasePosFormat1, PositionLookup},
+                gpos::{AnchorTable, Gpos, MarkBasePosFormat1, PositionLookup, SinglePos},
                 gsub::{SingleSubst, SubstitutionLookup},
                 hmtx::Hmtx,
                 layout::FeatureParams,
@@ -628,17 +628,31 @@ mod tests {
     }
 
     #[test]
-    fn masters_with_differing_fea_are_compiled_then_rejected() {
-        // each master's fea is compiled by its own job; we just can't merge
-        // them yet. The error must come from the BE, after both compiled.
-        let mut result = TestCompile::new("variable_fea/VarFea.designspace", |options| options);
+    fn masters_with_unmergeable_fea_are_rejected() {
+        // GSUB cannot vary: only the GsubBold master has a liga feature, so
+        // there is nothing sensible to merge and the BE must say so.
+        let mut result =
+            TestCompile::new("variable_fea/VarFeaGsubMismatch.designspace", |options| {
+                options
+            });
         let error = result.run_expect_err();
-        let Error::Backend(fontbe::error::Error::VariableFeaUnsupported(sources)) = &error else {
-            panic!("expected VariableFeaUnsupported, got {error:?}");
+        let Error::Backend(fontbe::error::Error::FeaMergeError(merge_error)) = &error else {
+            panic!("expected a merge error, got {error:?}");
         };
-        assert_eq!(sources.len(), 2);
+        assert_eq!(
+            merge_error.to_string(),
+            "master 1: GSUB lookups differ from the default master"
+        );
+    }
 
-        // both masters' fea got compiled, in their own jobs, before we gave up
+    #[test]
+    fn masters_with_differing_fea_are_merged() {
+        // Regular has `pos A <10 0 20 0>`, Bold `pos A <30 0 40 0>`; each is
+        // compiled by its own job and the two are merged into one variable
+        // single positioning lookup.
+        let result = TestCompile::compile_source("variable_fea/VarFea.designspace");
+
+        // both masters' fea got compiled, in their own jobs
         let mut compiled = result
             .be_context
             .fea_asts
@@ -651,6 +665,39 @@ mod tests {
             .collect::<Vec<_>>();
         compiled.sort();
         assert_eq!(compiled, vec![0, 1]);
+
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        let lookup = gpos.lookup_list().unwrap().lookups().get(0).unwrap();
+        let PositionLookup::Single(lookup) = lookup else {
+            panic!("expected a single positioning lookup");
+        };
+        let SinglePos::Format1(single) = lookup.subtables().get(0).unwrap() else {
+            panic!("expected SinglePosFormat1");
+        };
+        let value = single.value_record();
+
+        // the default master's values, with a device table pointing at deltas
+        assert_eq!(value.x_placement(), Some(10));
+        assert_eq!(value.x_advance(), Some(20));
+        assert!(
+            value.x_placement_device().is_some() && value.x_advance_device().is_some(),
+            "both varying fields should carry a VariationIndex"
+        );
+
+        // Bold is +20 on both fields, so one shared delta set of 20
+        let ivs = font
+            .gdef()
+            .unwrap()
+            .item_var_store()
+            .expect("merged GPOS needs an ItemVariationStore")
+            .unwrap();
+        let deltas = ivs
+            .item_variation_data()
+            .iter()
+            .flat_map(|data| delta_sets(&data.unwrap().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(deltas, vec![vec![20]]);
     }
 
     #[test]
