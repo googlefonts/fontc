@@ -3,12 +3,9 @@
 use write_fonts::tables::layout::{LookupFlag, builders::LookupBuilder};
 
 use super::{LookupRef, MergeCtx, MergeError};
-use crate::{
-    Kind,
-    compile::{
-        LookupId, VariationInfo,
-        lookups::{FilterSetId, PositionLookup},
-    },
+use crate::compile::{
+    LookupId, VariationInfo,
+    lookups::{FilterSetId, PositionLookup},
 };
 
 impl<V: VariationInfo> MergeCtx<'_, V> {
@@ -54,13 +51,6 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
             index,
             name,
             feature,
-        }
-    }
-
-    pub(super) fn unsupported(&self, index: usize, kind: Kind) -> MergeError {
-        MergeError::Unsupported {
-            lookup: self.lookup_ref(index),
-            kind,
         }
     }
 
@@ -135,7 +125,7 @@ fn merge_lookup<V: VariationInfo>(
             PositionLookup::MarkToBase(ctx.merge_mark_to_base(aligned!(MarkToBase)?, index)?)
         }
         PositionLookup::MarkToLig(_) => {
-            PositionLookup::MarkToLig(merge_indexwise(aligned!(MarkToLig)?, index, kind, ctx)?)
+            PositionLookup::MarkToLig(ctx.merge_mark_to_lig(aligned!(MarkToLig)?, index)?)
         }
         PositionLookup::MarkToMark(_) => {
             PositionLookup::MarkToMark(ctx.merge_mark_to_mark(aligned!(MarkToMark)?, index)?)
@@ -234,42 +224,11 @@ impl<T> AlignedLookup<'_, T> {
     }
 }
 
-//TODO: replace with real per-type merging; for now identical subtables pass through
-fn merge_indexwise<T: PartialEq + Clone, V: VariationInfo>(
-    aligned: AlignedLookup<'_, T>,
-    index: usize,
-    kind: Kind,
-    ctx: &MergeCtx<'_, V>,
-) -> Result<LookupBuilder<T>, MergeError> {
-    let subtables = aligned.indexwise(index, ctx, |row| {
-        if row.iter().all(|subtable| *subtable == row[0]) {
-            Ok(row[0].clone())
-        } else {
-            Err(ctx.unsupported(index, kind))
-        }
-    })?;
-    Ok(aligned.build(subtables))
-}
-
 #[cfg(test)]
 mod tests {
     use write_fonts::types::Tag;
 
     use super::super::{MergeError, test_helpers::*};
-    use crate::Kind;
-
-    #[test]
-    fn value_divergence_is_unsupported_for_now() {
-        let a = "markClass acute <anchor 0 0> @TOP; feature mark { pos ligature f_i <anchor 0 0> mark @TOP ligComponent <anchor 0 0> mark @TOP; } mark;";
-        let b = "markClass acute <anchor 0 0> @TOP; feature mark { pos ligature f_i <anchor 0 0> mark @TOP ligComponent <anchor 0 5> mark @TOP; } mark;";
-        assert_eq!(
-            merge_masters(&[a, b]).err(),
-            Some(MergeError::Unsupported {
-                lookup: lookup_ref(0, None, Some(Tag::new(b"mark"))),
-                kind: Kind::GposType5,
-            })
-        );
-    }
 
     #[test]
     fn lookup_count_differs_via_anonymous_lookups() {
