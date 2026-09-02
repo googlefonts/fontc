@@ -17,7 +17,7 @@ pub struct LanguageSystem {
 /// Track languagesystem statements
 ///
 /// Seeing no statements is the same as seeing 'DFLT dflt'.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct DefaultLanguageSystems {
     has_explicit_entry: bool,
     // this is me being fancy, because we clone this everytime we start a lookup.

@@ -15,7 +15,7 @@ use super::{
     tags,
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct FeatureLookups {
     /// the base (not variation specific) lookups
     pub(crate) base: Vec<LookupId>,
@@ -25,7 +25,7 @@ pub(crate) struct FeatureLookups {
 /// A type to store accumulated features during compilation
 ///
 /// We update this type as we encounter feature blocks in the source FEA.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct AllFeatures {
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
     required_features: HashSet<FeatureKey>,
@@ -54,7 +54,7 @@ pub(crate) struct ActiveFeature {
 /// This is a special and annoying case. We create this object when we encounter
 /// the aalt feature block, and then we use this to generate the aalt lookups
 /// once we've finished processing the input.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct AaltFeature {
     aalt_features: Vec<Tag>,
     pub(crate) all_alts: HashMap<GlyphId16, Vec<GlyphId16>>,
@@ -64,7 +64,7 @@ pub(crate) struct AaltFeature {
 }
 
 /// Helper for compiling the `size` feature
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct SizeFeature {
     pub design_size: u16,
     pub identifier: u16,
@@ -73,7 +73,7 @@ pub(crate) struct SizeFeature {
     pub names: Vec<NameSpec>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct CvParams {
     pub feat_ui_label_name: Vec<NameSpec>,
     pub feat_ui_tooltip_text_name: Vec<NameSpec>,
@@ -97,7 +97,7 @@ pub(crate) enum SpecialVerticalFeatureState {
 
 /// maps names to conditionsets, also tracking declaration order (which
 /// is maintained in the final output table)
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ConditionSetMap {
     named_conditionsets: HashMap<SmolStr, ConditionSet>,
     // used for sorting
