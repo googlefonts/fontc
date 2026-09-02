@@ -14,10 +14,11 @@ use write_fonts::types::GlyphId16;
 use super::{PendingCompilation, VariationInfo};
 
 mod error;
+mod lookups;
 #[cfg(test)]
 mod test_helpers;
 
-pub use error::MergeError;
+pub use error::{LookupRef, MergeError};
 
 /// Merge per-master compilations of non-variable FEA into one variable compilation.
 ///
@@ -48,12 +49,7 @@ pub fn merge<V: VariationInfo>(
     ctx.check_structure()?;
     ctx.merge_mark_classes()?;
     ctx.merge_gdef()?;
-    //TODO: merge these instead of requiring equality
-    for (i, other) in ctx.others.iter().enumerate() {
-        if ctx.merged.lookups.gpos() != other.lookups.gpos() {
-            return Err(MergeError::Gpos { master: i + 1 });
-        }
-    }
+    ctx.merge_gpos()?;
     ctx.finish()
 }
 
@@ -222,10 +218,10 @@ impl MergeCtx {
 
 #[cfg(test)]
 mod tests {
-    use write_fonts::tables::gdef::GlyphClassDef;
+    use write_fonts::{tables::gdef::GlyphClassDef, types::Tag};
 
     use super::{test_helpers::*, *};
-    use crate::compile::NopFeatureProvider;
+    use crate::{Kind, compile::NopFeatureProvider};
 
     #[test]
     fn identical_masters_round_trip() {
@@ -305,16 +301,6 @@ mod tests {
     }
 
     #[test]
-    fn gpos_must_match_for_now() {
-        let a = "feature kern { pos a b -20; } kern;";
-        let b = "feature kern { pos a b -40; } kern;";
-        assert_eq!(
-            merge_masters(&[a, b]).err(),
-            Some(MergeError::Gpos { master: 1 })
-        );
-    }
-
-    #[test]
     fn gdef_glyph_classes_are_unioned() {
         let a = "table GDEF { GlyphClassDef [a], , [acute], ; } GDEF;";
         let b = "table GDEF { GlyphClassDef [b], , [acute], ; } GDEF;";
@@ -365,11 +351,14 @@ mod tests {
     fn mark_classes_are_unioned() {
         let a = "markClass acute <anchor 0 0> @TOP; feature mark { pos base a <anchor 0 0> mark @TOP; } mark;";
         let b = "markClass [acute grave] <anchor 0 0> @TOP; feature mark { pos base a <anchor 0 0> mark @TOP; } mark;";
-        // the mark lookups differ, so this stops at the (later) GPOS check;
+        // the mark lookups differ, so this stops at the lookup merge;
         // what matters is that the mark class union itself is accepted.
         assert_eq!(
             merge_masters(&[a, b]).err(),
-            Some(MergeError::Gpos { master: 1 })
+            Some(MergeError::Unsupported {
+                lookup: lookup_ref(0, None, Some(Tag::new(b"mark"))),
+                kind: Kind::GposType4,
+            })
         );
     }
 }
