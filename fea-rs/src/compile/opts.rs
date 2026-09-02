@@ -8,7 +8,7 @@
 const DEFAULT_N_MESSAGES_TO_PRINT: usize = 100;
 
 /// Options for configuring compilation behaviour.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Opts {
     pub(crate) make_post_table: bool,
     pub(crate) max_n_errors: usize,

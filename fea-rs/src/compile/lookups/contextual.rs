@@ -257,40 +257,40 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ContextBuilder {
     rules: Vec<ContextRule>,
 }
 
 // we use separate types here to ensure we don't mix lookups
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct PosContextBuilder(ContextBuilder);
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct SubContextBuilder(ContextBuilder);
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ReverseChainBuilder {
     rules: Vec<ReverseSubRule>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct ReverseSubRule {
     backtrack: Vec<GlyphOrClass>,
     context: BTreeMap<GlyphId16, GlyphId16>,
     lookahead: Vec<GlyphOrClass>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ChainContextBuilder(ContextBuilder);
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct PosChainContextBuilder(ChainContextBuilder);
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct SubChainContextBuilder(ChainContextBuilder);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct ContextRule {
     backtrack: Vec<GlyphOrClass>,
     context: Vec<(GlyphOrClass, Vec<LookupId>)>,
