@@ -13,6 +13,7 @@ use write_fonts::types::GlyphId16;
 
 use super::{PendingCompilation, VariationInfo};
 
+mod carets;
 mod cursive;
 mod error;
 mod lookups;
@@ -54,6 +55,7 @@ pub fn merge<V: VariationInfo>(
     ctx.check_structure()?;
     ctx.merge_mark_classes()?;
     ctx.merge_gdef()?;
+    ctx.merge_ligature_carets()?;
     ctx.merge_gpos()?;
     ctx.finish()
 }
@@ -201,10 +203,6 @@ impl<'a, V: VariationInfo> MergeCtx<'a, V> {
             let merged = self.merged.tables.gdef.get_or_insert_with(Default::default);
             if merged.attach != other.attach {
                 return Err(MergeError::GdefAttach { master });
-            }
-            //TODO: merge these instead of requiring equality
-            if merged.ligature_pos != other.ligature_pos {
-                return Err(MergeError::LigatureCarets { master });
             }
             // sorted so that the reported conflict is deterministic
             let mut classes: Vec<_> = other.glyph_classes.iter().collect();

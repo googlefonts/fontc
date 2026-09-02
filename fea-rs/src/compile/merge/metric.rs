@@ -72,25 +72,37 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
                 })
             };
         }
-        if present.iter().all(|metric| metric.default == first.default) {
-            return Ok(first.default.into());
-        }
 
+        let per_master: Vec<Option<i16>> = per_master
+            .iter()
+            .map(|metric| metric.map(|metric| metric.default))
+            .collect();
+        self.merge_scalars(&per_master)
+            .map_err(|message| MergeError::Deltas {
+                lookup: self.lookup_ref(index),
+                message,
+            })
+    }
+
+    /// Merge plain values; `per_master[0]` must be present.
+    ///
+    /// The error is the message from computing deltas, for the caller to
+    /// wrap with context.
+    pub(super) fn merge_scalars(&self, per_master: &[Option<i16>]) -> Result<Metric, String> {
+        let default = per_master[0].expect("caller checks the default is present");
+        if per_master.iter().flatten().all(|value| *value == default) {
+            return Ok(default.into());
+        }
         let locations: HashMap<NormalizedLocation, i16> = self
             .locations
             .iter()
-            .zip(&per_master)
-            .filter_map(|(location, metric)| {
-                metric.map(|metric| (location.clone(), metric.default))
-            })
+            .zip(per_master)
+            .filter_map(|(location, value)| value.map(|value| (location.clone(), value)))
             .collect();
         let (default, deltas) = self
             .var_info
             .resolve_variable_metric(&locations)
-            .map_err(|e| MergeError::Deltas {
-                lookup: self.lookup_ref(index),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| e.to_string())?;
         Ok(metric_from_deltas(default, deltas))
     }
 

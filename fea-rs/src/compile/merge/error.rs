@@ -114,11 +114,14 @@ pub enum MergeError {
         lookup: LookupRef,
         glyph: GlyphId16,
     },
-    //TODO: remove once ligature carets are merged
     #[error(
-        "master {master}: GDEF ligature carets differ from the default master (not yet supported)"
+        "master {master}: ligature glyph {glyph} has a different number or kind of carets than in another master"
     )]
-    LigatureCarets { master: usize },
+    LigatureCarets { master: usize, glyph: GlyphId16 },
+    #[error("ligature glyph {glyph} has carets in some masters but not in the default master")]
+    LigatureCaretsMissingAtDefault { glyph: GlyphId16 },
+    #[error("ligature glyph {glyph}: failed to compute caret deltas: {message}")]
+    LigatureCaretDeltas { glyph: GlyphId16, message: String },
 }
 
 /// Identifies a lookup in a [`MergeError`].
