@@ -18,6 +18,7 @@ pub use feature_writer::{
 };
 pub use language_system::LanguageSystem;
 pub use lookups::{FeatureKey, LookupId};
+pub use merge::{MergeError, merge};
 pub use opts::Opts;
 pub use output::{Compilation, PendingCompilation};
 pub use tables::Os2Builder;
@@ -35,6 +36,7 @@ mod glyph_range;
 pub(crate) mod glyphsapp_syntax_ext;
 mod language_system;
 mod lookups;
+mod merge;
 mod opts;
 mod output;
 mod tables;
@@ -80,7 +82,7 @@ pub fn compile<V: VariationInfo, T: FeatureProvider>(
 /// Compile one master's (non-variable) FEA into the intermediate state used for merging.
 ///
 /// A designspace may have a different `features.fea` per master. To combine
-/// them, compile each one with this function, [`merge`] the results into a
+/// them, compile each one with this function, [`merge()`] the results into a
 /// single variable [`PendingCompilation`], and call [`PendingCompilation::finish`]
 /// once; the feature writer therefore runs once, on the merged result.
 ///
