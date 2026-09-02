@@ -199,9 +199,19 @@ impl std::fmt::Display for DiagnosticDisplayer<'_> {
 
 impl std::fmt::Debug for DiagnosticSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DiagnosticSet")
-            .field("messages", &self.messages)
-            .field("tree", &"ParseTree")
-            .finish()
+        self.write(f, false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parse::parse_string;
+
+    #[test]
+    fn debug_renders_diagnostics() {
+        let (_tree, diagnostics) = parse_string("feature kern { sub a by ; } kern;");
+        let debug = format!("{diagnostics:?}");
+        assert!(debug.contains("expected"));
+        assert!(!debug.contains("DiagnosticSet"));
     }
 }
