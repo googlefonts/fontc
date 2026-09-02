@@ -34,6 +34,49 @@ struct PairSubtable<'a> {
     classes: Vec<Vec<ClassPair<'a>>>,
 }
 
+/// The record a class subtable applies to a pair whose first glyph it covers
+/// but whose second glyph is in none of its classes.
+///
+/// A static so that outcome can be returned by reference, like a real cell,
+/// and stop the search through later subtables.
+static EMPTY: ValueRecordBuilder = ValueRecordBuilder {
+    x_advance: None,
+    y_advance: None,
+    x_placement: None,
+    y_placement: None,
+};
+
+impl<'a> PairSubtable<'a> {
+    /// The value this builder's class rules apply to a pair, if any do.
+    ///
+    /// Only the first class subtable whose first-glyph classes include
+    /// `first` matters: it applies the cell for `second`'s class, or the
+    /// empty record if `second` is in none of its classes. `None` if no
+    /// class subtable covers `first`.
+    fn class_value(
+        &self,
+        first: GlyphId16,
+        second: GlyphId16,
+    ) -> Option<(&'a ValueRecordBuilder, &'a ValueRecordBuilder)> {
+        for class_subtable in &self.classes {
+            let mut covers_first = false;
+            for (class1, class2, r1, r2) in class_subtable {
+                if !class1.contains(first) {
+                    continue;
+                }
+                covers_first = true;
+                if class2.contains(second) {
+                    return Some((r1, r2));
+                }
+            }
+            if covers_first {
+                return Some((&EMPTY, &EMPTY));
+            }
+        }
+        None
+    }
+}
+
 impl<'a> PairLookup<'a> {
     fn new(subtables: &'a [PairPosBuilder]) -> Self {
         let subtables = subtables
@@ -71,33 +114,33 @@ impl<'a> PairLookup<'a> {
         first: GlyphId16,
         second: GlyphId16,
     ) -> Option<(&'a ValueRecordBuilder, &'a ValueRecordBuilder)> {
-        static EMPTY: ValueRecordBuilder = ValueRecordBuilder {
-            x_advance: None,
-            y_advance: None,
-            x_placement: None,
-            y_placement: None,
-        };
         for subtable in &self.subtables {
             if let Some(records) = subtable.pairs.get(&(first, second)) {
                 return Some(*records);
             }
-            for class_subtable in &subtable.classes {
-                let mut covers_first = false;
-                for (class1, class2, r1, r2) in class_subtable {
-                    if !class1.contains(first) {
-                        continue;
-                    }
-                    covers_first = true;
-                    if class2.contains(second) {
-                        return Some((r1, r2));
-                    }
-                }
-                if covers_first {
-                    return Some((&EMPTY, &EMPTY));
-                }
+            if let Some(records) = subtable.class_value(first, second) {
+                return Some(records);
             }
         }
         None
+    }
+
+    /// Like [`effective_value`](Self::effective_value), for pairs that no
+    /// master spells out as a glyph pair, so only class rules can apply.
+    fn effective_class_value(
+        &self,
+        first: GlyphId16,
+        second: GlyphId16,
+    ) -> Option<(&'a ValueRecordBuilder, &'a ValueRecordBuilder)> {
+        self.subtables
+            .iter()
+            .find_map(|subtable| subtable.class_value(first, second))
+    }
+
+    fn class_pairs(&self) -> impl Iterator<Item = &ClassPair<'a>> {
+        self.subtables
+            .iter()
+            .flat_map(|subtable| subtable.classes.iter().flatten())
     }
 
     /// `true` if any rule adjusts the second glyph of the pair.
@@ -111,13 +154,6 @@ impl<'a> PairLookup<'a> {
                 .any(|record| !record.format().is_empty())
         })
     }
-
-    fn class_subtables(&self) -> Vec<Vec<ClassPair<'a>>> {
-        self.subtables
-            .iter()
-            .flat_map(|subtable| subtable.classes.iter().cloned())
-            .collect()
-    }
 }
 
 impl<V: VariationInfo> MergeCtx<'_, V> {
@@ -126,14 +162,22 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
     /// Glyph pairs are unioned. A master's value for a pair is whatever its
     /// lookup applies to that pair, which may come from a class rule or from
     /// a later subtable, or be nothing at all, in which case it contributes
-    /// zero. The merged glyph pairs go in the first subtable, ahead of the
-    /// class subtables, which keeps the effective values right.
+    /// zero. The merged glyph pairs go in one subtable ahead of the class
+    /// rules, which keeps the effective values right.
+    ///
+    /// Class rules are merged the way varLib merges class subtables: the
+    /// classes on each side are refined into the finest partition on which
+    /// every master's classes agree, and each refined cell gets the value
+    /// each master applies to it. All of a master's class subtables
+    /// contribute, in order, so the result is one class subtable.
     ///
     /// Whether the second glyph of pairs is positioned decides how a
     /// subtable consumes glyphs, so the masters must agree on it; varLib
     /// asserts the same.
     ///
     /// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/merger.py#L370-L455>
+    /// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/merger.py#L512-L629>
+    /// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/merger.py#L841-L868>
     pub(super) fn merge_pair_pos(
         &self,
         aligned: AlignedLookup<'_, PairPosBuilder>,
@@ -154,15 +198,6 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
                 master,
                 lookup: self.lookup_ref(index),
             });
-        }
-
-        //TODO: merge class pairs instead of requiring equality
-        let class_subtables = per_master[0].class_subtables();
-        if per_master
-            .iter()
-            .any(|lookup| lookup.class_subtables() != class_subtables)
-        {
-            return Err(self.unsupported(index, crate::Kind::GposType2));
         }
 
         let pairs: BTreeSet<(GlyphId16, GlyphId16)> = per_master
@@ -186,38 +221,62 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
             );
         }
 
-        let mut subtables = Vec::new();
-        let mut first_subtable = PairPosBuilder::default();
+        let mut builder = PairPosBuilder::default();
         for ((first, second), (r1, r2)) in merged_pairs {
-            first_subtable.insert_pair(first, r1, second, r2);
+            builder.insert_pair(first, r1, second, r2);
         }
-        let mut class_subtables = class_subtables.into_iter();
-        if let Some(classes) = class_subtables.next() {
-            insert_classes(&mut first_subtable, &classes);
+
+        let all_pairs = || per_master.iter().flat_map(PairLookup::class_pairs);
+        let classes1 = refine(all_pairs().map(|(class1, ..)| *class1));
+        let classes2 = refine(all_pairs().map(|(_, class2, ..)| *class2));
+        for class1 in &classes1 {
+            let first = class1.iter().next().unwrap();
+            for class2 in &classes2 {
+                let second = class2.iter().next().unwrap();
+                let values: Vec<_> = per_master
+                    .iter()
+                    .map(|lookup| lookup.effective_class_value(first, second))
+                    .collect();
+                if values
+                    .iter()
+                    .flatten()
+                    .all(|(r1, r2)| r1.format().is_empty() && r2.format().is_empty())
+                {
+                    continue;
+                }
+                let firsts: Vec<_> = values.iter().map(|v| v.map(|(r1, _)| r1)).collect();
+                let seconds: Vec<_> = values.iter().map(|v| v.map(|(_, r2)| r2)).collect();
+                builder.insert_classes(
+                    class1.clone(),
+                    self.merge_value_record(&firsts, index)?,
+                    class2.clone(),
+                    self.merge_value_record(&seconds, index)?,
+                );
+            }
         }
-        subtables.push(first_subtable);
-        for classes in class_subtables {
-            let mut subtable = PairPosBuilder::default();
-            insert_classes(&mut subtable, &classes);
-            subtables.push(subtable);
-        }
-        Ok(aligned.build(subtables))
+        Ok(aligned.build(vec![builder]))
     }
 }
 
-/// Add one class subtable's rules to a builder.
+/// Split glyph sets into the finest classes on which they all agree.
 ///
-/// Within a subtable the classes on each side are disjoint, so they all fit
-/// in one class subtable of the builder whatever the insertion order.
-fn insert_classes(builder: &mut PairPosBuilder, classes: &[ClassPair]) {
-    for (class1, class2, r1, r2) in classes {
-        builder.insert_classes(
-            (*class1).clone(),
-            (*r1).clone(),
-            (*class2).clone(),
-            (*r2).clone(),
-        );
+/// Every glyph in any input set lands in exactly one output class, and each
+/// output class is either inside or disjoint from every input set. So any
+/// glyph of an output class stands for the whole class in every master.
+///
+/// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/merger.py#L485-L509>
+fn refine<'a>(sets: impl Iterator<Item = &'a IntSet<GlyphId16>>) -> Vec<IntSet<GlyphId16>> {
+    let mut membership: BTreeMap<GlyphId16, Vec<usize>> = BTreeMap::new();
+    for (i, set) in sets.enumerate() {
+        for glyph in set.iter() {
+            membership.entry(glyph).or_default().push(i);
+        }
     }
+    let mut classes: BTreeMap<Vec<usize>, IntSet<GlyphId16>> = BTreeMap::new();
+    for (glyph, sets) in membership {
+        classes.entry(sets).or_default().insert(glyph);
+    }
+    classes.into_values().collect()
 }
 
 #[cfg(test)]
@@ -272,6 +331,64 @@ mod tests {
                 "feature kern { pos [a c] [b f_i] -40; subtable; pos a b -60; } kern;",
             ]),
             one_shot_binary("feature kern { pos a b -40; pos [a c] [b f_i] -40; } kern;")
+        );
+    }
+
+    #[test]
+    fn class_values_vary() {
+        assert_eq!(
+            merged_binary(&[
+                "feature kern { pos [a c] [b f_i] -40; } kern;",
+                "feature kern { pos [a c] [b f_i] -60; } kern;",
+            ]),
+            one_shot_binary(
+                "feature kern { pos [a c] [b f_i] (wght=400:-40 wght=900:-60); } kern;"
+            )
+        );
+    }
+
+    #[test]
+    fn class_membership_differs() {
+        // f_i is kerned only in the second master, so it splits off into its
+        // own class, zero at the default and -40 at the other end
+        assert_eq!(
+            merged_binary(&[
+                "feature kern { pos [a c] [b] -40; } kern;",
+                "feature kern { pos [a c f_i] [b] -40; } kern;",
+            ]),
+            one_shot_binary(
+                "feature kern { pos [a c] [b] -40; pos [f_i] [b] (wght=400:0 wght=900:-40); } kern;"
+            )
+        );
+    }
+
+    #[test]
+    fn shadowed_class_subtable_is_dropped() {
+        // [a] [b] -10 sits in a second class subtable in both masters, and
+        // is never reached because the first subtable covers 'a'
+        assert_eq!(
+            merged_binary(&[
+                "feature kern { pos [a c] [b] -40; pos [a] [b] -10; } kern;",
+                "feature kern { pos [a c] [b] -45; pos [a] [b] -10; } kern;",
+            ]),
+            one_shot_binary(
+                "feature kern { pos [a] [b] (wght=400:-40 wght=900:-45); pos [c] [b] (wght=400:-40 wght=900:-45); } kern;"
+            )
+        );
+    }
+
+    #[test]
+    fn class_cell_missing_in_a_master_is_zero_there() {
+        // the second master covers 'a' but has no rule for 'c' as a second
+        // glyph, so it applies the empty record to (a, c)
+        assert_eq!(
+            merged_binary(&[
+                "feature kern { pos [a] [b] -40; pos [a] [c] -30; } kern;",
+                "feature kern { pos [a] [b] -40; } kern;",
+            ]),
+            one_shot_binary(
+                "feature kern { pos [a] [b] -40; pos [a] [c] (wght=400:-30 wght=900:0); } kern;"
+            )
         );
     }
 
