@@ -17,6 +17,7 @@ mod cursive;
 mod error;
 mod lookups;
 mod metric;
+mod pair;
 mod single;
 #[cfg(test)]
 mod test_helpers;
