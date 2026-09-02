@@ -49,7 +49,14 @@ pub(super) fn merge_masters(feas: &[&str]) -> Result<PendingCompilation, MergeEr
     let masters = feas
         .iter()
         .enumerate()
-        .map(|(i, fea)| (location(i as f64 / feas.len() as f64), pending(fea)))
+        .map(|(i, fea)| {
+            let wght = if feas.len() == 1 {
+                0.0
+            } else {
+                i as f64 / (feas.len() - 1) as f64
+            };
+            (location(wght), pending(fea))
+        })
         .collect();
     merge(masters, &var_info())
 }
