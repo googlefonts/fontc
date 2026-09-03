@@ -508,9 +508,12 @@ fn master_compilations(
         }
     }
 
+    let default_location = static_metadata
+        .default_location()
+        .subset_axes(&static_metadata.axes);
     let Some(default) = masters
         .iter()
-        .position(|(location, _)| location == static_metadata.default_location())
+        .position(|(location, _)| *location == default_location)
     else {
         return Err(Error::VariableFeaNoDefaultMaster(features.n_sources()));
     };
