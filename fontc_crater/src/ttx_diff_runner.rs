@@ -1,9 +1,18 @@
-use std::{collections::BTreeMap, path::PathBuf, process::Command};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use crate::{BuildType, Results, RunResult, Target, ci::ResultsCache};
 
 // Run ttx-diff via python -m to ensure we use the venv's installed version
 static TTX_DIFF_MODULE: &str = "ttx_diff";
+// holds the sha256 of the font fontc produced; written by ttx_diff into the
+// build dir, keep in sync with core.py
+static FONTC_TTF_HASH_FILE: &str = "fontc.sha256";
+// ttx_diff's exit code for "the font fontc produced matched the hash we passed"
+const UNCHANGED_EXIT_CODE: i32 = 3;
 
 pub(super) struct TtxContext {
     pub fontc_path: PathBuf,
@@ -18,8 +27,14 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
     let source_path = target.source_path(&ctx.source_cache);
     let compare = target.build.name();
     let build_dir = outdir.join(compare);
-    ctx.results_cache
+    let reusing_fontmake = ctx
+        .results_cache
         .copy_cached_files_to_build_dir(target, &build_dir);
+    // we can only trust a cached result if fontmake's half of the comparison is
+    // the same one that produced it, which is only true if it came from the cache
+    let cached = reusing_fontmake
+        .then(|| ctx.results_cache.load_result(target))
+        .flatten();
     let mut cmd = Command::new("python3");
     cmd.args([
         "-m",
@@ -35,6 +50,10 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
     .arg("--normalizer_path")
     .arg(&ctx.normalizer_path)
     .args(["--rebuild", "fontc"]);
+    if let Some(cached) = cached.as_ref() {
+        cmd.arg("--expected_fontc_ttf_hash")
+            .arg(&cached.fontc_ttf_hash);
+    }
     if target.build == BuildType::GfTools {
         cmd.arg("--config")
             .arg(target.config_path(&ctx.source_cache));
@@ -67,6 +86,17 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
             }
             Ok(RawDiffOutput::Error(error)) => RunResult::Fail(DiffError::CompileFailed(error)),
         },
+        // fontc produced the same font as last time, so last time's result stands
+        Some(UNCHANGED_EXIT_CODE) => match cached {
+            Some(cached) => {
+                log::trace!("reused cached result for {target}");
+                return cached.into_result();
+            }
+            // we only pass --expected_fontc_ttf_hash when we have a cached result
+            None => RunResult::Fail(DiffError::Other(
+                "ttx_diff reported no change without a cached result".to_string(),
+            )),
+        },
         Some(124) => RunResult::Fail(DiffError::Other("ttx_diff timed out".to_string())),
         Some(other) => RunResult::Fail(DiffError::Other(format!(
             "unknown error (status {other}): '{stderr}'"
@@ -93,8 +123,21 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
     if fontmake_finished(&result) {
         ctx.results_cache
             .save_built_files_to_cache(target, &build_dir);
+        if let Some(hash) = read_fontc_ttf_hash(&build_dir) {
+            ctx.results_cache.save_result(target, hash, &result);
+        }
     }
     result
+}
+
+/// The hash ttx_diff recorded for the font fontc just produced.
+///
+/// Absent if fontc did not produce a font.
+fn read_fontc_ttf_hash(build_dir: &Path) -> Option<String> {
+    let path = build_dir.join(FONTC_TTF_HASH_FILE);
+    let hash = std::fs::read_to_string(path).ok()?;
+    let hash = hash.trim();
+    (!hash.is_empty()).then(|| hash.to_owned())
 }
 
 fn fontmake_finished(result: &RunResult<DiffOutput, DiffError>) -> bool {
@@ -239,7 +282,7 @@ pub(crate) enum DiffError {
 }
 
 /// One or both compilers failed to run
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct CompileFailed {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -249,7 +292,7 @@ pub(crate) struct CompileFailed {
 }
 
 /// Info regarding the failure of a single compiler
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct CompilerFailure {
     pub(crate) command: String,

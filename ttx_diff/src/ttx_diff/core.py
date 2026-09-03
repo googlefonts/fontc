@@ -35,8 +35,16 @@ JSON:
     where keys are the name of the compiler that failed, and the body is a
     dictionary with "command" and "stderr" fields, where the "command" field
     is the command that was used to run that compiler.
+
+Exit codes:
+    0   the two fonts compare as identical
+    2   the fonts differ, or a compiler failed (see JSON, above)
+    3   --expected_fontc_ttf_hash was passed and the font fontc produced hashed
+        to it, so we stopped without comparing anything. The sha256 of the font
+        fontc produced is always written to fontc.sha256 in the build directory.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -75,6 +83,10 @@ LIG_CARET_NAME = "ligcaret"
 # maximum chars of stderr to include when reporting errors; prevents
 # too much bloat when run in CI
 MAX_ERR_LEN = 1000
+# file in the build dir holding the sha256 of the font fontc produced
+FONTC_TTF_HASH_FILE = "fontc.sha256"
+# exit code used when --expected_fontc_ttf_hash matched and we skipped the diff
+UNCHANGED_EXIT_CODE = 3
 
 # fontc and fontmake's builds may be off by a second or two in the
 # head.created/modified; setting this makes them the same
@@ -467,6 +479,29 @@ def source_is_variable(path: Path) -> bool:
 def copy(old, new):
     shutil.copyfile(old, new)
     return new
+
+
+def hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+# Record the hash of the font fontc just produced, and if the caller told us what
+# hash it has already seen, exit without doing any of the comparison work: the
+# same two fonts always produce the same diff, so the caller's result stands.
+def write_hash_and_maybe_exit_early(
+    fontc_ttf: Path, build_dir: Path, expected_hash: Optional[str]
+):
+    if not fontc_ttf.is_file():
+        return
+    fontc_ttf_hash = hash_file(fontc_ttf)
+    (build_dir / FONTC_TTF_HASH_FILE).write_text(fontc_ttf_hash)
+    if expected_hash == fontc_ttf_hash:
+        eprint(f"fontc output unchanged ({fontc_ttf_hash[:12]}), skipping comparison")
+        sys.exit(UNCHANGED_EXIT_CODE)
 
 
 def get_name_to_id_map(ttx: etree.ElementTree):
@@ -1696,6 +1731,10 @@ def main(argv):
                     "command": " ".join(e.command),
                     "stderr": e.msg[-MAX_ERR_LEN:],
                 }
+        if "fontc" not in failures:
+            write_hash_and_maybe_exit_early(
+                fontc_ttf, build_dir, FLAGS.expected_fontc_ttf_hash
+            )
         with timed("build fontmake"):
             try:
                 if compare == "default":

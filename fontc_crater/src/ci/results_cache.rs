@@ -2,7 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::Target;
+use crate::{
+    RunResult, Target,
+    ttx_diff_runner::{DiffError, DiffOutput},
+};
 
 static CACHE_DIR_NAME: &str = "crater_cached_results";
 
@@ -10,6 +13,36 @@ static CACHE_DIR_NAME: &str = "crater_cached_results";
 static FONT_FILE: &str = "fontmake.ttf";
 static TTX_FILE: &str = "fontmake.ttx";
 static MARKKERN_FILE: &str = "fontmake.markkern.txt";
+// the previous run's result, keyed by the font fontc produced for this target
+static RESULT_FILE: &str = "result.json";
+
+/// A previous run's result, and the sha256 of the fontc.ttf it describes.
+///
+/// The diff is a function of the two compiled fonts, so if fontc produces the
+/// same font again and fontmake's side still comes from this cache, this result
+/// stands. This is the hash of fontc's *output*, not of the fontc binary; the
+/// binary changes every run, which is the thing we are trying to look past.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CachedRun {
+    pub(crate) fontc_ttf_hash: String,
+    result: CachedResult,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CachedResult {
+    Success(DiffOutput),
+    Failure(DiffError),
+}
+
+impl CachedRun {
+    pub(crate) fn into_result(self) -> RunResult<DiffOutput, DiffError> {
+        match self.result {
+            CachedResult::Success(output) => RunResult::Success(output),
+            CachedResult::Failure(err) => RunResult::Fail(err),
+        }
+    }
+}
 
 /// Manages a cache of files on disk
 pub(crate) struct ResultsCache {
@@ -34,15 +67,66 @@ impl ResultsCache {
     }
 
     /// if we have cached files for this target, copy them into the build directory.
-    pub fn copy_cached_files_to_build_dir(&self, target: &Target, build_dir: &Path) {
+    ///
+    /// Returns `true` if fontmake's output came from the cache, and so will not
+    /// be rebuilt.
+    pub fn copy_cached_files_to_build_dir(&self, target: &Target, build_dir: &Path) -> bool {
         let target_cache_dir = target.cache_dir(&self.base_results_cache_dir);
         if !target_cache_dir.exists() {
             log::trace!("no cached files for {target}");
-            return;
+            return false;
         }
 
-        if copy_cache_files(&target_cache_dir, build_dir).unwrap() {
+        let copied = copy_cache_files(&target_cache_dir, build_dir).unwrap();
+        if copied {
             log::trace!("reused cached files for {target}",);
+        }
+        copied
+    }
+
+    /// The previous run's result for this target, if we have one.
+    pub fn load_result(&self, target: &Target) -> Option<CachedRun> {
+        let path = target
+            .cache_dir(&self.base_results_cache_dir)
+            .join(RESULT_FILE);
+        if !path.exists() {
+            return None;
+        }
+        match crate::try_read_json(&path) {
+            Ok(run) => Some(run),
+            Err(e) => {
+                log::warn!("failed to load cached result for {target}: '{e}'");
+                None
+            }
+        }
+    }
+
+    /// Record this run's result so the next run can skip the comparison if the
+    /// font fontc produces is unchanged.
+    pub fn save_result(
+        &self,
+        target: &Target,
+        fontc_ttf_hash: String,
+        result: &RunResult<DiffOutput, DiffError>,
+    ) {
+        let result = match result {
+            RunResult::Success(output) => CachedResult::Success(output.clone()),
+            RunResult::Fail(DiffError::CompileFailed(err)) => {
+                CachedResult::Failure(DiffError::CompileFailed(err.clone()))
+            }
+            // a runtime error says nothing about these two binaries; retry next time
+            RunResult::Fail(DiffError::Other(_)) => return,
+        };
+        let target_cache_dir = target.cache_dir(&self.base_results_cache_dir);
+        if !target_cache_dir.exists() {
+            std::fs::create_dir_all(&target_cache_dir).unwrap();
+        }
+        let run = CachedRun {
+            fontc_ttf_hash,
+            result,
+        };
+        if let Err(e) = crate::try_write_json(&run, &target_cache_dir.join(RESULT_FILE)) {
+            log::warn!("failed to save cached result for {target}: '{e}'");
         }
     }
 
@@ -80,5 +164,98 @@ fn copy_cache_files(from_dir: &Path, to_dir: &Path) -> std::io::Result<bool> {
         Ok(true)
     } else {
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ttx_diff_runner::{CompileFailed, CompilerFailure, DiffValue};
+
+    fn test_target() -> Target {
+        Target::new(
+            "org/repo_deadbeefc0",
+            "deadbeefc0ffee",
+            "sources/config.yaml",
+            false,
+            "Font.glyphs",
+        )
+    }
+
+    #[test]
+    fn result_round_trip() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        assert!(cache.load_result(&target).is_none());
+
+        let diffs = [("GPOS".to_string(), DiffValue::Ratio(0.5))]
+            .into_iter()
+            .collect();
+        cache.save_result(
+            &target,
+            "abc123".into(),
+            &RunResult::Success(DiffOutput::Diffs(diffs)),
+        );
+
+        let loaded = cache.load_result(&target).expect("just saved it");
+        assert_eq!(loaded.fontc_ttf_hash, "abc123");
+        let RunResult::Success(DiffOutput::Diffs(diffs)) = loaded.into_result() else {
+            panic!("expected diffs");
+        };
+        assert_eq!(diffs.get("GPOS"), Some(&DiffValue::Ratio(0.5)));
+    }
+
+    #[test]
+    fn compile_failures_are_cached() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        cache.save_result(
+            &target,
+            "abc123".into(),
+            &RunResult::Fail(DiffError::CompileFailed(CompileFailed {
+                fontc: None,
+                fontmake: Some(CompilerFailure {
+                    command: "fontmake -o variable".into(),
+                    stderr: "oh no".into(),
+                }),
+            })),
+        );
+
+        let loaded = cache.load_result(&target).expect("just saved it");
+        let RunResult::Fail(DiffError::CompileFailed(failed)) = loaded.into_result() else {
+            panic!("expected a compile failure");
+        };
+        assert!(failed.fontc.is_none());
+        assert_eq!(failed.fontmake.unwrap().stderr, "oh no");
+    }
+
+    #[test]
+    fn runtime_failures_are_not_cached() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        cache.save_result(
+            &target,
+            "abc123".into(),
+            &RunResult::Fail(DiffError::Other("ttx_diff timed out".into())),
+        );
+        assert!(cache.load_result(&target).is_none());
+    }
+
+    #[test]
+    fn delete_all_clears_results() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        cache.save_result(
+            &target,
+            "abc123".into(),
+            &RunResult::Success(DiffOutput::Identical),
+        );
+        assert!(cache.load_result(&target).is_some());
+        cache.delete_all();
+        assert!(cache.load_result(&target).is_none());
     }
 }
