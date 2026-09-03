@@ -18,8 +18,6 @@
             <labelname xml:lang="en">Width</labelname>
         </axis>
         <axis default="0" maximum="1" minimum="0" name="italic" tag="ital">
-rsheeter marked this conversation as resolved.
-Show resolved
             <labelname xml:lang="en">Italic</labelname>
         </axis>
     </axes>
