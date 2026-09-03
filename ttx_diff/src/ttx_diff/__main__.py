@@ -43,6 +43,15 @@ flags.DEFINE_float(
     0.1,
     "The percentage of point (glyf) or delta (gvar) values allowed to differ by one without counting as a diff",
 )
+flags.DEFINE_string(
+    "expected_fontc_ttf_hash",
+    default=None,
+    help="sha256 of the font fontc produced last time the caller compared this "
+    "source. If the font fontc produces now hashes to the same value, exit 3 "
+    "immediately instead of comparing; the caller's stored result still applies. "
+    "The hash of the font fontc produces is always written to fontc.sha256 in "
+    "the build directory.",
+)
 flags.DEFINE_bool("json", False, "print results in machine-readable JSON format")
 flags.DEFINE_string("outdir", default=None, help="directory to store generated files")
 flags.DEFINE_bool(

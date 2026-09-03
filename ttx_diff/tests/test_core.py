@@ -1,8 +1,18 @@
 """Tests for ttx_diff.core."""
 
+import hashlib
+
+import pytest
 from lxml import etree
 
-from ttx_diff.core import strip_fontc_version_tag, unwrap_extension_lookups
+from ttx_diff.core import (
+    FONTC_TTF_HASH_FILE,
+    UNCHANGED_EXIT_CODE,
+    hash_file,
+    strip_fontc_version_tag,
+    unwrap_extension_lookups,
+    write_hash_and_maybe_exit_early,
+)
 
 
 def _make_tree(xml_str):
@@ -144,3 +154,38 @@ def test_strip_keeps_non_stamp_fontc_note():
     want = _name_tree("Version 1.000;fontc is broken")
     strip_fontc_version_tag(got)
     assert etree.tostring(got) == etree.tostring(want)
+
+
+def test_hash_file_matches_hashlib(tmp_path):
+    font = tmp_path / "fontc.ttf"
+    font.write_bytes(b"not really a font" * 1000)
+    assert hash_file(font) == hashlib.sha256(font.read_bytes()).hexdigest()
+
+
+def test_write_hash_records_the_hash(tmp_path):
+    font = tmp_path / "fontc.ttf"
+    font.write_bytes(b"pretend this is a font")
+    write_hash_and_maybe_exit_early(font, tmp_path, None)
+    assert (tmp_path / FONTC_TTF_HASH_FILE).read_text() == hash_file(font)
+
+
+def test_write_hash_exits_when_the_hash_matches(tmp_path):
+    font = tmp_path / "fontc.ttf"
+    font.write_bytes(b"pretend this is a font")
+    with pytest.raises(SystemExit) as exit:
+        write_hash_and_maybe_exit_early(font, tmp_path, hash_file(font))
+    assert exit.value.code == UNCHANGED_EXIT_CODE
+
+
+def test_write_hash_continues_when_the_hash_differs(tmp_path):
+    font = tmp_path / "fontc.ttf"
+    font.write_bytes(b"pretend this is a font")
+    write_hash_and_maybe_exit_early(font, tmp_path, "0" * 64)
+    assert (tmp_path / FONTC_TTF_HASH_FILE).read_text() == hash_file(font)
+
+
+# fontc failing to build is not a result we can cache, so there is nothing to
+# record and nothing to skip
+def test_write_hash_is_a_noop_without_a_font(tmp_path):
+    write_hash_and_maybe_exit_early(tmp_path / "fontc.ttf", tmp_path, "0" * 64)
+    assert not (tmp_path / FONTC_TTF_HASH_FILE).exists()
