@@ -8,8 +8,6 @@
 use std::collections::HashMap;
 
 use fontdrasil::coords::NormalizedLocation;
-use smol_str::SmolStr;
-use write_fonts::types::GlyphId16;
 
 use super::{PendingCompilation, VariationInfo};
 
@@ -40,9 +38,10 @@ pub use error::{LookupRef, MergeError};
 ///
 /// Everything that cannot vary must be identical across masters: language
 /// systems, features and the lookups they reference, GSUB, conditionsets,
-/// mark filtering sets, and so on. GDEF glyph classes and mark class
-/// membership are unioned, with an error if a glyph is classified
-/// differently in two masters. Tables other than GPOS and GDEF, and any
+/// mark filtering sets, and so on. GDEF glyph classes are unioned, with an
+/// error if a glyph is classified differently in two masters. Mark classes
+/// are matched by the marks they contain, not by name; see
+/// [`MergeCtx::align_mark_classes`]. Tables other than GPOS and GDEF, and any
 /// warnings, are taken from the default master; the caller should report
 /// each master's own diagnostics before merging.
 ///
@@ -53,7 +52,7 @@ pub fn merge<V: VariationInfo>(
 ) -> Result<PendingCompilation, MergeError> {
     let mut ctx = MergeCtx::new(masters, var_info)?;
     ctx.check_structure()?;
-    ctx.merge_mark_classes()?;
+    ctx.merge_mark_classes();
     ctx.merge_gdef()?;
     ctx.merge_ligature_carets()?;
     ctx.merge_gpos()?;
@@ -146,52 +145,20 @@ impl<'a, V: VariationInfo> MergeCtx<'a, V> {
     ///
     /// Only membership matters here: the anchors are merged where they are
     /// used, in the mark lookups, and this map only feeds GDEF glyph class
-    /// inference.
-    fn merge_mark_classes(&mut self) -> Result<(), MergeError> {
+    /// inference. Names are not compared, since a glyph can be in several
+    /// classes and masters can name the same class differently.
+    fn merge_mark_classes(&mut self) {
         let merged = &mut self.merged.mark_classes;
-        let mut membership: HashMap<GlyphId16, SmolStr> = merged
-            .iter()
-            .flat_map(|(name, class)| {
-                class
-                    .members
-                    .iter()
-                    .flat_map(|(glyphs, _)| glyphs.iter())
-                    .map(move |glyph| (glyph, name.clone()))
-            })
-            .collect();
-
-        for (i, other) in self.others.iter().enumerate() {
+        for other in &self.others {
             for (name, class) in &other.mark_classes {
-                for (glyphs, anchor) in &class.members {
-                    let mut is_new = false;
-                    for glyph in glyphs.iter() {
-                        match membership.get(&glyph) {
-                            Some(existing) if existing != name => {
-                                return Err(MergeError::MarkClassConflict {
-                                    master: i + 1,
-                                    glyph,
-                                    expected: existing.clone(),
-                                    found: name.clone(),
-                                });
-                            }
-                            Some(_) => (),
-                            None => {
-                                membership.insert(glyph, name.clone());
-                                is_new = true;
-                            }
-                        }
-                    }
-                    if is_new {
-                        merged
-                            .entry(name.clone())
-                            .or_default()
-                            .members
-                            .push((glyphs.clone(), anchor.clone()));
+                let members = &mut merged.entry(name.clone()).or_default().members;
+                for member in &class.members {
+                    if !members.contains(member) {
+                        members.push(member.clone());
                     }
                 }
             }
         }
-        Ok(())
     }
 
     fn merge_gdef(&mut self) -> Result<(), MergeError> {
@@ -342,17 +309,16 @@ mod tests {
     }
 
     #[test]
-    fn mark_class_conflict() {
+    fn mark_class_names_are_not_compared() {
         let a = "markClass acute <anchor 0 0> @TOP; feature mark { pos base a <anchor 0 0> mark @TOP; } mark;";
         let b = "markClass acute <anchor 0 0> @BOTTOM; feature mark { pos base a <anchor 0 0> mark @BOTTOM; } mark;";
-        assert_eq!(
-            merge_masters(&[a, b]).err(),
-            Some(MergeError::MarkClassConflict {
-                master: 1,
-                glyph: glyph_map().get("acute").unwrap(),
-                expected: "@TOP".into(),
-                found: "@BOTTOM".into(),
-            })
+        let merged = merge_masters(&[a, b]).unwrap();
+        assert_eq!(merged.mark_classes.len(), 2);
+        assert!(
+            merged
+                .mark_classes
+                .values()
+                .all(|class| class.members.len() == 1)
         );
     }
 
