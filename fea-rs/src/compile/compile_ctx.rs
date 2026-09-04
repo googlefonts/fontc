@@ -298,24 +298,26 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         );
     }
 
+    /// The logic in this fn is surprisingly treacherous.
+    ///
+    /// See <https://github.com/fonttools/fonttools/pull/4169> for the most
+    /// comprehensive explanation.
     fn set_script(&mut self, stmt: typed::Script) {
         let script = stmt.tag().to_raw();
+        let system = LanguageSystem {
+            script,
+            language: tags::LANG_DFLT,
+        };
 
-        // fonttools logic here is kind of particular, so let's match it literally
-        //https://github.com/fonttools/fonttools/blob/5ae2943a43/Lib/fontTools/feaLib/builder.py#L1239
-        if self
-            .active_feature
-            .as_ref()
-            .unwrap()
-            .current_system()
-            .map(|langsys| (langsys.script, langsys.language))
-            == Some((script, tags::LANG_DFLT))
-        {
-            return;
-        }
+        let system_is_current = self.active_feature.as_ref().unwrap().current_lang_sys() == system;
 
         self.script = Some(script);
-        self.lookup_flags.clear();
+
+        // a script statement naming the already-current system does not reset
+        // the lookupflag.
+        if !system_is_current {
+            self.lookup_flags.clear();
+        }
 
         self.set_script_language(script, tags::LANG_DFLT, false, false);
     }
