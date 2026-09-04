@@ -2266,7 +2266,7 @@ fn get_reasonable_length_span(node: &NodeOrToken) -> Range<usize> {
 ///
 /// Matches feaLib's `VariableScalar.does_vary`:
 /// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/feaLib/variableScalar.py#L58-L61>
-fn metric_from_deltas(default: i16, deltas: Vec<(VariationRegion, i16)>) -> Metric {
+pub(crate) fn metric_from_deltas(default: i16, deltas: Vec<(VariationRegion, i16)>) -> Metric {
     let device_or_deltas = if deltas.iter().all(|(_, delta)| *delta == 0) {
         DeviceOrDeltas::None
     } else {

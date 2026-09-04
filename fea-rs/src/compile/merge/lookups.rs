@@ -6,12 +6,12 @@ use super::{LookupRef, MergeCtx, MergeError};
 use crate::{
     Kind,
     compile::{
-        LookupId,
+        LookupId, VariationInfo,
         lookups::{FilterSetId, PositionLookup},
     },
 };
 
-impl MergeCtx {
+impl<V: VariationInfo> MergeCtx<'_, V> {
     pub(super) fn merge_gpos(&mut self) -> Result<(), MergeError> {
         let expected = self.merged.lookups.gpos().len();
         for (i, other) in self.others.iter().enumerate() {
@@ -37,7 +37,7 @@ impl MergeCtx {
         Ok(())
     }
 
-    fn lookup_ref(&self, index: usize) -> LookupRef {
+    pub(super) fn lookup_ref(&self, index: usize) -> LookupRef {
         let id = LookupId::Gpos(index);
         let name = self
             .merged
@@ -79,10 +79,10 @@ impl MergeCtx {
 /// Merge one lookup across all masters.
 ///
 /// `lookups` has one entry per master, the default first.
-fn merge_lookup(
+fn merge_lookup<V: VariationInfo>(
     lookups: &[&PositionLookup],
     index: usize,
-    ctx: &MergeCtx,
+    ctx: &MergeCtx<'_, V>,
 ) -> Result<PositionLookup, MergeError> {
     if lookups.iter().all(|lookup| *lookup == lookups[0]) {
         return Ok(lookups[0].clone());
@@ -123,8 +123,7 @@ fn merge_lookup(
 
     let merged = match inner[0] {
         PositionLookup::Single(_) => {
-            aligned!(Single)?;
-            return Err(ctx.unsupported(index, kind));
+            PositionLookup::Single(ctx.merge_single_pos(aligned!(Single)?, index)?)
         }
         PositionLookup::Pair(_) => {
             aligned!(Pair)?;
@@ -160,21 +159,21 @@ fn merge_lookup(
 }
 
 /// One lookup viewed across all masters, with the common header pulled out.
-struct AlignedLookup<'a, T> {
+pub(super) struct AlignedLookup<'a, T> {
     flags: LookupFlag,
     mark_set: Option<FilterSetId>,
     /// The subtables of each master, the default first.
-    per_master: Vec<&'a [T]>,
+    pub(super) per_master: Vec<&'a [T]>,
 }
 
 /// View every master's lookup as one lookup type, checking that the headers agree.
 ///
 /// `extract` pulls the builder for that type out of a `PositionLookup`; the
 /// caller guarantees every lookup is of that type.
-fn align<'a, T>(
+fn align<'a, T, V: VariationInfo>(
     lookups: &[&'a PositionLookup],
     index: usize,
-    ctx: &MergeCtx,
+    ctx: &MergeCtx<'_, V>,
     extract: impl Fn(&'a PositionLookup) -> &'a LookupBuilder<T>,
 ) -> Result<AlignedLookup<'a, T>, MergeError> {
     let builders: Vec<_> = lookups.iter().map(|lookup| extract(lookup)).collect();
@@ -202,10 +201,10 @@ impl<T> AlignedLookup<'_, T> {
     ///
     /// For lookup types where matching is per subtable this is the only
     /// correct alignment, so differing subtable counts are an error.
-    fn indexwise(
+    fn indexwise<V: VariationInfo>(
         &self,
         index: usize,
-        ctx: &MergeCtx,
+        ctx: &MergeCtx<'_, V>,
         merge_one: impl Fn(&[&T]) -> Result<T, MergeError>,
     ) -> Result<Vec<T>, MergeError> {
         let expected = self.per_master[0].len();
@@ -227,7 +226,7 @@ impl<T> AlignedLookup<'_, T> {
             .collect()
     }
 
-    fn build(self, subtables: Vec<T>) -> LookupBuilder<T> {
+    pub(super) fn build(self, subtables: Vec<T>) -> LookupBuilder<T> {
         LookupBuilder {
             flags: self.flags,
             mark_set: self.mark_set,
@@ -237,11 +236,11 @@ impl<T> AlignedLookup<'_, T> {
 }
 
 //TODO: replace with real per-type merging; for now identical subtables pass through
-fn merge_indexwise<T: PartialEq + Clone>(
+fn merge_indexwise<T: PartialEq + Clone, V: VariationInfo>(
     aligned: AlignedLookup<'_, T>,
     index: usize,
     kind: Kind,
-    ctx: &MergeCtx,
+    ctx: &MergeCtx<'_, V>,
 ) -> Result<LookupBuilder<T>, MergeError> {
     let subtables = aligned.indexwise(index, ctx, |row| {
         if row.iter().all(|subtable| *subtable == row[0]) {
