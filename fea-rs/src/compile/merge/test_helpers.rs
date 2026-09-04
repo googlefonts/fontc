@@ -29,7 +29,9 @@ pub(super) fn location(wght: f64) -> NormalizedLocation {
 pub(super) fn pending(fea: &str) -> PendingCompilation {
     let (tree, diagnostics) = parse::parse_string(fea);
     assert!(!diagnostics.has_errors(), "{}", diagnostics.display());
-    compile::compile_for_merge(&tree, &glyph_map(), Opts::new()).unwrap()
+    compile::compile_for_merge(&tree, &glyph_map(), Opts::new())
+        .unwrap()
+        .0
 }
 
 pub(super) fn merge_masters(feas: &[&str]) -> Result<PendingCompilation, MergeError> {

@@ -17,11 +17,19 @@ pub struct LanguageSystem {
 /// Track languagesystem statements
 ///
 /// Seeing no statements is the same as seeing 'DFLT dflt'.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub(crate) struct DefaultLanguageSystems {
     has_explicit_entry: bool,
     // this is me being fancy, because we clone this everytime we start a lookup.
     items: Rc<HashSet<LanguageSystem>>,
+}
+
+/// Only the resulting set matters: an implicit and an explicit 'DFLT dflt'
+/// are the same language system.
+impl PartialEq for DefaultLanguageSystems {
+    fn eq(&self, other: &Self) -> bool {
+        self.items == other.items
+    }
 }
 
 impl DefaultLanguageSystems {

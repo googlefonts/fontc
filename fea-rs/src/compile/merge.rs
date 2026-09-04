@@ -35,9 +35,9 @@ pub use error::MergeError;
 /// systems, features and the lookups they reference, GSUB, conditionsets,
 /// mark filtering sets, and so on. GDEF glyph classes and mark class
 /// membership are unioned, with an error if a glyph is classified
-/// differently in two masters. Tables other than GPOS and GDEF, and any
-/// warnings, are taken from the default master; the caller should report
-/// each master's own diagnostics before merging.
+/// differently in two masters. Tables other than GPOS and GDEF are taken
+/// from the default master; each master's own diagnostics are returned by
+/// [`compile_for_merge`], and it is up to the caller to report them.
 ///
 /// [`compile_for_merge`]: super::compile_for_merge
 pub fn merge<V: VariationInfo>(
@@ -282,6 +282,13 @@ mod tests {
             merge_masters(&[a, b]).err(),
             Some(MergeError::LanguageSystems { master: 1 })
         );
+    }
+
+    #[test]
+    fn implicit_and_explicit_dflt_are_the_same_language_system() {
+        let a = "feature kern { pos a b -20; } kern;";
+        let b = "languagesystem DFLT dflt; feature kern { pos a b -20; } kern;";
+        assert_eq!(merged_binary(&[a, b]), one_shot_binary(a));
     }
 
     #[test]

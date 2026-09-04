@@ -89,20 +89,25 @@ pub fn compile<V: VariationInfo, T: FeatureProvider>(
 /// Unlike [`compile`] this takes no [`VariationInfo`]: a master's FEA is by
 /// definition not variable, so variable metrics, conditionsets and glyphsapp
 /// number values are rejected, as they would be when compiling a static font.
+///
+/// If successful, returns the [`PendingCompilation`], and any warnings. The
+/// warnings are removed from the returned state, so they are not reported
+/// again by [`PendingCompilation::finish`].
 pub fn compile_for_merge(
     tree: &ParseTree,
     glyph_map: &GlyphMap,
     opts: Opts,
-) -> Result<PendingCompilation, DiagnosticSet> {
+) -> Result<(PendingCompilation, DiagnosticSet), DiagnosticSet> {
     let mut ctx = CompilationCtx::<NopFeatureProvider, NopVariationInfo>::new(
         glyph_map, tree, None, None, opts,
     );
     ctx.compile(&tree.typed_root());
-    let pending = ctx.get_pending_compilation();
+    let mut pending = ctx.get_pending_compilation();
     if pending.has_errors() {
         return Err(DiagnosticSet::new(pending.errors, tree, usize::MAX));
     }
-    Ok(pending)
+    let warnings = std::mem::take(&mut pending.errors);
+    Ok((pending, DiagnosticSet::new(warnings, tree, usize::MAX)))
 }
 
 /// A helper function for extracting the glyph order from a UFO
