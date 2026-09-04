@@ -44,7 +44,9 @@ pub(crate) struct ActiveFeature {
     pub(crate) tag: Tag,
     condition_set: Option<ConditionSet>,
     default_systems: DefaultLanguageSystems,
-    current_lang_sys: Option<LanguageSystem>,
+    current_lang_sys: LanguageSystem,
+    /// Whether a script or language statement has been seen
+    seen_script_lang: bool,
     lookups: HashMap<LanguageSystem, Vec<LookupId>>,
     script_default_lookups: HashMap<Tag, Vec<LookupId>>,
 }
@@ -349,12 +351,13 @@ impl ActiveFeature {
             condition_set,
             script_default_lookups: Default::default(),
             lookups: Default::default(),
-            current_lang_sys: Default::default(),
+            current_lang_sys: default_systems.first(),
+            seen_script_lang: false,
             default_systems,
         }
     }
 
-    pub(crate) fn current_system(&self) -> Option<LanguageSystem> {
+    pub(crate) fn current_lang_sys(&self) -> LanguageSystem {
         self.current_lang_sys
     }
 
@@ -406,26 +409,27 @@ impl ActiveFeature {
             self.lookups.entry(system).or_insert_with(|| lookups);
         }
 
-        self.current_lang_sys = Some(system);
+        self.current_lang_sys = system;
+        self.seen_script_lang = true;
         system.to_feature_key(self.tag)
     }
 
     pub(crate) fn add_lookup(&mut self, lookup: LookupId) {
         // there is a distinction between "implicit DFLT/dflt" and having
         // an explicit 'DFLT' script in the lookup block.
-        let is_script_default = match self.current_lang_sys {
-            None => false,
-            Some(sys) => sys.language == tags::LANG_DFLT,
-        };
-
-        if is_script_default {
+        if !self.seen_script_lang {
+            self.lookups
+                .entry(LanguageSystem::default())
+                .or_default()
+                .push(lookup);
+        } else if self.current_lang_sys.language == tags::LANG_DFLT {
             self.script_default_lookups
-                .entry(self.current_lang_sys.unwrap().script)
+                .entry(self.current_lang_sys.script)
                 .or_default()
                 .push(lookup);
         } else {
             self.lookups
-                .entry(self.current_lang_sys.unwrap_or_default())
+                .entry(self.current_lang_sys)
                 .or_default()
                 .push(lookup);
         }

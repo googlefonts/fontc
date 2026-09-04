@@ -40,6 +40,18 @@ impl DefaultLanguageSystems {
     pub fn iter(&self) -> impl Iterator<Item = LanguageSystem> + '_ {
         self.items.iter().copied()
     }
+
+    /// The first declared language system, ordered by (script, language).
+    ///
+    /// This matches the ordering of makeotf's `langSysMap`, and that behaviour
+    /// is in turn adopted by feaLib.
+    pub(crate) fn first(&self) -> LanguageSystem {
+        self.items
+            .iter()
+            .copied()
+            .min_by_key(|sys| (sys.script, sys.language))
+            .unwrap_or_default()
+    }
 }
 
 impl LanguageSystem {
