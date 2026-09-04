@@ -6,7 +6,7 @@ use std::{
 
 use write_fonts::{
     read::{
-        FontData, ReadError,
+        ReadError,
         tables::{
             gdef::{Gdef, MarkGlyphSets},
             gpos::{AnchorTable, Gpos, PositionLookupList, PositionSubtables, ValueRecord},
@@ -145,26 +145,16 @@ struct ResolvedAnchor {
 }
 
 impl ResolvedValueRecord {
-    fn new(
-        record: ValueRecord,
-        data: FontData,
-        computer: Option<&DeltaComputer>,
-    ) -> Result<Self, ReadError> {
+    fn new(record: ValueRecord, computer: Option<&DeltaComputer>) -> Result<Self, ReadError> {
         let x_advance =
-            ResolvedValue::new(record.x_advance(), record.x_advance_device(data), computer)?;
+            ResolvedValue::new(record.x_advance(), record.x_advance_device(), computer)?;
         let y_advance =
-            ResolvedValue::new(record.y_advance(), record.y_advance_device(data), computer)?;
+            ResolvedValue::new(record.y_advance(), record.y_advance_device(), computer)?;
 
-        let x_placement = ResolvedValue::new(
-            record.x_placement(),
-            record.x_placement_device(data),
-            computer,
-        )?;
-        let y_placement = ResolvedValue::new(
-            record.y_placement(),
-            record.y_placement_device(data),
-            computer,
-        )?;
+        let x_placement =
+            ResolvedValue::new(record.x_placement(), record.x_placement_device(), computer)?;
+        let y_placement =
+            ResolvedValue::new(record.y_placement(), record.y_placement_device(), computer)?;
         Ok(ResolvedValueRecord {
             x_advance,
             y_advance,

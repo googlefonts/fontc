@@ -69,7 +69,7 @@ pub(crate) struct AllLookups {
     gsub_debug_info: Vec<Option<LookupDebugInfo>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum PositionLookup {
     Single(LookupBuilder<SinglePosBuilder>),
     Pair(LookupBuilder<PairPosBuilder>),
@@ -108,7 +108,7 @@ impl_into_lookup!(MarkToLigBuilder, PositionLookup, MarkToLig);
 impl_into_lookup!(CursivePosBuilder, PositionLookup, Cursive);
 impl_into_lookup!(SingleSubBuilder, SubstitutionLookup, Single);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum SubstitutionLookup {
     Single(LookupBuilder<SingleSubBuilder>),
     Multiple(LookupBuilder<MultipleSubBuilder>),
@@ -604,6 +604,18 @@ impl AllLookups {
                 id
             }
         }
+    }
+
+    pub(crate) fn gpos(&self) -> &[PositionLookup] {
+        &self.gpos
+    }
+
+    pub(crate) fn gsub(&self) -> &[SubstitutionLookup] {
+        &self.gsub
+    }
+
+    pub(crate) fn named(&self) -> &HashMap<SmolStr, LookupId> {
+        &self.named
     }
 
     pub(crate) fn debug_info(&self) -> (&[Option<LookupDebugInfo>], &[Option<LookupDebugInfo>]) {

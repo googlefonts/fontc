@@ -18,8 +18,9 @@ pub use feature_writer::{
 };
 pub use language_system::LanguageSystem;
 pub use lookups::{FeatureKey, LookupId};
+pub use merge::{MergeError, merge};
 pub use opts::Opts;
-pub use output::Compilation;
+pub use output::{Compilation, PendingCompilation};
 pub use tables::Os2Builder;
 pub use variations::{AxisLocation, NopVariationInfo, VariationInfo};
 
@@ -35,6 +36,7 @@ mod glyph_range;
 pub(crate) mod glyphsapp_syntax_ext;
 mod language_system;
 mod lookups;
+mod merge;
 mod opts;
 mod output;
 mod tables;
@@ -75,6 +77,32 @@ pub fn compile<V: VariationInfo, T: FeatureProvider>(
             Err(errors)
         }
     }
+}
+
+/// Compile one master's (non-variable) FEA into the intermediate state used for merging.
+///
+/// A designspace may have a different `features.fea` per master. To combine
+/// them, compile each one with this function, [`merge()`] the results into a
+/// single variable [`PendingCompilation`], and call [`PendingCompilation::finish`]
+/// once; the feature writer therefore runs once, on the merged result.
+///
+/// Unlike [`compile`] this takes no [`VariationInfo`]: a master's FEA is by
+/// definition not variable, so variable metrics, conditionsets and glyphsapp
+/// number values are rejected, as they would be when compiling a static font.
+pub fn compile_for_merge(
+    tree: &ParseTree,
+    glyph_map: &GlyphMap,
+    opts: Opts,
+) -> Result<PendingCompilation, DiagnosticSet> {
+    let mut ctx = CompilationCtx::<NopFeatureProvider, NopVariationInfo>::new(
+        glyph_map, tree, None, None, opts,
+    );
+    ctx.compile(&tree.typed_root());
+    let pending = ctx.get_pending_compilation();
+    if pending.has_errors() {
+        return Err(DiagnosticSet::new(pending.errors, tree, usize::MAX));
+    }
+    Ok(pending)
 }
 
 /// A helper function for extracting the glyph order from a UFO
