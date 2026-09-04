@@ -50,13 +50,14 @@ pub enum MergeError {
         found: GlyphClassDef,
     },
     #[error(
-        "master {master}: glyph {glyph} is in mark class '{found}', but '{expected}' in another master"
+        "master {master}: {lookup}: marks {glyph} and {other} are in the same mark class in one \
+         master but in different classes in another"
     )]
-    MarkClassConflict {
+    MarkClassMismatch {
         master: usize,
+        lookup: LookupRef,
         glyph: GlyphId16,
-        expected: SmolStr,
-        found: SmolStr,
+        other: GlyphId16,
     },
     #[error(
         "master {master}: {found} GPOS lookups, but the default master has {expected}. \
