@@ -1,0 +1,12 @@
+languagesystem cyrl dflt;
+languagesystem latn dflt;
+
+feature test {
+    # 'cyrl' sorts first, and so is the system we start out in; this statement
+    # is a no-op, but rules still only get registered under cyrl.
+    script cyrl;
+    sub a by b;
+
+    script latn;
+    sub c by d;
+} test;

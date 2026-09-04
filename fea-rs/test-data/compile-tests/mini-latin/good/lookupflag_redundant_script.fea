@@ -1,0 +1,10 @@
+languagesystem latn dflt;
+
+feature test {
+    lookupflag IgnoreMarks;
+    # this script statement does not change the current system (which is seeded
+    # from the languagesystem statement above) and so is a no-op: it does not
+    # clear the preceding lookupflag.
+    script latn;
+    pos a -10;
+} test;
