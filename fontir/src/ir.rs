@@ -18,7 +18,7 @@ use write_fonts::{
 };
 
 use fontdrasil::{
-    coords::NormalizedLocation,
+    coords::{DesignLocation, NormalizedLocation},
     types::{Axes, GlyphName},
     variations::{ModelDeltas, VariationModel},
 };
@@ -1120,6 +1120,91 @@ impl FeaturesSource {
             fea_content,
             include_dir: None,
         }
+    }
+}
+
+impl Display for FeaturesSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FeaturesSource::Empty => f.write_str("<no features>"),
+            FeaturesSource::File { fea_file, .. } => write!(f, "{}", fea_file.display()),
+            FeaturesSource::Memory { .. } => f.write_str("<memory>"),
+        }
+    }
+}
+
+/// One FEA source, and the masters that use it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct MasterFeaSource {
+    /// Where the FEA for these masters comes from.
+    pub source: FeaturesSource,
+    /// The design locations of every master that shares this exact source.
+    ///
+    /// Empty if the source isn't associated with any particular master, e.g.
+    /// the features of a .glyphs file, which are font-wide.
+    pub locations: Vec<DesignLocation>,
+}
+
+/// Every distinct FEA source for a font.
+///
+/// The masters of a designspace can each have their own features.fea. Sources
+/// that are equivalent - the overwhelmingly common case, where every master
+/// has the same features - are collapsed into a single entry that records all
+/// the masters sharing it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct FeatureSources {
+    /// Never empty; `sources[0]` is the source we treat as the default master's.
+    sources: Vec<MasterFeaSource>,
+}
+
+impl FeatureSources {
+    /// One source, used by the entire font
+    pub fn single(source: FeaturesSource) -> Self {
+        FeatureSources {
+            sources: vec![MasterFeaSource {
+                source,
+                locations: Vec::new(),
+            }],
+        }
+    }
+
+    /// Distinct sources, one entry per set of masters that share a source.
+    ///
+    /// The first entry is the one we treat as the default master's; see
+    /// [`FeatureSources::default_source`].
+    ///
+    /// Panics if `sources` is empty; a font always has at least one (possibly
+    /// [`FeaturesSource::Empty`]) source.
+    pub fn new(sources: Vec<MasterFeaSource>) -> Self {
+        assert!(!sources.is_empty(), "a font always has a default source");
+        FeatureSources { sources }
+    }
+
+    /// The source used to compile everything that is not per-master.
+    ///
+    /// This is the default master's FEA, if it has any; a designspace where
+    /// only non-default masters have a features.fea uses the first one found.
+    pub fn default_source(&self) -> &FeaturesSource {
+        &self.sources[0].source
+    }
+
+    /// The number of distinct sources; always at least one.
+    pub fn n_sources(&self) -> usize {
+        self.sources.len()
+    }
+
+    pub fn get(&self, idx: usize) -> Option<&MasterFeaSource> {
+        self.sources.get(idx)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &MasterFeaSource> {
+        self.sources.iter()
+    }
+}
+
+impl Default for FeatureSources {
+    fn default() -> Self {
+        FeatureSources::single(FeaturesSource::Empty)
     }
 }
 

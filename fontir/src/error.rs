@@ -40,8 +40,6 @@ pub enum Error {
         #[source]
         VariationModelError,
     ),
-    #[error("feature files are non-identical: {0}, {1}")]
-    NonIdenticalFea(PathBuf, PathBuf),
     #[error("axis '{0}' missing at least one of default/min/max mapping")]
     MissingAxisMapping(Tag),
     #[error("no glyph for name '{0}'")]

@@ -506,7 +506,10 @@ impl StaticMetadata {
         })
     }
 
-    /// The default on all variable axes.
+    /// The default on every source axis, point axes included.
+    ///
+    /// Subset to [`Self::axes`] before comparing with a location in the
+    /// variation model.
     pub fn default_location(&self) -> &NormalizedLocation {
         &self.default_location
     }

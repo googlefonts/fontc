@@ -1,0 +1,3 @@
+feature ss01 {
+    pos A <10 0 20 0>;
+} ss01;

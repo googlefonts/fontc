@@ -40,7 +40,7 @@ pub trait Source {
 
     /// Create a function that could be called to generate or identify fea file(s).
     ///
-    /// When run work should update [crate::orchestration::Context] with [crate::ir::FeaturesSource].
+    /// When run work should update [crate::orchestration::Context] with [crate::ir::FeatureSources].
     fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error>;
 
     /// Create a function that could be called to produce the kerning locations.
