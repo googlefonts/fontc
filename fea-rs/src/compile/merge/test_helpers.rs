@@ -1,11 +1,16 @@
 //! Shared helpers for the merge tests.
 
 use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
+use smol_str::SmolStr;
+use write_fonts::types::Tag;
 
-use super::{MergeError, merge};
+use super::{LookupRef, MergeError, merge};
 use crate::{
     GlyphMap,
-    compile::{self, MockVariationInfo, NopFeatureProvider, Opts, PendingCompilation},
+    compile::{
+        self, FeatureKey, MockVariationInfo, NopFeatureProvider, Opts, PendingCompilation,
+        tags::{LANG_DFLT, SCRIPT_DFLT},
+    },
     parse,
 };
 
@@ -24,6 +29,14 @@ pub(super) fn var_info() -> MockVariationInfo {
 
 pub(super) fn location(wght: f64) -> NormalizedLocation {
     NormalizedLocation::for_pos(&[("wght", wght)])
+}
+
+pub(super) fn lookup_ref(index: usize, name: Option<&str>, feature: Option<Tag>) -> LookupRef {
+    LookupRef {
+        index,
+        name: name.map(SmolStr::new),
+        feature: feature.map(|tag| FeatureKey::new(tag, LANG_DFLT, SCRIPT_DFLT)),
+    }
 }
 
 pub(super) fn pending(fea: &str) -> PendingCompilation {
@@ -86,4 +99,12 @@ pos a c <-10 0 -10 0>;
 feature mark {
 lookup MARKS;
 } mark;
+lookup SPLIT {
+pos a 10;
+subtable;
+pos b 20;
+} SPLIT;
+feature cpsp {
+lookup SPLIT;
+} cpsp;
 ";
