@@ -10,7 +10,7 @@ use write_fonts::{
         avar::Avar, cmap::Cmap, colr::Colr, cpal::Cpal, fvar::Fvar, gasp::Gasp, gdef::Gdef,
         glyf::Glyf, gpos::Gpos, gsub::Gsub, gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx,
         hvar::Hvar, loca::Loca, maxp::Maxp, meta::Meta, mvar::Mvar, name::Name, os2::Os2,
-        post::Post, stat::Stat, vhea::Vhea, vmtx::Vmtx, vvar::Vvar,
+        post::Post, stat::Stat, varc::Varc, vhea::Vhea, vmtx::Vmtx, vvar::Vvar,
     },
     types::Tag,
 };
@@ -55,6 +55,7 @@ const TABLES_TO_MERGE: &[(WorkId, Tag)] = &[
     (WorkId::Gsub, Gsub::TAG),
     (WorkId::Gdef, Gdef::TAG),
     (WorkId::Gvar, Gvar::TAG),
+    (WorkId::Varc, Varc::TAG),
     (WorkId::Loca, Loca::TAG),
     (WorkId::Maxp, Maxp::TAG),
     (WorkId::Name, Name::TAG),
@@ -85,6 +86,7 @@ fn has(context: &Context, id: WorkId) -> bool {
         WorkId::Gsub => context.gsub.try_get().is_some(),
         WorkId::Gdef => context.gdef.try_get().is_some(),
         WorkId::Gvar => context.gvar.try_get().is_some(),
+        WorkId::Varc => context.varc.try_get().is_some(),
         WorkId::Loca => context.loca.try_get().is_some(),
         WorkId::Maxp => context.maxp.try_get().is_some(),
         WorkId::Name => context.name.try_get().is_some(),
@@ -118,6 +120,7 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
         WorkId::Gsub => to_bytes(context.gsub.get().as_ref()),
         WorkId::Gdef => to_bytes(context.gdef.get().as_ref()),
         WorkId::Gvar => Some(context.gvar.get().to_vec()),
+        WorkId::Varc => Some(context.varc.get().to_vec()),
         WorkId::Loca => Some(context.loca.get().to_vec()),
         WorkId::Maxp => to_bytes(context.maxp.get().as_ref()),
         WorkId::Name => to_bytes(context.name.get().as_ref()),
@@ -156,6 +159,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
             .variant(WorkId::Gsub)
             .variant(WorkId::Gdef)
             .variant(WorkId::Gvar)
+            .variant(WorkId::Varc)
             .variant(WorkId::Loca)
             .variant(WorkId::Maxp)
             .variant(WorkId::Name)

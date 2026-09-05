@@ -18,7 +18,7 @@ use write_fonts::{
 };
 
 use fontdrasil::{
-    coords::NormalizedLocation,
+    coords::{NormalizedCoord, NormalizedLocation},
     types::{Axes, GlyphName},
     variations::{ModelDeltas, VariationModel},
 };
@@ -1429,10 +1429,27 @@ pub struct Glyph {
     /// Whether to "export" in source terms
     pub emit_to_binary: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
+    #[serde(default, skip_serializing_if = "Axes::is_empty")]
+    axes: Axes, // Glyph-local axes for variable components.
     default_location: NormalizedLocation,
     sources: HashMap<NormalizedLocation, GlyphInstance>,
     has_consistent_2x2_transforms: bool,
     has_overflowing_2x2_transforms: bool,
+    #[serde(default)]
+    lowering: GlyphLowering,
+}
+
+/// How a glyph lowers to the binary. Assigned at the end of glyph order
+/// processing.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphLowering {
+    /// A glyf entry of contours, possibly empty.
+    #[default]
+    GlyfContours,
+    /// A glyf composite of ordinary components.
+    GlyfComposite,
+    /// A VARC record and a glyf entry of contours, possibly empty.
+    Varc,
 }
 
 /// Compute this during glyph processing and without allocation
@@ -1456,7 +1473,7 @@ fn has_consistent_2x2_transforms(
             .iter()
             .zip(inst.components.iter())
             .all(|(c1, c2)| {
-                c1.base == c2.base && c1.transform.as_coeffs()[..4] == c2.transform.as_coeffs()[..4]
+                c1.base == c2.base && c1.affine().as_coeffs()[..4] == c2.affine().as_coeffs()[..4]
             })
     });
     if log_enabled!(log::Level::Trace) && !consistent {
@@ -1474,7 +1491,7 @@ fn has_overflowing_2x2_transforms(
     // fontbe uses F2Dot14::from_f64() which saturates at MAX_F2DOT14
     let overflow_info = sources.iter().find_map(|(location, instance)| {
         instance.components.iter().find_map(|component| {
-            component.transform.as_coeffs()[..4]
+            component.affine().as_coeffs()[..4]
                 .iter()
                 .find(|&value| !(-2.0..=2.0).contains(value))
                 .map(|&value| (location.clone(), component.base.as_str(), value))
@@ -1522,15 +1539,37 @@ impl Glyph {
             name,
             emit_to_binary,
             codepoints,
+            axes: Axes::default(),
             default_location,
             sources: instances,
             has_consistent_2x2_transforms,
             has_overflowing_2x2_transforms,
+            lowering: GlyphLowering::default(),
         })
+    }
+
+    pub fn axes(&self) -> &Axes {
+        &self.axes
+    }
+
+    pub fn set_axes(&mut self, axes: Axes) {
+        self.axes = axes;
+    }
+
+    pub fn lowering(&self) -> GlyphLowering {
+        self.lowering
+    }
+
+    pub fn set_lowering(&mut self, lowering: GlyphLowering) {
+        self.lowering = lowering;
     }
 
     pub fn default_instance(&self) -> &GlyphInstance {
         self.sources.get(&self.default_location).unwrap()
+    }
+
+    pub fn default_location(&self) -> &NormalizedLocation {
+        &self.default_location
     }
 
     #[cfg(test)]
@@ -1645,6 +1684,8 @@ pub struct GlyphBuilder {
     pub emit_to_binary: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     pub sources: HashMap<NormalizedLocation, GlyphInstance>,
+    #[serde(default, skip_serializing_if = "Axes::is_empty")]
+    pub axes: Axes, // Glyph-local axes for variable components.
 }
 
 impl GlyphBuilder {
@@ -1654,6 +1695,7 @@ impl GlyphBuilder {
             emit_to_binary: true,
             codepoints: HashSet::new(),
             sources: HashMap::new(),
+            axes: Axes::default(),
         }
     }
 
@@ -1679,12 +1721,14 @@ impl GlyphBuilder {
     }
 
     pub fn build(self) -> Result<Glyph, BadGlyph> {
-        Glyph::new(
+        let mut glyph = Glyph::new(
             self.name,
             self.emit_to_binary,
             self.codepoints,
             self.sources,
-        )
+        )?;
+        glyph.axes = self.axes;
+        Ok(glyph)
     }
 }
 
@@ -1695,6 +1739,7 @@ impl From<Glyph> for GlyphBuilder {
             emit_to_binary: value.emit_to_binary,
             codepoints: value.codepoints,
             sources: value.sources,
+            axes: value.axes,
         }
     }
 }
@@ -1801,7 +1846,9 @@ impl GlyphInstance {
     /// The returned values must be provided in the following order:
     ///
     /// - the (x,y) values of points in any contours, in order
-    /// - the decomposed transform of any components, in order
+    /// - per component, in order: the transform values (see
+    ///   [`ComponentTransform::interpolation_values`]), then the location
+    ///   coordinates by tag
     /// - the width, height, and vertical origin (if present).
     ///
     /// These values are used to generate a `VariationModel`; after interpolation
@@ -1832,7 +1879,7 @@ impl GlyphInstance {
                 // <https://github.com/googlefonts/ufo2ft/issues/949>
                 self.components
                     .iter()
-                    .flat_map(|comp| comp.transform.as_coeffs()),
+                    .flat_map(component_interpolation_values),
             )
             .chain(Some(self.width))
             .chain(self.height)
@@ -1847,20 +1894,26 @@ impl GlyphInstance {
             contours.push(contour);
             values = remaining;
         }
-        let components = self
-            .components
-            .iter()
-            .zip(values.as_chunks::<6>().0)
-            .map(|(comp, coeffs)| Component {
+        // Per component: the transform values, then one coordinate per
+        // location axis. Fields not set in the template stay unset.
+        let mut components = Vec::with_capacity(self.components.len());
+        for comp in &self.components {
+            let (transform, remaining) = comp.transform.with_interpolated_values(values);
+            values = remaining;
+            let mut location = NormalizedLocation::new();
+            for (tag, _) in comp.location.iter() {
+                location.insert(*tag, NormalizedCoord::new(values[0]));
+                values = &values[1..];
+            }
+            components.push(Component {
                 base: comp.base.clone(),
-                transform: Affine::new(*coeffs),
+                transform,
                 anchor: comp.anchor.clone(),
-            })
-            .collect();
+                location,
+                reset_unspecified_axes: comp.reset_unspecified_axes,
+            });
+        }
 
-        // kind of silly but here i'm just manually truncating values as we
-        // consume them, just to simplify bookkeeping
-        values = &values[self.components.len() * 6..];
         let width = values[0];
         values = &values[1..];
         let height = self.height.and_then(|_| values.first().copied());
@@ -1885,6 +1938,31 @@ impl GlyphInstance {
             components,
         }
     }
+}
+
+/// The nine transform fields (a field that is not set is fed as 0, or 1 for
+/// scale).
+fn decomposed_transform_interpolation_values(t: &DecomposedTransform) -> impl Iterator<Item = f64> {
+    [
+        t.translate_x.unwrap_or(0.0),
+        t.translate_y.unwrap_or(0.0),
+        t.rotation.unwrap_or(0.0),
+        t.scale_x.unwrap_or(1.0),
+        t.scale_y.unwrap_or(1.0),
+        t.skew_x.unwrap_or(0.0),
+        t.skew_y.unwrap_or(0.0),
+        t.center_x.unwrap_or(0.0),
+        t.center_y.unwrap_or(0.0),
+    ]
+    .into_iter()
+}
+
+/// The transform values plus location coordinates of a component.
+fn component_interpolation_values(comp: &Component) -> impl Iterator<Item = f64> + '_ {
+    comp.transform
+        .interpolation_values()
+        .into_iter()
+        .chain(comp.location.iter().map(|(_, coord)| coord.to_f64()))
 }
 
 /// Create a new contour from raw points.
@@ -1931,8 +2009,8 @@ fn copy_ponts_to_el<'a>(el: &PathEl, vals: &'a [f64]) -> (PathEl, &'a [f64]) {
 pub struct Component {
     /// The name of the referenced glyph.
     pub base: GlyphName,
-    /// Affine transformation to apply to the referenced glyph.
-    pub transform: Affine,
+    /// Transform to apply to the referenced glyph.
+    pub transform: ComponentTransform,
     /// Explicit anchor for mark component attachment.
     ///
     /// In Glyphs.app, when a base glyph has multiple anchors with the same
@@ -1954,6 +2032,16 @@ pub struct Component {
     /// See: <https://handbook.glyphsapp.com/components/#reusing-shapes/anchors>
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor: Option<SmolStr>,
+    /// Location in the *referenced* glyph's axis space. Empty for an ordinary
+    /// component.
+    #[serde(default, skip_serializing_if = "NormalizedLocation::is_empty")]
+    pub location: NormalizedLocation,
+    /// If `true`, axes of the referenced glyph not present in
+    /// [`location`](Self::location) take the font's current variation settings.
+    /// If `false` they inherit the enclosing glyph's location. See
+    /// <https://github.com/harfbuzz/boring-expansion-spec/blob/main/VARC.md#processing>
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset_unspecified_axes: bool,
 }
 
 impl Component {
@@ -1961,22 +2049,231 @@ impl Component {
     pub fn new(base: impl Into<GlyphName>, transform: Affine) -> Self {
         Self {
             base: base.into(),
-            transform,
+            transform: ComponentTransform::Affine(transform),
             anchor: None,
+            location: NormalizedLocation::new(),
+            reset_unspecified_axes: false,
         }
     }
 
     /// Create a component with an explicit attachment anchor.
     pub fn with_anchor(base: impl Into<GlyphName>, transform: Affine, anchor: SmolStr) -> Self {
         Self {
-            base: base.into(),
-            transform,
             anchor: Some(anchor),
+            ..Self::new(base, transform)
         }
     }
 
+    /// Create a variable component: one that positions the referenced glyph in
+    /// that glyph's own axis space.
+    pub fn new_variable(
+        base: impl Into<GlyphName>,
+        transform: DecomposedTransform,
+        location: NormalizedLocation,
+        reset_unspecified_axes: bool,
+    ) -> Self {
+        Self {
+            base: base.into(),
+            transform: ComponentTransform::Decomposed(transform),
+            anchor: None,
+            location,
+            reset_unspecified_axes,
+        }
+    }
+
+    /// The transform as a matrix.
+    pub fn affine(&self) -> Affine {
+        self.transform.to_affine()
+    }
+
+    /// A variable component positions the referenced glyph in its own axis
+    /// space. An ordinary component does not, and behaves like a glyf
+    /// component.
+    pub fn is_variable(&self) -> bool {
+        !self.location.is_empty() || self.reset_unspecified_axes
+    }
+
+    /// The location the referenced glyph is sampled at inside a glyph at
+    /// `enclosing`.
+    ///
+    /// A reset component starts from the font's current location. Everything
+    /// else inherits the enclosing glyph's location.
+    pub fn location_at(
+        &self,
+        font_location: &NormalizedLocation,
+        enclosing: &NormalizedLocation,
+    ) -> NormalizedLocation {
+        let mut at = if self.reset_unspecified_axes {
+            font_location.clone()
+        } else {
+            enclosing.clone()
+        };
+        for (tag, coord) in self.location.iter() {
+            at.insert(*tag, *coord);
+        }
+        at
+    }
+
     pub(crate) fn has_nonidentity_2x2(&self) -> bool {
-        self.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0]
+        self.affine().as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0]
+    }
+}
+
+/// A component transform, stored as authored.
+///
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum ComponentTransform {
+    Affine(Affine),
+    Decomposed(DecomposedTransform),
+}
+
+impl ComponentTransform {
+    /// The transform as a matrix.
+    pub fn to_affine(&self) -> Affine {
+        match self {
+            ComponentTransform::Affine(affine) => *affine,
+            ComponentTransform::Decomposed(transform) => transform.to_affine(),
+        }
+    }
+
+    /// The values fed to interpolation: 6 affine coefficients, or the nine
+    /// decomposed fields (a field that is not set is fed as 0, or 1 for scale).
+    pub(crate) fn interpolation_values(&self) -> Vec<f64> {
+        match self {
+            ComponentTransform::Affine(affine) => affine.as_coeffs().to_vec(),
+            ComponentTransform::Decomposed(transform) => {
+                decomposed_transform_interpolation_values(transform).collect()
+            }
+        }
+    }
+
+    /// Rebuild from interpolated values, in the same order and count as
+    /// [`interpolation_values`](Self::interpolation_values).
+    pub(crate) fn with_interpolated_values<'a>(&self, values: &'a [f64]) -> (Self, &'a [f64]) {
+        match self {
+            ComponentTransform::Affine(_) => (
+                ComponentTransform::Affine(Affine::new(values[..6].try_into().unwrap())),
+                &values[6..],
+            ),
+            ComponentTransform::Decomposed(transform) => (
+                ComponentTransform::Decomposed(transform.with_field_values(&values[..9])),
+                &values[9..],
+            ),
+        }
+    }
+}
+
+/// <https://github.com/fonttools/fonttools/blob/5e6b12d12fa08abafbeb7570f47707fbedf69a45/Lib/fontTools/misc/transform.py#L410>
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[serde(default)]
+pub struct DecomposedTransform {
+    pub translate_x: Option<f64>,
+    pub translate_y: Option<f64>,
+    pub rotation: Option<f64>, // in degrees, counter-clockwise
+    pub scale_x: Option<f64>,
+    pub scale_y: Option<f64>,
+    pub skew_x: Option<f64>, // in degrees, clockwise
+    pub skew_y: Option<f64>, // in degrees, counter-clockwise
+    pub center_x: Option<f64>,
+    pub center_y: Option<f64>,
+}
+
+impl DecomposedTransform {
+    /// Compose the fields into an affine transform.
+    ///
+    /// Mirrors fontTools'
+    /// [`DecomposedTransform.toTransform`](https://github.com/fonttools/fonttools/blob/5e6b12d12fa08abafbeb7570f47707fbedf69a45/Lib/fontTools/misc/transform.py#L484):
+    /// translate by (translate + center), rotate, scale, skew, then translate back
+    /// by -center. Absent fields take their identity default (`0`, or `1` for scale).
+    pub fn to_affine(&self) -> Affine {
+        let translate_x = self.translate_x.unwrap_or(0.0);
+        let translate_y = self.translate_y.unwrap_or(0.0);
+        let rotation = self.rotation.unwrap_or(0.0).to_radians();
+        let scale_x = self.scale_x.unwrap_or(1.0);
+        let scale_y = self.scale_y.unwrap_or(1.0);
+        let skew_x = self.skew_x.unwrap_or(0.0).to_radians();
+        let skew_y = self.skew_y.unwrap_or(0.0).to_radians();
+        let center_x = self.center_x.unwrap_or(0.0);
+        let center_y = self.center_y.unwrap_or(0.0);
+
+        // fontTools skew matrix is (1, tan(skewY), tan(skewX), 1, 0, 0).
+        let skew = Affine::new([1.0, skew_y.tan(), skew_x.tan(), 1.0, 0.0, 0.0]);
+        Affine::translate((translate_x + center_x, translate_y + center_y))
+            * Affine::rotate(rotation)
+            * Affine::scale_non_uniform(scale_x, scale_y)
+            * skew
+            * Affine::translate((-center_x, -center_y))
+    }
+
+    /// Decompose an affine into transform fields. Inverse of [`to_affine`] for
+    /// invertible matrices.
+    ///
+    /// Port of fontTools
+    /// [`DecomposedTransform.fromTransform`](https://github.com/fonttools/fonttools/blob/5e6b12d12fa08abafbeb7570f47707fbedf69a45/Lib/fontTools/misc/transform.py#L439).
+    /// Center is never set.
+    ///
+    /// [`to_affine`]: Self::to_affine
+    pub fn from_affine(affine: Affine) -> DecomposedTransform {
+        let [mut a, mut b, c, d, x, y] = affine.as_coeffs();
+
+        let sx = a.signum();
+        if sx < 0.0 {
+            a *= sx;
+            b *= sx;
+        }
+
+        let delta = a * d - b * c;
+        let mut rotation = 0.0;
+        let (mut scale_x, mut scale_y) = (0.0, 0.0);
+        let (mut skew_x, mut skew_y) = (0.0, 0.0);
+        if a != 0.0 || b != 0.0 {
+            let r = (a * a + b * b).sqrt();
+            rotation = if b >= 0.0 {
+                (a / r).acos()
+            } else {
+                -(a / r).acos()
+            };
+            (scale_x, scale_y) = (r, delta / r);
+            skew_x = ((a * c + b * d) / (r * r)).atan();
+        } else if c != 0.0 || d != 0.0 {
+            let s = (c * c + d * d).sqrt();
+            rotation = std::f64::consts::FRAC_PI_2
+                - if d >= 0.0 {
+                    (-c / s).acos()
+                } else {
+                    -(c / s).acos()
+                };
+            (scale_x, scale_y) = (delta / s, s);
+            skew_y = ((a * c + b * d) / (s * s)).atan();
+        }
+
+        DecomposedTransform {
+            translate_x: Some(x),
+            translate_y: Some(y),
+            rotation: Some(rotation.to_degrees()),
+            scale_x: Some(scale_x * sx),
+            scale_y: Some(scale_y),
+            skew_x: Some(skew_x.to_degrees() * sx),
+            skew_y: Some(skew_y.to_degrees()),
+            center_x: None,
+            center_y: None,
+        }
+    }
+
+    /// Rebuild from nine field values, keeping only the fields set in `self`.
+    pub(crate) fn with_field_values(&self, fields: &[f64]) -> DecomposedTransform {
+        let take = |present: Option<f64>, v: f64| present.map(|_| v);
+        DecomposedTransform {
+            translate_x: take(self.translate_x, fields[0]),
+            translate_y: take(self.translate_y, fields[1]),
+            rotation: take(self.rotation, fields[2]),
+            scale_x: take(self.scale_x, fields[3]),
+            scale_y: take(self.scale_y, fields[4]),
+            skew_x: take(self.skew_x, fields[5]),
+            skew_y: take(self.skew_y, fields[6]),
+            center_x: take(self.center_x, fields[7]),
+            center_y: take(self.center_y, fields[8]),
+        }
     }
 }
 
@@ -2109,6 +2406,29 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn decomposed_transform_round_trips_through_affine() {
+        // from_affine inverts to_affine for invertible matrices, so wrapping an
+        // ordinary component's affine and composing it back gives the same matrix.
+        for affine in [
+            Affine::translate((10.0, -5.0)),
+            Affine::scale_non_uniform(2.0, 3.0),
+            Affine::rotate(0.7),
+            Affine::new([1.0, 0.0, 0.3, 1.0, 0.0, 0.0]), // skew
+            Affine::translate((4.0, 8.0))
+                * Affine::rotate(0.4)
+                * Affine::scale_non_uniform(1.5, 0.8),
+            Affine::new([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0]), // reflection (negative determinant)
+        ] {
+            let round = DecomposedTransform::from_affine(affine).to_affine();
+            let (got, want) = (round.as_coeffs(), affine.as_coeffs());
+            assert!(
+                got.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-9),
+                "affine {want:?} round-tripped to {got:?}"
+            );
+        }
+    }
 
     // from
     // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/tests/featureWriters/markFeatureWriter_test.py#L34>
@@ -2532,6 +2852,29 @@ mod tests {
     }
 
     #[test]
+    fn variable_component_serde_round_trip() {
+        let vc = Component::new_variable(
+            "radical",
+            DecomposedTransform {
+                translate_x: Some(100.0),
+                rotation: Some(15.0),
+                ..Default::default()
+            },
+            NormalizedLocation::for_pos(&[("wght", 0.5)]),
+            true,
+        );
+        let yaml = serde_yaml::to_string(&vc).unwrap();
+        let back: Component = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(vc, back);
+        // Absent transform fields stay absent (VARC HAVE_* semantics).
+        let ComponentTransform::Decomposed(transform) = &back.transform else {
+            panic!("expected a decomposed transform, got {:?}", back.transform);
+        };
+        assert!(transform.scale_x.is_none());
+        assert_eq!(Some(15.0), transform.rotation);
+    }
+
+    #[test]
     fn instance_from_deltas() {
         let z = Point::ZERO;
         let mut path1 = BezPath::new();
@@ -2587,7 +2930,51 @@ mod tests {
             }
         }
 
-        assert_eq!(new_instance.components[0].transform.as_coeffs(), [-1.; 6]);
+        assert_eq!(new_instance.components[0].affine().as_coeffs(), [-1.; 6]);
+    }
+
+    #[test]
+    fn instance_from_deltas_decomposed() {
+        // A decomposed transform consumes nine values in field order. Fields
+        // not set in the template stay unset.
+        let template = Component {
+            transform: ComponentTransform::Decomposed(DecomposedTransform {
+                translate_x: Some(1.),
+                rotation: Some(2.),
+                skew_x: Some(3.),
+                skew_y: Some(4.),
+                center_x: Some(5.),
+                center_y: Some(6.),
+                ..Default::default()
+            }),
+            ..Component::new("derp", Affine::IDENTITY)
+        };
+        let instance = GlyphInstance {
+            width: 600.,
+            components: vec![template],
+            ..Default::default()
+        };
+
+        let deltas = [10., 20., 45., 2., 3., 5., 6., 99., 98.]
+            .into_iter()
+            .chain([600.]) // width
+            .collect::<Vec<_>>();
+        let new_instance = instance.new_with_interpolated_values(&deltas);
+
+        assert_eq!(
+            new_instance.components[0].transform,
+            ComponentTransform::Decomposed(DecomposedTransform {
+                translate_x: Some(10.),
+                translate_y: None, // not set in the template
+                rotation: Some(45.),
+                scale_x: None,
+                scale_y: None,
+                skew_x: Some(5.),
+                skew_y: Some(6.),
+                center_x: Some(99.),
+                center_y: Some(98.),
+            })
+        );
     }
 
     #[test]

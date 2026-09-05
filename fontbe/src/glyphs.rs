@@ -260,7 +260,7 @@ fn point_seqs_for_composite_glyph(
             // See https://github.com/fonttools/fonttools/blob/1c283756a5/Lib/fontTools/ttLib/tables/_g_v_a_r.py#L243
             let mut points = Vec::new();
             for component in inst.components.iter() {
-                let [.., dx, dy] = component.transform.as_coeffs();
+                let [.., dx, dy] = component.affine().as_coeffs();
                 // ensure we round now, before iup or gvar generation:
                 // https://github.com/fonttools/fonttools/blob/5ae2943a43/Lib/fontTools/pens/ttGlyphPen.py#L110
                 let point = Point::new(dx.ot_round(), dy.ot_round());
@@ -362,7 +362,15 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
             .ir
             .glyphs
             .get(&FeWorkId::Glyph(self.glyph_name.clone()));
-        let glyph = CheckedGlyph::new(ir_glyph)?;
+
+        // A variable composite's contours, if any, compile to its own glyf
+        // entry, which the VARC record draws through a self-referencing
+        // component. Its components do not reach glyf.
+        let glyph = if ir_glyph.lowering() == ir::GlyphLowering::Varc {
+            CheckedGlyph::contours_only(ir_glyph)?
+        } else {
+            CheckedGlyph::new(ir_glyph)?
+        };
 
         // Hopefully in time https://github.com/harfbuzz/boring-expansion-spec means we can drop this
         let mut glyph = cubics_to_quadratics(glyph, static_metadata.units_per_em);
@@ -669,27 +677,7 @@ impl CheckedGlyph {
         // All is well, build the result
         let name = glyph.name.clone();
         Ok(if components.is_empty() {
-            let contours = glyph
-                .sources()
-                .iter()
-                .map(|(location, instance)| {
-                    let n_contours = instance.contours.len();
-                    if n_contours > 1 {
-                        trace!("Merging {n_contours} contours to form '{name}' at {location:?}",);
-                    }
-                    let mut path = instance.contours.first().cloned().unwrap_or_default();
-                    for contour in instance.contours.iter().skip(1) {
-                        for el in contour.elements() {
-                            path.push(*el);
-                        }
-                    }
-                    (location.clone(), path)
-                })
-                .collect();
-            CheckedGlyph::Contour {
-                name,
-                paths: contours,
-            }
+            Self::contours_only(glyph)?
         } else {
             let components = glyph
                 .sources()
@@ -699,10 +687,50 @@ impl CheckedGlyph {
                     instance
                         .components
                         .iter()
-                        .map(|c| (c.base.clone(), location.clone(), c.transform))
+                        .map(|c| (c.base.clone(), location.clone(), c.affine()))
                 })
                 .collect();
             CheckedGlyph::Composite { name, components }
+        })
+    }
+
+    /// The glyph contours, ignoring any components.
+    fn contours_only(glyph: &ir::Glyph) -> Result<Self, Error> {
+        let name = glyph.name.clone();
+        // every instance must have consistent path element types
+        let path_els: HashSet<String> = glyph
+            .sources()
+            .values()
+            .map(|g| g.path_elements())
+            .collect();
+        if path_els.len() > 1 {
+            warn!("{name} has inconsistent path elements: {path_els:?}",);
+            return Err(Error::GlyphError(
+                name.clone(),
+                GlyphProblem::InconsistentPathElements,
+            ));
+        }
+
+        let contours = glyph
+            .sources()
+            .iter()
+            .map(|(location, instance)| {
+                let n_contours = instance.contours.len();
+                if n_contours > 1 {
+                    trace!("Merging {n_contours} contours to form '{name}' at {location:?}",);
+                }
+                let mut path = instance.contours.first().cloned().unwrap_or_default();
+                for contour in instance.contours.iter().skip(1) {
+                    for el in contour.elements() {
+                        path.push(*el);
+                    }
+                }
+                (location.clone(), path)
+            })
+            .collect();
+        Ok(CheckedGlyph::Contour {
+            name,
+            paths: contours,
         })
     }
 

@@ -97,6 +97,8 @@ pub enum Error {
     DeltaError(DeltaError),
     #[error("No glyph id for '{0}'")]
     MissingGlyphId(GlyphName),
+    #[error("Unable to store VARC deltas for '{0}': {1}")]
+    VarcDeltaStoreError(GlyphName, write_fonts::error::Error),
     #[error("Error making CMap: {0}")]
     CmapConflict(#[from] CmapConflict),
     #[error("Progress stalled computing composite bbox: {0:?}")]
@@ -107,6 +109,10 @@ pub enum Error {
     NoGlobalMetricsInstance(NormalizedLocation),
     #[error("No palette entry for '{0:?}'")]
     MissingPaletteEntry(Color),
+    #[error("Variable component axis '{tag}' of glyph '{glyph}' is not a font axis")]
+    VariableComponentUnknownAxis { glyph: GlyphName, tag: Tag },
+    #[error("'{glyph}' references non-export glyph '{base}' as a variable component")]
+    VariableComponentBaseNotInGlyphOrder { glyph: GlyphName, base: GlyphName },
 }
 
 #[derive(Debug)]

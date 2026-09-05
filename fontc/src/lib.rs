@@ -526,6 +526,7 @@ mod tests {
             BeWorkIdentifier::Os2.into(),
             BeWorkIdentifier::Post.into(),
             BeWorkIdentifier::Stat.into(),
+            BeWorkIdentifier::Varc.into(),
             BeWorkIdentifier::Vhea.into(),
             BeWorkIdentifier::Vmtx.into(),
             BeWorkIdentifier::Vvar.into(),
