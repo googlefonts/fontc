@@ -43,5 +43,12 @@
 }
 ]
 },
-"sources": {}
+"sources": {
+"m01": {
+"name": "Regular",
+"location": {
+"wght": 0
+}
+}
+}
 }
