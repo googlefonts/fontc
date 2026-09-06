@@ -1,20 +1,28 @@
-use std::{path::Path, sync::Arc};
+use std::{collections::HashSet, path::Path, sync::Arc};
 
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
-    orchestration::{Access, Work},
+    orchestration::{Access, AccessBuilder, Work},
+    types::GlyphName,
 };
 use fontir::{
     error::Error,
-    ir::{FeatureSources, FeaturesSource, PreliminaryGdefCategories},
+    ir::{FeatureSources, FeaturesSource, KerningInstance, PreliminaryGdefCategories},
     orchestration::{Context, IrWork, WorkId},
     source::Source,
 };
 use log::{debug, warn};
 
 use crate::{
-    fontra::Font,
-    toir::{to_ir_gdef_categories, to_ir_global_metrics, to_ir_static_metadata},
+    fontra::{Font, Kerning},
+    kernutils::{
+        classify_glyphs_by_direction, flip_kerning_direction, merge_kerning,
+        split_kerning_by_direction,
+    },
+    toir::{
+        kerning_sources, to_ir_gdef_categories, to_ir_global_metrics, to_ir_kern_groups,
+        to_ir_kerning_instance, to_ir_kerning_locations, to_ir_static_metadata,
+    },
 };
 
 pub struct FontraIrSource {
@@ -26,6 +34,36 @@ impl Source for FontraIrSource {
     fn new(fontra_dir: &Path) -> Result<Self, Error> {
         let mut font_data = Font::load(fontra_dir)?;
         pin_discrete_axes(&mut font_data)?;
+        if let Some(kerning) = font_data
+            .kerning
+            .get(HORIZONTAL_KERNING_TYPE)
+            .map(|kerning| {
+                let axes: Vec<_> = font_data
+                    .axes
+                    .axes
+                    .iter()
+                    .filter_map(|axis| match axis {
+                        crate::fontra::Axis::Continuous(axis) => Some(axis.clone()),
+                        crate::fontra::Axis::Discrete(_) => None,
+                    })
+                    .collect();
+                let feature_text = match font_data.features.language.as_str() {
+                    "fea" => font_data.features.text.as_str(),
+                    _ => "",
+                };
+                let (ltr_glyphs, rtl_glyphs) = classify_glyphs_by_direction(
+                    &font_data.glyph_map,
+                    feature_text,
+                    &axes,
+                    fontra_dir,
+                );
+                flip_rtl_kerning(kerning, &ltr_glyphs, &rtl_glyphs)
+            })
+        {
+            font_data
+                .kerning
+                .insert(HORIZONTAL_KERNING_TYPE.to_string(), kerning);
+        }
         let gdef_categories = to_ir_gdef_categories(&font_data.glyph_infos);
 
         Ok(FontraIrSource {
@@ -58,14 +96,19 @@ impl Source for FontraIrSource {
     }
 
     fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        Ok(Box::new(NoopWork(WorkId::KerningLocations)))
+        Ok(Box::new(KerningLocationsWork {
+            font_data: self.font_data.clone(),
+        }))
     }
 
     fn create_kerning_instance_ir_work(
         &self,
         at: NormalizedLocation,
     ) -> Result<Box<IrWork>, Error> {
-        Ok(Box::new(NoopWork(WorkId::KernInstance(at))))
+        Ok(Box::new(KerningInstanceWork {
+            font_data: self.font_data.clone(),
+            location: at,
+        }))
     }
 
     fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error> {
@@ -75,6 +118,23 @@ impl Source for FontraIrSource {
     fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(NoopWork(WorkId::PaintGraph)))
     }
+}
+
+/// <https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/backends/designspace.py#L1490-L1503>
+fn flip_rtl_kerning(
+    kerning: &Kerning,
+    ltr_glyphs: &HashSet<GlyphName>,
+    rtl_glyphs: &HashSet<GlyphName>,
+) -> Kerning {
+    if rtl_glyphs.is_empty() {
+        return kerning.clone();
+    }
+
+    // UFO3's kerning direction is "writing direction", but kerning in Fontra
+    // is "visual left to right", so let's flip any right-to-left kerning.
+    let (ltr_kerning, rtl_kerning) = split_kerning_by_direction(kerning, ltr_glyphs, rtl_glyphs);
+    let rtl_kerning = flip_kerning_direction(&rtl_kerning);
+    merge_kerning(&ltr_kerning, &rtl_kerning)
 }
 
 /// Pin every discrete axis to its default value like Fontra's
@@ -124,6 +184,35 @@ fn pin_discrete_axes(font_data: &mut Font) -> Result<(), Error> {
     font_data
         .sources
         .retain(|_, source| at_default(&source.location));
+    let retained: std::collections::HashSet<String> = font_data.sources.keys().cloned().collect();
+
+    for kerning in font_data.kerning.values_mut() {
+        let keep: Vec<bool> = kerning
+            .source_identifiers
+            .iter()
+            .map(|identifier| retained.contains(identifier))
+            .collect();
+        if keep.iter().all(|keep| *keep) {
+            continue;
+        }
+        kerning.source_identifiers = kerning
+            .source_identifiers
+            .iter()
+            .zip(&keep)
+            .filter(|(_, keep)| **keep)
+            .map(|(identifier, _)| identifier.clone())
+            .collect();
+        for side2_values in kerning.values.values_mut() {
+            for values in side2_values.values_mut() {
+                *values = values
+                    .iter()
+                    .zip(&keep)
+                    .filter(|(_, keep)| **keep)
+                    .map(|(value, _)| *value)
+                    .collect();
+            }
+        }
+    }
     Ok(())
 }
 
@@ -230,6 +319,84 @@ impl Work<Context, WorkId, Error> for FeatureWork {
     }
 }
 
+pub(crate) const HORIZONTAL_KERNING_TYPE: &str = "kern";
+// TODO: support other kerning types
+
+#[derive(Debug)]
+struct KerningLocationsWork {
+    font_data: Arc<Font>,
+}
+
+impl Work<Context, WorkId, Error> for KerningLocationsWork {
+    fn id(&self) -> WorkId {
+        WorkId::KerningLocations
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::StaticMetadata)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        debug!("Generate IR for kerning");
+        for kern_type in self.font_data.kerning.keys() {
+            if kern_type != HORIZONTAL_KERNING_TYPE {
+                warn!("the {kern_type:?} kerning is dropped");
+            }
+        }
+        let static_metadata = context.static_metadata.get();
+        context.kerning_locations.set(to_ir_kerning_locations(
+            &static_metadata,
+            &self.font_data,
+            self.font_data.kerning.get(HORIZONTAL_KERNING_TYPE),
+        ));
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct KerningInstanceWork {
+    font_data: Arc<Font>,
+    location: NormalizedLocation,
+}
+
+impl Work<Context, WorkId, Error> for KerningInstanceWork {
+    fn id(&self) -> WorkId {
+        WorkId::KernInstance(self.location.clone())
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlyphOrder)
+            .build()
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        debug!("Generate kerning at {:?}", self.location);
+        let static_metadata = context.static_metadata.get();
+        let glyph_order = context.glyph_order.get();
+
+        let mut instance = KerningInstance {
+            location: self.location.clone(),
+            ..Default::default()
+        };
+        if let Some(kerning) = self.font_data.kerning.get(HORIZONTAL_KERNING_TYPE) {
+            let source_idx = kerning_sources(&static_metadata, &self.font_data, kerning)
+                .find(|(_, location)| *location == self.location)
+                .map(|(idx, _)| idx);
+            match source_idx {
+                Some(idx) => {
+                    instance = to_ir_kerning_instance(kerning, idx, &self.location, &glyph_order)
+                }
+                // The default location has no kerning, but we still want the groups.
+                None => instance.groups = to_ir_kern_groups(kerning, &glyph_order),
+            }
+        }
+        context.kerning_at.set(instance);
+        Ok(())
+    }
+}
+
 /// A work that produces nothing.
 #[derive(Debug)]
 struct NoopWork(WorkId);
@@ -284,6 +451,52 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert!(!font_data.sources.contains_key("light-condensed-italic"));
+        let kerning = font_data.kerning.get(HORIZONTAL_KERNING_TYPE).unwrap();
+        assert!(
+            !kerning
+                .source_identifiers
+                .contains(&"light-condensed-italic".to_string())
+        );
+        for side2_values in kerning.values.values() {
+            for values in side2_values.values() {
+                assert!(values.len() <= kerning.source_identifiers.len());
+            }
+        }
+    }
+
+    #[test]
+    fn pin_discrete_axes_keeps_kern_values_aligned() {
+        // The dropped source is not the last one, so the remaining values
+        // have to be picked out rather than truncated.
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let kerning = font_data.kerning.get_mut(HORIZONTAL_KERNING_TYPE).unwrap();
+        kerning.source_identifiers = vec![
+            "light-condensed-italic".to_string(),
+            "light-condensed".to_string(),
+            "bold-condensed".to_string(),
+        ];
+        for side2_values in kerning.values.values_mut() {
+            for values in side2_values.values_mut() {
+                *values = vec![Some(-1.0), Some(-2.0), Some(-3.0)];
+            }
+        }
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        let kerning = font_data.kerning.get(HORIZONTAL_KERNING_TYPE).unwrap();
+        assert_eq!(
+            vec!["light-condensed", "bold-condensed"],
+            kerning.source_identifiers
+        );
+        let values = kerning
+            .values
+            .values()
+            .next()
+            .unwrap()
+            .values()
+            .next()
+            .unwrap();
+        assert_eq!(&vec![Some(-2.0), Some(-3.0)], values);
     }
 
     #[test]

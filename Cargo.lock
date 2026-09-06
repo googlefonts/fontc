@@ -879,8 +879,10 @@ version = "0.5.0"
 dependencies = [
  "chrono",
  "diff",
+ "fea-rs",
  "fontdrasil",
  "fontir",
+ "icu_properties",
  "indexmap",
  "kurbo",
  "log",

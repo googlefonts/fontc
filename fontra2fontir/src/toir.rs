@@ -1,7 +1,7 @@
 //! Functions to convert fontra things to fontc IR things
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     str::FromStr,
 };
 
@@ -13,18 +13,20 @@ use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{
         DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph, GlyphInstance,
-        GlyphPathBuilder, NameBuilder, NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
+        GlyphOrder, GlyphPathBuilder, KernGroup, KernSide, KerningInstance, KerningLocations,
+        NameBuilder, NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
     },
 };
 use kurbo::BezPath;
-use log::{trace, warn};
+use log::{debug, trace, warn};
+use smol_str::SmolStr;
 use write_fonts::{
     tables::{gdef::GlyphClassDef, os2::SelectionFlags},
     types::{NameId, Tag},
 };
 
 use crate::fontra::{
-    AxisName, Contour, Font, FontSource, GlyphInfos, Point, PointType, VariableGlyph,
+    AxisName, Contour, Font, FontSource, GlyphInfos, Kerning, Point, PointType, VariableGlyph,
 };
 
 /// Normalize a design value against a font axis, clamped into the axis range
@@ -314,7 +316,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
 }
 
 /// Normalize a design-space location, filling missing axes with their default.
-fn to_ir_location<'a>(
+pub(crate) fn to_ir_location<'a>(
     axes: impl IntoIterator<Item = &'a Axis>,
     design_location: &HashMap<AxisName, f64>,
 ) -> NormalizedLocation {
@@ -491,6 +493,149 @@ fn to_ir_glyph(
     Glyph::new(fontra_glyph.name.clone(), true, codepoints, instances)
 }
 
+/// The sources that kern.
+pub(crate) fn kerning_sources<'a>(
+    static_metadata: &'a StaticMetadata,
+    font_data: &'a Font,
+    kerning: &'a Kerning,
+) -> impl Iterator<Item = (usize, NormalizedLocation)> + 'a {
+    kerning
+        .source_identifiers
+        .iter()
+        .enumerate()
+        .filter_map(move |(idx, identifier)| {
+            let Some(source) = font_data.sources.get(identifier) else {
+                warn!("kerning references unknown font source {identifier:?}");
+                return None;
+            };
+            // Fontra ignores kerning at sparse sources.
+            if source.is_sparse {
+                warn!("ignoring kerning at sparse font source {identifier:?}");
+                return None;
+            }
+            // Drop a source with no kerning so the kern interpolates across
+            // it instead of being pinned toward 0 there.
+            if !kern_source_has_values(kerning, idx) {
+                return None;
+            }
+            let location = to_ir_location(static_metadata.all_source_axes.iter(), &source.location);
+            Some((idx, location))
+        })
+}
+
+/// The default location and the location of every source that kerns.
+pub(crate) fn to_ir_kerning_locations(
+    static_metadata: &StaticMetadata,
+    font_data: &Font,
+    kerning: Option<&Kerning>,
+) -> KerningLocations {
+    let mut locations = KerningLocations::default();
+    // Keep the default source (it anchors the variation model).
+    locations
+        .locations
+        .insert(static_metadata.default_location().clone());
+    if let Some(kerning) = kerning {
+        locations.locations.extend(
+            kerning_sources(static_metadata, font_data, kerning).map(|(_, location)| location),
+        );
+    }
+    locations
+}
+
+/// Whether a kerning source has any value.
+fn kern_source_has_values(kerning: &Kerning, idx: usize) -> bool {
+    kerning
+        .values
+        .values()
+        .flat_map(|side2_values| side2_values.values())
+        .any(|values| values.get(idx).is_some_and(|value| value.is_some()))
+}
+
+/// The kern groups of both sides, with members missing from the glyph order
+/// pruned.
+pub(crate) fn to_ir_kern_groups(
+    kerning: &Kerning,
+    glyph_order: &GlyphOrder,
+) -> BTreeMap<KernGroup, BTreeSet<GlyphName>> {
+    let side1 = kerning
+        .groups_side1
+        .iter()
+        .map(|(name, members)| (KernGroup::Side1(name.clone()), members));
+    let side2 = kerning
+        .groups_side2
+        .iter()
+        .map(|(name, members)| (KernGroup::Side2(name.clone()), members));
+    side1
+        .chain(side2)
+        .filter_map(|(group, members)| {
+            let members: BTreeSet<_> = members
+                .iter()
+                .filter_map(|member| {
+                    let member = GlyphName::new(member.as_str());
+                    if glyph_order.contains(&member) {
+                        Some(member)
+                    } else {
+                        debug!(
+                            "kern group {group:?} references non-existent glyph '{member}'; ignoring"
+                        );
+                        None
+                    }
+                })
+                .collect();
+            (!members.is_empty()).then_some((group, members))
+        })
+        .collect()
+}
+
+/// The kern values of one kerning source.
+pub(crate) fn to_ir_kerning_instance(
+    kerning: &Kerning,
+    source_idx: usize,
+    location: &NormalizedLocation,
+    glyph_order: &GlyphOrder,
+) -> KerningInstance {
+    let groups = to_ir_kern_groups(kerning, glyph_order);
+    let resolve = |name: &str, group: fn(SmolStr) -> KernGroup| {
+        if let Some(group_name) = name.strip_prefix('@') {
+            let group = group(group_name.into());
+            if !groups.contains_key(&group) {
+                warn!("'{name}' is not a valid kern group; ignored");
+                return None;
+            }
+            Some(KernSide::Group(group))
+        } else {
+            let glyph_name = GlyphName::new(name);
+            if !glyph_order.contains(&glyph_name) {
+                warn!("'{name}' refers to a non-existent glyph; ignored");
+                return None;
+            }
+            Some(KernSide::Glyph(glyph_name))
+        }
+    };
+
+    let mut instance = KerningInstance {
+        location: location.clone(),
+        ..Default::default()
+    };
+    for (side1, side2_values) in kerning.values.iter() {
+        for (side2, values) in side2_values.iter() {
+            let Some(Some(value)) = values.get(source_idx) else {
+                continue;
+            };
+            let (Some(side1), Some(side2)) = (
+                resolve(side1, KernGroup::Side1),
+                resolve(side2, KernGroup::Side2),
+            ) else {
+                warn!("kerning unable to resolve at least one of '{side1}', '{side2}'; ignoring");
+                continue;
+            };
+            instance.kerns.insert((side1, side2), (*value).into());
+        }
+    }
+    instance.groups = groups;
+    instance
+}
+
 #[allow(dead_code)] // TEMPORARY
 fn add_to_path<'a>(
     path_builder: &'a mut GlyphPathBuilder,
@@ -589,10 +734,10 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use fontdrasil::{
-        coords::{CoordConverter, DesignCoord, UserCoord},
-        types::{Axes, Axis},
+        coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
+        types::{Axes, Axis, GlyphName},
     };
-    use fontir::ir::Glyph;
+    use fontir::ir::{Glyph, GlyphOrder, KernGroup, KernSide};
     use kurbo::{BezPath, PathEl};
     use write_fonts::{
         tables::os2::SelectionFlags,
@@ -600,13 +745,15 @@ mod tests {
     };
 
     use crate::{
-        fontra::{Font, VariableGlyph},
+        fontra::{Font, Kerning, VariableGlyph},
+        source::HORIZONTAL_KERNING_TYPE,
         test::testdata_dir,
         toir::to_ir_static_metadata,
     };
 
     use super::{
-        Error, NameKey, normalize_axis_value, to_ir_global_metrics, to_ir_glyph, to_ir_names,
+        Error, NameKey, normalize_axis_value, to_ir_global_metrics, to_ir_glyph,
+        to_ir_kerning_instance, to_ir_kerning_locations, to_ir_names,
     };
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
@@ -939,5 +1086,84 @@ mod tests {
                 .contains(SelectionFlags::USE_TYPO_METRICS)
         );
         assert_eq!(Some(1 << 2), static_metadata.misc.fs_type);
+    }
+
+    #[test]
+    fn kerning_instance_of_mutator_sans() {
+        let font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let kerning = font_data.kerning.get(HORIZONTAL_KERNING_TYPE).unwrap();
+        // No Adieresis, so group members prune.
+        let glyph_order: GlyphOrder = ["A", "Aacute", "T", "V"]
+            .iter()
+            .map(GlyphName::new)
+            .collect();
+        let loc = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+
+        // light-condensed is the first kerning source.
+        let light = to_ir_kerning_instance(kerning, 0, &loc, &glyph_order);
+        let glyph_t = KernSide::Glyph(GlyphName::new("T"));
+        let glyph_a = KernSide::Glyph(GlyphName::new("A"));
+        let group_a2 = KernSide::Group(KernGroup::Side2("A".into()));
+        assert_eq!(
+            Some(-75.0),
+            light
+                .kerns
+                .get(&(glyph_t.clone(), group_a2.clone()))
+                .map(|v| v.0)
+        );
+        // (T, A) has no value at light-condensed, only at bold-condensed.
+        assert!(
+            !light
+                .kerns
+                .contains_key(&(glyph_t.clone(), glyph_a.clone()))
+        );
+        let bold = to_ir_kerning_instance(kerning, 1, &loc, &glyph_order);
+        assert_eq!(
+            Some(-65.0),
+            bold.kerns.get(&(glyph_t, glyph_a)).map(|v| v.0)
+        );
+
+        // Groups convert with members pruned to the glyph order.
+        assert_eq!(
+            Some(&["A", "Aacute"].iter().map(GlyphName::new).collect()),
+            light.groups.get(&KernGroup::Side1("A".into()))
+        );
+    }
+
+    #[test]
+    fn kerning_locations_skip_sparse_empty_and_unknown_sources() {
+        let mut font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
+        // regular kerns. medium is sparse, bold has no values, and ghost
+        // does not exist.
+        font_data.kerning.insert(
+            HORIZONTAL_KERNING_TYPE.to_string(),
+            Kerning {
+                groups_side1: Default::default(),
+                groups_side2: Default::default(),
+                source_identifiers: vec![
+                    "regular".into(),
+                    "medium".into(),
+                    "bold".into(),
+                    "ghost".into(),
+                ],
+                values: HashMap::from([(
+                    "vbase".into(),
+                    HashMap::from([(
+                        "vcomp".into(),
+                        vec![Some(-10.0), Some(5.0), None, Some(1.0)],
+                    )]),
+                )]),
+            },
+        );
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let locations = to_ir_kerning_locations(
+            &static_metadata,
+            &font_data,
+            font_data.kerning.get(HORIZONTAL_KERNING_TYPE),
+        );
+        assert_eq!(
+            vec![static_metadata.default_location().clone()],
+            locations.locations.into_iter().collect::<Vec<_>>()
+        );
     }
 }
