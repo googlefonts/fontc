@@ -6,7 +6,7 @@ use fontdrasil::{
 };
 use fontir::{
     error::Error,
-    ir::PreliminaryGdefCategories,
+    ir::{FeatureSources, FeaturesSource, PreliminaryGdefCategories},
     orchestration::{Context, IrWork, WorkId},
     source::Source,
 };
@@ -52,7 +52,9 @@ impl Source for FontraIrSource {
     }
 
     fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        Ok(Box::new(NoopWork(WorkId::Features)))
+        Ok(Box::new(FeatureWork {
+            font_data: self.font_data.clone(),
+        }))
     }
 
     fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
@@ -193,6 +195,37 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         context
             .global_metrics
             .set(to_ir_global_metrics(&static_metadata, &self.font_data)?);
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct FeatureWork {
+    font_data: Arc<Font>,
+}
+
+impl Work<Context, WorkId, Error> for FeatureWork {
+    fn id(&self) -> WorkId {
+        WorkId::Features
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        debug!("Generate features");
+        let features = &self.font_data.features;
+        // "fea" is the only feature format Fontra supports. Skip anything else.
+        let source = match features.language.as_str() {
+            "fea" if !features.text.is_empty() => {
+                FeaturesSource::from_string(features.text.clone())
+            }
+            "fea" => FeaturesSource::empty(),
+            other => {
+                if !features.text.is_empty() {
+                    warn!("Ignoring features in unsupported language {other:?}");
+                }
+                FeaturesSource::empty()
+            }
+        };
+        context.features.set(FeatureSources::single(source));
         Ok(())
     }
 }
