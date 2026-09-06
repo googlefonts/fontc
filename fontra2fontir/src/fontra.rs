@@ -66,6 +66,8 @@ pub(crate) struct FontInfo {
     pub(crate) license_info_url: Option<String>,
     #[serde(rename = "vendorID")]
     pub(crate) vendor_id: Option<String>,
+    #[serde(default)]
+    pub(crate) custom_data: HashMap<String, serde_json::Value>,
 }
 
 /// Corresponds to a Fontra Axes
@@ -188,6 +190,8 @@ pub(crate) struct Font {
     #[serde(skip)]
     pub(crate) glyph_infos: GlyphInfos, // In Fontra this is a CustomData
     pub(crate) axes: Axes,
+    #[serde(default)]
+    pub(crate) custom_data: HashMap<String, serde_json::Value>,
     pub(crate) sources: BTreeMap<String, FontSource>,
     #[serde(skip)]
     pub(crate) kerning: BTreeMap<String, Kerning>,
@@ -496,6 +500,8 @@ pub(crate) struct FontSource {
     pub(crate) line_metrics_vertical_layout: HashMap<String, LineMetric>,
     #[serde(default)]
     pub(crate) italic_angle: f64,
+    #[serde(default)]
+    pub(crate) custom_data: HashMap<String, serde_json::Value>,
     // guidelines
 }
 
