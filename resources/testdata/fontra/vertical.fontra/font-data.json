@@ -99,6 +99,31 @@
 }
 },
 "fontInfo": {
-"familyName": "Vertical Test"
+"familyName": "Vertical Test",
+"customData": {
+"openTypeOS2WeightClass": 450,
+"openTypeOS2WidthClass": 3,
+"openTypeOS2Type": [],
+"openTypeOS2Panose": [
+2,
+0,
+5,
+3,
+0,
+0,
+0,
+0,
+0,
+0
+],
+"openTypeOS2Selection": [
+7
+],
+"openTypeOS2FamilyClass": [
+1,
+5
+],
+"openTypeHeadCreated": "2024/01/02 03:04:05"
+}
 }
 }

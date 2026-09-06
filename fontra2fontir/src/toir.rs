@@ -1,6 +1,9 @@
 //! Functions to convert fontra things to fontc IR things
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
@@ -10,13 +13,13 @@ use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{
         DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph, GlyphInstance,
-        GlyphPathBuilder, NameBuilder, NameKey, PreliminaryGdefCategories, StaticMetadata,
+        GlyphPathBuilder, NameBuilder, NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
     },
 };
 use kurbo::BezPath;
-use log::trace;
+use log::{trace, warn};
 use write_fonts::{
-    tables::gdef::GlyphClassDef,
+    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
     types::{NameId, Tag},
 };
 
@@ -54,9 +57,10 @@ fn default_source<'a>(font_data: &'a Font, axes: &[Axis]) -> Result<&'a FontSour
 fn to_ir_names(font_data: &Font, default_source: &FontSource) -> HashMap<NameKey, String> {
     let font_info = &font_data.font_info;
     let mut builder = NameBuilder::default();
-    if let Some(major) = font_info.version_major {
-        builder.set_version(major, font_info.version_minor.unwrap_or(0).max(0) as u32);
-    }
+    builder.set_version(
+        font_info.version_major.unwrap_or(0),
+        font_info.version_minor.unwrap_or(0).max(0) as u32,
+    );
     builder.add_if_present(NameId::COPYRIGHT_NOTICE, &font_info.copyright);
     builder.add_if_present(NameId::TRADEMARK, &font_info.trademark);
     builder.add_if_present(NameId::DESCRIPTION, &font_info.description);
@@ -105,6 +109,115 @@ fn to_ir_names(font_data: &Font, default_source: &FontSource) -> HashMap<NameKey
         &source_custom_data("openTypeNameWWSSubfamilyName"),
     );
     builder.build(font_info.vendor_id.as_deref().unwrap_or(DEFAULT_VENDOR_ID))
+}
+
+fn apply_custom_data(
+    static_metadata: &mut StaticMetadata,
+    font_data: &Font,
+    default_source: &FontSource,
+) -> Result<(), Error> {
+    let font_info = &font_data.font_info;
+    let custom_data = &font_info.custom_data;
+    let misc = &mut static_metadata.misc;
+    misc.version_major = font_info.version_major.unwrap_or(0);
+    misc.version_minor = font_info.version_minor.unwrap_or(0).max(0) as u32;
+    misc.is_fixed_pitch = default_source
+        .custom_data
+        .get("postscriptIsFixedPitch")
+        .and_then(|v| v.as_bool());
+    if let Some(vendor_id) = font_info
+        .vendor_id
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+    {
+        misc.vendor_id = Tag::from_str(vendor_id).map_err(|cause| Error::InvalidTag {
+            raw_tag: vendor_id.to_owned(),
+            cause,
+        })?;
+    }
+    let as_u16 = |key: &str| {
+        custom_data
+            .get(key)
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u16)
+    };
+    let as_numbers = |key: &str| {
+        custom_data
+            .get(key)
+            .and_then(|v| v.as_array())
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|value| value.as_u64())
+                    .collect::<Vec<_>>()
+            })
+    };
+    let as_bits = |key: &str| {
+        as_numbers(key).map(|bits| {
+            bits.iter()
+                .fold(0_u16, |acc, bit| match u16::try_from(*bit) {
+                    Ok(bit) if bit < 16 => acc | (1 << bit),
+                    _ => {
+                        warn!("ignoring out of range {key} bit {bit}");
+                        acc
+                    }
+                })
+        })
+    };
+    misc.us_weight_class = as_u16("openTypeOS2WeightClass").or(misc.us_weight_class);
+    misc.us_width_class = as_u16("openTypeOS2WidthClass").or(misc.us_width_class);
+    // ufo2ft defaults fsType to the installable-embedding bit when unset
+    misc.fs_type = Some(as_bits("openTypeOS2Type").unwrap_or(1 << 2));
+    // ufo2ft sets the style bit of the style map style name, which falls
+    // back to the preferred subfamily name and then to the style name:
+    // https://github.com/googlefonts/ufo2ft/blob/2f11b0ff84ef1f2494e54d1a7a15d92806d8337b/Lib/ufo2ft/fontInfoData.py#L76
+    let style = default_source
+        .custom_data
+        .get("openTypeNamePreferredSubfamilyName")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&default_source.name)
+        .trim()
+        .to_lowercase();
+    misc.selection_flags |= match style.as_str() {
+        "italic" => SelectionFlags::ITALIC,
+        "bold" => SelectionFlags::BOLD,
+        "bold italic" => SelectionFlags::BOLD | SelectionFlags::ITALIC,
+        _ => SelectionFlags::REGULAR,
+    };
+    if let Some(bits) = as_bits("openTypeOS2Selection") {
+        misc.selection_flags |= SelectionFlags::from_bits_truncate(bits);
+    }
+    misc.unicode_range_bits =
+        as_numbers("openTypeOS2UnicodeRanges").map(|bits| bits.iter().map(|b| *b as u32).collect());
+    misc.codepage_range_bits = as_numbers("openTypeOS2CodePageRanges")
+        .map(|bits| bits.iter().map(|b| *b as u32).collect());
+    if let Some(panose) = as_numbers("openTypeOS2Panose").filter(|values| values.len() == 10) {
+        misc.panose = Some(Panose {
+            family_type: panose[0] as u8,
+            serif_style: panose[1] as u8,
+            weight: panose[2] as u8,
+            proportion: panose[3] as u8,
+            contrast: panose[4] as u8,
+            stroke_variation: panose[5] as u8,
+            arm_style: panose[6] as u8,
+            letterform: panose[7] as u8,
+            midline: panose[8] as u8,
+            x_height: panose[9] as u8,
+        });
+    }
+    if let Some(class) = as_numbers("openTypeOS2FamilyClass").filter(|values| values.len() == 2) {
+        misc.family_class = Some(((class[0] as i16) << 8) | class[1] as i16);
+    }
+    if let Some(created) = custom_data
+        .get("openTypeHeadCreated")
+        .and_then(|v| v.as_str())
+    {
+        match chrono::NaiveDateTime::parse_from_str(created, "%Y/%m/%d %H:%M:%S") {
+            Ok(date) => misc.created = Some(date.and_utc()),
+            Err(e) => warn!("invalid openTypeHeadCreated {created:?}: {e}"),
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, Error> {
@@ -184,7 +297,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
                 .custom_data
                 .contains_key("openTypeVheaVertTypoLineGap"));
 
-    StaticMetadata::new(
+    let mut static_metadata = StaticMetadata::new(
         font_data.units_per_em,
         to_ir_names(font_data, default_source),
         axes,
@@ -195,7 +308,9 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         None,
         build_vertical,
     )
-    .map_err(Error::VariationModelError)
+    .map_err(Error::VariationModelError)?;
+    apply_custom_data(&mut static_metadata, font_data, default_source)?;
+    Ok(static_metadata)
 }
 
 /// Normalize a design-space location, filling missing axes with their default.
@@ -479,7 +594,10 @@ mod tests {
     };
     use fontir::ir::Glyph;
     use kurbo::{BezPath, PathEl};
-    use write_fonts::types::{NameId, Tag};
+    use write_fonts::{
+        tables::os2::SelectionFlags,
+        types::{NameId, Tag},
+    };
 
     use crate::{
         fontra::{Font, VariableGlyph},
@@ -487,7 +605,9 @@ mod tests {
         toir::to_ir_static_metadata,
     };
 
-    use super::{Error, normalize_axis_value, to_ir_global_metrics, to_ir_glyph, to_ir_names};
+    use super::{
+        Error, NameKey, normalize_axis_value, to_ir_global_metrics, to_ir_glyph, to_ir_names,
+    };
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
         axes.iter()
@@ -711,5 +831,113 @@ mod tests {
             );
         }
         assert!(to_ir_static_metadata(&font_data).unwrap().build_vertical);
+    }
+
+    #[test]
+    fn version_from_font_info() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        font_data.font_info.version_major = Some(2);
+        font_data.font_info.version_minor = Some(5);
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        assert_eq!(
+            (2, 5),
+            (
+                static_metadata.misc.version_major,
+                static_metadata.misc.version_minor
+            )
+        );
+        assert_eq!(
+            Some(&"Version 2.005".to_string()),
+            static_metadata
+                .names
+                .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
+        );
+    }
+
+    #[test]
+    fn fixed_pitch_from_the_default_source() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        assert_eq!(
+            None,
+            to_ir_static_metadata(&font_data)
+                .unwrap()
+                .misc
+                .is_fixed_pitch
+        );
+        for source in font_data.sources.values_mut() {
+            source.custom_data.insert(
+                "postscriptIsFixedPitch".to_string(),
+                serde_json::json!(true),
+            );
+        }
+        assert_eq!(
+            Some(true),
+            to_ir_static_metadata(&font_data)
+                .unwrap()
+                .misc
+                .is_fixed_pitch
+        );
+    }
+
+    #[test]
+    fn vendor_id_from_font_info() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        font_data.font_info.vendor_id = Some("TEST".to_string());
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        assert_eq!(Tag::new(b"TEST"), static_metadata.misc.vendor_id);
+
+        font_data.font_info.vendor_id = Some("  ".to_string());
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        assert_eq!(Tag::new(b"NONE"), static_metadata.misc.vendor_id);
+    }
+
+    #[test]
+    fn font_info_custom_data_of_vertical() {
+        let font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let misc = &static_metadata.misc;
+        assert_eq!(Some(450), misc.us_weight_class);
+        assert_eq!(Some(3), misc.us_width_class);
+        assert_eq!(Some(0), misc.fs_type);
+        // The default source is Regular, the bit 7 is authored.
+        assert_eq!(
+            SelectionFlags::REGULAR | SelectionFlags::USE_TYPO_METRICS,
+            misc.selection_flags
+        );
+        let panose = misc.panose.as_ref().unwrap();
+        assert_eq!((2, 5), (panose.family_type, panose.weight));
+        assert_eq!(Some(0x0105), misc.family_class);
+        assert_eq!(
+            Some(
+                chrono::NaiveDate::from_ymd_opt(2024, 1, 2)
+                    .unwrap()
+                    .and_hms_opt(3, 4, 5)
+                    .unwrap()
+                    .and_utc()
+            ),
+            misc.created
+        );
+    }
+
+    #[test]
+    fn out_of_range_flag_bits_are_ignored() {
+        // A bit number that does not fit the field.
+        let mut font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
+        font_data.font_info.custom_data.insert(
+            "openTypeOS2Selection".to_string(),
+            serde_json::json!([7, 16, 99]),
+        );
+        font_data
+            .font_info
+            .custom_data
+            .insert("openTypeOS2Type".to_string(), serde_json::json!([2, 42]));
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        assert!(
+            static_metadata
+                .misc
+                .selection_flags
+                .contains(SelectionFlags::USE_TYPO_METRICS)
+        );
+        assert_eq!(Some(1 << 2), static_metadata.misc.fs_type);
     }
 }

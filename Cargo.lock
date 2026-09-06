@@ -877,6 +877,7 @@ dependencies = [
 name = "fontra2fontir"
 version = "0.5.0"
 dependencies = [
+ "chrono",
  "diff",
  "fontdrasil",
  "fontir",
