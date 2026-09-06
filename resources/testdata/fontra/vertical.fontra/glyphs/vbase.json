@@ -1,0 +1,86 @@
+{
+"name": "vbase",
+"axes": [
+{
+"name": "depth",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 100
+}
+],
+"sources": [
+{
+"name": "<default>",
+"layerName": "foreground"
+},
+{
+"name": "depth=100",
+"layerName": "depth=100",
+"location": {
+"depth": 100
+}
+}
+],
+"layers": {
+"foreground": {
+"glyph": {
+"xAdvance": 600,
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 100,
+"y": 0
+},
+{
+"x": 500,
+"y": 0
+},
+{
+"x": 500,
+"y": 700
+},
+{
+"x": 100,
+"y": 700
+}
+],
+"isClosed": true
+}
+]
+}
+}
+},
+"depth=100": {
+"glyph": {
+"xAdvance": 600,
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 100,
+"y": -100
+},
+{
+"x": 500,
+"y": -100
+},
+{
+"x": 500,
+"y": 700
+},
+{
+"x": 100,
+"y": 700
+}
+],
+"isClosed": true
+}
+]
+}
+}
+}
+}
+}

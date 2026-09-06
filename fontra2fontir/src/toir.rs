@@ -9,8 +9,8 @@ use fontdrasil::{
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{
-        DEFAULT_VENDOR_ID, Glyph, GlyphInstance, GlyphPathBuilder, NameBuilder, NameKey,
-        PreliminaryGdefCategories, StaticMetadata,
+        DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph, GlyphInstance,
+        GlyphPathBuilder, NameBuilder, NameKey, PreliminaryGdefCategories, StaticMetadata,
     },
 };
 use kurbo::BezPath;
@@ -214,6 +214,99 @@ fn to_ir_location<'a>(
         .collect()
 }
 
+pub(crate) fn to_ir_global_metrics(
+    static_metadata: &StaticMetadata,
+    font_data: &Font,
+) -> Result<GlobalMetrics, Error> {
+    let mut metrics = GlobalMetricsBuilder::new();
+
+    for source in font_data.sources.values() {
+        let pos = to_ir_location(static_metadata.all_source_axes.iter(), &source.location);
+
+        // A sparse source carries no metrics, but every metric needs a
+        // master at the default location.
+        if source.is_sparse && !pos.is_default() {
+            continue;
+        }
+
+        macro_rules! set_metric {
+            ($variant:ident, $key:literal) => {
+                set_metric!(
+                    $variant,
+                    source.custom_data.get($key).and_then(|v| v.as_f64())
+                )
+            };
+            ($variant:ident, $getter:expr) => {
+                metrics.set_if_some(GlobalMetric::$variant, pos.clone(), $getter)
+            };
+        }
+
+        let horizontal_metrics = |name: &str| {
+            source
+                .line_metrics_horizontal_layout
+                .get(name)
+                .map(|m| m.value)
+        };
+
+        let vertical_metrics = |name: &str| {
+            source
+                .line_metrics_vertical_layout
+                .get(name)
+                .map(|m| m.value)
+        };
+
+        let ascender = horizontal_metrics("ascender");
+        let descender = horizontal_metrics("descender");
+        let x_height = horizontal_metrics("xHeight");
+
+        set_metric!(CapHeight, horizontal_metrics("capHeight"));
+        set_metric!(XHeight, x_height);
+        set_metric!(VheaAscender, vertical_metrics("ascender"));
+        set_metric!(VheaDescender, vertical_metrics("descender"));
+        set_metric!(VheaLineGap, vertical_metrics("lineGap"));
+
+        // https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/backends/designspace.py#L172
+        set_metric!(HheaAscender, "openTypeHheaAscender");
+        set_metric!(CaretOffset, "openTypeHheaCaretOffset");
+        set_metric!(CaretSlopeRise, "openTypeHheaCaretSlopeRise");
+        set_metric!(CaretSlopeRun, "openTypeHheaCaretSlopeRun");
+        set_metric!(HheaDescender, "openTypeHheaDescender");
+        set_metric!(HheaLineGap, "openTypeHheaLineGap");
+        set_metric!(StrikeoutPosition, "openTypeOS2StrikeoutPosition");
+        set_metric!(StrikeoutSize, "openTypeOS2StrikeoutSize");
+        set_metric!(SubscriptXOffset, "openTypeOS2SubscriptXOffset");
+        set_metric!(SubscriptXSize, "openTypeOS2SubscriptXSize");
+        set_metric!(SubscriptYOffset, "openTypeOS2SubscriptYOffset");
+        set_metric!(SubscriptYSize, "openTypeOS2SubscriptYSize");
+        set_metric!(SuperscriptXOffset, "openTypeOS2SuperscriptXOffset");
+        set_metric!(SuperscriptXSize, "openTypeOS2SuperscriptXSize");
+        set_metric!(SuperscriptYOffset, "openTypeOS2SuperscriptYOffset");
+        set_metric!(SuperscriptYSize, "openTypeOS2SuperscriptYSize");
+        set_metric!(Os2TypoAscender, "openTypeOS2TypoAscender");
+        set_metric!(Os2TypoDescender, "openTypeOS2TypoDescender");
+        set_metric!(Os2TypoLineGap, "openTypeOS2TypoLineGap");
+        set_metric!(Os2WinAscent, "openTypeOS2WinAscent");
+        set_metric!(Os2WinDescent, "openTypeOS2WinDescent");
+        set_metric!(VheaCaretOffset, "openTypeVheaCaretOffset");
+        set_metric!(VheaCaretSlopeRise, "openTypeVheaCaretSlopeRise");
+        set_metric!(VheaCaretSlopeRun, "openTypeVheaCaretSlopeRun");
+        set_metric!(VheaLineGap, "openTypeVheaVertTypoLineGap");
+        set_metric!(UnderlinePosition, "postscriptUnderlinePosition");
+        set_metric!(UnderlineThickness, "postscriptUnderlineThickness");
+
+        metrics.populate_defaults(
+            &pos,
+            static_metadata.units_per_em,
+            x_height,
+            ascender,
+            descender,
+            Some(source.italic_angle),
+        );
+    }
+
+    metrics.build(&static_metadata.axes)
+}
+
 #[allow(dead_code)] // TEMPORARY
 fn to_ir_glyph(
     global_axes: HashMap<AxisName, Tag>,
@@ -394,7 +487,7 @@ mod tests {
         toir::to_ir_static_metadata,
     };
 
-    use super::{Error, normalize_axis_value, to_ir_glyph, to_ir_names};
+    use super::{Error, normalize_axis_value, to_ir_global_metrics, to_ir_glyph, to_ir_names};
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
         axes.iter()
@@ -576,5 +669,47 @@ mod tests {
             to_ir_static_metadata(&font_data),
             Err(Error::InconsistentAxisDefinitions(_))
         ));
+    }
+
+    #[test]
+    fn global_metrics_with_all_sources_sparse() {
+        // A degenerate font whose sources are all sparse still gets metrics
+        // masters at the default location.
+        let mut font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
+        for source in font_data.sources.values_mut() {
+            source.is_sparse = true;
+        }
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let metrics = to_ir_global_metrics(&static_metadata, &font_data).unwrap();
+        let at_default = metrics.at(static_metadata.default_location());
+        assert_eq!(750.0, at_default.ascender.into_inner());
+    }
+
+    #[test]
+    fn global_metrics_from_custom_data() {
+        let font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let metrics = to_ir_global_metrics(&static_metadata, &font_data).unwrap();
+        let at_default = metrics.at(static_metadata.default_location());
+        assert_eq!(725.0, at_default.os2_typo_ascender.into_inner());
+        assert_eq!(950.0, at_default.caret_slope_rise.into_inner());
+        assert_eq!(-120.0, at_default.underline_position.into_inner());
+    }
+
+    #[test]
+    fn vertical_tables_need_the_three_vertical_metrics() {
+        let mut font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
+        assert!(to_ir_static_metadata(&font_data).unwrap().build_vertical);
+        for source in font_data.sources.values_mut() {
+            source.line_metrics_vertical_layout.remove("lineGap");
+        }
+        assert!(!to_ir_static_metadata(&font_data).unwrap().build_vertical);
+        for source in font_data.sources.values_mut() {
+            source.custom_data.insert(
+                "openTypeVheaVertTypoLineGap".to_string(),
+                serde_json::json!(0),
+            );
+        }
+        assert!(to_ir_static_metadata(&font_data).unwrap().build_vertical);
     }
 }
