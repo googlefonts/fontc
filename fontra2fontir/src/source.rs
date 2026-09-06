@@ -2,7 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
-    orchestration::Work,
+    orchestration::{Access, Work},
 };
 use fontir::{
     error::Error,
@@ -14,7 +14,7 @@ use log::{debug, warn};
 
 use crate::{
     fontra::Font,
-    toir::{to_ir_gdef_categories, to_ir_static_metadata},
+    toir::{to_ir_gdef_categories, to_ir_global_metrics, to_ir_static_metadata},
 };
 
 pub struct FontraIrSource {
@@ -42,7 +42,9 @@ impl Source for FontraIrSource {
     }
 
     fn create_global_metric_work(&self) -> Result<Box<IrWork>, Error> {
-        Ok(Box::new(NoopWork(WorkId::GlobalMetrics)))
+        Ok(Box::new(GlobalMetricsWork {
+            font_data: self.font_data.clone(),
+        }))
     }
 
     fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
@@ -160,6 +162,37 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         context
             .static_metadata
             .set(to_ir_static_metadata(&self.font_data)?);
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct GlobalMetricsWork {
+    font_data: Arc<Font>,
+}
+
+impl Work<Context, WorkId, Error> for GlobalMetricsWork {
+    fn id(&self) -> WorkId {
+        WorkId::GlobalMetrics
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::StaticMetadata)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        debug!(
+            "Global metrics for {}",
+            self.font_data
+                .font_info
+                .family_name
+                .as_deref()
+                .unwrap_or("<nameless family>")
+        );
+        let static_metadata = context.static_metadata.get();
+        context
+            .global_metrics
+            .set(to_ir_global_metrics(&static_metadata, &self.font_data)?);
         Ok(())
     }
 }
