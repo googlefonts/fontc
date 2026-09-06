@@ -1,6 +1,7 @@
 //! Loads fontra source and converts it to fontc IR
 
 mod fontra;
+mod kernutils;
 pub mod source;
 mod toir;
 
