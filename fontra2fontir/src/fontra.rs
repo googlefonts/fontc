@@ -161,11 +161,11 @@ impl Default for ConditionalSubstitutions {
     }
 }
 
-type KerningValues = HashMap<SmolStr, HashMap<SmolStr, Vec<Option<f64>>>>;
+pub(crate) type KerningValues = HashMap<SmolStr, HashMap<SmolStr, Vec<Option<f64>>>>;
 
 /// Corresponds to a Fontra Kerning
 /// <https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/classes.py#L93>
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Kerning {
     pub(crate) groups_side1: HashMap<SmolStr, Vec<SmolStr>>,
