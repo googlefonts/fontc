@@ -10,7 +10,7 @@ use fontir::{
     ir::{
         AnchorBuilder, FeatureSources, FeaturesSource, KerningInstance, PreliminaryGdefCategories,
     },
-    orchestration::{Context, IrWork, WorkId},
+    orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
 };
 use log::{debug, trace, warn};
@@ -129,6 +129,10 @@ impl Source for FontraIrSource {
 
     fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(NoopWork(WorkId::PaintGraph)))
+    }
+
+    fn compilation_flags(&self) -> Flags {
+        Flags::PROPAGATE_ANCHORS
     }
 }
 
@@ -476,12 +480,16 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             .flatten()
             .copied()
             .collect();
-        let glyph_ir = to_ir_glyph(&static_metadata, &self.font_data, codepoints, fontra_glyph)?;
+        let mut anchors = AnchorBuilder::new(self.glyph_name.clone());
+        let glyph_ir = to_ir_glyph(
+            &static_metadata,
+            &self.font_data,
+            codepoints,
+            fontra_glyph,
+            &mut anchors,
+        )?;
         context.glyphs.set(glyph_ir);
-        // TODO: parse and convert anchors
-        context
-            .anchors
-            .set(AnchorBuilder::new(self.glyph_name.clone()).build()?);
+        context.anchors.set(anchors.build()?);
         Ok(())
     }
 }

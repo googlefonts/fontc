@@ -12,9 +12,10 @@ use fontdrasil::{
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{
-        Component, DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph,
-        GlyphInstance, GlyphOrder, GlyphPathBuilder, KernGroup, KernSide, KerningInstance,
-        KerningLocations, NameBuilder, NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
+        AnchorBuilder, Component, DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics,
+        GlobalMetricsBuilder, Glyph, GlyphInstance, GlyphOrder, GlyphPathBuilder, KernGroup,
+        KernSide, KerningInstance, KerningLocations, NameBuilder, NameKey, Panose,
+        PreliminaryGdefCategories, StaticMetadata,
     },
 };
 use kurbo::BezPath;
@@ -532,6 +533,7 @@ pub(crate) fn to_ir_glyph(
     font_data: &Font,
     codepoints: HashSet<u32>,
     fontra_glyph: &VariableGlyph,
+    anchors: &mut AnchorBuilder,
 ) -> Result<Glyph, BadGlyph> {
     let axes = &static_metadata.all_source_axes;
     let local_axes = static_metadata.glyph_axes.get(&fontra_glyph.name);
@@ -620,6 +622,18 @@ pub(crate) fn to_ir_glyph(
                 to_ir_component(c, static_metadata, base_glyph_axes, reset)
             })
             .collect();
+
+        for anchor in layer.glyph.anchors.iter() {
+            let Some(name) = &anchor.name else {
+                warn!("'{}': ignoring an anchor without a name", fontra_glyph.name);
+                continue;
+            };
+            anchors.add(
+                name.clone(),
+                global_location.clone(),
+                kurbo::Point::new(anchor.x, anchor.y),
+            )?;
+        }
 
         instances.insert(
             global_location,
@@ -1035,7 +1049,7 @@ mod tests {
         coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
         types::{Axes, Axis, GlyphName},
     };
-    use fontir::ir::{Glyph, GlyphOrder, KernGroup, KernSide};
+    use fontir::ir::{AnchorBuilder, Glyph, GlyphOrder, KernGroup, KernSide};
     use kurbo::{BezPath, PathEl};
     use write_fonts::{
         tables::os2::SelectionFlags,
@@ -1181,6 +1195,7 @@ mod tests {
             &font_data,
             Default::default(),
             &fontra_glyph,
+            &mut AnchorBuilder::new(fontra_glyph.name.clone()),
         )
         .unwrap();
         assert_eq!(
@@ -1305,11 +1320,13 @@ mod tests {
         let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         let name = GlyphName::new("behDotless-ar");
         let fontra_glyph = font_data.glyphs.get(&name).unwrap();
+        let mut anchors = AnchorBuilder::new(name);
         let glyph = to_ir_glyph(
             &static_metadata,
             &font_data,
             Default::default(),
             fontra_glyph,
+            &mut anchors,
         )
         .unwrap();
         let mut mashq: Vec<f64> = glyph
@@ -1319,6 +1336,18 @@ mod tests {
             .collect();
         mashq.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert_eq!(vec![-1.0, 0.0, 1.0], mashq);
+
+        let anchors = anchors.build().unwrap();
+        let bottom = anchors
+            .anchors
+            .iter()
+            .find(|a| a.original_name == "bottom")
+            .unwrap();
+        let below_min = NormalizedLocation::for_pos(&[("MSHQ", -1.0), ("SPAC", 0.0)]);
+        assert_eq!(
+            Some(&kurbo::Point::new(407.0, 19.0)),
+            bottom.positions.get(&below_min)
+        );
     }
 
     #[test]
@@ -1568,7 +1597,14 @@ mod tests {
         let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         let convert = |name: &str| {
             let g = font_data.glyphs.get(&GlyphName::new(name)).unwrap();
-            to_ir_glyph(&static_metadata, &font_data, Default::default(), g).unwrap()
+            to_ir_glyph(
+                &static_metadata,
+                &font_data,
+                Default::default(),
+                g,
+                &mut AnchorBuilder::new(g.name.clone()),
+            )
+            .unwrap()
         };
         // A deep-component glyph with glyph-local axes.
         assert!(!convert("VG_4E00_00").axes().is_empty());
@@ -1628,6 +1664,7 @@ mod tests {
             &font_data,
             Default::default(),
             fontra_glyph,
+            &mut AnchorBuilder::new(fontra_glyph.name.clone()),
         )
         .unwrap();
         assert!(glyph.axes().is_empty());
@@ -1694,6 +1731,91 @@ mod tests {
             &font_data,
             &mut responds_to_global_axes_cache
         ));
+    }
+
+    #[test]
+    fn anchors_of_raqq_kashida() {
+        let font_data = Font::load(&testdata_dir().join("Raqq.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        let name = GlyphName::new("kashida-ar");
+        let fontra_glyph = font_data.glyphs.get(&name).unwrap();
+        let mut anchors = AnchorBuilder::new(name);
+        to_ir_glyph(
+            &static_metadata,
+            &font_data,
+            Default::default(),
+            fontra_glyph,
+            &mut anchors,
+        )
+        .unwrap();
+        let anchors = anchors.build().unwrap();
+        assert_eq!(
+            vec!["entry", "exit", "kasra"],
+            anchors
+                .anchors
+                .iter()
+                .map(|a| a.original_name.as_str())
+                .collect::<Vec<_>>()
+        );
+        let entry = &anchors.anchors[0];
+        assert!(entry.is_cursive());
+        assert_eq!(kurbo::Point::new(100.0, 0.0), entry.default_pos());
+        let kasra = &anchors.anchors[2];
+        assert!(!kasra.is_mark());
+        assert_eq!(kurbo::Point::new(50.0, -54.0), kasra.default_pos());
+    }
+
+    #[test]
+    fn variable_anchor_positions_of_raqq_space() {
+        let font_data = Font::load(&testdata_dir().join("Raqq.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        let name = GlyphName::new("space");
+        let fontra_glyph = font_data.glyphs.get(&name).unwrap();
+        let mut anchors = AnchorBuilder::new(name);
+        to_ir_glyph(
+            &static_metadata,
+            &font_data,
+            Default::default(),
+            fontra_glyph,
+            &mut anchors,
+        )
+        .unwrap();
+        let anchors = anchors.build().unwrap();
+        let alefabove = &anchors.anchors[0];
+        assert_eq!("alefabove", alefabove.original_name);
+        let mut positions: Vec<(f64, f64, f64)> = alefabove
+            .positions
+            .iter()
+            .map(|(loc, p)| (loc.get(Tag::new(b"SPAC")).unwrap().to_f64(), p.x, p.y))
+            .collect();
+        positions.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(
+            vec![(-1.0, 0.0, 0.0), (0.0, 200.0, 0.0), (1.0, 250.0, 0.0)],
+            positions
+        );
+    }
+
+    #[test]
+    fn unnamed_anchors_are_skipped() {
+        let mut font_data = Font::load(&testdata_dir().join("Raqq.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        let name = GlyphName::new("space");
+        for layer in font_data.glyphs.get_mut(&name).unwrap().layers.values_mut() {
+            for anchor in layer.glyph.anchors.iter_mut() {
+                anchor.name = None;
+            }
+        }
+        let fontra_glyph = font_data.glyphs.get(&name).unwrap();
+        let mut anchors = AnchorBuilder::new(name);
+        to_ir_glyph(
+            &static_metadata,
+            &font_data,
+            Default::default(),
+            fontra_glyph,
+            &mut anchors,
+        )
+        .unwrap();
+        assert!(anchors.build().unwrap().anchors.is_empty());
     }
 
     #[test]
