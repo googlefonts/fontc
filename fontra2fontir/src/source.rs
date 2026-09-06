@@ -199,13 +199,30 @@ fn pin_discrete_axes(font_data: &mut Font) -> Result<(), Error> {
     let retained: std::collections::HashSet<String> = font_data.sources.keys().cloned().collect();
 
     for glyph in font_data.glyphs.values_mut() {
+        // The pin does not apply to a font axis that the glyph redefines as
+        // a glyph axis.
+        let shadowed: std::collections::HashSet<&str> = glyph
+            .axes
+            .iter()
+            .map(|axis| axis.name.as_str())
+            .filter(|name| pinned.iter().any(|(pinned, _)| pinned == name))
+            .collect();
         glyph.sources.retain(|source| {
             source
                 .location_base
                 .as_ref()
                 .map(|base| retained.contains(base))
                 .unwrap_or(true)
-                && at_default(&source.location)
+                && pinned
+                    .iter()
+                    .filter(|(name, _)| !shadowed.contains(name.as_str()))
+                    .all(|(name, default)| {
+                        source
+                            .location
+                            .get(name)
+                            .map(|v| v == default)
+                            .unwrap_or(true)
+                    })
         });
     }
 
@@ -273,9 +290,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         context
             .preliminary_gdef_categories
             .set(self.gdef_categories.as_ref().clone());
-        context
-            .static_metadata
-            .set(to_ir_static_metadata(&self.font_data)?);
+        context.static_metadata.set(to_ir_static_metadata(
+            &self.font_data,
+            context.flags.contains(Flags::EMIT_VARC_TABLE),
+        )?);
         Ok(())
     }
 }
@@ -458,12 +476,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             .flatten()
             .copied()
             .collect();
-        let glyph_ir = to_ir_glyph(
-            &static_metadata.all_source_axes,
-            &self.font_data,
-            codepoints,
-            fontra_glyph,
-        )?;
+        let glyph_ir = to_ir_glyph(&static_metadata, &self.font_data, codepoints, fontra_glyph)?;
         context.glyphs.set(glyph_ir);
         // TODO: parse and convert anchors
         context
@@ -617,6 +630,30 @@ mod tests {
                 .map(|source| source.name.as_str())
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn pin_discrete_axes_keeps_sources_of_a_shadowing_glyph_axis() {
+        // 'period' redefines italic as a glyph axis, so its source locations
+        // are in the glyph axis's space and the pinned font axis cannot
+        // decide them.
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let name = GlyphName::new("period");
+        let glyph = font_data.glyphs.get_mut(&name).unwrap();
+        glyph.axes = vec![crate::fontra::GlyphAxis {
+            name: "italic".to_string(),
+            min_value: 0.0,
+            default_value: 0.0,
+            max_value: 1.0,
+        }];
+        glyph.sources = vec![
+            glyph_source("<default>", &[("italic", 0.0)]),
+            glyph_source("italic=1", &[("italic", 1.0)]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        assert_eq!(2, font_data.glyphs.get(&name).unwrap().sources.len());
     }
 
     #[test]

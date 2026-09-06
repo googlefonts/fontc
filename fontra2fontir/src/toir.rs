@@ -26,8 +26,64 @@ use write_fonts::{
 };
 
 use crate::fontra::{
-    self, AxisName, Contour, Font, FontSource, GlyphInfos, Kerning, Point, PointType, VariableGlyph,
+    self, AxisName, Contour, Font, FontSource, GlyphAxis, GlyphInfos, GlyphSource, Kerning,
+    Location, Point, PointType, VariableGlyph,
 };
+
+/// A hidden axis with a synthetic tag for each glyph-local axis that does not
+/// correspond to a font axis.
+fn glyph_axes(font_data: &Font) -> Result<BTreeMap<GlyphName, Axes>, Error> {
+    let font_axis_names: HashSet<&str> = font_data
+        .axes
+        .axes
+        .iter()
+        .map(|a| a.name().as_str())
+        .collect();
+    let mut result = BTreeMap::new();
+    for (glyph_name, glyph) in font_data.glyphs.iter() {
+        let mut axes = Vec::new();
+        for glyph_axis in &glyph.axes {
+            // Maps to the font axis of the same name.
+            if font_axis_names.contains(glyph_axis.name.as_str()) {
+                continue;
+            }
+            if glyph_axis.min_value > glyph_axis.default_value
+                || glyph_axis.default_value > glyph_axis.max_value
+            {
+                return Err(Error::InconsistentAxisDefinitions(format!(
+                    "glyph axis {:?} of {glyph_name}",
+                    glyph_axis.name
+                )));
+            }
+            let tag = local_axis_tag(axes.len());
+            let (min, default, max) = axis_tuple(glyph_axis);
+            axes.push(Axis {
+                tag,
+                name: glyph_axis.name.clone(),
+                hidden: true,
+                min,
+                default,
+                max,
+                converter: CoordConverter::unmapped(min, default, max),
+                localized_names: Default::default(),
+            });
+        }
+        if !axes.is_empty() {
+            result.insert(glyph_name.clone(), Axes::new(axes));
+        }
+    }
+    Ok(result)
+}
+
+/// The synthetic tag of the nth glyph-local axis.
+fn local_axis_tag(index: usize) -> Tag {
+    let tag = format!("V{index:03}");
+    Tag::new(
+        tag.as_bytes()
+            .try_into()
+            .expect("index fits in three digits"),
+    )
+}
 
 /// Normalize a design value against a font axis, clamped into the axis range
 /// like Fontra's
@@ -222,7 +278,10 @@ fn apply_custom_data(
     Ok(())
 }
 
-pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, Error> {
+pub(crate) fn to_ir_static_metadata(
+    font_data: &Font,
+    emit_varc: bool,
+) -> Result<StaticMetadata, Error> {
     let axes = font_data
         .axes
         .axes
@@ -299,6 +358,33 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
                 .custom_data
                 .contains_key("openTypeVheaVertTypoLineGap"));
 
+    // Add glyph-local axes to fvar as hidden axes.
+    let glyph_axes = glyph_axes(font_data)?;
+    let mut axes = axes;
+    if emit_varc {
+        let tags: BTreeSet<Tag> = glyph_axes
+            .values()
+            .flat_map(|axes| axes.iter().map(|axis| axis.tag))
+            .collect();
+        axes.extend(tags.into_iter().map(|tag| {
+            let (min, default, max) = (
+                UserCoord::new(-1.0),
+                UserCoord::new(0.0),
+                UserCoord::new(1.0),
+            );
+            Axis {
+                tag,
+                name: tag.to_string(),
+                hidden: true,
+                min,
+                default,
+                max,
+                converter: CoordConverter::unmapped(min, default, max),
+                localized_names: Default::default(),
+            }
+        }));
+    }
+
     let mut static_metadata = StaticMetadata::new(
         font_data.units_per_em,
         to_ir_names(font_data, default_source),
@@ -311,8 +397,25 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         build_vertical,
     )
     .map_err(Error::VariationModelError)?;
+    static_metadata.glyph_axes = glyph_axes;
     apply_custom_data(&mut static_metadata, font_data, default_source)?;
     Ok(static_metadata)
+}
+
+fn glyph_source_location(
+    font_data: &Font,
+    glyph: &VariableGlyph,
+    source: &GlyphSource,
+) -> Location {
+    let mut location = source
+        .location_base
+        .as_ref()
+        .and_then(|base| font_data.sources.get(base))
+        .map(|font_source| font_source.location.clone())
+        .unwrap_or_default();
+    location.retain(|name, _| !glyph.axes.iter().any(|a| a.name == *name));
+    location.extend(source.location.iter().map(|(name, v)| (name.clone(), *v)));
+    location
 }
 
 /// Normalize a design-space location, filling missing axes with their default.
@@ -425,15 +528,14 @@ pub(crate) fn to_ir_global_metrics(
 }
 
 pub(crate) fn to_ir_glyph(
-    axes: &Axes,
+    static_metadata: &StaticMetadata,
     font_data: &Font,
     codepoints: HashSet<u32>,
     fontra_glyph: &VariableGlyph,
 ) -> Result<Glyph, BadGlyph> {
-    // TODO: convert glyph-local axes into IR glyph axes
-    if !fontra_glyph.axes.is_empty() {
-        todo!("Support local axes");
-    }
+    let axes = &static_metadata.all_source_axes;
+    let local_axes = static_metadata.glyph_axes.get(&fontra_glyph.name);
+    let mut responds_to_global_axes_cache: HashMap<GlyphName, bool> = HashMap::new();
 
     let mut instances = HashMap::new();
     // Layers not referenced by any active source, e.g. backgrounds, do not
@@ -446,18 +548,42 @@ pub(crate) fn to_ir_glyph(
             ));
         };
 
-        // The glyph source location is the location of its base font source,
-        // overridden by the glyph source's own location entries. Missing axes
-        // are at their default.
-        let mut design_location = source
-            .location_base
-            .as_ref()
-            .and_then(|base| font_data.sources.get(base))
-            .map(|font_source| font_source.location.clone())
-            .unwrap_or_default();
-        design_location.extend(source.location.iter().map(|(name, v)| (name.clone(), *v)));
-
-        let global_location = to_ir_location(axes.iter(), &design_location);
+        let design_location = glyph_source_location(font_data, fontra_glyph, source);
+        let location_axes = axes
+            .iter()
+            .map(|axis| {
+                local_axes
+                    .and_then(|local| local.get(&axis.tag))
+                    .unwrap_or(axis)
+            })
+            .chain(
+                local_axes
+                    .into_iter()
+                    .flat_map(|local| local.iter())
+                    .filter(|axis| !axes.contains(&axis.tag)),
+            );
+        let global_location: NormalizedLocation = location_axes
+            .map(|axis| {
+                let value = design_location
+                    .get(&axis.name)
+                    .filter(|_| {
+                        local_axes.is_some_and(|local| local.contains(&axis.tag))
+                            || font_data.axes.axes.iter().any(|a| a.name() == &axis.name)
+                    })
+                    .copied();
+                let glyph_axis = fontra_glyph.axes.iter().find(|a| a.name == axis.name);
+                let coord = match (value, glyph_axis) {
+                    // A glyph axis defines the range for its values, whether
+                    // they map to its own local tag or to a font axis's tag.
+                    (Some(value), Some(glyph_axis)) => {
+                        normalize_glyph_axis_value(value, glyph_axis)
+                    }
+                    (Some(value), None) => normalize_axis_value(value, axis),
+                    (None, _) => axis.default.to_normalized(&axis.converter),
+                };
+                (axis.tag, coord)
+            })
+            .collect();
 
         // Keep the first of multiple sources at the same location.
         if instances.contains_key(&global_location) {
@@ -476,7 +602,24 @@ pub(crate) fn to_ir_glyph(
             .map(|c| to_ir_path(fontra_glyph.name.clone(), c))
             .collect::<Result<_, _>>()?;
 
-        let components: Vec<_> = layer.glyph.components.iter().map(to_ir_component).collect();
+        let components = layer
+            .glyph
+            .components
+            .iter()
+            .map(|c| {
+                let base_glyph_axes = font_data
+                    .glyphs
+                    .get(&c.name)
+                    .map(|g| g.axes.as_slice())
+                    .unwrap_or(&[]);
+                let reset = !responds_to_global_axes(
+                    &c.name,
+                    font_data,
+                    &mut responds_to_global_axes_cache,
+                );
+                to_ir_component(c, static_metadata, base_glyph_axes, reset)
+            })
+            .collect();
 
         instances.insert(
             global_location,
@@ -490,7 +633,146 @@ pub(crate) fn to_ir_glyph(
         );
     }
 
-    Glyph::new(fontra_glyph.name.clone(), true, codepoints, instances)
+    // Set a component axis that any source specifies in every source. Set it at the
+    // default value where a source omits it. The VARC table lists the axes
+    // once per component.
+    let component_count = instances.values().next().map(|i| i.components.len());
+    if let Some(count) = component_count
+        && instances.values().all(|i| i.components.len() == count)
+    {
+        for idx in 0..count {
+            let tags: BTreeSet<Tag> = instances
+                .values()
+                .flat_map(|i| i.components[idx].location.axis_tags().copied())
+                .collect();
+            for instance in instances.values_mut() {
+                let location = &mut instance.components[idx].location;
+                for tag in &tags {
+                    if location.get(*tag).is_none() {
+                        location.insert(*tag, NormalizedCoord::new(0.0));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut glyph = Glyph::new(fontra_glyph.name.clone(), true, codepoints, instances)?;
+    if let Some(local_axes) = local_axes {
+        glyph.set_axes(local_axes.clone());
+    }
+    Ok(glyph)
+}
+
+/// Similar to fontra-compile's
+/// [`respondsToGlobalAxes`](https://github.com/fontra/fontra-compile/blob/01d784d86c/src/fontra_compile/builder.py#L420-L429),
+/// with `locationBase` resolved.
+fn responds_to_global_axes(
+    name: &GlyphName,
+    font_data: &Font,
+    cache: &mut HashMap<GlyphName, bool>,
+) -> bool {
+    if let Some(&cached) = cache.get(name) {
+        return cached;
+    }
+    // Break component cycles: assume "no" while recursing through this glyph.
+    cache.insert(name.clone(), false);
+    let Some(glyph) = font_data.glyphs.get(name) else {
+        return false;
+    };
+    let local: HashSet<&str> = glyph.axes.iter().map(|a| a.name.as_str()).collect();
+    let resolved: Vec<Location> = glyph
+        .sources
+        .iter()
+        .map(|source| glyph_source_location(font_data, glyph, source))
+        .collect();
+    let global_axes: HashSet<&str> = resolved
+        .iter()
+        .flat_map(|location| location.keys().map(String::as_str))
+        .filter(|name| !local.contains(name))
+        .collect();
+    // A source that sets an axis, even to its default value, differs from a
+    // source that omits it.
+    let mut responds = global_axes.iter().any(|axis| {
+        let mut values = resolved.iter().map(|location| location.get(*axis).copied());
+        let first = values.next().unwrap_or_default();
+        values.any(|value| value != first)
+    });
+    if !responds {
+        'outer: for layer in glyph.layers.values() {
+            for component in &layer.glyph.components {
+                if responds_to_global_axes(&component.name, font_data, cache) {
+                    responds = true;
+                    break 'outer;
+                }
+            }
+        }
+    }
+    cache.insert(name.clone(), responds);
+    responds
+}
+
+/// Port of fontra-compile's
+/// [`axisTuple`](https://github.com/fontra/fontra-compile/blob/01d784d86c/src/fontra_compile/builder.py#L874-L896).
+fn axis_tuple(axis: &GlyphAxis) -> (UserCoord, UserCoord, UserCoord) {
+    let (mut min_value, default_value, mut max_value) =
+        (axis.min_value, axis.default_value, axis.max_value);
+    if min_value < default_value && default_value < max_value {
+        let min_diff = default_value - min_value;
+        let max_diff = max_value - default_value;
+        if min_diff > max_diff {
+            max_value = default_value + min_diff;
+        } else if min_diff < max_diff {
+            min_value = default_value - max_diff;
+        }
+    }
+    (
+        UserCoord::new(min_value),
+        UserCoord::new(default_value),
+        UserCoord::new(max_value),
+    )
+}
+
+/// Similar to fontTools'
+/// [`normalizeValue`](https://github.com/fonttools/fonttools/blob/7af8bf5cbf/Lib/fontTools/varLib/models.py#L54-L84).
+fn normalize_glyph_axis_value(value: f64, axis: &GlyphAxis) -> NormalizedCoord {
+    let (min, default, max) = axis_tuple(axis);
+    let value = value.clamp(min.to_f64(), max.to_f64());
+    let converter = CoordConverter::unmapped(min, default, max);
+    DesignCoord::new(value).to_normalized(&converter)
+}
+
+fn to_ir_component(
+    component: &fontra::Component,
+    static_metadata: &StaticMetadata,
+    base_glyph_axes: &[GlyphAxis],
+    reset_unspecified_axes: bool,
+) -> Component {
+    let global_axes = &static_metadata.all_source_axes;
+    let location: NormalizedLocation = component
+        .location
+        .iter()
+        .filter_map(|(name, value)| {
+            if let Some(glyph_axis) = base_glyph_axes.iter().find(|a| a.name == *name) {
+                let tag = static_metadata
+                    .glyph_axes
+                    .get(&component.name)
+                    .and_then(|axes| axes.iter().find(|a| a.name == *name))
+                    .map(|a| a.tag)
+                    .or_else(|| global_axes.iter().find(|a| a.name == *name).map(|a| a.tag))?;
+                return Some((tag, normalize_glyph_axis_value(*value, glyph_axis)));
+            }
+            global_axes
+                .iter()
+                .find(|a| a.name == *name)
+                .map(|a| (a.tag, normalize_axis_value(*value, a)))
+        })
+        .collect();
+    Component::new_variable(
+        component.name.clone(),
+        component.transformation.clone(),
+        location,
+        reset_unspecified_axes,
+    )
 }
 
 /// The sources that kern.
@@ -636,14 +918,6 @@ pub(crate) fn to_ir_kerning_instance(
     instance
 }
 
-fn to_ir_component(component: &fontra::Component) -> Component {
-    // TODO: convert components with a location into IR variable components
-    if !component.location.is_empty() {
-        todo!("Support variable components");
-    }
-    Component::new(component.name.clone(), component.transformation.to_affine())
-}
-
 fn add_to_path<'a>(
     path_builder: &'a mut GlyphPathBuilder,
     points: impl Iterator<Item = &'a Point>,
@@ -769,15 +1043,16 @@ mod tests {
     };
 
     use crate::{
-        fontra::{self, Font, Kerning, VariableGlyph},
+        fontra::{self, Font, GlyphAxis, Kerning, VariableGlyph},
         source::HORIZONTAL_KERNING_TYPE,
         test::testdata_dir,
         toir::to_ir_static_metadata,
     };
 
     use super::{
-        Error, NameKey, normalize_axis_value, to_ir_global_metrics, to_ir_glyph,
-        to_ir_kerning_instance, to_ir_kerning_locations, to_ir_names, to_ir_path,
+        Error, NameKey, StaticMetadata, normalize_axis_value, normalize_glyph_axis_value,
+        responds_to_global_axes, to_ir_global_metrics, to_ir_glyph, to_ir_kerning_instance,
+        to_ir_kerning_locations, to_ir_names, to_ir_path,
     };
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
@@ -826,7 +1101,7 @@ mod tests {
     #[test]
     fn static_metadata_of_2glyphs() {
         let font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         assert_eq!(1000, static_metadata.units_per_em);
         assert_eq!(
             vec![
@@ -898,11 +1173,11 @@ mod tests {
     #[test]
     fn ir_of_glyph_u20089() {
         let font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         let glyph_file = testdata_dir().join("2glyphs.fontra/glyphs/u20089.json");
         let fontra_glyph = VariableGlyph::from_file(&glyph_file).unwrap();
         let glyph = to_ir_glyph(
-            &static_metadata.all_source_axes,
+            &static_metadata,
             &font_data,
             Default::default(),
             &fontra_glyph,
@@ -1018,7 +1293,7 @@ mod tests {
             }
         }
         assert!(matches!(
-            to_ir_static_metadata(&font_data),
+            to_ir_static_metadata(&font_data, false),
             Err(Error::InconsistentAxisDefinitions(_))
         ));
     }
@@ -1027,11 +1302,11 @@ mod tests {
     fn source_locations_clamp_to_the_axis_range() {
         // behDotless-ar has a source at Mashq 0, below the axis minimum of 7.
         let font_data = Font::load(&testdata_dir().join("Raqq.fontra")).unwrap();
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         let name = GlyphName::new("behDotless-ar");
         let fontra_glyph = font_data.glyphs.get(&name).unwrap();
         let glyph = to_ir_glyph(
-            &static_metadata.all_source_axes,
+            &static_metadata,
             &font_data,
             Default::default(),
             fontra_glyph,
@@ -1054,7 +1329,7 @@ mod tests {
         for source in font_data.sources.values_mut() {
             source.is_sparse = true;
         }
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         let metrics = to_ir_global_metrics(&static_metadata, &font_data).unwrap();
         let at_default = metrics.at(static_metadata.default_location());
         assert_eq!(750.0, at_default.ascender.into_inner());
@@ -1063,7 +1338,7 @@ mod tests {
     #[test]
     fn global_metrics_from_custom_data() {
         let font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         let metrics = to_ir_global_metrics(&static_metadata, &font_data).unwrap();
         let at_default = metrics.at(static_metadata.default_location());
         assert_eq!(725.0, at_default.os2_typo_ascender.into_inner());
@@ -1074,18 +1349,30 @@ mod tests {
     #[test]
     fn vertical_tables_need_the_three_vertical_metrics() {
         let mut font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
-        assert!(to_ir_static_metadata(&font_data).unwrap().build_vertical);
+        assert!(
+            to_ir_static_metadata(&font_data, false)
+                .unwrap()
+                .build_vertical
+        );
         for source in font_data.sources.values_mut() {
             source.line_metrics_vertical_layout.remove("lineGap");
         }
-        assert!(!to_ir_static_metadata(&font_data).unwrap().build_vertical);
+        assert!(
+            !to_ir_static_metadata(&font_data, false)
+                .unwrap()
+                .build_vertical
+        );
         for source in font_data.sources.values_mut() {
             source.custom_data.insert(
                 "openTypeVheaVertTypoLineGap".to_string(),
                 serde_json::json!(0),
             );
         }
-        assert!(to_ir_static_metadata(&font_data).unwrap().build_vertical);
+        assert!(
+            to_ir_static_metadata(&font_data, false)
+                .unwrap()
+                .build_vertical
+        );
     }
 
     #[test]
@@ -1093,7 +1380,7 @@ mod tests {
         let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
         font_data.font_info.version_major = Some(2);
         font_data.font_info.version_minor = Some(5);
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         assert_eq!(
             (2, 5),
             (
@@ -1114,7 +1401,7 @@ mod tests {
         let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
         assert_eq!(
             None,
-            to_ir_static_metadata(&font_data)
+            to_ir_static_metadata(&font_data, false)
                 .unwrap()
                 .misc
                 .is_fixed_pitch
@@ -1127,7 +1414,7 @@ mod tests {
         }
         assert_eq!(
             Some(true),
-            to_ir_static_metadata(&font_data)
+            to_ir_static_metadata(&font_data, false)
                 .unwrap()
                 .misc
                 .is_fixed_pitch
@@ -1138,18 +1425,18 @@ mod tests {
     fn vendor_id_from_font_info() {
         let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
         font_data.font_info.vendor_id = Some("TEST".to_string());
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         assert_eq!(Tag::new(b"TEST"), static_metadata.misc.vendor_id);
 
         font_data.font_info.vendor_id = Some("  ".to_string());
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         assert_eq!(Tag::new(b"NONE"), static_metadata.misc.vendor_id);
     }
 
     #[test]
     fn font_info_custom_data_of_vertical() {
         let font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         let misc = &static_metadata.misc;
         assert_eq!(Some(450), misc.us_weight_class);
         assert_eq!(Some(3), misc.us_width_class);
@@ -1186,7 +1473,7 @@ mod tests {
             .font_info
             .custom_data
             .insert("openTypeOS2Type".to_string(), serde_json::json!([2, 42]));
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         assert!(
             static_metadata
                 .misc
@@ -1263,7 +1550,7 @@ mod tests {
                 )]),
             },
         );
-        let static_metadata = to_ir_static_metadata(&font_data).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
         let locations = to_ir_kerning_locations(
             &static_metadata,
             &font_data,
@@ -1272,6 +1559,159 @@ mod tests {
         assert_eq!(
             vec![static_metadata.default_location().clone()],
             locations.locations.into_iter().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn variable_composite_glyph_to_ir() {
+        let font_data = Font::load(&testdata_dir().join("component.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        let convert = |name: &str| {
+            let g = font_data.glyphs.get(&GlyphName::new(name)).unwrap();
+            to_ir_glyph(&static_metadata, &font_data, Default::default(), g).unwrap()
+        };
+        // A deep-component glyph with glyph-local axes.
+        assert!(!convert("VG_4E00_00").axes().is_empty());
+        // The composite with variable components.
+        let uni4e00 = convert("uni4E00");
+        let default = uni4e00.default_instance();
+        assert!(!default.components.is_empty());
+        assert!(
+            default
+                .components
+                .iter()
+                .all(|c| c.is_variable() && c.base == GlyphName::new("VG_4E00_00"))
+        );
+    }
+
+    #[test]
+    fn glyph_axis_with_a_font_axis_name_maps_to_its_tag() {
+        // R.alt redefines the weight and width font axes as glyph axes with a
+        // 0..1 range. Source values map to the font tags, normalized against
+        // the glyph axis range, and no local axes are synthesized.
+        let font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let axis = |name: &str, tag: &[u8; 4], min: f64, default: f64, max: f64| {
+            let (min, default, max) = (
+                UserCoord::new(min),
+                UserCoord::new(default),
+                UserCoord::new(max),
+            );
+            Axis {
+                tag: Tag::new(tag),
+                name: name.into(),
+                hidden: false,
+                min,
+                default,
+                max,
+                converter: CoordConverter::unmapped(min, default, max),
+                localized_names: Default::default(),
+            }
+        };
+        let static_metadata = StaticMetadata::new(
+            1000,
+            Default::default(),
+            vec![
+                axis("weight", b"wght", 100.0, 100.0, 900.0),
+                axis("width", b"wdth", 0.0, 0.0, 1000.0),
+            ],
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            None,
+            false,
+        )
+        .unwrap();
+        let fontra_glyph = font_data.glyphs.get(&GlyphName::new("R.alt")).unwrap();
+        let glyph = to_ir_glyph(
+            &static_metadata,
+            &font_data,
+            Default::default(),
+            fontra_glyph,
+        )
+        .unwrap();
+        assert!(glyph.axes().is_empty());
+        let mut corners: Vec<(f64, f64)> = glyph
+            .sources()
+            .keys()
+            .map(|loc| {
+                (
+                    loc.get(Tag::new(b"wght")).unwrap().to_f64(),
+                    loc.get(Tag::new(b"wdth")).unwrap().to_f64(),
+                )
+            })
+            .collect();
+        corners.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(
+            vec![(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)],
+            corners
+        );
+    }
+
+    #[test]
+    fn a_glyph_axis_with_min_above_max_is_an_error() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        let glyph = font_data.glyphs.get_mut(&GlyphName::new("u20089")).unwrap();
+        glyph.axes.push(GlyphAxis {
+            name: "depth".to_string(),
+            min_value: 50.0,
+            default_value: 0.0,
+            max_value: -10.0,
+        });
+        assert!(matches!(
+            to_ir_static_metadata(&font_data, false),
+            Err(Error::InconsistentAxisDefinitions(_))
+        ));
+    }
+
+    #[test]
+    fn responds_to_global_axes_resolves_location_base() {
+        let font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let mut responds_to_global_axes_cache = HashMap::new();
+        // A's sources take their locations from four font sources through
+        // locationBase alone.
+        let name: GlyphName = "A".into();
+        assert!(responds_to_global_axes(
+            &name,
+            &font_data,
+            &mut responds_to_global_axes_cache
+        ));
+    }
+
+    #[test]
+    fn responds_to_global_axes_ignores_glyph_local_variation() {
+        let font_data = Font::load(&testdata_dir().join("component.fontra")).unwrap();
+        let mut responds_to_global_axes_cache = HashMap::new();
+        let deep: GlyphName = "VG_4E00_00".into();
+        assert!(!responds_to_global_axes(
+            &deep,
+            &font_data,
+            &mut responds_to_global_axes_cache
+        ));
+        let root: GlyphName = "uni4E00".into();
+        assert!(responds_to_global_axes(
+            &root,
+            &font_data,
+            &mut responds_to_global_axes_cache
+        ));
+    }
+
+    #[test]
+    fn glyph_axis_values_normalize_against_symmetrized_range() {
+        // (-50, 0, 100): the shorter min side extends to -100, so a
+        // below-default value normalizes against the longer side and
+        // out-of-range values clamp to the extended range.
+        let axis = GlyphAxis {
+            name: "depth".into(),
+            min_value: -50.0,
+            default_value: 0.0,
+            max_value: 100.0,
+        };
+        assert_eq!(
+            vec![-1.0, -0.25, 0.0, 0.5, 1.0],
+            [-120.0, -25.0, 0.0, 50.0, 100.0]
+                .map(|v| normalize_glyph_axis_value(v, &axis).to_f64())
+                .to_vec(),
         );
     }
 }

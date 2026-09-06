@@ -46,6 +46,9 @@ pub struct StaticMetadata {
     /// The avar version 2 axis mappings.
     pub axis_mappings: Vec<AxisMapping>,
 
+    /// The glyph-local axes.
+    pub glyph_axes: BTreeMap<GlyphName, Axes>,
+
     /// Named locations in variation space
     pub named_instances: Vec<NamedInstance>,
 
@@ -507,6 +510,7 @@ impl StaticMetadata {
             all_source_axes: Axes::new(axes),
             axes: variable_axes,
             axis_mappings: Default::default(),
+            glyph_axes: Default::default(),
             named_instances,
             variation_model,
             default_location,
@@ -670,6 +674,7 @@ mod tests {
             all_source_axes: vec![axis.clone(), point_axis].into(),
             axes: Axes::new(vec![axis.clone()]),
             axis_mappings: Default::default(),
+            glyph_axes: Default::default(),
             named_instances: vec![NamedInstance {
                 name: "Nobody".to_string(),
                 postscript_name: None,
