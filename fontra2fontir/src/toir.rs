@@ -1127,6 +1127,21 @@ mod tests {
     }
 
     #[test]
+    fn static_metadata_of_source_less_font() {
+        let font_data = Font::load(&testdata_dir().join("minimal.fontra")).unwrap();
+        assert_eq!(
+            1,
+            font_data.sources.len(),
+            "a default source is synthesized"
+        );
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        assert_eq!(
+            vec![("Weight", Tag::new(b"wght"), 200.0, 200.0, 900.0)],
+            axis_tuples(&static_metadata.axes)
+        );
+    }
+
+    #[test]
     fn quad_points_make_quadratic_segments() {
         let contour = packed_contour(
             &[
