@@ -744,19 +744,16 @@ pub(crate) struct Point {
 }
 
 impl Point {
-    /// <https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/path.py#L583>
+    /// The type wins over the smooth flag, and a type other than cubic is
+    /// quad, like Fontra's
+    /// [`packPointType`](https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/core/path.py#L583-L590).
     pub(crate) fn point_type(&self) -> Result<PointType, PathConversionError> {
-        match (self.smooth, self.raw_type.as_deref()) {
-            (false, Some("cubic")) => Ok(PointType::OffCurveCubic),
-            (false, Some("quad")) => Ok(PointType::OffCurveQuad),
-            (false, None) => Ok(PointType::OnCurve),
-            (true, None) => Ok(PointType::OnCurveSmooth),
-            _ => Err(PathConversionError::Parse(format!(
-                "Unrecognized combination, smooth {}, type '{}'",
-                self.smooth,
-                self.raw_type.clone().unwrap_or_default()
-            ))),
-        }
+        Ok(match (self.raw_type.as_deref(), self.smooth) {
+            (Some("cubic"), _) => PointType::OffCurveCubic,
+            (Some(_), _) => PointType::OffCurveQuad,
+            (None, true) => PointType::OnCurveSmooth,
+            (None, false) => PointType::OnCurve,
+        })
     }
 }
 
