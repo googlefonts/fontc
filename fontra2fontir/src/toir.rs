@@ -51,13 +51,12 @@ fn default_source<'a>(font_data: &'a Font, axes: &[Axis]) -> Result<&'a FontSour
         .ok_or(Error::NoDefaultMaster)
 }
 
-fn to_ir_names(font_data: &Font) -> HashMap<NameKey, String> {
+fn to_ir_names(font_data: &Font, default_source: &FontSource) -> HashMap<NameKey, String> {
     let font_info = &font_data.font_info;
     let mut builder = NameBuilder::default();
     if let Some(major) = font_info.version_major {
         builder.set_version(major, font_info.version_minor.unwrap_or(0).max(0) as u32);
     }
-    builder.add_if_present(NameId::FAMILY_NAME, &font_info.family_name);
     builder.add_if_present(NameId::COPYRIGHT_NOTICE, &font_info.copyright);
     builder.add_if_present(NameId::TRADEMARK, &font_info.trademark);
     builder.add_if_present(NameId::DESCRIPTION, &font_info.description);
@@ -79,11 +78,31 @@ fn to_ir_names(font_data: &Font) -> HashMap<NameKey, String> {
     builder.add_if_present(NameId::VERSION_STRING, &custom_data("openTypeNameVersion"));
     builder.add_if_present(
         NameId::TYPOGRAPHIC_FAMILY_NAME,
-        &custom_data("openTypeNamePreferredFamilyName"),
+        &custom_data("openTypeNamePreferredFamilyName").or_else(|| font_info.family_name.clone()),
     );
     builder.add_if_present(
         NameId::WWS_FAMILY_NAME,
         &custom_data("openTypeNameWWSFamilyName"),
+    );
+    let source_custom_data = |key: &str| {
+        default_source
+            .custom_data
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
+    builder.add_if_present(
+        NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
+        &source_custom_data("openTypeNamePreferredSubfamilyName")
+            .or_else(|| Some(default_source.name.clone())),
+    );
+    builder.add_if_present(
+        NameId::COMPATIBLE_FULL_NAME,
+        &source_custom_data("openTypeNameCompatibleFullName"),
+    );
+    builder.add_if_present(
+        NameId::WWS_SUBFAMILY_NAME,
+        &source_custom_data("openTypeNameWWSSubfamilyName"),
     );
     builder.build(font_info.vendor_id.as_deref().unwrap_or(DEFAULT_VENDOR_ID))
 }
@@ -155,11 +174,12 @@ pub(crate) fn to_ir_static_metadata(font_data: &Font) -> Result<StaticMetadata, 
         .map(|source| to_ir_location(&axes, &source.location))
         .collect();
 
-    let italic_angle = default_source(font_data, &axes)?.italic_angle;
+    let default_source = default_source(font_data, &axes)?;
+    let italic_angle = default_source.italic_angle;
 
     StaticMetadata::new(
         font_data.units_per_em,
-        to_ir_names(font_data),
+        to_ir_names(font_data, default_source),
         axes,
         Default::default(),
         global_locations,
@@ -462,7 +482,8 @@ mod tests {
                 .custom_data
                 .insert(key.to_string(), serde_json::json!(value));
         }
-        let names = to_ir_names(&font_data);
+        let default_source = font_data.sources.values().next().unwrap();
+        let names = to_ir_names(&font_data, default_source);
         let name = |id: NameId| {
             names
                 .iter()
@@ -471,8 +492,33 @@ mod tests {
         };
         assert_eq!(Some("unique-id"), name(NameId::UNIQUE_ID));
         assert_eq!(Some("Version 9.876"), name(NameId::VERSION_STRING));
-        assert_eq!(Some("Pref"), name(NameId::TYPOGRAPHIC_FAMILY_NAME));
+        assert_eq!(Some("Pref"), name(NameId::FAMILY_NAME));
+        assert_eq!(None, name(NameId::TYPOGRAPHIC_FAMILY_NAME));
         assert_eq!(Some("WWS"), name(NameId::WWS_FAMILY_NAME));
+    }
+
+    #[test]
+    fn subfamily_names_from_the_default_source() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        font_data.font_info.family_name = Some("Family".to_string());
+        let mut default_source = font_data.sources.values().next().unwrap().clone();
+        default_source.name = "Light".to_string();
+        default_source.custom_data.insert(
+            "openTypeNameWWSSubfamilyName".to_string(),
+            serde_json::json!("WWS Light"),
+        );
+        let names = to_ir_names(&font_data, &default_source);
+        let name = |id: NameId| {
+            names
+                .iter()
+                .find(|(key, _)| key.name_id == id)
+                .map(|(_, value)| value.as_str())
+        };
+        assert_eq!(Some("Family Light"), name(NameId::FAMILY_NAME));
+        assert_eq!(Some("Regular"), name(NameId::SUBFAMILY_NAME));
+        assert_eq!(Some("Family"), name(NameId::TYPOGRAPHIC_FAMILY_NAME));
+        assert_eq!(Some("Light"), name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME));
+        assert_eq!(Some("WWS Light"), name(NameId::WWS_SUBFAMILY_NAME));
     }
 
     #[test]
