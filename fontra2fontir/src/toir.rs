@@ -12,10 +12,11 @@ use fontdrasil::{
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{
-        AnchorBuilder, AxisMapping, AxisValueLabel as IrAxisValueLabel, Component,
+        AnchorBuilder, AxisMapping, AxisValueLabel as IrAxisValueLabel, Component, Condition,
         DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph, GlyphInstance,
         GlyphOrder, GlyphPathBuilder, KernGroup, KernSide, KerningInstance, KerningLocations,
-        NameBuilder, NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
+        NameBuilder, NameKey, Panose, PreliminaryGdefCategories, Rule, StaticMetadata,
+        Substitution, VariableFeature,
     },
 };
 use kurbo::BezPath;
@@ -359,6 +360,7 @@ pub(crate) fn to_ir_static_metadata(
                 .custom_data
                 .contains_key("openTypeVheaVertTypoLineGap"));
     let axis_mappings = to_ir_axis_mappings(font_data, &axes)?;
+    let variations = to_ir_feature_variations(font_data, &axes)?;
 
     // Add glyph-local axes to fvar as hidden axes.
     let glyph_axes = glyph_axes(font_data)?;
@@ -401,6 +403,7 @@ pub(crate) fn to_ir_static_metadata(
     .map_err(Error::VariationModelError)?;
     static_metadata.glyph_axes = glyph_axes;
     static_metadata.axis_mappings = axis_mappings;
+    static_metadata.variations = variations;
     apply_custom_data(&mut static_metadata, font_data, default_source)?;
     static_metadata.set_axis_value_labels(
         to_ir_axis_value_labels(font_data),
@@ -484,6 +487,66 @@ fn to_ir_axis_mappings(font_data: &Font, axes: &[Axis]) -> Result<Vec<AxisMappin
             })
         })
         .collect()
+}
+
+/// Convert conditional substitutions to feature variations.
+fn to_ir_feature_variations(
+    font_data: &Font,
+    axes: &[Axis],
+) -> Result<Option<VariableFeature>, Error> {
+    let substitutions = &font_data.conditional_substitutions;
+    if substitutions.rules.is_empty() {
+        return Ok(None);
+    }
+    let features = substitutions
+        .feature_tags
+        .iter()
+        .map(|tag| {
+            Tag::from_str(tag).map_err(|cause| Error::InvalidTag {
+                raw_tag: tag.clone(),
+                cause,
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let to_condition = |condition: &fontra::SubstitutionCondition| -> Result<Condition, Error> {
+        let axis = axes
+            .iter()
+            .find(|axis| axis.name == condition.name)
+            .ok_or_else(|| Error::UnknownEntry("axis", condition.name.clone()))?;
+        if condition.min_value.is_none() && condition.max_value.is_none() {
+            return Err(Error::InvalidEntry(
+                "condition",
+                format!("{:?} has no minValue and no maxValue", condition.name),
+            ));
+        }
+        Ok(Condition::new(
+            axis.tag,
+            condition.min_value.map(DesignCoord::new),
+            condition.max_value.map(DesignCoord::new),
+        ))
+    };
+    let rules = substitutions
+        .rules
+        .iter()
+        .map(|rule| {
+            Ok(Rule {
+                conditions: rule
+                    .condition_sets
+                    .iter()
+                    .map(|set| set.conditions.iter().map(to_condition).collect())
+                    .collect::<Result<_, _>>()?,
+                substitutions: rule
+                    .substitutions
+                    .iter()
+                    .map(|(replace, with)| Substitution {
+                        replace: replace.as_str().into(),
+                        with: with.as_str().into(),
+                    })
+                    .collect(),
+            })
+        })
+        .collect::<Result<_, Error>>()?;
+    Ok(Some(VariableFeature { features, rules }))
 }
 
 /// Normalize a design-space location, filling missing axes with their default.
@@ -1131,9 +1194,10 @@ mod tests {
     };
 
     use super::{
-        AxisMapping, Error, NameKey, StaticMetadata, normalize_axis_value,
-        normalize_glyph_axis_value, responds_to_global_axes, to_ir_global_metrics, to_ir_glyph,
-        to_ir_kerning_instance, to_ir_kerning_locations, to_ir_names, to_ir_path,
+        AxisMapping, Condition, Error, NameKey, Rule, StaticMetadata, Substitution,
+        normalize_axis_value, normalize_glyph_axis_value, responds_to_global_axes,
+        to_ir_global_metrics, to_ir_glyph, to_ir_kerning_instance, to_ir_kerning_locations,
+        to_ir_names, to_ir_path,
     };
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
@@ -1249,6 +1313,79 @@ mod tests {
             }],
             static_metadata.axis_mappings
         );
+    }
+
+    /// A rule with one condition set.
+    fn substitution_rule(
+        conditions: &[(&str, Option<f64>, Option<f64>)],
+        substitutions: &[(&str, &str)],
+    ) -> fontra::SubstitutionRule {
+        fontra::SubstitutionRule {
+            name: None,
+            condition_sets: vec![fontra::SubstitutionConditionSet {
+                conditions: conditions
+                    .iter()
+                    .map(|(name, min, max)| fontra::SubstitutionCondition {
+                        name: name.to_string(),
+                        min_value: *min,
+                        max_value: *max,
+                    })
+                    .collect(),
+            }],
+            substitutions: substitutions
+                .iter()
+                .map(|(replace, with)| (replace.to_string(), with.to_string()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn feature_variations_of_2glyphs() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        font_data.conditional_substitutions.rules = vec![substitution_rule(
+            &[
+                ("Weight", Some(0.5), Some(1.0)),
+                ("Width", None, Some(60.0)),
+            ],
+            &[("a", "a.narrow")],
+        )];
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        let variations = static_metadata.variations.unwrap();
+        assert_eq!(vec![Tag::new(b"rclt")], variations.features);
+        assert_eq!(
+            vec![Rule {
+                conditions: vec![
+                    [
+                        Condition::new(
+                            Tag::new(b"wght"),
+                            Some(DesignCoord::new(0.5)),
+                            Some(DesignCoord::new(1.0))
+                        ),
+                        Condition::new(Tag::new(b"wdth"), None, Some(DesignCoord::new(60.0))),
+                    ]
+                    .into_iter()
+                    .collect()
+                ],
+                substitutions: vec![Substitution {
+                    replace: GlyphName::new("a"),
+                    with: GlyphName::new("a.narrow"),
+                }],
+            }],
+            variations.rules
+        );
+    }
+
+    #[test]
+    fn substitution_condition_on_an_unknown_axis_is_an_error() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        font_data.conditional_substitutions.rules = vec![substitution_rule(
+            &[("Slant", Some(0.0), Some(10.0))],
+            &[("a", "a.narrow")],
+        )];
+        assert!(matches!(
+            to_ir_static_metadata(&font_data, false),
+            Err(Error::UnknownEntry("axis", _))
+        ));
     }
 
     #[test]
