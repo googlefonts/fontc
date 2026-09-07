@@ -2179,6 +2179,25 @@ mod tests {
     }
 
     #[test]
+    fn compile_named_instances_from_fontra() {
+        assert_named_instances(
+            "fontra/vertical.fontra",
+            vec![
+                ("Regular".to_string(), vec![("Weight", 400.0)]),
+                ("Bold".to_string(), vec![("Weight", 700.0)]),
+            ],
+        );
+        // The only labels of MutatorSans are on the pinned italic axis.
+        assert_named_instances(
+            "fontra/MutatorSans.fontra",
+            vec![(
+                "Regular".to_string(),
+                vec![("Weight", 100.0), ("Width", 0.0)],
+            )],
+        );
+    }
+
+    #[test]
     fn compile_named_instances_from_designspace_with_stylename_attrs() {
         assert_named_instances(
             "wght_var_instance_stylename.designspace",

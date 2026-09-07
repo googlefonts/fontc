@@ -6,7 +6,9 @@ use std::{
 };
 
 use fontdrasil::{
-    coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
+    coords::{
+        CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation,
+    },
     types::{Axes, Axis, GlyphName},
 };
 use fontir::{
@@ -15,8 +17,8 @@ use fontir::{
         AnchorBuilder, AxisMapping, AxisValueLabel as IrAxisValueLabel, Component, Condition,
         DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph, GlyphInstance,
         GlyphOrder, GlyphPathBuilder, KernGroup, KernSide, KerningInstance, KerningLocations,
-        NameBuilder, NameKey, Panose, PreliminaryGdefCategories, Rule, StaticMetadata,
-        Substitution, VariableFeature,
+        NameBuilder, NameKey, NamedInstance, Panose, PreliminaryGdefCategories, Rule,
+        StaticMetadata, Substitution, VariableFeature,
     },
 };
 use kurbo::BezPath;
@@ -393,7 +395,7 @@ pub(crate) fn to_ir_static_metadata(
         font_data.units_per_em,
         to_ir_names(font_data, default_source),
         axes,
-        Default::default(),
+        to_ir_named_instances(font_data),
         global_locations,
         Default::default(),
         italic_angle,
@@ -485,6 +487,72 @@ fn to_ir_axis_mappings(font_data: &Font, axes: &[Axis]) -> Result<Vec<AxisMappin
                 input: to_location(&mapping.input_location, true)?,
                 output: to_location(&mapping.output_location, false)?,
             })
+        })
+        .collect()
+}
+
+/// <https://github.com/fontra/fontra-compile/blob/01d784d86/src/fontra_compile/compile_fontmake_action.py#L115-L158>
+fn to_ir_named_instances(font_data: &Font) -> Vec<NamedInstance> {
+    let sort_order = |tag: Tag| {
+        [b"wght", b"wdth", b"ital", b"slnt"]
+            .iter()
+            .position(|first| Tag::new(first) == tag)
+            .unwrap_or(usize::MAX)
+    };
+    let continuous: Vec<&fontra::FontAxis> = font_data
+        .axes
+        .axes
+        .iter()
+        .filter_map(|axis| match axis {
+            fontra::Axis::Continuous(axis) => Some(axis),
+            fontra::Axis::Discrete(_) => None,
+        })
+        .collect();
+    let mut axes: Vec<&fontra::FontAxis> = continuous
+        .iter()
+        .copied()
+        .filter(|axis| !axis.value_labels.is_empty())
+        .collect();
+    axes.sort_by_key(|axis| sort_order(axis.tag));
+    let elided_fallback_name = font_data
+        .axes
+        .elided_fallback_name
+        .as_deref()
+        .unwrap_or("Regular");
+    let default_location: UserLocation = continuous
+        .iter()
+        .map(|axis| (axis.tag, UserCoord::new(axis.default_value)))
+        .collect();
+    let mut instances: Vec<(Vec<&str>, UserLocation)> = vec![(Vec::new(), default_location)];
+    for axis in axes {
+        instances = instances
+            .iter()
+            .flat_map(|(name_parts, location)| {
+                axis.value_labels.iter().map(move |label| {
+                    let mut name_parts = name_parts.clone();
+                    if !label.elidable {
+                        name_parts.push(label.name.as_str());
+                    }
+                    let mut location = location.clone();
+                    location.insert(axis.tag, UserCoord::new(label.value));
+                    (name_parts, location)
+                })
+            })
+            .collect();
+    }
+    instances
+        .into_iter()
+        .map(|(name_parts, location)| {
+            let style_name = if name_parts.is_empty() {
+                elided_fallback_name.to_string()
+            } else {
+                name_parts.join(" ")
+            };
+            NamedInstance {
+                name: style_name,
+                postscript_name: None,
+                location,
+            }
         })
         .collect()
 }
@@ -1176,7 +1244,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use fontdrasil::{
-        coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
+        coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord, UserLocation},
         types::{Axes, Axis, GlyphName},
     };
     use fontir::ir::{AnchorBuilder, Glyph, GlyphOrder, KernGroup, KernSide};
@@ -1539,6 +1607,81 @@ mod tests {
         assert_eq!(Some("Pref"), name(NameId::FAMILY_NAME));
         assert_eq!(None, name(NameId::TYPOGRAPHIC_FAMILY_NAME));
         assert_eq!(Some("WWS"), name(NameId::WWS_FAMILY_NAME));
+    }
+
+    #[test]
+    fn a_font_without_labels_has_one_default_instance() {
+        let font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        assert_eq!(
+            vec![(
+                "Regular",
+                UserLocation::for_pos(&[("wght", 200.0), ("wdth", 100.0)])
+            )],
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|instance| (instance.name.as_str(), instance.location.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn named_instances_of_vertical() {
+        // The Regular label is elidable, so the instance takes the elided
+        // fallback name.
+        let font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        assert_eq!(
+            vec![
+                ("Regular", UserLocation::for_pos(&[("wght", 400.0)])),
+                ("Bold", UserLocation::for_pos(&[("wght", 700.0)])),
+            ],
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|instance| (instance.name.as_str(), instance.location.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn named_instances_are_the_product_of_the_labels() {
+        // Width is defined before Weight, the instances still start with wght.
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        let label = |name: &str, value: f64, elidable: bool| fontra::AxisValueLabel {
+            name: name.to_string(),
+            value,
+            min_value: None,
+            max_value: None,
+            linked_value: None,
+            elidable,
+            older_sibling: false,
+        };
+        font_data.axes.axes.reverse();
+        for axis in font_data.axes.axes.iter_mut() {
+            let fontra::Axis::Continuous(axis) = axis else {
+                unreachable!()
+            };
+            axis.value_labels = match axis.tag {
+                tag if tag == Tag::new(b"wght") => {
+                    vec![label("Light", 200.0, false), label("Black", 900.0, false)]
+                }
+                _ => vec![
+                    label("Condensed", 50.0, false),
+                    label("Normal", 100.0, true),
+                ],
+            };
+        }
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        assert_eq!(
+            vec!["Light Condensed", "Light", "Black Condensed", "Black"],
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|instance| instance.name.as_str())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
