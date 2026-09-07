@@ -219,14 +219,35 @@ fn pin_discrete_axes(font_data: &mut Font) -> Result<(), Error> {
             }
         }
     }
+    // Remove the conditions on the pinned axes, and drop a condition set that
+    // excludes the pinned default, like Fontra's
+    // [`filterSubstitutionCondition`](https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/workflow/actions/axes.py#L321-L335).
+    let rules = &mut font_data.conditional_substitutions.rules;
+    for rule in rules.iter_mut() {
+        rule.condition_sets.retain_mut(|set| {
+            let mut always_false = false;
+            set.conditions.retain(|condition| {
+                let Some((_, pin)) = pinned.iter().find(|(name, _)| *name == condition.name) else {
+                    return true;
+                };
+                if condition.min_value.is_some_and(|min| *pin < min)
+                    || condition.max_value.is_some_and(|max| *pin > max)
+                {
+                    always_false = true;
+                }
+                false
+            });
+            !always_false
+        });
+    }
+    rules.retain(|rule| !rule.condition_sets.is_empty());
     font_data
         .sources
         .retain(|_, source| at_default(&source.location));
     let retained: std::collections::HashSet<String> = font_data.sources.keys().cloned().collect();
 
     for glyph in font_data.glyphs.values_mut() {
-        // The pin does not apply to a font axis that the glyph redefines as
-        // a glyph axis.
+        // A glyph axis with the name of a pinned font axis is not pinned.
         let shadowed: std::collections::HashSet<&str> = glyph
             .axes
             .iter()
@@ -723,6 +744,61 @@ mod tests {
         assert_eq!(
             crate::fontra::Location::from([("width".to_string(), 200.0)]),
             mappings[0].output_location
+        );
+    }
+
+    #[test]
+    fn pin_discrete_axes_filters_substitution_conditions() {
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let condition = |name: &str, min: f64, max: f64| crate::fontra::SubstitutionCondition {
+            name: name.to_string(),
+            min_value: Some(min),
+            max_value: Some(max),
+        };
+        let rule = |sets: Vec<Vec<crate::fontra::SubstitutionCondition>>| {
+            crate::fontra::SubstitutionRule {
+                name: None,
+                condition_sets: sets
+                    .into_iter()
+                    .map(|conditions| crate::fontra::SubstitutionConditionSet { conditions })
+                    .collect(),
+                substitutions: [("I".to_string(), "I.narrow".to_string())].into(),
+            }
+        };
+        font_data.conditional_substitutions.rules = vec![
+            // The pinned default is inside the italic range, the condition is true.
+            rule(vec![vec![
+                condition("italic", 0.0, 0.0),
+                condition("width", 0.0, 328.0),
+            ]]),
+            // The pinned default is outside the italic range, the set is false.
+            rule(vec![
+                vec![condition("italic", 1.0, 1.0)],
+                vec![condition("weight", 0.0, 500.0)],
+            ]),
+            rule(vec![vec![condition("italic", 1.0, 1.0)]]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        assert_eq!(
+            vec![vec![vec!["width"]], vec![vec!["weight"]]],
+            font_data
+                .conditional_substitutions
+                .rules
+                .iter()
+                .map(|rule| {
+                    rule.condition_sets
+                        .iter()
+                        .map(|set| {
+                            set.conditions
+                                .iter()
+                                .map(|condition| condition.name.as_str())
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
         );
     }
 

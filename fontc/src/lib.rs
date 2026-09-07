@@ -1090,6 +1090,24 @@ mod tests {
     }
 
     #[test]
+    fn compile_fontra_feature_variations() {
+        // The two rules of MutatorSans have overlapping regions, so the overlay
+        // gives three records.
+        let result = TestCompile::compile_source("fontra/MutatorSans.fontra");
+        let gsub = result.font().gsub().unwrap();
+        let feature_list = gsub.feature_list().unwrap();
+        let rclt_idx = feature_list
+            .feature_records()
+            .iter()
+            .position(|rec| rec.feature_tag() == "rclt")
+            .unwrap();
+        let featvars = gsub.feature_variations().unwrap().unwrap();
+        assert_eq!(3, featvars.feature_variation_records().len());
+        let rclt_replacement = get_first_feature_substitution(gsub, rclt_idx);
+        assert!(!rclt_replacement.lookup_list_indices().is_empty());
+    }
+
+    #[test]
     fn compile_fontra_clamps_out_of_range_sources() {
         // behDotless-ar has a source below the Mashq axis minimum. Without the
         // clamp its location normalizes outside [-1, 1], and the GDEF variation

@@ -143,7 +143,7 @@ pub(crate) struct SubstitutionConditionSet {
 pub(crate) struct SubstitutionRule {
     pub(crate) name: Option<String>,
     pub(crate) condition_sets: Vec<SubstitutionConditionSet>,
-    pub(crate) substitutions: HashMap<String, String>,
+    pub(crate) substitutions: BTreeMap<String, String>,
 }
 
 /// Corresponds to a Fontra ConditionalSubstitutions
