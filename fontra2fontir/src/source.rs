@@ -197,6 +197,28 @@ fn pin_discrete_axes(font_data: &mut Font) -> Result<(), Error> {
             .iter()
             .all(|(name, default)| location.get(name).map(|v| v == default).unwrap_or(true))
     };
+
+    font_data.axes.mappings.retain(|mapping| {
+        let keep = at_default(&mapping.input_location);
+        if !keep {
+            let description = mapping.description.as_deref().unwrap_or_default();
+            warn!(
+                "dropping cross-axis mapping {description:?}, its input is not at the pinned default"
+            );
+        }
+        keep
+    });
+    for mapping in font_data.axes.mappings.iter_mut() {
+        for (name, _) in &pinned {
+            mapping.input_location.remove(name);
+            if mapping.output_location.remove(name).is_some() {
+                let description = mapping.description.as_deref().unwrap_or_default();
+                warn!(
+                    "dropping the {name:?} output of cross-axis mapping {description:?}, the axis is pinned"
+                );
+            }
+        }
+    }
     font_data
         .sources
         .retain(|_, source| at_default(&source.location));
@@ -662,6 +684,46 @@ mod tests {
         pin_discrete_axes(&mut font_data).unwrap();
 
         assert_eq!(2, font_data.glyphs.get(&name).unwrap().sources.len());
+    }
+
+    #[test]
+    fn pin_discrete_axes_prunes_cross_axis_mappings() {
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let mapping = |input: &[(&str, f64)], output: &[(&str, f64)]| {
+            let location = |coords: &[(&str, f64)]| -> crate::fontra::Location {
+                coords
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), *value))
+                    .collect()
+            };
+            crate::fontra::CrossAxisMapping {
+                description: None,
+                group_description: None,
+                input_location: location(input),
+                output_location: location(output),
+                inactive: false,
+            }
+        };
+        font_data.axes.mappings = vec![
+            mapping(
+                &[("weight", 850.0), ("italic", 0.0)],
+                &[("width", 200.0), ("italic", 1.0)],
+            ),
+            mapping(&[("weight", 850.0), ("italic", 1.0)], &[("width", 300.0)]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        let mappings = &font_data.axes.mappings;
+        assert_eq!(1, mappings.len());
+        assert_eq!(
+            crate::fontra::Location::from([("weight".to_string(), 850.0)]),
+            mappings[0].input_location
+        );
+        assert_eq!(
+            crate::fontra::Location::from([("width".to_string(), 200.0)]),
+            mappings[0].output_location
+        );
     }
 
     #[test]

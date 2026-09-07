@@ -323,7 +323,7 @@ mod tests {
             loca::LocaFormat,
             meta::{DataMapRecord, Metadata, ScriptLangTag},
         },
-        types::{F2Dot14, GlyphId, GlyphId16, NameId, Tag, Version16Dot16},
+        types::{F2Dot14, GlyphId, GlyphId16, MajorMinor, NameId, Tag, Version16Dot16},
     };
 
     use super::*;
@@ -1061,6 +1061,32 @@ mod tests {
             .collect();
         xs.sort_by(f64::total_cmp);
         assert_eq!(vec![411.0, 455.0, 530.0], xs);
+    }
+
+    fn avar_deltas(font: &FontRef, coords: &[f32]) -> Vec<i32> {
+        let avar = font.avar().unwrap();
+        assert_eq!(MajorMinor::VERSION_2_0, avar.version());
+        let axis_index_map = avar.axis_index_map().unwrap().unwrap();
+        let var_store = avar.var_store().unwrap().unwrap();
+        assert_eq!(font.fvar().unwrap().axis_count() as usize, coords.len());
+        let coords: Vec<_> = coords.iter().copied().map(F2Dot14::from_f32).collect();
+        (0..coords.len() as u32)
+            .map(|axis_idx| {
+                let index = axis_index_map.get(axis_idx).unwrap();
+                var_store.compute_delta(index, &coords).unwrap().to_i32()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn compile_fontra_cross_axis_mappings() {
+        // The active mapping moves bold to width 200.
+        let result = TestCompile::compile_source("fontra/MutatorSans.fontra");
+        let font = result.font();
+        assert_eq!(vec![0, 3277], avar_deltas(&font, &[1.0, 0.0]));
+        assert_eq!(vec![0, 0], avar_deltas(&font, &[0.0, 0.0]));
+        // An input at the default width applies at every width.
+        assert_eq!(vec![0, 3277], avar_deltas(&font, &[1.0, 1.0]));
     }
 
     #[test]
