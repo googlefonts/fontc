@@ -764,6 +764,412 @@ mod tests {
     }
 
     #[test]
+    fn compile_fontra_variable_composites_to_varc() {
+        // VARC is opt-in through --emit-varc-table.
+        let result = TestCompile::compile("fontra/component.fontra", |mut options| {
+            options.flags.set(Flags::EMIT_VARC_TABLE, true);
+            options
+        });
+        let font = result.font();
+        let tags: Vec<_> = font
+            .table_directory
+            .table_records()
+            .iter()
+            .map(|tr| tr.tag())
+            .collect();
+        assert!(
+            tags.contains(&Tag::new(b"VARC")),
+            "expected VARC table, found: {tags:?}"
+        );
+        // The glyphs have 4, 6 and 3 local axes, the glyphs share the tags,
+        // so fvar has the wght axis and six hidden axes.
+        assert_eq!(7, font.fvar().unwrap().axis_count());
+        // uni4E00 is a variable composite and must be covered by VARC.
+        let gid = result.get_glyph_index("uni4E00").expect("uni4E00 exists") as u16;
+        let varc = font.varc().expect("VARC parses");
+        let nth = varc
+            .coverage()
+            .unwrap()
+            .get(GlyphId16::new(gid))
+            .expect("uni4E00 should be covered by VARC");
+
+        // The component transform and axis values vary along wght, so the
+        // table needs a variation store.
+        assert!(
+            varc.multi_var_store().is_some(),
+            "VARC should carry a variation store"
+        );
+        let component = varc
+            .glyph(nth as usize)
+            .unwrap()
+            .components()
+            .next()
+            .unwrap()
+            .unwrap();
+        assert!(
+            component.transform_var_index().is_some(),
+            "component transform should vary"
+        );
+        assert!(
+            component.axis_values_var_index().is_some(),
+            "component axis values should vary"
+        );
+    }
+
+    #[test]
+    fn compile_fontra_variable_composites_decompose_by_default() {
+        // Without --emit-varc-table a variable composite decomposes into
+        // contours, as Fontra's export does.
+        let result = TestCompile::compile_source("fontra/component.fontra");
+        let font = result.font();
+        let tags: Vec<_> = font
+            .table_directory
+            .table_records()
+            .iter()
+            .map(|tr| tr.tag())
+            .collect();
+        assert!(
+            !tags.contains(&Tag::new(b"VARC")),
+            "VARC should not be present by default, found: {tags:?}"
+        );
+        // The glyph-local axes are not fvar axes.
+        assert_eq!(1, font.fvar().unwrap().axis_count());
+        // uni4E00 is a variable composite. Decomposed it becomes a simple
+        // glyph with contours.
+        let gid = result.get_glyph_index("uni4E00").expect("uni4E00 exists") as usize;
+        let glyphs = result.glyphs();
+        let glyphs = glyphs.read();
+        match glyphs.get(gid).and_then(|g| g.as_ref()) {
+            Some(glyf::Glyph::Simple(glyph)) => assert!(
+                glyph.number_of_contours() > 0,
+                "decomposed uni4E00 should have contours"
+            ),
+            _ => panic!("uni4E00 should decompose to a simple glyph"),
+        }
+    }
+
+    #[test]
+    fn compile_fontra_anchors() {
+        let result = TestCompile::compile_source("fontra/Raqq.fontra");
+        let anchors = result
+            .fe_context
+            .anchors
+            .get(&FeWorkIdentifier::Anchor("kashida-ar".into()));
+        let entry = anchors
+            .anchors
+            .iter()
+            .find(|a| a.original_name == "entry")
+            .expect("entry anchor");
+        assert!(entry.is_cursive());
+        assert_eq!((100.0, 0.0), (entry.default_pos().x, entry.default_pos().y));
+        // The curs and mark features come from the anchors.
+        let font = result.font();
+        let gpos = font.gpos().expect("GPOS");
+        let features: Vec<_> = gpos
+            .feature_list()
+            .unwrap()
+            .feature_records()
+            .iter()
+            .map(|f| f.feature_tag())
+            .collect();
+        assert!(features.contains(&Tag::new(b"curs")), "{features:?}");
+        assert!(features.contains(&Tag::new(b"mark")), "{features:?}");
+    }
+
+    #[test]
+    fn compile_fontra_kerning() {
+        let result = TestCompile::compile_source("fontra/Raqq.fontra");
+        let adjustments = &result.be_context.all_kerning_pairs.get().adjustments;
+        let value_of = |pair: &KernPair| {
+            adjustments
+                .iter()
+                .find(|(candidate, _)| candidate == pair)
+                .map(|(_, values)| values.values().map(|v| v.0).collect::<Vec<_>>())
+        };
+        // From kerning.csv: "@feh.medi;@ain.beh;2" and "@feh.medi;@feh.init.beh;-3"
+        // at the single Regular source. The pairs are Arabic, so they flip
+        // from the visual order of Fontra to the writing order.
+        assert_eq!(
+            Some(vec![2.0]),
+            value_of(&(
+                KernSide::Group(KernGroup::Side1("ain.beh".into())),
+                KernSide::Group(KernGroup::Side2("feh.medi".into())),
+            ))
+        );
+        assert_eq!(
+            Some(vec![-3.0]),
+            value_of(&(
+                KernSide::Group(KernGroup::Side1("feh.init.beh".into())),
+                KernSide::Group(KernGroup::Side2("feh.medi".into())),
+            ))
+        );
+    }
+
+    #[test]
+    fn compile_fontra_stat_axis_values() {
+        let result = TestCompile::compile_source("fontra/vertical.fontra");
+        let font = result.font();
+        let stat = font.stat().unwrap();
+        let name = font.name().unwrap();
+        let string_of = |id: NameId| {
+            name.name_record()
+                .iter()
+                .find(|record| record.name_id() == id)
+                .map(|record| {
+                    record
+                        .string(name.string_data())
+                        .unwrap()
+                        .chars()
+                        .collect::<String>()
+                })
+        };
+
+        let axis_values = stat.offset_to_axis_values().unwrap().unwrap();
+        let values = axis_values.axis_values();
+        assert_eq!(2, values.len());
+        let regular = values.get(0).unwrap();
+        let write_fonts::read::tables::stat::AxisValue::Format3(regular) = regular else {
+            panic!("Regular should be format 3");
+        };
+        assert_eq!(0, regular.axis_index());
+        assert_eq!(400.0, regular.value().to_f64());
+        assert_eq!(700.0, regular.linked_value().to_f64());
+        assert!(regular.flags().contains(
+            write_fonts::read::tables::stat::AxisValueTableFlags::ELIDABLE_AXIS_VALUE_NAME
+        ));
+        assert_eq!(
+            Some("Regular".to_string()),
+            string_of(regular.value_name_id())
+        );
+        let bold = values.get(1).unwrap();
+        let write_fonts::read::tables::stat::AxisValue::Format1(bold) = bold else {
+            panic!("Bold should be format 1");
+        };
+        assert_eq!(700.0, bold.value().to_f64());
+        assert_eq!(Some("Bold".to_string()), string_of(bold.value_name_id()));
+
+        // The elided fallback reuses the Regular label's name entry.
+        assert_eq!(
+            Some("Regular".to_string()),
+            string_of(stat.elided_fallback_name_id().unwrap())
+        );
+    }
+
+    #[test]
+    fn compile_fontra_font_info() {
+        // The UFO fontInfo attributes Fontra round-trips through customData.
+        let result = TestCompile::compile_source("fontra/vertical.fontra");
+        let font = result.font();
+        let os2 = font.os2().unwrap();
+        // A variable font's usWeightClass comes from the wght axis default,
+        // the authored width class passes through.
+        assert_eq!(400, os2.us_weight_class());
+        assert_eq!(3, os2.us_width_class());
+        assert_eq!(0, os2.fs_type());
+        assert_eq!(
+            SelectionFlags::REGULAR | SelectionFlags::USE_TYPO_METRICS,
+            os2.fs_selection()
+        );
+        assert_eq!(725, os2.s_typo_ascender());
+        assert_eq!(-275, os2.s_typo_descender());
+        let hhea = font.hhea().unwrap();
+        assert_eq!(950, hhea.caret_slope_rise());
+        let post = font.post().unwrap();
+        assert_eq!(-120, post.underline_position().to_i16());
+        assert_eq!(60, post.underline_thickness().to_i16());
+    }
+
+    #[test]
+    fn compile_fontra_style_names() {
+        let result = TestCompile::compile_source("fontra/MutatorSans.fontra");
+        let font = result.font();
+        let revision = font.head().unwrap().font_revision().to_f64();
+        assert_eq!(1.002, (revision * 1000.0).round() / 1000.0);
+        let name = font.name().unwrap();
+        assert_eq!(
+            vec![
+                Some("MutatorMathTest LightCondensed".to_string()),
+                Some("Regular".to_string()),
+                Some("MutatorMathTest".to_string()),
+                Some("LightCondensed".to_string()),
+            ],
+            [
+                NameId::FAMILY_NAME,
+                NameId::SUBFAMILY_NAME,
+                NameId::TYPOGRAPHIC_FAMILY_NAME,
+                NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
+            ]
+            .map(|id| resolve_name(&name, id))
+        );
+    }
+
+    #[test]
+    fn compile_fontra_discrete_axis_pinned() {
+        // MutatorSans has a discrete italic axis. It is pinned to its default,
+        // and the font has the two continuous axes.
+        let result = TestCompile::compile_source("fontra/MutatorSans.fontra");
+        let font = result.font();
+        let fvar = font.fvar().unwrap();
+        let tags: Vec<_> = fvar.axes().unwrap().iter().map(|a| a.axis_tag()).collect();
+        assert_eq!(vec![Tag::new(b"wght"), Tag::new(b"wdth")], tags);
+    }
+
+    #[test]
+    fn compile_fontra_glyph_axes_are_fvar_axes_with_varc() {
+        // With the VARC table the glyph-local axis depth of vbase is a hidden
+        // fvar axis, without the table it is not in fvar.
+        let result = TestCompile::compile("fontra/vertical.fontra", |mut options| {
+            options.flags.set(Flags::EMIT_VARC_TABLE, true);
+            options
+        });
+        let font = result.font();
+        let fvar = font.fvar().unwrap();
+        let tags: Vec<_> = fvar.axes().unwrap().iter().map(|a| a.axis_tag()).collect();
+        assert_eq!(vec![Tag::new(b"wght"), Tag::new(b"V000")], tags);
+
+        let result = TestCompile::compile_source("fontra/vertical.fontra");
+        assert_eq!(1, result.font().fvar().unwrap().axis_count());
+    }
+
+    #[test]
+    fn compile_fontra_drops_the_anchors_off_the_local_default() {
+        // _part.shoulder has the glyph-local axes crotchDepth and
+        // shoulderWidth, and its connect anchor moves along shoulderWidth.
+        // Without a VARC table only the positions at the local default
+        // remain, one per font master, and their locations have only wght.
+        let result = TestCompile::compile_source("fontra/GlyphsUnitTestSans3.fontra");
+        let anchors = result
+            .fe_context
+            .anchors
+            .get(&FeWorkIdentifier::Anchor("_part.shoulder".into()));
+        let connect = anchors
+            .anchors
+            .iter()
+            .find(|a| a.original_name == "connect")
+            .expect("connect anchor");
+        assert_eq!(455.0, connect.default_pos().x);
+        let mut xs: Vec<_> = connect
+            .positions
+            .iter()
+            .map(|(location, point)| {
+                assert_eq!(
+                    vec![Tag::new(b"wght")],
+                    location.axis_tags().copied().collect::<Vec<_>>()
+                );
+                point.x
+            })
+            .collect();
+        xs.sort_by(f64::total_cmp);
+        assert_eq!(vec![411.0, 455.0, 530.0], xs);
+    }
+
+    #[test]
+    fn compile_fontra_clamps_out_of_range_sources() {
+        // behDotless-ar has a source below the Mashq axis minimum. Without the
+        // clamp its location normalizes outside [-1, 1], and the GDEF variation
+        // store gets a region with its peak outside its start and end.
+        let result = TestCompile::compile_source("fontra/Raqq.fontra");
+        let font = result.font();
+        let gdef = font.gdef().expect("GDEF");
+        let var_store = gdef.item_var_store().expect("variation store").unwrap();
+        for region in var_store
+            .variation_region_list()
+            .unwrap()
+            .variation_regions()
+            .iter()
+        {
+            for axis in region.unwrap().region_axes() {
+                let (start, peak, end) = (
+                    axis.start_coord().to_f32(),
+                    axis.peak_coord().to_f32(),
+                    axis.end_coord().to_f32(),
+                );
+                assert!(
+                    start <= peak && peak <= end,
+                    "invalid region ({start}, {peak}, {end})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn compile_fontra_kerning_without_default_source() {
+        // vertical.fontra kerns only at bold. The default location anchors the
+        // variation model with an instance that has groups and no pairs, so
+        // the pair is zero there and the authored value is at bold.
+        let result = TestCompile::compile_source("fontra/vertical.fontra");
+        let adjustments = &result.be_context.all_kerning_pairs.get().adjustments;
+        let pair = (
+            KernSide::Group(KernGroup::Side1("pair1".into())),
+            KernSide::Glyph(GlyphName::new("vcomp")),
+        );
+        let values: Vec<(f64, f64)> = adjustments
+            .iter()
+            .find(|(candidate, _)| *candidate == pair)
+            .map(|(_, values)| {
+                values
+                    .iter()
+                    .map(|(loc, v)| (loc.get(Tag::new(b"wght")).unwrap().to_f64(), v.0))
+                    .collect()
+            })
+            .expect("group pair present");
+        assert_eq!(vec![(0.0, 0.0), (1.0, -30.0)], values);
+
+        let static_metadata = result.fe_context.static_metadata.get();
+        let default_instance = result
+            .fe_context
+            .kerning_at
+            .get(&FeWorkIdentifier::KernInstance(
+                static_metadata.default_location().clone(),
+            ));
+        assert!(default_instance.kerns.is_empty());
+        assert!(
+            default_instance
+                .groups
+                .contains_key(&KernGroup::Side1("pair1".into()))
+        );
+    }
+
+    #[test]
+    fn compile_fontra_vertical_metrics() {
+        let result = TestCompile::compile("fontra/vertical.fontra", |mut options| {
+            options.flags.set(Flags::EMIT_VARC_TABLE, true);
+            options
+        });
+        let font = result.font();
+
+        let vhea = font.vhea().expect("vhea");
+        assert_eq!(500, vhea.ascender().to_i16());
+        assert_eq!(-500, vhea.descender().to_i16());
+        assert_eq!(0, vhea.line_gap().to_i16());
+
+        // vcomp advance height and top side bearing come from its authored
+        // yAdvance and verticalOrigin, not the typo-metrics fallbacks.
+        let vmtx = font.vmtx().expect("vmtx");
+        let gid = GlyphId::new(result.get_glyph_index("vcomp").expect("vcomp exists"));
+        assert_eq!(
+            (Some(950), Some(880)),
+            (vmtx.advance(gid), vmtx.side_bearing(gid))
+        );
+
+        // vcomp has no contours and a constant horizontal advance, so gvar
+        // data can only come from the vertical phantom points.
+        let varc = font.varc().expect("VARC");
+        assert!(
+            varc.coverage().unwrap().get(gid).is_some(),
+            "vcomp should be covered by VARC"
+        );
+        assert!(
+            gvar_tuple_count(&result, "vcomp") > 0,
+            "vcomp should have gvar phantom deltas"
+        );
+
+        // The sparse medium source is not a metrics master, so the constant
+        // metrics produce no MVAR.
+        assert!(font.mvar().is_err(), "MVAR should not be present");
+    }
+
+    #[test]
     fn no_debg_table_by_default() {
         let result = TestCompile::compile_source("static.designspace");
         let font = result.font();
