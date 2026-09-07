@@ -697,6 +697,7 @@ pub(crate) struct StaticGlyph {
     pub(crate) path: Path,
     #[serde(default)]
     pub(crate) components: Vec<Component>,
+    #[serde(default)]
     pub(crate) x_advance: f64,
     pub(crate) y_advance: Option<f64>,
     pub(crate) vertical_origin: Option<f64>,
@@ -1193,6 +1194,12 @@ mod tests {
             vec![None, Some(-65.0), None, None, None],
             kern.values["T"]["A"]
         );
+    }
+
+    #[test]
+    fn a_layer_glyph_without_advance_parses() {
+        let glyph: StaticGlyph = serde_json::from_str("{}").unwrap();
+        assert_eq!(0.0, glyph.x_advance);
     }
 
     #[test]
