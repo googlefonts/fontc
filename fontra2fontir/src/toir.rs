@@ -12,10 +12,10 @@ use fontdrasil::{
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{
-        AnchorBuilder, AxisValueLabel as IrAxisValueLabel, Component, DEFAULT_VENDOR_ID,
-        GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph, GlyphInstance, GlyphOrder,
-        GlyphPathBuilder, KernGroup, KernSide, KerningInstance, KerningLocations, NameBuilder,
-        NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
+        AnchorBuilder, AxisMapping, AxisValueLabel as IrAxisValueLabel, Component,
+        DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph, GlyphInstance,
+        GlyphOrder, GlyphPathBuilder, KernGroup, KernSide, KerningInstance, KerningLocations,
+        NameBuilder, NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
     },
 };
 use kurbo::BezPath;
@@ -358,6 +358,7 @@ pub(crate) fn to_ir_static_metadata(
             || default_source
                 .custom_data
                 .contains_key("openTypeVheaVertTypoLineGap"));
+    let axis_mappings = to_ir_axis_mappings(font_data, &axes)?;
 
     // Add glyph-local axes to fvar as hidden axes.
     let glyph_axes = glyph_axes(font_data)?;
@@ -399,6 +400,7 @@ pub(crate) fn to_ir_static_metadata(
     )
     .map_err(Error::VariationModelError)?;
     static_metadata.glyph_axes = glyph_axes;
+    static_metadata.axis_mappings = axis_mappings;
     apply_custom_data(&mut static_metadata, font_data, default_source)?;
     static_metadata.set_axis_value_labels(
         to_ir_axis_value_labels(font_data),
@@ -449,6 +451,39 @@ fn to_ir_axis_value_labels(font_data: &Font) -> BTreeMap<Tag, Vec<IrAxisValueLab
         }
     }
     labels
+}
+
+/// The avar version 2 axis mappings, like Fontra's
+/// [`CrossAxisMapper`](https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/core/crossaxismapper.py#L22-L58).
+fn to_ir_axis_mappings(font_data: &Font, axes: &[Axis]) -> Result<Vec<AxisMapping>, Error> {
+    let to_location =
+        |location: &Location, drop_default: bool| -> Result<NormalizedLocation, Error> {
+            let mut result = NormalizedLocation::new();
+            for (name, value) in location {
+                let axis = axes
+                    .iter()
+                    .find(|axis| axis.name == *name)
+                    .ok_or_else(|| Error::UnknownEntry("axis", name.clone()))?;
+                let coord = normalize_axis_value(*value, axis);
+                if drop_default && coord == NormalizedCoord::new(0.0) {
+                    continue;
+                }
+                result.insert(axis.tag, coord);
+            }
+            Ok(result)
+        };
+    font_data
+        .axes
+        .mappings
+        .iter()
+        .filter(|mapping| !mapping.inactive)
+        .map(|mapping| {
+            Ok(AxisMapping {
+                input: to_location(&mapping.input_location, true)?,
+                output: to_location(&mapping.output_location, false)?,
+            })
+        })
+        .collect()
 }
 
 /// Normalize a design-space location, filling missing axes with their default.
@@ -1089,16 +1124,16 @@ mod tests {
     };
 
     use crate::{
-        fontra::{self, Font, GlyphAxis, Kerning, VariableGlyph},
+        fontra::{self, Font, GlyphAxis, Kerning, Location, VariableGlyph},
         source::HORIZONTAL_KERNING_TYPE,
         test::testdata_dir,
         toir::to_ir_static_metadata,
     };
 
     use super::{
-        Error, NameKey, StaticMetadata, normalize_axis_value, normalize_glyph_axis_value,
-        responds_to_global_axes, to_ir_global_metrics, to_ir_glyph, to_ir_kerning_instance,
-        to_ir_kerning_locations, to_ir_names, to_ir_path,
+        AxisMapping, Error, NameKey, StaticMetadata, normalize_axis_value,
+        normalize_glyph_axis_value, responds_to_global_axes, to_ir_global_metrics, to_ir_glyph,
+        to_ir_kerning_instance, to_ir_kerning_locations, to_ir_names, to_ir_path,
     };
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
@@ -1171,6 +1206,63 @@ mod tests {
             vec![("Weight", Tag::new(b"wght"), 200.0, 200.0, 900.0)],
             axis_tuples(&static_metadata.axes)
         );
+    }
+
+    fn cross_axis_mapping(
+        input: &[(&str, f64)],
+        output: &[(&str, f64)],
+        inactive: bool,
+    ) -> fontra::CrossAxisMapping {
+        let location = |coords: &[(&str, f64)]| -> Location {
+            coords
+                .iter()
+                .map(|(name, value)| (name.to_string(), *value))
+                .collect()
+        };
+        fontra::CrossAxisMapping {
+            description: None,
+            group_description: None,
+            input_location: location(input),
+            output_location: location(output),
+            inactive,
+        }
+    }
+
+    #[test]
+    fn axis_mappings_of_2glyphs() {
+        // The input drops the axes at the default, the output keeps them.
+        // Weight has a mapping, so design 1.0 is the user maximum.
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        font_data.axes.mappings = vec![
+            cross_axis_mapping(
+                &[("Weight", 1.0), ("Width", 100.0)],
+                &[("Width", 50.0), ("Weight", 1.0)],
+                false,
+            ),
+            cross_axis_mapping(&[("Width", 125.0)], &[("Width", 100.0)], true),
+        ];
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        assert_eq!(
+            vec![AxisMapping {
+                input: NormalizedLocation::for_pos(&[("wght", 1.0)]),
+                output: NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", -1.0)]),
+            }],
+            static_metadata.axis_mappings
+        );
+    }
+
+    #[test]
+    fn cross_axis_mapping_on_an_unknown_axis_is_an_error() {
+        let mut font_data = Font::load(&testdata_dir().join("2glyphs.fontra")).unwrap();
+        font_data.axes.mappings = vec![cross_axis_mapping(
+            &[("Weight", 1.0)],
+            &[("Slant", 10.0)],
+            false,
+        )];
+        assert!(matches!(
+            to_ir_static_metadata(&font_data, false),
+            Err(Error::UnknownEntry("axis", _))
+        ));
     }
 
     #[test]
