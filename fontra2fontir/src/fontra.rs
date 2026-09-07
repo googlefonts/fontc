@@ -237,6 +237,23 @@ impl Font {
         // The kerning lives in kerning.csv
         font.kerning = parse_kerning(path)?;
 
+        // We need at least one font source, Fontra does not enforce this, so
+        // add one at the default location if there are no sources.
+        if font.sources.is_empty() {
+            font.sources.insert(
+                "default".to_string(),
+                FontSource {
+                    name: "Regular".to_string(),
+                    is_sparse: false,
+                    location: Location::default(),
+                    line_metrics_horizontal_layout: HashMap::new(),
+                    line_metrics_vertical_layout: HashMap::new(),
+                    italic_angle: 0.0,
+                    custom_data: Default::default(),
+                },
+            );
+        }
+
         Ok(font)
     }
 }
