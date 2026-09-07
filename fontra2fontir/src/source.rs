@@ -331,9 +331,20 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 .as_deref()
                 .unwrap_or("<nameless family>")
         );
+        // The glyph order of fontra-compile: .notdef, .null, CR and space
+        // first, then the other glyphs by name, see
+        // https://github.com/fontra/fontra-compile/blob/01d784d86c/src/fontra_compile/compile_fontmake_action.py#L165-L183
+        let first = [".notdef", ".null", "CR", "space"];
+        let mut glyph_order: Vec<GlyphName> = self.font_data.glyph_map.keys().cloned().collect();
+        glyph_order.sort_by_key(|name| {
+            first
+                .iter()
+                .position(|n| *n == name.as_str())
+                .unwrap_or(first.len())
+        });
         context
             .preliminary_glyph_order
-            .set(self.font_data.glyph_map.keys().cloned().collect());
+            .set(glyph_order.into_iter().collect());
         context
             .preliminary_gdef_categories
             .set(self.gdef_categories.as_ref().clone());
@@ -850,8 +861,16 @@ mod tests {
         assert_eq!(Some("0.000;ALIF;Raqq-Regular"), name(NameId::UNIQUE_ID));
 
         let glyph_order = context.preliminary_glyph_order.get();
-        assert!(glyph_order.contains(&GlyphName::new(".notdef")));
         assert!(glyph_order.contains(&GlyphName::new("beh-ar")));
+        // .notdef and space come first, the other glyphs follow by name.
+        assert_eq!(
+            vec![".notdef", "space"],
+            glyph_order
+                .names()
+                .take(2)
+                .map(GlyphName::as_str)
+                .collect::<Vec<_>>()
+        );
 
         let gdef = context.preliminary_gdef_categories.get();
         assert!(gdef.infer_from_anchors);
