@@ -12,10 +12,10 @@ use fontdrasil::{
 use fontir::{
     error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{
-        AnchorBuilder, Component, DEFAULT_VENDOR_ID, GlobalMetric, GlobalMetrics,
-        GlobalMetricsBuilder, Glyph, GlyphInstance, GlyphOrder, GlyphPathBuilder, KernGroup,
-        KernSide, KerningInstance, KerningLocations, NameBuilder, NameKey, Panose,
-        PreliminaryGdefCategories, StaticMetadata,
+        AnchorBuilder, AxisValueLabel as IrAxisValueLabel, Component, DEFAULT_VENDOR_ID,
+        GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, Glyph, GlyphInstance, GlyphOrder,
+        GlyphPathBuilder, KernGroup, KernSide, KerningInstance, KerningLocations, NameBuilder,
+        NameKey, Panose, PreliminaryGdefCategories, StaticMetadata,
     },
 };
 use kurbo::BezPath;
@@ -400,6 +400,10 @@ pub(crate) fn to_ir_static_metadata(
     .map_err(Error::VariationModelError)?;
     static_metadata.glyph_axes = glyph_axes;
     apply_custom_data(&mut static_metadata, font_data, default_source)?;
+    static_metadata.set_axis_value_labels(
+        to_ir_axis_value_labels(font_data),
+        font_data.axes.elided_fallback_name.clone(),
+    );
     Ok(static_metadata)
 }
 
@@ -417,6 +421,34 @@ fn glyph_source_location(
     location.retain(|name, _| !glyph.axes.iter().any(|a| a.name == *name));
     location.extend(source.location.iter().map(|(name, v)| (name.clone(), *v)));
     location
+}
+
+fn to_ir_axis_value_labels(font_data: &Font) -> BTreeMap<Tag, Vec<IrAxisValueLabel>> {
+    let mut labels: BTreeMap<Tag, Vec<IrAxisValueLabel>> = BTreeMap::new();
+    for axis in font_data.axes.axes.iter() {
+        let fontra::Axis::Continuous(axis) = axis else {
+            continue;
+        };
+        for label in axis.value_labels.iter() {
+            if label.value < axis.min_value || label.value > axis.max_value {
+                warn!(
+                    "STAT label {:?} is outside the range of axis {:?}",
+                    label.name, axis.name
+                );
+                continue;
+            }
+            labels.entry(axis.tag).or_default().push(IrAxisValueLabel {
+                name: label.name.clone(),
+                value: label.value.into(),
+                min_value: label.min_value.map(Into::into),
+                max_value: label.max_value.map(Into::into),
+                linked_value: label.linked_value.map(Into::into),
+                elidable: label.elidable,
+                older_sibling: label.older_sibling,
+            });
+        }
+    }
+    labels
 }
 
 /// Normalize a design-space location, filling missing axes with their default.
@@ -1138,6 +1170,32 @@ mod tests {
         assert_eq!(
             vec![("Weight", Tag::new(b"wght"), 200.0, 200.0, 900.0)],
             axis_tuples(&static_metadata.axes)
+        );
+    }
+
+    #[test]
+    fn labels_outside_the_axis_range_are_dropped() {
+        let mut font_data = Font::load(&testdata_dir().join("vertical.fontra")).unwrap();
+        for axis in font_data.axes.axes.iter_mut() {
+            if let fontra::Axis::Continuous(axis) = axis {
+                axis.value_labels.push(fontra::AxisValueLabel {
+                    name: "Thin".to_string(),
+                    value: 100.0,
+                    min_value: None,
+                    max_value: None,
+                    linked_value: None,
+                    elidable: false,
+                    older_sibling: false,
+                });
+            }
+        }
+        let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
+        assert_eq!(
+            vec!["Regular", "Bold"],
+            static_metadata.misc.axis_value_labels[&Tag::new(b"wght")]
+                .iter()
+                .map(|label| label.name.as_str())
+                .collect::<Vec<_>>()
         );
     }
 
