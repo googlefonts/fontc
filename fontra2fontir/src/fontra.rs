@@ -820,27 +820,33 @@ pub(crate) struct PackedPath {
 
 impl PackedPath {
     // https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/path.py#L168
-    pub(crate) fn unpacked_contours(&self) -> Vec<Contour> {
+    pub(crate) fn unpacked_contours(&self) -> Result<Vec<Contour>, PathConversionError> {
         let mut contours = Vec::with_capacity(self.contour_info.len());
         let mut start = 0;
         for info in &self.contour_info {
+            let point_count = self.point_types.len().min(self.coordinates.len() / 2);
+            if info.end_point < start || info.end_point >= point_count {
+                return Err(PathConversionError::Parse(format!(
+                    "contour end point {} is out of range",
+                    info.end_point
+                )));
+            }
             let points = (start..=info.end_point)
                 .map(|i| {
                     // https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/path.py#L548
-                    let (raw_type, smooth) =
-                        match self.point_types.get(i).copied().unwrap_or_default() {
-                            t if t == PointType::OffCurveQuad as u8 => {
-                                (Some("quad".to_string()), false)
-                            }
-                            t if t == PointType::OffCurveCubic as u8 => {
-                                (Some("cubic".to_string()), false)
-                            }
-                            t if t == PointType::OnCurveSmooth as u8 => (None, true),
-                            _ => (None, false), // on-curve
-                        };
+                    let (raw_type, smooth) = match self.point_types[i] {
+                        t if t == PointType::OffCurveQuad as u8 => {
+                            (Some("quad".to_string()), false)
+                        }
+                        t if t == PointType::OffCurveCubic as u8 => {
+                            (Some("cubic".to_string()), false)
+                        }
+                        t if t == PointType::OnCurveSmooth as u8 => (None, true),
+                        _ => (None, false), // on-curve
+                    };
                     Point {
-                        x: self.coordinates.get(i * 2).copied().unwrap_or_default(),
-                        y: self.coordinates.get(i * 2 + 1).copied().unwrap_or_default(),
+                        x: self.coordinates[i * 2],
+                        y: self.coordinates[i * 2 + 1],
                         raw_type,
                         smooth,
                     }
@@ -852,7 +858,7 @@ impl PackedPath {
             });
             start = info.end_point + 1;
         }
-        contours
+        Ok(contours)
     }
 }
 
@@ -873,11 +879,11 @@ impl Default for Path {
 }
 
 impl Path {
-    pub(crate) fn contours(&self) -> Cow<'_, [Contour]> {
-        match self {
+    pub(crate) fn contours(&self) -> Result<Cow<'_, [Contour]>, PathConversionError> {
+        Ok(match self {
             Path::Unpacked(unpacked) => Cow::Borrowed(unpacked.contours.as_slice()),
-            Path::Packed(packed) => Cow::Owned(packed.unpacked_contours()),
-        }
+            Path::Packed(packed) => Cow::Owned(packed.unpacked_contours()?),
+        })
     }
 }
 
@@ -1008,6 +1014,7 @@ mod tests {
                     l.glyph
                         .path
                         .contours()
+                        .unwrap()
                         .iter()
                         .map(|c| c.points.len())
                         .collect::<Vec<_>>()
@@ -1015,7 +1022,7 @@ mod tests {
                 .collect::<HashSet<_>>(),
             "{glyph:#?}"
         );
-        let foreground = glyph.layers["foreground"].glyph.path.contours();
+        let foreground = glyph.layers["foreground"].glyph.path.contours().unwrap();
         let contour = foreground.first().unwrap();
         assert_eq!(PointType::OnCurve, contour.points[0].point_type().unwrap());
         assert_eq!(
@@ -1074,7 +1081,7 @@ mod tests {
             }],
         };
 
-        let contours = packed.unpacked_contours();
+        let contours = packed.unpacked_contours().unwrap();
         assert_eq!(1, contours.len());
         let contour = &contours[0];
         assert!(contour.is_closed);
@@ -1194,6 +1201,19 @@ mod tests {
             vec![None, Some(-65.0), None, None, None],
             kern.values["T"]["A"]
         );
+    }
+
+    #[test]
+    fn packed_path_with_an_end_point_out_of_range_is_an_error() {
+        let packed = PackedPath {
+            coordinates: vec![10.0, 10.0, 20.0, 20.0],
+            point_types: vec![0, 0],
+            contour_info: vec![ContourInfo {
+                end_point: 5,
+                is_closed: true,
+            }],
+        };
+        assert!(packed.unpacked_contours().is_err());
     }
 
     #[test]
