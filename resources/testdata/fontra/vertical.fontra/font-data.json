@@ -9,9 +9,22 @@
 "minValue": 400.0,
 "defaultValue": 400.0,
 "maxValue": 700.0,
-"hidden": false
+"hidden": false,
+"valueLabels": [
+{
+"name": "Regular",
+"value": 400,
+"linkedValue": 700,
+"elidable": true
+},
+{
+"name": "Bold",
+"value": 700
 }
 ]
+}
+],
+"elidedFallBackname": "Regular"
 },
 "sources": {
 "regular": {
