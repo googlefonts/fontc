@@ -798,6 +798,7 @@ pub(crate) fn to_ir_glyph(
             .glyph
             .path
             .contours()
+            .map_err(|e| BadGlyph::new(fontra_glyph.name.clone(), e))?
             .iter()
             .map(|c| to_ir_path(fontra_glyph.name.clone(), c))
             .collect::<Result<_, _>>()?;
@@ -1551,7 +1552,7 @@ mod tests {
                 is_closed,
             }],
         };
-        packed.unpacked_contours().remove(0)
+        packed.unpacked_contours().unwrap().remove(0)
     }
 
     #[test]
