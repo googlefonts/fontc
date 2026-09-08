@@ -91,11 +91,8 @@ fn append_pairpos_f1_rules(
             if !seen.insert((gid1, gid2)) {
                 continue;
             }
-            let data = pairset.offset_data();
-            let record1 =
-                ResolvedValueRecord::new(pairrec.value_record1, data, delta_computer).unwrap();
-            let record2 =
-                ResolvedValueRecord::new(pairrec.value_record2, data, delta_computer).unwrap();
+            let record1 = ResolvedValueRecord::new(pairrec.value_record1, delta_computer).unwrap();
+            let record2 = ResolvedValueRecord::new(pairrec.value_record2, delta_computer).unwrap();
             result.push(PairPosRule {
                 first: gid1,
                 second: gid2.into(),
@@ -108,13 +105,13 @@ fn append_pairpos_f1_rules(
 
 fn is_noop(value_record: &ValueRecord) -> bool {
     value_record.x_placement().unwrap_or(0) == 0
-        && value_record.x_placement_device.get().is_null()
+        && value_record.x_placement_device().is_none()
         && value_record.y_placement().unwrap_or(0) == 0
-        && value_record.y_placement_device.get().is_null()
+        && value_record.y_placement_device().is_none()
         && value_record.x_advance().unwrap_or(0) == 0
-        && value_record.x_advance_device.get().is_null()
+        && value_record.x_advance_device().is_none()
         && value_record.y_advance().unwrap_or(0) == 0
-        && value_record.y_advance_device.get().is_null()
+        && value_record.y_advance_device().is_none()
 }
 
 fn append_pairpos_f2_rules(
@@ -132,7 +129,6 @@ fn append_pairpos_f2_rules(
     }
 
     let class1records = subtable.class1_records();
-    let data = subtable.offset_data();
     for gid1 in coverage.iter() {
         let g1class = class1.get(gid1);
         let class1rec = class1records.get(g1class as _).unwrap();
@@ -152,10 +148,8 @@ fn append_pairpos_f2_rules(
                 if !seen.insert((gid1, gid2)) {
                     continue;
                 }
-                let record1 =
-                    ResolvedValueRecord::new(record1.clone(), data, delta_computer).unwrap();
-                let record2 =
-                    ResolvedValueRecord::new(record2.clone(), data, delta_computer).unwrap();
+                let record1 = ResolvedValueRecord::new(*record1, delta_computer).unwrap();
+                let record2 = ResolvedValueRecord::new(*record2, delta_computer).unwrap();
 
                 result.push(PairPosRule {
                     first: gid1,

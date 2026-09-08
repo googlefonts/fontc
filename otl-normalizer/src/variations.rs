@@ -62,7 +62,11 @@ impl<'a> DeltaComputer<'a> {
         let delta_ix = idx.into();
         self.locations
             .iter()
-            .map(|loc| self.ivs.compute_delta(delta_ix, loc).map(|d| d + coord))
+            .map(|loc| {
+                self.ivs
+                    .compute_delta(delta_ix, loc)
+                    .map(|d| d.to_i32() + coord)
+            })
             .collect()
     }
 }
