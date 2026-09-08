@@ -259,10 +259,10 @@ jobs:
           path: oswald
 
       - name: Compile GS Roman twice
-        run: ./resources/scripts/repeatable-builds.sh googlesans/source/GoogleSans/GoogleSans.designspace
+        run: ./resources/scripts/repeatable-builds.sh googlesans/sources/GoogleSans.designspace
 
       - name: Compile GS Italic twice
-        run: ./resources/scripts/repeatable-builds.sh googlesans/source/GoogleSans/GoogleSans-Italic.designspace
+        run: ./resources/scripts/repeatable-builds.sh googlesans/sources/GoogleSans-Italic.designspace
 
       - name: Compile Oswald twice
         run: ./resources/scripts/repeatable-builds.sh oswald/sources/Oswald.glyphs
