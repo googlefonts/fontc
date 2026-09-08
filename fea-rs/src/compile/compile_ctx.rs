@@ -91,7 +91,6 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     lookup_flags: LookupFlagInfo,
     active_feature: Option<ActiveFeature>,
     vertical_feature: SpecialVerticalFeatureState,
-    script: Option<Tag>,
     glyph_class_defs: HashMap<SmolStr, GlyphClass>,
     mark_classes: HashMap<SmolStr, MarkClass>,
     anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
@@ -134,7 +133,6 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             lookup_flags: Default::default(),
             active_feature: Default::default(),
             vertical_feature: Default::default(),
-            script: Default::default(),
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
             opts,
@@ -254,7 +252,6 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
         self.vertical_feature.end_feature();
         self.lookup_flags.clear();
-        self.script = None;
     }
 
     fn start_lookup_block(&mut self, name: &Token, use_extension: bool) {
@@ -289,7 +286,12 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
     fn set_language(&mut self, stmt: typed::Language) {
         let language = stmt.tag().to_raw();
-        let script = self.script.unwrap_or(tags::SCRIPT_DFLT);
+        let script = self
+            .active_feature
+            .as_ref()
+            .unwrap() // language statement only allowed in feature block
+            .current_lang_sys()
+            .script;
         self.set_script_language(
             script,
             language,
@@ -298,24 +300,24 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         );
     }
 
+    /// The logic in this fn is surprisingly treacherous.
+    ///
+    /// See <https://github.com/fonttools/fonttools/pull/4169> for the most
+    /// comprehensive explanation.
     fn set_script(&mut self, stmt: typed::Script) {
         let script = stmt.tag().to_raw();
+        let system = LanguageSystem {
+            script,
+            language: tags::LANG_DFLT,
+        };
 
-        // fonttools logic here is kind of particular, so let's match it literally
-        //https://github.com/fonttools/fonttools/blob/5ae2943a43/Lib/fontTools/feaLib/builder.py#L1239
-        if self
-            .active_feature
-            .as_ref()
-            .unwrap()
-            .current_system()
-            .map(|langsys| (langsys.script, langsys.language))
-            == Some((script, tags::LANG_DFLT))
-        {
-            return;
+        let system_is_current = self.active_feature.as_ref().unwrap().current_lang_sys() == system;
+
+        // a script statement naming the already-current system does not reset
+        // the lookupflag.
+        if !system_is_current {
+            self.lookup_flags.clear();
         }
-
-        self.script = Some(script);
-        self.lookup_flags.clear();
 
         self.set_script_language(script, tags::LANG_DFLT, false, false);
     }

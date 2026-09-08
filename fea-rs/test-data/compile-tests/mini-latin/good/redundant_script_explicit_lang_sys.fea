@@ -1,0 +1,8 @@
+languagesystem latn dflt;
+
+feature test {
+    # we had a bug where this reset script to DFLT; see
+    # https://github.com/googlefonts/fontc/pull/2127#discussion_r3949359281
+    language dflt;
+    sub a by b;
+} test;

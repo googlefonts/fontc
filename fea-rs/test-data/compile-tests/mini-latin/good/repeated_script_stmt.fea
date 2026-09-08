@@ -1,0 +1,12 @@
+languagesystem DFLT dflt;
+languagesystem dev2 dflt;
+languagesystem deva dflt;
+
+feature test {
+    script dev2;
+    sub a by b;
+    # a script statement always closes the open lookup, so the two rules end up
+    # in separate lookups even though this statement changes nothing else.
+    script dev2;
+    sub c by d;
+} test;
