@@ -172,7 +172,7 @@ impl Source for GlyphsIrSource {
                 match name {
                     "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
                     "eraseOpenCorners" => flags.set(Flags::ERASE_OPEN_CORNERS, true),
-                    "propagateAnchors" => flags.set(Flags::PROPAGATE_ANCHORS, true),
+                    "propagateAnchors" => (),
                     "decomposeTransformedComponents" => {
                         flags.set(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS, true)
                     }
@@ -182,16 +182,15 @@ impl Source for GlyphsIrSource {
         } else {
             // No ufo2ft filters defined - use Glyphs native defaults
             flags.set(Flags::ERASE_OPEN_CORNERS, true);
-            // Check custom parameter to allow opt-out while defaulting to true
-            if self
-                .font_info
-                .font
-                .custom_parameters
-                .propagate_anchors
-                .unwrap_or(true)
-            {
-                flags.set(Flags::PROPAGATE_ANCHORS, true);
-            }
+        }
+        if self
+            .font_info
+            .font
+            .custom_parameters
+            .propagate_anchors
+            .unwrap_or(true)
+        {
+            flags.set(Flags::PROPAGATE_ANCHORS, true);
         }
         flags
     }
@@ -4309,6 +4308,19 @@ unitsPerEm = 1000;
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             "decomposeTransformedComponents in userData should set DECOMPOSE_TRANSFORMED_COMPONENTS flag"
         );
+    }
+
+    #[test]
+    fn propagate_anchors_governed_by_custom_param_not_filters() {
+        let flags = |file: &str| {
+            GlyphsIrSource::new(&glyphs3_dir().join(file))
+                .unwrap()
+                .compilation_flags()
+        };
+        assert!(
+            flags("UfoFiltersWithoutPropagateAnchors.glyphs").contains(Flags::PROPAGATE_ANCHORS)
+        );
+        assert!(!flags("UfoFiltersDontPropagateAnchors.glyphs").contains(Flags::PROPAGATE_ANCHORS));
     }
 
     trait ExecForTest {
