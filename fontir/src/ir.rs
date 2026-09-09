@@ -42,8 +42,8 @@ pub use feature_writers::{
 };
 pub use path_builder::GlyphPathBuilder;
 pub use static_metadata::{
-    AxisValueLabel, Condition, ConditionSet, GdefCategories, MetaTableValues, MiscMetadata,
-    NameKey, NamedInstance, Panose, PostscriptNames, PreliminaryGdefCategories, Rule,
+    AxisMapping, AxisValueLabel, Condition, ConditionSet, GdefCategories, MetaTableValues,
+    MiscMetadata, NameKey, NamedInstance, Panose, PostscriptNames, PreliminaryGdefCategories, Rule,
     StaticMetadata, Substitution, VariableFeature,
 };
 

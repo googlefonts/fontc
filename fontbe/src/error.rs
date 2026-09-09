@@ -95,6 +95,8 @@ pub enum Error {
     NoVariationModel(NormalizedLocation),
     #[error("Delta error '{0:?}'")]
     DeltaError(DeltaError),
+    #[error("Duplicate axis mapping input {0:?}")]
+    DuplicateAxisMapping(NormalizedLocation),
     #[error("No glyph id for '{0}'")]
     MissingGlyphId(GlyphName),
     #[error("Error making CMap: {0}")]
