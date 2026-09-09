@@ -237,3 +237,61 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use fontdrasil::orchestration::Access;
+    use fontir::orchestration::Context as IrContext;
+    use write_fonts::{
+        tables::{
+            gpos::{PositionLookup, SinglePos, ValueRecord},
+            layout::{Lookup, LookupFlag, LookupList},
+        },
+        types::GlyphId16,
+    };
+
+    use super::*;
+
+    /// A GPOS with a single SinglePosFormat2 subtable that is itself larger
+    /// than 64k, so the Offset16 to its own coverage table can never fit.
+    /// Promoting the lookup to extension only widens the link from the
+    /// lookup to the subtable, and write-fonts does not split SinglePos.
+    /// If it ever learns to, this will fail with "GPOS should not pack" and
+    /// needs a different unpackable shape.
+    fn unpackable_gpos() -> Gpos {
+        const NUM_GLYPHS: u16 = 33000;
+        let coverage = (0..NUM_GLYPHS).map(GlyphId16::new).collect();
+        let values = (0..NUM_GLYPHS)
+            .map(|gid| ValueRecord::new().with_x_advance(gid as i16))
+            .collect();
+        Gpos::new(
+            Default::default(),
+            Default::default(),
+            LookupList::new(vec![PositionLookup::Single(Lookup::new(
+                LookupFlag::empty(),
+                vec![SinglePos::format_2(coverage, values)],
+            ))]),
+        )
+    }
+
+    // <https://github.com/googlefonts/fontc/issues/2128>
+    #[test]
+    fn failure_to_pack_a_table_is_an_error() {
+        let ir_context = IrContext::new_root(Default::default());
+        let context = Context::new_root(Default::default(), None, None, false, &ir_context)
+            .copy_for_work(Access::All, Access::All);
+        context.gpos.set(unpackable_gpos());
+
+        let err = bytes_for(&context, WorkId::Gpos).expect_err("GPOS should not pack");
+        assert!(
+            matches!(
+                &err,
+                Error::DumpTableError {
+                    e: write_fonts::error::Error::PackingFailed(_),
+                    context,
+                } if context == "GPOS"
+            ),
+            "{err}"
+        );
+    }
+}
