@@ -922,3 +922,102 @@ impl From<ChainContextBuilder> for SubChainContextBuilder {
         SubChainContextBuilder(src)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A rule matching `class` at two consecutive positions, applying
+    /// `lookup_id` at the first.
+    fn two_position_rule(class: [u16; 2], lookup_id: LookupId) -> ContextRule {
+        let class = GlyphOrClass::Class(class.into_iter().map(GlyphId16::new).collect());
+        ContextRule {
+            backtrack: Vec::new(),
+            context: vec![(class.clone(), vec![lookup_id]), (class, Vec::new())],
+            lookahead: Vec::new(),
+        }
+    }
+
+    /// 8000 rules in two halves. The first half's classes are {0,1}, {2,3},
+    /// ..., {7998,7999}, the second half's are {1,2}, {3,4}, ..., {7999,8000}.
+    ///
+    /// Within a half the classes are disjoint, so the half fits a single
+    /// ClassDef and can be a format 2 subtable. Across the halves they
+    /// interleave, so the whole set can only be 8000 format 3 subtables,
+    /// which overflow and force a split.
+    fn halves_reproducer_rules(lookup_id: LookupId) -> Vec<ContextRule> {
+        let first_half = (0..4000).map(|k| [2 * k, 2 * k + 1]);
+        let second_half = (0..4000).map(|k| [2 * k + 1, 2 * k + 2]);
+        first_half
+            .chain(second_half)
+            .map(|class| two_position_rule(class, lookup_id))
+            .collect()
+    }
+
+    /// A format 2 subtable's coverage is the union of the first-position
+    /// glyphs of the rules it holds, so it tells which rules ended up in it.
+    fn expected_coverages(
+        ranges: impl IntoIterator<Item = (u16, u16)>,
+    ) -> Vec<write_layout::CoverageTable> {
+        ranges
+            .into_iter()
+            .map(|(start, end)| {
+                (start..=end)
+                    .map(GlyphId16::new)
+                    .collect::<CoverageTableBuilder>()
+                    .build()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn oversized_sequence_context_is_split_into_format_2_subtables() {
+        let builder = LookupBuilder::new_with_lookups(
+            LookupFlag::default(),
+            None,
+            vec![SubContextBuilder(ContextBuilder {
+                rules: halves_reproducer_rules(LookupId::Gsub(0)),
+            })],
+        );
+        let mut var_store = VariationStoreBuilder::new(0);
+        let lookup = builder.build(&mut var_store);
+
+        // one format 2 subtable per half, in rule order
+        let expected_coverages = expected_coverages([(0, 7999), (1, 8000)]);
+        assert_eq!(lookup.subtables.len(), expected_coverages.len());
+        for (subtable, expected_coverage) in lookup.subtables.iter().zip(expected_coverages) {
+            let write_layout::SequenceContext::Format2(subtable) = subtable.as_ref() else {
+                panic!("expected format 2 subtable, got {subtable:?}");
+            };
+            assert_eq!(subtable.coverage.as_ref(), &expected_coverage);
+        }
+    }
+
+    #[test]
+    fn oversized_chained_sequence_context_is_split_into_format_2_subtables() {
+        let builder = LookupBuilder::new_with_lookups(
+            LookupFlag::default(),
+            None,
+            vec![PosChainContextBuilder(ChainContextBuilder(
+                ContextBuilder {
+                    rules: halves_reproducer_rules(LookupId::Gpos(0)),
+                },
+            ))],
+        );
+        let mut var_store = VariationStoreBuilder::new(0);
+        let lookup = builder.build(&mut var_store);
+
+        // A chained class rule is 4 bytes bigger than a plain one (backtrack
+        // and lookahead counts), so a 4000-rule half still overflows as
+        // format 2 and each half is split again: four subtables, in rule order.
+        let expected_coverages =
+            expected_coverages([(0, 3999), (4000, 7999), (1, 4000), (4001, 8000)]);
+        assert_eq!(lookup.subtables.len(), expected_coverages.len());
+        for (subtable, expected_coverage) in lookup.subtables.iter().zip(expected_coverages) {
+            let write_layout::ChainedSequenceContext::Format2(subtable) = subtable.as_ref() else {
+                panic!("expected format 2 subtable, got {subtable:?}");
+            };
+            assert_eq!(subtable.coverage.as_ref(), &expected_coverage);
+        }
+    }
+}
