@@ -13,7 +13,10 @@ use std::{
 };
 
 use fontdrasil::{paths::string_to_filename, types::GlyphName};
-use fontir::error::{BadSource, BadSourceKind, PathConversionError};
+use fontir::{
+    error::{BadSource, BadSourceKind, PathConversionError},
+    ir::DecomposedTransform,
+};
 use serde::Deserialize;
 use smol_str::SmolStr;
 use write_fonts::types::Tag;
@@ -863,42 +866,6 @@ impl Path {
     }
 }
 
-/// Corresponds to a FontTools DecomposedTransform
-/// <https://github.com/fonttools/fonttools/blob/0572f78718/Lib/fontTools/misc/transform.py#L410>
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub(crate) struct DecomposedTransform {
-    pub(crate) translate_x: f64,
-    pub(crate) translate_y: f64,
-    /// in degrees counter-clockwise in font coordinate space
-    pub(crate) rotation: f64,
-    pub(crate) scale_x: f64,
-    pub(crate) scale_y: f64,
-    /// in degrees clockwise in font coordinate space
-    pub(crate) skew_x: f64,
-    /// in degrees counter-clockwise in font coordinate space
-    pub(crate) skew_y: f64,
-    pub(crate) t_center_x: f64,
-    pub(crate) t_center_y: f64,
-}
-
-impl Default for DecomposedTransform {
-    fn default() -> Self {
-        // The identity transform: unit scale, everything else zero.
-        Self {
-            translate_x: 0.0,
-            translate_y: 0.0,
-            rotation: 0.0,
-            scale_x: 1.0,
-            scale_y: 1.0,
-            skew_x: 0.0,
-            skew_y: 0.0,
-            t_center_x: 0.0,
-            t_center_y: 0.0,
-        }
-    }
-}
-
 fn default_units_per_em() -> u16 {
     1000
 }
@@ -1066,15 +1033,12 @@ mod tests {
     #[test]
     fn transform_defaults_to_identity() {
         let c: Component = serde_json::from_str(r#"{"name":"a"}"#).unwrap();
-        assert_eq!(
-            (1.0, 1.0),
-            (c.transformation.scale_x, c.transformation.scale_y)
-        );
+        assert_eq!(kurbo::Affine::IDENTITY, c.transformation.to_affine());
         let c: Component =
             serde_json::from_str(r#"{"name":"a","transformation":{"translateX":5.0}}"#).unwrap();
-        assert_eq!(5.0, c.transformation.translate_x);
+        assert_eq!(Some(5.0), c.transformation.translate_x);
         assert_eq!(
-            (1.0, 1.0),
+            (None, None),
             (c.transformation.scale_x, c.transformation.scale_y)
         );
     }
