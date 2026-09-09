@@ -241,9 +241,8 @@ fn ttx_diff_has_changes(last_run_sha: &str) -> bool {
         .arg(last_run_sha)
         .output()
         .unwrap();
-    std::str::from_utf8(&output.stdout)
-        .unwrap()
-        .contains("ttx_diff/")
+    let diff = std::str::from_utf8(&output.stdout).unwrap();
+    diff.contains("ttx_diff/") || diff.contains("otl-normalizer/")
 }
 
 #[derive(Debug, Default)]
