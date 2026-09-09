@@ -104,32 +104,38 @@ fn has(context: &Context, id: WorkId) -> bool {
 fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
     // TODO: to_vec copies :(
     let bytes = match id {
-        WorkId::Avar => context.avar.get().as_ref().as_ref().and_then(to_bytes),
-        WorkId::Cmap => to_bytes(context.cmap.get().as_ref()),
-        WorkId::Colr => to_bytes(context.colr.get().as_ref()),
-        WorkId::Cpal => to_bytes(context.cpal.get().as_ref()),
-        WorkId::Fvar => to_bytes(context.fvar.get().as_ref()),
-        WorkId::Head => to_bytes(context.head.get().as_ref()),
-        WorkId::Hhea => to_bytes(context.hhea.get().as_ref()),
+        WorkId::Avar => context
+            .avar
+            .get()
+            .as_ref()
+            .as_ref()
+            .map(to_bytes)
+            .transpose()?,
+        WorkId::Cmap => Some(to_bytes(context.cmap.get().as_ref())?),
+        WorkId::Colr => Some(to_bytes(context.colr.get().as_ref())?),
+        WorkId::Cpal => Some(to_bytes(context.cpal.get().as_ref())?),
+        WorkId::Fvar => Some(to_bytes(context.fvar.get().as_ref())?),
+        WorkId::Head => Some(to_bytes(context.head.get().as_ref())?),
+        WorkId::Hhea => Some(to_bytes(context.hhea.get().as_ref())?),
         WorkId::Hmtx => Some(context.hmtx.get().to_vec()),
-        WorkId::Gasp => to_bytes(context.gasp.get().as_ref()),
+        WorkId::Gasp => Some(to_bytes(context.gasp.get().as_ref())?),
         WorkId::Glyf => Some(context.glyf.get().to_vec()),
-        WorkId::Gpos => to_bytes(context.gpos.get().as_ref()),
-        WorkId::Gsub => to_bytes(context.gsub.get().as_ref()),
-        WorkId::Gdef => to_bytes(context.gdef.get().as_ref()),
+        WorkId::Gpos => Some(to_bytes(context.gpos.get().as_ref())?),
+        WorkId::Gsub => Some(to_bytes(context.gsub.get().as_ref())?),
+        WorkId::Gdef => Some(to_bytes(context.gdef.get().as_ref())?),
         WorkId::Gvar => Some(context.gvar.get().to_vec()),
         WorkId::Loca => Some(context.loca.get().to_vec()),
-        WorkId::Maxp => to_bytes(context.maxp.get().as_ref()),
-        WorkId::Name => to_bytes(context.name.get().as_ref()),
-        WorkId::Os2 => to_bytes(context.os2.get().as_ref()),
-        WorkId::Post => to_bytes(context.post.get().as_ref()),
-        WorkId::Stat => to_bytes(context.stat.get().as_ref()),
-        WorkId::Hvar => to_bytes(context.hvar.get().as_ref()),
-        WorkId::Mvar => to_bytes(context.mvar.get().as_ref()),
-        WorkId::Meta => to_bytes(context.meta.get().as_ref()),
-        WorkId::Vhea => to_bytes(context.vhea.get().as_ref()),
+        WorkId::Maxp => Some(to_bytes(context.maxp.get().as_ref())?),
+        WorkId::Name => Some(to_bytes(context.name.get().as_ref())?),
+        WorkId::Os2 => Some(to_bytes(context.os2.get().as_ref())?),
+        WorkId::Post => Some(to_bytes(context.post.get().as_ref())?),
+        WorkId::Stat => Some(to_bytes(context.stat.get().as_ref())?),
+        WorkId::Hvar => Some(to_bytes(context.hvar.get().as_ref())?),
+        WorkId::Mvar => Some(to_bytes(context.mvar.get().as_ref())?),
+        WorkId::Meta => Some(to_bytes(context.meta.get().as_ref())?),
+        WorkId::Vhea => Some(to_bytes(context.vhea.get().as_ref())?),
         WorkId::Vmtx => Some(context.vmtx.get().to_vec()),
-        WorkId::Vvar => to_bytes(context.vvar.get().as_ref()),
+        WorkId::Vvar => Some(to_bytes(context.vvar.get().as_ref())?),
         _ => panic!("Missing a match for {id:?}"),
     };
     Ok(bytes)
@@ -199,7 +205,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
                 .add_table(&base)
                 .map_err(|e| Error::DumpTableError {
                     e: e.inner,
-                    context: "dump BASE failed".into(),
+                    context: "BASE".into(),
                 })?;
         }
 
