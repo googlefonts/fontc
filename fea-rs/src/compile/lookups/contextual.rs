@@ -568,12 +568,16 @@ impl ContextBuilder {
         var_store: Option<&mut VariationStoreBuilder>,
     ) -> Vec<write_layout::SequenceContext> {
         let in_gpos = var_store.is_some();
+        self.build_inner(in_gpos)
+    }
+
+    fn build_inner(mut self, in_gpos: bool) -> Vec<write_layout::SequenceContext> {
         assert!(self.rules.iter().all(|rule| !rule.is_chain_rule()));
         let format_1 = self.build_format_1(in_gpos).map(|x| vec![x]);
         let format_2 = self.build_format_2(in_gpos).map(|x| vec![x]);
         let format_3 = self
             .rules
-            .into_iter()
+            .iter()
             .map(|rule| {
                 let cov_tables = rule
                     .context
@@ -586,7 +590,18 @@ impl ContextBuilder {
             })
             .collect();
 
-        pick_best_format([format_1, format_2, Some(format_3)])
+        match pick_best_format([format_1, format_2, Some(format_3)]) {
+            Ok(best) => best,
+            Err(overflowed) if self.rules.len() <= 1 => overflowed,
+            Err(_) => {
+                let second_half = ContextBuilder {
+                    rules: self.rules.split_off(self.rules.len() / 2),
+                };
+                let mut subtables = self.build_inner(in_gpos);
+                subtables.extend(second_half.build_inner(in_gpos));
+                subtables
+            }
+        }
     }
 }
 
@@ -595,20 +610,32 @@ impl ChainContextBuilder {
         self.0.iter_lookups()
     }
 
-    fn build(self, in_gpos: bool) -> Vec<write_layout::ChainedSequenceContext> {
+    fn build(mut self, in_gpos: bool) -> Vec<write_layout::ChainedSequenceContext> {
         let maybe_format_1 = self.build_format_1(in_gpos);
         let maybe_format_2 = self.build_format_2(in_gpos);
-        // format_3 takes ownership, so we build it last (it is always possible)
         let format_3 = self.build_format_3(in_gpos);
 
         //gross: we try all types we can, and then pick the best one by
         //actually checking the compiled size. There may be heuristic approaches
         //that would approximate this with less work, but they are not obvious.
-        pick_best_format([
+        match pick_best_format([
             maybe_format_1.map(|x| vec![x]),
             maybe_format_2.map(|x| vec![x]),
             Some(format_3),
-        ])
+        ]) {
+            Ok(best) => best,
+            Err(overflowed) if self.0.rules.len() <= 1 => overflowed,
+            Err(_) => {
+                // A lookup's subtables are tried in order. Keep consecutive
+                // rules together and preserve their order when retrying them.
+                let second_half = ChainContextBuilder(ContextBuilder {
+                    rules: self.0.rules.split_off(self.0.rules.len() / 2),
+                });
+                let mut subtables = self.build(in_gpos);
+                subtables.extend(second_half.build(in_gpos));
+                subtables
+            }
+        }
     }
 
     fn build_format_1(&self, in_gpos: bool) -> Option<write_layout::ChainedSequenceContext> {
@@ -733,10 +760,10 @@ impl ChainContextBuilder {
     }
 
     /// format 3 is always possible; it also generates a subtable for each rule.
-    fn build_format_3(self, in_gpos: bool) -> Vec<write_layout::ChainedSequenceContext> {
+    fn build_format_3(&self, in_gpos: bool) -> Vec<write_layout::ChainedSequenceContext> {
         self.0
             .rules
-            .into_iter()
+            .iter()
             .map(|rule| {
                 let backtrack = rule
                     .backtrack
@@ -808,26 +835,38 @@ impl RemapIds for SubChainContextBuilder {
         self.0.0.remap_ids(id_map);
     }
 }
-// invariant: at least one item must be Some
-fn pick_best_format<T: FontWrite + Validate>(subtables: [Option<Vec<T>>; 3]) -> Vec<T> {
-    // first see if there's only one table present, in which case we can exit early:
-    if subtables.iter().filter(|t| t.is_some()).count() == 1 {
-        return subtables.into_iter().find_map(|opt| opt).unwrap();
+/// Return the smallest format that can be serialized.
+///
+/// The error contains a semantically valid candidate for an unsplittable
+/// single rule, so the final table writer encounters the same packing failure
+/// as it did before contextual splitting was added.
+fn pick_best_format<T: FontWrite + Validate>(
+    subtables: [Option<Vec<T>>; 3],
+) -> Result<Vec<T>, Vec<T>> {
+    let mut best = None;
+    let mut overflowed = None;
+
+    for (i, table) in subtables.into_iter().enumerate() {
+        let Some(table) = table else { continue };
+        let size = compute_size(&table);
+        let n_subtables = table.len();
+        log::trace!("format {} {n_subtables} subtables size {size:?}", i + 1);
+
+        if size == usize::MAX {
+            // Format 3 is last and always present, making it the eventual
+            // fallback when no candidate fits.
+            overflowed = Some(table);
+        } else if best
+            .as_ref()
+            .map(|(best_size, _)| size < *best_size)
+            .unwrap_or(true)
+        {
+            best = Some((size, table));
+        }
     }
 
-    // this is written in a sort of funny style so that it's easy to println
-    // the computed sizes for debugging
-    subtables
-        .into_iter()
-        .enumerate()
-        .filter_map(|(i, table)| table.map(|table| (i + 1, compute_size(&table), table)))
-        .inspect(|(i, size, subtables)| {
-            let n_subtables = subtables.len();
-            log::trace!("format {i} {n_subtables} subtables size {size:?}");
-        })
-        .min_by_key(|(_, size, _)| *size)
-        .unwrap()
-        .2
+    best.map(|(_, table)| table)
+        .ok_or_else(|| overflowed.expect("at least one contextual format must be available"))
 }
 
 fn compute_size<T: FontWrite + Validate>(subtables: &Vec<T>) -> usize {
@@ -920,5 +959,144 @@ impl From<ContextBuilder> for PosChainContextBuilder {
 impl From<ChainContextBuilder> for SubChainContextBuilder {
     fn from(src: ChainContextBuilder) -> SubChainContextBuilder {
         SubChainContextBuilder(src)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A rule matching `class` at two consecutive positions, applying
+    /// `lookup_id` at the first.
+    fn two_position_rule(class: [u16; 2], lookup_id: LookupId) -> ContextRule {
+        let class = GlyphOrClass::Class(class.into_iter().map(GlyphId16::new).collect());
+        ContextRule {
+            backtrack: Vec::new(),
+            context: vec![(class.clone(), vec![lookup_id]), (class, Vec::new())],
+            lookahead: Vec::new(),
+        }
+    }
+
+    /// 8000 rules in two halves. The first half's classes are {0,1}, {2,3},
+    /// ..., {7998,7999}, the second half's are {1,2}, {3,4}, ..., {7999,8000}.
+    ///
+    /// Within a half the classes are disjoint, so the half fits a single
+    /// ClassDef and can be a format 2 subtable. Across the halves they
+    /// interleave, so the whole set can only be 8000 format 3 subtables,
+    /// which overflow and force a split.
+    fn halves_reproducer_rules(lookup_id: LookupId) -> Vec<ContextRule> {
+        let first_half = (0..4000).map(|k| [2 * k, 2 * k + 1]);
+        let second_half = (0..4000).map(|k| [2 * k + 1, 2 * k + 2]);
+        first_half
+            .chain(second_half)
+            .map(|class| two_position_rule(class, lookup_id))
+            .collect()
+    }
+
+    /// A format 2 subtable's coverage is the union of the first-position
+    /// glyphs of the rules it holds, so it tells which rules ended up in it.
+    fn expected_coverages(
+        ranges: impl IntoIterator<Item = (u16, u16)>,
+    ) -> Vec<write_layout::CoverageTable> {
+        ranges
+            .into_iter()
+            .map(|(start, end)| {
+                (start..=end)
+                    .map(GlyphId16::new)
+                    .collect::<CoverageTableBuilder>()
+                    .build()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn oversized_sequence_context_is_split_into_format_2_subtables() {
+        let builder = LookupBuilder::new_with_lookups(
+            LookupFlag::default(),
+            None,
+            vec![SubContextBuilder(ContextBuilder {
+                rules: halves_reproducer_rules(LookupId::Gsub(0)),
+            })],
+        );
+        let mut var_store = VariationStoreBuilder::new(0);
+        let lookup = builder.build(&mut var_store);
+
+        // one format 2 subtable per half, in rule order
+        let expected_coverages = expected_coverages([(0, 7999), (1, 8000)]);
+        assert_eq!(lookup.subtables.len(), expected_coverages.len());
+        for (subtable, expected_coverage) in lookup.subtables.iter().zip(expected_coverages) {
+            let write_layout::SequenceContext::Format2(subtable) = subtable.as_ref() else {
+                panic!("expected format 2 subtable, got {subtable:?}");
+            };
+            assert_eq!(subtable.coverage.as_ref(), &expected_coverage);
+        }
+    }
+
+    #[test]
+    fn oversized_chained_sequence_context_is_split_into_format_2_subtables() {
+        let builder = LookupBuilder::new_with_lookups(
+            LookupFlag::default(),
+            None,
+            vec![PosChainContextBuilder(ChainContextBuilder(
+                ContextBuilder {
+                    rules: halves_reproducer_rules(LookupId::Gpos(0)),
+                },
+            ))],
+        );
+        let mut var_store = VariationStoreBuilder::new(0);
+        let lookup = builder.build(&mut var_store);
+
+        // A chained class rule is 4 bytes bigger than a plain one (backtrack
+        // and lookahead counts), so a 4000-rule half still overflows as
+        // format 2 and each half is split again: four subtables, in rule order.
+        let expected_coverages =
+            expected_coverages([(0, 3999), (4000, 7999), (1, 4000), (4001, 8000)]);
+        assert_eq!(lookup.subtables.len(), expected_coverages.len());
+        for (subtable, expected_coverage) in lookup.subtables.iter().zip(expected_coverages) {
+            let write_layout::ChainedSequenceContext::Format2(subtable) = subtable.as_ref() else {
+                panic!("expected format 2 subtable, got {subtable:?}");
+            };
+            assert_eq!(subtable.coverage.as_ref(), &expected_coverage);
+        }
+    }
+
+    #[test]
+    fn unsplittable_single_rule_is_not_split() {
+        // One rule with three positions of ~22000 glyphs each. The second
+        // class overlaps the first, so no ClassDef partition exists and
+        // format 2 is impossible; the only candidate is a single format 3
+        // subtable whose three coverages are ~44k each, so the third one is
+        // out of Offset16 reach and the subtable cannot be serialized.
+        let even_glyphs = (2..44_000)
+            .step_by(2)
+            .map(GlyphId16::new)
+            .collect::<Vec<_>>();
+        let even = GlyphOrClass::Class(even_glyphs.clone().into());
+        let odd = GlyphOrClass::Class((1..44_000).step_by(2).map(GlyphId16::new).collect());
+        let overlapping = GlyphOrClass::Class(
+            std::iter::once(GlyphId16::new(1))
+                .chain(even_glyphs)
+                .collect(),
+        );
+        let subtables = ContextBuilder {
+            rules: vec![ContextRule {
+                backtrack: Vec::new(),
+                context: vec![
+                    (even, vec![LookupId::Gsub(0)]),
+                    (overlapping, Vec::new()),
+                    (odd, Vec::new()),
+                ],
+                lookahead: Vec::new(),
+            }],
+        }
+        .build(None);
+
+        // returned as is, for the final packing to report
+        assert_eq!(subtables.len(), 1);
+        assert!(matches!(
+            subtables[0],
+            write_layout::SequenceContext::Format3(_)
+        ));
+        assert_eq!(compute_size(&subtables), usize::MAX);
     }
 }
