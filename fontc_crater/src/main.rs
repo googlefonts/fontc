@@ -3,7 +3,7 @@
 use std::{
     collections::BTreeMap,
     fmt::Display,
-    io::Write,
+    io::{IsTerminal, Write},
     path::Path,
     process::{Command, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
@@ -26,8 +26,10 @@ use error::Error;
 use target::{BuildType, Target};
 
 fn main() {
-    // note: the free fn, not `fmt().init()`; only this one reads RUST_LOG
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_ansi(std::io::stdout().is_terminal())
+        .init();
     let args = Args::parse();
     if let Err(e) = run(&args) {
         eprintln!("{e}");
