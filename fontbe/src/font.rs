@@ -104,32 +104,38 @@ fn has(context: &Context, id: WorkId) -> bool {
 fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
     // TODO: to_vec copies :(
     let bytes = match id {
-        WorkId::Avar => context.avar.get().as_ref().as_ref().and_then(to_bytes),
-        WorkId::Cmap => to_bytes(context.cmap.get().as_ref()),
-        WorkId::Colr => to_bytes(context.colr.get().as_ref()),
-        WorkId::Cpal => to_bytes(context.cpal.get().as_ref()),
-        WorkId::Fvar => to_bytes(context.fvar.get().as_ref()),
-        WorkId::Head => to_bytes(context.head.get().as_ref()),
-        WorkId::Hhea => to_bytes(context.hhea.get().as_ref()),
+        WorkId::Avar => context
+            .avar
+            .get()
+            .as_ref()
+            .as_ref()
+            .map(to_bytes)
+            .transpose()?,
+        WorkId::Cmap => Some(to_bytes(context.cmap.get().as_ref())?),
+        WorkId::Colr => Some(to_bytes(context.colr.get().as_ref())?),
+        WorkId::Cpal => Some(to_bytes(context.cpal.get().as_ref())?),
+        WorkId::Fvar => Some(to_bytes(context.fvar.get().as_ref())?),
+        WorkId::Head => Some(to_bytes(context.head.get().as_ref())?),
+        WorkId::Hhea => Some(to_bytes(context.hhea.get().as_ref())?),
         WorkId::Hmtx => Some(context.hmtx.get().to_vec()),
-        WorkId::Gasp => to_bytes(context.gasp.get().as_ref()),
+        WorkId::Gasp => Some(to_bytes(context.gasp.get().as_ref())?),
         WorkId::Glyf => Some(context.glyf.get().to_vec()),
-        WorkId::Gpos => to_bytes(context.gpos.get().as_ref()),
-        WorkId::Gsub => to_bytes(context.gsub.get().as_ref()),
-        WorkId::Gdef => to_bytes(context.gdef.get().as_ref()),
+        WorkId::Gpos => Some(to_bytes(context.gpos.get().as_ref())?),
+        WorkId::Gsub => Some(to_bytes(context.gsub.get().as_ref())?),
+        WorkId::Gdef => Some(to_bytes(context.gdef.get().as_ref())?),
         WorkId::Gvar => Some(context.gvar.get().to_vec()),
         WorkId::Loca => Some(context.loca.get().to_vec()),
-        WorkId::Maxp => to_bytes(context.maxp.get().as_ref()),
-        WorkId::Name => to_bytes(context.name.get().as_ref()),
-        WorkId::Os2 => to_bytes(context.os2.get().as_ref()),
-        WorkId::Post => to_bytes(context.post.get().as_ref()),
-        WorkId::Stat => to_bytes(context.stat.get().as_ref()),
-        WorkId::Hvar => to_bytes(context.hvar.get().as_ref()),
-        WorkId::Mvar => to_bytes(context.mvar.get().as_ref()),
-        WorkId::Meta => to_bytes(context.meta.get().as_ref()),
-        WorkId::Vhea => to_bytes(context.vhea.get().as_ref()),
+        WorkId::Maxp => Some(to_bytes(context.maxp.get().as_ref())?),
+        WorkId::Name => Some(to_bytes(context.name.get().as_ref())?),
+        WorkId::Os2 => Some(to_bytes(context.os2.get().as_ref())?),
+        WorkId::Post => Some(to_bytes(context.post.get().as_ref())?),
+        WorkId::Stat => Some(to_bytes(context.stat.get().as_ref())?),
+        WorkId::Hvar => Some(to_bytes(context.hvar.get().as_ref())?),
+        WorkId::Mvar => Some(to_bytes(context.mvar.get().as_ref())?),
+        WorkId::Meta => Some(to_bytes(context.meta.get().as_ref())?),
+        WorkId::Vhea => Some(to_bytes(context.vhea.get().as_ref())?),
         WorkId::Vmtx => Some(context.vmtx.get().to_vec()),
-        WorkId::Vvar => to_bytes(context.vvar.get().as_ref()),
+        WorkId::Vvar => Some(to_bytes(context.vvar.get().as_ref())?),
         _ => panic!("Missing a match for {id:?}"),
     };
     Ok(bytes)
@@ -199,7 +205,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
                 .add_table(&base)
                 .map_err(|e| Error::DumpTableError {
                     e: e.inner,
-                    context: "dump BASE failed".into(),
+                    context: "BASE".into(),
                 })?;
         }
 
@@ -235,5 +241,63 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
         debug!("Assembled {} byte font", font.len());
         context.font.set(font);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fontdrasil::orchestration::Access;
+    use fontir::orchestration::Context as IrContext;
+    use write_fonts::{
+        tables::{
+            gpos::{PositionLookup, SinglePos, ValueRecord},
+            layout::{Lookup, LookupFlag, LookupList},
+        },
+        types::GlyphId16,
+    };
+
+    use super::*;
+
+    /// A GPOS with a single SinglePosFormat2 subtable that is itself larger
+    /// than 64k, so the Offset16 to its own coverage table can never fit.
+    /// Promoting the lookup to extension only widens the link from the
+    /// lookup to the subtable, and write-fonts does not split SinglePos.
+    /// If it ever learns to, this will fail with "GPOS should not pack" and
+    /// needs a different unpackable shape.
+    fn unpackable_gpos() -> Gpos {
+        const NUM_GLYPHS: u16 = 33000;
+        let coverage = (0..NUM_GLYPHS).map(GlyphId16::new).collect();
+        let values = (0..NUM_GLYPHS)
+            .map(|gid| ValueRecord::new().with_x_advance(gid as i16))
+            .collect();
+        Gpos::new(
+            Default::default(),
+            Default::default(),
+            LookupList::new(vec![PositionLookup::Single(Lookup::new(
+                LookupFlag::empty(),
+                vec![SinglePos::format_2(coverage, values)],
+            ))]),
+        )
+    }
+
+    // <https://github.com/googlefonts/fontc/issues/2128>
+    #[test]
+    fn failure_to_pack_a_table_is_an_error() {
+        let ir_context = IrContext::new_root(Default::default());
+        let context = Context::new_root(Default::default(), None, None, false, &ir_context)
+            .copy_for_work(Access::All, Access::All);
+        context.gpos.set(unpackable_gpos());
+
+        let err = bytes_for(&context, WorkId::Gpos).expect_err("GPOS should not pack");
+        assert!(
+            matches!(
+                &err,
+                Error::DumpTableError {
+                    e: write_fonts::error::Error::PackingFailed(_),
+                    context,
+                } if context == "GPOS"
+            ),
+            "{err}"
+        );
     }
 }

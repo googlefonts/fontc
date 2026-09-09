@@ -28,7 +28,7 @@ use ordered_float::OrderedFloat;
 
 use write_fonts::{
     FontWrite, dump_table,
-    read::{FontRead, collections::IntSet, tables::gsub::Gsub as ReadGsub},
+    read::{FontRead, TopLevelTable, collections::IntSet, tables::gsub::Gsub as ReadGsub},
     tables::{
         avar::Avar,
         base::Base,
@@ -805,11 +805,14 @@ impl Context {
     }
 }
 
-pub(crate) fn to_bytes<T>(table: &T) -> Option<Vec<u8>>
+pub(crate) fn to_bytes<T>(table: &T) -> Result<Vec<u8>, Error>
 where
-    T: FontWrite + Validate,
+    T: FontWrite + Validate + TopLevelTable,
 {
-    write_fonts::dump_table(table).ok()
+    write_fonts::dump_table(table).map_err(|e| Error::DumpTableError {
+        e,
+        context: T::TAG.to_string(),
+    })
 }
 
 #[cfg(test)]
