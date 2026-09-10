@@ -12,12 +12,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         // `short = false` -> full commit SHA in VERGEN_GIT_SHA, shown by `--vv`.
         .sha(false)
         .build()?;
+    // On a git-less build (e.g. a published crate) the git lookups fail and,
+    // because `fail_on_error` is off by default, vergen emits the
+    // VERGEN_IDEMPOTENT_OUTPUT sentinel instead; fontbe::version detects it and
+    // falls back to the crate version.
+    //
+    // Don't enable `.idempotent()` here: for vergen-gitcl its only effect is to
+    // stop emitting `cargo:rerun-if-changed=.git/HEAD` (and the ref file), so
+    // the build script would not re-run when HEAD moves and the stamped
+    // version would go stale in a warm target dir.
     Emitter::new()
         .quiet()
-        // On a git-less build (e.g. a published crate) the git lookups emit the
-        // VERGEN_IDEMPOTENT_OUTPUT sentinel instead of failing; fontbe::version
-        // detects it and falls back to the crate version.
-        .idempotent()
         .add_instructions(&CargoBuilder::all_cargo()?)? // VERGEN_CARGO_* for `--vv`
         .add_instructions(&gitcl)?
         .add_instructions(&RustcBuilder::all_rustc()?)? // VERGEN_RUSTC_* for `--vv`
