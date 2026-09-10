@@ -168,6 +168,22 @@ pub struct GdefCategories {
     pub categories: BTreeMap<GlyphName, GlyphClassDef>,
 }
 
+/// A STAT axis value label.
+///
+/// The values are in user coordinates.
+///
+/// <https://learn.microsoft.com/en-us/typography/opentype/spec/stat#axis-value-tables>
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct AxisValueLabel {
+    pub name: String,
+    pub value: OrderedFloat<f64>,
+    pub min_value: Option<OrderedFloat<f64>>,
+    pub max_value: Option<OrderedFloat<f64>>,
+    pub linked_value: Option<OrderedFloat<f64>>,
+    pub elidable: bool,
+    pub older_sibling: bool,
+}
+
 /// Metadata primarily feeding the OS/2 table.
 ///
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/os2>
@@ -227,6 +243,12 @@ pub struct MiscMetadata {
     /// `None` means the key was absent (use the built-in defaults); `Some` fully
     /// replaces the defaults (an empty list disables all automatic features).
     pub feature_generation: Option<Vec<FeatureWriterSpec>>,
+
+    /// STAT axis value labels.
+    pub axis_value_labels: BTreeMap<Tag, Vec<AxisValueLabel>>,
+
+    /// STAT elided fallback name.
+    pub elided_fallback_name: Option<String>,
 }
 
 /// Records that will go in the '[meta]' table.
@@ -501,9 +523,61 @@ impl StaticMetadata {
                 us_width_class: None,
                 gasp: Vec::new(),
                 feature_generation: None,
+                axis_value_labels: Default::default(),
+                elided_fallback_name: None,
             },
             variations: None,
         })
+    }
+
+    /// Set the STAT axis value labels and the elided fallback name, and
+    /// register their names in the name map.
+    pub fn set_axis_value_labels(
+        &mut self,
+        axis_value_labels: BTreeMap<Tag, Vec<AxisValueLabel>>,
+        elided_fallback_name: Option<String>,
+    ) {
+        let mut name_id_gen = self
+            .names
+            .keys()
+            .map(|key| key.name_id.to_u16())
+            .max()
+            .unwrap_or(255)
+            .max(255);
+        // A name reuses the existing record with the lowest ID, like
+        // fontTools' _addName with minNameID 0:
+        // https://github.com/fonttools/fonttools/blob/7af8bf5cbf/Lib/fontTools/otlLib/builder.py#L3156-L3160
+        let mut reusable_names: HashMap<String, NameKey> = HashMap::new();
+        for (key, string) in self.names.iter() {
+            let entry = reusable_names.entry(string.clone()).or_insert(*key);
+            if key.name_id < entry.name_id {
+                *entry = *key;
+            }
+        }
+        let mut register_if_new = |name: &str| {
+            reusable_names.entry(name.to_owned()).or_insert_with(|| {
+                name_id_gen += 1;
+                NameKey::new(name_id_gen.into(), name)
+            });
+        };
+        if let Some(name) = elided_fallback_name
+            .as_deref()
+            .filter(|_| !self.axes.is_empty())
+        {
+            register_if_new(name);
+        }
+        for axis in self.axes.iter() {
+            for label in axis_value_labels.get(&axis.tag).into_iter().flatten() {
+                register_if_new(&label.name);
+            }
+        }
+        self.names.extend(
+            reusable_names
+                .into_iter()
+                .map(|(string, key)| (key, string)),
+        );
+        self.misc.axis_value_labels = axis_value_labels;
+        self.misc.elided_fallback_name = elided_fallback_name;
     }
 
     /// The default on all variable axes.
@@ -636,6 +710,8 @@ mod tests {
                     mode: FeatureWriterMode::Append,
                     features: None,
                 }]),
+                axis_value_labels: Default::default(),
+                elided_fallback_name: None,
             },
             number_values: Default::default(),
             variations: None,
@@ -689,6 +765,89 @@ mod tests {
         assert_eq!(
             reverse_names.get("Fam").unwrap().iter().next().unwrap(),
             &NameId::FAMILY_NAME
+        );
+    }
+
+    #[test]
+    fn set_axis_value_labels_registers_names() {
+        let mut static_metadata = test_static_metadata();
+        let max_id = |static_metadata: &StaticMetadata| {
+            static_metadata
+                .names
+                .keys()
+                .map(|key| key.name_id.to_u16())
+                .max()
+                .unwrap()
+        };
+        let before = max_id(&static_metadata);
+        let label = AxisValueLabel {
+            name: "Wide".to_string(),
+            value: 200.0.into(),
+            min_value: None,
+            max_value: None,
+            linked_value: None,
+            elidable: false,
+            older_sibling: false,
+        };
+        let labels: BTreeMap<_, _> = [(WGHT, vec![label])].into_iter().collect();
+
+        static_metadata.set_axis_value_labels(labels.clone(), Some("Regular".to_string()));
+        {
+            let reverse_names = static_metadata.reverse_names();
+            assert!(reverse_names["Regular"].contains(&NameId::new(before + 1)));
+            assert!(reverse_names["Wide"].contains(&NameId::new(before + 2)));
+        }
+
+        static_metadata.set_axis_value_labels(labels, Some("Regular".to_string()));
+        assert_eq!(before + 2, max_id(&static_metadata));
+    }
+
+    #[test]
+    fn no_label_names_for_a_static_font() {
+        let mut static_metadata = test_static_metadata();
+        static_metadata.axes = Axes::new(Vec::new());
+        let before = static_metadata.names.len();
+        let label = AxisValueLabel {
+            name: "Wide".to_string(),
+            value: 200.0.into(),
+            min_value: None,
+            max_value: None,
+            linked_value: None,
+            elidable: false,
+            older_sibling: false,
+        };
+        let labels: BTreeMap<_, _> = [(WGHT, vec![label])].into_iter().collect();
+
+        static_metadata.set_axis_value_labels(labels, Some("Regular".to_string()));
+
+        assert_eq!(before, static_metadata.names.len());
+    }
+
+    #[test]
+    fn label_names_reuse_the_subfamily_name() {
+        let mut static_metadata = test_static_metadata();
+        static_metadata.names.insert(
+            NameKey::new(NameId::SUBFAMILY_NAME, "Regular"),
+            "Regular".to_string(),
+        );
+        let before = static_metadata.names.len();
+        let label = AxisValueLabel {
+            name: "Regular".to_string(),
+            value: 400.0.into(),
+            min_value: None,
+            max_value: None,
+            linked_value: None,
+            elidable: true,
+            older_sibling: false,
+        };
+        let labels: BTreeMap<_, _> = [(Tag::new(b"wght"), vec![label])].into_iter().collect();
+
+        static_metadata.set_axis_value_labels(labels, Some("Regular".to_string()));
+
+        assert_eq!(before, static_metadata.names.len());
+        assert_eq!(
+            BTreeSet::from([NameId::SUBFAMILY_NAME]),
+            static_metadata.reverse_names()["Regular"]
         );
     }
 
