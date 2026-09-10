@@ -48,6 +48,9 @@ struct RunSummary {
     #[serde(alias = "input_file")]
     input_file_sha: String,
     stats: super::ttx_diff_runner::Summary,
+    /// How many targets skipped the comparison because fontc's output was unchanged.
+    #[serde(default)]
+    reused_cached_results: usize,
 }
 
 impl RunSummary {
@@ -170,6 +173,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         normalizer_path,
         source_cache: cache_dir,
         results_cache,
+        reused_cached_results: Default::default(),
     };
 
     let began = Utc::now();
@@ -182,7 +186,12 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let elapsed = elapsed.to_std().unwrap_or_default();
     let elapsed = super::human_readable_duration(elapsed);
 
-    log::info!("completed {n_targets} targets in {elapsed}");
+    let reused_cached_results = context
+        .reused_cached_results
+        .load(std::sync::atomic::Ordering::Relaxed);
+    log::info!(
+        "completed {n_targets} targets in {elapsed} ({reused_cached_results}/{n_targets} results reused from cache)"
+    );
 
     let summary = super::ttx_diff_runner::Summary::new(&results);
     // if nothing has changed we still want to report it, but we don't need to
@@ -200,6 +209,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         results_file,
         input_file_sha,
         stats: summary,
+        reused_cached_results,
     };
 
     prev_runs.push(summary);
@@ -231,9 +241,8 @@ fn ttx_diff_has_changes(last_run_sha: &str) -> bool {
         .arg(last_run_sha)
         .output()
         .unwrap();
-    std::str::from_utf8(&output.stdout)
-        .unwrap()
-        .contains("ttx_diff/")
+    let diff = std::str::from_utf8(&output.stdout).unwrap();
+    diff.contains("ttx_diff/") || diff.contains("otl-normalizer/")
 }
 
 #[derive(Debug, Default)]
@@ -394,6 +403,9 @@ fn copy_file_into_dir(file_path: &Path, dir_path: &Path) -> PathBuf {
 fn compile_crate_or_die(name: &str) -> PathBuf {
     let status = Command::new("cargo")
         .args(["build", "-p", name, "--release"])
+        // prevent fontc from including a git sha in its version in the name table
+        // this lets us skip work when two fontc builds produce identical output
+        .env("VERGEN_GIT_DESCRIBE", "VERGEN_IDEMPOTENT_OUTPUT")
         .status()
         .expect("failed to run cargo build");
     if !status.success() {

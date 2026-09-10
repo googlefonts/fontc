@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use crate::{BuildType, Results, RunResult, Target, ci::ResultsCache};
@@ -19,6 +20,7 @@ pub(super) struct TtxContext {
     pub normalizer_path: PathBuf,
     pub source_cache: PathBuf,
     pub results_cache: ResultsCache,
+    pub reused_cached_results: AtomicUsize,
 }
 
 pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffOutput, DiffError> {
@@ -89,6 +91,7 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
         // fontc produced the same font as last time, so last time's result stands
         Some(UNCHANGED_EXIT_CODE) => match cached {
             Some(cached) => {
+                ctx.reused_cached_results.fetch_add(1, Ordering::Relaxed);
                 log::trace!("reused cached result for {target}");
                 return cached.into_result();
             }
