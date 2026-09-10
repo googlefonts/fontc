@@ -12,3 +12,8 @@ gftools==0.9.93
 # of gftools builder, which is run as a post-process step, see:
 # https://github.com/googlefonts/gftools/issues/1159
 paintcompiler
+# glyphsLib 6.14.0 started generating STAT axis labels from named instances
+# (and a STAT-only 'ital' axis, googlefonts/glyphsLib#1158); fontc does not
+# implement that yet, so keep glyphsLib below 6.14 until it does, see
+# https://github.com/googlefonts/fontc/issues/2078
+glyphsLib<6.14
