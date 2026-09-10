@@ -103,24 +103,23 @@ fn to_var_store(
     let axes = &static_metadata.axes;
     let axis_tags = axes.axis_order();
 
-    let mut input_locations: Vec<NormalizedLocation> = mappings
+    let (mut input_locations, mut output_locations): (Vec<_>, Vec<_>) = mappings
         .iter()
-        .map(|mapping| mapping.input.clone())
-        .collect();
-    let mut output_locations: Vec<NormalizedLocation> = mappings
-        .iter()
-        .map(|mapping| mapping.output.clone())
-        .collect();
+        .map(|mapping| {
+            let mut input = mapping.input.clone();
+            input.fit_to_axes(&axis_tags);
+            (input, mapping.output.clone())
+        })
+        .unzip();
 
     // If base-master is missing, insert it at zero location.
-    if !input_locations.iter().any(|loc| !loc.has_any_non_zero()) {
+    if !input_locations.iter().any(NormalizedLocation::is_default) {
         input_locations.insert(0, NormalizedLocation::new());
         output_locations.insert(0, NormalizedLocation::new());
     }
 
     let mut locations = HashSet::new();
-    for loc in input_locations.iter_mut() {
-        loc.fit_to_axes(&axis_tags);
+    for loc in input_locations.iter() {
         if !locations.insert(loc.clone()) {
             return Err(Error::DuplicateAxisMapping(loc.clone()));
         }
@@ -134,13 +133,13 @@ fn to_var_store(
             .iter()
             .zip(input_locations.iter())
             .map(|(vo, vi)| {
-                let value = match vo.get(*tag) {
-                    None => 0,
-                    Some(vo) => {
+                let value = vo
+                    .get(*tag)
+                    .map(|vo| {
                         let v = vo.to_f64() - vi.get(*tag).unwrap_or_default().to_f64();
                         F2Dot14::from_f64(v).to_bits()
-                    }
-                };
+                    })
+                    .unwrap_or(0);
                 (vi.clone(), value)
             })
             .collect();
@@ -155,9 +154,10 @@ fn to_var_store(
     let (store, optimized) = store_builder.build();
     let var_idxes: Vec<u32> = var_idxes
         .into_iter()
-        .map(|value| match value {
-            Some(value) => optimized.get(value).unwrap().into(),
-            None => NO_VARIATION_INDEX,
+        .map(|value| {
+            value
+                .map(|value| optimized.get(value).unwrap().into())
+                .unwrap_or(NO_VARIATION_INDEX)
         })
         .collect();
     let var_idx_map = (!var_idxes.iter().enumerate().all(|(i, v)| *v == i as u32))
