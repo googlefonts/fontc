@@ -43,6 +43,9 @@ pub struct StaticMetadata {
     /// If empty this is a static font.
     pub axes: Axes,
 
+    /// The avar version 2 axis mappings.
+    pub axis_mappings: Vec<AxisMapping>,
+
     /// Named locations in variation space
     pub named_instances: Vec<NamedInstance>,
 
@@ -182,6 +185,15 @@ pub struct AxisValueLabel {
     pub linked_value: Option<OrderedFloat<f64>>,
     pub elidable: bool,
     pub older_sibling: bool,
+}
+
+/// An avar version 2 axis mapping.
+///
+/// <https://github.com/harfbuzz/boring-expansion-spec/blob/main/avar2.md#processing>
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct AxisMapping {
+    pub input: NormalizedLocation,
+    pub output: NormalizedLocation,
 }
 
 /// Metadata primarily feeding the OS/2 table.
@@ -494,6 +506,7 @@ impl StaticMetadata {
             names,
             all_source_axes: Axes::new(axes),
             axes: variable_axes,
+            axis_mappings: Default::default(),
             named_instances,
             variation_model,
             default_location,
@@ -653,6 +666,7 @@ mod tests {
             units_per_em: 1000,
             all_source_axes: vec![axis.clone(), point_axis].into(),
             axes: Axes::new(vec![axis.clone()]),
+            axis_mappings: Default::default(),
             named_instances: vec![NamedInstance {
                 name: "Nobody".to_string(),
                 postscript_name: None,
