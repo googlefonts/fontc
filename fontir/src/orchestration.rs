@@ -297,7 +297,7 @@ pub struct Context {
     pub gdef_categories: FeContextItem<ir::GdefCategories>,
     pub global_metrics: FeContextItem<ir::GlobalMetrics>,
     pub glyphs: FeContextMap<ir::Glyph>,
-    pub features: FeContextItem<ir::FeaturesSource>,
+    pub features: FeContextItem<ir::FeatureSources>,
     pub kerning_locations: FeContextItem<ir::KerningLocations>,
     pub kerning_at: FeContextMap<ir::KerningInstance>,
     pub anchors: FeContextMap<ir::GlyphAnchors>,

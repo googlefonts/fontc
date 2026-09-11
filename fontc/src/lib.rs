@@ -305,7 +305,7 @@ mod tests {
                 cpal::ColorRecord,
                 gasp::GaspRangeBehavior,
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
-                gpos::{AnchorTable, Gpos, MarkBasePosFormat1, PositionLookup},
+                gpos::{AnchorTable, Gpos, MarkBasePosFormat1, PositionLookup, SinglePos},
                 gsub::{SingleSubst, SubstitutionLookup},
                 hmtx::Hmtx,
                 layout::FeatureParams,
@@ -390,7 +390,8 @@ mod tests {
         fn run(&mut self) {
             let completed = self
                 .workload
-                .run_for_test(&self.fe_context, &self.be_context);
+                .run_for_test(&self.fe_context, &self.be_context)
+                .expect("compile failed");
 
             self.work_executed = completed;
 
@@ -401,6 +402,16 @@ mod tests {
 
         fn compile_source(source: &str) -> TestCompile {
             TestCompile::compile(source, |options| options)
+        }
+
+        /// Run a compile we expect to fail, and return the error
+        ///
+        /// Unlike [`TestCompile::run`] this leaves the contexts intact, so the
+        /// state we got to before failing can be inspected.
+        fn run_expect_err(&mut self) -> Error {
+            self.workload
+                .run_for_test(&self.fe_context, &self.be_context)
+                .expect_err("compile should have failed")
         }
 
         fn compile(source: &str, adjust_options: impl Fn(Options) -> Options) -> TestCompile {
@@ -495,7 +506,7 @@ mod tests {
             FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 0.0)])).into(),
             FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 1.0)])).into(),
             BeWorkIdentifier::Features.into(),
-            BeWorkIdentifier::FeaturesAst.into(),
+            BeWorkIdentifier::DEFAULT_FEATURES_AST.into(),
             BeWorkIdentifier::Avar.into(),
             BeWorkIdentifier::Cmap.into(),
             BeWorkIdentifier::Colr.into(),
@@ -614,6 +625,122 @@ mod tests {
     #[test]
     fn compile_fea_with_includes_resolved() {
         assert_compiles_with_gpos_and_gsub("fea_include_resolve.designspace", |o| o);
+    }
+
+    // The strongest check we have on the merge: two masters with their own
+    // features.fea must produce exactly what one features.fea written in
+    // variable syntax produces.
+    #[test]
+    fn merged_fea_matches_variable_syntax_fea() {
+        let merged = TestCompile::compile_source("variable_fea/VarFea.designspace");
+        let one_shot = TestCompile::compile_source("variable_fea/VarFeaOneShot.designspace");
+
+        for tag in [Tag::new(b"GPOS"), Tag::new(b"GDEF")] {
+            let merged = merged.font().table_data(tag).map(|d| d.as_bytes().to_vec());
+            let one_shot = one_shot
+                .font()
+                .table_data(tag)
+                .map(|d| d.as_bytes().to_vec());
+            assert!(merged.is_some(), "{tag} should be present");
+            assert_eq!(merged, one_shot, "{tag} differs from the one-shot compile");
+        }
+    }
+
+    // A point axis is not in the variation model, so it must not stop us from
+    // recognizing the default master's FEA.
+    #[test]
+    fn merged_fea_with_point_axis() {
+        let point_axis = TestCompile::compile_source("variable_fea/VarFeaPointAxis.designspace");
+        let no_point_axis = TestCompile::compile_source("variable_fea/VarFea.designspace");
+
+        for tag in [Tag::new(b"GPOS"), Tag::new(b"GDEF")] {
+            let point_axis = point_axis
+                .font()
+                .table_data(tag)
+                .map(|d| d.as_bytes().to_vec());
+            let no_point_axis = no_point_axis
+                .font()
+                .table_data(tag)
+                .map(|d| d.as_bytes().to_vec());
+            assert!(point_axis.is_some(), "{tag} should be present");
+            assert_eq!(
+                point_axis, no_point_axis,
+                "{tag} differs from the compile without a point axis"
+            );
+        }
+    }
+
+    #[test]
+    fn masters_with_unmergeable_fea_are_rejected() {
+        // GSUB cannot vary: only the GsubBold master has a liga feature, so
+        // there is nothing sensible to merge and the BE must say so.
+        let mut result =
+            TestCompile::new("variable_fea/VarFeaGsubMismatch.designspace", |options| {
+                options
+            });
+        let error = result.run_expect_err();
+        let Error::Backend(fontbe::error::Error::FeaMergeError(merge_error)) = &error else {
+            panic!("expected a merge error, got {error:?}");
+        };
+        assert_eq!(
+            merge_error.to_string(),
+            "master 1: GSUB lookups differ from the default master"
+        );
+    }
+
+    #[test]
+    fn masters_with_differing_fea_are_merged() {
+        // Regular has `pos A <10 0 20 0>`, Bold `pos A <30 0 40 0>`; each is
+        // compiled by its own job and the two are merged into one variable
+        // single positioning lookup.
+        let result = TestCompile::compile_source("variable_fea/VarFea.designspace");
+
+        // both masters' fea got compiled, in their own jobs
+        let mut compiled = result
+            .be_context
+            .fea_asts
+            .all()
+            .iter()
+            .map(|(id, ast)| {
+                assert_eq!(*id, BeWorkIdentifier::FeaturesAst(ast.idx).into());
+                ast.idx
+            })
+            .collect::<Vec<_>>();
+        compiled.sort();
+        assert_eq!(compiled, vec![0, 1]);
+
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        let lookup = gpos.lookup_list().unwrap().lookups().get(0).unwrap();
+        let PositionLookup::Single(lookup) = lookup else {
+            panic!("expected a single positioning lookup");
+        };
+        let SinglePos::Format1(single) = lookup.subtables().get(0).unwrap() else {
+            panic!("expected SinglePosFormat1");
+        };
+        let value = single.value_record();
+
+        // the default master's values, with a device table pointing at deltas
+        assert_eq!(value.x_placement(), Some(10));
+        assert_eq!(value.x_advance(), Some(20));
+        assert!(
+            value.x_placement_device().is_some() && value.x_advance_device().is_some(),
+            "both varying fields should carry a VariationIndex"
+        );
+
+        // Bold is +20 on both fields, so one shared delta set of 20
+        let ivs = font
+            .gdef()
+            .unwrap()
+            .item_var_store()
+            .expect("merged GPOS needs an ItemVariationStore")
+            .unwrap();
+        let deltas = ivs
+            .item_variation_data()
+            .iter()
+            .flat_map(|data| delta_sets(&data.unwrap().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(deltas, vec![vec![20]]);
     }
 
     #[test]

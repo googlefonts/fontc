@@ -21,12 +21,12 @@ use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
         AnchorBuilder, Color, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
-        DEFAULT_VENDOR_ID, FEATURE_WRITERS_LIB_KEY, FeatureWriterOptionValue, FeatureWriterSpec,
-        FeaturesSource, GlobalMetric, GlobalMetricsBuilder, GlyphOrder, KernGroup, KernSide,
-        KerningInstance, KerningLocations, MetaTableValues, NameBuilder, NameKey, NamedInstance,
-        Paint, PaintGlyph, PaintSolid, Panose, PostscriptNames, PreliminaryGdefCategories, Rule,
-        StaticMetadata, Substitution, VariableFeature, reject_duplicate_writers,
-        validate_feature_writer,
+        DEFAULT_VENDOR_ID, FEATURE_WRITERS_LIB_KEY, FeatureSources, FeatureWriterOptionValue,
+        FeatureWriterSpec, FeaturesSource, GlobalMetric, GlobalMetricsBuilder, GlyphOrder,
+        KernGroup, KernSide, KerningInstance, KerningLocations, MasterFeaSource, MetaTableValues,
+        NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PaintSolid, Panose,
+        PostscriptNames, PreliminaryGdefCategories, Rule, StaticMetadata, Substitution,
+        VariableFeature, reject_duplicate_writers, validate_feature_writer,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -66,7 +66,8 @@ pub struct DesignSpaceIrSource {
     designspace: Arc<DesignSpaceDocument>,
     designspace_dir: Arc<PathBuf>,
     glyphs: Arc<HashMap<GlyphName, HashMap<PathBuf, Vec<DesignLocation>>>>,
-    fea_files: Arc<Vec<PathBuf>>,
+    /// The features.fea of each master that has one, default master first
+    fea_files: Arc<Vec<(DesignLocation, PathBuf)>>,
 }
 
 fn glif_files(
@@ -277,15 +278,20 @@ impl Source for DesignSpaceIrSource {
             debug!("{} glyphs identified", glyphs.len());
         }
 
-        // For compilation purposes we start from ufo dir / features.fea
-        let fea_files: Vec<_> = designspace
-            .sources
-            .iter()
-            .filter_map(|s| {
-                let fea_file = designspace_dir.join(&s.filename).join("features.fea");
-                fea_file.is_file().then_some(fea_file)
-            })
-            .collect();
+        // For compilation purposes we start from ufo dir / features.fea.
+        // The default master comes first; it is the source of anything we
+        // don't (yet) compile per-master.
+        let mut fea_source_indices = (0..designspace.sources.len()).collect::<Vec<_>>();
+        fea_source_indices.swap(0, default_master_idx);
+        let mut fea_files: Vec<(DesignLocation, PathBuf)> = Vec::new();
+        for idx in fea_source_indices {
+            let source = &designspace.sources[idx];
+            let fea_file = designspace_dir.join(&source.filename).join("features.fea");
+            if fea_file.is_file() {
+                let location = to_design_location(&axis_tags_by_name, &source.location)?;
+                fea_files.push((location, fea_file));
+            }
+        }
 
         // if source was a designspace we don't want to copy over keys like
         // public.skipExportGlyphs, but we do if it was a UFO. (we assume that
@@ -480,7 +486,7 @@ struct GlobalMetricsWork {
 #[derive(Debug)]
 struct FeatureWork {
     designspace_or_ufo: Arc<PathBuf>,
-    fea_files: Arc<Vec<PathBuf>>,
+    fea_files: Arc<Vec<(DesignLocation, PathBuf)>>,
 }
 
 #[derive(Debug)]
@@ -1716,37 +1722,60 @@ impl Work<Context, WorkId, Error> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Features for {:#?}", self.designspace_or_ufo);
 
-        let fea_files = self.fea_files.as_ref();
-        for fea_file in fea_files.iter().skip(1) {
-            if !fea_files_identical(&fea_files[0], fea_file)? {
-                warn!(
-                    "Bailing out due to non-identical feature files. This is an unnecessary limitation."
-                );
-                return Err(Error::NonIdenticalFea(
-                    fea_files[0].to_path_buf(),
-                    fea_file.to_path_buf(),
-                ));
-            }
-        }
-
-        if !fea_files.is_empty() {
-            // Fea file is required to be ufo_dir/features.fea. Includes resolve as siblings
-            // of ufo_dir.
-            let fea_file = fea_files[0].clone();
-            let include_dir = fea_file
-                .parent()
-                .and_then(|f| f.parent())
-                .map(|v| v.to_path_buf())
-                .ok_or_else(|| BadSource::new(&fea_file, BadSourceKind::ExpectedParent))?;
-            context
-                .features
-                .set(FeaturesSource::from_file(fea_file, Some(include_dir)));
-        } else {
-            context.features.set(FeaturesSource::empty());
-        }
+        context.features.set(group_fea_files(&self.fea_files)?);
 
         Ok(())
     }
+}
+
+/// Collapse the masters' fea files into one entry per distinct source.
+///
+/// Masters whose features are equivalent (see [`fea_files_identical`]) share an
+/// entry, so the usual case - every master has the same features.fea - yields a
+/// single source. `fea_files` must have the default master first.
+fn group_fea_files(fea_files: &[(DesignLocation, PathBuf)]) -> Result<FeatureSources, Error> {
+    if fea_files.is_empty() {
+        return Ok(FeatureSources::single(FeaturesSource::empty()));
+    }
+
+    let mut sources: Vec<MasterFeaSource> = Vec::new();
+    // representative path of each group, parallel to sources
+    let mut representatives: Vec<&PathBuf> = Vec::new();
+    for (location, fea_file) in fea_files {
+        let mut group = None;
+        for (i, other) in representatives.iter().enumerate() {
+            if fea_files_identical(other, fea_file)? {
+                group = Some(i);
+                break;
+            }
+        }
+        match group {
+            Some(i) => sources[i].locations.push(location.clone()),
+            None => {
+                // Fea file is required to be ufo_dir/features.fea. Includes resolve as siblings
+                // of ufo_dir.
+                let include_dir = fea_file
+                    .parent()
+                    .and_then(|f| f.parent())
+                    .map(|v| v.to_path_buf())
+                    .ok_or_else(|| BadSource::new(fea_file, BadSourceKind::ExpectedParent))?;
+                sources.push(MasterFeaSource {
+                    source: FeaturesSource::from_file(fea_file.clone(), Some(include_dir)),
+                    locations: vec![location.clone()],
+                });
+                representatives.push(fea_file);
+            }
+        }
+    }
+
+    if sources.len() > 1 {
+        debug!(
+            "{} distinct feature files; they will be merged",
+            sources.len()
+        );
+    }
+
+    Ok(FeatureSources::new(sources))
 }
 
 /// Build the kern-group partition for a single source.
@@ -2352,6 +2381,75 @@ mod tests {
         let a = write_master("A.ufo", "include(../shared.fea)");
         let b = write_master("B.ufo", "include (../shared.fea)\n");
         assert!(fea_files_identical(&a, &b).unwrap());
+    }
+
+    fn fea_sources(designspace: &str) -> FeatureSources {
+        let source = DesignSpaceIrSource::new(&testdata_dir().join(designspace)).unwrap();
+        group_fea_files(&source.fea_files).unwrap()
+    }
+
+    fn fea_file(source: &MasterFeaSource) -> &Path {
+        match &source.source {
+            FeaturesSource::File { fea_file, .. } => fea_file,
+            other => panic!("expected a file, got {other}"),
+        }
+    }
+
+    #[test]
+    fn no_fea_is_one_empty_source() {
+        let sources = group_fea_files(&[]).unwrap();
+        assert_eq!(sources.n_sources(), 1);
+        assert_eq!(sources.default_source(), &FeaturesSource::Empty);
+    }
+
+    #[test]
+    fn masters_sharing_fea_are_one_source() {
+        // both masters have the same features.fea; we compile it once
+        let sources = fea_sources("fea_include.designspace");
+        assert_eq!(sources.n_sources(), 1);
+        assert_eq!(
+            sources.get(0).unwrap().locations,
+            vec![
+                DesignLocation::for_pos(&[("wght", 400.0)]),
+                DesignLocation::for_pos(&[("wght", 700.0)]),
+            ]
+        );
+    }
+
+    #[test]
+    fn equivalent_includes_at_different_depths_are_one_source() {
+        // the masters sit at different depths so their include paths differ,
+        // but they resolve to the same file: still one source
+        let sources = fea_sources("fea_include_resolve.designspace");
+        assert_eq!(sources.n_sources(), 1);
+        assert_eq!(sources.get(0).unwrap().locations.len(), 2);
+    }
+
+    #[test]
+    fn differing_master_fea_are_separate_sources_default_first() {
+        let sources = fea_sources("variable_fea/VarFea.designspace");
+        assert_eq!(sources.n_sources(), 2);
+        let names = sources
+            .iter()
+            .map(|s| {
+                fea_file(s)
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["VarFea-Regular.ufo", "VarFea-Bold.ufo"]);
+        assert_eq!(
+            sources.get(0).unwrap().locations,
+            vec![DesignLocation::for_pos(&[("wght", 400.0)])]
+        );
+        assert_eq!(
+            sources.get(1).unwrap().locations,
+            vec![DesignLocation::for_pos(&[("wght", 700.0)])]
+        );
     }
 
     macro_rules! plist_dict {

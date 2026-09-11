@@ -71,6 +71,13 @@ use crate::error::Error;
 
 type KernBlock = usize;
 
+/// Identifies one of the (possibly several) FEA sources of a font.
+///
+/// Index 0 is always the default master's source; see [`FeatureSources`].
+///
+/// [`FeatureSources`]: fontir::ir::FeatureSources
+pub type FeaSourceIdx = usize;
+
 /// Unique identifier of work.
 ///
 /// If there are no fields work is unique.
@@ -78,7 +85,7 @@ type KernBlock = usize;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkId {
     Features,
-    FeaturesAst,
+    FeaturesAst(FeaSourceIdx),
     Avar,
     Cmap,
     Colr,
@@ -122,6 +129,14 @@ impl WorkId {
 
     /// An id representing access to all gvar fragments
     pub const ALL_GVAR_FRAGMENTS: WorkId = WorkId::GvarFragment(GlyphName::NOTDEF);
+
+    /// An id representing access to every master's fea ast
+    pub const ALL_FEATURE_ASTS: WorkId = WorkId::FeaturesAst(0);
+
+    /// The ast of the default master's fea; see [`FeatureSources`]
+    ///
+    /// [`FeatureSources`]: fontir::ir::FeatureSources
+    pub const DEFAULT_FEATURES_AST: WorkId = WorkId::FeaturesAst(0);
 }
 
 impl Identifier for WorkId {
@@ -129,7 +144,7 @@ impl Identifier for WorkId {
         match self {
             WorkId::Features => "BeFeatures",
             WorkId::Meta => "BeMeta",
-            WorkId::FeaturesAst => "BeFeaturesAst",
+            WorkId::FeaturesAst(..) => "BeFeaturesAst",
             WorkId::Avar => "BeAvar",
             WorkId::Cmap => "BeCmap",
             WorkId::Colr => "BeColr",
@@ -358,6 +373,8 @@ pub struct FeaRsKerns {
 /// This does not include features that are generated, such as for kerning or marks.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FeaFirstPassOutput {
+    /// Which of the font's FEA sources this is the output for.
+    pub idx: FeaSourceIdx,
     /// A validated abstract syntax tree.
     pub ast: ParseTree,
     // bytes of the compiled gsub table
@@ -367,7 +384,7 @@ pub struct FeaFirstPassOutput {
 }
 
 impl FeaFirstPassOutput {
-    pub fn new(ast: ParseTree, compilation: Compilation) -> Result<Self, Error> {
+    pub fn new(idx: FeaSourceIdx, ast: ParseTree, compilation: Compilation) -> Result<Self, Error> {
         let gsub_bytes = compilation
             .gsub
             .as_ref()
@@ -378,6 +395,7 @@ impl FeaFirstPassOutput {
                 context: "GSUB".into(),
             })?;
         Ok(Self {
+            idx,
             ast,
             gsub_bytes,
             gdef_classes: compilation.gdef_classes,
@@ -398,7 +416,7 @@ impl FeaFirstPassOutput {
             None,
             Opts::new().compile_gpos(false),
         ) {
-            Ok((compilation, _)) => Self::new(ast, compilation),
+            Ok((compilation, _)) => Self::new(0, ast, compilation),
             Err(err) => panic!("{}", err.display()),
         }
     }
@@ -427,6 +445,12 @@ impl FeaRsKerns {
             .flatten()
             .map(|id| &self.lookups[*id])
             .collect()
+    }
+}
+
+impl IdAware<AnyWorkId> for FeaFirstPassOutput {
+    fn id(&self) -> AnyWorkId {
+        AnyWorkId::Be(WorkId::FeaturesAst(self.idx))
     }
 }
 
@@ -683,7 +707,7 @@ pub struct Context {
     pub vvar: BeContextItem<Vvar>,
     pub all_kerning_pairs: BeContextItem<AllKerningPairs>,
     pub kern_fragments: BeContextMap<KernFragment>,
-    pub fea_ast: BeContextItem<FeaFirstPassOutput>,
+    pub fea_asts: BeContextMap<FeaFirstPassOutput>,
     pub fea_rs_kerns: BeContextItem<FeaRsKerns>,
     pub fea_rs_marks: BeContextItem<FeaRsMarks>,
     pub extra_fea_tables: BeContextItem<ExtraFeaTables>,
@@ -733,7 +757,7 @@ impl Context {
             fea_rs_kerns: self.fea_rs_kerns.clone_with_acl(acl.clone()),
             fea_rs_marks: self.fea_rs_marks.clone_with_acl(acl.clone()),
             stat: self.stat.clone_with_acl(acl.clone()),
-            fea_ast: self.fea_ast.clone_with_acl(acl.clone()),
+            fea_asts: self.fea_asts.clone_with_acl(acl.clone()),
             extra_fea_tables: self.extra_fea_tables.clone_with_acl(acl.clone()),
             font: self.font.clone_with_acl(acl),
         }
@@ -785,7 +809,7 @@ impl Context {
             kern_fragments: ContextMap::new(acl.clone()),
             fea_rs_kerns: ContextItem::new(WorkId::GatherBeKerning.into(), acl.clone()),
             fea_rs_marks: ContextItem::new(WorkId::Marks.into(), acl.clone()),
-            fea_ast: ContextItem::new(WorkId::FeaturesAst.into(), acl.clone()),
+            fea_asts: ContextMap::new(acl.clone()),
             stat: ContextItem::new(WorkId::Stat.into(), acl.clone()),
             extra_fea_tables: ContextItem::new(WorkId::ExtraFeaTables.into(), acl.clone()),
             font: ContextItem::new(WorkId::Font.into(), acl),
@@ -802,6 +826,13 @@ impl Context {
 
     pub fn copy_read_only(&self) -> Context {
         self.copy(AccessControlList::read_only())
+    }
+
+    /// The first pass output for the default master's FEA.
+    ///
+    /// Anything that isn't compiled per-master works from this one.
+    pub fn default_fea_ast(&self) -> Arc<FeaFirstPassOutput> {
+        self.fea_asts.get(&WorkId::DEFAULT_FEATURES_AST.into())
     }
 }
 
