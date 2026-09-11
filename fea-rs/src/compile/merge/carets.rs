@@ -67,8 +67,11 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
                 let CaretValueBuilder::Coordinate { .. } = caret else {
                     // a point index is not a position; the masters that have
                     // the glyph must agree on it
-                    if carets.iter().flatten().any(|other| other[i] != *caret) {
-                        return Err(MergeError::LigatureCarets { master: 0, glyph });
+                    if let Some(master) = carets
+                        .iter()
+                        .position(|other| other.is_some_and(|other| other[i] != *caret))
+                    {
+                        return Err(MergeError::LigatureCarets { master, glyph });
                     }
                     values.push(caret.clone());
                     continue;
@@ -184,6 +187,18 @@ mod tests {
                 &carets("LigatureCaretByIndex f_i 3;"),
             ]),
             Err(MergeError::LigatureCarets { master: 1, .. })
+        ));
+    }
+
+    #[test]
+    fn caret_point_indices_must_agree() {
+        assert!(matches!(
+            merge_masters(&[
+                &carets("LigatureCaretByIndex f_i 3;"),
+                &carets("LigatureCaretByIndex f_i 3;"),
+                &carets("LigatureCaretByIndex f_i 4;"),
+            ]),
+            Err(MergeError::LigatureCarets { master: 2, .. })
         ));
     }
 

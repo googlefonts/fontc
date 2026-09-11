@@ -114,9 +114,7 @@ pub enum MergeError {
         lookup: LookupRef,
         glyph: GlyphId16,
     },
-    #[error(
-        "master {master}: ligature glyph {glyph} has a different number or kind of carets than in another master"
-    )]
+    #[error("master {master}: carets differ between masters for glyph {glyph}")]
     LigatureCarets { master: usize, glyph: GlyphId16 },
     #[error("ligature glyph {glyph} has carets in some masters but not in the default master")]
     LigatureCaretsMissingAtDefault { glyph: GlyphId16 },
