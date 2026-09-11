@@ -6,7 +6,6 @@ use smol_str::SmolStr;
 use write_fonts::{tables::gdef::GlyphClassDef, types::GlyphId16};
 
 use super::super::FeatureKey;
-use crate::Kind;
 
 /// An error encountered while merging per-master compilations.
 ///
@@ -107,9 +106,14 @@ pub enum MergeError {
          default master (in one they are adjusted, in the other not); masters must agree"
     )]
     SecondGlyphPositioning { master: usize, lookup: LookupRef },
-    //TODO: remove once every lookup type can be merged
-    #[error("{lookup} differs between masters, and merging {kind} lookups is not supported yet")]
-    Unsupported { lookup: LookupRef, kind: Kind },
+    #[error(
+        "master {master}: {lookup}: ligature {glyph} has a different number of components than in another master"
+    )]
+    LigatureComponents {
+        master: usize,
+        lookup: LookupRef,
+        glyph: GlyphId16,
+    },
     //TODO: remove once ligature carets are merged
     #[error(
         "master {master}: GDEF ligature carets differ from the default master (not yet supported)"
