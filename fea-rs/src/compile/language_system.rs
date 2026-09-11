@@ -24,6 +24,14 @@ pub(crate) struct DefaultLanguageSystems {
     items: Rc<HashSet<LanguageSystem>>,
 }
 
+/// Only the resulting set matters: an implicit and an explicit 'DFLT dflt'
+/// are the same language system.
+impl PartialEq for DefaultLanguageSystems {
+    fn eq(&self, other: &Self) -> bool {
+        self.items == other.items
+    }
+}
+
 impl DefaultLanguageSystems {
     pub(crate) fn insert(&mut self, system: LanguageSystem) {
         if !self.has_explicit_entry {

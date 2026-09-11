@@ -37,7 +37,7 @@ pub enum GlyphIdent {
     Cid(u16),
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct MarkClass {
     pub(crate) members: Vec<(GlyphClass, Option<AnchorBuilder>)>,
 }
