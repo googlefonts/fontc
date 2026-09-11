@@ -259,7 +259,7 @@ impl PositionLookup {
         }
     }
 
-    fn kind(&self) -> Kind {
+    pub(crate) fn kind(&self) -> Kind {
         match self {
             PositionLookup::Single(_) => Kind::GposType1,
             PositionLookup::Pair(_) => Kind::GposType2,
@@ -616,6 +616,12 @@ impl AllLookups {
 
     pub(crate) fn named(&self) -> &HashMap<SmolStr, LookupId> {
         &self.named
+    }
+
+    /// Replace the GPOS lookups with a merged set; the count must not change.
+    pub(crate) fn set_gpos(&mut self, gpos: Vec<PositionLookup>) {
+        assert_eq!(gpos.len(), self.gpos.len());
+        self.gpos = gpos;
     }
 
     pub(crate) fn debug_info(&self) -> (&[Option<LookupDebugInfo>], &[Option<LookupDebugInfo>]) {
