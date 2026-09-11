@@ -15,6 +15,8 @@ use super::{PendingCompilation, VariationInfo};
 
 mod error;
 mod lookups;
+mod metric;
+mod single;
 #[cfg(test)]
 mod test_helpers;
 
@@ -56,16 +58,19 @@ pub fn merge<V: VariationInfo>(
 /// The state of a merge in progress.
 ///
 /// `merged` starts as the default master and is updated in place; `others`
-/// are the remaining masters, so master `i + 1` is `others[i]`.
-struct MergeCtx {
+/// are the remaining masters, so master `i + 1` is `others[i]`. `locations`
+/// has one entry per master in that same order, the default first.
+struct MergeCtx<'a, V> {
     merged: PendingCompilation,
     others: Vec<PendingCompilation>,
+    locations: Vec<NormalizedLocation>,
+    var_info: &'a V,
 }
 
-impl MergeCtx {
-    fn new<V: VariationInfo>(
+impl<'a, V: VariationInfo> MergeCtx<'a, V> {
+    fn new(
         masters: Vec<(NormalizedLocation, PendingCompilation)>,
-        var_info: &V,
+        var_info: &'a V,
     ) -> Result<Self, MergeError> {
         let mut seen = HashMap::new();
         for (i, (location, _)) in masters.iter().enumerate() {
@@ -73,15 +78,18 @@ impl MergeCtx {
                 return Err(MergeError::DuplicateLocation { first, second: i });
             }
         }
-        let mut masters = masters.into_iter().map(|(_, master)| master);
-        let Some(mut merged) = masters.next() else {
+        let (locations, compilations): (Vec<_>, Vec<_>) = masters.into_iter().unzip();
+        let mut compilations = compilations.into_iter();
+        let Some(mut merged) = compilations.next() else {
             return Err(MergeError::NoMasters);
         };
         assert!(merged.lig_carets_from_feature_writer.is_empty());
         merged.axis_count = var_info.axis_count();
         Ok(MergeCtx {
             merged,
-            others: masters.collect(),
+            others: compilations.collect(),
+            locations,
+            var_info,
         })
     }
 

@@ -90,6 +90,18 @@ pub enum MergeError {
         "master {master}: {lookup} is a contextual lookup that differs from the default master"
     )]
     ContextualDiffers { master: usize, lookup: LookupRef },
+    #[error("{lookup}: a value is present in some masters but missing at the default master")]
+    MissingAtDefault { lookup: LookupRef },
+    #[error(
+        "{lookup}: an explicit device table differs between masters; device tables cannot be interpolated"
+    )]
+    DeviceDiffers { lookup: LookupRef },
+    #[error(
+        "{lookup}: an anchor with a contour point differs between masters; such anchors cannot vary"
+    )]
+    AnchorPoint { lookup: LookupRef },
+    #[error("{lookup}: failed to compute deltas: {message}")]
+    Deltas { lookup: LookupRef, message: String },
     //TODO: remove once every lookup type can be merged
     #[error("{lookup} differs between masters, and merging {kind} lookups is not supported yet")]
     Unsupported { lookup: LookupRef, kind: Kind },
