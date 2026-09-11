@@ -57,7 +57,7 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
         }
     }
 
-    fn unsupported(&self, index: usize, kind: Kind) -> MergeError {
+    pub(super) fn unsupported(&self, index: usize, kind: Kind) -> MergeError {
         MergeError::Unsupported {
             lookup: self.lookup_ref(index),
             kind,
@@ -126,8 +126,7 @@ fn merge_lookup<V: VariationInfo>(
             PositionLookup::Single(ctx.merge_single_pos(aligned!(Single)?, index)?)
         }
         PositionLookup::Pair(_) => {
-            aligned!(Pair)?;
-            return Err(ctx.unsupported(index, kind));
+            PositionLookup::Pair(ctx.merge_pair_pos(aligned!(Pair)?, index)?)
         }
         PositionLookup::Cursive(_) => {
             PositionLookup::Cursive(merge_indexwise(aligned!(Cursive)?, index, kind, ctx)?)
@@ -261,13 +260,13 @@ mod tests {
 
     #[test]
     fn value_divergence_is_unsupported_for_now() {
-        let a = "feature kern { pos a b -20; } kern;";
-        let b = "feature kern { pos a b -40; } kern;";
+        let a = "markClass acute <anchor 0 0> @TOP; feature mkmk { pos mark grave <anchor 0 0> mark @TOP; } mkmk;";
+        let b = "markClass acute <anchor 0 0> @TOP; feature mkmk { pos mark grave <anchor 0 5> mark @TOP; } mkmk;";
         assert_eq!(
             merge_masters(&[a, b]).err(),
             Some(MergeError::Unsupported {
-                lookup: lookup_ref(0, None, Some(Tag::new(b"kern"))),
-                kind: Kind::GposType2,
+                lookup: lookup_ref(0, None, Some(Tag::new(b"mkmk"))),
+                kind: Kind::GposType6,
             })
         );
     }
