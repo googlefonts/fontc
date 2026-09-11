@@ -1,6 +1,7 @@
 use std::{io, path::PathBuf};
 
 use thiserror::Error;
+use toml::de::Error as TomlError;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -12,6 +13,12 @@ pub enum Error {
         path: PathBuf,
         #[source]
         source: io::Error,
+    },
+    #[error("failed to parse COLRv1 config '{path}': '{source}'")]
+    ColrV1Config {
+        path: PathBuf,
+        #[source]
+        source: TomlError,
     },
     #[error("failed to write to stdout or stderr: '{0}'")]
     StdioWriteFail(#[source] io::Error),

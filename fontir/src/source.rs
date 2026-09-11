@@ -1,13 +1,42 @@
 //! Generic model of font sources.
 
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use fontdrasil::coords::NormalizedLocation;
+use fontdrasil::orchestration::Work;
+use serde::Deserialize;
 
 use crate::{
     error::Error,
-    orchestration::{Flags, IrWork},
+    orchestration::{Context, Flags, IrWork, WorkId},
 };
+
+/// The typed representation of a nanoemoji-style COLRv1 configuration.
+#[derive(Clone, Debug, Deserialize)]
+pub struct EmojiConfig {
+    pub family: String,
+    pub output_file: String,
+    pub color_format: String,
+    pub clipbox_quantization: u16,
+    #[serde(default)]
+    pub axis: HashMap<String, EmojiAxis>,
+    #[serde(default)]
+    pub master: HashMap<String, EmojiMaster>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EmojiAxis {
+    pub name: String,
+    pub default: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EmojiMaster {
+    pub style_name: String,
+    pub srcs: Vec<String>,
+    #[serde(default)]
+    pub position: HashMap<String, f64>,
+}
 
 /// A source of data from which one could compile a font.
 ///
@@ -70,5 +99,81 @@ pub trait Source {
     /// See <https://github.com/googlefonts/fontc/issues/1701>
     fn compilation_flags(&self) -> Flags {
         Flags::empty() // default: no flags from source
+    }
+}
+
+/// A source backed by a nanoemoji-style COLRv1 configuration.
+///
+/// The configuration is read by the compiler frontend before this source is
+/// constructed. The work needed to turn that configuration into IR is not
+/// implemented yet.
+#[derive(Debug)]
+pub struct EmojiSource {
+    config: EmojiConfig,
+}
+
+impl EmojiSource {
+    /// Construct an emoji source from an already-read configuration.
+    pub fn from_config(config: EmojiConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl Source for EmojiSource {
+    fn new(_root: &Path) -> Result<Self, Error> {
+        todo!()
+    }
+
+    fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(EmojiWork {
+            config: self.config.clone(),
+        }))
+    }
+
+    fn create_global_metric_work(&self) -> Result<Box<IrWork>, Error> {
+        todo!()
+    }
+
+    fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
+        todo!()
+    }
+
+    fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        todo!()
+    }
+
+    fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        todo!()
+    }
+
+    fn create_kerning_instance_ir_work(
+        &self,
+        _at: NormalizedLocation,
+    ) -> Result<Box<IrWork>, Error> {
+        todo!()
+    }
+
+    fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error> {
+        todo!()
+    }
+
+    fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+struct EmojiWork {
+    config: EmojiConfig,
+}
+
+impl Work<Context, WorkId, Error> for EmojiWork {
+    fn id(&self) -> WorkId {
+        WorkId::StaticMetadata
+    }
+
+    fn exec(&self, _context: &Context) -> Result<(), Error> {
+        let _ = &self.config;
+        todo!()
     }
 }

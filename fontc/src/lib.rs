@@ -1,5 +1,6 @@
 //! A font compiler with aspirations of being fast and safe.
 
+mod colrv1;
 mod error;
 #[cfg(not(feature = "rayon"))]
 mod norayon;
@@ -21,7 +22,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use fontir::{orchestration::Context as FeContext, source::Source};
+use fontir::{
+    orchestration::Context as FeContext,
+    source::{EmojiSource, Source},
+};
 
 use fontbe::orchestration::Context as BeContext;
 
@@ -37,6 +41,7 @@ pub enum Input {
     GlyphsPath(PathBuf),
     FontraPath(PathBuf),
     GlyphsMemory(String),
+    ColrV1ConfigPath(PathBuf),
 }
 
 impl Input {
@@ -54,6 +59,7 @@ impl Input {
             "glyphs" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "glyphspackage" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "fontra" => Ok(Input::FontraPath(path.to_path_buf())),
+            "toml" => Ok(Input::ColrV1ConfigPath(path.to_path_buf())),
             _ => Err(Error::UnrecognizedSource(path.to_path_buf())),
         }
     }
@@ -71,6 +77,10 @@ impl Input {
             Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(path)?)),
             Input::FontraPath(path) => Ok(Box::new(FontraIrSource::new(path)?)),
             Input::GlyphsMemory(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+            Input::ColrV1ConfigPath(path) => {
+                let config = colrv1::read(path)?;
+                Ok(Box::new(EmojiSource::from_config(config)))
+            }
         }
     }
 }
