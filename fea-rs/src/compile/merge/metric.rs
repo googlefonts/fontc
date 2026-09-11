@@ -28,8 +28,8 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
     /// Merge one metric across masters.
     ///
     /// `values[i]` is master `i`'s value, or `None` if that master has none;
-    /// at least one must be present. A value that is the same wherever it is
-    /// present stays a plain scalar.
+    /// with [`Missing::Sparse`] the default master must have one. A value
+    /// that is the same wherever it is present stays a plain scalar.
     ///
     /// <https://github.com/fonttools/fonttools/blob/34be2443a/Lib/fontTools/varLib/merger.py#L1254-L1258>
     pub(super) fn merge_metric(
@@ -38,8 +38,21 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
         missing: Missing,
         index: usize,
     ) -> Result<Metric, MergeError> {
-        let present: Vec<&Metric> = values.iter().flatten().copied().collect();
-        let first = *present.first().expect("caller passes at least one value");
+        let zero = Metric::from(0);
+        let per_master: Vec<Option<&Metric>> = values
+            .iter()
+            .map(|value| match (value, missing) {
+                (Some(metric), _) => Some(*metric),
+                (None, Missing::Zero) => Some(&zero),
+                (None, Missing::Sparse) => None,
+            })
+            .collect();
+        let Some(first) = per_master[0] else {
+            return Err(MergeError::MissingAtDefault {
+                lookup: self.lookup_ref(index),
+            });
+        };
+        let present: Vec<&Metric> = per_master.iter().flatten().copied().collect();
         assert!(
             present
                 .iter()
@@ -51,7 +64,7 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
             .iter()
             .any(|metric| matches!(metric.device_or_deltas, DeviceOrDeltas::Device(_)))
         {
-            return if values.iter().all(|value| *value == Some(first)) {
+            return if present.iter().all(|metric| *metric == first) {
                 Ok(first.clone())
             } else {
                 Err(MergeError::DeviceDiffers {
@@ -59,29 +72,17 @@ impl<V: VariationInfo> MergeCtx<'_, V> {
                 })
             };
         }
-
-        let per_master: Vec<Option<i16>> = values
-            .iter()
-            .map(|value| match (value, missing) {
-                (Some(metric), _) => Some(metric.default),
-                (None, Missing::Zero) => Some(0),
-                (None, Missing::Sparse) => None,
-            })
-            .collect();
-        let Some(default) = per_master[0] else {
-            return Err(MergeError::MissingAtDefault {
-                lookup: self.lookup_ref(index),
-            });
-        };
-        if per_master.iter().flatten().all(|value| *value == default) {
-            return Ok(default.into());
+        if present.iter().all(|metric| metric.default == first.default) {
+            return Ok(first.default.into());
         }
 
         let locations: HashMap<NormalizedLocation, i16> = self
             .locations
             .iter()
             .zip(&per_master)
-            .filter_map(|(location, value)| value.map(|value| (location.clone(), value)))
+            .filter_map(|(location, metric)| {
+                metric.map(|metric| (location.clone(), metric.default))
+            })
             .collect();
         let (default, deltas) = self
             .var_info
@@ -237,6 +238,14 @@ mod tests {
             ctx.merge_metric(&[None, Some(&5.into())], Missing::Sparse, 0),
             Err(MergeError::MissingAtDefault { .. })
         ));
+        let device = Metric {
+            default: 10,
+            device_or_deltas: Device::new(11, 12, &[1, 1]).into(),
+        };
+        assert!(matches!(
+            ctx.merge_metric(&[None, Some(&device)], Missing::Sparse, 0),
+            Err(MergeError::MissingAtDefault { .. })
+        ));
     }
 
     #[test]
@@ -253,6 +262,24 @@ mod tests {
         assert_eq!(merged, device);
         assert!(matches!(
             ctx.merge_metric(&[Some(&device), Some(&10.into())], Missing::Zero, 0),
+            Err(MergeError::DeviceDiffers { .. })
+        ));
+    }
+
+    #[test]
+    fn device_tables_can_be_sparse() {
+        let var_info = var_info();
+        let ctx = ctx(&var_info, &[0.0, 1.0]);
+        let device = Metric {
+            default: 10,
+            device_or_deltas: Device::new(11, 12, &[1, 1]).into(),
+        };
+        let merged = ctx
+            .merge_metric(&[Some(&device), None], Missing::Sparse, 0)
+            .unwrap();
+        assert_eq!(merged, device);
+        assert!(matches!(
+            ctx.merge_metric(&[Some(&device), None], Missing::Zero, 0),
             Err(MergeError::DeviceDiffers { .. })
         ));
     }
