@@ -1,21 +1,26 @@
 //! Generic model of font sources.
 
 use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
+    collections::{BTreeMap, HashMap, HashSet},
+    fs,
+    path::{Path, PathBuf},
 };
 
-use fontdrasil::orchestration::Work;
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontdrasil::{
     coords::{CoordConverter, NormalizedLocation, UserCoord, UserLocation},
-    types::{Axes, Axis},
+    types::{Axes, Axis, GlyphName},
 };
+use kurbo::{BezPath, Point};
 use serde::Deserialize;
+use smol_str::SmolStr;
+use tiny_skia_path::PathSegment;
+use usvg::Tree;
 use write_fonts::types::{NameId, Tag};
 
 use crate::{
-    error::Error,
-    ir::{NameKey, NamedInstance, StaticMetadata},
+    error::{BadSource, Error},
+    ir::{GlyphBuilder, GlyphInstance, NameKey, NamedInstance, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
 };
 
@@ -30,6 +35,8 @@ pub struct EmojiConfig {
     pub axis: HashMap<String, EmojiAxis>,
     #[serde(default)]
     pub master: HashMap<String, EmojiMaster>,
+    #[serde(skip)]
+    pub source_dir: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -143,7 +150,44 @@ impl Source for EmojiSource {
     }
 
     fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
-        todo!()
+        let mut glyphs = BTreeMap::<GlyphName, Vec<EmojiGlyphSource>>::new();
+        for (master_name, master) in &self.config.master {
+            for source in &master.srcs {
+                let path = self.config.source_dir.join(source);
+                let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                    return Err(Error::InvalidEntry("SVG filename", source.clone()));
+                };
+                let name = stem.into();
+                let codepoints = codepoints_from_glyph_name(stem)?;
+                glyphs.entry(name).or_default().push(EmojiGlyphSource {
+                    master_name: master_name.clone(),
+                    path,
+                    codepoints,
+                });
+            }
+        }
+
+        glyphs
+            .into_iter()
+            .map(|(name, sources)| {
+                let glyph_name: GlyphName = name.into();
+                let codepoints = sources
+                    .iter()
+                    .flat_map(|source| source.codepoints.iter().copied())
+                    .collect();
+                Ok(Box::new(EmojiGlyphWork {
+                    glyph_name,
+                    codepoints,
+                    sources,
+                    master_positions: self
+                        .config
+                        .master
+                        .iter()
+                        .map(|(name, master)| (name.clone(), master.position.clone()))
+                        .collect(),
+                }) as Box<IrWork>)
+            })
+            .collect()
     }
 
     fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
@@ -173,6 +217,176 @@ impl Source for EmojiSource {
 #[derive(Debug)]
 struct EmojiWork {
     config: EmojiConfig,
+}
+
+#[derive(Debug)]
+struct EmojiGlyphSource {
+    master_name: String,
+    path: PathBuf,
+    codepoints: HashSet<u32>,
+}
+
+#[derive(Debug)]
+struct EmojiGlyphWork {
+    glyph_name: GlyphName,
+    codepoints: HashSet<u32>,
+    sources: Vec<EmojiGlyphSource>,
+    master_positions: HashMap<String, HashMap<String, f64>>,
+}
+
+fn codepoints_from_glyph_name(name: &str) -> Result<HashSet<u32>, Error> {
+    let Some(codepoints) = name.strip_prefix("emoji_u") else {
+        return Ok(HashSet::new());
+    };
+    codepoints
+        .split('_')
+        .map(|codepoint| {
+            u32::from_str_radix(codepoint, 16)
+                .map_err(|_| Error::InvalidEntry("emoji codepoint", codepoint.to_owned()))
+        })
+        .collect()
+}
+
+fn master_location(
+    position: &HashMap<String, f64>,
+    axes: &Axes,
+) -> Result<NormalizedLocation, Error> {
+    let location: UserLocation = axes
+        .iter()
+        .map(|axis| {
+            (
+                axis.tag,
+                UserCoord::new(
+                    position
+                        .get(&axis.tag.to_string())
+                        .copied()
+                        .unwrap_or_else(|| axis.default.to_f64()),
+                ),
+            )
+        })
+        .collect();
+    Ok(location.to_normalized(axes)?)
+}
+
+fn parse_svg(path: &Path, units_per_em: u16) -> Result<GlyphInstance, Error> {
+    let data = fs::read(path).map_err(|source| Error::BadSource(BadSource::new(path, source)))?;
+    let options = usvg::Options {
+        resources_dir: path.parent().map(Path::to_owned),
+        ..Default::default()
+    };
+    let tree = Tree::from_data(&data, &options).map_err(|source| {
+        Error::BadSource(BadSource::custom(
+            path,
+            format!("Unable to parse SVG: {source}"),
+        ))
+    })?;
+    let width = tree.size().width() as f64;
+    let height = tree.size().height() as f64;
+    if width <= 0.0 || height <= 0.0 {
+        return Err(Error::InvalidEntry("SVG size", path.display().to_string()));
+    }
+    let scale_x = f64::from(units_per_em) / width;
+    let scale_y = f64::from(units_per_em) / height;
+    let mut contours = Vec::new();
+    collect_svg_paths(tree.root(), &mut contours, scale_x, scale_y, height);
+    Ok(GlyphInstance {
+        width: f64::from(units_per_em),
+        height: Some(f64::from(units_per_em)),
+        vertical_origin: Some(f64::from(units_per_em)),
+        contours,
+        components: Vec::new(),
+    })
+}
+
+fn collect_svg_paths(
+    group: &usvg::Group,
+    contours: &mut Vec<BezPath>,
+    scale_x: f64,
+    scale_y: f64,
+    height: f64,
+) {
+    for node in group.children() {
+        match node {
+            usvg::Node::Group(group) => {
+                collect_svg_paths(group, contours, scale_x, scale_y, height)
+            }
+            usvg::Node::Path(path) => {
+                let transform = path.abs_transform();
+                let transform_point = |point: tiny_skia_path::Point| {
+                    let x =
+                        f64::from(transform.sx * point.x + transform.kx * point.y + transform.tx);
+                    let y =
+                        f64::from(transform.ky * point.x + transform.sy * point.y + transform.ty);
+                    Point::new(x * scale_x, (height - y) * scale_y)
+                };
+                let mut bez_path = BezPath::new();
+                for segment in path.data().segments() {
+                    match segment {
+                        PathSegment::MoveTo(point) => bez_path.move_to(transform_point(point)),
+                        PathSegment::LineTo(point) => bez_path.line_to(transform_point(point)),
+                        PathSegment::QuadTo(p0, p1) => {
+                            bez_path.quad_to(transform_point(p0), transform_point(p1))
+                        }
+                        PathSegment::CubicTo(p0, p1, p2) => bez_path.curve_to(
+                            transform_point(p0),
+                            transform_point(p1),
+                            transform_point(p2),
+                        ),
+                        PathSegment::Close => bez_path.close_path(),
+                    }
+                }
+                if !bez_path.is_empty() {
+                    contours.push(bez_path);
+                }
+            }
+            usvg::Node::Image(_) | usvg::Node::Text(_) => {}
+        }
+    }
+}
+
+impl Work<Context, WorkId, Error> for EmojiGlyphWork {
+    fn id(&self) -> WorkId {
+        WorkId::Glyph(self.glyph_name.clone())
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::StaticMetadata)
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .specific_instance(WorkId::Glyph(self.glyph_name.clone()))
+            .specific_instance(WorkId::Anchor(self.glyph_name.clone()))
+            .build()
+    }
+
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::Anchor(self.glyph_name.clone())]
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let metadata = context.static_metadata.get();
+        let mut instances = HashMap::new();
+        for source in &self.sources {
+            let position = self
+                .master_positions
+                .get(&source.master_name)
+                .ok_or_else(|| Error::UnknownEntry("master", source.master_name.clone()))?;
+            let location = master_location(position, &metadata.all_source_axes)?;
+            let instance = parse_svg(&source.path, metadata.units_per_em)?;
+            instances.insert(location, instance);
+        }
+
+        let glyph = GlyphBuilder {
+            name: self.glyph_name.clone(),
+            emit_to_binary: true,
+            codepoints: self.codepoints.clone(),
+            sources: instances,
+        }
+        .build()?;
+        context.glyphs.set(glyph);
+        Ok(())
+    }
 }
 
 impl Work<Context, WorkId, Error> for EmojiWork {
@@ -293,6 +507,7 @@ impl Work<Context, WorkId, Error> for EmojiWork {
 mod tests {
     use super::*;
     use fontdrasil::orchestration::Work;
+    use kurbo::Shape;
 
     fn config() -> EmojiConfig {
         EmojiConfig {
@@ -300,6 +515,7 @@ mod tests {
             output_file: "test.ttf".to_string(),
             color_format: "glyf_colr_1".to_string(),
             clipbox_quantization: 32,
+            source_dir: PathBuf::new(),
             axis: HashMap::from([(
                 "wght".to_string(),
                 EmojiAxis {
@@ -376,5 +592,30 @@ mod tests {
         let result = work.exec(&Context::new_root(Flags::empty()));
 
         assert!(matches!(result, Err(Error::InvalidTag { raw_tag, .. }) if raw_tag == "invalid"));
+    }
+
+    #[test]
+    fn parses_svg_paths_into_font_coordinates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("emoji_u1f600.svg");
+        std::fs::write(
+            &path,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+                <rect x="0" y="0" width="64" height="64"/>
+            </svg>"#,
+        )
+        .unwrap();
+
+        let instance = parse_svg(&path, 1024).unwrap();
+        assert_eq!(instance.width, 1024.0);
+        assert_eq!(instance.contours.len(), 1);
+        assert_eq!(
+            instance.contours[0].bounding_box(),
+            kurbo::Rect::new(0.0, 512.0, 512.0, 1024.0)
+        );
+        assert_eq!(
+            codepoints_from_glyph_name("emoji_u1f600").unwrap(),
+            HashSet::from([0x1f600])
+        );
     }
 }

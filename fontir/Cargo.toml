@@ -19,6 +19,7 @@ thiserror.workspace = true
 smallvec.workspace = true
 
 kurbo.workspace = true
+tiny-skia-path.workspace = true
 ordered-float.workspace = true
 indexmap.workspace = true
 
@@ -26,6 +27,7 @@ log.workspace = true
 tracing.workspace = true
 
 write-fonts.workspace = true  # for pens
+usvg.workspace = true
 
 chrono.workspace = true
 smol_str.workspace = true

@@ -11,10 +11,13 @@ pub(crate) fn read(path: &Path) -> Result<EmojiConfig, Error> {
         path: path.to_owned(),
         source,
     })?;
-    toml::from_str(&contents).map_err(|source| Error::ColrV1Config {
-        path: path.to_owned(),
-        source,
-    })
+    let mut config =
+        toml::from_str::<EmojiConfig>(&contents).map_err(|source| Error::ColrV1Config {
+            path: path.to_owned(),
+            source,
+        })?;
+    config.source_dir = path.parent().unwrap_or_else(|| Path::new(".")).to_owned();
+    Ok(config)
 }
 
 #[cfg(test)]
