@@ -332,6 +332,10 @@ impl<Space> Location<Space> {
         Location(Default::default())
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// For testing only, make a location from raw tags + values
     #[doc(hidden)]
     pub fn for_pos(positions: &[(&str, f64)]) -> Self {

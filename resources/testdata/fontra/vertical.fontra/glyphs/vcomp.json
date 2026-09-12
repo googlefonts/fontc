@@ -1,0 +1,54 @@
+{
+"name": "vcomp",
+"sources": [
+{
+"name": "<default>",
+"layerName": "foreground"
+},
+{
+"name": "bold",
+"layerName": "bold",
+"location": {
+"Weight": 700
+}
+}
+],
+"layers": {
+"foreground": {
+"glyph": {
+"xAdvance": 600,
+"yAdvance": 950,
+"verticalOrigin": 880,
+"components": [
+{
+"name": "vbase",
+"location": {
+"depth": 40
+},
+"transformation": {
+"translateX": 10
+}
+}
+]
+}
+},
+"bold": {
+"glyph": {
+"xAdvance": 600,
+"yAdvance": 850,
+"verticalOrigin": 800,
+"components": [
+{
+"name": "vbase",
+"location": {
+"depth": 80
+},
+"transformation": {
+"translateX": 20
+}
+}
+]
+}
+}
+}
+}

@@ -1,83 +1,312 @@
-use std::{path::Path, sync::Arc};
+use std::{collections::HashSet, path::Path, sync::Arc};
 
-use fontdrasil::orchestration::Work;
+use fontdrasil::{
+    coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
+    orchestration::{Access, AccessBuilder, Work},
+    types::GlyphName,
+};
 use fontir::{
     error::Error,
-    orchestration::{Context, WorkId},
+    ir::{
+        AnchorBuilder, FeatureSources, FeaturesSource, KerningInstance, PreliminaryGdefCategories,
+    },
+    orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
 };
-use log::debug;
+use log::{debug, trace, warn};
 
-use crate::{fontra::Font, toir::to_ir_static_metadata};
+use crate::{
+    fontra::{Font, Kerning},
+    kernutils::{
+        classify_glyphs_by_direction, flip_kerning_direction, merge_kerning,
+        split_kerning_by_direction,
+    },
+    toir::{
+        kerning_sources, to_ir_gdef_categories, to_ir_global_metrics, to_ir_glyph,
+        to_ir_kern_groups, to_ir_kerning_instance, to_ir_kerning_locations, to_ir_static_metadata,
+    },
+};
 
 pub struct FontraIrSource {
     font_data: Arc<Font>,
+    gdef_categories: Arc<PreliminaryGdefCategories>,
 }
 
 impl Source for FontraIrSource {
     fn new(fontra_dir: &Path) -> Result<Self, Error> {
-        let font_data = Font::load(fontra_dir)?;
+        let mut font_data = Font::load(fontra_dir)?;
+        pin_discrete_axes(&mut font_data)?;
+        if let Some(kerning) = font_data
+            .kerning
+            .get(HORIZONTAL_KERNING_TYPE)
+            .map(|kerning| {
+                let axes: Vec<_> = font_data
+                    .axes
+                    .axes
+                    .iter()
+                    .filter_map(|axis| match axis {
+                        crate::fontra::Axis::Continuous(axis) => Some(axis.clone()),
+                        crate::fontra::Axis::Discrete(_) => None,
+                    })
+                    .collect();
+                let feature_text = match font_data.features.language.as_str() {
+                    "fea" => font_data.features.text.as_str(),
+                    _ => "",
+                };
+                let (ltr_glyphs, rtl_glyphs) = classify_glyphs_by_direction(
+                    &font_data.glyph_map,
+                    feature_text,
+                    &axes,
+                    fontra_dir,
+                );
+                flip_rtl_kerning(kerning, &ltr_glyphs, &rtl_glyphs)
+            })
+        {
+            font_data
+                .kerning
+                .insert(HORIZONTAL_KERNING_TYPE.to_string(), kerning);
+        }
+        let gdef_categories = to_ir_gdef_categories(&font_data.glyph_infos);
 
         Ok(FontraIrSource {
             font_data: Arc::new(font_data),
+            gdef_categories: Arc::new(gdef_categories),
         })
     }
 
-    fn create_static_metadata_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+    fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork {
+            font_data: self.font_data.clone(),
+            gdef_categories: self.gdef_categories.clone(),
+        }))
+    }
+
+    fn create_global_metric_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(GlobalMetricsWork {
             font_data: self.font_data.clone(),
         }))
     }
 
-    fn create_global_metric_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
+        Ok(self
+            .font_data
+            .glyphs
+            .keys()
+            .map(|glyph_name| {
+                Box::new(GlyphIrWork {
+                    glyph_name: glyph_name.clone(),
+                    font_data: self.font_data.clone(),
+                }) as Box<IrWork>
+            })
+            .collect())
     }
 
-    fn create_glyph_ir_work(
-        &self,
-    ) -> Result<Vec<Box<fontir::orchestration::IrWork>>, fontir::error::Error> {
-        todo!()
+    fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(FeatureWork {
+            font_data: self.font_data.clone(),
+        }))
     }
 
-    fn create_feature_ir_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
-    }
-
-    fn create_kerning_locations_ir_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(KerningLocationsWork {
+            font_data: self.font_data.clone(),
+        }))
     }
 
     fn create_kerning_instance_ir_work(
         &self,
-        _at: fontdrasil::coords::NormalizedLocation,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+        at: NormalizedLocation,
+    ) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(KerningInstanceWork {
+            font_data: self.font_data.clone(),
+            location: at,
+        }))
     }
 
-    fn create_color_palette_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::ColorPalettes)))
     }
 
-    fn create_color_glyphs_work(
-        &self,
-    ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        todo!()
+    fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
+        Ok(Box::new(NoopWork(WorkId::PaintGraph)))
     }
+
+    fn compilation_flags(&self) -> Flags {
+        Flags::PROPAGATE_ANCHORS
+    }
+}
+
+/// <https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/backends/designspace.py#L1490-L1503>
+fn flip_rtl_kerning(
+    kerning: &Kerning,
+    ltr_glyphs: &HashSet<GlyphName>,
+    rtl_glyphs: &HashSet<GlyphName>,
+) -> Kerning {
+    if rtl_glyphs.is_empty() {
+        return kerning.clone();
+    }
+
+    // UFO3's kerning direction is "writing direction", but kerning in Fontra
+    // is "visual left to right", so let's flip any right-to-left kerning.
+    let (ltr_kerning, rtl_kerning) = split_kerning_by_direction(kerning, ltr_glyphs, rtl_glyphs);
+    let rtl_kerning = flip_kerning_direction(&rtl_kerning);
+    merge_kerning(&ltr_kerning, &rtl_kerning)
+}
+
+/// Pin every discrete axis to its default value like Fontra's
+/// [`subset-axes`](https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/workflow/actions/axes.py#L231-L300)
+/// filter.
+fn pin_discrete_axes(font_data: &mut Font) -> Result<(), Error> {
+    let mut pinned: Vec<(String, f64)> = Vec::new();
+    for axis in font_data.axes.axes.iter() {
+        let crate::fontra::Axis::Discrete(axis) = axis else {
+            continue;
+        };
+        // Source locations are in design space, the axis default is in
+        // user space, so map it through the axis mapping, like Fontra's
+        // getDefaultSourceLocation:
+        // https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/workflow/actions/axes.py#L385-L393
+        let default = if axis.mapping.is_empty() {
+            axis.default_value
+        } else {
+            let examples = axis
+                .mapping
+                .iter()
+                .map(|[user, design]| (UserCoord::new(*user), DesignCoord::new(*design)))
+                .collect();
+            let converter = CoordConverter::new(examples, 0)?;
+            UserCoord::new(axis.default_value)
+                .to_design(&converter)
+                .to_f64()
+        };
+        pinned.push((axis.name.to_string(), default));
+    }
+    if pinned.is_empty() {
+        return Ok(());
+    }
+    for (name, default) in &pinned {
+        warn!("pinning discrete axis {name:?} to its default {default}");
+    }
+    font_data
+        .axes
+        .axes
+        .retain(|axis| matches!(axis, crate::fontra::Axis::Continuous(_)));
+
+    let at_default = |location: &crate::fontra::Location| {
+        pinned
+            .iter()
+            .all(|(name, default)| location.get(name).map(|v| v == default).unwrap_or(true))
+    };
+
+    font_data.axes.mappings.retain(|mapping| {
+        let keep = at_default(&mapping.input_location);
+        if !keep {
+            let description = mapping.description.as_deref().unwrap_or_default();
+            warn!(
+                "dropping cross-axis mapping {description:?}, its input is not at the pinned default"
+            );
+        }
+        keep
+    });
+    for mapping in font_data.axes.mappings.iter_mut() {
+        for (name, _) in &pinned {
+            mapping.input_location.remove(name);
+            if mapping.output_location.remove(name).is_some() {
+                let description = mapping.description.as_deref().unwrap_or_default();
+                warn!(
+                    "dropping the {name:?} output of cross-axis mapping {description:?}, the axis is pinned"
+                );
+            }
+        }
+    }
+    // Remove the conditions on the pinned axes, and drop a condition set that
+    // excludes the pinned default, like Fontra's
+    // [`filterSubstitutionCondition`](https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/workflow/actions/axes.py#L321-L335).
+    let rules = &mut font_data.conditional_substitutions.rules;
+    for rule in rules.iter_mut() {
+        rule.condition_sets.retain_mut(|set| {
+            let mut always_false = false;
+            set.conditions.retain(|condition| {
+                let Some((_, pin)) = pinned.iter().find(|(name, _)| *name == condition.name) else {
+                    return true;
+                };
+                if condition.min_value.is_some_and(|min| *pin < min)
+                    || condition.max_value.is_some_and(|max| *pin > max)
+                {
+                    always_false = true;
+                }
+                false
+            });
+            !always_false
+        });
+    }
+    rules.retain(|rule| !rule.condition_sets.is_empty());
+    font_data
+        .sources
+        .retain(|_, source| at_default(&source.location));
+    let retained: std::collections::HashSet<String> = font_data.sources.keys().cloned().collect();
+
+    for glyph in font_data.glyphs.values_mut() {
+        // A glyph axis with the name of a pinned font axis is not pinned.
+        let shadowed: std::collections::HashSet<&str> = glyph
+            .axes
+            .iter()
+            .map(|axis| axis.name.as_str())
+            .filter(|name| pinned.iter().any(|(pinned, _)| pinned == name))
+            .collect();
+        glyph.sources.retain(|source| {
+            source
+                .location_base
+                .as_ref()
+                .map(|base| retained.contains(base))
+                .unwrap_or(true)
+                && pinned
+                    .iter()
+                    .filter(|(name, _)| !shadowed.contains(name.as_str()))
+                    .all(|(name, default)| {
+                        source
+                            .location
+                            .get(name)
+                            .map(|v| v == default)
+                            .unwrap_or(true)
+                    })
+        });
+    }
+
+    for kerning in font_data.kerning.values_mut() {
+        let keep: Vec<bool> = kerning
+            .source_identifiers
+            .iter()
+            .map(|identifier| retained.contains(identifier))
+            .collect();
+        if keep.iter().all(|keep| *keep) {
+            continue;
+        }
+        kerning.source_identifiers = kerning
+            .source_identifiers
+            .iter()
+            .zip(&keep)
+            .filter(|(_, keep)| **keep)
+            .map(|(identifier, _)| identifier.clone())
+            .collect();
+        for side2_values in kerning.values.values_mut() {
+            for values in side2_values.values_mut() {
+                *values = values
+                    .iter()
+                    .zip(&keep)
+                    .filter(|(_, keep)| **keep)
+                    .map(|(value, _)| *value)
+                    .collect();
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
 struct StaticMetadataWork {
     font_data: Arc<Font>,
+    gdef_categories: Arc<PreliminaryGdefCategories>,
 }
 
 impl Work<Context, WorkId, Error> for StaticMetadataWork {
@@ -86,7 +315,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::PreliminaryGlyphOrder]
+        vec![
+            WorkId::PreliminaryGlyphOrder,
+            WorkId::PreliminaryGdefCategories,
+        ]
     }
 
     #[tracing::instrument(name = "fontra2fontir::StaticMetadataWork::exec", skip_all)]
@@ -99,24 +331,562 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 .as_deref()
                 .unwrap_or("<nameless family>")
         );
+        // The glyph order of fontra-compile: .notdef, .null, CR and space
+        // first, then the other glyphs by name, see
+        // https://github.com/fontra/fontra-compile/blob/01d784d86c/src/fontra_compile/compile_fontmake_action.py#L165-L183
+        let first = [".notdef", ".null", "CR", "space"];
+        let mut glyph_order: Vec<GlyphName> = self.font_data.glyph_map.keys().cloned().collect();
+        glyph_order.sort_by_key(|name| {
+            first
+                .iter()
+                .position(|n| *n == name.as_str())
+                .unwrap_or(first.len())
+        });
         context
             .preliminary_glyph_order
-            .set(self.font_data.glyph_map.keys().cloned().collect());
+            .set(glyph_order.into_iter().collect());
         context
-            .static_metadata
-            .set(to_ir_static_metadata(&self.font_data)?);
+            .preliminary_gdef_categories
+            .set(self.gdef_categories.as_ref().clone());
+        context.static_metadata.set(to_ir_static_metadata(
+            &self.font_data,
+            context.flags.contains(Flags::EMIT_VARC_TABLE),
+        )?);
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct GlobalMetricsWork {
+    font_data: Arc<Font>,
+}
+
+impl Work<Context, WorkId, Error> for GlobalMetricsWork {
+    fn id(&self) -> WorkId {
+        WorkId::GlobalMetrics
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::StaticMetadata)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        debug!(
+            "Global metrics for {}",
+            self.font_data
+                .font_info
+                .family_name
+                .as_deref()
+                .unwrap_or("<nameless family>")
+        );
+        let static_metadata = context.static_metadata.get();
+        context
+            .global_metrics
+            .set(to_ir_global_metrics(&static_metadata, &self.font_data)?);
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct FeatureWork {
+    font_data: Arc<Font>,
+}
+
+impl Work<Context, WorkId, Error> for FeatureWork {
+    fn id(&self) -> WorkId {
+        WorkId::Features
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        debug!("Generate features");
+        let features = &self.font_data.features;
+        // "fea" is the only feature format Fontra supports. Skip anything else.
+        let source = match features.language.as_str() {
+            "fea" if !features.text.is_empty() => {
+                FeaturesSource::from_string(features.text.clone())
+            }
+            "fea" => FeaturesSource::empty(),
+            other => {
+                if !features.text.is_empty() {
+                    warn!("Ignoring features in unsupported language {other:?}");
+                }
+                FeaturesSource::empty()
+            }
+        };
+        context.features.set(FeatureSources::single(source));
+        Ok(())
+    }
+}
+
+pub(crate) const HORIZONTAL_KERNING_TYPE: &str = "kern";
+// TODO: support other kerning types
+
+#[derive(Debug)]
+struct KerningLocationsWork {
+    font_data: Arc<Font>,
+}
+
+impl Work<Context, WorkId, Error> for KerningLocationsWork {
+    fn id(&self) -> WorkId {
+        WorkId::KerningLocations
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::StaticMetadata)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        debug!("Generate IR for kerning");
+        for kern_type in self.font_data.kerning.keys() {
+            if kern_type != HORIZONTAL_KERNING_TYPE {
+                warn!("the {kern_type:?} kerning is dropped");
+            }
+        }
+        let static_metadata = context.static_metadata.get();
+        context.kerning_locations.set(to_ir_kerning_locations(
+            &static_metadata,
+            &self.font_data,
+            self.font_data.kerning.get(HORIZONTAL_KERNING_TYPE),
+        ));
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct KerningInstanceWork {
+    font_data: Arc<Font>,
+    location: NormalizedLocation,
+}
+
+impl Work<Context, WorkId, Error> for KerningInstanceWork {
+    fn id(&self) -> WorkId {
+        WorkId::KernInstance(self.location.clone())
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlyphOrder)
+            .build()
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        debug!("Generate kerning at {:?}", self.location);
+        let static_metadata = context.static_metadata.get();
+        let glyph_order = context.glyph_order.get();
+
+        let mut instance = KerningInstance {
+            location: self.location.clone(),
+            ..Default::default()
+        };
+        if let Some(kerning) = self.font_data.kerning.get(HORIZONTAL_KERNING_TYPE) {
+            let source_idx = kerning_sources(&static_metadata, &self.font_data, kerning)
+                .find(|(_, location)| *location == self.location)
+                .map(|(idx, _)| idx);
+            match source_idx {
+                Some(idx) => {
+                    instance = to_ir_kerning_instance(kerning, idx, &self.location, &glyph_order)
+                }
+                // The default location has no kerning, but we still want the groups.
+                None => instance.groups = to_ir_kern_groups(kerning, &glyph_order),
+            }
+        }
+        context.kerning_at.set(instance);
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct GlyphIrWork {
+    glyph_name: GlyphName,
+    font_data: Arc<Font>,
+}
+
+impl Work<Context, WorkId, Error> for GlyphIrWork {
+    fn id(&self) -> WorkId {
+        WorkId::Glyph(self.glyph_name.clone())
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlobalMetrics)
+            .build()
+    }
+
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::Anchor(self.glyph_name.clone())]
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        trace!("Generate IR for {:#?}", self.glyph_name);
+        let static_metadata = context.static_metadata.get();
+        let fontra_glyph = self
+            .font_data
+            .glyphs
+            .get(&self.glyph_name)
+            .ok_or_else(|| Error::NoGlyphForName(self.glyph_name.clone()))?;
+        let codepoints = self
+            .font_data
+            .glyph_map
+            .get(&self.glyph_name)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
+        let mut anchors = AnchorBuilder::new(self.glyph_name.clone());
+        let glyph_ir = to_ir_glyph(
+            &static_metadata,
+            &self.font_data,
+            codepoints,
+            fontra_glyph,
+            &mut anchors,
+        )?;
+        context.glyphs.set(glyph_ir);
+        context.anchors.set(anchors.build()?);
+        Ok(())
+    }
+}
+
+/// A work that produces nothing.
+#[derive(Debug)]
+struct NoopWork(WorkId);
+
+impl Work<Context, WorkId, Error> for NoopWork {
+    fn id(&self) -> WorkId {
+        self.0.clone()
+    }
+
+    fn exec(&self, _context: &Context) -> Result<(), Error> {
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use fontdrasil::types::GlyphName;
+    use fontdrasil::{
+        orchestration::{Access, AccessBuilder},
+        types::GlyphName,
+    };
+    use fontir::{ir::NameKey, orchestration::Flags};
     use pretty_assertions::assert_eq;
+    use write_fonts::{
+        tables::gdef::GlyphClassDef,
+        types::{NameId, Tag},
+    };
 
     use crate::test::testdata_dir;
 
     use super::*;
+
+    fn context_for(fontra_dir: &str) -> (FontraIrSource, Context) {
+        let source = FontraIrSource::new(&testdata_dir().join(fontra_dir)).unwrap();
+        (source, Context::new_root(Flags::empty()))
+    }
+
+    #[test]
+    fn pin_discrete_axes_drops_off_default_sources() {
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        assert_eq!(3, font_data.axes.axes.len());
+        assert!(font_data.sources.contains_key("light-condensed-italic"));
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        assert_eq!(
+            vec!["weight", "width"],
+            font_data
+                .axes
+                .axes
+                .iter()
+                .map(|a| a.name().as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(!font_data.sources.contains_key("light-condensed-italic"));
+        let kerning = font_data.kerning.get(HORIZONTAL_KERNING_TYPE).unwrap();
+        assert!(
+            !kerning
+                .source_identifiers
+                .contains(&"light-condensed-italic".to_string())
+        );
+        for side2_values in kerning.values.values() {
+            for values in side2_values.values() {
+                assert!(values.len() <= kerning.source_identifiers.len());
+            }
+        }
+    }
+
+    #[test]
+    fn pin_discrete_axes_keeps_kern_values_aligned() {
+        // The dropped source is not the last one, so the remaining values
+        // have to be picked out rather than truncated.
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let kerning = font_data.kerning.get_mut(HORIZONTAL_KERNING_TYPE).unwrap();
+        kerning.source_identifiers = vec![
+            "light-condensed-italic".to_string(),
+            "light-condensed".to_string(),
+            "bold-condensed".to_string(),
+        ];
+        for side2_values in kerning.values.values_mut() {
+            for values in side2_values.values_mut() {
+                *values = vec![Some(-1.0), Some(-2.0), Some(-3.0)];
+            }
+        }
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        let kerning = font_data.kerning.get(HORIZONTAL_KERNING_TYPE).unwrap();
+        assert_eq!(
+            vec!["light-condensed", "bold-condensed"],
+            kerning.source_identifiers
+        );
+        let values = kerning
+            .values
+            .values()
+            .next()
+            .unwrap()
+            .values()
+            .next()
+            .unwrap();
+        assert_eq!(&vec![Some(-2.0), Some(-3.0)], values);
+    }
+
+    /// A glyph source at `location` on the default layer.
+    fn glyph_source(name: &str, location: &[(&str, f64)]) -> crate::fontra::GlyphSource {
+        crate::fontra::GlyphSource {
+            name: name.to_string(),
+            layer_name: "foreground".into(),
+            location: location
+                .iter()
+                .map(|(name, value)| (name.to_string(), *value))
+                .collect(),
+            location_base: None,
+            inactive: false,
+        }
+    }
+
+    #[test]
+    fn pin_discrete_axes_maps_the_default_to_design_space() {
+        // A mapped discrete axis: the user default 0 is design 200. The
+        // mapping reverses the order, so comparing in user space would keep
+        // the other source.
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        for axis in font_data.axes.axes.iter_mut() {
+            if let crate::fontra::Axis::Discrete(axis) = axis {
+                axis.mapping = vec![[0.0, 200.0], [1.0, 100.0]];
+            }
+        }
+        let name = GlyphName::new("period");
+        let glyph = font_data.glyphs.get_mut(&name).unwrap();
+        glyph.sources = vec![
+            glyph_source("at-design-100", &[("italic", 100.0)]),
+            glyph_source("at-design-200", &[("italic", 200.0)]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        let sources = &font_data.glyphs.get(&name).unwrap().sources;
+        assert_eq!(
+            vec!["at-design-200"],
+            sources
+                .iter()
+                .map(|source| source.name.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn pin_discrete_axes_keeps_sources_of_a_shadowing_glyph_axis() {
+        // 'period' redefines italic as a glyph axis, so its source locations
+        // are in the glyph axis's space and the pinned font axis cannot
+        // decide them.
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let name = GlyphName::new("period");
+        let glyph = font_data.glyphs.get_mut(&name).unwrap();
+        glyph.axes = vec![crate::fontra::GlyphAxis {
+            name: "italic".to_string(),
+            min_value: 0.0,
+            default_value: 0.0,
+            max_value: 1.0,
+        }];
+        glyph.sources = vec![
+            glyph_source("<default>", &[("italic", 0.0)]),
+            glyph_source("italic=1", &[("italic", 1.0)]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        assert_eq!(2, font_data.glyphs.get(&name).unwrap().sources.len());
+    }
+
+    #[test]
+    fn pin_discrete_axes_prunes_cross_axis_mappings() {
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let mapping = |input: &[(&str, f64)], output: &[(&str, f64)]| {
+            let location = |coords: &[(&str, f64)]| -> crate::fontra::Location {
+                coords
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), *value))
+                    .collect()
+            };
+            crate::fontra::CrossAxisMapping {
+                description: None,
+                group_description: None,
+                input_location: location(input),
+                output_location: location(output),
+                inactive: false,
+            }
+        };
+        font_data.axes.mappings = vec![
+            mapping(
+                &[("weight", 850.0), ("italic", 0.0)],
+                &[("width", 200.0), ("italic", 1.0)],
+            ),
+            mapping(&[("weight", 850.0), ("italic", 1.0)], &[("width", 300.0)]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        let mappings = &font_data.axes.mappings;
+        assert_eq!(1, mappings.len());
+        assert_eq!(
+            crate::fontra::Location::from([("weight".to_string(), 850.0)]),
+            mappings[0].input_location
+        );
+        assert_eq!(
+            crate::fontra::Location::from([("width".to_string(), 200.0)]),
+            mappings[0].output_location
+        );
+    }
+
+    #[test]
+    fn pin_discrete_axes_filters_substitution_conditions() {
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let condition = |name: &str, min: f64, max: f64| crate::fontra::SubstitutionCondition {
+            name: name.to_string(),
+            min_value: Some(min),
+            max_value: Some(max),
+        };
+        let rule = |sets: Vec<Vec<crate::fontra::SubstitutionCondition>>| {
+            crate::fontra::SubstitutionRule {
+                name: None,
+                condition_sets: sets
+                    .into_iter()
+                    .map(|conditions| crate::fontra::SubstitutionConditionSet { conditions })
+                    .collect(),
+                substitutions: [("I".to_string(), "I.narrow".to_string())].into(),
+            }
+        };
+        font_data.conditional_substitutions.rules = vec![
+            // The pinned default is inside the italic range, the condition is true.
+            rule(vec![vec![
+                condition("italic", 0.0, 0.0),
+                condition("width", 0.0, 328.0),
+            ]]),
+            // The pinned default is outside the italic range, the set is false.
+            rule(vec![
+                vec![condition("italic", 1.0, 1.0)],
+                vec![condition("weight", 0.0, 500.0)],
+            ]),
+            rule(vec![vec![condition("italic", 1.0, 1.0)]]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        assert_eq!(
+            vec![vec![vec!["width"]], vec![vec!["weight"]]],
+            font_data
+                .conditional_substitutions
+                .rules
+                .iter()
+                .map(|rule| {
+                    rule.condition_sets
+                        .iter()
+                        .map(|set| {
+                            set.conditions
+                                .iter()
+                                .map(|condition| condition.name.as_str())
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn compile_raqq() {
+        let (source, context) = context_for("Raqq.fontra");
+
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(800, static_metadata.units_per_em);
+        assert_eq!(
+            vec![Tag::new(b"SPAC"), Tag::new(b"MSHQ")],
+            static_metadata
+                .axes
+                .iter()
+                .map(|a| a.tag)
+                .collect::<Vec<_>>()
+        );
+        let name = |id: NameId| {
+            static_metadata
+                .names
+                .get(&NameKey::new_bmp_only(id))
+                .map(String::as_str)
+        };
+        assert_eq!(Some("Raqq"), name(NameId::FAMILY_NAME));
+        assert_eq!(Some("Regular"), name(NameId::SUBFAMILY_NAME));
+        assert_eq!(
+            Some("Copyright 2021–2024 The Raqq Project Authors (github.com/aliftype/raqq)"),
+            name(NameId::COPYRIGHT_NOTICE)
+        );
+        assert_eq!(Some("Khaled Hosny"), name(NameId::DESIGNER));
+        assert_eq!(Some("Alif Type"), name(NameId::MANUFACTURER));
+        assert_eq!(Some("https://aliftype.com"), name(NameId::VENDOR_URL));
+        // Synthesized from versionMajor/versionMinor and vendorID.
+        assert_eq!(Some("Version 0.000"), name(NameId::VERSION_STRING));
+        assert_eq!(Some("0.000;ALIF;Raqq-Regular"), name(NameId::UNIQUE_ID));
+
+        let glyph_order = context.preliminary_glyph_order.get();
+        assert!(glyph_order.contains(&GlyphName::new("beh-ar")));
+        // .notdef and space come first, the other glyphs follow by name.
+        assert_eq!(
+            vec![".notdef", "space"],
+            glyph_order
+                .names()
+                .take(2)
+                .map(GlyphName::as_str)
+                .collect::<Vec<_>>()
+        );
+
+        let gdef = context.preliminary_gdef_categories.get();
+        assert!(gdef.infer_from_anchors);
+        assert_eq!(
+            Some(&GlyphClassDef::Mark),
+            gdef.categories.get(&GlyphName::new("dammatan-ar"))
+        );
+        assert_eq!(
+            Some(&GlyphClassDef::Ligature),
+            gdef.categories.get(&GlyphName::new("fehDotless_alef-ar"))
+        );
+        assert!(
+            gdef.mark_category_glyphs
+                .contains(&GlyphName::new("dammatan-ar"))
+        );
+    }
 
     fn glyph_map(fontra_dir: &str) -> Vec<(GlyphName, Vec<u32>)> {
         let source = FontraIrSource::new(&testdata_dir().join(fontra_dir)).unwrap();
@@ -165,5 +935,36 @@ mod tests {
             .collect::<Vec<_>>(),
             glyph_map("codepoints.fontra"),
         )
+    }
+
+    #[test]
+    fn pin_discrete_axes_interpolates_the_default() {
+        // The user default 0.5 is not a mapping key, the mapping gives
+        // design 500.
+        let mut font_data = Font::load(&testdata_dir().join("MutatorSans.fontra")).unwrap();
+        for axis in font_data.axes.axes.iter_mut() {
+            if let crate::fontra::Axis::Discrete(axis) = axis {
+                axis.values = vec![0.0, 0.5, 1.0];
+                axis.default_value = 0.5;
+                axis.mapping = vec![[0.0, 0.0], [1.0, 1000.0]];
+            }
+        }
+        let name = GlyphName::new("period");
+        let glyph = font_data.glyphs.get_mut(&name).unwrap();
+        glyph.sources = vec![
+            glyph_source("at-design-0", &[("italic", 0.0)]),
+            glyph_source("at-design-500", &[("italic", 500.0)]),
+        ];
+
+        pin_discrete_axes(&mut font_data).unwrap();
+
+        let sources = &font_data.glyphs.get(&name).unwrap().sources;
+        assert_eq!(
+            vec!["at-design-500"],
+            sources
+                .iter()
+                .map(|source| source.name.as_str())
+                .collect::<Vec<_>>()
+        );
     }
 }
