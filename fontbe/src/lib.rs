@@ -23,5 +23,6 @@ pub mod post;
 pub mod stat;
 #[cfg(test)]
 mod test_util;
+pub mod varc;
 pub mod vertical_metrics;
 pub mod vvar;
