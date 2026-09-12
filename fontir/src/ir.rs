@@ -2142,10 +2142,17 @@ pub struct ColorGlyphs {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum Paint {
     Glyph(Box<PaintGlyph>),
+    Transform(Box<PaintTransform>),
     Solid(Box<PaintSolid>),
     LinearGradient(Box<PaintLinearGradient>),
     RadialGradient(Box<PaintRadialGradient>),
     Layers(Box<Vec<Paint>>),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintTransform {
+    pub paint: Paint,
+    pub transform: Affine,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

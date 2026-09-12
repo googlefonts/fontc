@@ -26,7 +26,7 @@ use crate::{
         Color, ColorGlyphs, ColorPalettes, ColorStop, FeatureSources, FeaturesSource,
         GlobalMetricsBuilder, GlyphBuilder, GlyphInstance, KerningInstance, KerningLocations,
         NameKey, NamedInstance, Paint, PaintGlyph, PaintLinearGradient, PaintRadialGradient,
-        PaintSolid, PreliminaryGdefCategories, StaticMetadata,
+        PaintSolid, PaintTransform, PreliminaryGdefCategories, StaticMetadata,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
 };
@@ -238,8 +238,8 @@ impl Source for EmojiSource {
                     .collect::<Vec<_>>();
                 preliminary_names.extend(layer_indices.iter().copied().filter_map(|index| {
                     let original = emoji_layer_name(&glyph_name, index);
-                    let canonical = layer_names[&original].clone();
-                    (canonical == original).then_some(canonical)
+                    let canonical = &layer_names[&original];
+                    (canonical.name == original).then_some(canonical.name.clone())
                 }));
                 let codepoints = sources
                     .iter()
@@ -342,7 +342,7 @@ struct EmojiGlyphWork {
     master_positions: HashMap<String, HashMap<String, f64>>,
     layer_count: usize,
     layer_indices: Vec<usize>,
-    layer_names: BTreeMap<GlyphName, GlyphName>,
+    layer_names: BTreeMap<GlyphName, EmojiLayerName>,
     metrics: SvgFontMetrics,
 }
 
@@ -354,13 +354,28 @@ struct EmojiColorPaletteWork {
 #[derive(Debug)]
 struct EmojiColorGlyphWork {
     config: EmojiConfig,
-    layer_names: BTreeMap<GlyphName, GlyphName>,
+    layer_names: BTreeMap<GlyphName, EmojiLayerName>,
 }
 
 #[derive(Debug)]
 struct SvgPath {
     instance: GlyphInstance,
     paint: Option<SvgPaint>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct EmojiLayerName {
+    name: GlyphName,
+    transform: kurbo::Affine,
+}
+
+type LayerSignature = Vec<Option<GlyphInstance>>;
+
+#[derive(Clone, Debug)]
+struct LayerCandidate {
+    signature: LayerSignature,
+    origins: Vec<Option<Point>>,
+    name: GlyphName,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -396,15 +411,15 @@ fn emoji_glyph_sources(
     Ok(glyphs)
 }
 
-/// Map every source layer name to the first name with exactly the same outline
-/// at every configured master. Paint is deliberately excluded: the same
-/// outline can be used by many differently painted COLR layers.
+/// Map every source layer name to the first name with the same outline, up to
+/// a stable translation, at every configured master. Paint is deliberately
+/// excluded: the same outline can be used by many differently painted COLR
+/// layers.
 fn emoji_layer_names(
     config: &EmojiConfig,
     glyphs: &BTreeMap<GlyphName, Vec<EmojiGlyphSource>>,
-) -> Result<BTreeMap<GlyphName, GlyphName>, Error> {
-    type LayerSignature = Vec<Option<GlyphInstance>>;
-    type LayerNameBucket = Vec<(LayerSignature, GlyphName)>;
+) -> Result<BTreeMap<GlyphName, EmojiLayerName>, Error> {
+    type LayerNameBucket = Vec<LayerCandidate>;
 
     let master_names = config.master.keys().cloned().collect::<BTreeSet<_>>();
     let mut buckets: HashMap<u64, LayerNameBucket> = HashMap::new();
@@ -424,7 +439,7 @@ fn emoji_layer_names(
 
         for index in 0..layer_count {
             let original = emoji_layer_name(glyph_name, index);
-            let signature = master_names
+            let instances = master_names
                 .iter()
                 .map(|master_name| {
                     parsed
@@ -435,27 +450,163 @@ fn emoji_layer_names(
                 })
                 .collect::<Vec<_>>();
 
-            if !signature.iter().any(Option::is_some) {
+            if !instances.iter().any(Option::is_some) {
                 continue;
             }
 
+            let origins = instances
+                .iter()
+                .map(|instance| instance.as_ref().map(instance_origin))
+                .collect::<Vec<_>>();
+            let signature = instances
+                .iter()
+                .map(|instance| instance.as_ref().map(normalize_instance))
+                .collect::<Vec<_>>();
             let hash = hash_layer_signature(&signature);
             let canonical = buckets
                 .entry(hash)
                 .or_default()
                 .iter()
-                .find_map(|(candidate, name)| (candidate == &signature).then_some(name.clone()));
-            let canonical = canonical.unwrap_or_else(|| {
-                buckets
-                    .get_mut(&hash)
-                    .unwrap()
-                    .push((signature, original.clone()));
-                original.clone()
+                .find_map(|candidate| {
+                    translated_layer_match(candidate, &signature, &origins)
+                        .map(|transform| (candidate.name.clone(), transform))
+                });
+            let (name, transform) = canonical.unwrap_or_else(|| {
+                buckets.get_mut(&hash).unwrap().push(LayerCandidate {
+                    signature,
+                    origins,
+                    name: original.clone(),
+                });
+                (original.clone(), kurbo::Affine::IDENTITY)
             });
-            layer_names.insert(original, canonical);
+            layer_names.insert(original, EmojiLayerName { name, transform });
         }
     }
     Ok(layer_names)
+}
+
+// The source reuse tolerance used by nanoemoji is 0.1 SVG units. Noto's
+// 128-unit SVGs map to a 1200-unit font box, so allow roughly one font unit
+// for the rounding and parsing differences introduced by that conversion.
+const TRANSLATION_EPSILON: f64 = 1.0;
+const SIGNATURE_HASH_GRID: f64 = TRANSLATION_EPSILON * 2.0;
+
+fn instance_origin(instance: &GlyphInstance) -> Point {
+    instance
+        .contours
+        .iter()
+        .map(Shape::bounding_box)
+        .reduce(|a, b| a.union(b))
+        .map(|bbox| Point::new(bbox.x0, bbox.y0))
+        .unwrap_or_default()
+}
+
+fn normalize_instance(instance: &GlyphInstance) -> GlyphInstance {
+    let origin = instance_origin(instance);
+    translate_instance(instance, -origin.x, -origin.y)
+}
+
+fn translate_instance(instance: &GlyphInstance, dx: f64, dy: f64) -> GlyphInstance {
+    let translate_path = |path: &BezPath| {
+        let mut translated = BezPath::new();
+        for element in path.elements() {
+            match element {
+                kurbo::PathEl::MoveTo(point) => {
+                    translated.move_to(Point::new(point.x + dx, point.y + dy))
+                }
+                kurbo::PathEl::LineTo(point) => {
+                    translated.line_to(Point::new(point.x + dx, point.y + dy))
+                }
+                kurbo::PathEl::QuadTo(p1, p2) => translated.quad_to(
+                    Point::new(p1.x + dx, p1.y + dy),
+                    Point::new(p2.x + dx, p2.y + dy),
+                ),
+                kurbo::PathEl::CurveTo(p1, p2, p3) => translated.curve_to(
+                    Point::new(p1.x + dx, p1.y + dy),
+                    Point::new(p2.x + dx, p2.y + dy),
+                    Point::new(p3.x + dx, p3.y + dy),
+                ),
+                kurbo::PathEl::ClosePath => translated.close_path(),
+            }
+        }
+        translated
+    };
+
+    GlyphInstance {
+        width: instance.width,
+        height: instance.height,
+        vertical_origin: instance.vertical_origin,
+        contours: instance.contours.iter().map(translate_path).collect(),
+        components: instance.components.clone(),
+    }
+}
+
+fn translated_layer_match(
+    candidate: &LayerCandidate,
+    signature: &[Option<GlyphInstance>],
+    origins: &[Option<Point>],
+) -> Option<kurbo::Affine> {
+    let mut translation: Option<(f64, f64)> = None;
+    for ((candidate_instance, instance), (candidate_origin, origin)) in candidate
+        .signature
+        .iter()
+        .zip(signature)
+        .zip(candidate.origins.iter().zip(origins))
+    {
+        match (candidate_instance, instance, candidate_origin, origin) {
+            (None, None, None, None) => {}
+            (Some(candidate_instance), Some(instance), Some(candidate_origin), Some(origin)) => {
+                let current = (origin.x - candidate_origin.x, origin.y - candidate_origin.y);
+                if let Some(previous) = translation
+                    && ((current.0 - previous.0).abs() > TRANSLATION_EPSILON
+                        || (current.1 - previous.1).abs() > TRANSLATION_EPSILON)
+                {
+                    return None;
+                }
+                if !instances_equal(candidate_instance, instance) {
+                    return None;
+                }
+                translation = Some(current);
+            }
+            _ => return None,
+        }
+    }
+
+    let (dx, dy) = translation.unwrap_or_default();
+    Some(kurbo::Affine::translate((dx, dy)))
+}
+
+fn instances_equal(a: &GlyphInstance, b: &GlyphInstance) -> bool {
+    if a.width != b.width
+        || a.height != b.height
+        || a.vertical_origin != b.vertical_origin
+        || a.components != b.components
+        || a.contours.len() != b.contours.len()
+    {
+        return false;
+    }
+    a.contours.iter().zip(&b.contours).all(|(a, b)| {
+        a.elements().len() == b.elements().len()
+            && a.elements()
+                .iter()
+                .zip(b.elements())
+                .all(|(a, b)| match (a, b) {
+                    (kurbo::PathEl::MoveTo(a), kurbo::PathEl::MoveTo(b))
+                    | (kurbo::PathEl::LineTo(a), kurbo::PathEl::LineTo(b)) => points_equal(*a, *b),
+                    (kurbo::PathEl::QuadTo(a1, a2), kurbo::PathEl::QuadTo(b1, b2)) => {
+                        points_equal(*a1, *b1) && points_equal(*a2, *b2)
+                    }
+                    (kurbo::PathEl::CurveTo(a1, a2, a3), kurbo::PathEl::CurveTo(b1, b2, b3)) => {
+                        points_equal(*a1, *b1) && points_equal(*a2, *b2) && points_equal(*a3, *b3)
+                    }
+                    (kurbo::PathEl::ClosePath, kurbo::PathEl::ClosePath) => true,
+                    _ => false,
+                })
+    })
+}
+
+fn points_equal(a: Point, b: Point) -> bool {
+    (a.x - b.x).abs() <= TRANSLATION_EPSILON && (a.y - b.y).abs() <= TRANSLATION_EPSILON
 }
 
 fn hash_layer_signature(signature: &[Option<GlyphInstance>]) -> u64 {
@@ -473,19 +624,19 @@ fn hash_layer_signature(signature: &[Option<GlyphInstance>]) -> u64 {
                         std::mem::discriminant(element).hash(&mut hasher);
                         match element {
                             kurbo::PathEl::MoveTo(p) | kurbo::PathEl::LineTo(p) => {
-                                p.x.to_bits().hash(&mut hasher);
-                                p.y.to_bits().hash(&mut hasher);
+                                hash_coordinate(p.x, &mut hasher);
+                                hash_coordinate(p.y, &mut hasher);
                             }
                             kurbo::PathEl::QuadTo(p1, p2) => {
                                 for p in [p1, p2] {
-                                    p.x.to_bits().hash(&mut hasher);
-                                    p.y.to_bits().hash(&mut hasher);
+                                    hash_coordinate(p.x, &mut hasher);
+                                    hash_coordinate(p.y, &mut hasher);
                                 }
                             }
                             kurbo::PathEl::CurveTo(p1, p2, p3) => {
                                 for p in [p1, p2, p3] {
                                     for value in [p.x, p.y] {
-                                        value.to_bits().hash(&mut hasher);
+                                        hash_coordinate(value, &mut hasher);
                                     }
                                 }
                             }
@@ -497,6 +648,10 @@ fn hash_layer_signature(signature: &[Option<GlyphInstance>]) -> u64 {
         }
     }
     hasher.finish()
+}
+
+fn hash_coordinate<H: Hasher>(value: f64, hasher: &mut H) {
+    (value / SIGNATURE_HASH_GRID).round().to_bits().hash(hasher);
 }
 
 impl SvgPaint {
@@ -823,7 +978,7 @@ impl Work<Context, WorkId, Error> for EmojiGlyphWork {
             .specific_instance(WorkId::Anchor(self.glyph_name.clone()));
         for index in self.layer_indices.iter().copied() {
             let original = emoji_layer_name(&self.glyph_name, index);
-            if self.layer_names[&original] == original {
+            if self.layer_names[&original].name == original {
                 access = access.specific_instance(WorkId::Glyph(original));
             }
         }
@@ -834,7 +989,7 @@ impl Work<Context, WorkId, Error> for EmojiGlyphWork {
         let mut completed = vec![WorkId::Anchor(self.glyph_name.clone())];
         completed.extend(self.layer_indices.iter().copied().filter_map(|index| {
             let original = emoji_layer_name(&self.glyph_name, index);
-            (self.layer_names[&original] == original).then_some(WorkId::Glyph(original))
+            (self.layer_names[&original].name == original).then_some(WorkId::Glyph(original))
         }));
         completed
     }
@@ -881,7 +1036,7 @@ impl Work<Context, WorkId, Error> for EmojiGlyphWork {
                 continue;
             }
             let original = emoji_layer_name(&self.glyph_name, index);
-            if self.layer_names[&original] != original {
+            if self.layer_names[&original].name != original {
                 continue;
             }
             context.glyphs.set(
@@ -1248,11 +1403,19 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
             let mut paints = Vec::new();
             for index in layer_paints.keys().copied() {
                 let original = emoji_layer_name(&base_name, index);
-                let layer_name = self.layer_names[&original].clone();
-                paints.push(Paint::Glyph(Box::new(PaintGlyph {
-                    name: layer_name,
+                let layer = &self.layer_names[&original];
+                let paint = Paint::Glyph(Box::new(PaintGlyph {
+                    name: layer.name.clone(),
                     paint: layer_paints[&index].to_paint(),
-                })));
+                }));
+                paints.push(if layer.transform == kurbo::Affine::IDENTITY {
+                    paint
+                } else {
+                    Paint::Transform(Box::new(PaintTransform {
+                        paint,
+                        transform: layer.transform,
+                    }))
+                });
             }
 
             if !paints.is_empty() {
@@ -1464,7 +1627,18 @@ mod tests {
         assert!(
             root.glyphs
                 .try_get(&WorkId::Glyph("emoji_u1f600.color1".into()))
-                .is_some()
+                .is_none()
+        );
+
+        let Paint::Layers(layers) = paints else {
+            panic!("expected two color layers");
+        };
+        let Paint::Transform(transform) = &layers[1] else {
+            panic!("expected the translated layer to use a transform");
+        };
+        assert_eq!(
+            transform.transform,
+            kurbo::Affine::translate((600.0, -600.0))
         );
     }
 
@@ -1506,7 +1680,7 @@ mod tests {
         let glyph_sources = emoji_glyph_sources(&config).unwrap();
         let layer_names = emoji_layer_names(&config, &glyph_sources).unwrap();
         assert_eq!(
-            layer_names[&GlyphName::from("emoji_u2764.color0")],
+            layer_names[&GlyphName::from("emoji_u2764.color0")].name,
             GlyphName::from("emoji_u1f499.color0")
         );
         assert!(
@@ -1540,6 +1714,60 @@ mod tests {
         };
         assert_eq!(red_paint.name, blue_paint.name);
         assert_ne!(red_paint.paint, blue_paint.paint);
+    }
+
+    fn test_layer_instance(x: f64, y: f64) -> GlyphInstance {
+        let mut path = BezPath::new();
+        path.move_to(Point::new(x, y));
+        path.line_to(Point::new(x + 10.0, y));
+        path.line_to(Point::new(x + 10.0, y + 10.0));
+        path.close_path();
+        GlyphInstance {
+            width: 1275.0,
+            height: Some(1200.0),
+            vertical_origin: Some(950.0),
+            contours: vec![path],
+            components: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn reuses_only_layers_with_stable_translation() {
+        let candidate_instances = [test_layer_instance(0.0, 0.0), test_layer_instance(5.0, 7.0)];
+        let candidate = LayerCandidate {
+            signature: candidate_instances
+                .iter()
+                .map(|instance| Some(normalize_instance(instance)))
+                .collect(),
+            origins: candidate_instances
+                .iter()
+                .map(|instance| Some(instance_origin(instance)))
+                .collect(),
+            name: "canonical".into(),
+        };
+
+        let translated_instances = [
+            test_layer_instance(20.0, -10.0),
+            test_layer_instance(25.0, -3.0),
+        ];
+        let signature = translated_instances
+            .iter()
+            .map(|instance| Some(normalize_instance(instance)))
+            .collect::<Vec<_>>();
+        let origins = translated_instances
+            .iter()
+            .map(|instance| Some(instance_origin(instance)))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            translated_layer_match(&candidate, &signature, &origins),
+            Some(kurbo::Affine::translate((20.0, -10.0)))
+        );
+
+        let unstable_origins = vec![Some(Point::new(20.0, -10.0)), Some(Point::new(27.0, -3.0))];
+        assert_eq!(
+            translated_layer_match(&candidate, &signature, &unstable_origins),
+            None
+        );
     }
 
     #[test]

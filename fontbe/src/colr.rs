@@ -16,13 +16,13 @@ use write_fonts::{
     OtRound,
     tables::{
         colr::{
-            BaseGlyph, BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList, ColorLine,
-            ColorStop, Colr, Extend, Layer, LayerList, Paint, PaintColrLayers, PaintGlyph,
-            PaintLinearGradient, PaintRadialGradient, PaintSolid,
+            Affine2x3, BaseGlyph, BaseGlyphList, BaseGlyphPaint, Clip, ClipBox, ClipList,
+            ColorLine, ColorStop, Colr, Extend, Layer, LayerList, Paint, PaintColrLayers,
+            PaintGlyph, PaintLinearGradient, PaintRadialGradient, PaintSolid, PaintTransform,
         },
         glyf::Bbox,
     },
-    types::{F2Dot14, FWord, GlyphId16},
+    types::{F2Dot14, FWord, Fixed, GlyphId16},
 };
 
 static OPAQUE: F2Dot14 = F2Dot14::ONE;
@@ -174,6 +174,28 @@ fn to_colr_paint(
                     .glyph_id(&paint.name)
                     .expect("Validated earlier"),
             }))
+        }
+        ir::Paint::Transform(transform) => {
+            let [xx, yx, xy, yy, dx, dy] = transform.transform.as_coeffs();
+            Ok(Paint::Transform(PaintTransform::new(
+                to_colr_paint(
+                    context,
+                    glyph_order,
+                    palette,
+                    glyph_name,
+                    bbox,
+                    layer_list,
+                    &transform.paint,
+                )?,
+                Affine2x3::new(
+                    Fixed::from_f64(xx),
+                    Fixed::from_f64(yx),
+                    Fixed::from_f64(xy),
+                    Fixed::from_f64(yy),
+                    Fixed::from_f64(dx),
+                    Fixed::from_f64(dy),
+                ),
+            )))
         }
         ir::Paint::Solid(paint) => Ok(Paint::Solid(PaintSolid {
             palette_index: match paint.color {
@@ -529,6 +551,51 @@ mod tests {
             }
             _ => panic!("Expected Paint::Solid"),
         }
+    }
+
+    #[test]
+    fn v1_translates_a_nested_paint() {
+        use fontir::orchestration::Context as IrContext;
+
+        let ir_ctx = IrContext::new_root(Default::default());
+        let context = Context::new_root(Default::default(), None, None, false, &ir_ctx);
+
+        let palette = ColorPalettes::default();
+        let mut glyph_order = GlyphOrder::new();
+        let glyph_name = GlyphName::new("test");
+        glyph_order.insert(glyph_name.clone());
+
+        let bbox = Bbox {
+            x_min: 0,
+            y_min: 0,
+            x_max: 100,
+            y_max: 100,
+        };
+        let mut layer_list = LayerList::default();
+        let ir_paint = ir::Paint::Transform(
+            ir::PaintTransform {
+                paint: ir::Paint::Solid(ir::PaintSolid { color: None }.into()),
+                transform: kurbo::Affine::translate((12.5, -7.25)),
+            }
+            .into(),
+        );
+
+        let Paint::Transform(transform) = to_colr_paint(
+            &context,
+            &glyph_order,
+            &palette,
+            &glyph_name,
+            &bbox,
+            &mut layer_list,
+            &ir_paint,
+        )
+        .unwrap() else {
+            panic!("expected PaintTransform");
+        };
+        assert_eq!(transform.transform.dx.to_f64(), 12.5);
+        assert_eq!(transform.transform.dy.to_f64(), -7.25);
+        assert_eq!(transform.transform.xx.to_f64(), 1.0);
+        assert_eq!(transform.transform.yy.to_f64(), 1.0);
     }
 
     #[test]
