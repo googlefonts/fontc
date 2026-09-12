@@ -11,16 +11,19 @@ use fontdrasil::{
     coords::{CoordConverter, NormalizedLocation, UserCoord, UserLocation},
     types::{Axes, Axis, GlyphName},
 };
+use indexmap::IndexMap;
 use kurbo::{BezPath, Point};
 use serde::Deserialize;
-use smol_str::SmolStr;
 use tiny_skia_path::PathSegment;
 use usvg::Tree;
 use write_fonts::types::{NameId, Tag};
 
 use crate::{
     error::{BadSource, Error},
-    ir::{GlyphBuilder, GlyphInstance, NameKey, NamedInstance, StaticMetadata},
+    ir::{
+        Color, ColorGlyphs, ColorPalettes, GlyphBuilder, GlyphInstance, NameKey, NamedInstance,
+        Paint, PaintGlyph, PaintSolid, StaticMetadata,
+    },
     orchestration::{Context, Flags, IrWork, WorkId},
 };
 
@@ -120,8 +123,7 @@ pub trait Source {
 /// A source backed by a nanoemoji-style COLRv1 configuration.
 ///
 /// The configuration is read by the compiler frontend before this source is
-/// constructed. The work needed to turn that configuration into IR is not
-/// implemented yet.
+/// constructed.
 #[derive(Debug)]
 pub struct EmojiSource {
     config: EmojiConfig,
@@ -170,7 +172,7 @@ impl Source for EmojiSource {
         glyphs
             .into_iter()
             .map(|(name, sources)| {
-                let glyph_name: GlyphName = name.into();
+                let glyph_name: GlyphName = name;
                 let codepoints = sources
                     .iter()
                     .flat_map(|source| source.codepoints.iter().copied())
@@ -206,11 +208,15 @@ impl Source for EmojiSource {
     }
 
     fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error> {
-        todo!()
+        Ok(Box::new(EmojiColorPaletteWork {
+            config: self.config.clone(),
+        }))
     }
 
     fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
-        todo!()
+        Ok(Box::new(EmojiColorGlyphWork {
+            config: self.config.clone(),
+        }))
     }
 }
 
@@ -232,6 +238,22 @@ struct EmojiGlyphWork {
     codepoints: HashSet<u32>,
     sources: Vec<EmojiGlyphSource>,
     master_positions: HashMap<String, HashMap<String, f64>>,
+}
+
+#[derive(Debug)]
+struct EmojiColorPaletteWork {
+    config: EmojiConfig,
+}
+
+#[derive(Debug)]
+struct EmojiColorGlyphWork {
+    config: EmojiConfig,
+}
+
+#[derive(Debug)]
+struct SvgPath {
+    instance: GlyphInstance,
+    color: Option<Color>,
 }
 
 fn codepoints_from_glyph_name(name: &str) -> Result<HashSet<u32>, Error> {
@@ -269,6 +291,20 @@ fn master_location(
 }
 
 fn parse_svg(path: &Path, units_per_em: u16) -> Result<GlyphInstance, Error> {
+    let paths = parse_svg_paths(path, units_per_em)?;
+    Ok(GlyphInstance {
+        width: f64::from(units_per_em),
+        height: Some(f64::from(units_per_em)),
+        vertical_origin: Some(f64::from(units_per_em)),
+        contours: paths
+            .into_iter()
+            .flat_map(|path| path.instance.contours)
+            .collect(),
+        components: Vec::new(),
+    })
+}
+
+fn parse_svg_paths(path: &Path, units_per_em: u16) -> Result<Vec<SvgPath>, Error> {
     let data = fs::read(path).map_err(|source| Error::BadSource(BadSource::new(path, source)))?;
     let options = usvg::Options {
         resources_dir: path.parent().map(Path::to_owned),
@@ -287,29 +323,39 @@ fn parse_svg(path: &Path, units_per_em: u16) -> Result<GlyphInstance, Error> {
     }
     let scale_x = f64::from(units_per_em) / width;
     let scale_y = f64::from(units_per_em) / height;
-    let mut contours = Vec::new();
-    collect_svg_paths(tree.root(), &mut contours, scale_x, scale_y, height);
-    Ok(GlyphInstance {
-        width: f64::from(units_per_em),
-        height: Some(f64::from(units_per_em)),
-        vertical_origin: Some(f64::from(units_per_em)),
-        contours,
-        components: Vec::new(),
-    })
+    let mut paths = Vec::new();
+    collect_svg_paths(
+        tree.root(),
+        &mut paths,
+        scale_x,
+        scale_y,
+        height,
+        path,
+        units_per_em,
+    )?;
+    Ok(paths)
 }
 
 fn collect_svg_paths(
     group: &usvg::Group,
-    contours: &mut Vec<BezPath>,
+    paths: &mut Vec<SvgPath>,
     scale_x: f64,
     scale_y: f64,
     height: f64,
-) {
+    svg_path: &Path,
+    units_per_em: u16,
+) -> Result<(), Error> {
     for node in group.children() {
         match node {
-            usvg::Node::Group(group) => {
-                collect_svg_paths(group, contours, scale_x, scale_y, height)
-            }
+            usvg::Node::Group(group) => collect_svg_paths(
+                group,
+                paths,
+                scale_x,
+                scale_y,
+                height,
+                svg_path,
+                units_per_em,
+            )?,
             usvg::Node::Path(path) => {
                 let transform = path.abs_transform();
                 let transform_point = |point: tiny_skia_path::Point| {
@@ -336,12 +382,54 @@ fn collect_svg_paths(
                     }
                 }
                 if !bez_path.is_empty() {
-                    contours.push(bez_path);
+                    let color = path.fill().map(|fill| match fill.paint() {
+                        usvg::Paint::Color(color) => {
+                            let alpha = (fill.opacity().get() * 255.0).round() as u8;
+                            Color {
+                                r: color.red,
+                                g: color.green,
+                                b: color.blue,
+                                a: alpha,
+                            }
+                        }
+                        usvg::Paint::LinearGradient(_)
+                        | usvg::Paint::RadialGradient(_)
+                        | usvg::Paint::Pattern(_) => {
+                            // Defer gradients and patterns until the source IR has
+                            // gradient support. Returning an error here prevents a
+                            // silently incorrect color font.
+                            Color {
+                                r: 0,
+                                g: 0,
+                                b: 0,
+                                a: 0,
+                            }
+                        }
+                    });
+                    if let Some(fill) = path.fill()
+                        && !matches!(fill.paint(), usvg::Paint::Color(_))
+                    {
+                        return Err(Error::UnsupportedConstruct(format!(
+                            "unsupported SVG paint in '{}'",
+                            svg_path.display()
+                        )));
+                    }
+                    paths.push(SvgPath {
+                        instance: GlyphInstance {
+                            width: f64::from(units_per_em),
+                            height: Some(f64::from(units_per_em)),
+                            vertical_origin: Some(f64::from(units_per_em)),
+                            contours: vec![bez_path],
+                            components: Vec::new(),
+                        },
+                        color,
+                    });
                 }
             }
             usvg::Node::Image(_) | usvg::Node::Text(_) => {}
         }
     }
+    Ok(())
 }
 
 impl Work<Context, WorkId, Error> for EmojiGlyphWork {
@@ -503,6 +591,169 @@ impl Work<Context, WorkId, Error> for EmojiWork {
     }
 }
 
+impl Work<Context, WorkId, Error> for EmojiColorPaletteWork {
+    fn id(&self) -> WorkId {
+        WorkId::ColorPalettes
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::None
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::ColorPalettes)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let mut colors = Vec::new();
+        let mut sources = Vec::new();
+        for master in self.config.master.values() {
+            sources.extend(
+                master
+                    .srcs
+                    .iter()
+                    .map(|source| self.config.source_dir.join(source)),
+            );
+        }
+        sources.sort();
+        sources.dedup();
+
+        for source in sources {
+            for path in parse_svg_paths(&source, 1024)? {
+                if let Some(color) = path.color
+                    && !colors.contains(&color)
+                {
+                    colors.push(color);
+                }
+            }
+        }
+
+        if let Some(palettes) = ColorPalettes::new(vec![colors])? {
+            context.colors.set(palettes);
+        }
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
+    fn id(&self) -> WorkId {
+        WorkId::PaintGraph
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::ColorPalettes)
+            .build()
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::PaintGraph)
+            .variant(WorkId::ALL_GLYPHS)
+            .build()
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let metadata = context.static_metadata.get();
+        let Some(palettes) = context.colors.try_get() else {
+            return Ok(());
+        };
+        let palette = palettes.palettes.first().cloned().unwrap_or_default();
+        let mut sources = BTreeMap::<GlyphName, Vec<(String, PathBuf)>>::new();
+        for (master_name, master) in &self.config.master {
+            for source in &master.srcs {
+                let path = self.config.source_dir.join(source);
+                let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                    return Err(Error::InvalidEntry("SVG filename", source.clone()));
+                };
+                sources
+                    .entry(stem.into())
+                    .or_default()
+                    .push((master_name.clone(), path));
+            }
+        }
+
+        let mut base_glyphs = IndexMap::new();
+        for (base_name, glyph_sources) in sources {
+            let mut layer_instances =
+                BTreeMap::<usize, HashMap<NormalizedLocation, GlyphInstance>>::new();
+            let mut layer_colors = BTreeMap::<usize, Color>::new();
+
+            for (master_name, path) in glyph_sources {
+                let position = self
+                    .config
+                    .master
+                    .get(&master_name)
+                    .ok_or_else(|| Error::UnknownEntry("master", master_name.clone()))?;
+                let location = master_location(&position.position, &metadata.all_source_axes)?;
+                for (index, svg_path) in parse_svg_paths(&path, metadata.units_per_em)?
+                    .into_iter()
+                    .enumerate()
+                {
+                    let Some(color) = svg_path.color else {
+                        continue;
+                    };
+                    if !palette.contains(&color) {
+                        return Err(Error::InvalidEntry(
+                            "SVG color",
+                            format!("{color:?} is missing from the color palette"),
+                        ));
+                    }
+                    if let Some(previous) = layer_colors.insert(index, color)
+                        && previous != color
+                    {
+                        return Err(Error::UnsupportedConstruct(format!(
+                            "color for layer {index} of '{base_name}' varies between masters"
+                        )));
+                    }
+                    layer_instances
+                        .entry(index)
+                        .or_default()
+                        .insert(location.clone(), svg_path.instance);
+                }
+            }
+
+            let mut paints = Vec::new();
+            for (index, instances) in layer_instances {
+                let layer_name = emoji_layer_name(&base_name, index);
+                let glyph = GlyphBuilder {
+                    name: layer_name.clone(),
+                    emit_to_binary: true,
+                    codepoints: HashSet::new(),
+                    sources: instances,
+                }
+                .build()?;
+                context.glyphs.set(glyph);
+                paints.push(Paint::Glyph(Box::new(PaintGlyph {
+                    name: layer_name,
+                    paint: Paint::Solid(Box::new(PaintSolid {
+                        color: Some(layer_colors[&index]),
+                    })),
+                })));
+            }
+
+            if !paints.is_empty() {
+                let paint = if paints.len() == 1 {
+                    paints.pop().unwrap()
+                } else {
+                    Paint::Layers(paints.into())
+                };
+                base_glyphs.insert(base_name, paint);
+            }
+        }
+
+        if !base_glyphs.is_empty() {
+            context.paint_graph.set(ColorGlyphs { base_glyphs });
+        }
+        Ok(())
+    }
+}
+
+fn emoji_layer_name(base_name: &GlyphName, index: usize) -> GlyphName {
+    format!("{}.color{}", base_name.as_str(), index).into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -616,6 +867,58 @@ mod tests {
         assert_eq!(
             codepoints_from_glyph_name("emoji_u1f600").unwrap(),
             HashSet::from([0x1f600])
+        );
+    }
+
+    #[test]
+    fn builds_color_palette_and_paint_graph() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("emoji_u1f600.svg");
+        std::fs::write(
+            &path,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+                <path fill="#ff0000" d="M0 0h64v64H0z"/>
+                <path fill="#0000ff" d="M64 64h64v64H64z"/>
+            </svg>"##,
+        )
+        .unwrap();
+
+        let mut config = config();
+        config.source_dir = dir.path().to_owned();
+        config.master.get_mut("regular").unwrap().srcs = vec!["emoji_u1f600.svg".to_owned()];
+        config.master.remove("bold");
+
+        let root = Context::new_root(Flags::empty());
+        let static_work = EmojiWork {
+            config: config.clone(),
+        };
+        let static_context =
+            root.copy_for_work(static_work.read_access(), static_work.write_access());
+        static_work.exec(&static_context).unwrap();
+
+        let palette_work = EmojiColorPaletteWork {
+            config: config.clone(),
+        };
+        let palette_context =
+            root.copy_for_work(palette_work.read_access(), palette_work.write_access());
+        palette_work.exec(&palette_context).unwrap();
+        assert_eq!(root.colors.get().palettes[0].len(), 2);
+
+        let color_work = EmojiColorGlyphWork { config };
+        let color_context = root.copy_for_work(color_work.read_access(), color_work.write_access());
+        color_work.exec(&color_context).unwrap();
+
+        let paints = &root.paint_graph.get().base_glyphs[&GlyphName::from("emoji_u1f600")];
+        assert!(matches!(paints, Paint::Layers(layers) if layers.len() == 2));
+        assert!(
+            root.glyphs
+                .try_get(&WorkId::Glyph("emoji_u1f600.color0".into()))
+                .is_some()
+        );
+        assert!(
+            root.glyphs
+                .try_get(&WorkId::Glyph("emoji_u1f600.color1".into()))
+                .is_some()
         );
     }
 }
