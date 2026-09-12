@@ -38,12 +38,36 @@ pub struct EmojiConfig {
     pub output_file: String,
     pub color_format: String,
     pub clipbox_quantization: u16,
+    #[serde(default = "default_emoji_upem")]
+    pub upem: u16,
+    #[serde(default = "default_emoji_width")]
+    pub width: u16,
+    #[serde(default = "default_emoji_ascender")]
+    pub ascender: i16,
+    #[serde(default = "default_emoji_descender")]
+    pub descender: i16,
     #[serde(default)]
     pub axis: HashMap<String, EmojiAxis>,
     #[serde(default)]
     pub master: HashMap<String, EmojiMaster>,
     #[serde(skip)]
     pub source_dir: PathBuf,
+}
+
+fn default_emoji_upem() -> u16 {
+    1024
+}
+
+fn default_emoji_width() -> u16 {
+    1275
+}
+
+fn default_emoji_ascender() -> i16 {
+    950
+}
+
+fn default_emoji_descender() -> i16 {
+    -250
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -140,6 +164,25 @@ impl EmojiSource {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct SvgFontMetrics {
+    units_per_em: u16,
+    width: f64,
+    ascender: f64,
+    descender: f64,
+}
+
+impl EmojiConfig {
+    fn svg_metrics(&self) -> SvgFontMetrics {
+        SvgFontMetrics {
+            units_per_em: self.upem,
+            width: self.width.into(),
+            ascender: self.ascender.into(),
+            descender: self.descender.into(),
+        }
+    }
+}
+
 impl Source for EmojiSource {
     fn new(_root: &Path) -> Result<Self, Error> {
         todo!()
@@ -160,6 +203,7 @@ impl Source for EmojiSource {
     fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
         let glyphs = emoji_glyph_sources(&self.config)?;
         let layer_names = emoji_layer_names(&self.config, &glyphs)?;
+        let metrics = self.config.svg_metrics();
 
         let mut preliminary_names = Vec::new();
         let mut works = glyphs
@@ -168,7 +212,7 @@ impl Source for EmojiSource {
                 let glyph_name: GlyphName = name;
                 let layer_count = sources
                     .iter()
-                    .map(|source| parse_svg_paths(&source.path, 1024).map(|paths| paths.len()))
+                    .map(|source| parse_svg_paths(&source.path, metrics).map(|paths| paths.len()))
                     .collect::<Result<Vec<_>, Error>>()?
                     .into_iter()
                     .max()
@@ -177,7 +221,7 @@ impl Source for EmojiSource {
                 let painted_indices = sources
                     .iter()
                     .map(|source| {
-                        parse_svg_paths(&source.path, 1024).map(|paths| {
+                        parse_svg_paths(&source.path, metrics).map(|paths| {
                             paths
                                 .into_iter()
                                 .enumerate()
@@ -214,6 +258,7 @@ impl Source for EmojiSource {
                     layer_count,
                     layer_indices,
                     layer_names: layer_names.clone(),
+                    metrics,
                 }) as Box<IrWork>)
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -298,6 +343,7 @@ struct EmojiGlyphWork {
     layer_count: usize,
     layer_indices: Vec<usize>,
     layer_names: BTreeMap<GlyphName, GlyphName>,
+    metrics: SvgFontMetrics,
 }
 
 #[derive(Debug)]
@@ -357,8 +403,11 @@ fn emoji_layer_names(
     config: &EmojiConfig,
     glyphs: &BTreeMap<GlyphName, Vec<EmojiGlyphSource>>,
 ) -> Result<BTreeMap<GlyphName, GlyphName>, Error> {
+    type LayerSignature = Vec<Option<GlyphInstance>>;
+    type LayerNameBucket = Vec<(LayerSignature, GlyphName)>;
+
     let master_names = config.master.keys().cloned().collect::<BTreeSet<_>>();
-    let mut buckets: HashMap<u64, Vec<(Vec<Option<GlyphInstance>>, GlyphName)>> = HashMap::new();
+    let mut buckets: HashMap<u64, LayerNameBucket> = HashMap::new();
     let mut layer_names = BTreeMap::new();
 
     for (glyph_name, sources) in glyphs {
@@ -367,7 +416,7 @@ fn emoji_layer_names(
             .map(|source| {
                 Ok((
                     source.master_name.clone(),
-                    parse_svg_paths(&source.path, 1024)?,
+                    parse_svg_paths(&source.path, config.svg_metrics())?,
                 ))
             })
             .collect::<Result<HashMap<_, _>, Error>>()?;
@@ -517,12 +566,12 @@ fn master_location(
 }
 
 #[cfg(test)]
-fn parse_svg(path: &Path, units_per_em: u16) -> Result<GlyphInstance, Error> {
-    let paths = parse_svg_paths(path, units_per_em)?;
+fn parse_svg(path: &Path, metrics: SvgFontMetrics) -> Result<GlyphInstance, Error> {
+    let paths = parse_svg_paths(path, metrics)?;
     Ok(GlyphInstance {
-        width: f64::from(units_per_em),
-        height: Some(f64::from(units_per_em)),
-        vertical_origin: Some(f64::from(units_per_em)),
+        width: metrics.width,
+        height: Some(metrics.ascender - metrics.descender),
+        vertical_origin: Some(metrics.ascender),
         contours: paths
             .into_iter()
             .flat_map(|path| path.instance.contours)
@@ -531,7 +580,7 @@ fn parse_svg(path: &Path, units_per_em: u16) -> Result<GlyphInstance, Error> {
     })
 }
 
-fn parse_svg_paths(path: &Path, units_per_em: u16) -> Result<Vec<SvgPath>, Error> {
+fn parse_svg_paths(path: &Path, metrics: SvgFontMetrics) -> Result<Vec<SvgPath>, Error> {
     let data = fs::read(path).map_err(|source| Error::BadSource(BadSource::new(path, source)))?;
     let options = usvg::Options {
         resources_dir: path.parent().map(Path::to_owned),
@@ -548,41 +597,26 @@ fn parse_svg_paths(path: &Path, units_per_em: u16) -> Result<Vec<SvgPath>, Error
     if width <= 0.0 || height <= 0.0 {
         return Err(Error::InvalidEntry("SVG size", path.display().to_string()));
     }
-    let scale_x = f64::from(units_per_em) / width;
-    let scale_y = f64::from(units_per_em) / height;
+    let scale = (metrics.ascender - metrics.descender) / height;
+    let x_offset = (metrics.width - scale * width) / 2.0;
     let mut paths = Vec::new();
-    collect_svg_paths(
-        tree.root(),
-        &mut paths,
-        scale_x,
-        scale_y,
-        height,
-        path,
-        units_per_em,
-    )?;
+    collect_svg_paths(tree.root(), &mut paths, scale, x_offset, path, metrics)?;
     Ok(paths)
 }
 
 fn collect_svg_paths(
     group: &usvg::Group,
     paths: &mut Vec<SvgPath>,
-    scale_x: f64,
-    scale_y: f64,
-    height: f64,
+    scale: f64,
+    x_offset: f64,
     svg_path: &Path,
-    units_per_em: u16,
+    metrics: SvgFontMetrics,
 ) -> Result<(), Error> {
     for node in group.children() {
         match node {
-            usvg::Node::Group(group) => collect_svg_paths(
-                group,
-                paths,
-                scale_x,
-                scale_y,
-                height,
-                svg_path,
-                units_per_em,
-            )?,
+            usvg::Node::Group(group) => {
+                collect_svg_paths(group, paths, scale, x_offset, svg_path, metrics)?
+            }
             usvg::Node::Path(path) => {
                 let transform = path.abs_transform();
                 let transform_point = |point: tiny_skia_path::Point| {
@@ -590,7 +624,7 @@ fn collect_svg_paths(
                         f64::from(transform.sx * point.x + transform.kx * point.y + transform.tx);
                     let y =
                         f64::from(transform.ky * point.x + transform.sy * point.y + transform.ty);
-                    Point::new(x * scale_x, (height - y) * scale_y)
+                    Point::new(x * scale + x_offset, metrics.ascender - y * scale)
                 };
                 let mut bez_path = BezPath::new();
                 for segment in path.data().segments() {
@@ -615,19 +649,18 @@ fn collect_svg_paths(
                             convert_svg_paint(
                                 fill,
                                 bez_path.bounding_box(),
-                                scale_x,
-                                scale_y,
-                                height,
+                                scale,
+                                x_offset,
                                 svg_path,
-                                units_per_em,
+                                metrics,
                             )
                         })
                         .transpose()?;
                     paths.push(SvgPath {
                         instance: GlyphInstance {
-                            width: f64::from(units_per_em),
-                            height: Some(f64::from(units_per_em)),
-                            vertical_origin: Some(f64::from(units_per_em)),
+                            width: metrics.width,
+                            height: Some(metrics.ascender - metrics.descender),
+                            vertical_origin: Some(metrics.ascender),
                             contours: vec![bez_path],
                             components: Vec::new(),
                         },
@@ -644,18 +677,17 @@ fn collect_svg_paths(
 fn convert_svg_paint(
     fill: &usvg::Fill,
     bbox: kurbo::Rect,
-    scale_x: f64,
-    scale_y: f64,
-    height: f64,
+    scale: f64,
+    x_offset: f64,
     svg_path: &Path,
-    _units_per_em: u16,
+    metrics: SvgFontMetrics,
 ) -> Result<SvgPaint, Error> {
     let opacity = fill.opacity().get();
     let space = GradientSpace {
         bbox,
-        scale_x,
-        scale_y,
-        height,
+        scale,
+        x_offset,
+        ascender: metrics.ascender,
     };
     match fill.paint() {
         usvg::Paint::Color(color) => Ok(SvgPaint::Solid(Color {
@@ -748,15 +780,18 @@ fn transformed_svg_point(x: f32, y: f32, transform: tiny_skia_path::Transform) -
 
 struct GradientSpace {
     bbox: kurbo::Rect,
-    scale_x: f64,
-    scale_y: f64,
-    height: f64,
+    scale: f64,
+    x_offset: f64,
+    ascender: f64,
 }
 
 impl GradientSpace {
     fn point(&self, x: f32, y: f32, transform: tiny_skia_path::Transform) -> Point {
         let (x, y) = transformed_svg_point(x, y, transform);
-        let point = Point::new(x * self.scale_x, (self.height - y) * self.scale_y);
+        let point = Point::new(
+            x * self.scale + self.x_offset,
+            self.ascender - y * self.scale,
+        );
         Point::new(
             (point.x - self.bbox.x0) / self.bbox.width(),
             (point.y - self.bbox.y0) / self.bbox.height(),
@@ -814,11 +849,11 @@ impl Work<Context, WorkId, Error> for EmojiGlyphWork {
                 .get(&source.master_name)
                 .ok_or_else(|| Error::UnknownEntry("master", source.master_name.clone()))?;
             let location = master_location(position, &metadata.all_source_axes)?;
-            let paths = parse_svg_paths(&source.path, metadata.units_per_em)?;
+            let paths = parse_svg_paths(&source.path, self.metrics)?;
             let instance = GlyphInstance {
-                width: f64::from(metadata.units_per_em),
-                height: Some(f64::from(metadata.units_per_em)),
-                vertical_origin: Some(f64::from(metadata.units_per_em)),
+                width: self.metrics.width,
+                height: Some(self.metrics.ascender - self.metrics.descender),
+                vertical_origin: Some(self.metrics.ascender),
                 contours: paths
                     .iter()
                     .flat_map(|path| path.instance.contours.clone())
@@ -961,8 +996,9 @@ impl Work<Context, WorkId, Error> for EmojiWork {
                 self.config.family.clone(),
             ),
         ]);
+        let metrics = self.config.svg_metrics();
         let static_metadata = StaticMetadata::new(
-            1024,
+            metrics.units_per_em,
             names,
             axes,
             named_instances,
@@ -988,6 +1024,7 @@ impl Work<Context, WorkId, Error> for EmojiGlobalMetricsWork {
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let metadata = context.static_metadata.get();
+        let metrics = self.config.svg_metrics();
         let mut builder = GlobalMetricsBuilder::new();
         let mut locations = HashSet::new();
         for master in self.config.master.values() {
@@ -997,7 +1034,14 @@ impl Work<Context, WorkId, Error> for EmojiGlobalMetricsWork {
             )?);
         }
         for location in locations {
-            builder.populate_defaults(&location, metadata.units_per_em, None, None, None, None);
+            builder.populate_defaults(
+                &location,
+                metrics.units_per_em,
+                None,
+                Some(metrics.ascender),
+                Some(metrics.descender),
+                None,
+            );
         }
         context
             .global_metrics
@@ -1129,7 +1173,7 @@ impl Work<Context, WorkId, Error> for EmojiColorPaletteWork {
         sources.dedup();
 
         for source in sources {
-            for path in parse_svg_paths(&source, 1024)? {
+            for path in parse_svg_paths(&source, self.config.svg_metrics())? {
                 if let Some(paint) = path.paint {
                     for color in paint.colors() {
                         if !colors.contains(&color) {
@@ -1165,7 +1209,6 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let metadata = context.static_metadata.get();
         let Some(palettes) = context.colors.try_get() else {
             return Ok(());
         };
@@ -1177,7 +1220,7 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
             let mut layer_paints = BTreeMap::<usize, SvgPaint>::new();
 
             for source in glyph_sources {
-                for (index, svg_path) in parse_svg_paths(&source.path, metadata.units_per_em)?
+                for (index, svg_path) in parse_svg_paths(&source.path, self.config.svg_metrics())?
                     .into_iter()
                     .enumerate()
                 {
@@ -1245,6 +1288,10 @@ mod tests {
             output_file: "test.ttf".to_string(),
             color_format: "glyf_colr_1".to_string(),
             clipbox_quantization: 32,
+            upem: 1024,
+            width: 1275,
+            ascender: 950,
+            descender: -250,
             source_dir: PathBuf::new(),
             axis: HashMap::from([(
                 "wght".to_string(),
@@ -1336,12 +1383,12 @@ mod tests {
         )
         .unwrap();
 
-        let instance = parse_svg(&path, 1024).unwrap();
-        assert_eq!(instance.width, 1024.0);
+        let instance = parse_svg(&path, config().svg_metrics()).unwrap();
+        assert_eq!(instance.width, 1275.0);
         assert_eq!(instance.contours.len(), 1);
         assert_eq!(
             instance.contours[0].bounding_box(),
-            kurbo::Rect::new(0.0, 512.0, 512.0, 1024.0)
+            kurbo::Rect::new(37.5, 350.0, 637.5, 950.0)
         );
         assert_eq!(
             codepoints_from_glyph_name("emoji_u1f600").unwrap(),
@@ -1518,7 +1565,7 @@ mod tests {
         )
         .unwrap();
 
-        let paths = parse_svg_paths(&path, 1024).unwrap();
+        let paths = parse_svg_paths(&path, config().svg_metrics()).unwrap();
         assert_eq!(paths.len(), 2);
         let SvgPaint::Linear(linear) = &paths[0].paint.as_ref().unwrap() else {
             panic!("expected linear gradient");

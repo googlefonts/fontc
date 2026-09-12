@@ -86,6 +86,11 @@ fn scale_gradient_radius(bbox: &Bbox, center_pct_x: f64, center_pct_y: f64) -> u
     max_dist_squared.sqrt().ot_round()
 }
 
+/// Scale a radial-gradient radius expressed as a fraction of its glyph bbox.
+fn scale_gradient_radius_pct(bbox: &Bbox, radius_pct: f32) -> u16 {
+    ((bbox.x_max - bbox.x_min) as f64 * f64::from(radius_pct)).ot_round()
+}
+
 /// Scale a gradient coordinate from percentage (0.0-1.0) to absolute coordinates
 /// within the given bounding box.
 ///
@@ -205,12 +210,12 @@ fn to_colr_paint(
             let (x0, y0) = scale_gradient_point(bbox, radial.p0.x, radial.p0.y);
             let (x1, y1) = scale_gradient_point(bbox, radial.p1.x, radial.p1.y);
             // Handle optional radii
-            let r0 = radial.r0.map(|r| r.0 as u16).unwrap_or(0); // default to 0
+            let r0 = radial
+                .r0
+                .map(|r| scale_gradient_radius_pct(bbox, r.0))
+                .unwrap_or(0); // default to 0
             let r1 = if let Some(r) = radial.r1 {
-                // TODO: Semantics of explicit radius values are unclear. Are they absolute font units,
-                // or percentages of bbox dimensions? For now treat as absolute, revisit when we have
-                // a source format that actually provides explicit radii.
-                r.0 as u16
+                scale_gradient_radius_pct(bbox, r.0)
             } else {
                 // Calculate radius from bbox dimensions, matching glyphsLib behavior
                 scale_gradient_radius(bbox, radial.p1.x, radial.p1.y)
@@ -524,5 +529,17 @@ mod tests {
             }
             _ => panic!("Expected Paint::Solid"),
         }
+    }
+
+    #[test]
+    fn radial_gradient_radius_is_scaled_from_bbox_fraction() {
+        let bbox = Bbox {
+            x_min: 10,
+            y_min: -20,
+            x_max: 110,
+            y_max: 80,
+        };
+
+        assert_eq!(scale_gradient_radius_pct(&bbox, 0.5), 50);
     }
 }
