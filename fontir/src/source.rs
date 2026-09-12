@@ -1,13 +1,21 @@
 //! Generic model of font sources.
 
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
-use fontdrasil::coords::NormalizedLocation;
 use fontdrasil::orchestration::Work;
+use fontdrasil::{
+    coords::{CoordConverter, NormalizedLocation, UserCoord, UserLocation},
+    types::{Axes, Axis},
+};
 use serde::Deserialize;
+use write_fonts::types::{NameId, Tag};
 
 use crate::{
     error::Error,
+    ir::{NameKey, NamedInstance, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
 };
 
@@ -172,8 +180,201 @@ impl Work<Context, WorkId, Error> for EmojiWork {
         WorkId::StaticMetadata
     }
 
-    fn exec(&self, _context: &Context) -> Result<(), Error> {
-        let _ = &self.config;
-        todo!()
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let mut axes = self
+            .config
+            .axis
+            .iter()
+            .map(|(tag_name, axis)| {
+                let tag = tag_name.parse::<Tag>().map_err(|cause| Error::InvalidTag {
+                    raw_tag: tag_name.clone(),
+                    cause,
+                })?;
+                let positions = self
+                    .config
+                    .master
+                    .values()
+                    .map(|master| {
+                        master
+                            .position
+                            .get(tag_name)
+                            .copied()
+                            .unwrap_or(axis.default)
+                    })
+                    .collect::<Vec<_>>();
+                let min = positions
+                    .iter()
+                    .copied()
+                    .reduce(f64::min)
+                    .unwrap_or(axis.default);
+                let max = positions
+                    .iter()
+                    .copied()
+                    .reduce(f64::max)
+                    .unwrap_or(axis.default);
+
+                Ok(Axis {
+                    name: axis.name.clone(),
+                    tag,
+                    min: UserCoord::new(min),
+                    default: UserCoord::new(axis.default),
+                    max: UserCoord::new(max),
+                    hidden: false,
+                    converter: CoordConverter::default_normalization(
+                        UserCoord::new(min),
+                        UserCoord::new(axis.default),
+                        UserCoord::new(max),
+                    ),
+                    localized_names: Default::default(),
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        axes.sort_by_key(|axis| axis.tag);
+
+        let defaults: HashMap<_, _> = axes.iter().map(|axis| (axis.tag, axis.default)).collect();
+        let axis_tags = axes.iter().map(|axis| axis.tag).collect::<HashSet<_>>();
+        let all_axes = Axes::new(axes.clone());
+
+        let mut global_locations = HashSet::new();
+        let mut named_instances = Vec::new();
+        let mut masters = self.config.master.iter().collect::<Vec<_>>();
+        masters.sort_by_key(|(name, _)| *name);
+        for (_, master) in masters {
+            let location: UserLocation = axis_tags
+                .iter()
+                .map(|tag| {
+                    (
+                        *tag,
+                        UserCoord::new(
+                            master
+                                .position
+                                .get(&tag.to_string())
+                                .copied()
+                                .unwrap_or_else(|| defaults[tag].to_f64()),
+                        ),
+                    )
+                })
+                .collect();
+            global_locations.insert(location.to_normalized(&all_axes)?);
+            named_instances.push(NamedInstance {
+                name: master.style_name.clone(),
+                postscript_name: None,
+                location,
+            });
+        }
+
+        let names = HashMap::from([
+            (
+                NameKey::new(NameId::FAMILY_NAME, &self.config.family),
+                self.config.family.clone(),
+            ),
+            (
+                NameKey::new(NameId::TYPOGRAPHIC_FAMILY_NAME, &self.config.family),
+                self.config.family.clone(),
+            ),
+        ]);
+        let static_metadata = StaticMetadata::new(
+            1024,
+            names,
+            axes,
+            named_instances,
+            global_locations,
+            None,
+            0.0,
+            None,
+            false,
+        )?;
+        context.static_metadata.set(static_metadata);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fontdrasil::orchestration::Work;
+
+    fn config() -> EmojiConfig {
+        EmojiConfig {
+            family: "Test Color".to_string(),
+            output_file: "test.ttf".to_string(),
+            color_format: "glyf_colr_1".to_string(),
+            clipbox_quantization: 32,
+            axis: HashMap::from([(
+                "wght".to_string(),
+                EmojiAxis {
+                    name: "Weight".to_string(),
+                    default: 400.0,
+                },
+            )]),
+            master: HashMap::from([
+                (
+                    "bold".to_string(),
+                    EmojiMaster {
+                        style_name: "Bold".to_string(),
+                        srcs: vec!["bold.svg".to_string()],
+                        position: HashMap::from([(String::from("wght"), 700.0)]),
+                    },
+                ),
+                (
+                    "regular".to_string(),
+                    EmojiMaster {
+                        style_name: "Regular".to_string(),
+                        srcs: vec!["regular.svg".to_string()],
+                        position: HashMap::new(),
+                    },
+                ),
+            ]),
+        }
+    }
+
+    fn execute(config: EmojiConfig) -> std::sync::Arc<StaticMetadata> {
+        let work = EmojiWork { config };
+        let root = Context::new_root(Flags::empty());
+        let context = root.copy_for_work(work.read_access(), work.write_access());
+        work.exec(&context).unwrap();
+        root.static_metadata.get()
+    }
+
+    #[test]
+    fn builds_static_metadata_from_config() {
+        let metadata = execute(config());
+        let axis = metadata.all_source_axes.iter().next().unwrap();
+
+        assert_eq!(metadata.units_per_em, 1024);
+        assert_eq!(axis.name, "Weight");
+        assert_eq!(axis.min.to_f64(), 400.0);
+        assert_eq!(axis.default.to_f64(), 400.0);
+        assert_eq!(axis.max.to_f64(), 700.0);
+        assert_eq!(
+            metadata
+                .names
+                .get(&NameKey::new(NameId::FAMILY_NAME, "Test Color")),
+            Some(&"Test Color".to_string())
+        );
+        assert_eq!(
+            metadata
+                .named_instances
+                .iter()
+                .map(|instance| instance.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Bold", "Regular"]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_axis_tags() {
+        let mut config = config();
+        config.axis.insert(
+            "invalid".to_string(),
+            EmojiAxis {
+                name: "Invalid".to_string(),
+                default: 0.0,
+            },
+        );
+        let work = EmojiWork { config };
+        let result = work.exec(&Context::new_root(Flags::empty()));
+
+        assert!(matches!(result, Err(Error::InvalidTag { raw_tag, .. }) if raw_tag == "invalid"));
     }
 }
