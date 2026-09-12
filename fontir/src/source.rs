@@ -1,7 +1,7 @@
 //! Generic model of font sources.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -22,9 +22,10 @@ use write_fonts::types::{NameId, Tag};
 use crate::{
     error::{BadSource, Error},
     ir::{
-        Color, ColorGlyphs, ColorPalettes, ColorStop, GlyphBuilder, GlyphInstance, NameKey,
-        NamedInstance, Paint, PaintGlyph, PaintLinearGradient, PaintRadialGradient, PaintSolid,
-        StaticMetadata,
+        Color, ColorGlyphs, ColorPalettes, ColorStop, FeatureSources, FeaturesSource,
+        GlobalMetricsBuilder, GlyphBuilder, GlyphInstance, KerningInstance, KerningLocations,
+        NameKey, NamedInstance, Paint, PaintGlyph, PaintLinearGradient, PaintRadialGradient,
+        PaintSolid, PreliminaryGdefCategories, StaticMetadata,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
 };
@@ -150,7 +151,9 @@ impl Source for EmojiSource {
     }
 
     fn create_global_metric_work(&self) -> Result<Box<IrWork>, Error> {
-        todo!()
+        Ok(Box::new(EmojiGlobalMetricsWork {
+            config: self.config.clone(),
+        }))
     }
 
     fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
@@ -161,6 +164,10 @@ impl Source for EmojiSource {
                 let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
                     return Err(Error::InvalidEntry("SVG filename", source.clone()));
                 };
+                // TODO: Support multi-codepoint emoji sequences as ligatures/components.
+                if is_multi_codepoint_emoji(stem) {
+                    continue;
+                }
                 let name = stem.into();
                 let codepoints = codepoints_from_glyph_name(stem)?;
                 glyphs.entry(name).or_default().push(EmojiGlyphSource {
@@ -171,10 +178,43 @@ impl Source for EmojiSource {
             }
         }
 
-        glyphs
+        let mut preliminary_names = Vec::new();
+        let mut works = glyphs
             .into_iter()
             .map(|(name, sources)| {
                 let glyph_name: GlyphName = name;
+                let layer_count = sources
+                    .iter()
+                    .map(|source| parse_svg_paths(&source.path, 1024).map(|paths| paths.len()))
+                    .collect::<Result<Vec<_>, Error>>()?
+                    .into_iter()
+                    .max()
+                    .unwrap_or_default();
+                preliminary_names.push(glyph_name.clone());
+                let painted_indices = sources
+                    .iter()
+                    .map(|source| {
+                        parse_svg_paths(&source.path, 1024).map(|paths| {
+                            paths
+                                .into_iter()
+                                .enumerate()
+                                .filter_map(|(index, path)| path.paint.map(|_| index))
+                                .collect::<BTreeSet<_>>()
+                        })
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+                let layer_indices = painted_indices
+                    .into_iter()
+                    .flatten()
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                preliminary_names.extend(
+                    layer_indices
+                        .iter()
+                        .copied()
+                        .map(|index| emoji_layer_name(&glyph_name, index)),
+                );
                 let codepoints = sources
                     .iter()
                     .flat_map(|source| source.codepoints.iter().copied())
@@ -189,24 +229,31 @@ impl Source for EmojiSource {
                         .iter()
                         .map(|(name, master)| (name.clone(), master.position.clone()))
                         .collect(),
+                    layer_count,
+                    layer_indices,
                 }) as Box<IrWork>)
             })
-            .collect()
+            .collect::<Result<Vec<_>, Error>>()?;
+        works.push(Box::new(EmojiGdefWork) as Box<IrWork>);
+        works.push(Box::new(EmojiPreliminaryGlyphOrderWork {
+            names: preliminary_names,
+        }) as Box<IrWork>);
+        Ok(works)
     }
 
     fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        todo!()
+        Ok(Box::new(EmojiFeatureWork))
     }
 
     fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        todo!()
+        Ok(Box::new(EmojiKerningLocationsWork))
     }
 
     fn create_kerning_instance_ir_work(
         &self,
-        _at: NormalizedLocation,
+        at: NormalizedLocation,
     ) -> Result<Box<IrWork>, Error> {
-        todo!()
+        Ok(Box::new(EmojiKerningInstanceWork { location: at }))
     }
 
     fn create_color_palette_work(&self) -> Result<Box<IrWork>, Error> {
@@ -228,6 +275,30 @@ struct EmojiWork {
 }
 
 #[derive(Debug)]
+struct EmojiGlobalMetricsWork {
+    config: EmojiConfig,
+}
+
+#[derive(Debug)]
+struct EmojiFeatureWork;
+
+#[derive(Debug)]
+struct EmojiKerningLocationsWork;
+
+#[derive(Debug)]
+struct EmojiKerningInstanceWork {
+    location: NormalizedLocation,
+}
+
+#[derive(Debug)]
+struct EmojiGdefWork;
+
+#[derive(Debug)]
+struct EmojiPreliminaryGlyphOrderWork {
+    names: Vec<GlyphName>,
+}
+
+#[derive(Debug)]
 struct EmojiGlyphSource {
     master_name: String,
     path: PathBuf,
@@ -240,6 +311,8 @@ struct EmojiGlyphWork {
     codepoints: HashSet<u32>,
     sources: Vec<EmojiGlyphSource>,
     master_positions: HashMap<String, HashMap<String, f64>>,
+    layer_count: usize,
+    layer_indices: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -291,13 +364,23 @@ fn codepoints_from_glyph_name(name: &str) -> Result<HashSet<u32>, Error> {
     let Some(codepoints) = name.strip_prefix("emoji_u") else {
         return Ok(HashSet::new());
     };
-    codepoints
+    let codepoints: HashSet<_> = codepoints
         .split('_')
         .map(|codepoint| {
             u32::from_str_radix(codepoint, 16)
                 .map_err(|_| Error::InvalidEntry("emoji codepoint", codepoint.to_owned()))
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+    Ok(if codepoints.len() == 1 {
+        codepoints
+    } else {
+        HashSet::new()
+    })
+}
+
+fn is_multi_codepoint_emoji(name: &str) -> bool {
+    name.strip_prefix("emoji_u")
+        .is_some_and(|codepoints| codepoints.split('_').count() > 1)
 }
 
 fn master_location(
@@ -321,6 +404,7 @@ fn master_location(
     Ok(location.to_normalized(axes)?)
 }
 
+#[cfg(test)]
 fn parse_svg(path: &Path, units_per_em: u16) -> Result<GlyphInstance, Error> {
     let paths = parse_svg_paths(path, units_per_em)?;
     Ok(GlyphInstance {
@@ -587,27 +671,54 @@ impl Work<Context, WorkId, Error> for EmojiGlyphWork {
     }
 
     fn write_access(&self) -> Access<WorkId> {
-        AccessBuilder::new()
+        let mut access = AccessBuilder::new()
             .specific_instance(WorkId::Glyph(self.glyph_name.clone()))
-            .specific_instance(WorkId::Anchor(self.glyph_name.clone()))
-            .build()
+            .specific_instance(WorkId::Anchor(self.glyph_name.clone()));
+        for index in self.layer_indices.iter().copied() {
+            access =
+                access.specific_instance(WorkId::Glyph(emoji_layer_name(&self.glyph_name, index)));
+        }
+        access.build()
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::Anchor(self.glyph_name.clone())]
+        let mut completed = vec![WorkId::Anchor(self.glyph_name.clone())];
+        completed.extend(
+            self.layer_indices
+                .iter()
+                .copied()
+                .map(|index| WorkId::Glyph(emoji_layer_name(&self.glyph_name, index))),
+        );
+        completed
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let metadata = context.static_metadata.get();
         let mut instances = HashMap::new();
+        let mut layer_instances = vec![HashMap::new(); self.layer_count];
         for source in &self.sources {
             let position = self
                 .master_positions
                 .get(&source.master_name)
                 .ok_or_else(|| Error::UnknownEntry("master", source.master_name.clone()))?;
             let location = master_location(position, &metadata.all_source_axes)?;
-            let instance = parse_svg(&source.path, metadata.units_per_em)?;
-            instances.insert(location, instance);
+            let paths = parse_svg_paths(&source.path, metadata.units_per_em)?;
+            let instance = GlyphInstance {
+                width: f64::from(metadata.units_per_em),
+                height: Some(f64::from(metadata.units_per_em)),
+                vertical_origin: Some(f64::from(metadata.units_per_em)),
+                contours: paths
+                    .iter()
+                    .flat_map(|path| path.instance.contours.clone())
+                    .collect(),
+                components: Vec::new(),
+            };
+            instances.insert(location.clone(), instance);
+            for (index, path) in paths.into_iter().enumerate() {
+                if path.paint.is_some() {
+                    layer_instances[index].insert(location.clone(), path.instance);
+                }
+            }
         }
 
         let glyph = GlyphBuilder {
@@ -618,6 +729,20 @@ impl Work<Context, WorkId, Error> for EmojiGlyphWork {
         }
         .build()?;
         context.glyphs.set(glyph);
+        for (index, sources) in layer_instances.into_iter().enumerate() {
+            if sources.is_empty() {
+                continue;
+            }
+            context.glyphs.set(
+                GlyphBuilder {
+                    name: emoji_layer_name(&self.glyph_name, index),
+                    emit_to_binary: true,
+                    codepoints: HashSet::new(),
+                    sources,
+                }
+                .build()?,
+            );
+        }
         Ok(())
     }
 }
@@ -702,7 +827,7 @@ impl Work<Context, WorkId, Error> for EmojiWork {
                     )
                 })
                 .collect();
-            global_locations.insert(location.to_normalized(&all_axes)?);
+            global_locations.insert(master_location(&master.position, &all_axes)?);
             named_instances.push(NamedInstance {
                 name: master.style_name.clone(),
                 postscript_name: None,
@@ -732,6 +857,130 @@ impl Work<Context, WorkId, Error> for EmojiWork {
             false,
         )?;
         context.static_metadata.set(static_metadata);
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, Error> for EmojiGlobalMetricsWork {
+    fn id(&self) -> WorkId {
+        WorkId::GlobalMetrics
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::StaticMetadata)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let metadata = context.static_metadata.get();
+        let mut builder = GlobalMetricsBuilder::new();
+        let mut locations = HashSet::new();
+        for master in self.config.master.values() {
+            locations.insert(master_location(
+                &master.position,
+                &metadata.all_source_axes,
+            )?);
+        }
+        for location in locations {
+            builder.populate_defaults(&location, metadata.units_per_em, None, None, None, None);
+        }
+        context
+            .global_metrics
+            .set(builder.build(&metadata.all_source_axes)?);
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, Error> for EmojiFeatureWork {
+    fn id(&self) -> WorkId {
+        WorkId::Features
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::Features)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        context
+            .features
+            .set(FeatureSources::single(FeaturesSource::Empty));
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, Error> for EmojiKerningLocationsWork {
+    fn id(&self) -> WorkId {
+        WorkId::KerningLocations
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::KerningLocations)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        context.kerning_locations.set(KerningLocations::default());
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, Error> for EmojiKerningInstanceWork {
+    fn id(&self) -> WorkId {
+        WorkId::KernInstance(self.location.clone())
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::KerningLocations)
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::SpecificInstanceOfVariant(WorkId::KernInstance(self.location.clone()))
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        context.kerning_at.set(KerningInstance {
+            location: self.location.clone(),
+            ..Default::default()
+        });
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, Error> for EmojiGdefWork {
+    fn id(&self) -> WorkId {
+        WorkId::PreliminaryGdefCategories
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::PreliminaryGdefCategories)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        context
+            .preliminary_gdef_categories
+            .set(PreliminaryGdefCategories::default());
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, Error> for EmojiPreliminaryGlyphOrderWork {
+    fn id(&self) -> WorkId {
+        WorkId::PreliminaryGlyphOrder
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::ALL_GLYPHS)
+            .build()
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Variant(WorkId::PreliminaryGlyphOrder)
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        context
+            .preliminary_glyph_order
+            .set(self.names.iter().cloned().collect());
         Ok(())
     }
 }
@@ -791,14 +1040,12 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
         AccessBuilder::new()
             .variant(WorkId::StaticMetadata)
             .variant(WorkId::ColorPalettes)
+            .variant(WorkId::ALL_GLYPHS)
             .build()
     }
 
     fn write_access(&self) -> Access<WorkId> {
-        AccessBuilder::new()
-            .variant(WorkId::PaintGraph)
-            .variant(WorkId::ALL_GLYPHS)
-            .build()
+        Access::Variant(WorkId::PaintGraph)
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
@@ -814,6 +1061,10 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
                 let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
                     return Err(Error::InvalidEntry("SVG filename", source.clone()));
                 };
+                // TODO: Support multi-codepoint emoji sequences as ligatures/components.
+                if is_multi_codepoint_emoji(stem) {
+                    continue;
+                }
                 sources
                     .entry(stem.into())
                     .or_default()
@@ -823,17 +1074,9 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
 
         let mut base_glyphs = IndexMap::new();
         for (base_name, glyph_sources) in sources {
-            let mut layer_instances =
-                BTreeMap::<usize, HashMap<NormalizedLocation, GlyphInstance>>::new();
             let mut layer_paints = BTreeMap::<usize, SvgPaint>::new();
 
-            for (master_name, path) in glyph_sources {
-                let position = self
-                    .config
-                    .master
-                    .get(&master_name)
-                    .ok_or_else(|| Error::UnknownEntry("master", master_name.clone()))?;
-                let location = master_location(&position.position, &metadata.all_source_axes)?;
+            for (_master_name, path) in glyph_sources {
                 for (index, svg_path) in parse_svg_paths(&path, metadata.units_per_em)?
                     .into_iter()
                     .enumerate()
@@ -856,24 +1099,12 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
                             "paint for layer {index} of '{base_name}' varies between masters"
                         )));
                     }
-                    layer_instances
-                        .entry(index)
-                        .or_default()
-                        .insert(location.clone(), svg_path.instance);
                 }
             }
 
             let mut paints = Vec::new();
-            for (index, instances) in layer_instances {
+            for index in layer_paints.keys().copied() {
                 let layer_name = emoji_layer_name(&base_name, index);
-                let glyph = GlyphBuilder {
-                    name: layer_name.clone(),
-                    emit_to_binary: true,
-                    codepoints: HashSet::new(),
-                    sources: instances,
-                }
-                .build()?;
-                context.glyphs.set(glyph);
                 paints.push(Paint::Glyph(Box::new(PaintGlyph {
                     name: layer_name,
                     paint: layer_paints[&index].to_paint(),
@@ -1015,6 +1246,12 @@ mod tests {
             codepoints_from_glyph_name("emoji_u1f600").unwrap(),
             HashSet::from([0x1f600])
         );
+        assert!(
+            codepoints_from_glyph_name("emoji_u1f469_200d_1f4bb")
+                .unwrap()
+                .is_empty()
+        );
+        assert!(is_multi_codepoint_emoji("emoji_u1f469_200d_1f4bb"));
     }
 
     #[test]
@@ -1042,6 +1279,15 @@ mod tests {
         let static_context =
             root.copy_for_work(static_work.read_access(), static_work.write_access());
         static_work.exec(&static_context).unwrap();
+
+        for glyph_work in EmojiSource::from_config(config.clone())
+            .create_glyph_ir_work()
+            .unwrap()
+        {
+            let glyph_context =
+                root.copy_for_work(glyph_work.read_access(), glyph_work.write_access());
+            glyph_work.exec(&glyph_context).unwrap();
+        }
 
         let palette_work = EmojiColorPaletteWork {
             config: config.clone(),
