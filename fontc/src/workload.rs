@@ -294,12 +294,23 @@ impl Workload {
         }
     }
 
-    fn mark_also_completed(&mut self, success: &AnyWorkId) {
+    fn mark_also_completed(&mut self, fe_root: &FeContext, success: &AnyWorkId) {
         let Some(also_completed) = self.also_completes.get(success).cloned() else {
             return;
         };
         for id in also_completed {
+            let auxiliary_glyph = match &id {
+                AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) => Some(glyph_name.clone()),
+                _ => None,
+            };
             self.complete_one(id);
+            // An auxiliary FE glyph can have a BE glyph job of its own. Since
+            // the auxiliary FE job is completed by `also_completes`, it does
+            // not pass through `handle_success`; refine the corresponding BE
+            // job here so it is no longer stuck at Access::Unknown.
+            if let Some(glyph_name) = auxiliary_glyph {
+                self.update_be_glyph_work(fe_root, glyph_name);
+            }
         }
     }
 
@@ -329,7 +340,7 @@ impl Workload {
                 counter.fetch_sub(1, Ordering::AcqRel);
             }
             self.complete_one(be_id.clone());
-            self.mark_also_completed(&be_id);
+            self.mark_also_completed(fe_root, &be_id);
             return;
         }
 
@@ -367,7 +378,7 @@ impl Workload {
         log::debug!("{success:?} successful");
 
         self.complete_one(success.clone());
-        self.mark_also_completed(&success);
+        self.mark_also_completed(fe_root, &success);
 
         // When glyph order finalizes, add BE work for any new glyphs
         if let AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) = success {
