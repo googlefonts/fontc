@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fs,
+    hash::{Hash, Hasher},
     path::{Path, PathBuf},
 };
 
@@ -157,26 +158,8 @@ impl Source for EmojiSource {
     }
 
     fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
-        let mut glyphs = BTreeMap::<GlyphName, Vec<EmojiGlyphSource>>::new();
-        for (master_name, master) in &self.config.master {
-            for source in &master.srcs {
-                let path = self.config.source_dir.join(source);
-                let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-                    return Err(Error::InvalidEntry("SVG filename", source.clone()));
-                };
-                // TODO: Support multi-codepoint emoji sequences as ligatures/components.
-                if is_multi_codepoint_emoji(stem) {
-                    continue;
-                }
-                let name = stem.into();
-                let codepoints = codepoints_from_glyph_name(stem)?;
-                glyphs.entry(name).or_default().push(EmojiGlyphSource {
-                    master_name: master_name.clone(),
-                    path,
-                    codepoints,
-                });
-            }
-        }
+        let glyphs = emoji_glyph_sources(&self.config)?;
+        let layer_names = emoji_layer_names(&self.config, &glyphs)?;
 
         let mut preliminary_names = Vec::new();
         let mut works = glyphs
@@ -209,12 +192,11 @@ impl Source for EmojiSource {
                     .collect::<BTreeSet<_>>()
                     .into_iter()
                     .collect::<Vec<_>>();
-                preliminary_names.extend(
-                    layer_indices
-                        .iter()
-                        .copied()
-                        .map(|index| emoji_layer_name(&glyph_name, index)),
-                );
+                preliminary_names.extend(layer_indices.iter().copied().filter_map(|index| {
+                    let original = emoji_layer_name(&glyph_name, index);
+                    let canonical = layer_names[&original].clone();
+                    (canonical == original).then_some(canonical)
+                }));
                 let codepoints = sources
                     .iter()
                     .flat_map(|source| source.codepoints.iter().copied())
@@ -231,6 +213,7 @@ impl Source for EmojiSource {
                         .collect(),
                     layer_count,
                     layer_indices,
+                    layer_names: layer_names.clone(),
                 }) as Box<IrWork>)
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -265,6 +248,7 @@ impl Source for EmojiSource {
     fn create_color_glyphs_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(EmojiColorGlyphWork {
             config: self.config.clone(),
+            layer_names: emoji_layer_names(&self.config, &emoji_glyph_sources(&self.config)?)?,
         }))
     }
 }
@@ -313,6 +297,7 @@ struct EmojiGlyphWork {
     master_positions: HashMap<String, HashMap<String, f64>>,
     layer_count: usize,
     layer_indices: Vec<usize>,
+    layer_names: BTreeMap<GlyphName, GlyphName>,
 }
 
 #[derive(Debug)]
@@ -323,6 +308,7 @@ struct EmojiColorPaletteWork {
 #[derive(Debug)]
 struct EmojiColorGlyphWork {
     config: EmojiConfig,
+    layer_names: BTreeMap<GlyphName, GlyphName>,
 }
 
 #[derive(Debug)]
@@ -336,6 +322,132 @@ enum SvgPaint {
     Solid(Color),
     Linear(PaintLinearGradient),
     Radial(PaintRadialGradient),
+}
+
+fn emoji_glyph_sources(
+    config: &EmojiConfig,
+) -> Result<BTreeMap<GlyphName, Vec<EmojiGlyphSource>>, Error> {
+    let mut glyphs = BTreeMap::<GlyphName, Vec<EmojiGlyphSource>>::new();
+    for (master_name, master) in &config.master {
+        for source in &master.srcs {
+            let path = config.source_dir.join(source);
+            let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                return Err(Error::InvalidEntry("SVG filename", source.clone()));
+            };
+            // TODO: Support multi-codepoint emoji sequences as ligatures/components.
+            if is_multi_codepoint_emoji(stem) {
+                continue;
+            }
+            let name = stem.into();
+            let codepoints = codepoints_from_glyph_name(stem)?;
+            glyphs.entry(name).or_default().push(EmojiGlyphSource {
+                master_name: master_name.clone(),
+                path,
+                codepoints,
+            });
+        }
+    }
+    Ok(glyphs)
+}
+
+/// Map every source layer name to the first name with exactly the same outline
+/// at every configured master. Paint is deliberately excluded: the same
+/// outline can be used by many differently painted COLR layers.
+fn emoji_layer_names(
+    config: &EmojiConfig,
+    glyphs: &BTreeMap<GlyphName, Vec<EmojiGlyphSource>>,
+) -> Result<BTreeMap<GlyphName, GlyphName>, Error> {
+    let master_names = config.master.keys().cloned().collect::<BTreeSet<_>>();
+    let mut buckets: HashMap<u64, Vec<(Vec<Option<GlyphInstance>>, GlyphName)>> = HashMap::new();
+    let mut layer_names = BTreeMap::new();
+
+    for (glyph_name, sources) in glyphs {
+        let parsed = sources
+            .iter()
+            .map(|source| {
+                Ok((
+                    source.master_name.clone(),
+                    parse_svg_paths(&source.path, 1024)?,
+                ))
+            })
+            .collect::<Result<HashMap<_, _>, Error>>()?;
+        let layer_count = parsed.values().map(Vec::len).max().unwrap_or_default();
+
+        for index in 0..layer_count {
+            let original = emoji_layer_name(glyph_name, index);
+            let signature = master_names
+                .iter()
+                .map(|master_name| {
+                    parsed
+                        .get(master_name)
+                        .and_then(|paths| paths.get(index))
+                        .filter(|path| path.paint.is_some())
+                        .map(|path| path.instance.clone())
+                })
+                .collect::<Vec<_>>();
+
+            if !signature.iter().any(Option::is_some) {
+                continue;
+            }
+
+            let hash = hash_layer_signature(&signature);
+            let canonical = buckets
+                .entry(hash)
+                .or_default()
+                .iter()
+                .find_map(|(candidate, name)| (candidate == &signature).then_some(name.clone()));
+            let canonical = canonical.unwrap_or_else(|| {
+                buckets
+                    .get_mut(&hash)
+                    .unwrap()
+                    .push((signature, original.clone()));
+                original.clone()
+            });
+            layer_names.insert(original, canonical);
+        }
+    }
+    Ok(layer_names)
+}
+
+fn hash_layer_signature(signature: &[Option<GlyphInstance>]) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for instance in signature {
+        match instance {
+            None => 0u8.hash(&mut hasher),
+            Some(instance) => {
+                1u8.hash(&mut hasher);
+                instance.width.to_bits().hash(&mut hasher);
+                instance.height.map(f64::to_bits).hash(&mut hasher);
+                instance.vertical_origin.map(f64::to_bits).hash(&mut hasher);
+                for contour in &instance.contours {
+                    for element in contour.elements() {
+                        std::mem::discriminant(element).hash(&mut hasher);
+                        match element {
+                            kurbo::PathEl::MoveTo(p) | kurbo::PathEl::LineTo(p) => {
+                                p.x.to_bits().hash(&mut hasher);
+                                p.y.to_bits().hash(&mut hasher);
+                            }
+                            kurbo::PathEl::QuadTo(p1, p2) => {
+                                for p in [p1, p2] {
+                                    p.x.to_bits().hash(&mut hasher);
+                                    p.y.to_bits().hash(&mut hasher);
+                                }
+                            }
+                            kurbo::PathEl::CurveTo(p1, p2, p3) => {
+                                for p in [p1, p2, p3] {
+                                    for value in [p.x, p.y] {
+                                        value.to_bits().hash(&mut hasher);
+                                    }
+                                }
+                            }
+                            kurbo::PathEl::ClosePath => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    hasher.finish()
 }
 
 impl SvgPaint {
@@ -675,20 +787,20 @@ impl Work<Context, WorkId, Error> for EmojiGlyphWork {
             .specific_instance(WorkId::Glyph(self.glyph_name.clone()))
             .specific_instance(WorkId::Anchor(self.glyph_name.clone()));
         for index in self.layer_indices.iter().copied() {
-            access =
-                access.specific_instance(WorkId::Glyph(emoji_layer_name(&self.glyph_name, index)));
+            let original = emoji_layer_name(&self.glyph_name, index);
+            if self.layer_names[&original] == original {
+                access = access.specific_instance(WorkId::Glyph(original));
+            }
         }
         access.build()
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
         let mut completed = vec![WorkId::Anchor(self.glyph_name.clone())];
-        completed.extend(
-            self.layer_indices
-                .iter()
-                .copied()
-                .map(|index| WorkId::Glyph(emoji_layer_name(&self.glyph_name, index))),
-        );
+        completed.extend(self.layer_indices.iter().copied().filter_map(|index| {
+            let original = emoji_layer_name(&self.glyph_name, index);
+            (self.layer_names[&original] == original).then_some(WorkId::Glyph(original))
+        }));
         completed
     }
 
@@ -733,9 +845,13 @@ impl Work<Context, WorkId, Error> for EmojiGlyphWork {
             if sources.is_empty() {
                 continue;
             }
+            let original = emoji_layer_name(&self.glyph_name, index);
+            if self.layer_names[&original] != original {
+                continue;
+            }
             context.glyphs.set(
                 GlyphBuilder {
-                    name: emoji_layer_name(&self.glyph_name, index),
+                    name: original,
                     emit_to_binary: true,
                     codepoints: HashSet::new(),
                     sources,
@@ -1054,30 +1170,14 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
             return Ok(());
         };
         let palette = palettes.palettes.first().cloned().unwrap_or_default();
-        let mut sources = BTreeMap::<GlyphName, Vec<(String, PathBuf)>>::new();
-        for (master_name, master) in &self.config.master {
-            for source in &master.srcs {
-                let path = self.config.source_dir.join(source);
-                let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-                    return Err(Error::InvalidEntry("SVG filename", source.clone()));
-                };
-                // TODO: Support multi-codepoint emoji sequences as ligatures/components.
-                if is_multi_codepoint_emoji(stem) {
-                    continue;
-                }
-                sources
-                    .entry(stem.into())
-                    .or_default()
-                    .push((master_name.clone(), path));
-            }
-        }
+        let sources = emoji_glyph_sources(&self.config)?;
 
         let mut base_glyphs = IndexMap::new();
         for (base_name, glyph_sources) in sources {
             let mut layer_paints = BTreeMap::<usize, SvgPaint>::new();
 
-            for (_master_name, path) in glyph_sources {
-                for (index, svg_path) in parse_svg_paths(&path, metadata.units_per_em)?
+            for source in glyph_sources {
+                for (index, svg_path) in parse_svg_paths(&source.path, metadata.units_per_em)?
                     .into_iter()
                     .enumerate()
                 {
@@ -1104,7 +1204,8 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
 
             let mut paints = Vec::new();
             for index in layer_paints.keys().copied() {
-                let layer_name = emoji_layer_name(&base_name, index);
+                let original = emoji_layer_name(&base_name, index);
+                let layer_name = self.layer_names[&original].clone();
                 paints.push(Paint::Glyph(Box::new(PaintGlyph {
                     name: layer_name,
                     paint: layer_paints[&index].to_paint(),
@@ -1297,7 +1398,12 @@ mod tests {
         palette_work.exec(&palette_context).unwrap();
         assert_eq!(root.colors.get().palettes[0].len(), 2);
 
-        let color_work = EmojiColorGlyphWork { config };
+        let glyph_sources = emoji_glyph_sources(&config).unwrap();
+        let layer_names = emoji_layer_names(&config, &glyph_sources).unwrap();
+        let color_work = EmojiColorGlyphWork {
+            config,
+            layer_names,
+        };
         let color_context = root.copy_for_work(color_work.read_access(), color_work.write_access());
         color_work.exec(&color_context).unwrap();
 
@@ -1313,6 +1419,80 @@ mod tests {
                 .try_get(&WorkId::Glyph("emoji_u1f600.color1".into()))
                 .is_some()
         );
+    }
+
+    #[test]
+    fn reuses_identical_emoji_layer_outlines() {
+        let dir = tempfile::tempdir().unwrap();
+        let red = dir.path().join("emoji_u2764.svg");
+        let blue = dir.path().join("emoji_u1f499.svg");
+        let svg = |color: &str| {
+            format!(
+                r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+                    <path fill="{color}" d="M0 0h128v128H0z"/>
+                </svg>"##
+            )
+        };
+        std::fs::write(&red, svg("#ff0000")).unwrap();
+        std::fs::write(&blue, svg("#0000ff")).unwrap();
+
+        let mut config = config();
+        config.source_dir = dir.path().to_owned();
+        config.master.get_mut("regular").unwrap().srcs =
+            vec!["emoji_u2764.svg".to_owned(), "emoji_u1f499.svg".to_owned()];
+        config.master.remove("bold");
+        let source = EmojiSource::from_config(config.clone());
+
+        let root = Context::new_root(Flags::empty());
+        let static_work = EmojiWork {
+            config: config.clone(),
+        };
+        let static_context =
+            root.copy_for_work(static_work.read_access(), static_work.write_access());
+        static_work.exec(&static_context).unwrap();
+        for glyph_work in source.create_glyph_ir_work().unwrap() {
+            let glyph_context =
+                root.copy_for_work(glyph_work.read_access(), glyph_work.write_access());
+            glyph_work.exec(&glyph_context).unwrap();
+        }
+
+        let glyph_sources = emoji_glyph_sources(&config).unwrap();
+        let layer_names = emoji_layer_names(&config, &glyph_sources).unwrap();
+        assert_eq!(
+            layer_names[&GlyphName::from("emoji_u2764.color0")],
+            GlyphName::from("emoji_u1f499.color0")
+        );
+        assert!(
+            root.glyphs
+                .try_get(&WorkId::Glyph("emoji_u2764.color0".into()))
+                .is_none()
+        );
+
+        let palette_work = EmojiColorPaletteWork {
+            config: config.clone(),
+        };
+        let palette_context =
+            root.copy_for_work(palette_work.read_access(), palette_work.write_access());
+        palette_work.exec(&palette_context).unwrap();
+        let color_work = EmojiColorGlyphWork {
+            config,
+            layer_names,
+        };
+        let color_context = root.copy_for_work(color_work.read_access(), color_work.write_access());
+        color_work.exec(&color_context).unwrap();
+
+        let Paint::Glyph(red_paint) =
+            &root.paint_graph.get().base_glyphs[&GlyphName::from("emoji_u2764")]
+        else {
+            panic!("expected a single red layer");
+        };
+        let Paint::Glyph(blue_paint) =
+            &root.paint_graph.get().base_glyphs[&GlyphName::from("emoji_u1f499")]
+        else {
+            panic!("expected a single blue layer");
+        };
+        assert_eq!(red_paint.name, blue_paint.name);
+        assert_ne!(red_paint.paint, blue_paint.paint);
     }
 
     #[test]
@@ -1380,7 +1560,12 @@ mod tests {
             root.copy_for_work(palette_work.read_access(), palette_work.write_access());
         palette_work.exec(&palette_context).unwrap();
 
-        let color_work = EmojiColorGlyphWork { config };
+        let glyph_sources = emoji_glyph_sources(&config).unwrap();
+        let layer_names = emoji_layer_names(&config, &glyph_sources).unwrap();
+        let color_work = EmojiColorGlyphWork {
+            config,
+            layer_names,
+        };
         let color_context = root.copy_for_work(color_work.read_access(), color_work.write_access());
         color_work.exec(&color_context).unwrap();
 

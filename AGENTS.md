@@ -6,7 +6,7 @@ This repository is a Cargo workspace for the Rust-based `fontc` compiler. The ma
 
 ## Current Work Context
 
-The current development focus is support for COLRv1 fonts. The primary reference/test source is the sibling checkout at `/home/wmedrano/src/noto-emoji`.
+Basic COLRv1 support is implemented: `fontc` can compile the Noto Color Emoji source and generate a TTF. The output still has known bugs, so COLRv1 work should be validated against the sibling checkout at `/home/wmedrano/src/noto-emoji`, which is the primary reference/test source.
 
 For the Noto Color Emoji reference build, use the nanoemoji TOML configuration rather than passing only the SVG directory:
 
