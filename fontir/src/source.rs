@@ -201,7 +201,8 @@ impl Source for EmojiSource {
     }
 
     fn create_glyph_ir_work(&self) -> Result<Vec<Box<IrWork>>, Error> {
-        let glyphs = emoji_glyph_sources(&self.config)?;
+        let mut glyphs = emoji_glyph_sources(&self.config)?;
+        add_missing_emoji_component_glyphs(&mut glyphs)?;
         let layer_names = emoji_layer_names(&self.config, &glyphs)?;
         let metrics = self.config.svg_metrics();
 
@@ -241,10 +242,15 @@ impl Source for EmojiSource {
                     let canonical = &layer_names[&original];
                     (canonical.name == original).then_some(canonical.name.clone())
                 }));
-                let codepoints = sources
-                    .iter()
-                    .flat_map(|source| source.codepoints.iter().copied())
-                    .collect();
+                let synthetic = sources.is_empty();
+                let codepoints = if synthetic {
+                    codepoints_from_glyph_name(glyph_name.as_str())?
+                } else {
+                    sources
+                        .iter()
+                        .flat_map(|source| source.codepoints.iter().copied())
+                        .collect()
+                };
                 Ok(Box::new(EmojiGlyphWork {
                     glyph_name,
                     codepoints,
@@ -259,6 +265,7 @@ impl Source for EmojiSource {
                     layer_indices,
                     layer_names: layer_names.clone(),
                     metrics,
+                    synthetic,
                 }) as Box<IrWork>)
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -270,7 +277,10 @@ impl Source for EmojiSource {
     }
 
     fn create_feature_ir_work(&self) -> Result<Box<IrWork>, Error> {
-        Ok(Box::new(EmojiFeatureWork))
+        let glyphs = emoji_glyph_sources(&self.config)?;
+        Ok(Box::new(EmojiFeatureWork {
+            source: emoji_feature_source(&glyphs)?,
+        }))
     }
 
     fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
@@ -309,7 +319,9 @@ struct EmojiGlobalMetricsWork {
 }
 
 #[derive(Debug)]
-struct EmojiFeatureWork;
+struct EmojiFeatureWork {
+    source: FeaturesSource,
+}
 
 #[derive(Debug)]
 struct EmojiKerningLocationsWork;
@@ -344,6 +356,7 @@ struct EmojiGlyphWork {
     layer_indices: Vec<usize>,
     layer_names: BTreeMap<GlyphName, EmojiLayerName>,
     metrics: SvgFontMetrics,
+    synthetic: bool,
 }
 
 #[derive(Debug)]
@@ -395,10 +408,6 @@ fn emoji_glyph_sources(
             let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
                 return Err(Error::InvalidEntry("SVG filename", source.clone()));
             };
-            // TODO: Support multi-codepoint emoji sequences as ligatures/components.
-            if is_multi_codepoint_emoji(stem) {
-                continue;
-            }
             let name = stem.into();
             let codepoints = codepoints_from_glyph_name(stem)?;
             glyphs.entry(name).or_default().push(EmojiGlyphSource {
@@ -409,6 +418,43 @@ fn emoji_glyph_sources(
         }
     }
     Ok(glyphs)
+}
+
+fn add_missing_emoji_component_glyphs(
+    all_glyphs: &mut BTreeMap<GlyphName, Vec<EmojiGlyphSource>>,
+) -> Result<(), Error> {
+    let source_names = all_glyphs.keys().cloned().collect::<HashSet<_>>();
+    let glyph_names_by_codepoint = emoji_glyph_names_by_codepoint(all_glyphs)?;
+    let mut component_names = BTreeSet::new();
+    for glyph_name in all_glyphs.keys() {
+        let Some(codepoints) = emoji_codepoints_from_glyph_name(glyph_name.as_str())? else {
+            continue;
+        };
+        if codepoints.len() > 1 {
+            component_names.extend(codepoints.iter().map(|codepoint| {
+                glyph_names_by_codepoint
+                    .get(codepoint)
+                    .cloned()
+                    .unwrap_or_else(|| emoji_component_glyph_name(*codepoint))
+            }));
+        }
+    }
+
+    for component_name in component_names {
+        if source_names.contains(&component_name) {
+            continue;
+        }
+        let codepoints = emoji_codepoints_from_glyph_name(component_name.as_str())?
+            .ok_or_else(|| Error::InvalidEntry("emoji codepoint", component_name.to_string()))?;
+        if codepoints.len() != 1 {
+            return Err(Error::InvalidEntry(
+                "emoji component codepoint",
+                component_name.to_string(),
+            ));
+        }
+        all_glyphs.insert(component_name, Vec::new());
+    }
+    Ok(())
 }
 
 /// Map every source layer name to the first name with the same outline, up to
@@ -676,27 +722,93 @@ impl SvgPaint {
     }
 }
 
-fn codepoints_from_glyph_name(name: &str) -> Result<HashSet<u32>, Error> {
+fn emoji_codepoints_from_glyph_name(name: &str) -> Result<Option<Vec<u32>>, Error> {
     let Some(codepoints) = name.strip_prefix("emoji_u") else {
-        return Ok(HashSet::new());
+        return Ok(None);
     };
-    let codepoints: HashSet<_> = codepoints
+    let codepoints = codepoints
         .split('_')
         .map(|codepoint| {
             u32::from_str_radix(codepoint, 16)
                 .map_err(|_| Error::InvalidEntry("emoji codepoint", codepoint.to_owned()))
         })
         .collect::<Result<_, _>>()?;
+    Ok(Some(codepoints))
+}
+
+fn codepoints_from_glyph_name(name: &str) -> Result<HashSet<u32>, Error> {
+    let Some(codepoints) = emoji_codepoints_from_glyph_name(name)? else {
+        return Ok(HashSet::new());
+    };
     Ok(if codepoints.len() == 1 {
-        codepoints
+        codepoints.into_iter().collect()
     } else {
         HashSet::new()
     })
 }
 
-fn is_multi_codepoint_emoji(name: &str) -> bool {
-    name.strip_prefix("emoji_u")
-        .is_some_and(|codepoints| codepoints.split('_').count() > 1)
+fn emoji_component_glyph_name(codepoint: u32) -> GlyphName {
+    format!("emoji_u{codepoint:x}").into()
+}
+
+fn emoji_glyph_names_by_codepoint(
+    glyphs: &BTreeMap<GlyphName, Vec<EmojiGlyphSource>>,
+) -> Result<HashMap<u32, GlyphName>, Error> {
+    let mut names = HashMap::new();
+    for glyph_name in glyphs.keys() {
+        let Some(codepoints) = emoji_codepoints_from_glyph_name(glyph_name.as_str())? else {
+            continue;
+        };
+        if codepoints.len() == 1 {
+            names
+                .entry(codepoints[0])
+                .or_insert_with(|| glyph_name.clone());
+        }
+    }
+    Ok(names)
+}
+
+fn emoji_feature_source(
+    glyphs: &BTreeMap<GlyphName, Vec<EmojiGlyphSource>>,
+) -> Result<FeaturesSource, Error> {
+    let glyph_names_by_codepoint = emoji_glyph_names_by_codepoint(glyphs)?;
+    let mut substitutions = Vec::new();
+    for glyph_name in glyphs.keys() {
+        let Some(codepoints) = emoji_codepoints_from_glyph_name(glyph_name.as_str())? else {
+            continue;
+        };
+        if codepoints.len() < 2 {
+            continue;
+        }
+        let components = codepoints
+            .iter()
+            .map(|codepoint| {
+                glyph_names_by_codepoint
+                    .get(codepoint)
+                    .cloned()
+                    .unwrap_or_else(|| emoji_component_glyph_name(*codepoint))
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        substitutions.push((
+            codepoints.len(),
+            format!("    sub {} by {};", components.join(" "), glyph_name),
+        ));
+    }
+    substitutions.sort_by(|(a, _), (b, _)| b.cmp(a));
+    let substitutions = substitutions
+        .into_iter()
+        .map(|(_, substitution)| substitution)
+        .collect::<Vec<_>>();
+
+    if substitutions.is_empty() {
+        Ok(FeaturesSource::Empty)
+    } else {
+        Ok(FeaturesSource::from_string(format!(
+            "feature ccmp {{\n{}\n}} ccmp;\n",
+            substitutions.join("\n")
+        )))
+    }
 }
 
 fn master_location(
@@ -998,6 +1110,12 @@ impl Work<Context, WorkId, Error> for EmojiGlyphWork {
         let metadata = context.static_metadata.get();
         let mut instances = HashMap::new();
         let mut layer_instances = vec![HashMap::new(); self.layer_count];
+        if self.synthetic {
+            for position in self.master_positions.values() {
+                let location = master_location(position, &metadata.all_source_axes)?;
+                instances.insert(location, GlyphInstance::default());
+            }
+        }
         for source in &self.sources {
             let position = self
                 .master_positions
@@ -1217,7 +1335,7 @@ impl Work<Context, WorkId, Error> for EmojiFeatureWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         context
             .features
-            .set(FeatureSources::single(FeaturesSource::Empty));
+            .set(FeatureSources::single(self.source.clone()));
         Ok(())
     }
 }
@@ -1557,12 +1675,85 @@ mod tests {
             codepoints_from_glyph_name("emoji_u1f600").unwrap(),
             HashSet::from([0x1f600])
         );
+        assert_eq!(
+            emoji_codepoints_from_glyph_name("emoji_u1f469_200d_1f4bb").unwrap(),
+            Some(vec![0x1f469, 0x200d, 0x1f4bb])
+        );
         assert!(
             codepoints_from_glyph_name("emoji_u1f469_200d_1f4bb")
                 .unwrap()
                 .is_empty()
         );
-        assert!(is_multi_codepoint_emoji("emoji_u1f469_200d_1f4bb"));
+    }
+
+    #[test]
+    fn generates_emoji_sequence_features_and_missing_components() {
+        let mut config = config();
+        config.master.get_mut("regular").unwrap().srcs = vec![
+            "emoji_u1f469.svg".to_owned(),
+            "emoji_u1f4bb.svg".to_owned(),
+            "emoji_u1f469_200d_1f4bb.svg".to_owned(),
+        ];
+        config.master.remove("bold");
+
+        let mut glyphs = emoji_glyph_sources(&config).unwrap();
+        let source = emoji_feature_source(&glyphs).unwrap();
+        let FeaturesSource::Memory { fea_content, .. } = source else {
+            panic!("expected in-memory emoji features");
+        };
+        assert_eq!(
+            fea_content,
+            "feature ccmp {\n    sub emoji_u1f469 emoji_u200d emoji_u1f4bb by emoji_u1f469_200d_1f4bb;\n} ccmp;\n"
+        );
+
+        add_missing_emoji_component_glyphs(&mut glyphs).unwrap();
+        assert!(glyphs.contains_key(&GlyphName::from("emoji_u200d")));
+        assert!(glyphs[&GlyphName::from("emoji_u200d")].is_empty());
+    }
+
+    #[test]
+    fn builds_synthetic_emoji_component_glyph() {
+        let dir = tempfile::tempdir().unwrap();
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+            <path fill="#ff0000" d="M0 0h128v128H0z"/>
+        </svg>"##;
+        for name in [
+            "emoji_u1f469.svg",
+            "emoji_u1f4bb.svg",
+            "emoji_u1f469_200d_1f4bb.svg",
+        ] {
+            std::fs::write(dir.path().join(name), svg).unwrap();
+        }
+
+        let mut config = config();
+        config.source_dir = dir.path().to_owned();
+        config.master.get_mut("regular").unwrap().srcs = vec![
+            "emoji_u1f469.svg".to_owned(),
+            "emoji_u1f4bb.svg".to_owned(),
+            "emoji_u1f469_200d_1f4bb.svg".to_owned(),
+        ];
+        config.master.remove("bold");
+        let source = EmojiSource::from_config(config.clone());
+        let root = Context::new_root(Flags::empty());
+        let static_work = EmojiWork {
+            config: config.clone(),
+        };
+        let static_context =
+            root.copy_for_work(static_work.read_access(), static_work.write_access());
+        static_work.exec(&static_context).unwrap();
+
+        for glyph_work in source.create_glyph_ir_work().unwrap() {
+            let glyph_context =
+                root.copy_for_work(glyph_work.read_access(), glyph_work.write_access());
+            glyph_work.exec(&glyph_context).unwrap();
+        }
+
+        let joiner = root
+            .glyphs
+            .get(&WorkId::Glyph(GlyphName::from("emoji_u200d")));
+        assert_eq!(joiner.codepoints, HashSet::from([0x200d]));
+        assert_eq!(joiner.default_instance().width, 0.0);
+        assert!(joiner.default_instance().contours.is_empty());
     }
 
     #[test]
