@@ -910,6 +910,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tiny-skia-path",
+ "toml",
  "tracing",
  "tracing-subscriber",
  "usvg",

@@ -12,7 +12,8 @@ use fontdrasil::{
     types::{Axes, Axis, GlyphName},
 };
 use indexmap::IndexMap;
-use kurbo::{BezPath, Point};
+use kurbo::{BezPath, Point, Shape};
+use ordered_float::OrderedFloat;
 use serde::Deserialize;
 use tiny_skia_path::PathSegment;
 use usvg::Tree;
@@ -21,8 +22,9 @@ use write_fonts::types::{NameId, Tag};
 use crate::{
     error::{BadSource, Error},
     ir::{
-        Color, ColorGlyphs, ColorPalettes, GlyphBuilder, GlyphInstance, NameKey, NamedInstance,
-        Paint, PaintGlyph, PaintSolid, StaticMetadata,
+        Color, ColorGlyphs, ColorPalettes, ColorStop, GlyphBuilder, GlyphInstance, NameKey,
+        NamedInstance, Paint, PaintGlyph, PaintLinearGradient, PaintRadialGradient, PaintSolid,
+        StaticMetadata,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
 };
@@ -253,7 +255,36 @@ struct EmojiColorGlyphWork {
 #[derive(Debug)]
 struct SvgPath {
     instance: GlyphInstance,
-    color: Option<Color>,
+    paint: Option<SvgPaint>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum SvgPaint {
+    Solid(Color),
+    Linear(PaintLinearGradient),
+    Radial(PaintRadialGradient),
+}
+
+impl SvgPaint {
+    fn colors(&self) -> impl Iterator<Item = Color> + '_ {
+        match self {
+            Self::Solid(color) => {
+                Box::new(std::iter::once(*color)) as Box<dyn Iterator<Item = Color>>
+            }
+            Self::Linear(gradient) => Box::new(gradient.color_line.iter().map(|stop| stop.color)),
+            Self::Radial(gradient) => Box::new(gradient.color_line.iter().map(|stop| stop.color)),
+        }
+    }
+
+    fn to_paint(&self) -> Paint {
+        match self {
+            Self::Solid(color) => Paint::Solid(Box::new(PaintSolid {
+                color: Some(*color),
+            })),
+            Self::Linear(gradient) => Paint::LinearGradient(Box::new(gradient.clone())),
+            Self::Radial(gradient) => Paint::RadialGradient(Box::new(gradient.clone())),
+        }
+    }
 }
 
 fn codepoints_from_glyph_name(name: &str) -> Result<HashSet<u32>, Error> {
@@ -382,38 +413,20 @@ fn collect_svg_paths(
                     }
                 }
                 if !bez_path.is_empty() {
-                    let color = path.fill().map(|fill| match fill.paint() {
-                        usvg::Paint::Color(color) => {
-                            let alpha = (fill.opacity().get() * 255.0).round() as u8;
-                            Color {
-                                r: color.red,
-                                g: color.green,
-                                b: color.blue,
-                                a: alpha,
-                            }
-                        }
-                        usvg::Paint::LinearGradient(_)
-                        | usvg::Paint::RadialGradient(_)
-                        | usvg::Paint::Pattern(_) => {
-                            // Defer gradients and patterns until the source IR has
-                            // gradient support. Returning an error here prevents a
-                            // silently incorrect color font.
-                            Color {
-                                r: 0,
-                                g: 0,
-                                b: 0,
-                                a: 0,
-                            }
-                        }
-                    });
-                    if let Some(fill) = path.fill()
-                        && !matches!(fill.paint(), usvg::Paint::Color(_))
-                    {
-                        return Err(Error::UnsupportedConstruct(format!(
-                            "unsupported SVG paint in '{}'",
-                            svg_path.display()
-                        )));
-                    }
+                    let paint = path
+                        .fill()
+                        .map(|fill| {
+                            convert_svg_paint(
+                                fill,
+                                bez_path.bounding_box(),
+                                scale_x,
+                                scale_y,
+                                height,
+                                svg_path,
+                                units_per_em,
+                            )
+                        })
+                        .transpose()?;
                     paths.push(SvgPath {
                         instance: GlyphInstance {
                             width: f64::from(units_per_em),
@@ -422,7 +435,7 @@ fn collect_svg_paths(
                             contours: vec![bez_path],
                             components: Vec::new(),
                         },
-                        color,
+                        paint,
                     });
                 }
             }
@@ -430,6 +443,138 @@ fn collect_svg_paths(
         }
     }
     Ok(())
+}
+
+fn convert_svg_paint(
+    fill: &usvg::Fill,
+    bbox: kurbo::Rect,
+    scale_x: f64,
+    scale_y: f64,
+    height: f64,
+    svg_path: &Path,
+    _units_per_em: u16,
+) -> Result<SvgPaint, Error> {
+    let opacity = fill.opacity().get();
+    let space = GradientSpace {
+        bbox,
+        scale_x,
+        scale_y,
+        height,
+    };
+    match fill.paint() {
+        usvg::Paint::Color(color) => Ok(SvgPaint::Solid(Color {
+            r: color.red,
+            g: color.green,
+            b: color.blue,
+            a: (opacity * 255.0).round() as u8,
+        })),
+        usvg::Paint::LinearGradient(gradient) => {
+            if gradient.spread_method() != usvg::SpreadMethod::Pad {
+                return Err(unsupported_svg_paint(svg_path, "non-pad gradient spread"));
+            }
+            let stops = gradient
+                .stops()
+                .iter()
+                .map(|stop| ColorStop {
+                    offset: OrderedFloat(stop.offset().get()),
+                    color: Color {
+                        r: stop.color().red,
+                        g: stop.color().green,
+                        b: stop.color().blue,
+                        a: 255,
+                    },
+                    alpha: OrderedFloat(opacity * stop.opacity().get()),
+                })
+                .collect();
+            let p0 = space.point(gradient.x1(), gradient.y1(), gradient.transform());
+            let p1 = space.point(gradient.x2(), gradient.y2(), gradient.transform());
+            Ok(SvgPaint::Linear(PaintLinearGradient {
+                color_line: stops,
+                p0,
+                p1,
+                p2: None,
+            }))
+        }
+        usvg::Paint::RadialGradient(gradient) => {
+            if gradient.spread_method() != usvg::SpreadMethod::Pad {
+                return Err(unsupported_svg_paint(svg_path, "non-pad gradient spread"));
+            }
+            let stops = gradient
+                .stops()
+                .iter()
+                .map(|stop| ColorStop {
+                    offset: OrderedFloat(stop.offset().get()),
+                    color: Color {
+                        r: stop.color().red,
+                        g: stop.color().green,
+                        b: stop.color().blue,
+                        a: 255,
+                    },
+                    alpha: OrderedFloat(opacity * stop.opacity().get()),
+                })
+                .collect();
+            let p0 = space.point(gradient.fx(), gradient.fy(), gradient.transform());
+            let p1 = space.point(gradient.cx(), gradient.cy(), gradient.transform());
+            let r1 = space.radius(
+                gradient.cx(),
+                gradient.cy(),
+                gradient.r().get(),
+                gradient.transform(),
+            );
+            let r0 = space.radius(
+                gradient.fx(),
+                gradient.fy(),
+                gradient.fr().get(),
+                gradient.transform(),
+            );
+            Ok(SvgPaint::Radial(PaintRadialGradient {
+                color_line: stops,
+                p0,
+                r0: Some(OrderedFloat(r0)),
+                p1,
+                r1: Some(OrderedFloat(r1)),
+            }))
+        }
+        usvg::Paint::Pattern(_) => Err(unsupported_svg_paint(svg_path, "pattern fill")),
+    }
+}
+
+fn unsupported_svg_paint(path: &Path, paint: &str) -> Error {
+    Error::UnsupportedConstruct(format!("unsupported SVG {paint} in '{}'", path.display()))
+}
+
+fn transformed_svg_point(x: f32, y: f32, transform: tiny_skia_path::Transform) -> (f64, f64) {
+    (
+        f64::from(transform.sx * x + transform.kx * y + transform.tx),
+        f64::from(transform.ky * x + transform.sy * y + transform.ty),
+    )
+}
+
+struct GradientSpace {
+    bbox: kurbo::Rect,
+    scale_x: f64,
+    scale_y: f64,
+    height: f64,
+}
+
+impl GradientSpace {
+    fn point(&self, x: f32, y: f32, transform: tiny_skia_path::Transform) -> Point {
+        let (x, y) = transformed_svg_point(x, y, transform);
+        let point = Point::new(x * self.scale_x, (self.height - y) * self.scale_y);
+        Point::new(
+            (point.x - self.bbox.x0) / self.bbox.width(),
+            (point.y - self.bbox.y0) / self.bbox.height(),
+        )
+    }
+
+    fn radius(&self, x: f32, y: f32, radius: f32, transform: tiny_skia_path::Transform) -> f32 {
+        if radius == 0.0 {
+            return 0.0;
+        }
+        let center = self.point(x, y, transform);
+        let edge = self.point(x + radius, y, transform);
+        center.distance(edge) as f32
+    }
 }
 
 impl Work<Context, WorkId, Error> for EmojiGlyphWork {
@@ -620,10 +765,12 @@ impl Work<Context, WorkId, Error> for EmojiColorPaletteWork {
 
         for source in sources {
             for path in parse_svg_paths(&source, 1024)? {
-                if let Some(color) = path.color
-                    && !colors.contains(&color)
-                {
-                    colors.push(color);
+                if let Some(paint) = path.paint {
+                    for color in paint.colors() {
+                        if !colors.contains(&color) {
+                            colors.push(color);
+                        }
+                    }
                 }
             }
         }
@@ -678,7 +825,7 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
         for (base_name, glyph_sources) in sources {
             let mut layer_instances =
                 BTreeMap::<usize, HashMap<NormalizedLocation, GlyphInstance>>::new();
-            let mut layer_colors = BTreeMap::<usize, Color>::new();
+            let mut layer_paints = BTreeMap::<usize, SvgPaint>::new();
 
             for (master_name, path) in glyph_sources {
                 let position = self
@@ -691,20 +838,22 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
                     .into_iter()
                     .enumerate()
                 {
-                    let Some(color) = svg_path.color else {
+                    let Some(paint) = svg_path.paint else {
                         continue;
                     };
-                    if !palette.contains(&color) {
-                        return Err(Error::InvalidEntry(
-                            "SVG color",
-                            format!("{color:?} is missing from the color palette"),
-                        ));
+                    for color in paint.colors() {
+                        if !palette.contains(&color) {
+                            return Err(Error::InvalidEntry(
+                                "SVG color",
+                                format!("{color:?} is missing from the color palette"),
+                            ));
+                        }
                     }
-                    if let Some(previous) = layer_colors.insert(index, color)
-                        && previous != color
+                    if let Some(previous) = layer_paints.insert(index, paint.clone())
+                        && previous != paint
                     {
                         return Err(Error::UnsupportedConstruct(format!(
-                            "color for layer {index} of '{base_name}' varies between masters"
+                            "paint for layer {index} of '{base_name}' varies between masters"
                         )));
                     }
                     layer_instances
@@ -727,9 +876,7 @@ impl Work<Context, WorkId, Error> for EmojiColorGlyphWork {
                 context.glyphs.set(glyph);
                 paints.push(Paint::Glyph(Box::new(PaintGlyph {
                     name: layer_name,
-                    paint: Paint::Solid(Box::new(PaintSolid {
-                        color: Some(layer_colors[&index]),
-                    })),
+                    paint: layer_paints[&index].to_paint(),
                 })));
             }
 
@@ -920,5 +1067,78 @@ mod tests {
                 .try_get(&WorkId::Glyph("emoji_u1f600.color1".into()))
                 .is_some()
         );
+    }
+
+    #[test]
+    fn parses_linear_and_radial_gradients() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("emoji_u1f600.svg");
+        std::fs::write(
+            &path,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+                <defs>
+                    <linearGradient id="linear" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="128" y2="128">
+                        <stop offset="0" stop-color="#ff0000"/>
+                        <stop offset="1" stop-color="#00ff00" stop-opacity="0.5"/>
+                    </linearGradient>
+                    <radialGradient id="radial" gradientUnits="userSpaceOnUse" cx="96" cy="96" r="64" fx="80" fy="80">
+                        <stop offset="0" stop-color="#0000ff"/>
+                        <stop offset="1" stop-color="#ffffff"/>
+                    </radialGradient>
+                </defs>
+                <path fill="url(#linear)" d="M0 0h64v64H0z"/>
+                <path fill="url(#radial)" d="M64 64h64v64H64z"/>
+            </svg>"##,
+        )
+        .unwrap();
+
+        let paths = parse_svg_paths(&path, 1024).unwrap();
+        assert_eq!(paths.len(), 2);
+        let SvgPaint::Linear(linear) = &paths[0].paint.as_ref().unwrap() else {
+            panic!("expected linear gradient");
+        };
+        assert_eq!(linear.color_line.len(), 2);
+        assert_eq!(linear.color_line[1].alpha, OrderedFloat(0.5));
+        assert_eq!(linear.p0, Point::new(0.0, 1.0));
+        assert_eq!(linear.p1, Point::new(2.0, -1.0));
+
+        let SvgPaint::Radial(radial) = &paths[1].paint.as_ref().unwrap() else {
+            panic!("expected radial gradient");
+        };
+        assert_eq!(radial.color_line.len(), 2);
+        assert_eq!(radial.p1, Point::new(0.5, 0.5));
+        assert_eq!(radial.r1, Some(OrderedFloat(1.0)));
+        assert_eq!(radial.r0, Some(OrderedFloat(0.0)));
+    }
+
+    #[test]
+    #[ignore = "requires the sibling noto-emoji checkout and is intentionally expensive"]
+    fn builds_noto_emoji_color_ir() {
+        let config_path = Path::new("/home/wmedrano/src/noto-emoji/colrv1/all.toml");
+        let contents = std::fs::read_to_string(config_path).unwrap();
+        let mut config: EmojiConfig = toml::from_str(&contents).unwrap();
+        config.source_dir = config_path.parent().unwrap().to_owned();
+
+        let root = Context::new_root(Flags::empty());
+        let static_work = EmojiWork {
+            config: config.clone(),
+        };
+        let static_context =
+            root.copy_for_work(static_work.read_access(), static_work.write_access());
+        static_work.exec(&static_context).unwrap();
+
+        let palette_work = EmojiColorPaletteWork {
+            config: config.clone(),
+        };
+        let palette_context =
+            root.copy_for_work(palette_work.read_access(), palette_work.write_access());
+        palette_work.exec(&palette_context).unwrap();
+
+        let color_work = EmojiColorGlyphWork { config };
+        let color_context = root.copy_for_work(color_work.read_access(), color_work.write_access());
+        color_work.exec(&color_context).unwrap();
+
+        assert!(!root.colors.get().palettes[0].is_empty());
+        assert!(!root.paint_graph.get().base_glyphs.is_empty());
     }
 }

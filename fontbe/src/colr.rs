@@ -49,7 +49,7 @@ fn to_colr_line(
                     GlyphProblem::NotInColorPalette(stop.color),
                 )
             })? as u16,
-            OPAQUE,
+            F2Dot14::from_f32(stop.alpha.0),
         ));
     }
 
