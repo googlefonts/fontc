@@ -56,9 +56,18 @@ const MAX_INCLUDE_DEPTH: usize = 50;
 pub(crate) struct ParseContext {
     root_id: FileId,
     sources: Arc<SourceList>,
-    parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
+    parsed_files: HashMap<ParseKey, (Node, Vec<Diagnostic>)>,
     graph: IncludeGraph,
 }
+
+/// A source file, parsed in a particular scope.
+///
+/// The scope is the kind of the node containing the include statement (or
+/// `SourceFile` for the root file). The same file included from two different
+/// scopes is parsed once per scope, since its contents mean different things
+/// in each (a file of `pos` rules included from a lookup block and from a
+/// feature block, say).
+type ParseKey = (FileId, Kind);
 
 /// A simple graph of files and their includes.
 ///
@@ -68,7 +77,7 @@ pub(crate) struct ParseContext {
 #[derive(Clone, Debug, Default)]
 struct IncludeGraph {
     // source file -> (destination file, span-in-source-for-error)
-    nodes: HashMap<FileId, Vec<(FileId, Range<usize>)>>,
+    nodes: HashMap<ParseKey, Vec<(ParseKey, Range<usize>)>>,
 }
 
 /// An include statement in a source file.
@@ -79,7 +88,7 @@ pub struct IncludeStatement {
 }
 
 struct IncludeError {
-    file: FileId,
+    key: ParseKey,
     /// the index of the problem statement, in the list of that file's includes
     statement_idx: usize,
     range: Range<usize>,
@@ -131,36 +140,35 @@ impl ParseContext {
         let mut parsed_files = HashMap::new();
         let mut includes = IncludeGraph::default();
 
-        while let Some((id, scope)) = queue.pop() {
-            // skip things we've already parsed.
-            if parsed_files.contains_key(&id) {
+        while let Some(key) = queue.pop() {
+            // skip things we've already parsed (in this scope).
+            if parsed_files.contains_key(&key) {
                 continue;
             }
+            let (id, scope) = key;
             let source = sources.get(&id).unwrap();
             let (node, mut errors, include_stmts) = parse_src(source, glyph_map, scope);
             errors.iter_mut().for_each(|e| e.message.file = id);
 
-            parsed_files.insert(source.id(), (node, errors));
+            parsed_files.insert(key, (node, errors));
             if include_stmts.is_empty() {
                 continue;
             }
 
-            // we need to drop `source` so we can mutate source_map below
-            let source_id = source.id();
-
             for include in &include_stmts {
-                match sources.source_for_path(Path::new(include.path()), Some(source_id)) {
+                match sources.source_for_path(Path::new(include.path()), Some(id)) {
                     Ok(included_id) => {
-                        includes.add_edge(id, (included_id, include.stmt_range()));
-                        queue.push((included_id, include.scope));
+                        let child = (included_id, include.scope);
+                        includes.add_edge(key, (child, include.stmt_range()));
+                        queue.push(child);
                     }
                     Err(e) => {
                         let range = include.path_range();
-                        parsed_files.get_mut(&id).unwrap().1.push(Diagnostic::error(
-                            id,
-                            range,
-                            e.to_string(),
-                        ));
+                        parsed_files
+                            .get_mut(&key)
+                            .unwrap()
+                            .1
+                            .push(Diagnostic::error(id, range, e.to_string()));
                     }
                 }
             }
@@ -174,24 +182,31 @@ impl ParseContext {
         })
     }
 
-    pub(crate) fn root_id(&self) -> FileId {
-        self.root_id
+    fn root_key(&self) -> ParseKey {
+        (self.root_id, Kind::SourceFile)
     }
 
     /// Construct a `ParseTree`, and return any diagnostics.
     ///
     /// This method also performs validation of include statements.
     pub(crate) fn generate_parse_tree(self) -> (ParseTree, DiagnosticSet) {
-        let mut all_errors = self
-            .parsed_files
-            .iter()
-            .flat_map(|(_, (_, errs))| errs.iter())
-            .cloned()
-            .collect::<Vec<_>>();
-        let include_errors = self.graph.validate(self.root_id());
+        // a file included from more than one scope is parsed once per scope,
+        // and reports the same diagnostic from each parse; keep one copy.
+        // (files are visited in load order, so the output is deterministic)
+        let mut all_errors: Vec<Diagnostic> = Vec::new();
+        let mut parsed_files = self.parsed_files.iter().collect::<Vec<_>>();
+        parsed_files.sort_by_key(|(key, _)| **key);
+        for (_, (_, errs)) in parsed_files {
+            for err in errs {
+                if !all_errors.contains(err) {
+                    all_errors.push(err.clone());
+                }
+            }
+        }
+        let include_errors = self.graph.validate(self.root_key());
         // record any errors:
         for IncludeError {
-            file, range, kind, ..
+            key, range, kind, ..
         } in &include_errors
         {
             // find statement
@@ -199,11 +214,11 @@ impl ParseContext {
                 IncludeErrorKind::Cycle => "cyclical include statement",
                 IncludeErrorKind::ToDeep => "exceded maximum include depth",
             };
-            all_errors.push(Diagnostic::error(*file, range.clone(), message));
+            all_errors.push(Diagnostic::error(key.0, range.clone(), message));
         }
 
         let mut map = SourceMap::default();
-        let mut root = self.generate_recurse(self.root_id(), &include_errors, &mut map, 0);
+        let mut root = self.generate_recurse(self.root_key(), &include_errors, &mut map, 0);
         let needs_update_positions = self.parsed_files.len() > 1;
         // we need to do this before updating positions, since it mutates and
         // requires that there exist only one reference (via Arc) to the node
@@ -235,23 +250,24 @@ impl ParseContext {
     /// from within another node, instead of always parsing a root node.
     fn generate_recurse(
         &self,
-        id: FileId,
+        key: ParseKey,
         skip: &[IncludeError],
         source_map: &mut SourceMap,
         offset: usize,
     ) -> Node {
-        let this_node = self.parsed_files[&id].0.clone();
+        let id = key.0;
+        let this_node = self.parsed_files[&key].0.clone();
         let self_len = this_node.text_len();
         let mut self_pos = 0;
         let mut global_pos = offset;
-        let this_node = match self.graph.includes_for_file(id) {
+        let this_node = match self.graph.includes_for_file(key) {
             Some(includes) => {
                 let mut edits = Vec::with_capacity(includes.len());
 
-                for (i, (child_id, stmt)) in includes.iter().enumerate() {
+                for (i, (child_key, stmt)) in includes.iter().enumerate() {
                     if skip
                         .iter()
-                        .any(|err| err.file == id && err.statement_idx == i)
+                        .any(|err| err.key == key && err.statement_idx == i)
                     {
                         continue;
                     }
@@ -261,7 +277,8 @@ impl ParseContext {
                     source_map.add_entry(pre_range, (id, self_pos));
                     self_pos = stmt.end;
                     global_pos += pre_len;
-                    let child_node = self.generate_recurse(*child_id, skip, source_map, global_pos);
+                    let child_node =
+                        self.generate_recurse(*child_key, skip, source_map, global_pos);
                     global_pos += child_node.text_len();
                     edits.push((stmt.clone(), child_node));
                 }
@@ -278,11 +295,11 @@ impl ParseContext {
 }
 
 impl IncludeGraph {
-    fn add_edge(&mut self, from: FileId, to: (FileId, Range<usize>)) {
+    fn add_edge(&mut self, from: ParseKey, to: (ParseKey, Range<usize>)) {
         self.nodes.entry(from).or_default().push(to);
     }
 
-    fn includes_for_file(&self, file: FileId) -> Option<&[(FileId, Range<usize>)]> {
+    fn includes_for_file(&self, file: ParseKey) -> Option<&[(ParseKey, Range<usize>)]> {
         self.nodes.get(&file).map(|f| f.as_slice())
     }
 
@@ -291,7 +308,7 @@ impl IncludeGraph {
     /// If the result is non-empty, each returned error should be converted to
     /// d to diagnostics by the caller, and those statements should
     /// not be resolved when building the final tree.
-    fn validate(&self, root: FileId) -> Vec<IncludeError> {
+    fn validate(&self, root: ParseKey) -> Vec<IncludeError> {
         let edges = match self.nodes.get(&root) {
             None => return Vec::new(),
             Some(edges) => edges,
@@ -307,7 +324,7 @@ impl IncludeGraph {
                 stack.push((node, edges, cur_edge + 1));
                 if stack.len() >= MAX_INCLUDE_DEPTH - 1 {
                     bad_edges.push(IncludeError {
-                        file: node,
+                        key: node,
                         statement_idx: cur_edge,
                         range: stmt.clone(),
                         kind: IncludeErrorKind::ToDeep,
@@ -323,7 +340,7 @@ impl IncludeGraph {
                 } else if stack.iter().any(|(ancestor, _, _)| ancestor == child) {
                     // we have a cycle
                     bad_edges.push(IncludeError {
-                        file: node,
+                        key: node,
                         statement_idx: cur_edge,
                         range: stmt.clone(),
                         kind: IncludeErrorKind::Cycle,
@@ -392,6 +409,7 @@ mod tests {
             builder.finish()
         };
         let statement = typed::Include::cast(&statement.into()).unwrap();
+        let [a, b, c, d] = [a, b, c, d].map(|id| (id, Kind::SourceFile));
         let mut graph = IncludeGraph::default();
         graph.add_edge(a, (b, statement.range()));
         graph.add_edge(b, (c, statement.range()));
@@ -399,7 +417,7 @@ mod tests {
         graph.add_edge(d, (b, statement.range()));
 
         let result = graph.validate(a);
-        assert_eq!(result[0].file, d);
+        assert_eq!(result[0].key, d);
         assert_eq!(result[0].range, 0..18);
     }
 
@@ -421,6 +439,46 @@ mod tests {
         let (resolved, errs) = parse.generate_parse_tree();
         assert_eq!(errs.len(), 1);
         assert_eq!(resolved.root.text_len(), "include(bb);".len());
+    }
+
+    /// parse a root file plus includes, using an in-memory resolver
+    fn parse_in_memory(files: &[(&str, &str)]) -> (ParseTree, DiagnosticSet) {
+        let files = files
+            .iter()
+            .map(|(name, contents)| (name.to_string(), Arc::<str>::from(*contents)))
+            .collect::<Vec<_>>();
+        let root = files[0].0.clone();
+        let resolver = move |path: &Path| {
+            files
+                .iter()
+                .find(|(name, _)| Path::new(name) == path)
+                .map(|(_, contents)| contents.clone())
+                .ok_or_else(|| SourceLoadError::new(path.to_owned(), "not found"))
+        };
+        crate::parse::parse_root(root.into(), None, Box::new(resolver)).unwrap()
+    }
+
+    /// a file that is valid in one scope and not another is parsed in each,
+    /// so it errors in the other regardless of which include comes first.
+    #[test]
+    fn same_file_in_two_scopes() {
+        for (root, shared, expected) in [
+            (
+                "feature test {\n  include(shared);\n} test;\ninclude(shared);",
+                "pos a b 20;\n",
+                "'pos'",
+            ),
+            (
+                "include(shared);\nfeature test {\n  include(shared);\n} test;",
+                "pos a b 20;\n",
+                "'pos'",
+            ),
+        ] {
+            let (_, errs) = parse_in_memory(&[("root", root), ("shared", shared)]);
+            assert_eq!(errs.len(), 1, "{root}: {}", errs.display());
+            let text = errs.diagnostics()[0].text();
+            assert!(text.contains(expected), "{root}: {}", errs.display());
+        }
     }
 
     #[test]
