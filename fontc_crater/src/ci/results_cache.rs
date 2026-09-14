@@ -9,10 +9,10 @@ use crate::{
 
 static CACHE_DIR_NAME: &str = "crater_cached_results";
 
-// the files that we cache for each target
+// the files that we cache for each target. The font is all that is required;
+// other files are derived from it.
 static FONT_FILE: &str = "fontmake.ttf";
-static TTX_FILE: &str = "fontmake.ttx";
-static MARKKERN_FILE: &str = "fontmake.markkern.txt";
+static DERIVED_FILES: [&str; 2] = ["fontmake.ttx", "fontmake.markkern.txt"];
 // the previous run's result, keyed by the font fontc produced for this target
 static RESULT_FILE: &str = "result.json";
 
@@ -136,35 +136,30 @@ impl ResultsCache {
         if !target_cache_dir.exists() {
             std::fs::create_dir_all(&target_cache_dir).unwrap();
         }
-        // no need to overwrite existing cache
-        if [FONT_FILE, TTX_FILE, MARKKERN_FILE]
-            .into_iter()
-            .all(|p| target_cache_dir.join(p).exists())
-        {
-            return;
-        }
         if copy_cache_files(build_dir, &target_cache_dir).unwrap() {
             log::trace!("saved cached files for {target}");
         }
     }
 }
 
+/// Copy the font and whichever derived files exist, skipping any the
+/// destination already has.
+///
+/// Returns `false` if the source has no font.
 fn copy_cache_files(from_dir: &Path, to_dir: &Path) -> std::io::Result<bool> {
-    let font = from_dir.join(FONT_FILE);
-    let ttx = from_dir.join(TTX_FILE);
-    let markkern = from_dir.join(MARKKERN_FILE);
-
-    if [&font, &ttx, &markkern].into_iter().all(|p| p.exists()) {
-        if !to_dir.exists() {
-            std::fs::create_dir_all(to_dir)?;
-        }
-        std::fs::copy(font, to_dir.join(FONT_FILE)).map(|_| ())?;
-        std::fs::copy(ttx, to_dir.join(TTX_FILE)).map(|_| ())?;
-        std::fs::copy(markkern, to_dir.join(MARKKERN_FILE)).map(|_| ())?;
-        Ok(true)
-    } else {
-        Ok(false)
+    if !from_dir.join(FONT_FILE).exists() {
+        return Ok(false);
     }
+    if !to_dir.exists() {
+        std::fs::create_dir_all(to_dir)?;
+    }
+    for name in std::iter::once(FONT_FILE).chain(DERIVED_FILES) {
+        let (from, to) = (from_dir.join(name), to_dir.join(name));
+        if from.exists() && !to.exists() {
+            std::fs::copy(from, to)?;
+        }
+    }
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -242,6 +237,69 @@ mod tests {
             &RunResult::Fail(DiffError::Other("ttx_diff timed out".into())),
         );
         assert!(cache.load_result(&target).is_none());
+    }
+
+    fn write_files(dir: &Path, names: &[&str]) {
+        std::fs::create_dir_all(dir).unwrap();
+        for name in names {
+            std::fs::write(dir.join(name), name).unwrap();
+        }
+    }
+
+    fn file_names(dir: &Path) -> Vec<String> {
+        let mut names = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn font_alone_is_enough_to_cache() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        let build_dir = tempdir.path().join("build");
+        write_files(&build_dir, &[FONT_FILE]);
+        cache.save_built_files_to_cache(&target, &build_dir);
+
+        let next_build_dir = tempdir.path().join("next_build");
+        assert!(cache.copy_cached_files_to_build_dir(&target, &next_build_dir));
+        assert_eq!(file_names(&next_build_dir), [FONT_FILE]);
+    }
+
+    #[test]
+    fn derived_files_are_added_to_an_existing_entry() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        let build_dir = tempdir.path().join("build");
+        write_files(&build_dir, &[FONT_FILE]);
+        cache.save_built_files_to_cache(&target, &build_dir);
+
+        write_files(&build_dir, &DERIVED_FILES);
+        cache.save_built_files_to_cache(&target, &build_dir);
+
+        let next_build_dir = tempdir.path().join("next_build");
+        assert!(cache.copy_cached_files_to_build_dir(&target, &next_build_dir));
+        assert_eq!(
+            file_names(&next_build_dir),
+            ["fontmake.markkern.txt", "fontmake.ttf", "fontmake.ttx"]
+        );
+    }
+
+    #[test]
+    fn nothing_is_cached_without_the_font() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        let build_dir = tempdir.path().join("build");
+        write_files(&build_dir, &DERIVED_FILES);
+        cache.save_built_files_to_cache(&target, &build_dir);
+
+        let next_build_dir = tempdir.path().join("next_build");
+        assert!(!cache.copy_cached_files_to_build_dir(&target, &next_build_dir));
     }
 
     #[test]
