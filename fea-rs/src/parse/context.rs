@@ -361,20 +361,7 @@ fn parse_src(
     let mut sink = AstSink::new(src.text(), src.id(), glyph_map);
     {
         let mut parser = Parser::new(src.text(), &mut sink);
-        match scope {
-            Kind::FeatureNode => {
-                parser.start_node(Kind::SourceFile);
-                super::grammar::eat_feature_block_items(&mut parser);
-                parser.eat_trivia();
-                parser.finish_node();
-            }
-            Kind::SourceFile => super::grammar::root(&mut parser),
-            other => {
-                log::warn!("encountered include statement in unhandled scope '{other}'");
-                // just parse as root, like we would have originally
-                super::grammar::root(&mut parser);
-            }
-        }
+        super::grammar::root_for_scope(&mut parser, scope);
     }
     sink.finish()
 }

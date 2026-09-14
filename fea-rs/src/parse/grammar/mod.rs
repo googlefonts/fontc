@@ -16,9 +16,6 @@ pub(crate) use self::{
     glyph::eat_glyphs_predicate, gsub::gsub_rule, metrics::expect_glyphs_number_value,
 };
 
-// for parsing include statements that occur inside feature blocks.
-pub(crate) use feature::eat_feature_block_items;
-
 /// Entry point for parsing a FEA file.
 pub fn root(parser: &mut Parser) {
     parser.start_node(AstKind::SourceFile);
@@ -28,6 +25,89 @@ pub fn root(parser: &mut Parser) {
 
     parser.eat_trivia();
     parser.finish_node();
+}
+
+/// Entry point for parsing a file that was `include`'d from inside a block.
+///
+/// `scope` is the kind of the node that contained the include statement. The
+/// included file is parsed as if its contents appeared inline in that block:
+/// feature block statements or lookup block statements. (This mirrors makeotf, which selects a per-block parser
+/// entry point for each included file; feaLib gets the same effect by
+/// resolving includes at the token level.)
+///
+/// A `SourceFile` scope, or a scope we do not know how to handle, is parsed
+/// as a top-level file.
+pub(crate) fn root_for_scope(parser: &mut Parser, scope: AstKind) {
+    let Some(block) = BlockScope::for_kind(scope) else {
+        if scope != AstKind::SourceFile {
+            log::warn!("encountered include statement in unhandled scope '{scope}'");
+        }
+        return root(parser);
+    };
+
+    // the wrapper node gets the scope's kind, so that include statements at
+    // the top level of this file are recorded as being in that scope (see
+    // `Node::find_include_nodes`). The wrapper is flattened away when the
+    // file is spliced into the including block.
+    parser.start_node(scope);
+    while !parser.at_eof() {
+        let n_diagnostics = parser.diagnostic_count();
+        // the block item parsers do not advance past a token that cannot
+        // start an item (a stray '}', say). In a block that token is handled
+        // by the enclosing parser; here there is no enclosing parser, so
+        // report it (unless the item parser already did) and move on, rather
+        // than silently dropping the rest of the file.
+        if !block.eat_item(parser) && !parser.at_eof() {
+            if parser.diagnostic_count() == n_diagnostics {
+                parser.err(format!(
+                    "Unexpected token '{}' in file included from a {}",
+                    parser.current_token_text(),
+                    block.description(),
+                ));
+            }
+            parser.eat_raw();
+        }
+    }
+
+    parser.eat_trivia();
+    parser.finish_node();
+}
+
+/// A block whose contents can be `include`d from a separate file.
+#[derive(Clone, Copy)]
+enum BlockScope {
+    Feature,
+    Lookup,
+}
+
+impl BlockScope {
+    fn for_kind(kind: AstKind) -> Option<Self> {
+        match kind {
+            AstKind::FeatureNode => Some(Self::Feature),
+            AstKind::LookupBlockNode => Some(Self::Lookup),
+            _ => None,
+        }
+    }
+
+    /// Parse one item of this block, returning `true` if the parser advanced.
+    ///
+    /// The recovery sets for feature and lookup items are an approximation
+    /// of the enclosing block's: in the grammar proper those are threaded in
+    /// from the enclosing blocks, which a single scope kind cannot carry.
+    /// This only affects how much of a malformed statement gets skipped.
+    fn eat_item(self, parser: &mut Parser) -> bool {
+        match self {
+            Self::Feature => feature::statement(parser, TokenSet::FEATURE_STATEMENT, false),
+            Self::Lookup => feature::statement(parser, TokenSet::STATEMENT, true),
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::Feature => "feature block",
+            Self::Lookup => "lookup block",
+        }
+    }
 }
 
 fn top_level_element(parser: &mut Parser) {

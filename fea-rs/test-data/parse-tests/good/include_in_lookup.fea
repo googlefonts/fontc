@@ -1,0 +1,9 @@
+lookup KERN useExtension {
+    include(../includes/included_inside_lookup.fea);
+} KERN;
+
+feature kern {
+    lookup KERN;
+    # the same file again, this time from a feature block
+    include(../includes/included_inside_lookup.fea);
+} kern;
