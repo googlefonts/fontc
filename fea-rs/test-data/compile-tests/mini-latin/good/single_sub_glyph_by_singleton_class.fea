@@ -1,0 +1,7 @@
+feature test {
+    # a singleton replacement class is treated as a single glyph, so this is
+    # the same as `sub a by b;` (feaLib agrees):
+    # http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#5a-gsub-lookuptype-1-single-substitution
+    sub a by [b];
+    sub c by d;
+} test;

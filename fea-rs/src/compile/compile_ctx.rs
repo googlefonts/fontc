@@ -524,6 +524,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let replace_ids = replace
             .map(|r| self.resolve_glyph_or_class(r))
             .unwrap_or(GlyphOrClass::Null);
+        // treat singleton class as single glyph, per the spec:
+        // "If the replacement is a singleton glyph class, then the rule
+        // will be treated identically to a format B rule":
+        // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#5a-gsub-lookuptype-1-single-substitution
+        let replace_ids = match replace_ids.single_glyph() {
+            Some(gid) => GlyphOrClass::Glyph(gid),
+            None => replace_ids,
+        };
         match (target_ids, replace_ids) {
             (GlyphOrClass::Null, _) => {
                 self.error(target.range(), "NULL is not a valid substitution target");
@@ -532,14 +540,6 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             (GlyphOrClass::Glyph(_), GlyphOrClass::Class(_)) => {
                 self.error(replace.unwrap().range(), "cannot sub glyph by glyph class");
                 None
-            }
-            // treat singleton class as single glyph, per the spec:
-            // "If the replacement is a singleton glyph class, then the rule
-            // will be treated identically to a format B rule":
-            // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#5a-gsub-lookuptype-1-single-substitution
-            (GlyphOrClass::Class(c1), GlyphOrClass::Class(c2)) if c2.len() == 1 => {
-                let g2 = *c2.into_iter().next().unwrap();
-                Some((GlyphOrClass::Class(c1), GlyphOrClass::Glyph(g2)))
             }
             (GlyphOrClass::Class(c1), GlyphOrClass::Class(c2)) if c1.len() != c2.len() => {
                 self.error(
