@@ -15,7 +15,10 @@ use crate::{
 
 static PARSE_GOOD: &str = "./test-data/parse-tests/good";
 static PARSE_BAD: &str = "./test-data/parse-tests/bad";
-static OTHER_TESTS: &[&str] = &["./test-data/include-resolution-tests/dir1/test1.fea"];
+static OTHER_TESTS: &[&str] = &[
+    "./test-data/include-resolution-tests/dir1/test1.fea",
+    "./test-data/include-resolution-tests/dir1/test2.fea",
+];
 const GOOD_OUTPUT_EXTENSION: &str = "PARSE_TREE";
 const BAD_OUTPUT_EXTENSION: &str = "ERR";
 const GLYPH_ORDER_PATH: &str = "./test-data/simple_glyph_order.txt";

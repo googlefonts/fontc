@@ -31,7 +31,8 @@ pub fn root(parser: &mut Parser) {
 ///
 /// `scope` is the kind of the node that contained the include statement. The
 /// included file is parsed as if its contents appeared inline in that block:
-/// feature block statements or lookup block statements. (This mirrors makeotf, which selects a per-block parser
+/// feature block statements, lookup block statements, or the entries of a
+/// particular table. (This mirrors makeotf, which selects a per-block parser
 /// entry point for each included file; feaLib gets the same effect by
 /// resolving includes at the token level.)
 ///
@@ -78,6 +79,7 @@ pub(crate) fn root_for_scope(parser: &mut Parser, scope: AstKind) {
 enum BlockScope {
     Feature,
     Lookup,
+    Table(table::TableFn),
 }
 
 impl BlockScope {
@@ -85,7 +87,7 @@ impl BlockScope {
         match kind {
             AstKind::FeatureNode => Some(Self::Feature),
             AstKind::LookupBlockNode => Some(Self::Lookup),
-            _ => None,
+            other => table::table_fn_for_kind(other).map(Self::Table),
         }
     }
 
@@ -99,6 +101,7 @@ impl BlockScope {
         match self {
             Self::Feature => feature::statement(parser, TokenSet::FEATURE_STATEMENT, false),
             Self::Lookup => feature::statement(parser, TokenSet::STATEMENT, true),
+            Self::Table(table_fn) => table::eat_table_item(parser, table_fn),
         }
     }
 
@@ -106,6 +109,7 @@ impl BlockScope {
         match self {
             Self::Feature => "feature block",
             Self::Lookup => "lookup block",
+            Self::Table(_) => "table block",
         }
     }
 }

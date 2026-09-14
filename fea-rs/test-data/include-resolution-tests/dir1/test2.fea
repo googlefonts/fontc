@@ -1,0 +1,10 @@
+# includes inside blocks are parsed as the contents of that block
+table OS/2 {
+    include(../_included_os2.fea);
+} OS/2;
+
+feature kern {
+    lookup KERN useExtension {
+        include(../_included_kern.fea);
+    } KERN;
+} kern;

@@ -7,3 +7,7 @@ feature test {
 lookup TEST {
     include(../includes/stray_statements.fea);
 } TEST;
+
+table OS/2 {
+    include(../includes/stray_statements.fea);
+} OS/2;

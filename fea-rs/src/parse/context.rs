@@ -460,6 +460,16 @@ mod tests {
                 "pos a b 20;\n",
                 "'pos'",
             ),
+            (
+                "table hhea {\n  include(shared);\n} hhea;\ntable OS/2 {\n  include(shared);\n} OS/2;",
+                "Ascender 800;\n",
+                "OS/2",
+            ),
+            (
+                "table OS/2 {\n  include(shared);\n} OS/2;\ntable hhea {\n  include(shared);\n} hhea;",
+                "Ascender 800;\n",
+                "OS/2",
+            ),
         ] {
             let (_, errs) = parse_in_memory(&[("root", root), ("shared", shared)]);
             assert_eq!(errs.len(), 1, "{root}: {}", errs.display());

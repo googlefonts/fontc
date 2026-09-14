@@ -21,3 +21,21 @@ in ./test-data/parse-tests/includes/stray_statements.fea at 2:0
   | 
 2 | languagesystem
   | ^^^^^^^^^^^^^^
+
+error: Expected OS/2 table keyword
+in ./test-data/parse-tests/includes/stray_statements.fea at 1:0
+  | 
+1 | sub a by b;
+  | ^^^
+
+error: Expected OS/2 table keyword
+in ./test-data/parse-tests/includes/stray_statements.fea at 2:0
+  | 
+2 | languagesystem
+  | ^^^^^^^^^^^^^^
+
+error: Expected OS/2 table keyword
+in ./test-data/parse-tests/includes/stray_statements.fea at 3:0
+  | 
+3 | pos a b nonsense;
+  | ^^^
