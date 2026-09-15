@@ -1,0 +1,2 @@
+# only valid inside a lookup or feature block
+pos a b -20;

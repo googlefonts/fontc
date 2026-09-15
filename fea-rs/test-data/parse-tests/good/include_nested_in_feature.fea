@@ -1,0 +1,3 @@
+feature test {
+    include(../includes/included_nested_outer.fea);
+} test;

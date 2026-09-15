@@ -1,0 +1,13 @@
+# the included file has a valid statement, then a token that cannot start
+# one, then a malformed rule. Each is reported once per scope.
+feature test {
+    include(../includes/stray_statements.fea);
+} test;
+
+lookup TEST {
+    include(../includes/stray_statements.fea);
+} TEST;
+
+table OS/2 {
+    include(../includes/stray_statements.fea);
+} OS/2;
