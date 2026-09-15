@@ -46,6 +46,7 @@ use write_fonts::{
     types::{NameId, Tag},
 };
 
+use crate::stat::to_stat_axes;
 use crate::toir::{
     FontInfo, design_location, to_ir_color, to_ir_contours_and_components, to_ir_features,
     to_ir_paint,
@@ -464,6 +465,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .collect();
 
         let number_values = get_number_values(font_info, font);
+        let stat_axes = to_stat_axes(font, &axes);
 
         // negate the italic angle because it's clockwise in Glyphs.app whereas it's
         // counter-clockwise in UFO/OpenType and our GlobalMetrics follow the latter
@@ -573,6 +575,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
+        if let Some(stat_axes) = stat_axes {
+            // glyphsLib's fixed elided fallback name
+            static_metadata.set_stat(stat_axes, Some("Regular".to_string()));
+        }
         static_metadata.misc.feature_generation = feature_writers_from_user_data(&font.user_data)?;
         static_metadata.variations = variations;
         // treat  empty string or all spaces as equivalent to no value; it means
@@ -2199,6 +2205,8 @@ mod tests {
         source::Source,
     };
     use glyphs_reader::{AxisRule, Font, glyphdata::Category};
+
+    use crate::stat::assert_labels;
 
     use ir::{Panose, test_helpers::Round2};
     use kurbo::{Rect, Shape};
@@ -4580,8 +4588,55 @@ mode = skip;
         );
     }
 
-    /// Exec the static metadata work over an in-memory glyphs source, returning
-    /// the error it is expected to produce.
+    fn stat_labels_from_glyphs_source(glyphs_file: &Path) -> Vec<fontir::ir::StatAxis> {
+        let source = GlyphsIrSource::new(glyphs_file).unwrap();
+        let context = Context::new_root(Flags::default());
+        let task_context = context.copy_for_work(
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .variant(WorkId::PreliminaryGdefCategories)
+                .build(),
+        );
+        source
+            .create_static_metadata_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        context.static_metadata.get().misc.stat_axes.clone()
+    }
+
+    #[test]
+    fn static_metadata_installs_glyphs_stat_labels() {
+        let stat = stat_labels_from_glyphs_source(&glyphs3_dir().join("StatLabels.glyphs"));
+        // Black lies outside the variable font's user region and gets no label
+        assert_labels(
+            &stat,
+            "wght",
+            &[
+                ("Regular", 400.0, true, Some(700.0)),
+                ("Bold", 700.0, false, None),
+            ],
+        );
+    }
+
+    #[test]
+    fn glyphs_stat_labels_sit_at_the_mapped_user_locations() {
+        // Axis Mappings puts the masters at user 300 and 800; the instances'
+        // weightClass values (400, 500, 700) do not match and must be ignored
+        let stat = stat_labels_from_glyphs_source(&glyphs3_dir().join("StatAxisMappings.glyphs"));
+        assert_labels(
+            &stat,
+            "wght",
+            &[
+                ("Regular", 300.0, true, Some(800.0)),
+                ("Medium", 550.0, false, None),
+                ("Bold", 800.0, false, None),
+            ],
+        );
+    }
+
     fn feature_writers_error_from_glyphs_source(source: &str) -> Error {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let source = GlyphsIrSource::new_from_memory(source).unwrap();

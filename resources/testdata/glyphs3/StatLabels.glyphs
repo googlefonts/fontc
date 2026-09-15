@@ -1,0 +1,46 @@
+{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = Test;
+fontMaster = (
+{
+axesValues = (400);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (700);
+id = m02;
+name = Bold;
+}
+);
+glyphs = ();
+instances = (
+{
+axesValues = (400);
+name = Regular;
+weightClass = 400;
+},
+{
+axesValues = (700);
+isBold = 1;
+name = Bold;
+weightClass = 700;
+},
+{
+axesValues = (900);
+name = Black;
+weightClass = 900;
+},
+{
+name = VF;
+type = variable;
+}
+);
+unitsPerEm = 1000;
+}

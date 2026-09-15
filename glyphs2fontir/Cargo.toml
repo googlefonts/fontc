@@ -23,6 +23,7 @@ thiserror.workspace = true
 
 kurbo.workspace = true
 ordered-float.workspace = true
+regex.workspace = true
 indexmap.workspace = true
 
 write-fonts.workspace = true

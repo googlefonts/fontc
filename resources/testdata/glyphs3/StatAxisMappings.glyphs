@@ -1,0 +1,200 @@
+{
+.appVersion = "895";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Axis Mappings";
+value = {
+wght = {
+300 = 400;
+800 = 700;
+};
+};
+}
+);
+familyName = StatAxisMappings;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = "D91BDBCC-A2D8-4F5C-B7BC-D9791902ACA1";
+metricValues = (
+{
+over = 0;
+pos = 800;
+},
+{
+over = 0;
+pos = 700;
+},
+{
+over = 0;
+pos = 500;
+},
+{
+over = 0;
+},
+{
+over = 0;
+pos = -200;
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+id = "229D1187-E383-4500-9549-2FEAC5222376";
+metricValues = (
+{
+over = 0;
+pos = 800;
+},
+{
+over = 0;
+pos = 700;
+},
+{
+over = 0;
+pos = 500;
+},
+{
+over = 0;
+},
+{
+over = 0;
+pos = -200;
+}
+);
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = .notdef;
+layers = (
+{
+layerId = "D91BDBCC-A2D8-4F5C-B7BC-D9791902ACA1";
+width = 600;
+},
+{
+layerId = "229D1187-E383-4500-9549-2FEAC5222376";
+width = 600;
+}
+);
+},
+{
+glyphname = A;
+layers = (
+{
+layerId = "D91BDBCC-A2D8-4F5C-B7BC-D9791902ACA1";
+shapes = (
+{
+closed = 1;
+nodes = (
+(50,0,l),
+(50,300,l),
+(300,300,l),
+(300,0,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "229D1187-E383-4500-9549-2FEAC5222376";
+shapes = (
+{
+closed = 1;
+nodes = (
+(50,0,l),
+(50,400,l),
+(400,400,l),
+(400,0,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = "D91BDBCC-A2D8-4F5C-B7BC-D9791902ACA1";
+width = 600;
+},
+{
+layerId = "229D1187-E383-4500-9549-2FEAC5222376";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+instances = (
+{
+axesValues = (
+400
+);
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+isBold = 1;
+linkStyle = Regular;
+name = Bold;
+weightClass = 700;
+},
+{
+axesValues = (
+550
+);
+name = Medium;
+weightClass = 500;
+},
+{
+name = VF;
+type = variable;
+}
+);
+kerningLTR = {
+};
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+stems = (
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
