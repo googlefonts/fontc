@@ -273,13 +273,12 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     };
     builder.add(NameId::SUBFAMILY_NAME, subfamily.to_string());
 
-    // Family name needs to include style, with some mutilation (drop last Regular, Bold, Italic)
-    // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da540d646b0784ae6d2c3ca834/Lib/glyphsLib/builder/names.py#L92>
     let original_family = builder
         .get(NameId::FAMILY_NAME)
         .map(|s| s.to_string())
         .unwrap_or_default();
-    let family = NameBuilder::make_family_name(&original_family, &font.default_master().name, true);
+    let family =
+        NameBuilder::style_map_family_name(&original_family, &font.default_master().name, flags);
     builder.add(NameId::FAMILY_NAME, family.clone());
 
     if let Some(typographic_family) = &builder
@@ -2728,7 +2727,7 @@ mod tests {
     #[test]
     fn name_table_with_preferred_names() {
         let font = Font::load(&glyphs3_dir().join("PreferableNames.glyphs")).unwrap();
-        let mut names: Vec<_> = names(&font, SelectionFlags::REGULAR).into_iter().collect();
+        let mut names: Vec<_> = names(&font, SelectionFlags::BOLD).into_iter().collect();
         names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
         // typographic family and subfamily should be present now
         let mut expected_names = the_best_names();
@@ -2742,10 +2741,6 @@ mod tests {
                 (
                     NameKey::new_bmp_only(NameId::FULL_NAME),
                     "Pref Family Name Pref Regular".to_string(),
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
-                    "Regular".to_string(),
                 ),
                 (
                     NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
@@ -2762,6 +2757,23 @@ mod tests {
             ],
         );
         assert_eq!(expected_names, names);
+    }
+
+    // <https://github.com/googlefonts/fontc/issues/1815>
+    #[test]
+    fn family_name_keeps_style_parts_the_flags_do_not_account_for() {
+        let font = Font::load(&glyphs3_dir().join("StaticBoldItalic.glyphs")).unwrap();
+        let family_name = |flags| {
+            names(&font, flags)
+                .remove(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
+                .unwrap()
+        };
+        assert_eq!(
+            "WghtVar",
+            family_name(SelectionFlags::BOLD | SelectionFlags::ITALIC)
+        );
+        assert_eq!("WghtVar Italic", family_name(SelectionFlags::BOLD));
+        assert_eq!("WghtVar Bold Italic", family_name(SelectionFlags::REGULAR));
     }
 
     #[test]
