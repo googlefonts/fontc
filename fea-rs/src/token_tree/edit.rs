@@ -126,7 +126,7 @@ feature liga {
 
         let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
         let mut parser = Parser::new(fea, &mut sink);
-        crate::parse::grammar::root(&mut parser);
+        crate::parse::grammar::root(&mut parser, crate::token_tree::Kind::SourceFile);
         let (root, _errs, _) = sink.finish();
 
         let replace_lang = {

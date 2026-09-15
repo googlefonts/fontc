@@ -325,11 +325,6 @@ impl<'b, 'a> Parser<'a, 'b> {
         self.buf[0].trivia_len = 0;
     }
 
-    /// The number of diagnostics (errors and warnings) recorded so far.
-    pub(crate) fn diagnostic_count(&self) -> usize {
-        self.sink.diagnostic_count()
-    }
-
     pub(crate) fn err_and_bump(&mut self, error: impl Into<String>) {
         self.err(error);
         self.eat_raw();

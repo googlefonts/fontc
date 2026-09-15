@@ -17,55 +17,21 @@ pub(crate) use self::{
 };
 
 /// Entry point for parsing a FEA file.
-pub fn root(parser: &mut Parser) {
+///
+/// `scope` is the kind of the node containing the statement that included
+/// this file, or `SourceFile` for the root file. The file is parsed as if its
+/// contents appeared inline at that point: top-level elements, feature block
+/// statements, lookup block statements, or the entries of a particular table.
+/// (This mirrors makeotf, which selects a per-block parser entry point for
+/// each included file; feaLib gets the same effect by resolving includes at
+/// the token level.)
+pub(crate) fn root(parser: &mut Parser, scope: AstKind) {
+    let scope = Scope::for_kind(scope);
     parser.start_node(AstKind::SourceFile);
     while !parser.at_eof() {
-        top_level_element(parser);
-    }
-
-    parser.eat_trivia();
-    parser.finish_node();
-}
-
-/// Entry point for parsing a file that was `include`'d from inside a block.
-///
-/// `scope` is the kind of the node that contained the include statement. The
-/// included file is parsed as if its contents appeared inline in that block:
-/// feature block statements, lookup block statements, or the entries of a
-/// particular table. (This mirrors makeotf, which selects a per-block parser
-/// entry point for each included file; feaLib gets the same effect by
-/// resolving includes at the token level.)
-///
-/// A `SourceFile` scope, or a scope we do not know how to handle, is parsed
-/// as a top-level file.
-pub(crate) fn root_for_scope(parser: &mut Parser, scope: AstKind) {
-    let Some(block) = BlockScope::for_kind(scope) else {
-        if scope != AstKind::SourceFile {
-            log::warn!("encountered include statement in unhandled scope '{scope}'");
-        }
-        return root(parser);
-    };
-
-    // the wrapper node gets the scope's kind, so that include statements at
-    // the top level of this file are recorded as being in that scope (see
-    // `Node::find_include_nodes`). The wrapper is flattened away when the
-    // file is spliced into the including block.
-    parser.start_node(scope);
-    while !parser.at_eof() {
-        let n_diagnostics = parser.diagnostic_count();
-        // the block item parsers do not advance past a token that cannot
-        // start an item (a stray '}', say). In a block that token is handled
-        // by the enclosing parser; here there is no enclosing parser, so
-        // report it (unless the item parser already did) and move on, rather
-        // than silently dropping the rest of the file.
-        if !block.eat_item(parser) && !parser.at_eof() {
-            if parser.diagnostic_count() == n_diagnostics {
-                parser.err(format!(
-                    "Unexpected token '{}' in file included from a {}",
-                    parser.current_token_text(),
-                    block.description(),
-                ));
-            }
+        if !scope.eat_item(parser) {
+            // the item parsers report a token they cannot handle and leave it
+            // for the enclosing block; a file has no enclosing block.
             parser.eat_raw();
         }
     }
@@ -74,24 +40,36 @@ pub(crate) fn root_for_scope(parser: &mut Parser, scope: AstKind) {
     parser.finish_node();
 }
 
-/// A block whose contents can be `include`d from a separate file.
+/// The context in which the contents of a file are parsed.
 #[derive(Clone, Copy)]
-enum BlockScope {
+enum Scope {
+    /// The top level of a source file
+    Root,
+    /// The body of a feature block
     Feature,
+    /// The body of a lookup block
     Lookup,
+    /// The body of a table block
     Table(table::TableFn),
 }
 
-impl BlockScope {
-    fn for_kind(kind: AstKind) -> Option<Self> {
+impl Scope {
+    fn for_kind(kind: AstKind) -> Self {
         match kind {
-            AstKind::FeatureNode => Some(Self::Feature),
-            AstKind::LookupBlockNode => Some(Self::Lookup),
-            other => table::table_fn_for_kind(other).map(Self::Table),
+            AstKind::SourceFile => Self::Root,
+            AstKind::FeatureNode => Self::Feature,
+            AstKind::LookupBlockNode => Self::Lookup,
+            other => match table::table_fn_for_kind(other) {
+                Some(table_fn) => Self::Table(table_fn),
+                None => {
+                    log::warn!("encountered include statement in unhandled scope '{other}'");
+                    Self::Root
+                }
+            },
         }
     }
 
-    /// Parse one item of this block, returning `true` if the parser advanced.
+    /// Parse one item of this scope, returning `true` if the parser advanced.
     ///
     /// The recovery sets for feature and lookup items are an approximation
     /// of the enclosing block's: in the grammar proper those are threaded in
@@ -99,17 +77,13 @@ impl BlockScope {
     /// This only affects how much of a malformed statement gets skipped.
     fn eat_item(self, parser: &mut Parser) -> bool {
         match self {
+            Self::Root => {
+                top_level_element(parser);
+                true
+            }
             Self::Feature => feature::statement(parser, TokenSet::FEATURE_STATEMENT, false),
             Self::Lookup => feature::statement(parser, TokenSet::STATEMENT, true),
             Self::Table(table_fn) => table::eat_table_item(parser, table_fn),
-        }
-    }
-
-    fn description(self) -> &'static str {
-        match self {
-            Self::Feature => "feature block",
-            Self::Lookup => "lookup block",
-            Self::Table(_) => "table block",
         }
     }
 }
@@ -464,7 +438,7 @@ mod tests {
     #[test]
     fn no_cv_param_in_lookup() {
         let fea = "lookup hi {cvParameters {}; } hi ;";
-        let (_out, errors, _errstr) = debug_parse_output(fea, root);
+        let (_out, errors, _errstr) = debug_parse_output(fea, |p| root(p, AstKind::SourceFile));
         assert!(!errors.is_empty(), "{}", fea);
         assert!(errors.first().unwrap().text().contains("cvParameters"));
     }
@@ -472,7 +446,7 @@ mod tests {
     #[test]
     fn simple_value_record_def() {
         let fea = "valueRecordDef 123 foo;";
-        let (out, errors, _errstr) = debug_parse_output(fea, root);
+        let (out, errors, _errstr) = debug_parse_output(fea, |p| root(p, AstKind::SourceFile));
         assert!(errors.is_empty());
 
         let out = typed::Root::cast(&out).unwrap();
