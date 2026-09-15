@@ -184,14 +184,16 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         target: GlyphOrClass,
         replacement: GlyphOrClass,
     ) -> LookupId {
+        let pairs: Vec<_> = target
+            .iter()
+            .zip(replacement.into_iter_for_target())
+            .collect();
         let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
-                SubstitutionLookup::Single(subtables) => subtables.subtables.iter().all(|subt| {
-                    target
-                        .iter()
-                        .zip(replacement.iter())
-                        .all(|(a, b)| subt.can_add(a, b))
-                }),
+                SubstitutionLookup::Single(subtables) => subtables
+                    .subtables
+                    .iter()
+                    .all(|subt| pairs.iter().all(|(a, b)| subt.can_add(*a, *b))),
                 _ => false,
             },
             |flags, mark_set| SubstitutionLookup::Single(LookupBuilder::new(flags, mark_set)),
@@ -201,7 +203,7 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
             unreachable!("per logic above we only return this variant");
         };
         let sub = subtables.last_mut().unwrap();
-        for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
+        for (target, replacement) in pairs {
             sub.insert(target, replacement);
         }
         id

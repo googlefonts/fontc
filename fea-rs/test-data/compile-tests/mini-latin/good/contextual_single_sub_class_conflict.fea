@@ -1,0 +1,9 @@
+# The second rule's class contains 'g', which the first rule already maps to a
+# different glyph, so the second rule needs its own anonymous lookup instead of
+# overwriting 'g -> g.salt'. The third rule maps 'g' identically and can reuse
+# the first anonymous lookup.
+lookup test {
+    sub a g' b by g.salt;
+    sub c [f g h]' d by zero;
+    sub e g' f by g.salt;
+} test;
