@@ -157,11 +157,6 @@ impl<'a> AstSink<'a> {
         (node, self.errors, includes)
     }
 
-    /// The number of diagnostics (errors and warnings) recorded so far.
-    pub(crate) fn diagnostic_count(&self) -> usize {
-        self.errors.len()
-    }
-
     #[cfg(test)]
     pub fn errors(&self) -> &[Diagnostic] {
         &self.errors

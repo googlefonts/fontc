@@ -142,11 +142,6 @@ impl TokenSet {
         TokenSet(self.0 | mask(token))
     }
 
-    pub(crate) const fn remove(self, token: Kind) -> TokenSet {
-        assert!((token as u16) < 128);
-        TokenSet(self.0 & !mask(token))
-    }
-
     pub(crate) const fn contains(&self, kind: Kind) -> bool {
         self.0 & mask(kind) != 0
     }

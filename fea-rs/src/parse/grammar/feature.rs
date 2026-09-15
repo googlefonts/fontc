@@ -109,15 +109,15 @@ pub(crate) fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool
         Kind::LanguageKw => {
             super::eat_language(parser, recovery);
         }
-        Kind::FeatureKw => {
-            // aalt only
-            if parser.matches(1, TokenSet::TAG_LIKE) && parser.matches(2, Kind::Semi) {
-                parser.in_node(Kind::AaltFeatureNode, |parser| {
-                    assert!(parser.eat(Kind::FeatureKw));
-                    parser.expect_tag(TokenSet::EMPTY);
-                    parser.expect_recover(Kind::Semi, recovery);
-                });
-            }
+        // aalt only
+        Kind::FeatureKw
+            if parser.matches(1, TokenSet::TAG_LIKE) && parser.matches(2, Kind::Semi) =>
+        {
+            parser.in_node(Kind::AaltFeatureNode, |parser| {
+                assert!(parser.eat(Kind::FeatureKw));
+                parser.expect_tag(TokenSet::EMPTY);
+                parser.expect_recover(Kind::Semi, recovery);
+            });
         }
         Kind::ParametersKw => metrics::parameters(parser, recovery),
         Kind::SizemenunameKw => parser.in_node(Kind::SizeMenuNameNode, |parser| {
