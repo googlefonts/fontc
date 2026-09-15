@@ -1,0 +1,34 @@
+{
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Hidden = 1;
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+familyName = WghtVar;
+fontMaster = (
+{
+id = m01;
+weightValue = 400;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 0020;
+}
+);
+unitsPerEm = 1000;
+}

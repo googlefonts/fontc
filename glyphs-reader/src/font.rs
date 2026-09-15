@@ -986,7 +986,10 @@ impl PlistParamsExt for Plist {
         let plist = self.as_dict()?;
         let name = plist.get("Name").and_then(Plist::as_str)?;
         let tag = plist.get("Tag").and_then(Plist::as_str)?;
-        let hidden = plist.get("hidden").and_then(Plist::as_bool);
+        let hidden = plist
+            .get("Hidden")
+            .or_else(|| plist.get("hidden"))
+            .and_then(Plist::as_bool);
         Some(Axis {
             name: name.into(),
             tag: tag.into(),
@@ -4723,6 +4726,15 @@ slant = (10);
     #[test]
     fn axis_hidden() {
         let font = Font::load(&glyphs3_dir().join("WghtVar_3master_CustomOrigin.glyphs")).unwrap();
+        assert_eq!(
+            font.axes.iter().map(|a| a.hidden).collect::<Vec<_>>(),
+            vec![Some(true)]
+        );
+    }
+
+    #[test]
+    fn axis_hidden_v2() {
+        let font = Font::load(&glyphs2_dir().join("WghtVar_HiddenAxis.glyphs")).unwrap();
         assert_eq!(
             font.axes.iter().map(|a| a.hidden).collect::<Vec<_>>(),
             vec![Some(true)]
