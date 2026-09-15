@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize, de::Error as _};
 use smol_str::{SmolStr, format_smolstr};
 use write_fonts::{
     OtRound,
+    tables::os2::SelectionFlags,
     types::{GlyphId16, NameId, Tag},
 };
 
@@ -852,20 +853,32 @@ fn is_ribbi(style_name: &str) -> bool {
 }
 
 impl NameBuilder {
-    /// If drop_rbbi_suffix remove trailing Regular, Bold, or Italic, e.g. convert Family Regular to just Family
-    pub fn make_family_name(family: &str, subfamily: &str, drop_rbbi_suffix: bool) -> String {
+    pub fn make_family_name(family: &str, subfamily: &str) -> String {
         let mut family = vec![family];
         family.extend(subfamily.split_ascii_whitespace());
-        if drop_rbbi_suffix {
-            while let Some(last) = family.last().copied() {
-                if matches!(last, "Regular" | "Bold" | "Italic") {
-                    family.pop();
-                } else {
-                    break;
-                }
+        family.join(" ")
+    }
+
+    /// The style-linked family name, e.g. "Family Bold" becomes "Family" when
+    /// the selection flags say bold.
+    ///
+    /// <https://github.com/googlefonts/glyphsLib/blob/7819ab5e/Lib/glyphsLib/builder/names.py#L98-L112>
+    pub fn style_map_family_name(family: &str, style_name: &str, flags: SelectionFlags) -> String {
+        let mut is_bold = flags.contains(SelectionFlags::BOLD);
+        let mut is_italic = flags.contains(SelectionFlags::ITALIC);
+        let mut is_regular = !(is_bold || is_italic);
+        let mut linked_style = Vec::new();
+        for part in style_name.split_ascii_whitespace().rev() {
+            match part {
+                "Regular" if is_regular => is_regular = false,
+                "Bold" if is_bold => is_bold = false,
+                "Italic" | "Oblique" if is_italic => is_italic = false,
+                _ => linked_style.push(part),
             }
         }
-        family.join(" ")
+        linked_style.push(family);
+        linked_style.reverse();
+        linked_style.join(" ")
     }
 
     pub fn add(&mut self, name_id: NameId, value: String) {
@@ -997,7 +1010,6 @@ impl NameBuilder {
                         .unwrap_or_default(),
                     self.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
                         .unwrap_or_default(),
-                    false,
                 ),
             );
         }
@@ -1014,7 +1026,7 @@ impl NameBuilder {
             if !subfamily.is_empty() {
                 family += "-";
             }
-            let mut value = NameBuilder::make_family_name(&family, subfamily, false);
+            let mut value = NameBuilder::make_family_name(&family, subfamily);
             normalize_for_postscript(&mut value, false);
             self.add(NameId::POSTSCRIPT_NAME, value);
         }
@@ -2389,6 +2401,33 @@ mod tests {
         let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_name(&names, "Halant", NameId::FAMILY_NAME);
+    }
+
+    // Expected values from glyphsLib build_stylemap_names
+    #[test]
+    fn style_map_family_name_strips_only_what_the_flags_account_for() {
+        let bold = SelectionFlags::BOLD;
+        let italic = SelectionFlags::ITALIC;
+        for (style_name, flags, expected) in [
+            ("Regular", SelectionFlags::empty(), "Family"),
+            ("Bold", bold, "Family"),
+            ("Italic", italic, "Family"),
+            ("Bold Italic", bold | italic, "Family"),
+            ("Italic", SelectionFlags::empty(), "Family Italic"),
+            ("Bold Italic", bold, "Family Italic"),
+            ("Semi Bold", SelectionFlags::empty(), "Family Semi Bold"),
+            ("Condensed Bold Oblique", bold | italic, "Family Condensed"),
+            ("Bold Bold", bold, "Family Bold"),
+            ("Regular Italic", italic, "Family Regular"),
+            ("Light", SelectionFlags::empty(), "Family Light"),
+            ("", SelectionFlags::empty(), "Family"),
+        ] {
+            assert_eq!(
+                expected,
+                NameBuilder::style_map_family_name("Family", style_name, flags),
+                "{style_name:?} with {flags:?}"
+            );
+        }
     }
 
     #[test]
