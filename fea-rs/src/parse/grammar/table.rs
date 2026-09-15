@@ -51,13 +51,6 @@ pub(crate) fn table(parser: &mut Parser) {
 /// A function that parses a single item in the body of a particular table.
 pub(super) type TableFn = fn(&mut Parser, TokenSet);
 
-/// Tokens that end the body of a table block.
-///
-/// `include` is in `TOP_LEVEL` as a recovery token, but is valid in a table body.
-const TABLE_BODY_END: TokenSet = TokenSet::TOP_LEVEL
-    .remove(Kind::IncludeKw)
-    .add(Kind::RBrace);
-
 /// The item parser for a given table node kind, or `None` if this is not a
 /// table node (or is a table we do not understand).
 pub(super) fn table_fn_for_kind(kind: AstKind) -> Option<TableFn> {
@@ -93,8 +86,10 @@ pub(super) fn eat_table_item(parser: &mut Parser, table_fn: TableFn) -> bool {
 // build any table, given a function that parses items from that table.
 fn table_impl(parser: &mut Parser, tag: Tag, table_fn: TableFn) {
     parser.expect_recover(Kind::LBrace, TokenSet::TOP_SEMI);
-    while !parser.at_eof() && !parser.matches(0, TABLE_BODY_END) {
-        eat_table_item(parser, table_fn);
+    while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
+        if !eat_table_item(parser, table_fn) {
+            break;
+        }
     }
 
     parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
