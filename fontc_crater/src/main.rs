@@ -71,6 +71,9 @@ fn run_all<T: Send, E: Send, Cx: Sync>(
     let results = threadpool.install(|| {
         targets
             .into_par_iter()
+            // each job is its own unit of work; this ensures that multiple
+            // slow jobs don't run sequentially on a single thread.
+            .with_max_len(1)
             .map(|target| {
                 let i = counter.fetch_add(1, Ordering::Relaxed) + 1;
                 currently_running.fetch_add(1, Ordering::Relaxed);
