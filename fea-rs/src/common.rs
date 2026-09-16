@@ -105,6 +105,19 @@ impl GlyphOrClass {
         matches!(self, GlyphOrClass::Null)
     }
 
+    /// If this is a class, sort and deduplicate the glyphs.
+    ///
+    /// This is for positions where the class will become a coverage table,
+    /// so order doesn't matter.
+    pub(crate) fn canonicalize(&mut self) {
+        if let GlyphOrClass::Class(class) = self {
+            class.sort_and_dedup();
+            if let [gid] = class.items() {
+                *self = GlyphOrClass::Glyph(*gid);
+            }
+        }
+    }
+
     pub(crate) fn to_class(&self) -> Option<GlyphClass> {
         match self {
             GlyphOrClass::Glyph(gid) => Some((*gid).into()),
@@ -127,14 +140,6 @@ impl GlyphOrClass {
             GlyphOrClass::Class(class) if class.len() == 1 => class.iter().next(),
             _ => None,
         }
-    }
-
-    /// Combine the glyphs from `other` into this value.
-    ///
-    /// After this call, `self` contains glyphs from both operands (appended
-    /// in order) as a `Class` variant.
-    pub(crate) fn extend(&mut self, other: &GlyphOrClass) {
-        *self = GlyphOrClass::Class(self.iter().chain(other.iter()).collect());
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {
@@ -167,5 +172,11 @@ impl GlyphOrClass {
             idx %= self.len();
             next
         })
+    }
+}
+
+impl std::iter::FromIterator<GlyphId16> for GlyphOrClass {
+    fn from_iter<T: IntoIterator<Item = GlyphId16>>(iter: T) -> Self {
+        GlyphOrClass::Class(iter.into_iter().collect())
     }
 }

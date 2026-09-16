@@ -54,6 +54,11 @@ impl GlyphClass {
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    pub(crate) fn sort_and_dedup(&mut self) {
+        self.0.sort_unstable();
+        self.0.dedup();
+    }
 }
 
 impl std::iter::FromIterator<GlyphId16> for GlyphClass {

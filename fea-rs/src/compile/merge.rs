@@ -246,6 +246,20 @@ mod tests {
     }
 
     #[test]
+    fn gsub_contextual_class_order_may_differ() {
+        // a mark class grouped by anchor lists its glyphs in a different
+        // order in each master; used in a contextual rule that is harmless
+        let a = "markClass [acute grave] <anchor 0 100> @MARKS;
+                 lookup S { sub a by b; } S;
+                 feature calt { sub a' lookup S @MARKS; } calt;";
+        let b = "markClass grave <anchor 0 200> @MARKS;
+                 markClass acute <anchor 0 300> @MARKS;
+                 lookup S { sub a by b; } S;
+                 feature calt { sub a' lookup S @MARKS; } calt;";
+        assert_eq!(merged_binary(&[a, b]), one_shot_binary(a));
+    }
+
+    #[test]
     fn language_systems_must_match() {
         let a = "languagesystem DFLT dflt; feature kern { pos a b -20; } kern;";
         let b = "languagesystem latn dflt; feature kern { pos a b -20; } kern;";
