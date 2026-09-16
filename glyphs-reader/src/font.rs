@@ -2616,22 +2616,6 @@ impl RawFont {
             if let Some(custom_weight_class) = instance.custom_parameters.take("weightClass") {
                 instance.weight_class = custom_weight_class.to_string().into();
             }
-            // named clases become #s in v3
-            for (tag, opt) in [
-                ("wght", &mut instance.weight_class),
-                ("wdth", &mut instance.width_class),
-            ] {
-                let Some(value) = opt.as_ref() else {
-                    continue;
-                };
-                if f64::from_str(value).is_ok() {
-                    continue;
-                };
-                let Some(value) = lookup_class_value(tag, value) else {
-                    return Err(Error::UnknownValueName(value.clone()));
-                };
-                let _ = opt.insert(value.to_string());
-            }
 
             instance.properties.extend(v2_to_v3_name(
                 instance
@@ -2651,6 +2635,32 @@ impl RawFont {
                 layer.v2_to_v3_attributes();
             }
         }
+    }
+
+    /// Replace named instance weight and width classes with their numbers.
+    ///
+    /// Names are the Glyphs 2 spelling and the Glyphs 3 format defines both
+    /// fields as integers, but glyphsLib writes the names in v3 files too and
+    /// Glyphs.app reads either, so do the same for both versions.
+    fn normalize_instance_classes(&mut self) -> Result<(), Error> {
+        for instance in self.instances.iter_mut() {
+            for (tag, opt) in [
+                ("wght", &mut instance.weight_class),
+                ("wdth", &mut instance.width_class),
+            ] {
+                let Some(value) = opt.as_ref() else {
+                    continue;
+                };
+                if f64::from_str(value).is_ok() {
+                    continue;
+                };
+                let Some(value) = lookup_class_value(tag, value) else {
+                    return Err(Error::UnknownValueName(value.clone()));
+                };
+                let _ = opt.insert(value.to_string());
+            }
+        }
+        Ok(())
     }
 
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
@@ -3407,7 +3417,7 @@ fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<u16> {
         ("wdth", "extracondensed") => Some(2),
         ("wdth", "condensed") => Some(3),
         ("wdth", "semicondensed") => Some(4),
-        ("wdth", "" | "Medium (normal)") => Some(5),
+        ("wdth", "" | "medium(normal)") => Some(5),
         ("wdth", "semiexpanded") => Some(6),
         ("wdth", "expanded") => Some(7),
         ("wdth", "extraexpanded") => Some(8),
@@ -3656,6 +3666,7 @@ impl TryFrom<RawFont> for Font {
             // <https://github.com/googlefonts/fontc/issues/1029>
             from.v2_to_v3_names()?;
         }
+        from.normalize_instance_classes()?;
 
         // TODO: this should be provided in a manner that allows for overrides
         let glyph_data = GlyphData::default();
@@ -4308,6 +4319,26 @@ mod tests {
         let font = RawFont::load(&v3_font).unwrap();
         // falls back to default
         assert_eq!(font.format_version, FormatVersion::V3);
+    }
+
+    #[test]
+    fn glyphs3_named_and_numeric_instance_classes() {
+        let font = Font::load(&glyphs3_dir().join("InstanceClasses.glyphs")).unwrap();
+
+        assert_eq!(
+            font.axis_mappings.get("Weight"),
+            Some(&AxisUserToDesignMap(vec![
+                (OrderedFloat(600.0), OrderedFloat(60.0)),
+                (OrderedFloat(650.0), OrderedFloat(70.0)),
+            ]))
+        );
+        assert_eq!(
+            font.axis_mappings.get("Width"),
+            Some(&AxisUserToDesignMap(vec![
+                (OrderedFloat(75.0), OrderedFloat(80.0)),
+                (OrderedFloat(100.0), OrderedFloat(90.0)),
+            ]))
+        );
     }
 
     #[test]
