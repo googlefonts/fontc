@@ -2310,8 +2310,8 @@ mod tests {
     fn sequence_enumerator_smoke_test() {
         let sequence = vec![
             GlyphOrClass::Glyph(GlyphId16::new(1)),
-            GlyphOrClass::Class([2_u16, 3, 4].iter().copied().map(GlyphId16::new).collect()),
-            GlyphOrClass::Class([8, 9].iter().copied().map(GlyphId16::new).collect()),
+            [2, 3, 4].into_iter().map(GlyphId16::new).collect(),
+            [8, 9].into_iter().map(GlyphId16::new).collect(),
         ];
 
         assert_eq!(

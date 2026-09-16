@@ -300,10 +300,15 @@ struct ContextRule {
 impl ContextBuilder {
     pub fn add(
         &mut self,
-        backtrack: Vec<GlyphOrClass>,
-        context: Vec<(GlyphOrClass, Vec<LookupId>)>,
-        lookahead: Vec<GlyphOrClass>,
+        mut backtrack: Vec<GlyphOrClass>,
+        mut context: Vec<(GlyphOrClass, Vec<LookupId>)>,
+        mut lookahead: Vec<GlyphOrClass>,
     ) {
+        backtrack.iter_mut().for_each(GlyphOrClass::canonicalize);
+        context
+            .iter_mut()
+            .for_each(|(glyphs, _)| glyphs.canonicalize());
+        lookahead.iter_mut().for_each(GlyphOrClass::canonicalize);
         let rule = ContextRule {
             backtrack,
             context,
@@ -376,7 +381,7 @@ impl ContextBuilder {
                 rule.context
                     .iter()
                     .skip(1)
-                    .map(|(cls, _)| cls.to_glyph().unwrap())
+                    .map(|(cls, _)| cls.single_glyph().unwrap())
                     .collect(),
                 seq_lookups,
             );
@@ -470,7 +475,9 @@ impl ContextRule {
             && self.lookahead == other.lookahead
             && self.context[0].1 == other.context[0].1
         {
-            self.context[0].0.extend(&other.context[0].0);
+            let (glyphs, _) = &mut self.context[0];
+            *glyphs = glyphs.iter().chain(other.context[0].0.iter()).collect();
+            glyphs.canonicalize();
             true
         } else {
             false
@@ -885,10 +892,12 @@ fn compute_size<T: FontWrite + Validate>(subtables: &Vec<T>) -> usize {
 impl ReverseChainBuilder {
     pub fn add(
         &mut self,
-        backtrack: Vec<GlyphOrClass>,
+        mut backtrack: Vec<GlyphOrClass>,
         context: BTreeMap<GlyphId16, GlyphId16>,
-        lookahead: Vec<GlyphOrClass>,
+        mut lookahead: Vec<GlyphOrClass>,
     ) {
+        backtrack.iter_mut().for_each(GlyphOrClass::canonicalize);
+        lookahead.iter_mut().for_each(GlyphOrClass::canonicalize);
         self.rules.push(ReverseSubRule {
             backtrack,
             context,
@@ -966,15 +975,87 @@ impl From<ChainContextBuilder> for SubChainContextBuilder {
 mod tests {
     use super::*;
 
+    impl<const N: usize> From<[u16; N]> for GlyphOrClass {
+        fn from(glyphs: [u16; N]) -> Self {
+            glyphs.into_iter().map(GlyphId16::new).collect()
+        }
+    }
+
     /// A rule matching `class` at two consecutive positions, applying
     /// `lookup_id` at the first.
     fn two_position_rule(class: [u16; 2], lookup_id: LookupId) -> ContextRule {
-        let class = GlyphOrClass::Class(class.into_iter().map(GlyphId16::new).collect());
+        let class = GlyphOrClass::from(class);
         ContextRule {
             backtrack: Vec::new(),
             context: vec![(class.clone(), vec![lookup_id]), (class, Vec::new())],
             lookahead: Vec::new(),
         }
+    }
+
+    #[test]
+    fn add_canonicalizes_positions() {
+        fn builder<const N: usize>(backtrack: [u16; N]) -> ContextBuilder {
+            let mut builder = ContextBuilder::default();
+            builder.add(
+                vec![backtrack.into()],
+                vec![(
+                    GlyphOrClass::Glyph(GlyphId16::new(9)),
+                    vec![LookupId::Gsub(0)],
+                )],
+                Vec::new(),
+            );
+            builder
+        }
+        assert_eq!(builder([3, 1, 2]), builder([2, 1, 3, 3]));
+        assert_ne!(builder([1, 2]), builder([1, 3]));
+        assert_eq!(
+            builder([1, 1]).rules[0].backtrack,
+            [GlyphOrClass::Glyph(GlyphId16::new(1))]
+        );
+    }
+
+    #[test]
+    fn format_1_accepts_singleton_class_inputs() {
+        let builder = ContextBuilder {
+            rules: vec![ContextRule {
+                backtrack: Vec::new(),
+                context: vec![
+                    (
+                        GlyphOrClass::Glyph(GlyphId16::new(1)),
+                        vec![LookupId::Gsub(0)],
+                    ),
+                    ([2].into(), Vec::new()),
+                ],
+                lookahead: Vec::new(),
+            }],
+        };
+        assert!(builder.build_format_1(false).is_some());
+    }
+
+    #[test]
+    fn try_merge_unions_inputs() {
+        let mut builder = ContextBuilder::default();
+        builder.add(
+            Vec::new(),
+            vec![([2, 1].into(), vec![LookupId::Gsub(0)])],
+            Vec::new(),
+        );
+        builder.add(
+            Vec::new(),
+            vec![([3, 1].into(), vec![LookupId::Gsub(0)])],
+            Vec::new(),
+        );
+        builder.add(
+            Vec::new(),
+            vec![([4].into(), vec![LookupId::Gsub(1)])],
+            Vec::new(),
+        );
+        assert_eq!(builder.rules.len(), 2);
+        assert_eq!(builder.rules[0].context[0].0, [1, 2, 3].into());
+        assert_eq!(
+            builder.rules[1].context[0].0,
+            GlyphOrClass::Glyph(GlyphId16::new(4))
+        );
     }
 
     /// 8000 rules in two halves. The first half's classes are {0,1}, {2,3},
@@ -1071,13 +1152,11 @@ mod tests {
             .step_by(2)
             .map(GlyphId16::new)
             .collect::<Vec<_>>();
-        let even = GlyphOrClass::Class(even_glyphs.clone().into());
-        let odd = GlyphOrClass::Class((1..44_000).step_by(2).map(GlyphId16::new).collect());
-        let overlapping = GlyphOrClass::Class(
-            std::iter::once(GlyphId16::new(1))
-                .chain(even_glyphs)
-                .collect(),
-        );
+        let even: GlyphOrClass = even_glyphs.iter().copied().collect();
+        let odd: GlyphOrClass = (1..44_000).step_by(2).map(GlyphId16::new).collect();
+        let overlapping: GlyphOrClass = std::iter::once(GlyphId16::new(1))
+            .chain(even_glyphs)
+            .collect();
         let subtables = ContextBuilder {
             rules: vec![ContextRule {
                 backtrack: Vec::new(),
