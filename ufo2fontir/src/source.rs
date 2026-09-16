@@ -22,10 +22,10 @@ use fontir::{
     ir::{
         AnchorBuilder, Color, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
         DEFAULT_VENDOR_ID, FEATURE_WRITERS_LIB_KEY, FeatureSources, FeatureWriterOptionValue,
-        FeatureWriterSpec, FeaturesSource, GlobalMetric, GlobalMetricsBuilder, GlyphOrder,
-        KernGroup, KernSide, KerningInstance, KerningLocations, MasterFeaSource, MetaTableValues,
-        NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PaintSolid, Panose,
-        PostscriptNames, PreliminaryGdefCategories, Rule, StaticMetadata, Substitution,
+        FeatureWriterSpec, FeaturesSource, FilterScope, GlobalMetric, GlobalMetricsBuilder,
+        GlyphOrder, KernGroup, KernSide, KerningInstance, KerningLocations, MasterFeaSource,
+        MetaTableValues, NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PaintSolid,
+        Panose, PostscriptNames, PreliminaryGdefCategories, Rule, StaticMetadata, Substitution,
         VariableFeature, reject_duplicate_writers, validate_feature_writer,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
@@ -425,6 +425,7 @@ impl Source for DesignSpaceIrSource {
                     "decomposeTransformedComponents" => {
                         flags.set(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS, true)
                     }
+                    "decomposeComponents" => (),
                     other => log::info!("unhandled ufo2ft filter '{other}'"),
                 }
             }
@@ -683,6 +684,28 @@ fn feature_writers_from_lib(lib: &Dictionary) -> Result<Option<Vec<FeatureWriter
     }
     reject_duplicate_writers(&specs)?;
     Ok(Some(specs))
+}
+
+/// Read the `decomposeComponents` entry of the ufo2ft filter list, if any.
+fn decompose_components_from_lib(lib: &Dictionary) -> Option<FilterScope> {
+    let filter = lib
+        .get(UFO2FT_FILTERS)?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_dictionary)
+        .find(|f| f.get("name").and_then(Value::as_string) == Some("decomposeComponents"))?;
+    let scope = FilterScope::from_lists(filter.get("include"), filter.get("exclude"), |v| {
+        v.as_array()?
+            .iter()
+            .map(|v| v.as_string().map(GlyphName::from))
+            .collect()
+    });
+    if scope.is_none() {
+        warn!(
+            "ignoring decomposeComponents filter: include and exclude are mutually exclusive and must be lists of glyph names"
+        );
+    }
+    scope
 }
 
 fn plist_to_feature_writer_option(value: &Value) -> FeatureWriterOptionValue {
@@ -1275,6 +1298,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         static_metadata.misc.unicode_variation_sequences = unicode_variation_sequences(&lib_plist)?;
 
         static_metadata.misc.feature_generation = feature_writers_from_lib(&self.designspace.lib)?;
+        static_metadata.misc.decompose_components =
+            decompose_components_from_lib(&self.designspace.lib);
 
         if let Some(gasp_records) = font_info_at_default.open_type_gasp_range_records.as_ref() {
             static_metadata.misc.gasp = gasp_records
@@ -3918,6 +3943,68 @@ mod tests {
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             "decomposeTransformedComponents in lib.plist should set DECOMPOSE_TRANSFORMED_COMPONENTS flag"
         );
+    }
+
+    fn ufo2ft_filters(filter: plist::Dictionary) -> plist::Dictionary {
+        plist_dict! {
+            UFO2FT_FILTERS => Value::Array(vec![
+                plist_dict! { "name" => "flattenComponents" }.into(),
+                filter.into(),
+            ]),
+        }
+    }
+
+    fn glyph_list(names: &[&str]) -> Value {
+        Value::Array(names.iter().map(|n| Value::from(*n)).collect())
+    }
+
+    #[test]
+    fn decompose_components_filter_scope() {
+        let unscoped = ufo2ft_filters(plist_dict! { "name" => "decomposeComponents" });
+        assert_eq!(
+            decompose_components_from_lib(&unscoped),
+            Some(FilterScope::All)
+        );
+
+        let include = ufo2ft_filters(plist_dict! {
+            "name" => "decomposeComponents",
+            "pre" => true,
+            "include" => glyph_list(&["Aacute", "Agrave"]),
+        });
+        assert_eq!(
+            decompose_components_from_lib(&include),
+            Some(FilterScope::Include(
+                ["Aacute", "Agrave"].map(GlyphName::from).into()
+            ))
+        );
+
+        let exclude = ufo2ft_filters(plist_dict! {
+            "name" => "decomposeComponents",
+            "exclude" => glyph_list(&["Aacute"]),
+        });
+        assert_eq!(
+            decompose_components_from_lib(&exclude),
+            Some(FilterScope::Exclude(["Aacute"].map(GlyphName::from).into()))
+        );
+    }
+
+    #[test]
+    fn malformed_decompose_components_filter_is_ignored() {
+        let absent = ufo2ft_filters(plist_dict! { "name" => "propagateAnchors" });
+        assert_eq!(decompose_components_from_lib(&absent), None);
+
+        let both = ufo2ft_filters(plist_dict! {
+            "name" => "decomposeComponents",
+            "include" => glyph_list(&["Aacute"]),
+            "exclude" => glyph_list(&["Agrave"]),
+        });
+        assert_eq!(decompose_components_from_lib(&both), None);
+
+        let not_a_list = ufo2ft_filters(plist_dict! {
+            "name" => "decomposeComponents",
+            "include" => "Aacute",
+        });
+        assert_eq!(decompose_components_from_lib(&not_a_list), None);
     }
 
     #[test]

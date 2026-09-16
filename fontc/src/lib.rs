@@ -1150,6 +1150,50 @@ mod tests {
     }
 
     #[test]
+    fn decompose_components_filter_include_list() {
+        let temp_dir = copy_source("HVVAR/SingleModel_Direct");
+        let mut src = temp_dir.path().to_path_buf();
+
+        let lib_file = src.join("SingleModelDirect-Regular.ufo/lib.plist");
+        let lib = fs::read_to_string(&lib_file).unwrap().replacen(
+            "<dict>",
+            r#"<dict>
+    <key>com.github.googlei18n.ufo2ft.filters</key>
+    <array>
+      <dict>
+        <key>name</key>
+        <string>decomposeComponents</string>
+        <key>pre</key>
+        <true/>
+        <key>include</key>
+        <array>
+          <string>Aacute</string>
+        </array>
+      </dict>
+      <dict>
+        <key>name</key>
+        <string>flattenComponents</string>
+      </dict>
+    </array>"#,
+            1,
+        );
+        fs::write(&lib_file, lib).unwrap();
+
+        src.push("SingleModelDirect.designspace");
+        let mut result = TestCompile::new(src.to_str().unwrap(), |o| o);
+        result.run();
+
+        assert!(
+            matches!(result.read_be_glyph("Aacute"), RawGlyph::Simple(_)),
+            "Aacute is in the include list and should be decomposed"
+        );
+        assert!(
+            matches!(result.read_be_glyph("Agrave"), RawGlyph::Composite(_)),
+            "Agrave is not in the include list and should stay a composite"
+        );
+    }
+
+    #[test]
     fn writes_cmap() {
         let result = TestCompile::compile_source("glyphs2/Component.glyphs");
 

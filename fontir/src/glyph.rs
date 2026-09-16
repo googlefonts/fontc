@@ -629,26 +629,40 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
     Ok(())
 }
 
+/// Decompose the glyphs the `--decompose-components` flag or the source's
+/// `decomposeComponents` filter asks for.
+///
+/// ufo2ft runs this as a pre filter, ahead of the consistency checks and
+/// flattening below, so a composite that references a decomposed glyph
+/// sees a simple glyph.
+fn decompose_components(context: &Context) -> Result<(), BadGlyph> {
+    let static_metadata = context.static_metadata.get();
+    let decompose_all = context.flags.contains(Flags::DECOMPOSE_COMPONENTS);
+    let scope = static_metadata.misc.decompose_components.as_ref();
+    if !decompose_all && scope.is_none() {
+        return Ok(());
+    }
+    for glyph_name in context.preliminary_glyph_order.get().names() {
+        let glyph = context.get_glyph(glyph_name.clone());
+        if glyph.emit_to_binary
+            && !glyph.default_instance().components.is_empty()
+            && (decompose_all || scope.is_some_and(|scope| scope.contains(glyph_name)))
+        {
+            convert_components_to_contours(context, &glyph)?;
+        }
+    }
+    Ok(())
+}
+
 /// Run some optional transformations on the glyphs listed.
 ///
-/// This includes decomposing all components, or only those with non-identity
-/// 2x2 transforms, and flattening nested composite glyphs so that they all
-/// have depth 1 (no components that reference components).
+/// This includes decomposing components with non-identity 2x2 transforms, and
+/// flattening nested composite glyphs so that they all have depth 1 (no
+/// components that reference components).
 fn apply_optional_transformations(
     context: &Context,
     glyph_order: &GlyphOrder,
 ) -> Result<(), BadGlyph> {
-    // If we are decomposing all components, the rest of the flags can be ignored
-    if context.flags.contains(Flags::DECOMPOSE_COMPONENTS) {
-        for glyph_name in glyph_order.names() {
-            let glyph = context.get_glyph(glyph_name.clone());
-            if !glyph.default_instance().components.is_empty() {
-                convert_components_to_contours(context, &glyph)?;
-            }
-        }
-        return Ok(());
-    }
-
     // If both --flatten-components and --decompose-transformed-components flags
     // are set, we want to decompose any transformed components first and *then*
     // flatten the rest. That's how fontmake (ufo2ft) does, and also tends to
@@ -844,6 +858,8 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // it just copies preliminary categories as-is.
         recompute_gdef_categories(context)?;
 
+        decompose_components(context)?;
+
         // then generate the final glyph order and do final glyph processing
         let arc_current = context.preliminary_glyph_order.get();
         let current_glyph_order = &*arc_current;
@@ -1035,8 +1051,9 @@ mod tests {
 
     use crate::{
         ir::{
-            AnchorBuilder, Component, GdefCategories, GlobalMetric, GlobalMetricsBuilder, Glyph,
-            GlyphBuilder, GlyphInstance, GlyphOrder, PreliminaryGdefCategories, StaticMetadata,
+            AnchorBuilder, Component, FilterScope, GdefCategories, GlobalMetric,
+            GlobalMetricsBuilder, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
+            PreliminaryGdefCategories, StaticMetadata,
         },
         orchestration::{Context, Flags, WorkId},
     };
@@ -1575,6 +1592,35 @@ mod tests {
         // because the non-id 2x2 transform of the shallow_component would have
         // infected the deep_component and caused it to be decomposed.
         assert_is_flattened_component(&context, test_data.deep_component.name);
+    }
+
+    #[test]
+    fn decompose_components_filter_before_flattening() {
+        let test_data = deep_component();
+        let mut context = test_context();
+        context.flags.set(Flags::FLATTEN_COMPONENTS, true);
+        let mut meta = (*context.static_metadata.get()).clone();
+        meta.misc.decompose_components = Some(FilterScope::Include(
+            [test_data.shallow_component.name.clone()].into(),
+        ));
+        context.static_metadata.set(meta);
+        context.preliminary_glyph_order.set(test_data.glyph_order());
+        test_data.write_to(&context);
+
+        decompose_components(&context).unwrap();
+        apply_optional_transformations(&context, &test_data.glyph_order()).unwrap();
+
+        // the shallow_component is listed so it was converted to a simple glyph
+        assert_is_simple_glyph(&context, test_data.shallow_component.name.clone());
+        // the deep_component is not listed, and since the shallow_component is
+        // now simple, flattening leaves it referencing that rather than the
+        // shape the shallow_component used to reference
+        assert_is_flattened_component(&context, test_data.deep_component.name.clone());
+        let deep_component = context.get_glyph(test_data.deep_component.name);
+        assert_eq!(
+            deep_component.component_names().collect::<Vec<_>>(),
+            vec![&test_data.shallow_component.name]
+        );
     }
 
     trait AffineLike {

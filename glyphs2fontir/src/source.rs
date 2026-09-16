@@ -19,11 +19,11 @@ use fontir::{
     ir::{
         self, AnchorBuilder, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
         DEFAULT_VENDOR_ID, FEATURE_WRITERS_LIB_KEY, FeatureWriterOptionValue, FeatureWriterSpec,
-        GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphAnchors, GlyphInstance, GlyphOrder,
-        KernGroup, KernSide, KerningInstance, KerningLocations, MetaTableValues, NameBuilder,
-        NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames, PreliminaryGdefCategories,
-        Rule, StaticMetadata, Substitution, VariableFeature, reject_duplicate_writers,
-        validate_feature_writer,
+        FilterScope, GlobalMetric, GlobalMetrics, GlobalMetricsBuilder, GlyphAnchors,
+        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningInstance, KerningLocations,
+        MetaTableValues, NameBuilder, NameKey, NamedInstance, Paint, PaintGlyph, PostscriptNames,
+        PreliminaryGdefCategories, Rule, StaticMetadata, Substitution, VariableFeature,
+        reject_duplicate_writers, validate_feature_writer,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::Source,
@@ -51,6 +51,8 @@ use crate::toir::{
     FontInfo, design_location, to_ir_color, to_ir_contours_and_components, to_ir_features,
     to_ir_paint,
 };
+
+const UFO2FT_FILTERS: &str = "com.github.googlei18n.ufo2ft.filters";
 
 #[derive(Debug, Clone)]
 pub struct GlyphsIrSource {
@@ -152,7 +154,6 @@ impl Source for GlyphsIrSource {
     }
 
     fn compilation_flags(&self) -> Flags {
-        const UFO2FT_FILTERS: &str = "com.github.googlei18n.ufo2ft.filters";
         let mut flags = Flags::empty();
 
         let master = self.font_info.font.default_master();
@@ -179,6 +180,7 @@ impl Source for GlyphsIrSource {
                     "decomposeTransformedComponents" => {
                         flags.set(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS, true)
                     }
+                    "decomposeComponents" => (),
                     other => log::info!("unhandled ufo2ft filter '{other}'"),
                 }
             }
@@ -395,6 +397,31 @@ fn feature_writers_from_user_data(
     Ok(Some(specs))
 }
 
+/// Read the `decomposeComponents` entry of the ufo2ft filter list in the
+/// default master's userData, if any.
+fn decompose_components_from_user_data(
+    user_data: &BTreeMap<SmolStr, Plist>,
+) -> Option<FilterScope> {
+    let filter = user_data
+        .get(UFO2FT_FILTERS)?
+        .as_array()?
+        .iter()
+        .filter_map(Plist::as_dict)
+        .find(|f| f.get("name").and_then(Plist::as_str) == Some("decomposeComponents"))?;
+    let scope = FilterScope::from_lists(filter.get("include"), filter.get("exclude"), |v| {
+        v.as_array()?
+            .iter()
+            .map(|v| v.as_str().map(GlyphName::from))
+            .collect()
+    });
+    if scope.is_none() {
+        warn!(
+            "ignoring decomposeComponents filter: include and exclude are mutually exclusive and must be lists of glyph names"
+        );
+    }
+    scope
+}
+
 fn plist_to_feature_writer_option(key: &str, value: &Plist) -> FeatureWriterOptionValue {
     match value {
         // glyphs plist has no boolean type: booleans round-trip as integers. The
@@ -580,6 +607,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             static_metadata.set_stat(stat_axes, Some("Regular".to_string()));
         }
         static_metadata.misc.feature_generation = feature_writers_from_user_data(&font.user_data)?;
+        static_metadata.misc.decompose_components =
+            decompose_components_from_user_data(&font.default_master().user_data);
         static_metadata.variations = variations;
         // treat  empty string or all spaces as equivalent to no value; it means
         // 'null', per the spec
@@ -4499,6 +4528,68 @@ unitsPerEm = 1000;
             flags("UfoFiltersWithoutPropagateAnchors.glyphs").contains(Flags::PROPAGATE_ANCHORS)
         );
         assert!(!flags("UfoFiltersDontPropagateAnchors.glyphs").contains(Flags::PROPAGATE_ANCHORS));
+    }
+
+    fn decompose_components_scope(filter: &str) -> Option<FilterScope> {
+        let source = GlyphsIrSource::new_from_memory(&format!(
+            r#"{{
+.appVersion = "3227";
+.formatVersion = 3;
+fontMaster = (
+{{
+id = "master01";
+userData = {{
+com.github.googlei18n.ufo2ft.filters = (
+{{
+name = flattenComponents;
+}},
+{{
+{filter}
+}}
+);
+}};
+}}
+);
+unitsPerEm = 1000;
+}}"#
+        ))
+        .unwrap();
+        decompose_components_from_user_data(&source.font_info.font.default_master().user_data)
+    }
+
+    #[test]
+    fn decompose_components_filter_scope() {
+        assert_eq!(
+            decompose_components_scope("name = decomposeComponents;"),
+            Some(FilterScope::All)
+        );
+        assert_eq!(
+            decompose_components_scope(
+                "name = decomposeComponents;\npre = 1;\ninclude = (Aacute, Agrave);"
+            ),
+            Some(FilterScope::Include(
+                ["Aacute", "Agrave"].map(GlyphName::from).into()
+            ))
+        );
+        assert_eq!(
+            decompose_components_scope("name = decomposeComponents;\nexclude = (Aacute);"),
+            Some(FilterScope::Exclude(["Aacute"].map(GlyphName::from).into()))
+        );
+    }
+
+    #[test]
+    fn malformed_decompose_components_filter_is_ignored() {
+        assert_eq!(decompose_components_scope("name = propagateAnchors;"), None);
+        assert_eq!(
+            decompose_components_scope(
+                "name = decomposeComponents;\ninclude = (Aacute);\nexclude = (Agrave);"
+            ),
+            None
+        );
+        assert_eq!(
+            decompose_components_scope("name = decomposeComponents;\ninclude = Aacute;"),
+            None
+        );
     }
 
     trait ExecForTest {
