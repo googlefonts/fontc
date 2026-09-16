@@ -126,13 +126,6 @@ impl GlyphOrClass {
         }
     }
 
-    pub(crate) fn to_glyph(&self) -> Option<GlyphId16> {
-        match self {
-            GlyphOrClass::Glyph(gid) => Some(*gid),
-            _ => None,
-        }
-    }
-
     /// If this is a glyph or a class with exactly one, return it.
     pub(crate) fn single_glyph(&self) -> Option<GlyphId16> {
         match self {

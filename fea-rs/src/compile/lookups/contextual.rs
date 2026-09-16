@@ -381,7 +381,7 @@ impl ContextBuilder {
                 rule.context
                     .iter()
                     .skip(1)
-                    .map(|(cls, _)| cls.to_glyph().unwrap())
+                    .map(|(cls, _)| cls.single_glyph().unwrap())
                     .collect(),
                 seq_lookups,
             );
@@ -1012,6 +1012,24 @@ mod tests {
             builder([1, 1]).rules[0].backtrack,
             [GlyphOrClass::Glyph(GlyphId16::new(1))]
         );
+    }
+
+    #[test]
+    fn format_1_accepts_singleton_class_inputs() {
+        let builder = ContextBuilder {
+            rules: vec![ContextRule {
+                backtrack: Vec::new(),
+                context: vec![
+                    (
+                        GlyphOrClass::Glyph(GlyphId16::new(1)),
+                        vec![LookupId::Gsub(0)],
+                    ),
+                    ([2].into(), Vec::new()),
+                ],
+                lookahead: Vec::new(),
+            }],
+        };
+        assert!(builder.build_format_1(false).is_some());
     }
 
     #[test]
