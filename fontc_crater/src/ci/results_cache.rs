@@ -13,8 +13,38 @@ static CACHE_DIR_NAME: &str = "crater_cached_results";
 // other files are derived from it.
 static FONT_FILE: &str = "fontmake.ttf";
 static DERIVED_FILES: [&str; 2] = ["fontmake.ttx", "fontmake.markkern.txt"];
+// what ttx_diff leaves in place of the font when fontmake fails; keep in sync
+// with core.py
+static FAILURE_FILE: &str = "fontmake.failure.json";
 // the previous run's result, keyed by the font fontc produced for this target
 static RESULT_FILE: &str = "result.json";
+
+/// What fontmake left in a build directory: a font, or a record of how it
+/// failed. Either is enough to skip building it again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FontmakeOutput {
+    Font,
+    Failure,
+}
+
+impl FontmakeOutput {
+    fn in_dir(dir: &Path) -> Option<Self> {
+        if dir.join(FONT_FILE).exists() {
+            Some(Self::Font)
+        } else if dir.join(FAILURE_FILE).exists() {
+            Some(Self::Failure)
+        } else {
+            None
+        }
+    }
+
+    fn files(self) -> Vec<&'static str> {
+        match self {
+            Self::Font => std::iter::once(FONT_FILE).chain(DERIVED_FILES).collect(),
+            Self::Failure => vec![FAILURE_FILE],
+        }
+    }
+}
 
 /// A previous run's result, and the sha256 of the fontc.ttf it describes.
 ///
@@ -68,17 +98,21 @@ impl ResultsCache {
 
     /// if we have cached files for this target, copy them into the build directory.
     ///
-    /// Returns `true` if fontmake's output came from the cache, and so will not
-    /// be rebuilt.
-    pub fn copy_cached_files_to_build_dir(&self, target: &Target, build_dir: &Path) -> bool {
+    /// Returns which of fontmake's outputs came from the cache, and so will
+    /// not be rebuilt.
+    pub fn copy_cached_files_to_build_dir(
+        &self,
+        target: &Target,
+        build_dir: &Path,
+    ) -> Option<FontmakeOutput> {
         let target_cache_dir = target.cache_dir(&self.base_results_cache_dir);
         if !target_cache_dir.exists() {
             log::trace!("no cached files for {target}");
-            return false;
+            return None;
         }
 
         let copied = copy_cache_files(&target_cache_dir, build_dir).unwrap();
-        if copied {
+        if copied.is_some() {
             log::trace!("reused cached files for {target}",);
         }
         copied
@@ -136,30 +170,31 @@ impl ResultsCache {
         if !target_cache_dir.exists() {
             std::fs::create_dir_all(&target_cache_dir).unwrap();
         }
-        if copy_cache_files(build_dir, &target_cache_dir).unwrap() {
+        if copy_cache_files(build_dir, &target_cache_dir)
+            .unwrap()
+            .is_some()
+        {
             log::trace!("saved cached files for {target}");
         }
     }
 }
 
-/// Copy the font and whichever derived files exist, skipping any the
+/// Copy whatever fontmake left in `from_dir`, skipping any files the
 /// destination already has.
-///
-/// Returns `false` if the source has no font.
-fn copy_cache_files(from_dir: &Path, to_dir: &Path) -> std::io::Result<bool> {
-    if !from_dir.join(FONT_FILE).exists() {
-        return Ok(false);
-    }
+fn copy_cache_files(from_dir: &Path, to_dir: &Path) -> std::io::Result<Option<FontmakeOutput>> {
+    let Some(output) = FontmakeOutput::in_dir(from_dir) else {
+        return Ok(None);
+    };
     if !to_dir.exists() {
         std::fs::create_dir_all(to_dir)?;
     }
-    for name in std::iter::once(FONT_FILE).chain(DERIVED_FILES) {
+    for name in output.files() {
         let (from, to) = (from_dir.join(name), to_dir.join(name));
         if from.exists() && !to.exists() {
             std::fs::copy(from, to)?;
         }
     }
-    Ok(true)
+    Ok(Some(output))
 }
 
 #[cfg(test)]
@@ -265,7 +300,10 @@ mod tests {
         cache.save_built_files_to_cache(&target, &build_dir);
 
         let next_build_dir = tempdir.path().join("next_build");
-        assert!(cache.copy_cached_files_to_build_dir(&target, &next_build_dir));
+        assert_eq!(
+            cache.copy_cached_files_to_build_dir(&target, &next_build_dir),
+            Some(FontmakeOutput::Font)
+        );
         assert_eq!(file_names(&next_build_dir), [FONT_FILE]);
     }
 
@@ -282,7 +320,10 @@ mod tests {
         cache.save_built_files_to_cache(&target, &build_dir);
 
         let next_build_dir = tempdir.path().join("next_build");
-        assert!(cache.copy_cached_files_to_build_dir(&target, &next_build_dir));
+        assert_eq!(
+            cache.copy_cached_files_to_build_dir(&target, &next_build_dir),
+            Some(FontmakeOutput::Font)
+        );
         assert_eq!(
             file_names(&next_build_dir),
             ["fontmake.markkern.txt", "fontmake.ttf", "fontmake.ttx"]
@@ -299,7 +340,45 @@ mod tests {
         cache.save_built_files_to_cache(&target, &build_dir);
 
         let next_build_dir = tempdir.path().join("next_build");
-        assert!(!cache.copy_cached_files_to_build_dir(&target, &next_build_dir));
+        assert_eq!(
+            cache.copy_cached_files_to_build_dir(&target, &next_build_dir),
+            None
+        );
+    }
+
+    #[test]
+    fn failure_is_cached_in_place_of_the_font() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        let build_dir = tempdir.path().join("build");
+        write_files(&build_dir, &[FAILURE_FILE]);
+        cache.save_built_files_to_cache(&target, &build_dir);
+
+        let next_build_dir = tempdir.path().join("next_build");
+        assert_eq!(
+            cache.copy_cached_files_to_build_dir(&target, &next_build_dir),
+            Some(FontmakeOutput::Failure)
+        );
+        assert_eq!(file_names(&next_build_dir), [FAILURE_FILE]);
+    }
+
+    #[test]
+    fn font_takes_precedence_over_failure() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        write_files(
+            &target.cache_dir(&cache.base_results_cache_dir),
+            &[FONT_FILE, FAILURE_FILE],
+        );
+
+        let next_build_dir = tempdir.path().join("next_build");
+        assert_eq!(
+            cache.copy_cached_files_to_build_dir(&target, &next_build_dir),
+            Some(FontmakeOutput::Font)
+        );
+        assert_eq!(file_names(&next_build_dir), [FONT_FILE]);
     }
 
     #[test]

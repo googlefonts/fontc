@@ -1,6 +1,7 @@
 """Tests for ttx_diff.core."""
 
 import hashlib
+import json
 
 import pytest
 from lxml import etree
@@ -8,7 +9,11 @@ from lxml import etree
 from ttx_diff.core import (
     FONTC_TTF_HASH_FILE,
     UNCHANGED_EXIT_CODE,
+    delete_things_we_must_rebuild,
+    failure_file,
     hash_file,
+    load_fontmake_failure,
+    save_fontmake_failure,
     strip_fontc_version_tag,
     unwrap_extension_lookups,
     write_hash_and_maybe_exit_early,
@@ -189,3 +194,40 @@ def test_write_hash_continues_when_the_hash_differs(tmp_path):
 def test_write_hash_is_a_noop_without_a_font(tmp_path):
     write_hash_and_maybe_exit_early(tmp_path / "fontc.ttf", tmp_path, "0" * 64)
     assert not (tmp_path / FONTC_TTF_HASH_FILE).exists()
+
+
+FONTMAKE_FAILURE = {"command": "fontmake -o variable", "stderr": "oh no"}
+
+
+def test_fontmake_failure_round_trip(tmp_path):
+    fontmake_ttf = tmp_path / "fontmake.ttf"
+    assert load_fontmake_failure(fontmake_ttf) is None
+    save_fontmake_failure(fontmake_ttf, FONTMAKE_FAILURE)
+    assert load_fontmake_failure(fontmake_ttf) == FONTMAKE_FAILURE
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "{ not json",
+        "[1, 2]",
+        json.dumps({"command": "fontmake"}),
+        json.dumps({"command": "fontmake", "stderr": 1}),
+    ],
+)
+def test_malformed_fontmake_failure_is_ignored(tmp_path, contents):
+    fontmake_ttf = tmp_path / "fontmake.ttf"
+    failure_file(fontmake_ttf).write_text(contents)
+    assert load_fontmake_failure(fontmake_ttf) is None
+
+
+# fontc_crater relies on --rebuild fontc keeping the failure alongside the
+# other fontmake files it copies in
+def test_rebuild_treats_the_failure_like_fontmake_output(tmp_path):
+    fontmake_ttf = tmp_path / "fontmake.ttf"
+    fontc_ttf = tmp_path / "fontc.ttf"
+    save_fontmake_failure(fontmake_ttf, FONTMAKE_FAILURE)
+    delete_things_we_must_rebuild("fontc", fontmake_ttf, fontc_ttf)
+    assert load_fontmake_failure(fontmake_ttf) == FONTMAKE_FAILURE
+    delete_things_we_must_rebuild("fontmake", fontmake_ttf, fontc_ttf)
+    assert load_fontmake_failure(fontmake_ttf) is None

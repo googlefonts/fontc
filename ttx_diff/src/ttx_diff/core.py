@@ -36,6 +36,10 @@ JSON:
     dictionary with "command" and "stderr" fields, where the "command" field
     is the command that was used to run that compiler.
 
+    If fontmake fails, that "command" and "stderr" are also written to
+    fontmake.failure.json in the build directory, and a later run that does not
+    rebuild fontmake reports them again instead of building.
+
 Exit codes:
     0   the two fonts compare as identical
     2   the fonts differ, or a compiler failed (see JSON, above)
@@ -254,6 +258,34 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
     if not FLAGS.production_names:
         cmd.append("--no-production-names")
     build(cmd, build_dir)
+
+
+# Where we record how fontmake failed, in place of the font it did not produce.
+# Like the font, it is reused until --rebuild deletes it.
+def failure_file(ttf_path: Path) -> Path:
+    return ttf_path.with_suffix(".failure.json")
+
+
+def save_fontmake_failure(fontmake_ttf: Path, failure: dict):
+    failure_file(fontmake_ttf).write_text(json.dumps(failure))
+
+
+def load_fontmake_failure(fontmake_ttf: Path) -> Optional[dict]:
+    path = failure_file(fontmake_ttf)
+    if not path.is_file():
+        return None
+    try:
+        failure = json.loads(path.read_text())
+    except (OSError, ValueError) as e:
+        eprint(f"ignoring unreadable {rel_user(path)}: {e}")
+        return None
+    if not isinstance(failure, dict) or not all(
+        isinstance(failure.get(k), str) for k in ("command", "stderr")
+    ):
+        eprint(f"ignoring malformed {rel_user(path)}")
+        return None
+    eprint(f"reusing {rel_user(path)}")
+    return {"command": failure["command"], "stderr": failure["stderr"]}
 
 
 def build_fontmake(source: Path, build_dir: Path):
@@ -1538,6 +1570,7 @@ def delete_things_we_must_rebuild(
                 ttf_path.with_suffix(".ttx"),
                 ttf_path.with_suffix(".markkern.txt"),
                 ttf_path.with_suffix(".ligcaret.txt"),
+                failure_file(ttf_path),
             ]
             if not skip_fonts:
                 paths.append(ttf_path)
@@ -1735,17 +1768,22 @@ def main(argv):
             write_hash_and_maybe_exit_early(
                 fontc_ttf, build_dir, FLAGS.expected_fontc_ttf_hash
             )
-        with timed("build fontmake"):
-            try:
-                if compare == "default":
-                    build_fontmake(source, build_dir)
-                else:
-                    run_gftools(source, FLAGS.config, build_dir)
-            except BuildFail as e:
-                failures["fontmake"] = {
-                    "command": " ".join(e.command),
-                    "stderr": e.msg[-MAX_ERR_LEN:],
-                }
+        fontmake_failure = load_fontmake_failure(fontmake_ttf)
+        if fontmake_failure is not None:
+            failures["fontmake"] = fontmake_failure
+        else:
+            with timed("build fontmake"):
+                try:
+                    if compare == "default":
+                        build_fontmake(source, build_dir)
+                    else:
+                        run_gftools(source, FLAGS.config, build_dir)
+                except BuildFail as e:
+                    failures["fontmake"] = {
+                        "command": " ".join(e.command),
+                        "stderr": e.msg[-MAX_ERR_LEN:],
+                    }
+                    save_fontmake_failure(fontmake_ttf, failures["fontmake"])
 
     report_errors_and_exit_if_there_were_any(failures)
 
