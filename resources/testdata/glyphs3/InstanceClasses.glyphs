@@ -1,0 +1,36 @@
+{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+},
+{
+name = Width;
+tag = wdth;
+}
+);
+familyName = Test;
+fontMaster = (
+{
+axesValues = (0, 100);
+id = m01;
+name = Regular;
+}
+);
+instances = (
+{
+axesValues = (60, 80);
+name = Named;
+weightClass = SemiBold;
+widthClass = Condensed;
+},
+{
+axesValues = (70, 90);
+name = Numeric;
+weightClass = 650;
+widthClass = "Medium (normal)";
+}
+);
+unitsPerEm = 1000;
+}
