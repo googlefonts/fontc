@@ -1,0 +1,2 @@
+# included from inside a lookup block in dir1/test2.fea
+pos a b -20;

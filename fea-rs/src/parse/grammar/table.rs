@@ -39,28 +39,57 @@ pub(crate) fn table(parser: &mut Parser) {
         }
     };
 
-    match tag.tag {
-        tags::BASE => table_impl(parser, tags::BASE, base::table_entry),
-        tags::GDEF => table_impl(parser, tags::GDEF, gdef::table_entry),
-        tags::head => table_impl(parser, tags::head, head::table_entry),
-        tags::hhea => table_impl(parser, tags::hhea, hhea::table_entry),
-        tags::name => table_impl(parser, tags::name, name::table_entry),
-        tags::OS2 => table_impl(parser, tags::OS2, os2::table_entry),
-        tags::vhea => table_impl(parser, tags::vhea, vhea::table_entry),
-        tags::vmtx => table_impl(parser, tags::vmtx, vmtx::table_entry),
-        tags::STAT => table_impl(parser, tags::STAT, stat::table_entry),
-        _ => unknown_table(parser, tag.range),
+    let table_kind = table_kind_for_tag(tag.tag);
+    match table_fn_for_kind(table_kind) {
+        Some(table_fn) => table_impl(parser, tag.tag, table_fn),
+        None => unknown_table(parser, tag.range),
     }
 
-    let table_kind = table_kind_for_tag(tag.tag);
     parser.finish_and_remap_node(table_kind);
 }
 
-// build any table, given a function that parses items from that table.
-fn table_impl(parser: &mut Parser, tag: Tag, table_fn: impl Fn(&mut Parser, TokenSet)) {
-    parser.expect_recover(Kind::LBrace, TokenSet::TOP_SEMI);
-    while !parser.at_eof() && !parser.matches(0, TokenSet::TOP_LEVEL.add(Kind::RBrace)) {
+/// A function that parses a single item in the body of a particular table.
+pub(super) type TableFn = fn(&mut Parser, TokenSet);
+
+/// The item parser for a given table node kind, or `None` if this is not a
+/// table node (or is a table we do not understand).
+pub(super) fn table_fn_for_kind(kind: AstKind) -> Option<TableFn> {
+    match kind {
+        AstKind::BaseTableNode => Some(base::table_entry),
+        AstKind::GdefTableNode => Some(gdef::table_entry),
+        AstKind::HeadTableNode => Some(head::table_entry),
+        AstKind::HheaTableNode => Some(hhea::table_entry),
+        AstKind::NameTableNode => Some(name::table_entry),
+        AstKind::Os2TableNode => Some(os2::table_entry),
+        AstKind::VheaTableNode => Some(vhea::table_entry),
+        AstKind::VmtxTableNode => Some(vmtx::table_entry),
+        AstKind::StatTableNode => Some(stat::table_entry),
+        _ => None,
+    }
+}
+
+/// Parse a single item in the body of a table, which may be an include.
+///
+/// Returns `true` if the parser advanced. This is `pub(super)` so that it can
+/// be called directly in the case where we are parsing a file that was
+/// `include`'d from within a table block.
+pub(super) fn eat_table_item(parser: &mut Parser, table_fn: TableFn) -> bool {
+    let start_pos = parser.nth_range(0).start;
+    if parser.matches(0, Kind::IncludeKw) {
+        super::include(parser);
+    } else {
         table_fn(parser, TokenSet::TOP_LEVEL);
+    }
+    parser.nth_range(0).start != start_pos
+}
+
+// build any table, given a function that parses items from that table.
+fn table_impl(parser: &mut Parser, tag: Tag, table_fn: TableFn) {
+    parser.expect_recover(Kind::LBrace, TokenSet::TOP_SEMI);
+    while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
+        if !eat_table_item(parser, table_fn) {
+            break;
+        }
     }
 
     parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);

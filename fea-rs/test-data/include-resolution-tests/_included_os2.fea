@@ -1,0 +1,3 @@
+# included from inside a table block in dir1/test2.fea
+WeightClass 600;
+XHeight 511;

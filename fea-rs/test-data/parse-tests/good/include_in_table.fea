@@ -1,0 +1,8 @@
+table OS/2 {
+    include(../includes/included_inside_os2_table.fea);
+    WeightClass 600;
+} OS/2;
+
+table name {
+    include(../includes/included_inside_name_table.fea);
+} name;
