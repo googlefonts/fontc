@@ -83,7 +83,8 @@ struct IncludeGraph {
 /// An include statement in a source file.
 pub struct IncludeStatement {
     pub(crate) stmt: typed::Include,
-    /// the type of the parent node, dictates how this should be parsed.
+    /// The kind of the node containing this statement (or `SourceFile`),
+    /// which dictates how the included file is parsed.
     pub(crate) scope: Kind,
 }
 
@@ -361,9 +362,16 @@ fn parse_src(
     let mut sink = AstSink::new(src.text(), src.id(), glyph_map);
     {
         let mut parser = Parser::new(src.text(), &mut sink);
-        super::grammar::root_for_scope(&mut parser, scope);
+        super::grammar::root(&mut parser, scope);
     }
-    sink.finish()
+    let (node, errors, mut includes) = sink.finish();
+    // the top level of this file is the body of the block that included it
+    for include in &mut includes {
+        if include.scope == Kind::SourceFile {
+            include.scope = scope;
+        }
+    }
+    (node, errors, includes)
 }
 
 #[cfg(test)]
