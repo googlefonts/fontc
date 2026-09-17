@@ -1281,7 +1281,12 @@ impl RawCustomParameters {
                 "panose" => panose = value.as_vec_of_ints(),
                 "openTypeOS2Panose" => panose_old = value.as_vec_of_ints(),
                 "glyphOrder" => add_and_report_issues!(glyph_order, Plist::as_vec_of_string),
-                "gasp Table" => add_and_report_issues!(gasp_table, Plist::as_gasp_table),
+                // Glyphs writes this name with either case, and glyphsLib
+                // registers a handler for both:
+                //     https://github.com/googlefonts/glyphsLib/blob/7819ab5e/Lib/glyphsLib/builder/custom_params.py#L574-L590
+                "gasp Table" | "GASP Table" => {
+                    add_and_report_issues!(gasp_table, Plist::as_gasp_table)
+                }
                 "Feature for Feature Variations" => {
                     add_and_report_issues!(feature_for_feature_variations, Plist::as_str, into)
                 }
@@ -5618,6 +5623,22 @@ etc;
         let cooked = raw.build(FormatVersion::V2, &GlyphData::default()).unwrap();
         assert_eq!(cooked.category, Some(Category::Letter));
         assert_eq!(cooked.sub_category, None); // NOT Some(Ligature)
+    }
+
+    #[test]
+    fn gasp_table_either_case() {
+        // Glyphs writes this parameter with either case and the uppercase
+        // spelling is the more common one in the wild, but we only matched
+        // the lowercase one, so the table was silently dropped.
+        let expected = BTreeMap::from([(8, 10), (20, 7), (65535, 15), (65536, 1)]);
+        for file in ["WghtVarGasp.glyphs", "WghtVarGaspUppercase.glyphs"] {
+            let font = Font::load(&glyphs3_dir().join(file)).unwrap();
+            assert_eq!(
+                Some(&expected),
+                font.custom_parameters.gasp_table.as_ref(),
+                "{file}"
+            );
+        }
     }
 
     #[test]
