@@ -676,19 +676,33 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             }
         }
 
-        let mut glyph_order: GlyphOrder =
-            font.glyph_order.iter().cloned().map(Into::into).collect();
+        // Bracket and color glyphs are absent from public.glyphOrder, so ufo2ft
+        // appends them together in sorted order.
+        // <https://github.com/googlefonts/ufo2ft/blob/9b9ced585/Lib/ufo2ft/util.py#L32-L54>
+        let color_glyphs: HashSet<&SmolStr> = font_info.color_glyphs.values().flatten().collect();
+        let mut glyph_order: GlyphOrder = font
+            .glyph_order
+            .iter()
+            .filter(|name| !color_glyphs.contains(name))
+            .cloned()
+            .map(Into::into)
+            .collect();
 
-        let mut bracket_glyphs = font
+        let mut generated_glyphs = font
             .glyphs
             .values()
             .filter(|g| g.export)
             .flat_map(|g| {
                 bracket_glyph_names(g, &static_metadata.axes).map(|(bracket_name, _)| bracket_name)
             })
+            .chain(
+                color_glyphs
+                    .iter()
+                    .map(|name| GlyphName::from(name.as_str())),
+            )
             .collect::<Vec<_>>();
-        bracket_glyphs.sort();
-        glyph_order.extend(bracket_glyphs);
+        generated_glyphs.sort();
+        glyph_order.extend(generated_glyphs);
 
         context.static_metadata.set(static_metadata);
         context.preliminary_glyph_order.set(glyph_order);
@@ -3738,6 +3752,35 @@ mod tests {
                 "peso.001",
                 "peso.001.BRACKET.varAlt01",
                 "peso.BRACKET.varAlt01",
+            ])
+        );
+    }
+
+    // color and bracket glyphs are sorted together, not as two separate runs
+    #[test]
+    fn color_and_bracket_glyph_sort_order() {
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("color-and-bracket-glyph-order.glyphs"));
+        build_glyphs(&source, &context).unwrap();
+        let prelim_order = context.preliminary_glyph_order.get();
+
+        assert_eq!(
+            prelim_order.as_ref(),
+            &make_glyph_order([
+                "A",
+                "B",
+                "A.BRACKET.varAlt01",
+                "B.color0",
+                "B.color1",
+                "B.color10",
+                "B.color2",
+                "B.color3",
+                "B.color4",
+                "B.color5",
+                "B.color6",
+                "B.color7",
+                "B.color8",
+                "B.color9",
             ])
         );
     }
