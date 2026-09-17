@@ -13,6 +13,12 @@ glyphs = (
 glyphname = A;
 layers = (
 {
+anchors = (
+{
+name = top;
+pos = (300,500);
+}
+);
 attr = {
 color = 1;
 };

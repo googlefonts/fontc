@@ -505,7 +505,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         // - Preliminary categories (without anchor inspection) computed here.
         // - Final categories (with anchor inspection) computed after anchor propagation
         //   in fontir/src/glyph.rs
-        let preliminary_gdef_categories = make_preliminary_glyph_categories(font, &axes);
+        let preliminary_gdef_categories = make_preliminary_glyph_categories(font_info);
 
         // Build vertical metrics if:
         // 1. At least one glyph defines a vertical attribute (vertWidth/vertOrigin), OR
@@ -852,7 +852,9 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
 }
 
 /// Compute GDEF glyph categories using only category and subcategory, no anchor inspection.
-fn make_preliminary_glyph_categories(font: &Font, axes: &Axes) -> PreliminaryGdefCategories {
+fn make_preliminary_glyph_categories(font_info: &FontInfo) -> PreliminaryGdefCategories {
+    let font = &font_info.font;
+    let axes = &font_info.axes;
     let mark_category_glyphs = font
         .glyphs
         .values()
@@ -880,10 +882,20 @@ fn make_preliminary_glyph_categories(font: &Font, axes: &Axes) -> PreliminaryGde
         })
         .collect();
 
+    // glyphsLib computes categories before it splits color layers into glyphs
+    // <https://github.com/googlefonts/glyphsLib/blob/bb60aebe/Lib/glyphsLib/builder/builders.py#L255-L258>
+    let excluded = font_info
+        .color_glyphs
+        .values()
+        .flatten()
+        .map(|name| name.clone().into())
+        .collect();
+
     PreliminaryGdefCategories {
         categories,
         infer_from_anchors: true,
         mark_category_glyphs,
+        excluded,
     }
 }
 
@@ -2561,6 +2573,20 @@ mod tests {
             category_for_glyph_preliminary(glyph.category, glyph.sub_category),
             None
         );
+    }
+
+    // Glyphs split from color layers never get a GDEF class, even though their layers
+    // carry the same attaching anchors as the glyph they came from.
+    // https://github.com/googlefonts/fontc/issues/1870
+    #[test]
+    fn color_layer_glyphs_are_excluded_from_gdef() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("COLRv0-2layers.glyphs"));
+        let preliminary = context.preliminary_gdef_categories.get();
+        assert_eq!(
+            BTreeSet::from([GlyphName::new("A.color0"), GlyphName::new("A.color1")]),
+            preliminary.excluded
+        );
+        assert!(!preliminary.excluded.contains(&GlyphName::new("A")));
     }
 
     // An explicit `subCategory` of `Ligature` yields a preliminary Ligature, but the

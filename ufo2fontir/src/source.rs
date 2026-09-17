@@ -750,6 +750,7 @@ fn preliminary_gdef_categories_from_glyphdata(
         categories,
         infer_from_anchors: true,
         mark_category_glyphs,
+        excluded: Default::default(),
     }
 }
 
@@ -1126,6 +1127,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                     categories,
                     infer_from_anchors: false,
                     mark_category_glyphs: Default::default(),
+                    excluded: Default::default(),
                 }
             };
 

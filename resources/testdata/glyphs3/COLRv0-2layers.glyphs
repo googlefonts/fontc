@@ -28,6 +28,12 @@ glyphs = (
 glyphname = A;
 layers = (
 {
+anchors = (
+{
+name = top;
+pos = (300,500);
+}
+);
 layerId = m01;
 shapes = (
 {
@@ -43,6 +49,12 @@ nodes = (
 width = 600;
 },
 {
+anchors = (
+{
+name = top;
+pos = (300,500);
+}
+);
 attr = {
 colorPalette = 1;
 };
@@ -62,6 +74,12 @@ nodes = (
 width = 600;
 },
 {
+anchors = (
+{
+name = top;
+pos = (300,500);
+}
+);
 attr = {
 colorPalette = 0;
 };

@@ -1848,6 +1848,23 @@ mod tests {
         assert_eq!(categories.get(".notdef"), None);
     }
 
+    // The glyphs split from color layers keep the parent's attaching anchors but
+    // glyphsLib never classifies them: it builds public.openTypeCategories before
+    // creating them. https://github.com/googlefonts/fontc/issues/1870
+    #[test]
+    fn color_layer_glyphs_get_no_gdef_class() {
+        for source in [
+            "glyphs3/COLRv0-2layers.glyphs",
+            "glyphs3/COLRv1-manyshapes-per-glyph.glyphs",
+        ] {
+            let result = TestCompile::compile_source(source);
+            let categories = &result.fe_context.gdef_categories.get().categories;
+            assert_eq!(categories.get("A"), Some(&GlyphClassDef::Base), "{source}");
+            assert_eq!(categories.get("A.color0"), None, "{source}");
+            assert_eq!(categories.get("A.color1"), None, "{source}");
+        }
+    }
+
     /// Build mapping from glyphs-reader master id to normalized location.
     fn build_master_id_to_location<'a>(
         expected: &'a glyphs_reader::Font,
