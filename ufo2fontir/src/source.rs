@@ -1272,6 +1272,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .get("public.openTypeMeta")
             .and_then(parse_meta_table_values);
 
+        static_metadata.misc.unicode_variation_sequences = unicode_variation_sequences(&lib_plist)?;
+
         static_metadata.misc.feature_generation = feature_writers_from_lib(&self.designspace.lib)?;
 
         if let Some(gasp_records) = font_info_at_default.open_type_gasp_range_records.as_ref() {
@@ -1349,6 +1351,42 @@ fn source_has_kerning(
     let font = norad::Font::load_requested_data(&ufo_dir, norad::DataRequest::none().kerning(true))
         .map_err(|e| BadSource::custom(ufo_dir, e))?;
     Ok(!font.kerning.is_empty())
+}
+
+/// <https://unifiedfontobject.org/versions/ufo3/lib.plist/#publicunicodevariationsequences>
+fn unicode_variation_sequences(
+    lib_plist: &plist::Dictionary,
+) -> Result<BTreeMap<u32, BTreeMap<u32, GlyphName>>, BadSource> {
+    const KEY: &str = "public.unicodeVariationSequences";
+    let Some(raw) = lib_plist.get(KEY) else {
+        return Ok(Default::default());
+    };
+    let raw = raw
+        .as_dictionary()
+        .ok_or_else(|| BadSource::custom("lib.plist", format!("{KEY} isn't a dictionary")))?;
+
+    let mut sequences: BTreeMap<u32, BTreeMap<u32, GlyphName>> = BTreeMap::new();
+    for (selector, mappings) in raw {
+        let (Ok(selector), Some(mappings)) =
+            (u32::from_str_radix(selector, 16), mappings.as_dictionary())
+        else {
+            warn!("{KEY}: ignoring malformed entry for \"{selector}\"");
+            continue;
+        };
+        for (codepoint, glyph_name) in mappings {
+            let (Ok(codepoint), Some(glyph_name)) =
+                (u32::from_str_radix(codepoint, 16), glyph_name.as_string())
+            else {
+                warn!("{KEY}: ignoring malformed entry for \"{selector:04X}\" \"{codepoint}\"");
+                continue;
+            };
+            sequences
+                .entry(selector)
+                .or_default()
+                .insert(codepoint, GlyphName::from(glyph_name));
+        }
+    }
+    Ok(sequences)
 }
 
 fn parse_meta_table_values(plist: &plist::Value) -> Option<MetaTableValues> {
@@ -3380,6 +3418,33 @@ mod tests {
         let meta_table = static_meta.misc.meta_table.as_ref().unwrap();
         assert_eq!(meta_table.dlng, ["en-latn", "fr-latn", "nl-Latn"]);
         assert_eq!(meta_table.slng, ["Latn", "Cyrl"]);
+    }
+
+    #[test]
+    fn unicode_variation_sequences_from_lib() {
+        let (_, context) = build_static_metadata("UnicodeVariationSequences.ufo", Flags::default());
+        let static_metadata = context.static_metadata.get();
+        let sequences = static_metadata
+            .misc
+            .unicode_variation_sequences
+            .iter()
+            .flat_map(|(selector, mappings)| {
+                mappings
+                    .iter()
+                    .map(|(codepoint, name)| (*selector, *codepoint, name.as_str()))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            sequences,
+            vec![
+                (0xFE00, 0x7C, "bar.uv001"),
+                (0xFE0E, 0x1F170, "u1F170.text"),
+                (0xFE0F, 0x2B, "plus"),
+                (0xFE0F, 0x7C, "bar"),
+                (0xFE0F, 0x1F170, "u1F170"),
+                (0xE0100, 0x20, "space"),
+            ]
+        );
     }
 
     #[test]
