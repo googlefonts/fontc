@@ -1,0 +1,5 @@
+error: cannot sub glyph by glyph class
+in ./test-data/compile-tests/mini-latin/bad/single_sub_glyph_by_class.fea at 3:13
+  | 
+3 |     sub a by [b c];
+  |              ^^^^^

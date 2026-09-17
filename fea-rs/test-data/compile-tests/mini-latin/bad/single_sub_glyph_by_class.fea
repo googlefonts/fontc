@@ -1,0 +1,4 @@
+feature test {
+    # a single glyph can only be replaced by a glyph or a singleton class
+    sub a by [b c];
+} test;
