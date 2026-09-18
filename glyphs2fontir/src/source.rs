@@ -172,6 +172,8 @@ impl Source for GlyphsIrSource {
                 match name {
                     "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
                     "eraseOpenCorners" => flags.set(Flags::ERASE_OPEN_CORNERS, true),
+                    // Glyphs sources handle this as a font transformation; the
+                    // custom parameter below is authoritative.
                     "propagateAnchors" => (),
                     "decomposeTransformedComponents" => {
                         flags.set(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS, true)
