@@ -1990,6 +1990,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn propagate_anchors_with_unrelated_ufo2ft_filter() {
+        let result =
+            TestCompile::compile_source("glyphs3/UfoFiltersWithoutPropagateAnchors.glyphs");
+        let anchors = result
+            .fe_context
+            .anchors
+            .get(&FeWorkIdentifier::Anchor("Aacute".into()));
+        let names = anchors
+            .anchors
+            .iter()
+            .map(|anchor| anchor.original_name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["top"]);
+    }
+
+    #[test]
+    fn propagate_anchors_filter_loses_to_custom_parameter() {
+        let result = TestCompile::compile_source("glyphs3/UfoFiltersDontPropagateAnchors.glyphs");
+        let anchors = result
+            .fe_context
+            .anchors
+            .try_get(&FeWorkIdentifier::Anchor("Aacute".into()));
+        assert!(anchors.is_none() || anchors.unwrap().anchors.is_empty());
+    }
+
     /// Verify anchors propagate through a single-layer smart component.
     ///
     /// Regression test for <https://github.com/googlefonts/fontc/issues/1973>.
