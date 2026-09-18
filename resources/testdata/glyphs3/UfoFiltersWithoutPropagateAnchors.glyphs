@@ -1,0 +1,81 @@
+{
+.appVersion = "3227";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+fontMaster = (
+{
+axesValues = (
+220
+);
+id = "EC64484B-0978-4CB1-9EE9-C40A2D8C4059";
+userData = {
+com.github.googlei18n.ufo2ft.filters = (
+{
+name = decomposeTransformedComponents;
+}
+);
+};
+visible = 1;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+anchors = (
+{name = top; pos = (250,700);}
+);
+layerId = "EC64484B-0978-4CB1-9EE9-C40A2D8C4059";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(500,0,l),
+(250,700,l)
+);
+}
+);
+width = 500;
+}
+);
+unicode = 65;
+},
+{
+glyphname = acutecomb;
+layers = (
+{
+anchors = (
+{name = _top; pos = (0,700);}
+);
+layerId = "EC64484B-0978-4CB1-9EE9-C40A2D8C4059";
+width = 0;
+}
+);
+unicode = 769;
+},
+{
+glyphname = Aacute;
+layers = (
+{
+layerId = "EC64484B-0978-4CB1-9EE9-C40A2D8C4059";
+shapes = (
+{ref = A;},
+{pos = (250,0); ref = acutecomb;}
+);
+width = 500;
+}
+);
+unicode = 193;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 2;
+versionMinor = 201;
+}
