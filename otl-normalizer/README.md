@@ -10,6 +10,12 @@ suitable for comparison in a text diff.
 This currently supports a subset of GPOS (kerning and marks) and normalizes the
 GDEF ligature caret table. GSUB is stubbed out not supported.
 
+It also prints `glyf` and `gvar` (`--table glyf`, `--table gvar`) as
+line-oriented text: one block per glyph in glyph name order, with all-off-curve
+contours rotated to start at the point closest to the origin, single-point
+contours stripped of their on/off type, and gvar deltas densified to every
+point (plus the four phantom points) with IUP interpolation.
+
 It is part of the [`fontc`] project, and is used to test font compilation as
 well as to compare the output of different compiler toolchains.
 
