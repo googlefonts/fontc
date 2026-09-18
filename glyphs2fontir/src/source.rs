@@ -1832,11 +1832,23 @@ fn process_layer(
         .into_inner();
 
     // TODO populate width and height properly
-    let (mut contours, mut components) = to_ir_contours_and_components(
+    let (mut contours, mut components) = match to_ir_contours_and_components(
         glyph.name.clone().into(),
         &instance.shapes,
         erase_open_corners,
-    )?;
+    ) {
+        Ok(result) => result,
+        // fontmake only draws a non-exporting glyph if something uses it as a
+        // component, so a bad outline in an unreferenced one is not an error
+        Err(e) if !glyph.export && !font_info.font.is_used_as_component(&glyph.name) => {
+            log::warn!(
+                "Ignoring shapes in layer {} of non-exporting glyph: {e}",
+                instance.layer_id
+            );
+            Default::default()
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     // See GLYPHS_ORIGIN_ANCHOR. Anchors are shifted where layer.anchors is read.
     if let Some(origin) = layer_origin(instance) {
@@ -3379,6 +3391,13 @@ mod tests {
                 is_export("space"),
             ]
         );
+    }
+
+    #[test]
+    fn ignores_bad_contour_in_unreferenced_non_export_glyph() {
+        let (source, context) =
+            build_global_metrics(glyphs3_dir().join("NoExportBadContour.glyphs"));
+        build_glyphs(&source, &context).unwrap();
     }
 
     #[test]

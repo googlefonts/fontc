@@ -4126,6 +4126,17 @@ impl Font {
         &self.masters[self.default_master_idx]
     }
 
+    /// Whether any glyph in the font uses `glyph_name` as a component.
+    pub fn is_used_as_component(&self, glyph_name: &str) -> bool {
+        self.glyphs.values().any(|g| {
+            g.layers
+                .iter()
+                .chain(g.bracket_layers.iter())
+                .flat_map(|l| l.shapes.iter())
+                .any(|shape| matches!(shape, Shape::Component(c) if c.name == glyph_name))
+        })
+    }
+
     /// Whether the given master declares any kerning, LTR or RTL.
     pub fn has_kerns_for_master(&self, master_id: &str) -> bool {
         self.kerning_ltr
