@@ -1,0 +1,113 @@
+{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = "Color Bracket Order";
+fontMaster = (
+{
+axesValues = (
+40
+);
+id = m01;
+name = Light;
+},
+{
+axesValues = (
+200
+);
+id = m02;
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+width = 500;
+},
+{
+layerId = m02;
+width = 500;
+},
+{
+associatedMasterId = m01;
+attr = {
+axisRules = (
+{
+min = 150;
+}
+);
+};
+layerId = m01bracket;
+name = "Light [150]";
+width = 500;
+},
+{
+associatedMasterId = m02;
+attr = {
+axisRules = (
+{
+min = 150;
+}
+);
+};
+layerId = m02bracket;
+name = "Bold [150]";
+width = 500;
+}
+);
+},
+{
+glyphname = B;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};}
+);
+width = 500;
+},
+{
+attr = {
+color = 1;
+};
+layerId = m02;
+shapes = (
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};},
+{attr = {fillColor = (0,0,255,255);};},
+{attr = {fillColor = (255,0,0,255);};}
+);
+width = 500;
+}
+);
+}
+);
+unitsPerEm = 1000;
+}
