@@ -162,6 +162,11 @@ pub struct PreliminaryGdefCategories {
     /// component propagation.
     #[serde(default)]
     pub mark_category_glyphs: BTreeSet<GlyphName>,
+    /// Glyphs that never get a GDEF class, even if `categories` or anchors
+    /// would assign one; e.g. the glyphs split from Glyphs.app color layers,
+    /// which glyphsLib only creates after it has computed categories.
+    #[serde(default)]
+    pub excluded: BTreeSet<GlyphName>,
 }
 
 /// Final GDEF categories after anchor propagation has been applied.

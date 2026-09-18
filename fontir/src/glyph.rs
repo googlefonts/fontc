@@ -979,6 +979,9 @@ fn recompute_gdef_categories(context: &Context) -> Result<(), Error> {
 
     for (_work_id, glyph) in context.glyphs.all() {
         let glyph_name = glyph.name.clone();
+        if preliminary.excluded.contains(&glyph_name) {
+            continue;
+        }
 
         // Check if this glyph has attaching anchors (non-underscore) in any location.
         // Attaching anchors are anything that is not Mark (e.g. Base, Ligature,
@@ -2426,6 +2429,7 @@ mod tests {
                 categories: Default::default(),
                 infer_from_anchors: true,
                 mark_category_glyphs: Default::default(),
+                excluded: Default::default(),
             });
         ctx.gdef_categories.set(GdefCategories::default());
 
