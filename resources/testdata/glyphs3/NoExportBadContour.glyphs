@@ -1,0 +1,56 @@
+{
+.appVersion = "3217";
+.formatVersion = 3;
+familyName = "No Export Bad Contour";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(200,0,l),
+(200,200,l),
+(0,200,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+export = 0;
+glyphname = bad;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(120,50,o),
+(100,100,l)
+);
+}
+);
+width = 600;
+}
+);
+}
+);
+unitsPerEm = 1000;
+}
