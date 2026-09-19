@@ -266,6 +266,11 @@ pub struct MiscMetadata {
 
     /// STAT elided fallback name.
     pub elided_fallback_name: Option<String>,
+
+    /// Unicode Variation Sequences: variation selector => base codepoint => glyph name.
+    ///
+    /// The shape of <https://unifiedfontobject.org/versions/ufo3/lib.plist/#publicunicodevariationsequences>.
+    pub unicode_variation_sequences: BTreeMap<u32, BTreeMap<u32, GlyphName>>,
 }
 
 /// Records that will go in the '[meta]' table.
@@ -543,6 +548,7 @@ impl StaticMetadata {
                 feature_generation: None,
                 axis_value_labels: Default::default(),
                 elided_fallback_name: None,
+                unicode_variation_sequences: Default::default(),
             },
             variations: None,
         })
@@ -734,6 +740,7 @@ mod tests {
                 }]),
                 axis_value_labels: Default::default(),
                 elided_fallback_name: None,
+                unicode_variation_sequences: Default::default(),
             },
             number_values: Default::default(),
             variations: None,

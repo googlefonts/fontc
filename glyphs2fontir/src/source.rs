@@ -677,6 +677,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             }
         }
 
+        static_metadata.misc.unicode_variation_sequences = unicode_variation_sequences(font);
+
         // Bracket and color glyphs are absent from public.glyphOrder, so ufo2ft
         // appends them together in sorted order.
         // <https://github.com/googlefonts/ufo2ft/blob/9b9ced585/Lib/ufo2ft/util.py#L32-L54>
@@ -712,6 +714,46 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .set(preliminary_gdef_categories);
         Ok(())
     }
+}
+
+/// The variation selector a `.uvNNN` glyph name suffix stands for, if any.
+///
+/// <https://github.com/googlefonts/glyphsLib/blob/bb60aebe/Lib/glyphsLib/builder/glyph.py#L53-L69>
+fn variation_selector_for_suffix(suffix: &str) -> Option<u32> {
+    let digits = suffix.strip_prefix("uv")?;
+    if digits.len() != 3 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    match digits.parse::<u32>().ok()? {
+        n @ 1..=16 => Some(0xFE00 + n - 1),
+        n @ 17..=256 => Some(0xE0100 + n - 17),
+        _ => None,
+    }
+}
+
+/// <https://github.com/googlefonts/glyphsLib/blob/bb60aebe/Lib/glyphsLib/builder/glyph.py#L96-L106>
+fn unicode_variation_sequences(font: &Font) -> BTreeMap<u32, BTreeMap<u32, GlyphName>> {
+    let mut sequences: BTreeMap<u32, BTreeMap<u32, GlyphName>> = BTreeMap::new();
+    for glyph in font.glyphs.values().filter(|g| g.export) {
+        let Some((base_name, suffix)) = glyph.name.rsplit_once('.') else {
+            continue;
+        };
+        let Some(selector) = variation_selector_for_suffix(suffix) else {
+            continue;
+        };
+        let Some(codepoint) = font
+            .glyphs
+            .get(base_name)
+            .and_then(|base| base.unicode.first().copied())
+        else {
+            continue;
+        };
+        sequences
+            .entry(selector)
+            .or_default()
+            .insert(codepoint, glyph.name.clone().into());
+    }
+    sequences
 }
 
 fn make_feature_variations(fontinfo: &FontInfo) -> Option<VariableFeature> {
@@ -3404,6 +3446,44 @@ mod tests {
     fn reads_fs_type_0x0000() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("fstype_0x0000.glyphs"));
         assert_eq!(Some(0), context.static_metadata.get().misc.fs_type);
+    }
+
+    #[test]
+    fn unicode_variation_sequences_from_glyph_names() {
+        let (_, context) =
+            build_static_metadata(glyphs3_dir().join("UnicodeVariationSequences.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let sequences = static_metadata
+            .misc
+            .unicode_variation_sequences
+            .iter()
+            .flat_map(|(selector, mappings)| {
+                mappings
+                    .iter()
+                    .map(|(codepoint, name)| (*selector, *codepoint, name.as_str()))
+            })
+            .collect::<Vec<_>>();
+        // b.uv002 isn't exported, c.uv003 has no base glyph, d has no unicode
+        // and a.uv999 and a.uv001.ss01 don't end in .uvNNN
+        assert_eq!(
+            sequences,
+            vec![
+                (0xFE00, 0x61, "a.uv001"),
+                (0xFE0F, 0x62, "b.uv016"),
+                (0xE0100, 0x61, "a.uv017"),
+            ]
+        );
+    }
+
+    #[test]
+    fn variation_selector_suffixes() {
+        assert_eq!(super::variation_selector_for_suffix("uv001"), Some(0xFE00));
+        assert_eq!(super::variation_selector_for_suffix("uv016"), Some(0xFE0F));
+        assert_eq!(super::variation_selector_for_suffix("uv017"), Some(0xE0100));
+        assert_eq!(super::variation_selector_for_suffix("uv256"), Some(0xE01EF));
+        for bad in ["uv000", "uv257", "uv1", "uv0001", "uv01a", "uvs001", "ss01"] {
+            assert_eq!(super::variation_selector_for_suffix(bad), None, "{bad}");
+        }
     }
 
     // Some fonts use the long UFO name "openTypeOS2Type" instead of the Glyphs-native "fsType"

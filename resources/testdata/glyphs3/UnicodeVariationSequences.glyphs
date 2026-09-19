@@ -1,0 +1,126 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+familyName = UnicodeVariationSequences;
+fontMaster = (
+{
+id = master01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+unicode = 32;
+},
+{
+glyphname = a;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+unicode = 97;
+},
+{
+glyphname = a.uv001;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+},
+{
+glyphname = a.uv017;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+},
+{
+glyphname = a.uv001.ss01;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+},
+{
+glyphname = a.uv999;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+},
+{
+glyphname = b;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+unicode = 98;
+},
+{
+export = 0;
+glyphname = b.uv002;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+},
+{
+glyphname = b.uv016;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+},
+{
+glyphname = c.uv003;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+},
+{
+glyphname = d;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+},
+{
+glyphname = d.uv001;
+layers = (
+{
+layerId = master01;
+width = 600;
+}
+);
+}
+);
+unitsPerEm = 1000;
+}

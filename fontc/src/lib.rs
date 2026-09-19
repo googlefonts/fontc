@@ -1200,6 +1200,69 @@ mod tests {
         }
     }
 
+    // (codepoint, selector, glyph name or None for the default glyph), in subtable order
+    fn variant_mappings(result: &TestCompile) -> Vec<(u32, u32, Option<GlyphName>)> {
+        use write_fonts::read::tables::cmap::MapVariant;
+        let font = result.font();
+        font.charmap()
+            .variant_mappings()
+            .map(|(codepoint, selector, variant)| {
+                let name = match variant {
+                    MapVariant::UseDefault => None,
+                    MapVariant::Variant(gid) => {
+                        Some(result.get_glyph_name(gid.try_into().unwrap()).unwrap())
+                    }
+                };
+                (codepoint, selector, name)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn cmap_format_14_from_ufo_lib() {
+        let result = TestCompile::compile_source("UnicodeVariationSequences.ufo");
+        assert_eq!(
+            variant_mappings(&result),
+            vec![
+                (0x7C, 0xFE00, Some("bar.uv001".into())),
+                (0x1F170, 0xFE0E, Some("u1F170.text".into())),
+                (0x2B, 0xFE0F, None),
+                (0x7C, 0xFE0F, None),
+                (0x1F170, 0xFE0F, None),
+                (0x20, 0xE0100, None),
+            ]
+        );
+        // the base mappings are unaffected
+        let font = result.font();
+        let charmap = font.charmap();
+        assert_eq!(
+            [0x20u32, 0x2B, 0x7C, 0x1F170].map(|cp| charmap.map(cp).map(|gid| gid.to_u32())),
+            [Some(1), Some(3), Some(2), Some(5)]
+        );
+    }
+
+    #[test]
+    fn cmap_format_14_from_glyph_names() {
+        let result = TestCompile::compile_source("glyphs3/UnicodeVariationSequences.glyphs");
+        assert_eq!(
+            variant_mappings(&result),
+            vec![
+                (0x61, 0xFE00, Some("a.uv001".into())),
+                (0x62, 0xFE0F, Some("b.uv016".into())),
+                (0x61, 0xE0100, Some("a.uv017".into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn no_cmap_format_14_without_sequences() {
+        let result = TestCompile::compile_source("glyphs2/Component.glyphs");
+        assert!(variant_mappings(&result).is_empty());
+        let raw_cmap = dump_table(result.be_context.cmap.get().as_ref()).unwrap();
+        let cmap = Cmap::read(FontData::new(&raw_cmap)).unwrap();
+        assert!(cmap.encoding_records().iter().all(|r| r.encoding_id() != 5));
+    }
+
     /// When instances disagree on codepoints, we use the default master's codepoints.
     /// This must not produce a cmap conflict (duplicate mappings or missing entries).
     #[test]
