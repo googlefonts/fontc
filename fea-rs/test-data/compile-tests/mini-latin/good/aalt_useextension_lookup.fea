@@ -1,0 +1,25 @@
+languagesystem DFLT dflt;
+
+# aalt should see through useExtension on referenced lookups: a -> b from
+# plain_ctx, d -> e from ext_ctx, f -> a from ext_single
+feature aalt {
+    feature calt;
+} aalt;
+
+lookup plain_ctx {
+    sub a' c by b;
+} plain_ctx;
+
+lookup ext_ctx useExtension {
+    sub d' c by e;
+} ext_ctx;
+
+lookup ext_single useExtension {
+    sub f by a;
+} ext_single;
+
+feature calt {
+    lookup plain_ctx;
+    lookup ext_ctx;
+    lookup ext_single;
+} calt;
