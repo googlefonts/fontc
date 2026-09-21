@@ -1,0 +1,55 @@
+{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = "Unnamed Master";
+fontMaster = (
+{
+axesValues = (
+100
+);
+id = "831723D7-215A-436C-BC4B-58FF534F216D";
+name = Thin;
+},
+{
+axesValues = (
+400
+);
+id = m01;
+},
+{
+axesValues = (
+900
+);
+id = "7B9881F8-7ED0-4E78-A3DD-36D09C85A17B";
+name = Black;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = "831723D7-215A-436C-BC4B-58FF534F216D";
+width = 200;
+},
+{
+layerId = m01;
+width = 400;
+},
+{
+layerId = "7B9881F8-7ED0-4E78-A3DD-36D09C85A17B";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
