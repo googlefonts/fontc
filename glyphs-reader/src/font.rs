@@ -2512,20 +2512,19 @@ impl RawFont {
         Ok(())
     }
 
-    fn v2_to_v3_master_names(&mut self) -> Result<(), Error> {
+    /// Name masters that have no name, matching glyphsLib's `GSFontMaster.name`.
+    fn default_master_names(&mut self) {
         // in Glyphs 2, masters don't have a single 'name' attribute, but rather
         // a concatenation of three other optional attributes weirdly called
         // 'width', 'weight' and 'custom' (in exactly this order).
         // The first two can only contain few predefined values, the last one is
         // residual and free-form. They default to 'Regular' when omitted in
-        // the source. See:
+        // the source, as does the Glyphs 3 'name' attribute. See:
         // https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv2.md
+        // https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md
         // https://github.com/googlefonts/glyphsLib/blob/9d5828d/Lib/glyphsLib/classes.py#L1700-L1711
+        let italic_angle_idx = self.metrics.iter().position(|m| m.type_ == "italic angle");
         for master in self.font_master.iter_mut() {
-            // Even though glyphs2 masters don't officially have a 'name' attribute,
-            // some glyphs2 sources produced by more recent versions of Glyphs
-            // sometimes have it (unclear exactly when or from which version on).
-            // We keep the 'name' attribute as is, instead of generating a one.
             if master.name.is_some() {
                 continue;
             }
@@ -2543,8 +2542,11 @@ impl RawFont {
             .collect::<Vec<_>>();
 
             // append "Italic" if italic angle != 0
-            if let Some(italic_angle) = master.italic_angle
-                && italic_angle != 0.0
+            let italic = italic_angle_idx
+                .and_then(|idx| master.metric_values.get(idx))
+                .and_then(|value| value.pos)
+                .is_some_and(|angle| angle != 0.0);
+            if italic
                 && (names.is_empty()
                     || !names
                         .iter()
@@ -2560,7 +2562,6 @@ impl RawFont {
                 Some(names.join(" "))
             };
         }
-        Ok(())
     }
 
     fn v2_to_v3_names(&mut self) -> Result<(), Error> {
@@ -2670,7 +2671,6 @@ impl RawFont {
 
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
-        self.v2_to_v3_master_names()?;
         self.v2_to_v3_axes()?;
         self.v2_to_v3_metrics()?;
         self.v2_to_v3_instances()?;
@@ -3671,6 +3671,7 @@ impl TryFrom<RawFont> for Font {
             // <https://github.com/googlefonts/fontc/issues/1029>
             from.v2_to_v3_names()?;
         }
+        from.default_master_names();
         from.normalize_instance_classes()?;
 
         // TODO: this should be provided in a manner that allows for overrides
@@ -4816,6 +4817,15 @@ slant = (10);
         // string as an integer.
         let font = Font::load(&glyphs3_dir().join("CustomOrigin.glyphs")).unwrap();
         assert_eq!(1, font.default_master_idx);
+    }
+
+    #[rstest]
+    #[case::upright("UnnamedMaster.glyphs", "Regular")]
+    #[case::italic("UnnamedMaster-Italic.glyphs", "Italic")]
+    fn unnamed_v3_master_is_default(#[case] file: &str, #[case] expected: &str) {
+        let font = Font::load(&glyphs3_dir().join(file)).unwrap();
+        assert_eq!(1, font.default_master_idx);
+        assert_eq!(expected, font.masters[1].name);
     }
 
     #[rstest]
