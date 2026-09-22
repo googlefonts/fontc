@@ -27,16 +27,12 @@ pub fn create_font_work() -> Box<BeWork> {
     Box::new(FontWork {})
 }
 
+// STAT is not listed: it's valid in a static font, and glyphsLib emits one
+// for a Glyphs source with a Variable Font Setting even when no axis varies.
 fn is_variable_only(workid: &WorkId) -> bool {
     matches!(
         workid,
-        WorkId::Avar
-            | WorkId::Fvar
-            | WorkId::Gvar
-            | WorkId::Stat
-            | WorkId::Hvar
-            | WorkId::Vvar
-            | WorkId::Mvar
+        WorkId::Avar | WorkId::Fvar | WorkId::Gvar | WorkId::Hvar | WorkId::Vvar | WorkId::Mvar
     )
 }
 

@@ -192,6 +192,34 @@ pub struct AxisValueLabel {
     pub older_sibling: bool,
 }
 
+/// A STAT design axis and its axis value labels.
+///
+/// This mirrors a designspace v5 axis with its `<labels>`, as fontTools'
+/// `getStatAxes` turns them into STAT axis records: every source axis gets
+/// a record, fvar axis or not, in source order. Explicit `axisOrdering`,
+/// localized label names and format 4 location labels are not modelled yet.
+///
+/// <https://learn.microsoft.com/en-us/typography/opentype/spec/stat#axis-records>
+/// <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#labels-element-axis>
+/// <https://github.com/fonttools/fonttools/blob/7af8bf5cbf/Lib/fontTools/varLib/stat.py#L52-L84>
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct StatAxis {
+    pub tag: Tag,
+    pub name: String,
+    pub labels: Vec<AxisValueLabel>,
+}
+
+impl StatAxis {
+    /// A STAT design axis for an fvar axis, with no labels.
+    pub fn from_axis(axis: &Axis) -> Self {
+        StatAxis {
+            tag: axis.tag,
+            name: axis.ui_label_name().to_string(),
+            labels: Vec::new(),
+        }
+    }
+}
+
 /// An avar version 2 axis mapping.
 ///
 /// <https://github.com/harfbuzz/boring-expansion-spec/blob/main/avar2.md#processing>
@@ -261,8 +289,13 @@ pub struct MiscMetadata {
     /// replaces the defaults (an empty list disables all automatic features).
     pub feature_generation: Option<Vec<FeatureWriterSpec>>,
 
-    /// STAT axis value labels.
-    pub axis_value_labels: BTreeMap<Tag, Vec<AxisValueLabel>>,
+    /// STAT design axes, in order, with their axis value labels.
+    ///
+    /// [`StaticMetadata::new`] seeds this with the fvar axes and no labels;
+    /// [`StaticMetadata::set_stat`] replaces the whole list, which is how a
+    /// frontend emits axes that have no fvar counterpart, such as point axes
+    /// pruned from fvar or the STAT-only `ital` axis glyphsLib synthesizes.
+    pub stat_axes: Vec<StatAxis>,
 
     /// STAT elided fallback name.
     pub elided_fallback_name: Option<String>,
@@ -504,6 +537,7 @@ impl StaticMetadata {
                 .map(|(string, key)| (key, string)),
         );
 
+        let stat_axes = variable_axes.iter().map(StatAxis::from_axis).collect();
         let variation_model = VariationModel::new(global_locations, variable_axes.axis_order());
 
         let default_location = axes
@@ -546,7 +580,7 @@ impl StaticMetadata {
                 us_width_class: None,
                 gasp: Vec::new(),
                 feature_generation: None,
-                axis_value_labels: Default::default(),
+                stat_axes,
                 elided_fallback_name: None,
                 unicode_variation_sequences: Default::default(),
             },
@@ -554,13 +588,21 @@ impl StaticMetadata {
         })
     }
 
-    /// Set the STAT axis value labels and the elided fallback name, and
-    /// register their names in the name map.
-    pub fn set_axis_value_labels(
-        &mut self,
-        axis_value_labels: BTreeMap<Tag, Vec<AxisValueLabel>>,
-        elided_fallback_name: Option<String>,
-    ) {
+    /// Set the STAT design axes with their axis value labels and the elided
+    /// fallback name, and register their names in the name map.
+    ///
+    /// Names are registered in the order fontTools' `buildStatTable` visits
+    /// them, the elided fallback then each axis name followed by its value
+    /// names, so that name IDs match fontmake's. The fallback and the value
+    /// names reuse the lowest existing record with the same string, which is
+    /// how "Regular" ends up on name ID 2 or 17 as the STAT spec suggests.
+    /// An axis name only reuses a font-specific record (ID >= 256): the STAT
+    /// spec originally required axis name IDs above 255 (fontTools #1985,
+    /// fixed in #1986; OTS still warns on IDs 26..255), and fontc already
+    /// registers fvar axis names there (#1502), which STAT then shares.
+    /// <https://github.com/fonttools/fonttools/blob/7af8bf5cbf/Lib/fontTools/otlLib/builder.py#L3044-L3050>
+    /// <https://github.com/fonttools/fonttools/blob/7af8bf5cbf/Lib/fontTools/otlLib/builder.py#L3156-L3160>
+    pub fn set_stat(&mut self, stat_axes: Vec<StatAxis>, elided_fallback_name: Option<String>) {
         let mut name_id_gen = self
             .names
             .keys()
@@ -568,39 +610,43 @@ impl StaticMetadata {
             .max()
             .unwrap_or(255)
             .max(255);
-        // A name reuses the existing record with the lowest ID, like
-        // fontTools' _addName with minNameID 0:
-        // https://github.com/fonttools/fonttools/blob/7af8bf5cbf/Lib/fontTools/otlLib/builder.py#L3156-L3160
-        let mut reusable_names: HashMap<String, NameKey> = HashMap::new();
-        for (key, string) in self.names.iter() {
-            let entry = reusable_names.entry(string.clone()).or_insert(*key);
-            if key.name_id < entry.name_id {
-                *entry = *key;
+        let mut reusable_names: HashMap<String, BTreeSet<NameId>> = self
+            .reverse_names()
+            .into_iter()
+            .map(|(name, ids)| (name.to_owned(), ids))
+            .collect();
+        let mut new_names = Vec::new();
+        let mut register_if_new = |name: &str, min_name_id: NameId| {
+            if reusable_names
+                .get(name)
+                .is_some_and(|ids| ids.last().is_some_and(|id| *id >= min_name_id))
+            {
+                return;
             }
-        }
-        let mut register_if_new = |name: &str| {
-            reusable_names.entry(name.to_owned()).or_insert_with(|| {
-                name_id_gen += 1;
-                NameKey::new(name_id_gen.into(), name)
-            });
+            name_id_gen += 1;
+            let name_id = NameId::new(name_id_gen);
+            reusable_names
+                .entry(name.to_owned())
+                .or_default()
+                .insert(name_id);
+            new_names.push((NameKey::new(name_id, name), name.to_owned()));
         };
+        let any_name_id = NameId::new(0);
+        let font_specific_name_id = NameId::new(256);
         if let Some(name) = elided_fallback_name
             .as_deref()
-            .filter(|_| !self.axes.is_empty())
+            .filter(|_| !stat_axes.is_empty())
         {
-            register_if_new(name);
+            register_if_new(name, any_name_id);
         }
-        for axis in self.axes.iter() {
-            for label in axis_value_labels.get(&axis.tag).into_iter().flatten() {
-                register_if_new(&label.name);
+        for axis in stat_axes.iter() {
+            register_if_new(&axis.name, font_specific_name_id);
+            for label in axis.labels.iter() {
+                register_if_new(&label.name, any_name_id);
             }
         }
-        self.names.extend(
-            reusable_names
-                .into_iter()
-                .map(|(string, key)| (key, string)),
-        );
-        self.misc.axis_value_labels = axis_value_labels;
+        self.names.extend(new_names);
+        self.misc.stat_axes = stat_axes;
         self.misc.elided_fallback_name = elided_fallback_name;
     }
 
@@ -738,7 +784,7 @@ mod tests {
                     mode: FeatureWriterMode::Append,
                     features: None,
                 }]),
-                axis_value_labels: Default::default(),
+                stat_axes: Vec::new(),
                 elided_fallback_name: None,
                 unicode_variation_sequences: Default::default(),
             },
@@ -798,56 +844,11 @@ mod tests {
     }
 
     #[test]
-    fn set_axis_value_labels_registers_names() {
+    fn no_fallback_name_without_stat_axes() {
         let mut static_metadata = test_static_metadata();
-        let max_id = |static_metadata: &StaticMetadata| {
-            static_metadata
-                .names
-                .keys()
-                .map(|key| key.name_id.to_u16())
-                .max()
-                .unwrap()
-        };
-        let before = max_id(&static_metadata);
-        let label = AxisValueLabel {
-            name: "Wide".to_string(),
-            value: 200.0.into(),
-            min_value: None,
-            max_value: None,
-            linked_value: None,
-            elidable: false,
-            older_sibling: false,
-        };
-        let labels: BTreeMap<_, _> = [(WGHT, vec![label])].into_iter().collect();
-
-        static_metadata.set_axis_value_labels(labels.clone(), Some("Regular".to_string()));
-        {
-            let reverse_names = static_metadata.reverse_names();
-            assert!(reverse_names["Regular"].contains(&NameId::new(before + 1)));
-            assert!(reverse_names["Wide"].contains(&NameId::new(before + 2)));
-        }
-
-        static_metadata.set_axis_value_labels(labels, Some("Regular".to_string()));
-        assert_eq!(before + 2, max_id(&static_metadata));
-    }
-
-    #[test]
-    fn no_label_names_for_a_static_font() {
-        let mut static_metadata = test_static_metadata();
-        static_metadata.axes = Axes::new(Vec::new());
         let before = static_metadata.names.len();
-        let label = AxisValueLabel {
-            name: "Wide".to_string(),
-            value: 200.0.into(),
-            min_value: None,
-            max_value: None,
-            linked_value: None,
-            elidable: false,
-            older_sibling: false,
-        };
-        let labels: BTreeMap<_, _> = [(WGHT, vec![label])].into_iter().collect();
 
-        static_metadata.set_axis_value_labels(labels, Some("Regular".to_string()));
+        static_metadata.set_stat(Vec::new(), Some("Regular".to_string()));
 
         assert_eq!(before, static_metadata.names.len());
     }
@@ -860,24 +861,118 @@ mod tests {
             "Regular".to_string(),
         );
         let before = static_metadata.names.len();
-        let label = AxisValueLabel {
-            name: "Regular".to_string(),
-            value: 400.0.into(),
-            min_value: None,
-            max_value: None,
-            linked_value: None,
-            elidable: true,
-            older_sibling: false,
-        };
-        let labels: BTreeMap<_, _> = [(Tag::new(b"wght"), vec![label])].into_iter().collect();
+        let stat_axes = vec![StatAxis {
+            labels: vec![AxisValueLabel {
+                elidable: true,
+                ..label("Regular", 400.0)
+            }],
+            ..StatAxis::from_axis(static_metadata.axes.iter().next().unwrap())
+        }];
 
-        static_metadata.set_axis_value_labels(labels, Some("Regular".to_string()));
+        static_metadata.set_stat(stat_axes, Some("Regular".to_string()));
 
         assert_eq!(before, static_metadata.names.len());
         assert_eq!(
             BTreeSet::from([NameId::SUBFAMILY_NAME]),
             static_metadata.reverse_names()["Regular"]
         );
+    }
+
+    fn label(name: &str, value: f64) -> AxisValueLabel {
+        AxisValueLabel {
+            name: name.to_string(),
+            value: value.into(),
+            min_value: None,
+            max_value: None,
+            linked_value: None,
+            elidable: false,
+            older_sibling: false,
+        }
+    }
+
+    #[test]
+    fn new_seeds_stat_axes_from_fvar_axes() {
+        let static_metadata = StaticMetadata::new(
+            1000,
+            Default::default(),
+            vec![Axis::for_test("wght"), Axis::for_test("wdth")],
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            vec![(WGHT, "Weight", 0), (Tag::new(b"wdth"), "Width", 0)],
+            static_metadata
+                .misc
+                .stat_axes
+                .iter()
+                .map(|axis| (axis.tag, axis.name.as_str(), axis.labels.len()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn stat_axes_register_names_in_fonttools_order() {
+        let mut static_metadata = test_static_metadata();
+        static_metadata.names.insert(
+            NameKey::new(NameId::SUBFAMILY_NAME, "Italic"),
+            "Italic".to_string(),
+        );
+        let stat_axes = vec![
+            StatAxis {
+                tag: WGHT,
+                name: "Weight".to_string(),
+                labels: vec![label("Regular", 400.0)],
+            },
+            StatAxis {
+                tag: Tag::new(b"ital"),
+                name: "Italic".to_string(),
+                labels: vec![label("Italic", 1.0)],
+            },
+        ];
+
+        static_metadata.set_stat(stat_axes.clone(), Some("Regular".to_string()));
+
+        let reverse_names = static_metadata.reverse_names();
+        // The fallback comes first and is new; the wght label reuses it
+        assert_eq!(BTreeSet::from([NameId::new(258)]), reverse_names["Regular"]);
+        // The fvar axis name was already registered
+        assert_eq!(BTreeSet::from([NameId::new(256)]), reverse_names["Weight"]);
+        // The STAT-only axis name must not reuse the subfamily name (ID < 256),
+        // but its value label does
+        assert_eq!(
+            BTreeSet::from([NameId::SUBFAMILY_NAME, NameId::new(259)]),
+            reverse_names["Italic"]
+        );
+        assert_eq!(stat_axes, static_metadata.misc.stat_axes);
+
+        // Setting the same STAT again registers nothing new
+        let before = static_metadata.names.len();
+        static_metadata.set_stat(stat_axes, Some("Regular".to_string()));
+        assert_eq!(before, static_metadata.names.len());
+    }
+
+    #[test]
+    fn stat_axes_register_names_without_fvar_axes() {
+        let mut static_metadata = test_static_metadata();
+        static_metadata.axes = Axes::new(Vec::new());
+        let before = static_metadata.names.len();
+        let stat_axes = vec![StatAxis {
+            tag: WGHT,
+            name: "Weight".to_string(),
+            labels: vec![label("Wide", 200.0)],
+        }];
+
+        static_metadata.set_stat(stat_axes, Some("Regular".to_string()));
+
+        assert_eq!(before + 2, static_metadata.names.len());
+        let reverse_names = static_metadata.reverse_names();
+        assert!(reverse_names.contains_key("Regular"));
+        assert!(reverse_names.contains_key("Wide"));
     }
 
     #[test]
