@@ -200,6 +200,7 @@ pub struct AxisValueLabel {
 /// localized label names and format 4 location labels are not modelled yet.
 ///
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/stat#axis-records>
+/// <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#labels-element-axis>
 /// <https://github.com/fonttools/fonttools/blob/7af8bf5cbf/Lib/fontTools/varLib/stat.py#L52-L84>
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StatAxis {
