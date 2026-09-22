@@ -33,7 +33,7 @@ use fontir::{
 };
 use log::{Level, debug, log_enabled, trace, warn};
 use norad::{
-    DataRequest,
+    DataRequest, FontReader, LayerReader,
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
 };
@@ -64,73 +64,112 @@ const UFO2FT_COLOR_LAYER_MAPPING: &str = "com.github.googlei18n.ufo2ft.colorLaye
 pub struct DesignSpaceIrSource {
     designspace_or_ufo: Arc<PathBuf>,
     designspace: Arc<DesignSpaceDocument>,
-    designspace_dir: Arc<PathBuf>,
-    glyphs: Arc<HashMap<GlyphName, HashMap<PathBuf, Vec<DesignLocation>>>>,
+    ufos: Ufos,
+    glyphs: Arc<HashMap<GlyphName, HashMap<UfoLayer, Vec<DesignLocation>>>>,
     /// The features.fea of each master that has one, default master first
-    fea_files: Arc<Vec<(DesignLocation, PathBuf)>>,
+    fea_files: Arc<Vec<(DesignLocation, FeaturesSource)>>,
 }
 
-fn glif_files(
-    ufo_dir: &Path,
-    layer_cache: &mut HashMap<String, HashMap<GlyphName, PathBuf>>,
-    source: &designspace::Source,
-) -> Result<BTreeMap<GlyphName, PathBuf>, Error> {
-    let layer_name = layer_dir(ufo_dir, layer_cache, source)?;
-    let glyph_dir = ufo_dir.join(layer_name);
-    if !glyph_dir.is_dir() {
-        return Err(BadSource::new(glyph_dir, BadSourceKind::ExpectedDirectory).into());
-    }
+/// The UFOs of the designspace, keyed by `source.filename`
+type Ufos = Arc<HashMap<String, Ufo>>;
 
-    let glyph_list_file = glyph_dir.join("contents.plist");
-    if !glyph_list_file.is_file() {
-        return Err(BadSource::new(glyph_list_file, BadSourceKind::ExpectedFile).into());
-    }
-    let result: BTreeMap<String, PathBuf> =
-        plist::from_file(&glyph_list_file).map_err(|e| BadSource::custom(&glyph_list_file, e))?;
-
-    if result.is_empty() {
-        warn!("{glyph_list_file:?} is empty");
-    }
-
-    Ok(result
-        .into_iter()
-        .map(|(glyph_name, path)| (glyph_name.into(), glyph_dir.join(path)))
-        .collect())
+#[derive(Debug)]
+struct Ufo {
+    /// The path the designspace refers to, dir or zip; used for messages
+    path: PathBuf,
+    reader: FontReader,
 }
 
-fn layer_contents(ufo_dir: &Path) -> Result<HashMap<GlyphName, PathBuf>, BadSource> {
-    let file = ufo_dir.join("layercontents.plist");
-    if !file.is_file() {
-        return Ok(HashMap::new());
+impl Ufo {
+    /// Open a UFO, indexing only the `layers` the designspace refers to
+    /// (`None` being the default layer); others may be malformed, and are
+    /// left alone as fontmake does.
+    fn open(path: PathBuf, layers: &HashSet<Option<&str>>) -> Result<Self, BadSource> {
+        let request = DataRequest::all()
+            .data(false)
+            .images(false)
+            .filter_layers(|name, dir| {
+                layers.contains(&Some(name))
+                    || (dir == Path::new("glyphs") && layers.contains(&None))
+            });
+        let reader =
+            FontReader::open_requested(&path, &request).map_err(|e| BadSource::custom(&path, e))?;
+        Ok(Ufo { path, reader })
     }
-    let contents: Vec<(GlyphName, PathBuf)> =
-        plist::from_file(&file).map_err(|e| BadSource::custom(file, e))?;
-    Ok(contents.into_iter().collect())
+
+    fn load(&self, request: &DataRequest) -> Result<norad::Font, BadSource> {
+        self.reader
+            .load(request)
+            .map_err(|e| BadSource::custom(&self.path, e))
+    }
 }
 
-pub(crate) fn layer_dir<'a>(
-    ufo_dir: &Path,
-    layer_cache: &'a mut HashMap<String, HashMap<GlyphName, PathBuf>>,
-    source: &designspace::Source,
-) -> Result<&'a PathBuf, Error> {
-    if !layer_cache.contains_key(&source.filename) {
-        let contents = layer_contents(ufo_dir)?;
-        layer_cache.insert(source.filename.clone(), contents);
-    }
-    let name_to_path = layer_cache.get_mut(&source.filename).unwrap();
+/// A specific layer in a specific UFO.
+///
+/// Multiple designspace sources can reference the same layer.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct UfoLayer {
+    /// `source.filename` in the designspace, the key in [`Ufos`]
+    ufo: String,
+    layer: String,
+}
 
-    // No answer means dir is glyphs, which we'll stuff in under an empty string so the lifetime checks out
-    let glyph_name = source
-        .layer
-        .as_ref()
-        .map_or_else(GlyphName::empty, |l| l.as_str().into());
-    if source.layer.is_none() {
-        name_to_path.insert(glyph_name.clone(), PathBuf::from("glyphs"));
+impl UfoLayer {
+    fn new(ufo: &Ufo, source: &designspace::Source) -> Result<Self, Error> {
+        let layer = match &source.layer {
+            Some(name) => ufo.reader.layer(name),
+            None => ufo.reader.default_layer(),
+        }
+        .ok_or_else(|| {
+            Error::NoSuchLayer(format!(
+                "{} in {}",
+                source.layer.as_deref().unwrap_or("<default>"),
+                source.filename
+            ))
+        })?;
+        Ok(UfoLayer {
+            ufo: source.filename.clone(),
+            layer: layer.name().to_string(),
+        })
     }
 
-    name_to_path
-        .get(&glyph_name)
-        .ok_or_else(|| Error::NoSuchLayer(source.filename.clone()))
+    fn resolve<'a>(&self, ufos: &'a HashMap<String, Ufo>) -> Result<Glif<'a>, Error> {
+        let ufo = ufos
+            .get(&self.ufo)
+            .ok_or_else(|| BadSource::new(&self.ufo, BadSourceKind::ExpectedFile))?;
+        let layer = ufo
+            .reader
+            .layer(&self.layer)
+            .ok_or_else(|| Error::NoSuchLayer(format!("{} in {}", self.layer, self.ufo)))?;
+        Ok(Glif {
+            layer_dir: ufo.path.join(layer.path()),
+            layer,
+        })
+    }
+}
+
+/// A layer to read glifs from on demand
+pub(crate) struct Glif<'a> {
+    pub(crate) layer: LayerReader<'a>,
+    /// Where the layer lives, for messages; a virtual path for a zipped UFO
+    pub(crate) layer_dir: PathBuf,
+}
+
+impl Glif<'_> {
+    /// Read the glif for `glyph_name`, returning its path along with it for use in messages
+    pub(crate) fn load(&self, glyph_name: &GlyphName) -> Result<(norad::Glyph, PathBuf), Error> {
+        let path = self.layer_dir.join(
+            self.layer
+                .glyph_path(glyph_name.as_str())
+                .unwrap_or(Path::new(glyph_name.as_str())),
+        );
+        let glyph = self
+            .layer
+            .load_glyph(glyph_name.as_str())
+            .ok_or_else(|| BadSource::new(&path, BadSourceKind::ExpectedFile))?
+            .map_err(|e| BadSource::custom(&path, e))?;
+        Ok((glyph, path))
+    }
 }
 
 impl DesignSpaceIrSource {
@@ -142,14 +181,15 @@ impl DesignSpaceIrSource {
         // A single glif could be used by many source blocks that use the same layer
         // *gasp*
         // So resolve each file to 1..N locations in designspace
-        let Some(glif_files) = self.glyphs.get(glyph_name) else {
+        let Some(ufo_layers) = self.glyphs.get(glyph_name) else {
             return Err(Error::NoLocationsForGlyph(glyph_name.clone()));
         };
 
         Ok(GlyphIrWork {
             glyph_name: glyph_name.clone(),
             export,
-            glif_files: glif_files.clone(),
+            ufo_layers: ufo_layers.clone(),
+            ufos: self.ufos.clone(),
         })
     }
 }
@@ -222,38 +262,47 @@ impl Source for DesignSpaceIrSource {
             })
             .collect::<Result<HashMap<&str, Tag>, _>>()?;
 
-        // glif filenames are not reversible so we need to read contents.plist to figure out groups
-        // See https://github.com/unified-font-object/ufo-spec/issues/164.
-        // UFO filename => map of layer
-        let mut layer_cache = HashMap::new();
+        let mut layers_by_ufo: HashMap<&String, HashSet<Option<&str>>> = HashMap::new();
+        for source in designspace.sources.iter() {
+            layers_by_ufo
+                .entry(&source.filename)
+                .or_default()
+                .insert(source.layer.as_deref());
+        }
+        let ufos = layers_by_ufo
+            .into_iter()
+            .map(|(filename, layers)| {
+                Ufo::open(designspace_dir.join(filename), &layers)
+                    .map(|ufo| (filename.clone(), ufo))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
 
-        let mut glyphs = HashMap::<GlyphName, HashMap<PathBuf, Vec<DesignLocation>>>::new();
+        let mut glyphs = HashMap::<GlyphName, HashMap<UfoLayer, Vec<DesignLocation>>>::new();
 
-        let (default_master_idx, _) = default_master(&designspace)?;
+        let (default_master_idx, default_master) = default_master(&designspace)?;
         let mut sources_indices_default_first = (0..designspace.sources.len()).collect::<Vec<_>>();
         sources_indices_default_first.swap(0, default_master_idx);
-        let mut default_master_lib = None;
+
+        // some important stuff can live in the lib of the individual ufos,
+        // particularly when a glyphs.app file is converted to ufo/designspace.
+        // In this case the individual source libs should be consistent, so
+        // we will just look at the lib for the default master.
+        let default_master_lib = ufos[&default_master.filename]
+            .load(&DataRequest::none().lib(true))?
+            .lib;
 
         for source_idx in sources_indices_default_first {
             let source = &designspace.sources[source_idx];
-            // Track files within each UFO
-            // The UFO dir *must* exist since we were able to find fontinfo in it earlier
-            let ufo_dir = designspace_dir.join(&source.filename);
-            // some important stuff can live in the lib of the individual ufos,
-            // particularly when a glyphs.app file is converted to ufo/designspace.
-            // In this case the individual source libs should be consistent, so
-            // we will just look at the lib for the default master.
-            if default_master_lib.is_none() {
-                let ufo = norad::Font::load_requested_data(&ufo_dir, DataRequest::none().lib(true))
-                    .map_err(|e| BadSource::custom(&ufo_dir, e))?;
-                default_master_lib = Some(ufo.lib);
+            let ufo = &ufos[&source.filename];
+            let ufo_layer = UfoLayer::new(ufo, source)?;
+            let layer = ufo.reader.layer(&ufo_layer.layer).unwrap();
+            if layer.is_empty() {
+                warn!("layer {} of {} is empty", ufo_layer.layer, source.filename);
             }
 
             let location = to_design_location(&axis_tags_by_name, &source.location)?;
-            for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
-                if !glif_file.exists() {
-                    return Err(BadSource::new(glif_file, BadSourceKind::ExpectedFile).into());
-                }
+            for glyph_name in layer.glyph_names() {
+                let glyph_name = GlyphName::from(glyph_name.as_str());
                 // Default master went first, so if we've never seen this glyph before that's weird
                 if source_idx != default_master_idx && !glyphs.contains_key(&glyph_name) {
                     warn!(
@@ -266,7 +315,7 @@ impl Source for DesignSpaceIrSource {
                 glyphs
                     .entry(glyph_name)
                     .or_default()
-                    .entry(glif_file)
+                    .entry(ufo_layer.clone())
                     .or_default()
                     .push(location.clone());
             }
@@ -283,13 +332,12 @@ impl Source for DesignSpaceIrSource {
         // don't (yet) compile per-master.
         let mut fea_source_indices = (0..designspace.sources.len()).collect::<Vec<_>>();
         fea_source_indices.swap(0, default_master_idx);
-        let mut fea_files: Vec<(DesignLocation, PathBuf)> = Vec::new();
+        let mut fea_files: Vec<(DesignLocation, FeaturesSource)> = Vec::new();
         for idx in fea_source_indices {
             let source = &designspace.sources[idx];
-            let fea_file = designspace_dir.join(&source.filename).join("features.fea");
-            if fea_file.is_file() {
+            if let Some(features) = features_source(&ufos[&source.filename])? {
                 let location = to_design_location(&axis_tags_by_name, &source.location)?;
-                fea_files.push((location, fea_file));
+                fea_files.push((location, features));
             }
         }
 
@@ -300,14 +348,14 @@ impl Source for DesignSpaceIrSource {
             designspace_or_ufo_file.extension().and_then(OsStr::to_str) == Some("designspace");
         merge_default_master_lib_into_designspace_lib(
             &mut designspace.lib,
-            default_master_lib.unwrap_or_default(),
+            default_master_lib,
             skip_public_keys,
         );
 
         Ok(DesignSpaceIrSource {
             designspace_or_ufo: Arc::new(designspace_or_ufo_file.to_path_buf()),
             designspace: Arc::new(designspace),
-            designspace_dir: Arc::new(designspace_dir),
+            ufos: Arc::new(ufos),
             glyphs: Arc::new(glyphs),
             fea_files: Arc::new(fea_files),
         })
@@ -316,7 +364,7 @@ impl Source for DesignSpaceIrSource {
     fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork {
             designspace_or_ufo: self.designspace_or_ufo.clone(),
-            designspace_dir: self.designspace_dir.clone(),
+            ufos: self.ufos.clone(),
             designspace: self.designspace.clone(),
             glyph_names: Arc::new(self.glyphs.keys().cloned().collect()),
         }))
@@ -325,7 +373,7 @@ impl Source for DesignSpaceIrSource {
     fn create_global_metric_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(GlobalMetricsWork {
             designspace_or_ufo: self.designspace_or_ufo.clone(),
-            designspace_dir: self.designspace_dir.clone(),
+            ufos: self.ufos.clone(),
             designspace: self.designspace.clone(),
         }))
     }
@@ -340,7 +388,7 @@ impl Source for DesignSpaceIrSource {
     fn create_kerning_locations_ir_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(KerningLocationsWork {
             designspace_or_ufo: self.designspace_or_ufo.clone(),
-            designspace_dir: self.designspace_dir.clone(),
+            ufos: self.ufos.clone(),
             designspace: self.designspace.clone(),
         }))
     }
@@ -351,7 +399,7 @@ impl Source for DesignSpaceIrSource {
     ) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(KerningInstanceWork {
             designspace_or_ufo: self.designspace_or_ufo.clone(),
-            designspace_dir: self.designspace_dir.clone(),
+            ufos: self.ufos.clone(),
             designspace: self.designspace.clone(),
             location: at,
         }))
@@ -472,7 +520,7 @@ fn merge_default_master_lib_into_designspace_lib(
 #[derive(Debug)]
 struct StaticMetadataWork {
     designspace_or_ufo: Arc<PathBuf>,
-    designspace_dir: Arc<PathBuf>,
+    ufos: Ufos,
     designspace: Arc<DesignSpaceDocument>,
     glyph_names: Arc<HashSet<GlyphName>>,
 }
@@ -480,27 +528,27 @@ struct StaticMetadataWork {
 #[derive(Debug)]
 struct GlobalMetricsWork {
     designspace_or_ufo: Arc<PathBuf>,
-    designspace_dir: Arc<PathBuf>,
+    ufos: Ufos,
     designspace: Arc<DesignSpaceDocument>,
 }
 
 #[derive(Debug)]
 struct FeatureWork {
     designspace_or_ufo: Arc<PathBuf>,
-    fea_files: Arc<Vec<(DesignLocation, PathBuf)>>,
+    fea_files: Arc<Vec<(DesignLocation, FeaturesSource)>>,
 }
 
 #[derive(Debug)]
 struct KerningLocationsWork {
     designspace_or_ufo: Arc<PathBuf>,
-    designspace_dir: Arc<PathBuf>,
+    ufos: Ufos,
     designspace: Arc<DesignSpaceDocument>,
 }
 
 #[derive(Debug)]
 struct KerningInstanceWork {
     designspace_or_ufo: Arc<PathBuf>,
-    designspace_dir: Arc<PathBuf>,
+    ufos: Ufos,
     designspace: Arc<DesignSpaceDocument>,
     location: NormalizedLocation,
 }
@@ -537,17 +585,6 @@ fn default_master(
         }
     }
     Err(Error::NoDefaultMaster)
-}
-
-fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, BadSource> {
-    let lib_plist_file = ufo_dir.join(name);
-    if !lib_plist_file.is_file() {
-        return Err(BadSource::new(lib_plist_file, BadSourceKind::ExpectedFile));
-    }
-    plist::Value::from_file(&lib_plist_file)
-        .map_err(|e| BadSource::custom(&lib_plist_file, e))?
-        .into_dictionary()
-        .ok_or_else(|| BadSource::custom(lib_plist_file, "not a dictionary"))
 }
 
 // Per https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044596662
@@ -864,19 +901,67 @@ fn units_per_em<'a>(font_infos: impl Iterator<Item = &'a norad::FontInfo>) -> Re
     }
 }
 
-fn fea_files_identical(f1: &Path, f2: &Path) -> Result<bool, BadSource> {
-    if !f1.is_file() {
-        return Err(BadSource::new(f1, BadSourceKind::ExpectedFile));
+/// The features.fea of a UFO, if it has one.
+///
+/// A UFO on disk is referenced by path so includes resolve as they always have;
+/// the contents of a zipped UFO are read now. Either way, per the UFO spec,
+/// includes resolve against the directory the UFO lives in.
+fn features_source(ufo: &Ufo) -> Result<Option<FeaturesSource>, BadSource> {
+    const FEATURES_FILE: &str = "features.fea";
+    let include_dir = ufo
+        .path
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| BadSource::new(&ufo.path, BadSourceKind::ExpectedParent))?;
+    let Some(content) = ufo.reader.source().try_read(Path::new(FEATURES_FILE)) else {
+        return Ok(None);
+    };
+    let fea_file = ufo.path.join(FEATURES_FILE);
+    let content = content.map_err(|e| BadSource::new(&fea_file, BadSourceKind::Io(e)))?;
+    Ok(Some(match ufo.reader.path() {
+        Some(_) => FeaturesSource::from_file(fea_file, Some(include_dir)),
+        None => FeaturesSource::Memory {
+            fea_content: String::from_utf8(content).map_err(|e| BadSource::custom(&fea_file, e))?,
+            include_dir: Some(include_dir),
+        },
+    }))
+}
+
+/// The text of a features source, along with the path it is (notionally) at and
+/// the directory its includes resolve against.
+fn fea_content(source: &FeaturesSource) -> Result<(Cow<'_, str>, PathBuf, PathBuf), BadSource> {
+    match source {
+        FeaturesSource::File {
+            fea_file,
+            include_dir,
+        } => {
+            let content = std::fs::read_to_string(fea_file)
+                .map_err(|e| BadSource::new(fea_file, BadSourceKind::Io(e)))?;
+            let include_dir = include_dir
+                .clone()
+                .or_else(|| fea_file.parent().map(Path::to_path_buf))
+                .unwrap_or_default();
+            Ok((Cow::Owned(content), fea_file.clone(), include_dir))
+        }
+        FeaturesSource::Memory {
+            fea_content,
+            include_dir,
+        } => {
+            let include_dir = include_dir.clone().unwrap_or_default();
+            let fea_file = include_dir.join("features.fea");
+            Ok((Cow::Borrowed(fea_content), fea_file, include_dir))
+        }
+        FeaturesSource::Empty => Ok((Cow::Borrowed(""), PathBuf::new(), PathBuf::new())),
     }
-    if !f2.is_file() {
-        return Err(BadSource::new(f2, BadSourceKind::ExpectedFile));
-    }
-    let c1 = std::fs::read_to_string(f1).map_err(|e| BadSource::new(f1, BadSourceKind::Io(e)))?;
-    let c2 = std::fs::read_to_string(f2).map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
-    let (ast1, _) = parse_string(c1);
-    let (ast2, _) = parse_string(c2);
-    let resolver1 = FileSystemResolver::new(ufo_parent_dir(f1));
-    let resolver2 = FileSystemResolver::new(ufo_parent_dir(f2));
+}
+
+fn fea_files_identical(f1: &FeaturesSource, f2: &FeaturesSource) -> Result<bool, BadSource> {
+    let (c1, p1, d1) = fea_content(f1)?;
+    let (c2, p2, d2) = fea_content(f2)?;
+    let (ast1, _) = parse_string(c1.into_owned());
+    let (ast2, _) = parse_string(c2.into_owned());
+    let resolver1 = FileSystemResolver::new(d1);
+    let resolver2 = FileSystemResolver::new(d2);
     // Compare the significant tokens -- include paths canonicalized, whitespace
     // and comments ignored -- rather than the raw text, matching how ufo2ft
     // decides feature compatibility. This tolerates trailing-newline,
@@ -884,15 +969,8 @@ fn fea_files_identical(f1: &Path, f2: &Path) -> Result<bool, BadSource> {
     // paths that point at the same file, while still erroring on real changes.
     // `Iterator::eq` walks both streams lazily and stops at the first mismatch,
     // and only the (canonicalized) include paths allocate.
-    Ok(significant_fea_tokens(&ast1, f1, &resolver1)
-        .eq(significant_fea_tokens(&ast2, f2, &resolver2)))
-}
-
-/// The directory an include path is resolved against: per the UFO spec, the
-/// directory the UFO lives in (the parent of the UFO package).
-fn ufo_parent_dir(fea_path: &Path) -> PathBuf {
-    let fea_dir = fea_path.parent().unwrap_or(Path::new("."));
-    fea_dir.parent().unwrap_or(fea_dir).to_path_buf()
+    Ok(significant_fea_tokens(&ast1, &p1, &resolver1)
+        .eq(significant_fea_tokens(&ast2, &p2, &resolver2)))
 }
 
 /// Iterate the significant tokens of a features.fea for compatibility comparison:
@@ -933,15 +1011,12 @@ fn significant_fea_tokens<'a>(
 ///
 /// That is, source.filename => fontinfo.
 fn font_infos<'a>(
-    designspace_dir: &Path,
+    ufos: &HashMap<String, Ufo>,
     designspace: &'a DesignSpaceDocument,
 ) -> Result<HashMap<&'a String, norad::FontInfo>, BadSource> {
     let mut results = HashMap::new();
     for source in designspace.sources.iter() {
-        let ufo_dir = designspace_dir.join(&source.filename);
-        let data_request = norad::DataRequest::none();
-        let font = norad::Font::load_requested_data(&ufo_dir, data_request)
-            .map_err(|e| BadSource::custom(ufo_dir, e))?;
+        let font = ufos[&source.filename].load(&DataRequest::none())?;
         results.insert(&source.filename, font.font_info);
     }
     Ok(results)
@@ -1061,15 +1136,12 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
     #[tracing::instrument(name = "ufo2fontir::StaticMetadataWork::exec", skip_all)]
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Static metadata for {:#?}", self.designspace_or_ufo);
-        let designspace_dir = self.designspace_dir.as_ref();
         let (_, default_master) = default_master(&self.designspace)?;
-        let font_infos = font_infos(designspace_dir, &self.designspace)?;
-        let font_info_at_default = font_infos.get(&default_master.filename).ok_or_else(|| {
-            BadSource::new(
-                designspace_dir.join(&default_master.filename),
-                BadSourceKind::ExpectedFile,
-            )
-        })?;
+        let default_ufo = &self.ufos[&default_master.filename];
+        let font_infos = font_infos(&self.ufos, &self.designspace)?;
+        let font_info_at_default = font_infos
+            .get(&default_master.filename)
+            .ok_or_else(|| BadSource::new(&default_ufo.path, BadSourceKind::ExpectedFile))?;
 
         let units_per_em = units_per_em(font_infos.values())?;
         let names = names(font_info_at_default);
@@ -1124,15 +1196,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         .into_values()
         .collect();
 
-        let lib_plist =
-            match load_plist(&designspace_dir.join(&default_master.filename), "lib.plist") {
-                Ok(lib_plist) => lib_plist,
-                Err(BadSource {
-                    kind: BadSourceKind::ExpectedFile,
-                    ..
-                }) => Default::default(),
-                Err(e) => return Err(e)?,
-            };
+        let lib_plist = default_ufo.load(&DataRequest::none().lib(true))?.lib;
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
 
         // Check the designspace lib first (canonical location), fall back to the default
@@ -1371,13 +1435,8 @@ fn is_glyph_only(source: &norad::designspace::Source) -> bool {
 
 /// Whether a source declares any kerning at all (mirrors ufo2ft's
 /// `not source.font.kerning`). Reads only the UFO's kerning, no glyphs.
-fn source_has_kerning(
-    designspace_dir: &Path,
-    source: &norad::designspace::Source,
-) -> Result<bool, Error> {
-    let ufo_dir = designspace_dir.join(&source.filename);
-    let font = norad::Font::load_requested_data(&ufo_dir, norad::DataRequest::none().kerning(true))
-        .map_err(|e| BadSource::custom(ufo_dir, e))?;
+fn source_has_kerning(ufo: &Ufo) -> Result<bool, Error> {
+    let font = ufo.load(&DataRequest::none().kerning(true))?;
     Ok(!font.kerning.is_empty())
 }
 
@@ -1589,8 +1648,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         debug!("Global metrics for {:#?}", self.designspace_or_ufo);
         let static_metadata = context.static_metadata.get();
 
-        let designspace_dir = self.designspace_dir.as_ref();
-        let font_infos = font_infos(designspace_dir, &self.designspace)?;
+        let font_infos = font_infos(&self.ufos, &self.designspace)?;
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources)?;
 
@@ -1605,7 +1663,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
             let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
             let font_info = font_infos.get(&source.filename).ok_or_else(|| {
                 BadSource::new(
-                    designspace_dir.join(&source.filename),
+                    &self.ufos[&source.filename].path,
                     BadSourceKind::ExpectedFile,
                 )
             })?;
@@ -1801,38 +1859,28 @@ impl Work<Context, WorkId, Error> for FeatureWork {
 /// Masters whose features are equivalent (see [`fea_files_identical`]) share an
 /// entry, so the usual case - every master has the same features.fea - yields a
 /// single source. `fea_files` must have the default master first.
-fn group_fea_files(fea_files: &[(DesignLocation, PathBuf)]) -> Result<FeatureSources, Error> {
+fn group_fea_files(
+    fea_files: &[(DesignLocation, FeaturesSource)],
+) -> Result<FeatureSources, Error> {
     if fea_files.is_empty() {
         return Ok(FeatureSources::single(FeaturesSource::empty()));
     }
 
     let mut sources: Vec<MasterFeaSource> = Vec::new();
-    // representative path of each group, parallel to sources
-    let mut representatives: Vec<&PathBuf> = Vec::new();
     for (location, fea_file) in fea_files {
         let mut group = None;
-        for (i, other) in representatives.iter().enumerate() {
-            if fea_files_identical(other, fea_file)? {
+        for (i, other) in sources.iter().enumerate() {
+            if fea_files_identical(&other.source, fea_file)? {
                 group = Some(i);
                 break;
             }
         }
         match group {
             Some(i) => sources[i].locations.push(location.clone()),
-            None => {
-                // Fea file is required to be ufo_dir/features.fea. Includes resolve as siblings
-                // of ufo_dir.
-                let include_dir = fea_file
-                    .parent()
-                    .and_then(|f| f.parent())
-                    .map(|v| v.to_path_buf())
-                    .ok_or_else(|| BadSource::new(fea_file, BadSourceKind::ExpectedParent))?;
-                sources.push(MasterFeaSource {
-                    source: FeaturesSource::from_file(fea_file.clone(), Some(include_dir)),
-                    locations: vec![location.clone()],
-                });
-                representatives.push(fea_file);
-            }
+            None => sources.push(MasterFeaSource {
+                source: fea_file.clone(),
+                locations: vec![location.clone()],
+            }),
         }
     }
 
@@ -1913,7 +1961,6 @@ impl Work<Context, WorkId, Error> for KerningLocationsWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Kerning groups for {:#?}", self.designspace_or_ufo);
 
-        let designspace_dir = self.designspace_dir.as_ref();
         let static_metadata = context.static_metadata.get();
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources)?;
@@ -1932,7 +1979,7 @@ impl Work<Context, WorkId, Error> for KerningLocationsWork {
             // model) and any source that kerns; drop non-default sources with no
             // kerning so the kern interpolates across them instead of being
             // pinned toward 0 there.
-            if idx != default_master_idx && !source_has_kerning(designspace_dir, source)? {
+            if idx != default_master_idx && !source_has_kerning(&self.ufos[&source.filename])? {
                 continue;
             }
             let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
@@ -1968,7 +2015,6 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
             self.designspace_or_ufo, self.location
         );
 
-        let designspace_dir = self.designspace_dir.as_ref();
         let static_metadata = context.static_metadata.get();
         let glyph_order = context.glyph_order.get();
         let master_locations =
@@ -1985,13 +2031,11 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
             })
             .unwrap();
 
-        let ufo_dir = designspace_dir.join(&source.filename);
         // Load groups alongside kerning: norad's UFO2 @MMK_L_/@MMK_R_ ->
         // public.kern1./kern2. upconversion only fires when both are present,
         // and we need this source's own groups to resolve its kerning cascade.
-        let data_request = norad::DataRequest::none().kerning(true).groups(true);
-        let font = norad::Font::load_requested_data(&ufo_dir, data_request)
-            .map_err(|e| BadSource::custom(ufo_dir, e))?;
+        let font =
+            self.ufos[&source.filename].load(&DataRequest::none().kerning(true).groups(true))?;
 
         // This source's own kern-group partition. Kerning references are
         // validated against it (and resolved against it in the BE), so a group
@@ -2055,7 +2099,8 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
 struct GlyphIrWork {
     glyph_name: GlyphName,
     export: bool,
-    glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
+    ufo_layers: HashMap<UfoLayer, Vec<DesignLocation>>,
+    ufos: Ufos,
 }
 
 impl Work<Context, WorkId, Error> for GlyphIrWork {
@@ -2082,22 +2127,22 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!(
             "Generate glyph IR for {:?} from {:#?}",
-            self.glyph_name, self.glif_files
+            self.glyph_name, self.ufo_layers
         );
         let static_metadata = context.static_metadata.get();
 
-        // Migrate glif_files into internal coordinates, default location first
-        let mut glif_files = Vec::new();
-        //let mut default_idx = None;
-        for (path, design_locations) in self.glif_files.iter() {
+        // Migrate ufo_layers into internal coordinates, default location first
+        let mut glifs = Vec::new();
+        for (ufo_layer, design_locations) in self.ufo_layers.iter() {
             let normalized_locations: Vec<NormalizedLocation> = design_locations
                 .iter()
                 .map(|dl| dl.to_normalized(&static_metadata.all_source_axes).unwrap())
                 .collect();
+            let glif = ufo_layer.resolve(&self.ufos)?;
             if normalized_locations.iter().any(|loc| loc.is_default()) {
-                glif_files.insert(0, (normalized_locations, path));
+                glifs.insert(0, (normalized_locations, glif));
             } else {
-                glif_files.push((normalized_locations, path));
+                glifs.push((normalized_locations, glif));
             }
         }
 
@@ -2108,7 +2153,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             self.glyph_name.clone(),
             self.export,
             erase_open_corners,
-            &glif_files,
+            &glifs,
             &mut ir_anchors,
         )?;
 
@@ -2412,7 +2457,7 @@ mod tests {
         let f2 = tmp.path().join("b.fea");
         std::fs::write(&f1, "feature kern { pos a b -5; } kern;").unwrap();
         std::fs::write(&f2, "feature kern { pos a b -5; } kern;\n").unwrap();
-        assert!(fea_files_identical(&f1, &f2).unwrap());
+        assert!(fea_files_identical(&fea_source(&f1), &fea_source(&f2)).unwrap());
     }
 
     #[test]
@@ -2425,7 +2470,7 @@ mod tests {
         let f2 = tmp.path().join("b.fea");
         std::fs::write(&f1, "# master A\nfeature kern { pos a b -5; } kern;\n").unwrap();
         std::fs::write(&f2, "feature kern { pos a b -5; } kern; # note\n").unwrap();
-        assert!(fea_files_identical(&f1, &f2).unwrap());
+        assert!(fea_files_identical(&fea_source(&f1), &fea_source(&f2)).unwrap());
     }
 
     #[test]
@@ -2448,7 +2493,13 @@ mod tests {
         };
         let a = write_master("A.ufo", "include(../shared.fea)");
         let b = write_master("B.ufo", "include (../shared.fea)\n");
-        assert!(fea_files_identical(&a, &b).unwrap());
+        assert!(fea_files_identical(&fea_source(&a), &fea_source(&b)).unwrap());
+    }
+
+    /// A features.fea at `path`, with includes resolving as they do for a UFO
+    fn fea_source(path: &Path) -> FeaturesSource {
+        let include_dir = path.parent().and_then(Path::parent).map(Path::to_path_buf);
+        FeaturesSource::from_file(path.to_path_buf(), include_dir)
     }
 
     fn fea_sources(designspace: &str) -> FeatureSources {
@@ -2539,18 +2590,19 @@ mod tests {
     }
 
     fn glifs_for_layer(filename: &str, layer: Option<String>) -> Vec<PathBuf> {
-        let mut layer_cache = HashMap::new();
         let source = designspace::Source {
             filename: filename.to_string(),
             layer,
             ..Default::default()
         };
-        let ufo_dir = ufo_dir(&source.filename);
-        glif_files(&ufo_dir, &mut layer_cache, &source)
-            .unwrap()
-            .into_values()
-            .map(|p| p.strip_prefix(&ufo_dir).unwrap().to_path_buf())
-            .collect::<Vec<PathBuf>>()
+        let layers = HashSet::from([source.layer.as_deref()]);
+        let ufo = Ufo::open(ufo_dir(&source.filename), &layers).unwrap();
+        let ufo_layer = UfoLayer::new(&ufo, &source).unwrap();
+        let layer = ufo.reader.layer(&ufo_layer.layer).unwrap();
+        layer
+            .glyph_names()
+            .map(|name| layer.path().join(layer.glyph_path(name).unwrap()))
+            .collect()
     }
 
     #[test]
@@ -2675,15 +2727,19 @@ mod tests {
     }
 
     fn add_design_location(
-        add_to: &mut HashMap<PathBuf, Vec<DesignLocation>>,
-        glif_file: &str,
+        add_to: &mut HashMap<UfoLayer, Vec<DesignLocation>>,
+        ufo: &str,
+        layer: &str,
         tag: Tag,
         pos: f64,
     ) {
         let mut loc = DesignLocation::new();
         loc.insert(tag, DesignCoord::new(pos));
         add_to
-            .entry(testdata_dir().join(glif_file))
+            .entry(UfoLayer {
+                ufo: ufo.to_string(),
+                layer: layer.to_string(),
+            })
             .or_default()
             .push(loc);
     }
@@ -2696,26 +2752,29 @@ mod tests {
             .create_work_for_one_glyph(&"bar".into(), true)
             .unwrap();
 
-        let mut expected_glif_files = HashMap::new();
+        let mut expected_ufo_layers = HashMap::new();
         add_design_location(
-            &mut expected_glif_files,
-            "WghtVar-Regular.ufo/glyphs/bar.glif",
+            &mut expected_ufo_layers,
+            "WghtVar-Regular.ufo",
+            "public.default",
             Tag::new(b"wght"),
             400.0,
         );
         add_design_location(
-            &mut expected_glif_files,
-            "WghtVar-Regular.ufo/glyphs.{600}/bar.glif",
+            &mut expected_ufo_layers,
+            "WghtVar-Regular.ufo",
+            "{600}",
             Tag::new(b"wght"),
             600.0,
         );
         add_design_location(
-            &mut expected_glif_files,
-            "WghtVar-Bold.ufo/glyphs/bar.glif",
+            &mut expected_ufo_layers,
+            "WghtVar-Bold.ufo",
+            "public.default",
             Tag::new(b"wght"),
             700.0,
         );
-        assert_eq!(expected_glif_files, work.glif_files);
+        assert_eq!(expected_ufo_layers, work.ufo_layers);
     }
 
     #[test]
@@ -2727,20 +2786,22 @@ mod tests {
             .unwrap();
 
         // Note there is NOT a glyphs.{600} version of plus
-        let mut expected_glif_files = HashMap::new();
+        let mut expected_ufo_layers = HashMap::new();
         add_design_location(
-            &mut expected_glif_files,
-            "WghtVar-Regular.ufo/glyphs/plus.glif",
+            &mut expected_ufo_layers,
+            "WghtVar-Regular.ufo",
+            "public.default",
             Tag::new(b"wght"),
             400.0,
         );
         add_design_location(
-            &mut expected_glif_files,
-            "WghtVar-Bold.ufo/glyphs/plus.glif",
+            &mut expected_ufo_layers,
+            "WghtVar-Bold.ufo",
+            "public.default",
             Tag::new(b"wght"),
             700.0,
         );
-        assert_eq!(expected_glif_files, work.glif_files);
+        assert_eq!(expected_ufo_layers, work.ufo_layers);
     }
 
     #[test]
@@ -2773,11 +2834,10 @@ mod tests {
         // Should still work.
         let source = load_wght_var();
         let (_, default_master) = default_master(&source.designspace).unwrap();
-        let lib_plist = load_plist(
-            &source.designspace_dir.join(&default_master.filename),
-            "lib.plist",
-        )
-        .unwrap();
+        let lib_plist = source.ufos[&default_master.filename]
+            .load(&DataRequest::none().lib(true))
+            .unwrap()
+            .lib;
         let go = glyph_order(
             &lib_plist,
             &HashSet::from(["bar".into(), "plus".into(), "an-imaginary-one".into()]),
@@ -2814,14 +2874,14 @@ mod tests {
     #[test]
     pub fn fetches_upem() {
         let source = load_wght_var();
-        let font_infos = font_infos(&source.designspace_dir, &source.designspace).unwrap();
+        let font_infos = font_infos(&source.ufos, &source.designspace).unwrap();
         assert_eq!(1000, units_per_em(font_infos.values()).unwrap());
     }
 
     #[test]
     pub fn ot_rounds_upem() {
         let source = load_designspace("float.designspace");
-        let font_infos = font_infos(&source.designspace_dir, &source.designspace).unwrap();
+        let font_infos = font_infos(&source.ufos, &source.designspace).unwrap();
         assert_eq!(
             256, // 255.5 rounded toward +infinity
             units_per_em(font_infos.values()).unwrap()
@@ -2831,7 +2891,7 @@ mod tests {
     #[test]
     pub fn default_names_for_minimal() {
         let source = load_designspace("float.designspace");
-        let font_info = font_infos(&source.designspace_dir, &source.designspace)
+        let font_info = font_infos(&source.ufos, &source.designspace)
             .unwrap()
             .get(&String::from("Float-Regular.ufo"))
             .cloned()

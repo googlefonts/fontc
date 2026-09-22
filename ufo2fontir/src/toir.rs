@@ -5,7 +5,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadGlyph, BadSource, Error},
+    error::{BadGlyph, Error},
     ir::{self, AnchorBuilder, GlyphPathBuilder},
 };
 use kurbo::{Affine, BezPath};
@@ -14,7 +14,7 @@ use norad::designspace::{self, Dimension};
 use smol_str::SmolStr;
 use write_fonts::types::Tag;
 
-use crate::source::vertical_origin;
+use crate::source::{Glif, vertical_origin};
 
 /// Key for glyphsLib's component info storage in UFO glyph lib.
 ///
@@ -308,12 +308,12 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
     })
 }
 
-/// Invariant: the default location is always first in the glif_files list.
-pub fn to_ir_glyph(
+/// Invariant: the default location is always first in the glifs list.
+pub(crate) fn to_ir_glyph(
     glyph_name: GlyphName,
     emit_to_binary: bool,
     erase_open_corners: bool,
-    glif_files: &[(Vec<NormalizedLocation>, &PathBuf)],
+    glifs: &[(Vec<NormalizedLocation>, Glif<'_>)],
     anchors: &mut AnchorBuilder,
 ) -> Result<ir::Glyph, Error> {
     let mut glyph = ir::GlyphBuilder::new(glyph_name.clone());
@@ -322,14 +322,13 @@ pub fn to_ir_glyph(
     // We stash the codepoints from the default location so we can warn
     // if any other instances have different codepoints
     let mut default_loc_codepoints = None;
-    for (locations, glif_file) in glif_files.iter() {
-        let mut norad_glyph =
-            norad::Glyph::load(glif_file).map_err(|e| BadSource::custom(glif_file, e))?;
+    for (locations, glif) in glifs.iter() {
+        let (mut norad_glyph, glif_file) = glif.load(&glyph_name)?;
 
         for location in locations {
             glyph.try_add_source(
                 location,
-                to_ir_glyph_instance(&norad_glyph, glif_file, erase_open_corners)?,
+                to_ir_glyph_instance(&norad_glyph, &glif_file, erase_open_corners)?,
             )?;
 
             // we only care about anchors from exportable glyphs
@@ -423,12 +422,17 @@ mod tests {
         let mut norm_loc = NormalizedLocation::new();
         norm_loc.insert(Tag::new(b"wght"), NormalizedCoord::new(0.0));
         let mut anchors = AnchorBuilder::new("bar".into());
-        let glif_path = testdata_dir().join("WghtVar-Regular.ufo/glyphs/bar.glif");
+        let ufo_dir = testdata_dir().join("WghtVar-Regular.ufo");
+        let reader = norad::FontReader::open(&ufo_dir).unwrap();
+        let glif = Glif {
+            layer: reader.default_layer().unwrap(),
+            layer_dir: ufo_dir.join("glyphs"),
+        };
         let glyph = to_ir_glyph(
             "bar".into(),
             true,
             false,
-            &[(vec![norm_loc], &glif_path)],
+            &[(vec![norm_loc], glif)],
             &mut anchors,
         )
         .unwrap();
