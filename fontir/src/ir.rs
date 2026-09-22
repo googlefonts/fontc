@@ -500,36 +500,28 @@ impl GlobalMetricsBuilder {
         self.set_if_absent(GlobalMetric::CaretOffset, pos, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd/Lib/ufo2ft/outlineCompiler.py#L575-L616
-        let subscript_x_size = self
-            .get(GlobalMetric::SubscriptXSize, pos)
-            .unwrap_or_else(|| (units_per_em * 0.65).into());
-        let subscript_y_size = self
-            .get(GlobalMetric::SubscriptYSize, pos)
-            .unwrap_or_else(|| (units_per_em * 0.60).into());
-        let subscript_y_offset = self
-            .get(GlobalMetric::SubscriptYOffset, pos)
-            .unwrap_or_else(|| (units_per_em * 0.075).into());
-        let superscript_y_offset = self
-            .get(GlobalMetric::SuperscriptYOffset, pos)
-            .unwrap_or_else(|| (units_per_em * 0.35).into());
+        let mut rounded = |metric, fallback: f64| -> f64 {
+            self.set_if_absent(metric, pos, OtRound::<f64>::ot_round(fallback))
+                .0
+                .ot_round()
+        };
+        let subscript_x_size = rounded(GlobalMetric::SubscriptXSize, units_per_em * 0.65);
+        let subscript_y_size = rounded(GlobalMetric::SubscriptYSize, units_per_em * 0.60);
+        let subscript_y_offset = rounded(GlobalMetric::SubscriptYOffset, units_per_em * 0.075);
+        let superscript_y_offset = rounded(GlobalMetric::SuperscriptYOffset, units_per_em * 0.35);
 
-        self.set_if_absent(GlobalMetric::SubscriptXSize, pos, subscript_x_size);
-        self.set_if_absent(GlobalMetric::SubscriptYSize, pos, subscript_y_size);
         self.set_if_absent(
             GlobalMetric::SubscriptXOffset,
             pos,
-            adjust_offset(-subscript_y_offset.0, italic_angle),
+            adjust_offset(-subscript_y_offset, italic_angle),
         );
-        self.set_if_absent(GlobalMetric::SubscriptYOffset, pos, subscript_y_offset);
-
         self.set_if_absent(GlobalMetric::SuperscriptXSize, pos, subscript_x_size);
         self.set_if_absent(GlobalMetric::SuperscriptYSize, pos, subscript_y_size);
         self.set_if_absent(
             GlobalMetric::SuperscriptXOffset,
             pos,
-            adjust_offset(superscript_y_offset.0, italic_angle),
+            adjust_offset(superscript_y_offset, italic_angle),
         );
-        self.set_if_absent(GlobalMetric::SuperscriptYOffset, pos, superscript_y_offset);
 
         // ufo2ft and Glyphs.app have different defaults for the post.underlinePosition:
         // the former uses 0.075*UPEM whereas the latter 0.1*UPEM (both use the same
@@ -570,10 +562,6 @@ impl GlobalMetricsBuilder {
         metric: GlobalMetric,
     ) -> &mut HashMap<NormalizedLocation, OrderedFloat<f64>> {
         self.0.entry(metric).or_default()
-    }
-
-    fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> Option<OrderedFloat<f64>> {
-        self.0.get(&metric)?.get(pos).copied()
     }
 
     /// Set the value of a metric at a specific location.
@@ -2511,6 +2499,62 @@ mod tests {
             .0
             .ot_round();
         assert_eq!(451, rounded);
+    }
+
+    // ufo2ft rounds the fallback Y offsets (2048 * 0.075 = 153.6 -> 154,
+    // 2048 * 0.35 = 716.8 -> 717) before deriving the X offsets from the italic
+    // angle; feeding the raw floats to adjust_offset gives -35 and 165 instead.
+    // Expected values produced by ufo2ft.compileTTF on a UFO with these settings.
+    //
+    // NOTE: this test is not about 'correctness' in a meaningful way, it is just
+    // checking that our behaviour matches the python. This may not be important
+    // when you are reading this.
+    #[test]
+    fn subscript_x_offset_derived_from_rounded_y_offset() {
+        let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let mut metrics = GlobalMetricsBuilder::new();
+        metrics.populate_defaults(&pos, 2048, None, None, None, Some(-13.0));
+        let metrics = metrics.build(&Axes::default()).unwrap();
+        let get = |metric| OtRound::<i16>::ot_round(metrics.get(metric, &pos).0);
+        assert_eq!(
+            [1331, 1229, -36, 154, 1331, 1229, 166, 717],
+            [
+                get(GlobalMetric::SubscriptXSize),
+                get(GlobalMetric::SubscriptYSize),
+                get(GlobalMetric::SubscriptXOffset),
+                get(GlobalMetric::SubscriptYOffset),
+                get(GlobalMetric::SuperscriptXSize),
+                get(GlobalMetric::SuperscriptYSize),
+                get(GlobalMetric::SuperscriptXOffset),
+                get(GlobalMetric::SuperscriptYOffset),
+            ]
+        );
+    }
+
+    // ufo2ft derives the X offset from the explicit Y offset as given, so an
+    // explicit integer Y offset must not be replaced by the rounded fallback.
+    //
+    // NOTE: this test is not about 'correctness' in a meaningful way, it is just
+    // checking that our behaviour matches the python. This may not be important
+    // when you are reading this.
+    #[test]
+    fn subscript_x_offset_derived_from_explicit_y_offset() {
+        let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let mut metrics = GlobalMetricsBuilder::new();
+        metrics.set(GlobalMetric::SubscriptYOffset, pos.clone(), 150.0);
+        metrics.set(GlobalMetric::SuperscriptYOffset, pos.clone(), 700.0);
+        metrics.populate_defaults(&pos, 2048, None, None, None, Some(-13.0));
+        let metrics = metrics.build(&Axes::default()).unwrap();
+        let get = |metric| OtRound::<i16>::ot_round(metrics.get(metric, &pos).0);
+        assert_eq!(
+            [-35, 150, 162, 700],
+            [
+                get(GlobalMetric::SubscriptXOffset),
+                get(GlobalMetric::SubscriptYOffset),
+                get(GlobalMetric::SuperscriptXOffset),
+                get(GlobalMetric::SuperscriptYOffset),
+            ]
+        );
     }
 
     #[test]
