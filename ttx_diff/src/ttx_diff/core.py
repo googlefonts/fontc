@@ -1447,22 +1447,22 @@ def jsonify_output(output: dict[str, dict[str, Any]]):
     different_lines = 0
     for tag in all_tags:
         if tag not in fontc:
-            different_lines += len(fontmake[tag])
+            different_lines += line_count(fontmake[tag])
             out[tag] = "fontmake"
         elif tag not in fontmake:
-            different_lines += len(fontc[tag])
+            different_lines += line_count(fontc[tag])
             out[tag] = "fontc"
         else:
             s1 = fontc[tag]
             s2 = fontmake[tag]
             if s1 != s2:
                 ratio = diff_ratio(s1, s2)
-                n_lines = max(len(s1), len(s2))
+                n_lines = max(line_count(s1), line_count(s2))
                 same_lines += int(n_lines * ratio)
                 different_lines += int(n_lines * (1 - ratio))
                 out[tag] = ratio
             else:
-                same_lines += len(s1)
+                same_lines += line_count(s1)
 
     # then also add in size differences, if any
     for tag, size_diff in sizes.items():
@@ -1494,6 +1494,10 @@ def extract_comparables(font_xml, build_dir: Path, compiler: str) -> dict[str, s
         comparables[tag] = table_str
 
     return comparables
+
+
+def line_count(text) -> int:
+    return len(text.splitlines())
 
 
 # the line-wise ratio of difference, i.e. the fraction of lines that are the same
