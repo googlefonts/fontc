@@ -926,8 +926,49 @@ fn finalize_kerning(
         .flatten()
         .chain(dist_features.into_iter().flatten())
         .collect();
+    let (lookups, features) = prune_unreferenced_lookups(lookups, features);
     debug_ordered_lookups(&features, &lookups);
     Ok(FeaRsKerns { lookups, features })
+}
+
+/// Drop any lookup no feature refers to, renumbering those that remain.
+///
+/// A tag in our todo list can end up with no features: `kern` is dropped when
+/// the FEA declares it without an insertion marker, and `dist` only gets
+/// features for the scripts that use it. Lookups built for a tag that produced
+/// nothing are dead weight, and their mark filtering sets would still land in
+/// GDEF.
+// <https://github.com/googlefonts/ufo2ft/blob/9b9ced585437/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L305>
+fn prune_unreferenced_lookups(
+    lookups: Vec<PendingLookup<PairPosBuilder>>,
+    mut features: BTreeMap<FeatureKey, Vec<usize>>,
+) -> (
+    Vec<PendingLookup<PairPosBuilder>>,
+    BTreeMap<FeatureKey, Vec<usize>>,
+) {
+    let referenced = features
+        .values()
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if referenced.len() == lookups.len() {
+        return (lookups, features);
+    }
+
+    let remap = referenced
+        .iter()
+        .enumerate()
+        .map(|(new_idx, old_idx)| (*old_idx, new_idx))
+        .collect::<HashMap<_, _>>();
+    let lookups = lookups
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, lookup)| remap.contains_key(&idx).then_some(lookup))
+        .collect();
+    for idx in features.values_mut().flatten() {
+        *idx = remap[idx];
+    }
+    (lookups, features)
 }
 
 /// Given a map of `[scripts] -> [lookups]`, convert it into a map of
@@ -1554,6 +1595,7 @@ fn merge_scripts(
 
 #[cfg(test)]
 mod tests {
+    use fea_rs::compile::Compilation;
     use write_fonts::read::FontRead;
 
     use crate::features::test_helpers::LayoutOutputBuilder;
@@ -1723,8 +1765,8 @@ mod tests {
             self
         }
 
-        /// Returns the raw lookups/features as well as otl-normalizer output
-        fn build(self) -> (FeaRsKerns, String) {
+        /// Returns the raw lookups/features as well as the compiled tables
+        fn compile(self) -> (FeaRsKerns, Compilation, GlyphOrder) {
             let pairs = self.pairs.iter().collect::<Vec<_>>();
             let categories = GdefCategories {
                 categories: self.opentype_categories,
@@ -1746,11 +1788,17 @@ mod tests {
             .unwrap();
 
             let comp = layout_output.compile(&kerns);
+            (kerns, comp, self.glyph_order)
+        }
+
+        /// Returns the raw lookups/features as well as otl-normalizer output
+        fn build(self) -> (FeaRsKerns, String) {
+            let (kerns, comp, glyph_order) = self.compile();
             let gpos_bytes = write_fonts::dump_table(comp.gpos.as_ref().unwrap()).unwrap();
             let gpos =
                 write_fonts::read::tables::gpos::Gpos::read(gpos_bytes.as_slice().into()).unwrap();
             let mut buf = Vec::new();
-            let names = self.glyph_order.names().cloned().collect();
+            let names = glyph_order.names().cloned().collect();
             otl_normalizer::print_gpos(&mut buf, &gpos, None, &names).unwrap();
             let norm_out = String::from_utf8(buf).unwrap();
             (kerns, norm_out)
@@ -2308,6 +2356,79 @@ mod tests {
             # lookupflag LookupFlag(8)
             aaMatra_kannada 34 ailength_kannada
             "#
+        );
+    }
+
+    fn mark_filter_set_count(comp: &Compilation) -> usize {
+        comp.gdef
+            .as_ref()
+            .and_then(|gdef| gdef.mark_glyph_sets_def.as_ref())
+            .map(|sets| sets.coverages.len())
+            .unwrap_or_default()
+    }
+
+    const TONOS: char = '\u{0384}';
+
+    #[test]
+    fn no_mark_filter_set_when_kern_is_declared_in_fea() {
+        let input = || {
+            KernInput::new(&['A', 'B', TONOS])
+                // a mark with an advance: makes the lookups use a filtering
+                // set instead of IgnoreMarks
+                .with_opentype_category_marks(&[TONOS])
+                .with_rule('A', 'B', -30)
+        };
+
+        let (kerns, comp, _) = input()
+            .with_user_fea("languagesystem DFLT dflt; feature kern { pos A B -40; } kern;")
+            .compile();
+
+        assert!(kerns.features.is_empty());
+        assert!(kerns.lookups.is_empty());
+        assert_eq!(mark_filter_set_count(&comp), 0);
+
+        // control: with no 'kern' block in the FEA we do generate the lookups,
+        // and they do want a filtering set
+        let (kerns, comp, _) = input().compile();
+        assert_eq!(kerns.lookups.len(), 1);
+        assert_eq!(
+            flags_and_rule_count(&kerns.lookups[0]).0,
+            LookupFlag::USE_MARK_FILTERING_SET
+        );
+        assert_eq!(mark_filter_set_count(&comp), 1);
+    }
+
+    #[test]
+    fn prune_lookups_that_no_feature_uses() {
+        let (kerns, _, _) = KernInput::new(&[AAMATRA_KANNADA, AILENGTH_KANNADA, 'A', 'B'])
+            .with_user_fea(
+                "
+            languagesystem DFLT dflt;
+            languagesystem latn dflt;
+            languagesystem knda dflt;
+            languagesystem knd2 dflt;
+            feature kern { pos A B -40; } kern;
+                ",
+            )
+            .with_rule([AAMATRA_KANNADA], [AILENGTH_KANNADA], 34)
+            .with_rule('A', 'B', -30)
+            .compile();
+
+        // only 'dist' is generated, so the latin lookup belongs to nothing
+        assert_eq!(
+            kerns.features.keys().cloned().collect::<Vec<_>>(),
+            [
+                FeatureKey::new(DIST, DFLT_LANG, Tag::new(b"knd2")),
+                FeatureKey::new(DIST, DFLT_LANG, Tag::new(b"knda")),
+            ]
+        );
+        assert_eq!(kerns.lookups.len(), 1);
+        assert!(
+            kerns
+                .features
+                .values()
+                .flatten()
+                .all(|idx| *idx < kerns.lookups.len())
         );
     }
 
