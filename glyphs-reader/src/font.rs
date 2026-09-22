@@ -4138,6 +4138,20 @@ impl Font {
         })
     }
 
+    /// The id of the master that supplies the given master's kerning.
+    ///
+    /// "Link Metrics With Master"/"Link Metrics With First Master" replaces a
+    /// master's own kerning with the linked master's.
+    ///
+    /// <https://github.com/googlefonts/glyphsLib/blob/682ff4b17711/Lib/glyphsLib/builder/kerning.py#L33-L35>
+    pub fn kerning_source_id<'a>(&'a self, master_id: &'a str) -> &'a str {
+        self.masters
+            .iter()
+            .find(|m| m.id == master_id)
+            .and_then(|m| m.metrics_source_id.as_deref())
+            .unwrap_or(master_id)
+    }
+
     /// Whether the given master declares any kerning, LTR or RTL.
     pub fn has_kerns_for_master(&self, master_id: &str) -> bool {
         self.kerning_ltr
