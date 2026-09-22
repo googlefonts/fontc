@@ -26,7 +26,7 @@ use crate::{
 mod html;
 mod results_cache;
 
-pub(crate) use results_cache::ResultsCache;
+pub(crate) use results_cache::{FontmakeOutput, ResultsCache};
 
 static SUMMARY_FILE: &str = "summary.json";
 static SOURCES_FILE: &str = "sources.json";
@@ -51,6 +51,9 @@ struct RunSummary {
     /// How many targets skipped the comparison because fontc's output was unchanged.
     #[serde(default)]
     reused_cached_results: usize,
+    /// How many targets skipped building with fontmake because it failed last time.
+    #[serde(default)]
+    reused_fontmake_failures: usize,
 }
 
 impl RunSummary {
@@ -174,6 +177,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         source_cache: cache_dir,
         results_cache,
         reused_cached_results: Default::default(),
+        reused_fontmake_failures: Default::default(),
     };
 
     let began = Utc::now();
@@ -189,8 +193,11 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let reused_cached_results = context
         .reused_cached_results
         .load(std::sync::atomic::Ordering::Relaxed);
+    let reused_fontmake_failures = context
+        .reused_fontmake_failures
+        .load(std::sync::atomic::Ordering::Relaxed);
     log::info!(
-        "completed {n_targets} targets in {elapsed} ({reused_cached_results}/{n_targets} results reused from cache)"
+        "completed {n_targets} targets in {elapsed} ({reused_cached_results}/{n_targets} results reused from cache, {reused_fontmake_failures} fontmake failures reused)"
     );
 
     let summary = super::ttx_diff_runner::Summary::new(&results);
@@ -210,6 +217,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         input_file_sha,
         stats: summary,
         reused_cached_results,
+        reused_fontmake_failures,
     };
 
     prev_runs.push(summary);

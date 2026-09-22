@@ -5,7 +5,10 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use crate::{BuildType, Results, RunResult, Target, ci::ResultsCache};
+use crate::{
+    BuildType, Results, RunResult, Target,
+    ci::{FontmakeOutput, ResultsCache},
+};
 
 // Run ttx-diff via python -m to ensure we use the venv's installed version
 static TTX_DIFF_MODULE: &str = "ttx_diff";
@@ -21,6 +24,7 @@ pub(super) struct TtxContext {
     pub source_cache: PathBuf,
     pub results_cache: ResultsCache,
     pub reused_cached_results: AtomicUsize,
+    pub reused_fontmake_failures: AtomicUsize,
 }
 
 pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffOutput, DiffError> {
@@ -29,14 +33,15 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
     let source_path = target.source_path(&ctx.source_cache);
     let compare = target.build.name();
     let build_dir = outdir.join(compare);
-    let reusing_fontmake = ctx
+    let reused_fontmake = ctx
         .results_cache
         .copy_cached_files_to_build_dir(target, &build_dir);
+    if reused_fontmake == Some(FontmakeOutput::Failure) {
+        ctx.reused_fontmake_failures.fetch_add(1, Ordering::Relaxed);
+    }
     // we can only trust a cached result if fontmake's half of the comparison is
     // the same one that produced it, which is only true if it came from the cache
-    let cached = reusing_fontmake
-        .then(|| ctx.results_cache.load_result(target))
-        .flatten();
+    let cached = reused_fontmake.and_then(|_| ctx.results_cache.load_result(target));
     let mut cmd = Command::new("python3");
     cmd.args([
         "-m",
@@ -123,7 +128,9 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
         log::warn!("error running {target} '{err}'");
     }
 
-    if fontmake_finished(&result) {
+    // a runtime error says nothing about fontmake; otherwise the build dir
+    // holds its font or a record of its failure, either of which we can reuse
+    if !matches!(result, RunResult::Fail(DiffError::Other(_))) {
         ctx.results_cache
             .save_built_files_to_cache(target, &build_dir);
         if let Some(hash) = read_fontc_ttf_hash(&build_dir) {
@@ -141,14 +148,6 @@ fn read_fontc_ttf_hash(build_dir: &Path) -> Option<String> {
     let hash = std::fs::read_to_string(path).ok()?;
     let hash = hash.trim();
     (!hash.is_empty()).then(|| hash.to_owned())
-}
-
-fn fontmake_finished(result: &RunResult<DiffOutput, DiffError>) -> bool {
-    match result {
-        RunResult::Success(_) => true,
-        RunResult::Fail(DiffError::CompileFailed(diff)) => diff.fontmake.is_none(),
-        RunResult::Fail(DiffError::Other(_)) => false,
-    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
