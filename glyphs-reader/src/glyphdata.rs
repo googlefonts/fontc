@@ -539,7 +539,7 @@ impl GlyphData {
 
         // No override, perhaps we have a direct answer?
         bundled::find_pos_by_name(name)
-            .or_else(|| find_pos_by_prod_name(name.into()))
+            .or_else(|| find_pos_by_prod_name(name))
             .or_else(|| {
                 codepoints
                     .into_iter()
@@ -1265,6 +1265,56 @@ mod tests {
             Some((Category::Letter, None)),
             get_category("uni17BF.b", &[]),
         )
+    }
+
+    // Entries like allahlong-ar carry their codepoint only as unicodeLegacy, so
+    // "uniFDFA" is reachable solely through the production name; glyphsLib finds
+    // these via its production name map.
+    #[rstest(name, expected,
+        case("uniFDFA", Some((Category::Letter, Some(Subcategory::Ligature)))),
+        case("uniFDFB", Some((Category::Letter, Some(Subcategory::Ligature)))),
+        case("uniFBF9", Some((Category::Letter, Some(Subcategory::Ligature)))),
+        // an absent uniXXXX name still synthesizes via AGL + unicode category
+        case("uniE000", Some((Category::Letter, Some(Subcategory::Compatibility)))),
+    )]
+    fn unicode_legacy_only_prod_name(
+        name: &str,
+        expected: Option<(Category, Option<Subcategory>)>,
+    ) {
+        assert_eq!(expected, get_category(name, &[]));
+    }
+
+    #[test]
+    fn unicode_legacy_not_found_by_codepoint() {
+        // glyphsLib only indexes the unicode attribute, not unicodeLegacy
+        assert!(
+            GlyphData::new(None)
+                .query_no_synthesis("allahlong", Some(&BTreeSet::from([0xFDFA])))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn unicode_legacy_only_prod_name_result() {
+        let result = GlyphData::new(None)
+            .query_no_synthesis("uniFDFA", None)
+            .unwrap();
+        assert_eq!(
+            (
+                Category::Letter,
+                Some(Subcategory::Ligature),
+                None,
+                Some(Script::Arabic),
+                Some("uniFDFA".to_string())
+            ),
+            (
+                result.category,
+                result.subcategory,
+                result.codepoint,
+                result.script,
+                result.production_name.map(|p| p.to_string())
+            )
+        );
     }
 
     #[rstest(name, expected,

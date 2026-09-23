@@ -1,8 +1,8 @@
 //! Accessors for bundled glyphsLib data
 
 use std::{
-    cmp::Ordering, collections::HashMap, marker::PhantomData, str::from_utf8_unchecked,
-    sync::LazyLock,
+    borrow::Borrow, cmp::Ordering, collections::HashMap, marker::PhantomData,
+    str::from_utf8_unchecked, sync::LazyLock,
 };
 
 use smol_str::SmolStr;
@@ -98,13 +98,13 @@ fn name(idx: usize) -> &'static str {
     unsafe { from_utf8_unchecked(&NAMES[start..end]) }
 }
 
-fn custom_prod_name(idx: usize) -> (ProductionName, usize) {
+fn custom_prod_name(idx: usize) -> (&'static str, usize) {
     let start = offset(&PROD_NAME_OFFSETS, PROD_NAMES, idx);
     let end = offset(&PROD_NAME_OFFSETS, PROD_NAMES, idx + 1);
     let (idx_slice, str_slice) = PROD_NAMES[start..end].split_at(3);
     let idx = U24::from_slice(idx_slice);
     let name = unsafe { from_utf8_unchecked(str_slice) };
-    (ProductionName::Custom(SmolStr::new_static(name)), idx)
+    (name, idx)
 }
 
 // PROD_NAME_OFFSETS/PROD_NAMES let us bsearch the index into the GlyphData for a given production name.
@@ -115,18 +115,22 @@ static REVERSE_PROD_NAMES: LazyLock<HashMap<usize, ProductionName>> = LazyLock::
     let mut map = HashMap::new();
     for i in 0..PROD_NAME_OFFSETS.len() {
         let (name, idx) = custom_prod_name(i);
-        map.insert(idx, name);
+        map.insert(idx, ProductionName::Custom(SmolStr::new_static(name)));
     }
     map
 });
 
-fn bsearch<T: Ord>(len: usize, needle: T, get: impl Fn(usize) -> (T, usize)) -> Option<usize> {
+fn bsearch<K, T>(len: usize, needle: &K, get: impl Fn(usize) -> (T, usize)) -> Option<usize>
+where
+    K: Ord + ?Sized,
+    T: Borrow<K>,
+{
     let mut upper = len as i32 - 1;
     let mut lower = 0;
     while lower <= upper {
         let mid = ((lower + upper) / 2) as usize;
         let (c, i) = get(mid);
-        match c.cmp(&needle) {
+        match c.borrow().cmp(needle) {
             Ordering::Equal => return Some(i),
             Ordering::Less => lower = mid as i32 + 1,
             Ordering::Greater => upper = mid as i32 - 1,
@@ -147,20 +151,14 @@ fn has_predictable_prod_name(cp: u32) -> bool {
     bit & bits == bit
 }
 
-pub(crate) fn find_pos_by_prod_name(needle: ProductionName) -> Option<usize> {
-    match needle {
-        ProductionName::Bmp(cp) | ProductionName::NonBmp(cp) => {
-            if has_predictable_prod_name(cp) {
-                find_pos_by_codepoint(cp)
-            } else {
-                None
-            }
-        }
-        ProductionName::Custom(..) => {
-            // See if this matches against the (relatively small) set of names that break the basic patterns
-            bsearch(PROD_NAME_OFFSETS.len(), needle, custom_prod_name)
-        }
+pub(crate) fn find_pos_by_prod_name(needle: &str) -> Option<usize> {
+    if let ProductionName::Bmp(cp) | ProductionName::NonBmp(cp) = ProductionName::from(needle)
+        && has_predictable_prod_name(cp)
+    {
+        return find_pos_by_codepoint(cp);
     }
+    // Names that break the basic patterns, including uniXXXX ones whose codepoint is only unicodeLegacy
+    bsearch(PROD_NAME_OFFSETS.len(), needle, custom_prod_name)
 }
 
 pub(crate) fn find_pos_by_name(needle: &str) -> Option<usize> {
@@ -168,7 +166,7 @@ pub(crate) fn find_pos_by_name(needle: &str) -> Option<usize> {
 }
 
 pub(crate) fn find_pos_by_codepoint(needle: u32) -> Option<usize> {
-    bsearch(CODEPOINT_TO_INFO_IDX.len(), needle as usize, |i| {
+    bsearch(CODEPOINT_TO_INFO_IDX.len(), &(needle as usize), |i| {
         CODEPOINT_TO_INFO_IDX.get(i).unwrap()
     })
 }
@@ -284,7 +282,7 @@ mod tests {
                     production_name: Some("uni2E42".into()),
                 }
             ),
-            result_for_idx(find_pos_by_prod_name("uni2E42".into()).unwrap())
+            result_for_idx(find_pos_by_prod_name("uni2E42").unwrap())
         );
     }
 
@@ -301,13 +299,13 @@ mod tests {
                     production_name: Some("uE007E".into()),
                 }
             ),
-            result_for_idx(find_pos_by_prod_name("uE007E".into()).unwrap())
+            result_for_idx(find_pos_by_prod_name("uE007E").unwrap())
         );
     }
 
     #[test]
     fn find_pos_by_prod_name_empty() {
-        assert_eq!(None, find_pos_by_prod_name(" ".into()));
+        assert_eq!(None, find_pos_by_prod_name(" "));
     }
 
     #[test]
@@ -324,7 +322,7 @@ mod tests {
                     production_name: Some(".null".into()),
                 }
             ),
-            result_for_idx(find_pos_by_prod_name(".null".into()).unwrap())
+            result_for_idx(find_pos_by_prod_name(".null").unwrap())
         );
     }
 
@@ -337,7 +335,7 @@ mod tests {
     #[test]
     fn find_pos_by_prod_name_zzz() {
         // This was crashing
-        find_pos_by_prod_name("zzz".into());
+        find_pos_by_prod_name("zzz");
     }
 
     #[test]
@@ -354,7 +352,7 @@ mod tests {
                     production_name: Some("u1F1E61F1E9".into()),
                 }
             ),
-            result_for_idx(find_pos_by_prod_name("u1F1E61F1E9".into()).unwrap())
+            result_for_idx(find_pos_by_prod_name("u1F1E61F1E9").unwrap())
         );
     }
 
