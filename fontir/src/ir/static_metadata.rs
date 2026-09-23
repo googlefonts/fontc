@@ -304,6 +304,46 @@ pub struct MiscMetadata {
     ///
     /// The shape of <https://unifiedfontobject.org/versions/ufo3/lib.plist/#publicunicodevariationsequences>.
     pub unicode_variation_sequences: BTreeMap<u32, BTreeMap<u32, GlyphName>>,
+
+    /// The `decomposeComponents` ufo2ft filter, if the source lists it.
+    pub decompose_components: Option<FilterScope>,
+}
+
+/// The glyphs a ufo2ft filter applies to: all of them, or an `include` or
+/// `exclude` list of glyph names.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum FilterScope {
+    All,
+    Include(BTreeSet<GlyphName>),
+    Exclude(BTreeSet<GlyphName>),
+}
+
+impl FilterScope {
+    /// Build from a filter entry's `include` and `exclude` values.
+    ///
+    /// ufo2ft rejects an entry that has both, and treats each as a list of glyph
+    /// names; `names` converts the source's list type, returning `None` for
+    /// anything else. `None` means the entry is malformed and should be ignored.
+    pub fn from_lists<T>(
+        include: Option<&T>,
+        exclude: Option<&T>,
+        names: impl Fn(&T) -> Option<BTreeSet<GlyphName>>,
+    ) -> Option<FilterScope> {
+        match (include, exclude) {
+            (None, None) => Some(FilterScope::All),
+            (Some(include), None) => names(include).map(FilterScope::Include),
+            (None, Some(exclude)) => names(exclude).map(FilterScope::Exclude),
+            (Some(_), Some(_)) => None,
+        }
+    }
+
+    pub fn contains(&self, glyph_name: &GlyphName) -> bool {
+        match self {
+            FilterScope::All => true,
+            FilterScope::Include(names) => names.contains(glyph_name),
+            FilterScope::Exclude(names) => !names.contains(glyph_name),
+        }
+    }
 }
 
 /// Records that will go in the '[meta]' table.
@@ -583,6 +623,7 @@ impl StaticMetadata {
                 stat_axes,
                 elided_fallback_name: None,
                 unicode_variation_sequences: Default::default(),
+                decompose_components: None,
             },
             variations: None,
         })
@@ -787,6 +828,7 @@ mod tests {
                 stat_axes: Vec::new(),
                 elided_fallback_name: None,
                 unicode_variation_sequences: Default::default(),
+                decompose_components: None,
             },
             number_values: Default::default(),
             variations: None,
