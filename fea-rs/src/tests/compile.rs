@@ -358,40 +358,30 @@ feature locl {
 }
 
 #[test]
-fn multiple_languages_can_include_dflt() {
-    let grouped = compile_fea(
+fn multiple_languages_reject_dflt_in_group() {
+    let fea_path = write_temp_fea(
         "\
 feature locl {
     script latn;
     language dflt DEU FRA exclude_dflt;
-    lookup shared {
-        sub a by b;
-    } shared;
+    sub a by b;
 } locl;
 ",
-        "multiple_languages_with_dflt_grouped",
-    );
-    let expanded = compile_fea(
-        "\
-feature locl {
-    script latn;
-    language dflt exclude_dflt;
-    lookup shared {
-        sub a by b;
-    } shared;
-    language DEU exclude_dflt;
-    lookup shared;
-    language FRA exclude_dflt;
-    lookup shared;
-} locl;
-",
-        "multiple_languages_with_dflt_expanded",
+        "multiple_languages_with_dflt",
     );
     let glyph_map = mini_latin_glyph_map();
+    let compiler: Compiler<'_, NopFeatureProvider, MockVariationInfo> =
+        Compiler::new(fea_path, &glyph_map);
+    let error = match compiler.compile() {
+        Ok(_) => panic!("compilation should reject grouped 'dflt'"),
+        Err(error) => error,
+    };
+    let diagnostics = error.diagnostics().unwrap();
 
+    assert_eq!(diagnostics.len(), 1);
     assert_eq!(
-        grouped.to_binary(&glyph_map).unwrap(),
-        expanded.to_binary(&glyph_map).unwrap(),
+        diagnostics.diagnostics()[0].text(),
+        "'dflt' can only be used alone in a language statement",
     );
 }
 

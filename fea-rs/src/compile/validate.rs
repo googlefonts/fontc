@@ -644,6 +644,18 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         self.validate_feature_statements(tag_raw, node.statements());
     }
 
+    fn validate_language(&mut self, node: &typed::Language) {
+        let tags = node.tags().collect::<Vec<_>>();
+        if tags.len() > 1
+            && let Some(dflt) = tags.iter().find(|tag| tag.to_raw() == tags::LANG_DFLT)
+        {
+            self.error(
+                dflt.range(),
+                "'dflt' can only be used alone in a language statement",
+            );
+        }
+    }
+
     // shared between features and feature variations
     fn validate_feature_statements<'b>(
         &mut self,
@@ -653,12 +665,13 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         let mut has_seen_rule = false;
         for item in iter {
             if item.kind() == Kind::ScriptNode
-                || item.kind() == Kind::LanguageNode
                 || item.kind() == Kind::SubtableNode
                 || item.kind() == Kind::Semi
                 || item.kind() == Kind::Comment
             {
                 // lgtm
+            } else if let Some(node) = typed::Language::cast(item) {
+                self.validate_language(&node);
             } else if let Some(node) = typed::CvParameters::cast(item) {
                 if !tags::is_character_variant(feature_tag) {
                     self.error(
