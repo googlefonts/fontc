@@ -1,0 +1,5 @@
+error: Expected ';'
+in ./test-data/parse-tests/bad/multiple_languages_missing_semi.fea at 3:20
+  | 
+3 |     language AZE CRT
+  |                     ^

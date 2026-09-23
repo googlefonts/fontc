@@ -1,0 +1,5 @@
+error: 'dflt' can only be used alone in a language statement
+in ./test-data/compile-tests/mini-latin/bad/multiple_languages_dflt_in_group.fea at 3:13
+  | 
+3 |     language dflt DEU FRA exclude_dflt;
+  |              ^^^^

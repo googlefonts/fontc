@@ -1,0 +1,9 @@
+# a Glyphs.app extension, equivalent to one language statement per tag,
+# each referencing the same lookups.
+feature locl {
+    script latn;
+    language AZE CRT KAZ TAT TRK exclude_dflt required;
+    lookup localized_i {
+        sub i by j;
+    } localized_i;
+} locl;

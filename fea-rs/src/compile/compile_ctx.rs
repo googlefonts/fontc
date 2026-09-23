@@ -285,16 +285,16 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn set_language(&mut self, stmt: typed::Language) {
-        let language = stmt.tag().to_raw();
+        let languages = stmt.tags().map(|tag| tag.to_raw()).collect::<Vec<_>>();
         let script = self
             .active_feature
             .as_ref()
             .unwrap() // language statement only allowed in feature block
             .current_lang_sys()
             .script;
-        self.set_script_language(
+        self.set_script_languages(
             script,
-            language,
+            languages,
             stmt.exclude_dflt().is_some(),
             stmt.required().is_some(),
         );
@@ -311,7 +311,11 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             language: tags::LANG_DFLT,
         };
 
-        let system_is_current = self.active_feature.as_ref().unwrap().current_lang_sys() == system;
+        let system_is_current = self
+            .active_feature
+            .as_ref()
+            .unwrap()
+            .is_only_current_system(system);
 
         // a script statement naming the already-current system does not reset
         // the lookupflag.
@@ -329,18 +333,30 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         exclude_dflt: bool,
         required: bool,
     ) {
-        let system = LanguageSystem { script, language };
+        self.set_script_languages(script, [language], exclude_dflt, required);
+    }
+
+    fn set_script_languages(
+        &mut self,
+        script: Tag,
+        languages: impl IntoIterator<Item = Tag>,
+        exclude_dflt: bool,
+        required: bool,
+    ) {
         if let Some((id, _name)) = self.lookups.finish_current() {
             self.add_lookup_to_current_feature_if_present(id);
         }
-        let key = self
-            .active_feature
-            .as_mut()
-            .unwrap()
-            .set_system(system, exclude_dflt);
+        let keys = self.active_feature.as_mut().unwrap().set_systems(
+            languages
+                .into_iter()
+                .map(|language| LanguageSystem { script, language }),
+            exclude_dflt,
+        );
 
         if required {
-            self.features.add_required(key);
+            for key in keys {
+                self.features.add_required(key);
+            }
         }
     }
 

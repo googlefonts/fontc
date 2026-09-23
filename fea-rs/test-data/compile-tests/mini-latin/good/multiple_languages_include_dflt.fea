@@ -1,0 +1,11 @@
+feature locl {
+    script latn;
+    language dflt;
+    lookup defaults {
+        sub a by b;
+    } defaults;
+    language DEU FRA include_dflt;
+    lookup localized {
+        sub c by d;
+    } localized;
+} locl;

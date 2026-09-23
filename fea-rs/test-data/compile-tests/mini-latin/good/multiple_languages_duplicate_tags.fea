@@ -1,0 +1,6 @@
+# repeated tags are ignored
+feature locl {
+    script latn;
+    language DEU DEU FRA DEU exclude_dflt;
+    sub a by b;
+} locl;
