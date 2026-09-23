@@ -12,6 +12,7 @@ from ttx_diff.core import (
     delete_things_we_must_rebuild,
     failure_file,
     hash_file,
+    jsonify_output,
     load_fontmake_failure,
     save_fontmake_failure,
     strip_fontc_version_tag,
@@ -231,3 +232,25 @@ def test_rebuild_treats_the_failure_like_fontmake_output(tmp_path):
     assert load_fontmake_failure(fontmake_ttf) == FONTMAKE_FAILURE
     delete_things_we_must_rebuild("fontmake", fontmake_ttf, fontc_ttf)
     assert load_fontmake_failure(fontmake_ttf) is None
+
+
+def test_jsonify_output_weights_by_line_count():
+    # two tables with the same number of lines but very different line
+    # lengths must contribute equally to the overall score
+    long_lines = "\n".join(["x" * 100] * 10).encode()
+    short_lines = "\n".join(["y"] * 10).encode()
+    fontc = {"long": long_lines, "short": short_lines}
+    fontmake = {"long": long_lines, "short": "\n".join(["z"] * 10).encode()}
+    out = jsonify_output({"fontc": fontc, "fontmake": fontmake})["success"]
+    assert out["short"] == 0.0
+    assert out["total"] == pytest.approx(0.5)
+
+
+def test_jsonify_output_missing_table_counts_lines():
+    long_lines = "\n".join(["x" * 100] * 10).encode()
+    short_lines = "\n".join(["y"] * 10).encode()
+    fontc = {"same": short_lines}
+    fontmake = {"same": short_lines, "extra": long_lines}
+    out = jsonify_output({"fontc": fontc, "fontmake": fontmake})["success"]
+    assert out["extra"] == "fontmake"
+    assert out["total"] == pytest.approx(0.5)
