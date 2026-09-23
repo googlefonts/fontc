@@ -4896,6 +4896,12 @@ mod tests {
         assert_eq!(f1, f2, "{context}");
     }
 
+    /// Dump a parsed font to a temp file, handy if troubleshooting.
+    fn dump_font(name: &str, font: &Font) {
+        let path = std::env::temp_dir().join(format!("{name}.txt"));
+        std::fs::write(path, format!("{font:#?}")).unwrap();
+    }
+
     fn assert_load_v2_matches_load_v3(name: &str, compare: LoadCompare) {
         let has_package = matches!(compare, LoadCompare::GlyphsAndPackage);
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
@@ -4906,9 +4912,8 @@ mod tests {
         let g2 = Font::load(&g2_file).unwrap();
         let g3 = Font::load(&g3_file).unwrap();
 
-        // Handy if troubleshooting
-        std::fs::write("/tmp/g2.glyphs.txt", format!("{g2:#?}")).unwrap();
-        std::fs::write("/tmp/g3.glyphs.txt", format!("{g3:#?}")).unwrap();
+        dump_font(&format!("{name}-g2.glyphs"), &g2);
+        dump_font(&format!("{name}-g3.glyphs"), &g3);
 
         assert_fonts_equal_sans_localized_names(
             &g2,
@@ -4920,8 +4925,8 @@ mod tests {
             let g2_pkg = Font::load(&glyphs2_dir().join(pkgname.clone())).unwrap();
             let g3_pkg = Font::load(&glyphs3_dir().join(pkgname.clone())).unwrap();
 
-            std::fs::write("/tmp/g2.glyphspackage.txt", format!("{g2_pkg:#?}")).unwrap();
-            std::fs::write("/tmp/g3.glyphspackage.txt", format!("{g3_pkg:#?}")).unwrap();
+            dump_font(&format!("{name}-g2.glyphspackage"), &g2_pkg);
+            dump_font(&format!("{name}-g3.glyphspackage"), &g3_pkg);
 
             assert_fonts_equal_sans_localized_names(&g2_pkg, &g3_pkg, "g2_pkg vs g3_pkg");
             assert_fonts_equal(&g3_pkg, &g3, "g3_pkg vs g3");
