@@ -31,7 +31,7 @@ tinystr = "0.8.0"
 # fontations etc
 write-fonts = { version = "0.54.0", features = ["serde", "read", "tables"]  }
 skrifa = { version = "0.48.0" }
-norad = { version = "0.19.0", default-features = false }
+norad = { version = "0.19.0", default-features = false, features = ["ufoz"] }
 
 # dev dependencies
 criterion = "0.8"
