@@ -1,0 +1,121 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+familyName = LinkedKerning;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+customParameters = (
+{
+name = "Link Metrics With Master";
+value = m04;
+}
+);
+id = m02;
+name = Bold;
+},
+{
+axesValues = (
+850
+);
+customParameters = (
+{
+name = "Link Metrics With Master";
+value = m02;
+}
+);
+id = m03;
+name = Heavy;
+},
+{
+axesValues = (
+1000
+);
+id = m04;
+name = Black;
+}
+);
+glyphs = (
+{
+glyphname = A;
+kernRight = A;
+layers = (
+{
+layerId = m01;
+width = 500;
+},
+{
+layerId = m02;
+width = 600;
+},
+{
+layerId = m03;
+width = 650;
+},
+{
+layerId = m04;
+width = 700;
+}
+);
+unicode = 65;
+},
+{
+glyphname = B;
+kernLeft = B;
+layers = (
+{
+layerId = m01;
+width = 500;
+},
+{
+layerId = m02;
+width = 600;
+},
+{
+layerId = m03;
+width = 650;
+},
+{
+layerId = m04;
+width = 700;
+}
+);
+unicode = 66;
+}
+);
+kerningLTR = {
+m01 = {
+"@MMK_L_A" = {
+"@MMK_R_B" = -10;
+};
+};
+m03 = {
+"@MMK_L_A" = {
+"@MMK_R_B" = -30;
+};
+};
+m04 = {
+"@MMK_L_A" = {
+"@MMK_R_B" = -40;
+};
+};
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

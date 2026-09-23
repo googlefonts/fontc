@@ -1263,7 +1263,7 @@ impl Work<Context, WorkId, Error> for KerningLocationsWork {
             .iter()
             .filter_map(|(master_id, pos)| {
                 let keep = master_id.as_str() == default_master_id.as_str()
-                    || font.has_kerns_for_master(master_id);
+                    || font.has_kerns_for_master(font.kerning_source_id(master_id));
                 keep.then(|| pos.clone())
             })
             .collect();
@@ -1439,19 +1439,10 @@ fn kerning_at_location<'a>(
         .iter()
         .find_map(|(id, pos)| (pos == location).then_some(id))?;
 
-    // Check if this master has linked metrics via "Link Metrics With Master" or
-    // "Link Metrics With First Master" custom parameters.
-    // See https://github.com/googlefonts/glyphsLib/blob/682ff4b1/Lib/glyphsLib/builder/kerning.py#L33-L35
-    let metrics_source_id = font_info
-        .font
-        .masters
-        .iter()
-        .find(|m| m.id == *our_id)
-        .and_then(|m| m.metrics_source_id.as_deref())
-        .unwrap_or(our_id);
+    let source_id = font_info.font.kerning_source_id(our_id);
 
-    let ltr = font_info.font.kerning_ltr.get(metrics_source_id);
-    let rtl = font_info.font.kerning_rtl.get(metrics_source_id);
+    let ltr = font_info.font.kerning_ltr.get(source_id);
+    let rtl = font_info.font.kerning_rtl.get(source_id);
     // if there's no RTL, just return LTR, unchanged.
     let Some(rtl) = rtl else {
         // if there's no rtl we can just return ltr,
@@ -3395,6 +3386,36 @@ mod tests {
             2,
             "the RTL-only non-default master must be kept"
         );
+    }
+
+    #[test]
+    fn non_default_master_with_linked_kerning_is_kept() {
+        // AR One Sans: a master with no kerning of its own but a "Link Metrics
+        // With Master" link to one that kerns is not kernless, so it keeps its
+        // location and carries the linked master's pairs. In
+        // KerningLinkedMaster.glyphs m02 (Bold, wght 0.5) links to m04 (Black).
+        let (_, context) = build_kerning(glyphs3_dir().join("KerningLinkedMaster.glyphs"));
+
+        let bold = NormalizedLocation::for_pos(&[("wght", 0.5)]);
+        assert!(
+            context.kerning_locations.get().locations.contains(&bold),
+            "the master inheriting kerning through the link must be kept"
+        );
+        assert_eq!(
+            context.kerning_at.get(&WorkId::KernInstance(bold)).kerns,
+            make_kerning(&[("@side1.A", "@side2.B", -40)])
+        );
+    }
+
+    #[test]
+    fn master_linked_to_kernless_master_is_skipped() {
+        // the link supplies the master's kerning *instead of* its own, so a
+        // master linked to a kernless one is itself kernless however much it
+        // kerns directly. m03 (Heavy, wght 0.75) kerns but links to m02.
+        let (_, context) = build_kerning(glyphs3_dir().join("KerningLinkedMaster.glyphs"));
+
+        let heavy = NormalizedLocation::for_pos(&[("wght", 0.75)]);
+        assert!(!context.kerning_locations.get().locations.contains(&heavy));
     }
 
     #[test]
