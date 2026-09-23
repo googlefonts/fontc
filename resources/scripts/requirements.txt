@@ -68,7 +68,7 @@ defcon[lxml,pens]==0.12.2
     #   ufoprocessor
 ffmpeg-python==0.2.0
     # via gftools
-filelock==3.32.6
+filelock==4.0.1
     # via youseedee
 font-v==2.1.0
     # via gftools
@@ -139,15 +139,14 @@ gitpython==3.1.62
     # via font-v
 glyphsets==1.1.0
     # via gftools
-glyphslib==6.13.1
+glyphslib==6.15.0
     # via
-    #   -r resources/scripts/requirements.in
     #   bumpfontversion
     #   fontmake
     #   gftools
     #   glyphsets
     #   ttx-diff
-idna==3.19
+idna==3.20
     # via requests
 importlib-resources==7.1.0
     # via gfsubsets
@@ -171,7 +170,7 @@ mutatormath==3.0.1
     # via ufoprocessor
 nanoemoji==0.16.0
     # via gftools
-networkx==3.6.1
+networkx==3.7
     # via gftools
 ninja==1.13.2
     # via
@@ -198,7 +197,7 @@ pillow==12.3.0
     # via
     #   gftools
     #   nanoemoji
-platformdirs==4.11.8
+platformdirs==4.11.12
     # via youseedee
 pngquant-cli==3.0.3
     # via nanoemoji
@@ -217,11 +216,11 @@ pygithub==2.10.0
     # via gftools
 pygments==2.21.0
     # via rich
-pyjwt[crypto]==2.13.0
+pyjwt[crypto]==2.14.0
     # via pygithub
 pynacl==1.6.2
     # via pygithub
-pyparsing==3.3.2
+pyparsing==3.3.3
     # via vttlib
 python-dateutil==2.9.0.post0
     # via strictyaml
@@ -264,7 +263,7 @@ tabulate==0.10.0
     #   glyphsets
 toml==0.10.2
     # via nanoemoji
-tqdm==4.70.0
+tqdm==4.70.1
     # via afdko
 ttfautohint-py==0.6.1
     # via gftools
@@ -294,17 +293,17 @@ ufonormalizer==0.6.3
     # via afdko
 ufoprocessor==1.14.1
     # via afdko
-uharfbuzz==0.56.1
+uharfbuzz==0.56.2
     # via
     #   fonttools
     #   vharfbuzz
-unicodedata2==17.0.1
+unicodedata2==18.0.0
     # via
     #   fonttools
     #   glyphsets
 unidecode==1.4.0
     # via gftools
-urllib3==2.7.0
+urllib3==2.8.0
     # via
     #   pygithub
     #   requests
