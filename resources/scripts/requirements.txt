@@ -91,7 +91,7 @@ fontparts==1.1.1
     # via ufoprocessor
 fontpens==0.4.0
     # via defcon
-fonttools[lxml,repacker,ufo,unicode,woff]==4.65.0
+fonttools[lxml,repacker,ufo,unicode,woff]==4.66.0
     # via
     #   afdko
     #   axisregistry
@@ -216,7 +216,7 @@ pygithub==2.10.0
     # via gftools
 pygments==2.21.0
     # via rich
-pyjwt[crypto]==2.14.0
+pyjwt[crypto]==2.15.0
     # via pygithub
 pynacl==1.6.2
     # via pygithub
