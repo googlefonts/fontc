@@ -365,20 +365,15 @@ impl ActiveFeature {
         self.current_lang_systems.as_slice() == [system]
     }
 
-    /// Change the active language system.
+    /// Change the active language systems.
     ///
     /// This method is called when encountering 'script' and 'language' statements
     /// in a feature block. These statements have strange semantics, best documented
     /// in issues like <https://github.com/fonttools/fonttools/pull/1307>.
     ///
     /// This method handles figuring out what previously declared lookups should
-    /// be included with the newly assigned language system.
-    pub(crate) fn set_system(&mut self, system: LanguageSystem, exclude_dflt: bool) -> FeatureKey {
-        self.set_systems([system], exclude_dflt).pop().unwrap()
-    }
-
-    /// Change the active language systems to a group that shares subsequent
-    /// rules and lookup references.
+    /// be included with each newly assigned language system. All assigned
+    /// systems share subsequent rules and lookup references.
     pub(crate) fn set_systems(
         &mut self,
         systems: impl IntoIterator<Item = LanguageSystem>,
@@ -722,7 +717,7 @@ mod tests {
         let [id] = make_ids();
         let mut feature = ActiveFeature::new(TAG_TEST, Default::default(), None);
 
-        feature.set_systems([LATN_DEU, LATN_TRK, LATN_DEU], true);
+        let _ = feature.set_systems([LATN_DEU, LATN_TRK, LATN_DEU], true);
         feature.add_lookup(id);
 
         let built = feature.build_features();
@@ -743,11 +738,11 @@ mod tests {
 
         let mut feature = ActiveFeature::new(TAG_TEST, default_systems, None);
         feature.add_lookup(id_1); // added to default lookups
-        feature.set_system(LATN_DFLT, false);
+        let _ = feature.set_systems([LATN_DFLT], false);
         feature.add_lookup(id_2); // added to script-default lookups
 
-        feature.set_system(LATN_TRK, false);
-        feature.set_system(LATN_POL, false);
+        let _ = feature.set_systems([LATN_TRK], false);
+        let _ = feature.set_systems([LATN_POL], false);
 
         let built = feature.build_features();
 
@@ -779,19 +774,19 @@ mod tests {
 
         let mut feature = ActiveFeature::new(TAG_TEST, defaults, None);
         feature.add_lookup(id1);
-        feature.set_system(DFLT_DFLT, false);
+        let _ = feature.set_systems([DFLT_DFLT], false);
         feature.add_lookup(id2);
-        feature.set_system(DFLT_DFLT, false);
+        let _ = feature.set_systems([DFLT_DFLT], false);
         feature.add_lookup(id3);
-        feature.set_system(DFLT_FRE, false);
+        let _ = feature.set_systems([DFLT_FRE], false);
         feature.add_lookup(id4);
-        feature.set_system(LATN_DFLT, false);
+        let _ = feature.set_systems([LATN_DFLT], false);
         feature.add_lookup(id5);
-        feature.set_system(LATN_DFLT, false);
+        let _ = feature.set_systems([LATN_DFLT], false);
         feature.add_lookup(id6);
-        feature.set_system(LATN_FRE, false);
+        let _ = feature.set_systems([LATN_FRE], false);
         feature.add_lookup(id7);
-        feature.set_system(LATN_DEF, true);
+        let _ = feature.set_systems([LATN_DEF], true);
         feature.add_lookup(id8);
 
         let built = feature.build_features();
