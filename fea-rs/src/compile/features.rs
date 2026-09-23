@@ -44,7 +44,7 @@ pub(crate) struct ActiveFeature {
     pub(crate) tag: Tag,
     condition_set: Option<ConditionSet>,
     default_systems: DefaultLanguageSystems,
-    current_lang_sys: LanguageSystem,
+    current_lang_systems: Vec<LanguageSystem>,
     /// Whether a script or language statement has been seen
     seen_script_lang: bool,
     lookups: HashMap<LanguageSystem, Vec<LookupId>>,
@@ -351,14 +351,18 @@ impl ActiveFeature {
             condition_set,
             script_default_lookups: Default::default(),
             lookups: Default::default(),
-            current_lang_sys: default_systems.first(),
+            current_lang_systems: vec![default_systems.first()],
             seen_script_lang: false,
             default_systems,
         }
     }
 
     pub(crate) fn current_lang_sys(&self) -> LanguageSystem {
-        self.current_lang_sys
+        self.current_lang_systems[0]
+    }
+
+    pub(crate) fn is_only_current_system(&self, system: LanguageSystem) -> bool {
+        self.current_lang_systems.as_slice() == [system]
     }
 
     /// Change the active language system.
@@ -370,6 +374,38 @@ impl ActiveFeature {
     /// This method handles figuring out what previously declared lookups should
     /// be included with the newly assigned language system.
     pub(crate) fn set_system(&mut self, system: LanguageSystem, exclude_dflt: bool) -> FeatureKey {
+        self.set_systems([system], exclude_dflt).pop().unwrap()
+    }
+
+    /// Change the active language systems to a group that shares subsequent
+    /// rules and lookup references.
+    pub(crate) fn set_systems(
+        &mut self,
+        systems: impl IntoIterator<Item = LanguageSystem>,
+        exclude_dflt: bool,
+    ) -> Vec<FeatureKey> {
+        let mut seen = HashSet::new();
+        let systems = systems
+            .into_iter()
+            .filter(|system| seen.insert(*system))
+            .collect::<Vec<_>>();
+        assert!(
+            !systems.is_empty(),
+            "language statement has at least one tag"
+        );
+
+        for &system in &systems {
+            self.prepare_system(system, exclude_dflt);
+        }
+        self.current_lang_systems = systems;
+        self.seen_script_lang = true;
+        self.current_lang_systems
+            .iter()
+            .map(|system| (*system).to_feature_key(self.tag))
+            .collect()
+    }
+
+    fn prepare_system(&mut self, system: LanguageSystem, exclude_dflt: bool) {
         // if the language is default, this is either the DFLT dflt system
         // or a script default (like latn dflt). In this second case, we keep
         // the script dflt lookups separate from the DFLT dflt lookups, because
@@ -408,10 +444,6 @@ impl ActiveFeature {
             }
             self.lookups.entry(system).or_insert_with(|| lookups);
         }
-
-        self.current_lang_sys = system;
-        self.seen_script_lang = true;
-        system.to_feature_key(self.tag)
     }
 
     pub(crate) fn add_lookup(&mut self, lookup: LookupId) {
@@ -422,16 +454,17 @@ impl ActiveFeature {
                 .entry(LanguageSystem::default())
                 .or_default()
                 .push(lookup);
-        } else if self.current_lang_sys.language == tags::LANG_DFLT {
-            self.script_default_lookups
-                .entry(self.current_lang_sys.script)
-                .or_default()
-                .push(lookup);
         } else {
-            self.lookups
-                .entry(self.current_lang_sys)
-                .or_default()
-                .push(lookup);
+            for &system in &self.current_lang_systems {
+                if system.language == tags::LANG_DFLT {
+                    self.script_default_lookups
+                        .entry(system.script)
+                        .or_default()
+                        .push(lookup);
+                } else {
+                    self.lookups.entry(system).or_default().push(lookup);
+                }
+            }
         }
     }
 
@@ -683,6 +716,25 @@ mod tests {
     const LATN_TRK: LanguageSystem = langsys(b"latn", b"TRK ");
     const LATN_POL: LanguageSystem = langsys(b"latn", b"POL ");
     const TAG_TEST: Tag = Tag::new(b"test");
+
+    #[test]
+    fn multiple_current_language_systems_share_lookups() {
+        let [id] = make_ids();
+        let mut feature = ActiveFeature::new(TAG_TEST, Default::default(), None);
+
+        feature.set_systems([LATN_DEU, LATN_TRK, LATN_DEU], true);
+        feature.add_lookup(id);
+
+        let built = feature.build_features();
+        assert_eq!(
+            built.get_base(&LATN_DEU.to_feature_key(TAG_TEST)),
+            Some([id].as_slice())
+        );
+        assert_eq!(
+            built.get_base(&LATN_TRK.to_feature_key(TAG_TEST)),
+            Some([id].as_slice())
+        );
+    }
 
     #[test]
     fn non_default_script_default() {

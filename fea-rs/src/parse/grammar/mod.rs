@@ -240,7 +240,15 @@ fn eat_language(parser: &mut Parser, recovery: TokenSet) -> bool {
     }
     parser.in_node(AstKind::LanguageNode, |parser| {
         assert!(parser.eat(Kind::LanguageKw));
-        parser.expect_tag(recovery.union(TokenSet::SEMI));
+        let language_end = recovery
+            .union(TokenSet::SEMI)
+            .add(Kind::ExcludeDfltKw)
+            .add(Kind::IncludeDfltKw)
+            .add(Kind::RequiredKw);
+        parser.expect_tag(language_end);
+        while parser.matches(0, TokenSet::TAG_LIKE) {
+            parser.expect_tag(language_end);
+        }
         parser.eat(Kind::ExcludeDfltKw);
         parser.eat(Kind::IncludeDfltKw);
         parser.eat(Kind::RequiredKw);
@@ -434,6 +442,32 @@ pub(crate) fn debug_parse_output(
 mod tests {
     use super::*;
     use crate::token_tree::typed::{self, AstNode};
+    use write_fonts::types::Tag;
+
+    #[test]
+    fn multiple_languages() {
+        let (out, errors, _errstr) = debug_parse_output(
+            "language AZE CRT KAZ TAT TRK exclude_dflt required;",
+            |parser| {
+                eat_language(parser, TokenSet::EMPTY);
+            },
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+
+        let language = typed::Language::cast(&out).unwrap();
+        assert_eq!(
+            language.tags().map(|tag| tag.to_raw()).collect::<Vec<_>>(),
+            [
+                Tag::new(b"AZE "),
+                Tag::new(b"CRT "),
+                Tag::new(b"KAZ "),
+                Tag::new(b"TAT "),
+                Tag::new(b"TRK "),
+            ]
+        );
+        assert!(language.exclude_dflt().is_some());
+        assert!(language.required().is_some());
+    }
 
     #[test]
     fn no_cv_param_in_lookup() {

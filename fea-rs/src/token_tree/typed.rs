@@ -861,8 +861,8 @@ impl Script {
 }
 
 impl Language {
-    pub(crate) fn tag(&self) -> Tag {
-        self.iter().find_map(Tag::cast).unwrap()
+    pub(crate) fn tags(&self) -> impl Iterator<Item = Tag> + '_ {
+        self.iter().filter_map(Tag::cast)
     }
 
     //FIXME: I believe this is never meaningful, as it is the default behaviour?
