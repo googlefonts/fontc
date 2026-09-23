@@ -1,0 +1,5 @@
+feature locl {
+    script latn;
+    language dflt DEU FRA exclude_dflt;
+    sub a by b;
+} locl;

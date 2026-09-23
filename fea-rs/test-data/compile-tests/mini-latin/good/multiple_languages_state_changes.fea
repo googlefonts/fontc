@@ -1,0 +1,18 @@
+# the grouped languages should not receive lookups after a later
+# language or script statement.
+feature locl {
+    script latn;
+    language DEU FRA exclude_dflt;
+    lookup western {
+        sub a by b;
+    } western;
+    language TRK exclude_dflt;
+    lookup turkish {
+        sub c by d;
+    } turkish;
+    script cyrl;
+    language SRB exclude_dflt;
+    lookup serbian {
+        sub e by f;
+    } serbian;
+} locl;
