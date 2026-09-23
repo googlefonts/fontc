@@ -717,7 +717,7 @@ mod tests {
         let [id] = make_ids();
         let mut feature = ActiveFeature::new(TAG_TEST, Default::default(), None);
 
-        let _ = feature.set_systems([LATN_DEU, LATN_TRK, LATN_DEU], true);
+        feature.set_systems([LATN_DEU, LATN_TRK, LATN_DEU], true);
         feature.add_lookup(id);
 
         let built = feature.build_features();
@@ -738,11 +738,11 @@ mod tests {
 
         let mut feature = ActiveFeature::new(TAG_TEST, default_systems, None);
         feature.add_lookup(id_1); // added to default lookups
-        let _ = feature.set_systems([LATN_DFLT], false);
+        feature.set_systems([LATN_DFLT], false);
         feature.add_lookup(id_2); // added to script-default lookups
 
-        let _ = feature.set_systems([LATN_TRK], false);
-        let _ = feature.set_systems([LATN_POL], false);
+        feature.set_systems([LATN_TRK], false);
+        feature.set_systems([LATN_POL], false);
 
         let built = feature.build_features();
 
@@ -774,19 +774,19 @@ mod tests {
 
         let mut feature = ActiveFeature::new(TAG_TEST, defaults, None);
         feature.add_lookup(id1);
-        let _ = feature.set_systems([DFLT_DFLT], false);
+        feature.set_systems([DFLT_DFLT], false);
         feature.add_lookup(id2);
-        let _ = feature.set_systems([DFLT_DFLT], false);
+        feature.set_systems([DFLT_DFLT], false);
         feature.add_lookup(id3);
-        let _ = feature.set_systems([DFLT_FRE], false);
+        feature.set_systems([DFLT_FRE], false);
         feature.add_lookup(id4);
-        let _ = feature.set_systems([LATN_DFLT], false);
+        feature.set_systems([LATN_DFLT], false);
         feature.add_lookup(id5);
-        let _ = feature.set_systems([LATN_DFLT], false);
+        feature.set_systems([LATN_DFLT], false);
         feature.add_lookup(id6);
-        let _ = feature.set_systems([LATN_FRE], false);
+        feature.set_systems([LATN_FRE], false);
         feature.add_lookup(id7);
-        let _ = feature.set_systems([LATN_DEF], true);
+        feature.set_systems([LATN_DEF], true);
         feature.add_lookup(id8);
 
         let built = feature.build_features();
