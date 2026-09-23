@@ -861,6 +861,11 @@ impl Script {
 }
 
 impl Language {
+    /// The language tags of this statement.
+    ///
+    /// Several tags, e.g. language AZE CRT KAZ TAT TRK;, are a [Glyphs.app](https://glyphs.app/)
+    /// extension not in the Adobe FEA spec; it is proposed in
+    /// <https://github.com/adobe-type-tools/feature_file_workshops/pull/8>.
     pub(crate) fn tags(&self) -> impl Iterator<Item = Tag> + '_ {
         self.iter().filter_map(Tag::cast)
     }

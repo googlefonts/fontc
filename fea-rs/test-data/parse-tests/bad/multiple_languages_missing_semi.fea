@@ -1,0 +1,5 @@
+feature locl {
+    script latn;
+    language AZE CRT
+    sub a by b;
+} locl;
