@@ -35,6 +35,8 @@ pub enum Error {
     Panic(String),
     #[error("Selecting an export is only supported for .glyphs or .glyphspackage files")]
     ExportRequiresGlyphsSource,
+    #[error("Custom glyph data is only supported for .glyphs or .glyphspackage files")]
+    GlyphDataRequiresGlyphsSource,
 }
 
 impl Error {

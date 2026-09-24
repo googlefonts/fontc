@@ -1,0 +1,55 @@
+{
+.appVersion = "3301";
+.formatVersion = 3;
+familyName = "Glyph Data Overrides";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(50,0,l),
+(618,0,l),
+(618,667,l),
+(50,667,l)
+);
+}
+);
+width = 668;
+}
+);
+unicode = 65;
+},
+{
+glyphname = foo;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+},
+{
+glyphname = gravecomb;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

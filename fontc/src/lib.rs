@@ -66,18 +66,26 @@ impl Input {
 
     /// Creates the implementation of [`Source`] to feed to fontir.
     ///
-    /// Selecting an export is only supported for Glyphs sources; for any
-    /// other input it is an error. Designspace instances have names too, but
-    /// fontc doesn't apply instance metadata from them yet.
+    /// Selecting an export is only supported for Glyphs sources, and custom
+    /// glyph data for Glyphs sources on disk, like fontmake's `--glyph-data`;
+    /// for any other input they are an error. Designspace instances have names
+    /// too, but fontc doesn't apply instance metadata from them yet.
     #[tracing::instrument(skip_all)]
     pub fn create_source(&self, options: &SourceOptions) -> Result<Box<dyn Source>, Error> {
         let export = options.export.as_deref();
         if export.is_some() && !matches!(self, Input::GlyphsPath(_) | Input::GlyphsMemory(_)) {
             return Err(Error::ExportRequiresGlyphsSource);
         }
+        if !options.glyph_data.is_empty() && !matches!(self, Input::GlyphsPath(_)) {
+            return Err(Error::GlyphDataRequiresGlyphsSource);
+        }
         match self {
             Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path)?)),
-            Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(path, export)?)),
+            Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(
+                path,
+                export,
+                &options.glyph_data,
+            )?)),
             Input::FontraPath(path) => Ok(Box::new(FontraIrSource::new(path)?)),
             Input::GlyphsMemory(source) => {
                 Ok(Box::new(GlyphsIrSource::new_from_memory(source, export)?))
@@ -148,6 +156,9 @@ pub struct SourceOptions {
     /// fontmake's `-i` but matched exactly, not as a regex: for a single-master
     /// Glyphs source, the export's full name, `"{family} {name}"`.
     pub export: Option<String>,
+    /// User-provided GlyphData XML files, applied in order, later ones taking
+    /// precedence (Glyphs sources only).
+    pub glyph_data: Vec<PathBuf>,
 }
 
 /// Options for font compilation.
@@ -2219,6 +2230,7 @@ mod tests {
             "static_export_instances.glyphs",
             &SourceOptions {
                 export: Some(export.to_string()),
+                ..Default::default()
             },
             |options| options,
         );
@@ -2244,12 +2256,67 @@ mod tests {
         .unwrap();
         let result = input.create_source(&SourceOptions {
             export: Some("Intermediate Layer Regular".to_string()),
+            ..Default::default()
         });
         assert!(
             matches!(result, Err(Error::ExportRequiresGlyphsSource)),
             "{:?}",
             result.err()
         );
+    }
+
+    fn gdef_class_and_advance(compile: &TestCompile, name: &str) -> (Option<u16>, u16) {
+        let font = compile.font();
+        let gid = compile.get_gid(name);
+        let class = font
+            .gdef()
+            .ok()
+            .and_then(|gdef| gdef.glyph_class_def())
+            .map(|classdef| classdef.unwrap().get(gid));
+        let advance = font.hmtx().unwrap().advance(gid.into()).unwrap();
+        (class, advance)
+    }
+
+    fn compile_with_glyph_data(source: &str, glyph_data: &[&str]) -> TestCompile {
+        let glyph_data: Vec<_> = glyph_data
+            .iter()
+            .map(|path| testdata_dir().join(path))
+            .collect();
+        let mut result = TestCompile::new_with_source_options(
+            source,
+            &SourceOptions {
+                glyph_data,
+                ..Default::default()
+            },
+            |options| options,
+        );
+        result.run();
+        result
+    }
+
+    #[test]
+    fn glyph_data_overrides_bundled_data() {
+        let compile = TestCompile::compile_source("glyphs3/GlyphDataOverrides.glyphs");
+        // no GlyphData knowledge of 'foo', so no class
+        assert_eq!(gdef_class_and_advance(&compile, "foo"), (Some(0), 600));
+
+        // the gftools basic_family_glyphs_glyphData case: 'foo' becomes a mark
+        let compile =
+            compile_with_glyph_data("glyphs3/GlyphDataOverrides.glyphs", &["glyphdata/foo.xml"]);
+        assert_eq!(gdef_class_and_advance(&compile, "foo"), (Some(3), 0));
+    }
+
+    #[test]
+    fn glyph_data_requires_glyphs_source() {
+        let input = Input::new(
+            &testdata_dir().join("designspace_from_glyphs/IntermediateLayer.designspace"),
+        )
+        .unwrap();
+        let result = input.create_source(&SourceOptions {
+            glyph_data: vec![testdata_dir().join("glyphdata/foo.xml")],
+            ..Default::default()
+        });
+        assert!(matches!(result, Err(Error::GlyphDataRequiresGlyphsSource)));
     }
 
     #[rstest]
