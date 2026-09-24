@@ -1,0 +1,19 @@
+languagesystem DFLT dflt;
+
+# GDEF glyph classes should be inferred from useExtension mark lookups:
+# a and e are Base, f_i is Ligature, acutecomb is Mark
+markClass acutecomb <anchor 100 200> @TOP;
+
+lookup mark_base_ext useExtension {
+    pos base [a e] <anchor 150 300> mark @TOP;
+} mark_base_ext;
+
+lookup mark_lig_ext useExtension {
+    pos ligature f_i <anchor 50 300> mark @TOP
+        ligComponent <anchor 150 300> mark @TOP;
+} mark_lig_ext;
+
+feature mark {
+    lookup mark_base_ext;
+    lookup mark_lig_ext;
+} mark;
