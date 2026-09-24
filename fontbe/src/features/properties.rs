@@ -4,8 +4,9 @@ use std::{
     hash::Hash,
 };
 
+use fontdrasil::unicode18;
 use icu_properties::{
-    CodePointMapData, PropertyNamesShort, PropertyParser,
+    PropertyParser,
     props::{BidiClass, Script},
 };
 use tinystr::tinystr;
@@ -25,8 +26,7 @@ pub const HIRA: UnicodeShortName = tinystr!(4, "Hira");
 pub const KANA: UnicodeShortName = tinystr!(4, "Kana");
 pub const HRKT: UnicodeShortName = tinystr!(4, "Hrkt");
 
-/// The type used by icu4x for script names
-pub type UnicodeShortName = tinystr::TinyAsciiStr<4>;
+pub use fontdrasil::unicode18::UnicodeShortName;
 
 /// The writing direction of a script
 #[derive(Clone, Debug, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -89,7 +89,7 @@ impl ScriptDirection {
 // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b340c/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L49>
 /// returns none for neutral characters
 fn unicode_bidi_type(c: u32) -> Option<BidiClass> {
-    match CodePointMapData::<BidiClass>::new().get32(c) {
+    match unicode18::bidi_class(c) {
         BidiClass::RightToLeft | BidiClass::ArabicLetter => Some(BidiClass::RightToLeft),
         BidiClass::LeftToRight | BidiClass::ArabicNumber | BidiClass::EuropeanNumber => {
             Some(BidiClass::LeftToRight)
@@ -164,10 +164,8 @@ pub(crate) fn glyphs_matching_predicate(
 // https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/util.py#L591
 pub fn unicode_script_extensions(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
     let mut seen_hrkt = false;
-    icu_properties::script::ScriptWithExtensions::new()
-        .get_script_extensions_val32(cp)
-        .iter()
-        .flat_map(get_script_short_name)
+    unicode18::script_extensions(cp)
+        .into_iter()
         .filter_map(move |script| {
             if script == HIRA || script == KANA {
                 if seen_hrkt {
@@ -282,14 +280,7 @@ impl<T: Ord + Eq, U: Clone> BinarySearchExact<T, U> for &[(T, U)] {
 
 /// Get the unicode script property for this code point
 fn script_for_codepoint(cp: u32) -> Option<UnicodeShortName> {
-    get_script_short_name(icu_properties::script::ScriptWithExtensions::new().get_script_val32(cp))
-}
-
-pub(crate) fn get_script_short_name(script: Script) -> Option<UnicodeShortName> {
-    let lookup = PropertyNamesShort::<Script>::new();
-    lookup
-        .get(script)
-        .and_then(|script| tinystr::TinyStr4::try_from_str(script).ok())
+    unicode18::script(cp)
 }
 
 /// Takes an OpenType script tag and returns a unicode script identifier
@@ -341,7 +332,9 @@ pub(crate) fn script_to_ot_tags(script: &UnicodeShortName) -> impl Iterator<Item
     let mut out = [None, None];
     if let Some(tag) = SCRIPT_EXCEPTIONS.binary_search_exact(&script.as_str()) {
         out[0] = Some(tag);
-    } else if PropertyParser::<Script>::new().get_strict(script).is_none() {
+    } else if !unicode18::is_new_script(*script)
+        && PropertyParser::<Script>::new().get_strict(script).is_none()
+    {
         out[0] = Some(DFLT_SCRIPT);
     } else {
         out[0] = NEW_SCRIPT_TAGS.binary_search_exact(&script.as_str());
@@ -404,6 +397,29 @@ mod tests {
         // need an override because it existed in unicode 16
         let other = unicode_script_extensions(0x0ce6);
         assert_eq!(other.collect::<Vec<_>>(), ["Knda", "Nand", "Tutg"]);
+    }
+
+    #[test]
+    fn unicode_18_script_and_bidi_properties() {
+        // U+1CF5 lost Deva from Script_Extensions in Unicode 18. When it is
+        // unambiguous, the kern feature writer adds Bengali to known scripts.
+        assert_eq!(
+            unicode_script_extensions(0x1CF5).collect::<Vec<_>>(),
+            ["Beng"]
+        );
+
+        let mut scripts = unicode_script_extensions(0x0B83).collect::<Vec<_>>();
+        scripts.sort();
+        assert_eq!(scripts, ["Knda", "Mlym", "Taml", "Telu"]);
+        assert_eq!(script_for_codepoint(0x11DF0), Some(tinystr!(4, "Beng")));
+        assert_eq!(unicode_bidi_type(0x11DF0), None);
+        for (script, tag) in [
+            (tinystr!(4, "Jurc"), Tag::new(b"jurc")),
+            (tinystr!(4, "Pcun"), Tag::new(b"pcun")),
+            (tinystr!(4, "Seal"), Tag::new(b"seal")),
+        ] {
+            assert_eq!(script_to_ot_tags(&script).collect::<Vec<_>>(), [tag]);
+        }
     }
 
     // https://github.com/googlefonts/ufo2ft/issues/901

@@ -2699,7 +2699,7 @@ mod tests {
     fn unicode_script(cp: u32) -> UnicodeShortName {
         use super::super::properties;
         let s = icu_properties::script::ScriptWithExtensions::new().get_script_val32(cp);
-        let name = properties::get_script_short_name(s).unwrap();
+        let name = fontdrasil::unicode18::script_short_name(s).unwrap();
         if name == properties::HIRA || name == properties::KANA {
             properties::HRKT
         } else {

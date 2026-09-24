@@ -18,6 +18,9 @@ write-fonts.workspace = true
 log.workspace = true
 thiserror.workspace = true
 kurbo.workspace = true
+icu_properties.workspace = true
+smallvec.workspace = true
+tinystr.workspace = true
 
 [dev-dependencies]
 diff.workspace = true

@@ -16,6 +16,7 @@ use std::{
     str::FromStr,
 };
 
+use fontdrasil::unicode18;
 use icu_properties::props::GeneralCategory;
 
 use smol_str::SmolStr;
@@ -792,7 +793,7 @@ impl GlyphData {
 
 // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L261
 fn category_from_icu(c: char) -> (Category, Option<Subcategory>) {
-    match icu_properties::CodePointMapData::<GeneralCategory>::new().get(c) {
+    match unicode18::general_category(c) {
         GeneralCategory::Unassigned | GeneralCategory::OtherSymbol => (Category::Symbol, None),
         GeneralCategory::UppercaseLetter
         | GeneralCategory::LowercaseLetter
@@ -1044,6 +1045,15 @@ mod tests {
 
     use super::*;
     use rstest::rstest;
+
+    #[test]
+    fn unicode_18_general_category() {
+        assert_eq!(
+            category_from_icu('\u{11DF0}'),
+            (Category::Mark, Some(Subcategory::Nonspacing))
+        );
+        assert_eq!(category_from_icu('\u{12550}'), (Category::Number, None));
+    }
 
     #[test]
     fn simple_overrides() {
