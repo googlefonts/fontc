@@ -204,7 +204,13 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     // if nothing has changed we still want to report it, but we don't need to
     // write a new big results file; we can reuse the previous one
     let (results_file, reuse_last_result) = match prev_runs.last() {
-        Some(prev) if prev.stats == summary => (prev.results_file.clone(), true),
+        Some(prev)
+            if prev
+                .try_load_results(&args.out_dir)
+                .is_ok_and(|prev| same_outcomes(&prev, &results)) =>
+        {
+            (prev.results_file.clone(), true)
+        }
         _ => (out_file.into(), false),
     };
 
@@ -235,6 +241,20 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     super::try_write_json(&source_repos, &sources_file)?;
     let failures_file = args.out_dir.join(FAILED_REPOS_FILE);
     super::try_write_json(&failures, &failures_file)
+}
+
+/// Whether every target got the same result in both runs.
+///
+/// Failures only need to fail the same way: their output contains timestamps
+/// and temporary paths, so it differs even when nothing has changed.
+fn same_outcomes(prev: &DiffResults, current: &DiffResults) -> bool {
+    prev.success == current.success
+        && prev.failure.len() == current.failure.len()
+        && prev.failure.iter().zip(&current.failure).all(
+            |((prev_target, prev_err), (target, err))| {
+                prev_target == target && prev_err.same_kind(err)
+            },
+        )
 }
 
 fn result_path_for_current_date() -> String {
@@ -442,5 +462,72 @@ fn log_if_auth_or_not() {
             &token[token.len() - 10..]
         ),
         Err(_) => log::warn!("no auth token set, private repos will be skipped"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    const GENTIUM: &str = "silnrsi/font-gentium/$VIRTUAL/google/fonts/ofl/gentiumbookplus/config.yaml source/GentiumPlusRoman.designspace?7ac5e5ca61 (default)";
+
+    // Target only deserializes from borrowed strings, so go through text
+    fn results(value: serde_json::Value) -> DiffResults {
+        serde_json::from_str(&value.to_string()).unwrap()
+    }
+
+    fn fontc_failure(stderr: &str) -> DiffResults {
+        results(json!({
+            "success": {},
+            "failure": {
+                GENTIUM: {
+                    "compile_failed": { "fontc": { "command": "fontc", "stderr": stderr } }
+                }
+            }
+        }))
+    }
+
+    #[test]
+    fn table_level_change_is_a_new_outcome() {
+        let before = || {
+            results(json!({
+                "success": {
+                    GENTIUM: { "diffs": { "GDEF": 0.99611986, "STAT": 0.68421054, "total": 0.99992245 } }
+                },
+                "failure": {}
+            }))
+        };
+        let after = results(json!({
+            "success": {
+                GENTIUM: { "diffs": { "STAT": 0.68421054, "total": 0.9999498 } }
+            },
+            "failure": {}
+        }));
+
+        assert!(same_outcomes(&before(), &before()));
+        assert!(!same_outcomes(&before(), &after));
+    }
+
+    #[test]
+    fn failure_output_is_ignored() {
+        assert!(same_outcomes(
+            &fontc_failure("[2026-09-23T16:29:44Z] oh no"),
+            &fontc_failure("[2026-09-24T00:06:37Z] oh no")
+        ));
+    }
+
+    #[test]
+    fn failing_compiler_is_not_ignored() {
+        let fontmake_failure = results(json!({
+            "success": {},
+            "failure": {
+                GENTIUM: {
+                    "compile_failed": { "fontmake": { "command": "fontmake", "stderr": "oh no" } }
+                }
+            }
+        }));
+        assert!(!same_outcomes(&fontc_failure("oh no"), &fontmake_failure));
     }
 }
