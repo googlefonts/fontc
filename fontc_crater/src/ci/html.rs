@@ -99,18 +99,36 @@ fn make_html(
     let css = include_str!("../../resources/style.css");
     let table = html! {
         table #results {
+            colgroup {
+                col.date;
+                col.rev;
+                col.identical;
+                col.total;
+                col.identical_perc;
+                col.fontc_err;
+                col.fontmake_err;
+                col.both_err;
+                col.other_err;
+                col.diff_perc;
+                col.diff_perc_excl;
+            }
             thead  {
                 tr #results_head {
-                    th.date scope="col" { "date" }
-                    th.rev scope="col" { "rev" }
-                    th.identical scope="col" { "identical" }
-                    th.total scope="col" { "targets" }
-                    th.identical_perc scope="col" { "identical %" }
-                    th.fontc_err scope="col" { "fontc 💥" }
-                    th.fontmake_err scope="col" { "fontmake 💥" }
-                    th.both_err scope="col" { "both 💥" }
-                    th.other_err scope="col" { "other 💥" }
-                    th.diff_erc scope="col" { "similarity %" }
+                    th.date scope="col" rowspan="2" { "date" }
+                    th.rev scope="col" rowspan="2" { "rev" }
+                    th.identical scope="col" rowspan="2" { "identical" }
+                    th.total scope="col" rowspan="2" { "targets" }
+                    th.identical_perc scope="col" rowspan="2" { "identical %" }
+                    th.col_group scope="colgroup" colspan="4" { "crashes" }
+                    th.col_group scope="colgroup" colspan="2" { "similarity %" }
+                }
+                tr {
+                    th.fontc_err scope="col" { "fontc" }
+                    th.fontmake_err scope="col" { "fontmake" }
+                    th.both_err scope="col" { "both" }
+                    th.other_err scope="col" { "other" }
+                    th.diff_perc scope="col" { "all" }
+                    th.diff_perc_excl scope="col" { "excl crashes" }
                 }
             }
             (table_body)
@@ -296,6 +314,12 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             More::IsBetter,
         );
         let diff_fmt = format!("{:.3}", run.stats.diff_perc_including_failures);
+        let diff_perc_excl_diff = make_delta_decoration(
+            run.stats.diff_perc_excluding_failures,
+            prev.map(|p| p.stats.diff_perc_excluding_failures),
+            More::IsBetter,
+        );
+        let diff_excl_fmt = format!("{:.3}", run.stats.diff_perc_excluding_failures);
         let diff_url = format!(
             "https://github.com/googlefonts/fontc/compare/{}...{}/",
             prev.as_ref()
@@ -340,6 +364,7 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
                 (err_cells)
 
                 td.diff_perc {  (diff_fmt) " " (diff_perc_diff) }
+                td.diff_perc_excl {  (diff_excl_fmt) " " (diff_perc_excl_diff) }
             }
         }
     }
