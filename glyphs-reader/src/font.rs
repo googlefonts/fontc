@@ -1169,6 +1169,7 @@ impl RawCustomParameters {
             match name.as_str() {
                 "Propagate Anchors" => add_and_report_issues!(propagate_anchors, Plist::as_bool),
                 "Use Typo Metrics" => add_and_report_issues!(use_typo_metrics, Plist::as_bool),
+                "Has WWS Names" => add_and_report_issues!(has_wws_names, Plist::as_bool),
                 "Export STAT Table" => {
                     add_and_report_issues!(export_stat_table, Plist::as_bool)
                 }
@@ -1182,31 +1183,51 @@ impl RawCustomParameters {
                     Some(value) => params.style_names_as_stat_entries.push(value.into()),
                     None => log::warn!("failed to parse param for 'style_names_as_stat_entries'"),
                 },
-                // <https://github.com/googlefonts/glyphsLib/blob/52c982399ba20dc96a2c2195df6fc6cea1f9a906/Lib/glyphsLib/builder/custom_params.py#L356>
-                "postscriptIsFixedPitch" | "isFixedPitch" => {
-                    add_and_report_issues!(is_fixed_pitch, Plist::as_bool)
-                }
-                "Has WWS Names" => add_and_report_issues!(has_wws_names, Plist::as_bool),
-                "typoAscender" => add_and_report_issues!(typo_ascender, Plist::as_i64),
-                "typoDescender" => add_and_report_issues!(typo_descender, Plist::as_i64),
-                "typoLineGap" => add_and_report_issues!(typo_line_gap, Plist::as_i64),
-                "winAscent" => add_and_report_issues!(win_ascent, Plist::as_i64),
-                "winDescent" => add_and_report_issues!(win_descent, Plist::as_i64),
-                "hheaAscender" => add_and_report_issues!(hhea_ascender, Plist::as_i64),
-                "hheaDescender" => add_and_report_issues!(hhea_descender, Plist::as_i64),
-                "hheaLineGap" => add_and_report_issues!(hhea_line_gap, Plist::as_i64),
-                "vheaVertAscender" => add_and_report_issues!(vhea_ascender, Plist::as_i64),
-                "vheaVertDescender" => add_and_report_issues!(vhea_descender, Plist::as_i64),
-                "vheaVertLineGap" => add_and_report_issues!(vhea_line_gap, Plist::as_i64),
-                "underlineThickness" => {
-                    add_and_report_issues!(underline_thickness, Plist::as_ordered_f64)
-                }
-                "underlinePosition" => {
-                    add_and_report_issues!(underline_position, Plist::as_ordered_f64)
-                }
                 // Glyphs uses short names (e.g. "subscriptXSize") but some fonts use the
                 // long UFO names (e.g. "openTypeOS2SubscriptXSize"). Both are accepted.
                 // https://github.com/googlefonts/glyphsLib/blob/d42d3b15/Lib/glyphsLib/builder/custom_params.py#L329-L340
+                "postscriptIsFixedPitch" | "isFixedPitch" => {
+                    add_and_report_issues!(is_fixed_pitch, Plist::as_bool)
+                }
+                "typoAscender" | "openTypeOS2TypoAscender" => {
+                    add_and_report_issues!(typo_ascender, Plist::as_i64)
+                }
+                "typoDescender" | "openTypeOS2TypoDescender" => {
+                    add_and_report_issues!(typo_descender, Plist::as_i64)
+                }
+                "typoLineGap" | "openTypeOS2TypoLineGap" => {
+                    add_and_report_issues!(typo_line_gap, Plist::as_i64)
+                }
+                "winAscent" | "openTypeOS2WinAscent" => {
+                    add_and_report_issues!(win_ascent, Plist::as_i64)
+                }
+                "winDescent" | "openTypeOS2WinDescent" => {
+                    add_and_report_issues!(win_descent, Plist::as_i64)
+                }
+                "hheaAscender" | "openTypeHheaAscender" => {
+                    add_and_report_issues!(hhea_ascender, Plist::as_i64)
+                }
+                "hheaDescender" | "openTypeHheaDescender" => {
+                    add_and_report_issues!(hhea_descender, Plist::as_i64)
+                }
+                "hheaLineGap" | "openTypeHheaLineGap" => {
+                    add_and_report_issues!(hhea_line_gap, Plist::as_i64)
+                }
+                "vheaVertAscender" | "vheaVertTypoAscender" | "openTypeVheaVertTypoAscender" => {
+                    add_and_report_issues!(vhea_ascender, Plist::as_i64)
+                }
+                "vheaVertDescender" | "vheaVertTypoDescender" | "openTypeVheaVertTypoDescender" => {
+                    add_and_report_issues!(vhea_descender, Plist::as_i64)
+                }
+                "vheaVertLineGap" | "vheaVertTypoLineGap" | "openTypeVheaVertTypoLineGap" => {
+                    add_and_report_issues!(vhea_line_gap, Plist::as_i64)
+                }
+                "underlineThickness" | "postscriptUnderlineThickness" => {
+                    add_and_report_issues!(underline_thickness, Plist::as_ordered_f64)
+                }
+                "underlinePosition" | "postscriptUnderlinePosition" => {
+                    add_and_report_issues!(underline_position, Plist::as_ordered_f64)
+                }
                 "strikeoutPosition" | "openTypeOS2StrikeoutPosition" => {
                     add_and_report_issues!(strikeout_position, Plist::as_i64)
                 }
@@ -5760,6 +5781,64 @@ etc;
             Some(OrderedFloat(-300_f64)),
             font.custom_parameters.underline_position
         );
+    }
+
+    #[test]
+    fn read_longform_metric_param_names() {
+        let font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+fontMaster = (
+{
+customParameters = (
+{name = postscriptUnderlineThickness; value = 70;},
+{name = postscriptUnderlinePosition; value = -120;},
+{name = openTypeOS2TypoAscender; value = 800;},
+{name = openTypeOS2TypoDescender; value = -200;},
+{name = openTypeOS2TypoLineGap; value = 10;},
+{name = openTypeOS2WinAscent; value = 1000;},
+{name = openTypeOS2WinDescent; value = 300;},
+{name = openTypeHheaAscender; value = 900;},
+{name = openTypeHheaDescender; value = -250;},
+{name = openTypeHheaLineGap; value = 20;},
+{name = openTypeVheaVertTypoAscender; value = 500;},
+{name = openTypeVheaVertTypoDescender; value = -500;},
+{name = openTypeVheaVertTypoLineGap; value = 30;}
+);
+id = "m01";
+},
+{
+customParameters = (
+{name = vheaVertTypoAscender; value = 510;},
+{name = vheaVertTypoDescender; value = -510;},
+{name = vheaVertTypoLineGap; value = 40;}
+);
+id = "m02";
+}
+);
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+        let params = &font.masters[0].custom_parameters;
+        assert_eq!(params.underline_thickness, Some(OrderedFloat(70.0)));
+        assert_eq!(params.underline_position, Some(OrderedFloat(-120.0)));
+        assert_eq!(params.typo_ascender, Some(800));
+        assert_eq!(params.typo_descender, Some(-200));
+        assert_eq!(params.typo_line_gap, Some(10));
+        assert_eq!(params.win_ascent, Some(1000));
+        assert_eq!(params.win_descent, Some(300));
+        assert_eq!(params.hhea_ascender, Some(900));
+        assert_eq!(params.hhea_descender, Some(-250));
+        assert_eq!(params.hhea_line_gap, Some(20));
+        assert_eq!(params.vhea_ascender, Some(500));
+        assert_eq!(params.vhea_descender, Some(-500));
+        assert_eq!(params.vhea_line_gap, Some(30));
+
+        let params = &font.masters[1].custom_parameters;
+        assert_eq!(params.vhea_ascender, Some(510));
+        assert_eq!(params.vhea_descender, Some(-510));
+        assert_eq!(params.vhea_line_gap, Some(40));
     }
 
     #[test]
