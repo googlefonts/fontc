@@ -6,7 +6,7 @@ use std::{
 
 use fontdrasil::unicode18;
 use icu_properties::{
-    CodePointMapData, PropertyNamesShort, PropertyParser,
+    PropertyParser,
     props::{BidiClass, Script},
 };
 use tinystr::tinystr;
@@ -26,8 +26,7 @@ pub const HIRA: UnicodeShortName = tinystr!(4, "Hira");
 pub const KANA: UnicodeShortName = tinystr!(4, "Kana");
 pub const HRKT: UnicodeShortName = tinystr!(4, "Hrkt");
 
-/// The type used by icu4x for script names
-pub type UnicodeShortName = tinystr::TinyAsciiStr<4>;
+pub use fontdrasil::unicode18::UnicodeShortName;
 
 /// The writing direction of a script
 #[derive(Clone, Debug, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -90,10 +89,7 @@ impl ScriptDirection {
 // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b340c/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L49>
 /// returns none for neutral characters
 fn unicode_bidi_type(c: u32) -> Option<BidiClass> {
-    let bidi_class = unicode18::bidi_class(c)
-        .and_then(|name| PropertyParser::<BidiClass>::new().get_strict(name))
-        .unwrap_or_else(|| CodePointMapData::<BidiClass>::new().get32(c));
-    match bidi_class {
+    match unicode18::bidi_class(c) {
         BidiClass::RightToLeft | BidiClass::ArabicLetter => Some(BidiClass::RightToLeft),
         BidiClass::LeftToRight | BidiClass::ArabicNumber | BidiClass::EuropeanNumber => {
             Some(BidiClass::LeftToRight)
@@ -167,29 +163,21 @@ pub(crate) fn glyphs_matching_predicate(
 // the specific logic from
 // https://github.com/googlefonts/ufo2ft/blob/01d3faee/Lib/ufo2ft/util.py#L591
 pub fn unicode_script_extensions(cp: u32) -> impl Iterator<Item = UnicodeShortName> {
-    let override_scripts = unicode18::script_extensions(cp);
     let mut seen_hrkt = false;
-    let changed = override_scripts
+    unicode18::script_extensions(cp)
         .into_iter()
-        .flat_map(|scripts| scripts.split(','))
-        .map(|script| UnicodeShortName::try_from_str(script).unwrap());
-    let unchanged = icu_properties::script::ScriptWithExtensions::new()
-        .get_script_extensions_val32(cp)
-        .iter()
-        .flat_map(get_script_short_name)
-        .filter(move |_| override_scripts.is_none());
-    changed.chain(unchanged).filter_map(move |script| {
-        if script == HIRA || script == KANA {
-            if seen_hrkt {
-                None
+        .filter_map(move |script| {
+            if script == HIRA || script == KANA {
+                if seen_hrkt {
+                    None
+                } else {
+                    seen_hrkt = true;
+                    Some(HRKT)
+                }
             } else {
-                seen_hrkt = true;
-                Some(HRKT)
+                Some(script)
             }
-        } else {
-            Some(script)
-        }
-    })
+        })
 }
 
 /// Returns a map of gids to their scripts.
@@ -293,19 +281,6 @@ impl<T: Ord + Eq, U: Clone> BinarySearchExact<T, U> for &[(T, U)] {
 /// Get the unicode script property for this code point
 fn script_for_codepoint(cp: u32) -> Option<UnicodeShortName> {
     unicode18::script(cp)
-        .map(|script| UnicodeShortName::try_from_str(script).unwrap())
-        .or_else(|| {
-            get_script_short_name(
-                icu_properties::script::ScriptWithExtensions::new().get_script_val32(cp),
-            )
-        })
-}
-
-pub(crate) fn get_script_short_name(script: Script) -> Option<UnicodeShortName> {
-    let lookup = PropertyNamesShort::<Script>::new();
-    lookup
-        .get(script)
-        .and_then(|script| tinystr::TinyStr4::try_from_str(script).ok())
 }
 
 /// Takes an OpenType script tag and returns a unicode script identifier
@@ -357,7 +332,7 @@ pub(crate) fn script_to_ot_tags(script: &UnicodeShortName) -> impl Iterator<Item
     let mut out = [None, None];
     if let Some(tag) = SCRIPT_EXCEPTIONS.binary_search_exact(&script.as_str()) {
         out[0] = Some(tag);
-    } else if !unicode18::is_new_script(script.as_str())
+    } else if !unicode18::is_new_script(*script)
         && PropertyParser::<Script>::new().get_strict(script).is_none()
     {
         out[0] = Some(DFLT_SCRIPT);

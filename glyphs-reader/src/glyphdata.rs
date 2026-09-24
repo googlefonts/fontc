@@ -17,7 +17,7 @@ use std::{
 };
 
 use fontdrasil::unicode18;
-use icu_properties::{PropertyParser, props::GeneralCategory};
+use icu_properties::props::GeneralCategory;
 
 use smol_str::SmolStr;
 
@@ -793,10 +793,7 @@ impl GlyphData {
 
 // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L261
 fn category_from_icu(c: char) -> (Category, Option<Subcategory>) {
-    let category = unicode18::general_category(c as u32)
-        .and_then(|name| PropertyParser::<GeneralCategory>::new().get_strict(name))
-        .unwrap_or_else(|| icu_properties::CodePointMapData::<GeneralCategory>::new().get(c));
-    match category {
+    match unicode18::general_category(c) {
         GeneralCategory::Unassigned | GeneralCategory::OtherSymbol => (Category::Symbol, None),
         GeneralCategory::UppercaseLetter
         | GeneralCategory::LowercaseLetter

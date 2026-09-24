@@ -14,7 +14,7 @@ categories = ["text-processing", "parsing", "graphics"]
 fontdrasil = { version = "1.0.0", path = "../fontdrasil" }
 fontir = { version = "1.0.0", path = "../fontir" }
 fea-rs = { version = "1.0.0", path = "../fea-rs" }
-tinystr = "0.8.0"
+tinystr.workspace = true
 
 icu_properties.workspace = true
 

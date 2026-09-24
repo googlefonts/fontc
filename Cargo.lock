@@ -834,14 +834,17 @@ name = "fontdrasil"
 version = "1.0.0"
 dependencies = [
  "diff",
+ "icu_properties",
  "kurbo",
  "log",
  "ordered-float",
  "pretty_assertions",
  "serde",
+ "smallvec",
  "smol_str",
  "tempfile",
  "thiserror",
+ "tinystr",
  "tracing-subscriber",
  "write-fonts",
 ]

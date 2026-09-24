@@ -26,6 +26,7 @@ rayon = "1.6"
 # unicode18.rs contains deltas against this exact version's baked data.
 icu_properties = "=2.1.2"
 smallvec = {version = "1.15", features = ["const_new"]}
+tinystr = "0.8.0"
 
 # fontations etc
 write-fonts = { version = "0.53.0", features = ["serde", "read", "tables"]  }
