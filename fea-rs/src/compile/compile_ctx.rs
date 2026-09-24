@@ -343,7 +343,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         exclude_dflt: bool,
         required: bool,
     ) {
-        if let Some((id, _name)) = self.lookups.finish_current() {
+        if let Some(id) = self.lookups.finish_current_keep_name() {
             self.add_lookup_to_current_feature_if_present(id);
         }
         let keys = self.active_feature.as_mut().unwrap().set_systems(

@@ -1,0 +1,16 @@
+languagesystem DFLT dflt;
+languagesystem cyrl dflt;
+languagesystem cyrl BGR;
+
+feature locl {
+    lookup locl_bgr {
+        script cyrl;
+        language BGR;
+        sub a by b;
+    } locl_bgr;
+} locl;
+
+feature ss03 {
+    # the name refers to the lookup holding the rule, not an empty lookup
+    lookup locl_bgr;
+} ss03;
