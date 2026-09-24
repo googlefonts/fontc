@@ -7,5 +7,6 @@ pub mod orchestration;
 pub mod paths;
 mod piecewise_linear_map;
 pub mod types;
+pub mod unicode18;
 pub mod util;
 pub mod variations;
