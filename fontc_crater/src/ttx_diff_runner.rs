@@ -150,7 +150,7 @@ fn read_fontc_ttf_hash(build_dir: &Path) -> Option<String> {
     (!hash.is_empty()).then(|| hash.to_owned())
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum DiffOutput {
     Identical,
@@ -281,6 +281,20 @@ enum RawDiffOutput {
 pub(crate) enum DiffError {
     CompileFailed(CompileFailed),
     Other(String),
+}
+
+impl DiffError {
+    /// Whether `other` failed the same way, ignoring what was printed.
+    pub(crate) fn same_kind(&self, other: &DiffError) -> bool {
+        match (self, other) {
+            (DiffError::CompileFailed(a), DiffError::CompileFailed(b)) => {
+                a.fontc.is_some() == b.fontc.is_some()
+                    && a.fontmake.is_some() == b.fontmake.is_some()
+            }
+            (DiffError::Other(_), DiffError::Other(_)) => true,
+            _ => false,
+        }
+    }
 }
 
 /// One or both compilers failed to run
