@@ -431,7 +431,7 @@ impl FeaFirstPassOutput {
 
 impl FeaRsKerns {
     pub fn is_empty(&self) -> bool {
-        self.lookups.is_empty()
+        self.lookups.is_empty() || self.features.is_empty()
     }
 
     #[cfg(test)]
