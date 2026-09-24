@@ -14,8 +14,11 @@ tbody td, th {
   text-align: left;
 }
 
-#results_head .th {
+#results th {
   padding: 5px 5px;
+}
+
+#results thead {
   border-bottom: 1px solid #bbb;
 }
 
@@ -42,18 +45,37 @@ td.rev {
   font-family: monospace;
 }
 
+#results thead th {
+  vertical-align: bottom;
+}
+
+/*underline group headers, inset so adjacent groups don't run together*/
+#results thead th.col_group {
+  text-align: center;
+  background: linear-gradient(#bbb, #bbb) center bottom / calc(100% - 10px) 1px no-repeat;
+}
+
 /*the timestamp is big, give it room*/
-#results_head th:nth-child(1) {
+col.date {
   width: 19%
 }
 
-/*and some columns dont need as much space, so make them smaller */
-#results_head th:nth-child(6) {
-  width: 9%
+/*some columns dont need as much space, so make them smaller */
+col.rev {
+  width: 6%
 }
 
-#results_head th:nth-child(8) {
-  width: 9%
+col.fontc_err,
+col.fontmake_err,
+col.both_err,
+col.other_err {
+  width: 7%
+}
+
+/*and give the similarity columns enough room to not wrap*/
+col.diff_perc,
+col.diff_perc_excl {
+  width: 10%
 }
 
 #explain {
