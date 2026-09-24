@@ -406,6 +406,29 @@ mod tests {
         assert_eq!(other.collect::<Vec<_>>(), ["Knda", "Nand", "Tutg"]);
     }
 
+    #[test]
+    fn unicode_18_script_and_bidi_properties() {
+        // U+1CF5 lost Deva from Script_Extensions in Unicode 18. When it is
+        // unambiguous, the kern feature writer adds Bengali to known scripts.
+        assert_eq!(
+            unicode_script_extensions(0x1CF5).collect::<Vec<_>>(),
+            ["Beng"]
+        );
+
+        let mut scripts = unicode_script_extensions(0x0B83).collect::<Vec<_>>();
+        scripts.sort();
+        assert_eq!(scripts, ["Knda", "Mlym", "Taml", "Telu"]);
+        assert_eq!(script_for_codepoint(0x11DF0), Some(tinystr!(4, "Beng")));
+        assert_eq!(unicode_bidi_type(0x11DF0), None);
+        for (script, tag) in [
+            (tinystr!(4, "Jurc"), Tag::new(b"jurc")),
+            (tinystr!(4, "Pcun"), Tag::new(b"pcun")),
+            (tinystr!(4, "Seal"), Tag::new(b"seal")),
+        ] {
+            assert_eq!(script_to_ot_tags(&script).collect::<Vec<_>>(), [tag]);
+        }
+    }
+
     // https://github.com/googlefonts/ufo2ft/issues/901
     // I'm not sure that ufo2ft's behaviour is the best choice, but for the times
     // being we will match it.

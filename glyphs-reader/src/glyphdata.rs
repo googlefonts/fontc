@@ -1046,6 +1046,15 @@ mod tests {
     use rstest::rstest;
 
     #[test]
+    fn unicode_18_general_category() {
+        assert_eq!(
+            category_from_icu('\u{11DF0}'),
+            (Category::Mark, Some(Subcategory::Nonspacing))
+        );
+        assert_eq!(category_from_icu('\u{12550}'), (Category::Number, None));
+    }
+
+    #[test]
     fn simple_overrides() {
         let overrides = HashMap::from([(
             "A".into(),
