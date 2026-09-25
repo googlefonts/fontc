@@ -29,7 +29,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    features::properties::ScriptDirection,
+    features::properties::{ExtraSubstitutions, ScriptDirection},
     orchestration::{
         AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsMarks, MarkLookups, WorkId,
     },
@@ -74,6 +74,7 @@ struct MarkLookupBuilder<'a> {
     mark_glyphs: BTreeSet<GlyphId16>,
     lig_carets: BTreeMap<GlyphId16, Vec<CaretValueBuilder>>,
     char_map: HashMap<u32, GlyphId16>,
+    extra_substitutions: ExtraSubstitutions,
     // marks.rs fuses ufo2ft's Mark and Curs writers, so we carry the whole plan
     // and gate mark/curs (and GDEF ligature carets) independently.
     plan: FeatureGenerationPlan,
@@ -281,6 +282,8 @@ impl<'a> MarkLookupBuilder<'a> {
         });
 
         let mark_glyphs = find_mark_glyphs(&pruned, &gdef_classes);
+        let extra_substitutions =
+            super::properties::extra_substitutions(static_metadata, glyph_order);
         Ok(Self {
             anchor_lists: pruned,
             glyph_order,
@@ -290,6 +293,7 @@ impl<'a> MarkLookupBuilder<'a> {
             mark_glyphs,
             lig_carets,
             char_map,
+            extra_substitutions,
             plan,
         })
     }
@@ -604,6 +608,7 @@ impl<'a> MarkLookupBuilder<'a> {
         let dir_glyphs = super::properties::glyphs_by_script_direction(
             &self.char_map,
             self.fea_first_pass.gsub().as_ref(),
+            &self.extra_substitutions,
         )?;
 
         let mut ltr_builder = CursivePosBuilder::default();
@@ -755,12 +760,14 @@ impl<'a> MarkLookupBuilder<'a> {
             &self.char_map,
             unicode_is_abvm,
             gsub.as_ref(),
+            &self.extra_substitutions,
         )?;
 
         let mut non_abvm_glyphs = super::properties::glyphs_matching_predicate(
             &self.char_map,
             unicode_is_non_abvm,
             gsub.as_ref(),
+            &self.extra_substitutions,
         )?;
         // https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L1156
         // TK: there's another bug here I think!? we can't trust char map, need
