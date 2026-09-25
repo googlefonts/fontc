@@ -1,0 +1,106 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = "New Font";
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+id = m02;
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(255,0,0,255),
+0
+),
+(
+(0,0,255,255),
+1
+)
+);
+end = (0.9,0.9);
+start = (0.1,0.1);
+};
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+},
+{
+attr = {
+color = 1;
+};
+layerId = m02;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(255,0,0,255),
+0
+),
+(
+(0,0,255,255),
+1
+)
+);
+end = (0.9,0.9);
+start = (0.1,0.1);
+};
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(842,0,l),
+(842,700,l),
+(63,700,l)
+);
+}
+);
+width = 900;
+}
+);
+unicode = 65;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
