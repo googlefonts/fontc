@@ -867,9 +867,6 @@ impl AllLookups {
     }
 
     /// Return the aalt-relevant lookups for this lookup Id.
-    ///
-    /// If lookup is GSUB type 1 or 3, return a single lookup.
-    /// If contextual, returns any referenced single-sub lookups.
     pub(crate) fn aalt_lookups(&self, id: LookupId) -> Vec<&SubstitutionLookup> {
         let mut collect = Vec::new();
         let mut seen = HashSet::new();
@@ -889,7 +886,15 @@ impl AllLookups {
         if !seen.insert(id) {
             return;
         }
+        self.collect_aalt_lookup(lookup, collect, seen);
+    }
 
+    fn collect_aalt_lookup<'a>(
+        &'a self,
+        lookup: &'a SubstitutionLookup,
+        collect: &mut Vec<&'a SubstitutionLookup>,
+        seen: &mut HashSet<LookupId>,
+    ) {
         match lookup {
             SubstitutionLookup::Single(_)
             | SubstitutionLookup::Alternate(_)
@@ -906,6 +911,7 @@ impl AllLookups {
                 .iter()
                 .flat_map(|sub| sub.iter_lookups())
                 .for_each(|id| self.aalt_lookups_impl(id, collect, seen)),
+            SubstitutionLookup::Extension(inner) => self.collect_aalt_lookup(inner, collect, seen),
             _ => (),
         }
     }
