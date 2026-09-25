@@ -1,0 +1,142 @@
+{
+"unitsPerEm": 1000,
+"axes": {
+"axes": [
+{
+"name": "Weight",
+"label": "Weight",
+"tag": "wght",
+"minValue": 400.0,
+"defaultValue": 400.0,
+"maxValue": 700.0,
+"hidden": false,
+"valueLabels": [
+{
+"name": "Regular",
+"value": 400,
+"linkedValue": 700,
+"elidable": true
+},
+{
+"name": "Bold",
+"value": 700
+}
+]
+}
+],
+"elidedFallBackname": "Regular"
+},
+"sources": {
+"regular": {
+"name": "Regular",
+"location": {
+"Weight": 400
+},
+"lineMetricsHorizontalLayout": {
+"ascender": {
+"value": 750
+},
+"descender": {
+"value": -250
+},
+"xHeight": {
+"value": 500
+},
+"capHeight": {
+"value": 700
+}
+},
+"lineMetricsVerticalLayout": {
+"ascender": {
+"value": 500
+},
+"descender": {
+"value": -500
+},
+"lineGap": {
+"value": 0
+}
+},
+"customData": {
+"openTypeOS2TypoAscender": 725,
+"openTypeOS2TypoDescender": -275,
+"openTypeHheaCaretSlopeRise": 950,
+"postscriptUnderlinePosition": -120,
+"postscriptUnderlineThickness": 60
+}
+},
+"medium": {
+"name": "Medium",
+"isSparse": true,
+"location": {
+"Weight": 550
+}
+},
+"bold": {
+"name": "Bold",
+"location": {
+"Weight": 700
+},
+"lineMetricsHorizontalLayout": {
+"ascender": {
+"value": 750
+},
+"descender": {
+"value": -250
+},
+"xHeight": {
+"value": 500
+},
+"capHeight": {
+"value": 700
+}
+},
+"lineMetricsVerticalLayout": {
+"ascender": {
+"value": 500
+},
+"descender": {
+"value": -500
+},
+"lineGap": {
+"value": 0
+}
+},
+"customData": {
+"openTypeOS2TypoAscender": 725,
+"openTypeOS2TypoDescender": -275,
+"openTypeHheaCaretSlopeRise": 950,
+"postscriptUnderlinePosition": -120,
+"postscriptUnderlineThickness": 60
+}
+}
+},
+"fontInfo": {
+"familyName": "Vertical Test",
+"customData": {
+"openTypeOS2WeightClass": 450,
+"openTypeOS2WidthClass": 3,
+"openTypeOS2Type": [],
+"openTypeOS2Panose": [
+2,
+0,
+5,
+3,
+0,
+0,
+0,
+0,
+0,
+0
+],
+"openTypeOS2Selection": [
+7
+],
+"openTypeOS2FamilyClass": [
+1,
+5
+],
+"openTypeHeadCreated": "2024/01/02 03:04:05"
+}
+}
+}
