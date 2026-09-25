@@ -359,6 +359,7 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
         let glyph_order = context.ir.glyph_order.get();
         let static_metadata = context.ir.static_metadata.get();
         let quantization = colr_clip_box_quantization(static_metadata.units_per_em);
+        let is_variable = !static_metadata.axes.is_empty();
 
         let mut colr_v0_glyphs = Vec::new();
         let mut colr_v0_layers = Vec::new();
@@ -420,12 +421,14 @@ impl Work<Context, AnyWorkId, Error> for ColrWork {
                         paint,
                     )?,
                 ));
-                add_or_extend_clip(
-                    &mut clips,
-                    quantization,
-                    glyph_order.glyph_id(glyph_name).expect("Prevalidated"),
-                    &glyph,
-                );
+                if !is_variable {
+                    add_or_extend_clip(
+                        &mut clips,
+                        quantization,
+                        glyph_order.glyph_id(glyph_name).expect("Prevalidated"),
+                        &glyph,
+                    );
+                }
             }
         }
 
