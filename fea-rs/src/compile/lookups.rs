@@ -287,6 +287,41 @@ impl PositionLookup {
             PositionLookup::Extension(_) => unreachable!("Extension lookup has no subtable break"),
         }
     }
+
+    fn infer_glyph_classes(&self, f: &mut impl FnMut(GlyphId16, GlyphClassDef)) {
+        match self {
+            PositionLookup::MarkToBase(lookup) => {
+                for subtable in &lookup.subtables {
+                    subtable
+                        .base_glyphs()
+                        .for_each(|k| f(k, GlyphClassDef::Base));
+                    subtable
+                        .mark_glyphs()
+                        .for_each(|k| f(k, GlyphClassDef::Mark));
+                }
+            }
+            PositionLookup::MarkToLig(lookup) => {
+                for subtable in &lookup.subtables {
+                    subtable
+                        .lig_glyphs()
+                        .for_each(|k| f(k, GlyphClassDef::Ligature));
+                    subtable
+                        .mark_glyphs()
+                        .for_each(|k| f(k, GlyphClassDef::Mark));
+                }
+            }
+            PositionLookup::MarkToMark(lookup) => {
+                for subtable in &lookup.subtables {
+                    subtable
+                        .mark1_glyphs()
+                        .chain(subtable.mark2_glyphs())
+                        .for_each(|k| f(k, GlyphClassDef::Mark));
+                }
+            }
+            PositionLookup::Extension(inner) => inner.infer_glyph_classes(f),
+            _ => (),
+        }
+    }
 }
 
 impl SubstitutionLookup {
@@ -812,37 +847,7 @@ impl AllLookups {
 
     pub(crate) fn infer_glyph_classes(&self, mut f: impl FnMut(GlyphId16, GlyphClassDef)) {
         for lookup in &self.gpos {
-            match lookup {
-                PositionLookup::MarkToBase(lookup) => {
-                    for subtable in &lookup.subtables {
-                        subtable
-                            .base_glyphs()
-                            .for_each(|k| f(k, GlyphClassDef::Base));
-                        subtable
-                            .mark_glyphs()
-                            .for_each(|k| f(k, GlyphClassDef::Mark));
-                    }
-                }
-                PositionLookup::MarkToLig(lookup) => {
-                    for subtable in &lookup.subtables {
-                        subtable
-                            .lig_glyphs()
-                            .for_each(|k| f(k, GlyphClassDef::Ligature));
-                        subtable
-                            .mark_glyphs()
-                            .for_each(|k| f(k, GlyphClassDef::Mark));
-                    }
-                }
-                PositionLookup::MarkToMark(lookup) => {
-                    for subtable in &lookup.subtables {
-                        subtable
-                            .mark1_glyphs()
-                            .chain(subtable.mark2_glyphs())
-                            .for_each(|k| f(k, GlyphClassDef::Mark));
-                    }
-                }
-                _ => (),
-            }
+            lookup.infer_glyph_classes(&mut f);
         }
         //TODO: the spec says to do gsub too, but fonttools doesn't?
     }
