@@ -775,14 +775,14 @@ impl<'a> MarkLookupBuilder<'a> {
     }
 }
 
-// matching current fonttools behaviour, we treat treat every non-bottom as a top:
-// https://github.com/googlefonts/ufo2ft/blob/5a606b7884bb6da5/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L998
+// matching current ufo2ft behaviour, we treat every non-bottom, non-nukta as a top:
+// https://github.com/googlefonts/ufo2ft/blob/b4890b5b/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L1010
 fn is_above_mark(anchor_name: &GroupName) -> bool {
     !is_below_mark(anchor_name)
 }
 
 fn is_below_mark(anchor_name: &GroupName) -> bool {
-    anchor_name.starts_with("bottom") || anchor_name == "nukta"
+    anchor_name.starts_with("bottom") || anchor_name.starts_with("nukta")
 }
 
 impl Work<Context, AnyWorkId, Error> for MarkWork {
@@ -1118,11 +1118,12 @@ mod tests {
             ("candrabindu-kannada", '\u{0C81}'),
             ("halant-kannada", '\u{0CCD}'),
             ("ka-kannada", '\u{0C95}'),
+            ("aa-deva", '\u{0906}'),
             ("taonethousand", '\u{0BF2}'),
             ("uni25CC", '\u{25CC}'),
         ];
 
-        static UNMAPPED: &[&str] = &["ka-kannada.base", "a.alt"];
+        static UNMAPPED: &[&str] = &["ka-kannada.base", "a.alt", "nukta-deva.sat"];
 
         let c = agl::char_for_agl_name(name.as_str()).or_else(|| {
             MANUAL
@@ -1627,6 +1628,37 @@ mod tests {
                 dottedCircle @(x: 491, y: 458)
                   @(x: -456, y: 460) halant-kannada
 
+                "#
+        );
+    }
+
+    // reduced from NotoSansDevanagari's Santali nukta
+    #[test]
+    fn nukta_prefixed_anchor_is_below_mark() {
+        let mut input = MarksInput::default();
+        let out = input
+            .add_glyph("aa-deva", None, |anchors| {
+                anchors.add("nukta.sat", [(893, -150)]);
+            })
+            .add_glyph("nukta-deva.sat", None, |anchors| {
+                anchors.add("_nukta.sat", [(-283, -134)]);
+            })
+            .set_user_fea(
+                "
+            languagesystem DFLT dflt;
+            languagesystem deva dflt;
+            languagesystem dev2 dflt;",
+            )
+            .get_normalized_output();
+
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+                # blwm: DFLT/dflt, dev2/dflt, deva/dflt
+                # 1 MarkToBase rules
+                # lookupflag LookupFlag(0)
+                aa-deva @(x: 893, y: -150)
+                  @(x: -283, y: -134) nukta-deva.sat
                 "#
         );
     }
