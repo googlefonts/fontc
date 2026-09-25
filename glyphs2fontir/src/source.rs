@@ -1821,7 +1821,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 ///
 /// See <https://github.com/googlefonts/glyphsLib/pull/1155> for a reference
 /// implementation (glyphsLib applies this before anchor propagation).
-const GLYPHS_ORIGIN_ANCHOR: &str = "*origin";
+pub(crate) const GLYPHS_ORIGIN_ANCHOR: &str = "*origin";
 
 /// The `*origin` anchor's position, if the layer has one.
 fn layer_origin(layer: &Layer) -> Option<kurbo::Point> {

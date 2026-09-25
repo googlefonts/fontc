@@ -28,6 +28,8 @@ use glyphs_reader::{
     Component, FeatureSnippet, Font, Glyph, Layer, NodeType, Path, Shape, ShapeAttributes,
 };
 
+use crate::source::GLYPHS_ORIGIN_ANCHOR;
+
 pub(crate) fn to_ir_contours_and_components(
     glyph_name: GlyphName,
     shapes: &[Shape],
@@ -681,6 +683,9 @@ fn split_colrv1_glyph(
             let mut new_layer = old_layer.clone();
             new_layer.attributes.color = run.color();
             new_layer.shapes = old_layer.shapes[run.start..run.end].to_vec();
+            new_layer
+                .anchors
+                .retain(|anchor| anchor.name == GLYPHS_ORIGIN_ANCHOR);
             trace!(
                 "{glyph_name} {} takes {} shapes for {run:?}",
                 old_layer.layer_id,
@@ -895,13 +900,13 @@ pub(crate) fn to_ir_paint(
 #[cfg(test)]
 mod tests {
     use glyphs_reader::{
-        Font, Glyph, Layer, LayerAttributes, Node, Path,
+        Anchor, Font, Glyph, Layer, LayerAttributes, Node, Path,
         glyphdata::{Category, Subcategory},
     };
     use std::path::PathBuf;
     use std::str::FromStr;
 
-    use super::{FontInfo, split_color_glyphs, to_ir_path};
+    use super::{FontInfo, GLYPHS_ORIGIN_ANCHOR, split_color_glyphs, to_ir_path};
 
     fn testdata_dir() -> PathBuf {
         let dir = PathBuf::from("../resources/testdata");
@@ -1322,6 +1327,30 @@ mod tests {
             !color_glyphs.contains_key("empty_color"),
             "COLRv1 glyph with empty color layer should not be added to color_glyphs"
         );
+    }
+
+    #[test]
+    fn colrv1_split_glyphs_have_no_anchors() {
+        let mut font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv1-manyshapes-per-glyph.glyphs")).unwrap();
+        let origin = Anchor {
+            name: GLYPHS_ORIGIN_ANCHOR.into(),
+            pos: (10.0, 20.0).into(),
+        };
+        font.glyphs.get_mut("A").unwrap().layers[0]
+            .anchors
+            .push(origin.clone());
+
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        assert_eq!(font.glyphs["A"].layers[0].anchors.len(), 2);
+        assert_eq!(color_glyphs["A"], ["A.color0", "A.color1"]);
+        for name in &color_glyphs["A"] {
+            assert_eq!(
+                font.glyphs[name].layers[0].anchors,
+                std::slice::from_ref(&origin)
+            );
+        }
     }
 
     /// When multiple user-space values map to the same design-space value

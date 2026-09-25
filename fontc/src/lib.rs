@@ -2064,9 +2064,10 @@ mod tests {
         assert_eq!(categories.get(".notdef"), None);
     }
 
-    // The glyphs split from color layers keep the parent's attaching anchors but
-    // glyphsLib never classifies them: it builds public.openTypeCategories before
-    // creating them. https://github.com/googlefonts/fontc/issues/1870
+    // The glyphs split from COLRv0 palette layers keep those layers' attaching
+    // anchors but glyphsLib never classifies them: it builds
+    // public.openTypeCategories before creating them.
+    // https://github.com/googlefonts/fontc/issues/1870
     #[test]
     fn color_layer_glyphs_get_no_gdef_class() {
         for source in [
