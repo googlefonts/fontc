@@ -792,12 +792,26 @@ impl AllLookups {
                 Some((id, None))
             }
         } else if let Some(name) = self.current_name.take() {
-            self.named.insert(name.clone(), LookupId::Empty);
-            // there was a named block with no rules, return the empty lookup
+            self.named.entry(name.clone()).or_insert(LookupId::Empty);
+            // no rules since the block (or its last script/language statement)
+            // began, return the empty lookup
             Some((LookupId::Empty, Some(name)))
         } else {
             None
         }
+    }
+
+    /// Finish the current lookup, but not the named lookup block containing it.
+    ///
+    /// Inside a named block the name is bound to the finished lookup. Any rules
+    /// that follow go in a new lookup, and the name is rebound to that.
+    pub(crate) fn finish_current_keep_name(&mut self) -> Option<LookupId> {
+        let lookup = self.current.take()?;
+        let id = self.push(lookup, self.current_use_extension);
+        if let Some(name) = self.current_name.clone() {
+            self.named.insert(name, id);
+        }
+        Some(id)
     }
 
     pub(crate) fn promote_single_sub_to_multi_if_necessary(&mut self) {

@@ -1,0 +1,32 @@
+languagesystem DFLT dflt;
+languagesystem cyrl dflt;
+languagesystem cyrl BGR;
+
+feature locl {
+    # a script or language statement ends the current lookup, and the rules
+    # after it go in a new one; the block's name refers to the last lookup.
+    lookup split {
+        sub a by b;
+        script cyrl;
+        sub c by d;
+    } split;
+
+    # the new lookup keeps the block's useExtension.
+    lookup split_ext useExtension {
+        sub e by f;
+        language BGR;
+        sub g by h;
+    } split_ext;
+
+    # no rules after the script statement: the name keeps its lookup.
+    lookup trailing {
+        sub i by j;
+        script cyrl;
+    } trailing;
+} locl;
+
+feature ss03 {
+    lookup split;
+    lookup split_ext;
+    lookup trailing;
+} ss03;
