@@ -556,22 +556,27 @@ impl Layer {
     }
 
     /// NOTE: panics if called on a non-bracket layer
-    fn bracket_info(&self, axes: &[Axis]) -> BTreeMap<String, (Option<i64>, Option<i64>)> {
+    fn bracket_info(&self, axes: &[Axis]) -> BTreeMap<String, AxisRule> {
         assert!(
             !self.attributes.axis_rules.is_empty(),
             "all bracket layers have axis rules"
         );
         axes.iter()
             .zip(&self.attributes.axis_rules)
-            .map(|(axis, rule)| (axis.tag.clone(), (rule.min, rule.max)))
+            .map(|(axis, rule)| (axis.tag.clone(), rule.clone()))
             .collect()
     }
 
-    fn axis_rules_sort_key(&self) -> Vec<(i64, i64)> {
+    fn axis_rules_sort_key(&self) -> Vec<(OrderedFloat<f64>, OrderedFloat<f64>)> {
         self.attributes
             .axis_rules
             .iter()
-            .map(|ax| (ax.min.unwrap_or(i64::MIN), ax.max.unwrap_or(i64::MAX)))
+            .map(|ax| {
+                (
+                    ax.min.unwrap_or(f64::NEG_INFINITY.into()),
+                    ax.max.unwrap_or(f64::INFINITY.into()),
+                )
+            })
             .collect()
     }
 
@@ -593,11 +598,11 @@ pub struct LayerAttributes {
     pub color_palette: Option<i64>,
 }
 
-#[derive(Clone, Default, FromPlist, Debug, PartialEq, Hash)]
+#[derive(Clone, Default, FromPlist, Debug, PartialEq, Eq, Hash)]
 pub struct AxisRule {
     // if missing, assume default min/max for font
-    pub min: Option<i64>,
-    pub max: Option<i64>,
+    pub min: Option<OrderedFloat<f64>>,
+    pub max: Option<OrderedFloat<f64>>,
 }
 
 impl AxisRule {
@@ -614,10 +619,11 @@ impl AxisRule {
         let tail = name.get(idx + 1..)?;
         let (value, _) = tail.split_once(']')?;
         let value = str::parse::<u32>(value.trim()).ok()?;
+        let value = OrderedFloat(value as f64);
         let (min, max) = if reversed {
-            (None, Some(value as _))
+            (None, Some(value))
         } else {
-            (Some(value as _), None)
+            (Some(value), None)
         };
         Some(AxisRule { min, max })
     }
@@ -4255,23 +4261,14 @@ impl Font {
 //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/builder/bracket_layers.py#L258
 fn synthesize_bracket_layer(
     old_layer: &Layer,
-    box_: BTreeMap<String, (Option<i64>, Option<i64>)>,
+    box_: BTreeMap<String, AxisRule>,
     axes: &[Axis],
 ) -> Layer {
     let mut new_layer = old_layer.clone();
     new_layer.associated_master_id = Some(std::mem::take(&mut new_layer.layer_id));
     new_layer.attributes.axis_rules = axes
         .iter()
-        .map(|axis| {
-            if let Some((min, max)) = box_.get(&axis.tag) {
-                AxisRule {
-                    min: min.map(|x| x as _),
-                    max: max.map(|x| x as _),
-                }
-            } else {
-                Default::default()
-            }
-        })
+        .map(|axis| box_.get(&axis.tag).cloned().unwrap_or_default())
         .collect();
 
     new_layer
@@ -6037,15 +6034,35 @@ etc;
             &[
                 AxisRule {
                     min: None,
-                    max: Some(400)
+                    max: Some(OrderedFloat(400.0))
                 },
                 AxisRule {
-                    min: Some(100),
+                    min: Some(OrderedFloat(100.0)),
                     max: None,
                 },
                 AxisRule {
                     min: None,
                     max: None,
+                },
+            ]
+        )
+    }
+
+    #[test]
+    fn parse_fractional_axis_rules() {
+        let plist =
+            r#"{ axisRules = ({ min = 39.6; max = 39.99; }, { min = 20; max = "60.5"; }); }"#;
+        let attrs = LayerAttributes::parse_plist(plist).unwrap();
+        assert_eq!(
+            attrs.axis_rules,
+            [
+                AxisRule {
+                    min: Some(OrderedFloat(39.6)),
+                    max: Some(OrderedFloat(39.99)),
+                },
+                AxisRule {
+                    min: Some(OrderedFloat(20.0)),
+                    max: Some(OrderedFloat(60.5)),
                 },
             ]
         )
@@ -6068,7 +6085,7 @@ etc;
             [
                 AxisRule {
                     min: None,
-                    max: Some(141)
+                    max: Some(OrderedFloat(141.0))
                 },
                 AxisRule::default()
             ]
@@ -6082,7 +6099,7 @@ etc;
             assert_eq!(
                 rule,
                 Some(AxisRule {
-                    min: Some(60),
+                    min: Some(OrderedFloat(60.0)),
                     max: None
                 }),
                 "{name}"
@@ -6098,7 +6115,7 @@ etc;
                 rule,
                 Some(AxisRule {
                     min: None,
-                    max: Some(60)
+                    max: Some(OrderedFloat(60.0))
                 })
             )
         }
@@ -6106,7 +6123,7 @@ etc;
 
     #[test]
     fn parse_layer_fails() {
-        for name in &["[hi]", "[45opsz]", "Medium [499‹wg]"] {
+        for name in &["[hi]", "[45opsz]", "Medium [499‹wg]", "[39.6]"] {
             assert!(AxisRule::from_layer_name(name).is_none(), "{name}")
         }
     }

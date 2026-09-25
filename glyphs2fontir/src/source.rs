@@ -932,11 +932,11 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
         .map(|(axis, rule)| {
             let min = rule
                 .min
-                .map(|v| DesignCoord::new(v as f64))
+                .map(DesignCoord::new)
                 .unwrap_or(axis.min.to_design(&axis.converter));
             let max = rule
                 .max
-                .map(|v| DesignCoord::new(v as f64))
+                .map(DesignCoord::new)
                 .unwrap_or(axis.max.to_design(&axis.converter));
             Condition::new(axis.tag, min.into(), max.into())
         })
@@ -4190,7 +4190,7 @@ mod tests {
         let mut layer = Layer::default();
         layer.attributes.axis_rules = vec![
             AxisRule {
-                min: Some(42),
+                min: Some(OrderedFloat(42.0)),
                 max: None,
             },
             Default::default(),
@@ -4215,6 +4215,27 @@ mod tests {
                     Some(DesignCoord::new(125.))
                 )
             ])
+        )
+    }
+
+    #[test]
+    fn bracket_info_fractional_axis_rules() {
+        let axes = Axes::for_test(&["wght"]);
+        let mut layer = Layer::default();
+        layer.attributes.axis_rules = vec![AxisRule {
+            min: Some(OrderedFloat(39.6)),
+            max: Some(OrderedFloat(39.99)),
+        }];
+
+        let result = get_bracket_info(&layer, &axes);
+
+        assert_eq!(
+            result,
+            ConditionSet::from_iter([Condition::new(
+                WGHT,
+                Some(DesignCoord::new(39.6)),
+                Some(DesignCoord::new(39.99))
+            )])
         )
     }
 
