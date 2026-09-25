@@ -1,0 +1,8 @@
+# The second rule's class expands to 'a b' and 'a d'. 'a b' conflicts with the
+# first rule's anonymous lookup, so both sequences need to go into a single new
+# anonymous lookup, and the second rule should reference it.
+languagesystem DFLT dflt;
+feature liga {
+  sub A a' b' by c;
+  sub a' [b d]' by e;
+} liga;

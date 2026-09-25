@@ -674,15 +674,11 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                     }
                 };
                 let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
-                let mut to_return = None;
-                for target in sequence_enumerator(&target) {
-                    to_return = Some(
-                        lookup
-                            .as_gsub_contextual()
-                            .add_anon_gsub_type_4(target, replacement),
-                    );
-                }
-                to_return
+                Some(
+                    lookup
+                        .as_gsub_contextual()
+                        .add_anon_gsub_type_4(sequence_enumerator(&target), replacement),
+                )
             } else {
                 let target = input.items().next().unwrap().target();
                 let arity = rule.replacements().count();

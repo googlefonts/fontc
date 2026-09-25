@@ -235,15 +235,16 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
 
     pub(crate) fn add_anon_gsub_type_4(
         &mut self,
-        target: Vec<GlyphId16>,
+        targets: Vec<Vec<GlyphId16>>,
         replacement: GlyphId16,
     ) -> LookupId {
         let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
-                SubstitutionLookup::Ligature(builder) => builder
-                    .subtables
-                    .iter()
-                    .all(|sub| sub.can_add(&target, replacement)),
+                SubstitutionLookup::Ligature(builder) => builder.subtables.iter().all(|sub| {
+                    targets
+                        .iter()
+                        .all(|target| sub.can_add(target, replacement))
+                }),
                 _ => false,
             },
             |flags, mark_set| SubstitutionLookup::Ligature(LookupBuilder::new(flags, mark_set)),
@@ -254,7 +255,9 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         };
 
         let sub = subtables.last_mut().unwrap();
-        sub.insert(target, replacement);
+        for target in targets {
+            sub.insert(target, replacement);
+        }
         id
     }
 }
