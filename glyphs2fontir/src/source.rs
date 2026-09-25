@@ -1537,6 +1537,11 @@ fn expand_kerning_to_brackets(
             .copied()
             .map(|gn| (participants.0.clone(), gn.clone().into()))
             .collect(),
+        (Some(left), Some(_)) if participants.0 == participants.1 => left
+            .iter()
+            .copied()
+            .map(|gn| (KernSide::Glyph(gn.clone()), KernSide::Glyph(gn.clone())))
+            .collect(),
         (Some(left), Some(right)) => left
             .iter()
             .copied()
@@ -3341,6 +3346,9 @@ mod tests {
                 ("a.BRACKET.varAlt01", "x.BRACKET.varAlt01", -100),
                 ("a", "x.BRACKET.varAlt02", -100),
                 ("a.BRACKET.varAlt01", "x.BRACKET.varAlt02", -100),
+                ("x", "x", -50),
+                ("x.BRACKET.varAlt01", "x.BRACKET.varAlt01", -50),
+                ("x.BRACKET.varAlt02", "x.BRACKET.varAlt02", -50),
             ])
         );
     }
