@@ -17,26 +17,28 @@
 //!   which gets the default instance's own style name; a name that equals
 //!   the default one is still elidable. `Elidable STAT Axis Value Name` on an
 //!   instance marks its label elidable on the listed axes.
-//! - An elidable default weight is style-linked to the weight of the instance
-//!   flagged `isBold`. A real `ital` axis links its default to its highest
+//! - A real `ital` axis links its default to its highest
 //!   value. When the source has no `ital` axis a STAT-only one is added:
 //!   "Italic" at 1 if the default instance is italic (flag or name), else an
-//!   elidable "Roman" at 0 linked to 1. For an italic family whose default
-//!   instance is named just "Italic", "Italic" is stripped from every label.
+//!   elidable "Roman" at 0 linked to 1.
+//! - In a family with no real ital or slnt axis, an instance named just
+//!   "Italic" or "Regular Italic" marks the regular style, wherever it sits and
+//!   whatever its weight class. Only then is "Italic" stripped from every
+//!   label, and that instance's value on each axis takes the axis default name,
+//!   elidable. Any other spelling ("Book Italic", "Normal Italic") keeps every
+//!   name whole with nothing elided.
+//! - The elidable weight, wherever it sits, is style-linked to the weight of
+//!   the instance flagged `isBold`.
 //! - `Style Name as STAT entry` on any instance switches the whole font to
-//!   manual mode: only the instances listing an axis produce labels on it,
-//!   named as-is, and axes nobody lists get no values at all.
+//!   manual mode: only the instances listing an axis produce labels on it, and
+//!   axes nobody lists get no values at all. The italic word is stripped there
+//!   too; an entry that stripping would leave empty keeps the instance's own
+//!   name.
 //!
-//! Two deviations from glyphsLib. An instance's value on an axis is its
-//! Glyphs axis coordinate converted to user space through the font's axis
-//! mapping, the same conversion fvar and avar use, so a label always sits
-//! where its instance does. glyphsLib 6.14 takes the instance's weightClass
-//! and widthClass as the user value instead, which puts labels at coordinates
-//! no instance occupies when the mapping and the classes disagree
-//! (googlefonts/glyphsLib#1171). And inactive Variable Font Settings are
-//! ignored, as Glyphs.app does not export them; glyphsLib 6.14 counts them
-//! (fixed by googlefonts/glyphsLib#1172). Labels outside the variable font's user
-//! region are dropped afterwards, as fontTools' `getStatAxes` does.
+//! An instance's value on an axis is its Glyphs axis coordinate converted to
+//! user space through the font's axis mapping, the same conversion fvar and
+//! avar use. Labels outside the variable font's user region are dropped
+//! afterwards, as fontTools' `getStatAxes` does.
 
 use std::{collections::BTreeMap, sync::LazyLock};
 
@@ -52,6 +54,7 @@ use smol_str::SmolStr;
 use write_fonts::types::Tag;
 
 const ITAL: Tag = Tag::new(b"ital");
+const SLNT: Tag = Tag::new(b"slnt");
 const WDTH: Tag = Tag::new(b"wdth");
 const WGHT: Tag = Tag::new(b"wght");
 
@@ -66,6 +69,17 @@ struct StatInstance {
     export_stat_table: Option<bool>,
     elidable: Vec<SmolStr>,
     manual: Vec<SmolStr>,
+}
+
+impl StatInstance {
+    /// Whether this instance is named just "Italic" or "Regular Italic", which
+    /// marks it as an italic family's regular style.
+    fn is_regular_italic(&self) -> bool {
+        matches!(
+            self.name.trim().to_lowercase().as_str(),
+            "italic" | "regular italic"
+        )
+    }
 }
 
 /// The STAT design axes Glyphs derives from a source: the source axes, point
@@ -140,15 +154,25 @@ fn derive_stat_axes(instances: &[StatInstance], axes: &Axes) -> Option<Vec<StatA
         .copied()
         .find(|instance| at_default(instance, axes, None));
     let italic = default_instance.is_some_and(is_italic);
-    let plain_italic = italic
-        && default_instance.is_some_and(|instance| instance.name.trim().to_lowercase() == "italic");
+    // An instance called nothing but "Italic" or "Regular Italic" marks the
+    // regular style of an italic family, unless a real slope axis gives the
+    // italic word a meaning of its own
+    let regular = (!axes.contains(&ITAL) && !axes.contains(&SLNT))
+        .then(|| {
+            instances
+                .iter()
+                .copied()
+                .find(|instance| instance.is_regular_italic())
+        })
+        .flatten();
     let manual = instances.iter().any(|instance| !instance.manual.is_empty());
 
     let mut stat_axes = if manual {
-        manual_labels(axes, &instances)
+        manual_labels(axes, &instances, regular)
     } else {
-        automatic_labels(axes, &instances, default_instance, plain_italic)
+        automatic_labels(axes, &instances, default_instance, regular)
     };
+    link_bold(&mut stat_axes, axes, &instances);
 
     if !axes.contains(&ITAL) {
         stat_axes.push(synthetic_italic_axis(italic));
@@ -204,7 +228,11 @@ fn stat_axis(axis: &Axis, labels: Vec<AxisValueLabel>) -> StatAxis {
     }
 }
 
-fn manual_labels(axes: &Axes, instances: &[&StatInstance]) -> Vec<StatAxis> {
+fn manual_labels(
+    axes: &Axes,
+    instances: &[&StatInstance],
+    regular: Option<&StatInstance>,
+) -> Vec<StatAxis> {
     axes.iter()
         .enumerate()
         .map(|(axis_idx, axis)| {
@@ -217,7 +245,16 @@ fn manual_labels(axes: &Axes, instances: &[&StatInstance]) -> Vec<StatAxis> {
                     continue;
                 };
                 labels.entry(loc).or_insert_with(|| {
-                    make_label(instance.name.as_str(), loc, is_elidable(instance, axis))
+                    // The italic word goes here too, but an entry left empty
+                    // by that (the regular instance's) keeps its own name
+                    let name = match regular {
+                        Some(_) => {
+                            Some(strip_italic(&instance.name)).filter(|name| !name.is_empty())
+                        }
+                        None => None,
+                    }
+                    .unwrap_or_else(|| instance.name.clone());
+                    make_label(name, loc, is_elidable(instance, axis))
                 });
             }
             stat_axis(axis, labels.into_values().collect())
@@ -229,7 +266,7 @@ fn automatic_labels(
     axes: &Axes,
     instances: &[&StatInstance],
     default_instance: Option<&StatInstance>,
-    plain_italic: bool,
+    regular: Option<&StatInstance>,
 ) -> Vec<StatAxis> {
     // The first axis on which instances actually vary receives the default
     // instance's full style name at its default coordinate.
@@ -275,7 +312,7 @@ fn automatic_labels(
                             .find(|instance| at_default(instance, axes, Some(axis_idx)))
                             .unwrap_or(instances_at_loc[0])
                     };
-                    let name = label_name(&representative.name, default, plain_italic);
+                    let name = label_name(representative, default, regular);
                     // The default name is elidable by definition, any other
                     // name only when the instance's parameter says so
                     let elidable = name == default || is_elidable(representative, axis);
@@ -289,25 +326,16 @@ fn automatic_labels(
     for (axis_idx, axis) in axes.iter().enumerate() {
         let default = axis.default.into_inner();
         let stat_axis = &mut stat_axes[axis_idx];
-        let linked = match axis.tag {
-            // The elidable default weight links to the bold instance's weight,
-            // wherever that instance sits on the other axes. A default named
-            // e.g. Book only links when its parameter makes it elidable.
-            WGHT if default_label(stat_axis, default).is_some_and(|label| label.elidable) => {
-                instances
-                    .iter()
-                    .find(|instance| instance.is_bold)
-                    .and_then(|instance| user_loc(instance, axis_idx))
-            }
-            // A real ital axis links upright to the highest generated italic
-            // value. A slnt axis is deliberately not linked.
-            ITAL => stat_axis.labels.iter().map(|label| label.value).max(),
-            _ => None,
-        };
-        // No self-links: a bold instance at the default weight, or an ital
-        // axis whose only value is the upright one, link nowhere
-        if let Some(linked) = linked.filter(|linked| *linked != default)
-            && let Some(label) = default_label(stat_axis, default)
+        // A real ital axis links upright to the highest generated italic
+        // value. A slnt axis is deliberately not linked. No self-links: an
+        // ital axis whose only value is the upright one links nowhere
+        if axis.tag == ITAL
+            && let Some(linked) = stat_axis.labels.iter().map(|label| label.value).max()
+            && linked != default
+            && let Some(label) = stat_axis
+                .labels
+                .iter_mut()
+                .find(|label| label.value == default)
         {
             label.linked_value = Some(linked);
         }
@@ -316,8 +344,29 @@ fn automatic_labels(
     stat_axes
 }
 
-fn default_label(axis: &mut StatAxis, default: OrderedFloat<f64>) -> Option<&mut AxisValueLabel> {
-    axis.labels.iter_mut().find(|label| label.value == default)
+/// The elidable weight (the regular) links to the bold instance's weight,
+/// wherever either sits on the other axes; in manual mode as well. A default
+/// named e.g. Book only links when its parameter makes it elidable, and a bold
+/// instance at the regular weight links nowhere.
+fn link_bold(stat_axes: &mut [StatAxis], axes: &Axes, instances: &[&StatInstance]) {
+    let Some(axis_idx) = axes.iter().position(|axis| axis.tag == WGHT) else {
+        return;
+    };
+    let Some(bold) = instances
+        .iter()
+        .find(|instance| instance.is_bold)
+        .and_then(|instance| user_loc(instance, axis_idx))
+    else {
+        return;
+    };
+    if let Some(label) = stat_axes[axis_idx]
+        .labels
+        .iter_mut()
+        .find(|label| label.elidable)
+        && label.value != bold
+    {
+        label.linked_value = Some(bold);
+    }
 }
 
 fn synthetic_italic_axis(italic: bool) -> StatAxis {
@@ -334,11 +383,13 @@ fn synthetic_italic_axis(italic: bool) -> StatAxis {
     }
 }
 
-fn label_name(name: &str, default: &str, plain_italic: bool) -> String {
-    let name = if plain_italic {
-        strip_italic(name)
-    } else {
-        name.to_string()
+fn label_name(instance: &StatInstance, default: &str, regular: Option<&StatInstance>) -> String {
+    let name = match regular {
+        // The regular instance's value takes the axis default name, "Normal"
+        // on a width axis, whatever its own name says
+        Some(regular) if std::ptr::eq(instance, regular) => String::new(),
+        Some(_) => strip_italic(&instance.name),
+        None => instance.name.clone(),
     };
     if name.is_empty() {
         default.to_string()
@@ -872,8 +923,8 @@ mod tests {
         assert_labels(&stat, "ital", &[("Italic", 1.0, false, None)]);
     }
 
-    // Only a default named exactly "Italic" strips the word: "Book Italic"
-    // keeps every name whole, none of them elidable
+    // Only an instance named exactly "Italic" or "Regular Italic" strips the
+    // word: with "Book Italic" every name stays whole, none of them elidable
     #[test]
     fn named_italic_default_keeps_italic_in_all_names() {
         let mut book = StatInstance::single("Book Italic", &[400.0]);
@@ -926,6 +977,124 @@ mod tests {
                 ("Normal", 100.0, true, None),
             ],
         );
+    }
+
+    // Glyphs 3.5: the default master is the Thin one, but the instance called
+    // "Italic" or "Regular Italic" is the regular style. The word goes from
+    // every label and that instance's value is Regular, elidable, linked to
+    // the bold, wherever it sits (googlefonts/glyphsLib#1174)
+    #[test]
+    fn regular_italic_instance_off_the_default_marks_the_italic_family() {
+        for regular_name in ["Italic", "Regular Italic"] {
+            let mut thin = StatInstance::single("Thin Italic", &[100.0]);
+            thin.is_italic = true;
+            let mut regular = StatInstance::single(regular_name, &[400.0]);
+            regular.is_italic = true;
+            let mut bold = StatInstance::single("Bold Italic", &[700.0]);
+            bold.is_italic = true;
+            bold.is_bold = true;
+            let mut black = StatInstance::single("Black Italic", &[900.0]);
+            black.is_italic = true;
+            let stat = stat(
+                vec![axis("wght", "Weight", 100.0, 100.0, 900.0)],
+                vec![thin, regular, bold, black],
+            );
+            assert_labels(
+                &stat,
+                "wght",
+                &[
+                    ("Thin", 100.0, false, None),
+                    ("Regular", 400.0, true, Some(700.0)),
+                    ("Bold", 700.0, false, None),
+                    ("Black", 900.0, false, None),
+                ],
+            );
+            assert_labels(&stat, "ital", &[("Italic", 1.0, false, None)]);
+        }
+    }
+
+    // Any other spelling of the regular instance leaves the names whole
+    #[test]
+    fn other_regular_italic_spellings_do_not_qualify() {
+        for regular_name in ["Normal Italic", "Book Italic", "Roman Italic"] {
+            let mut thin = StatInstance::single("Thin Italic", &[100.0]);
+            thin.is_italic = true;
+            let mut regular = StatInstance::single(regular_name, &[400.0]);
+            regular.is_italic = true;
+            let mut bold = StatInstance::single("Bold Italic", &[700.0]);
+            bold.is_italic = true;
+            bold.is_bold = true;
+            let stat = stat(
+                vec![axis("wght", "Weight", 100.0, 100.0, 700.0)],
+                vec![thin, regular, bold],
+            );
+            assert_labels(
+                &stat,
+                "wght",
+                &[
+                    ("Thin Italic", 100.0, false, None),
+                    (regular_name, 400.0, false, None),
+                    ("Bold Italic", 700.0, false, None),
+                ],
+            );
+            assert_labels(&stat, "ital", &[("Italic", 1.0, false, None)]);
+        }
+    }
+
+    // On a width axis the regular instance's value is Normal, with no link
+    #[test]
+    fn regular_italic_instance_takes_the_axis_default_name() {
+        let mut condensed = StatInstance::single("Condensed Italic", &[75.0]);
+        condensed.is_italic = true;
+        let mut regular = StatInstance::single("Italic", &[100.0]);
+        regular.is_italic = true;
+        let mut expanded = StatInstance::single("Expanded Italic", &[125.0]);
+        expanded.is_italic = true;
+        let stat = stat(
+            vec![axis("wdth", "Width", 75.0, 75.0, 125.0)],
+            vec![condensed, regular, expanded],
+        );
+        assert_labels(
+            &stat,
+            "wdth",
+            &[
+                ("Condensed", 75.0, false, None),
+                ("Normal", 100.0, true, None),
+                ("Expanded", 125.0, false, None),
+            ],
+        );
+        assert_labels(&stat, "ital", &[("Italic", 1.0, false, None)]);
+    }
+
+    // Manual mode strips the word as well; the regular instance's entry keeps
+    // its own name, elidable through its parameter, and still links to bold
+    #[test]
+    fn manual_mode_drops_italic_and_links_the_elidable_entry() {
+        let mut thin = StatInstance::single("Thin Italic", &[100.0]);
+        thin.is_italic = true;
+        thin.manual.push("wght".into());
+        let mut regular = StatInstance::single("Italic", &[400.0]);
+        regular.is_italic = true;
+        regular.manual.push("wght".into());
+        regular.elidable.push("wght".into());
+        let mut bold = StatInstance::single("Bold Italic", &[700.0]);
+        bold.is_italic = true;
+        bold.is_bold = true;
+        bold.manual.push("wght".into());
+        let stat = stat(
+            vec![axis("wght", "Weight", 100.0, 100.0, 700.0)],
+            vec![thin, regular, bold],
+        );
+        assert_labels(
+            &stat,
+            "wght",
+            &[
+                ("Thin", 100.0, false, None),
+                ("Italic", 400.0, true, Some(700.0)),
+                ("Bold", 700.0, false, None),
+            ],
+        );
+        assert_labels(&stat, "ital", &[("Italic", 1.0, false, None)]);
     }
 
     #[test]
