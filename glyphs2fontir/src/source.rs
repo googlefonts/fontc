@@ -523,9 +523,9 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             true => SelectionFlags::ITALIC,
             false => SelectionFlags::empty(),
         } |
-        // https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/names.py#L27
-        match master_name.to_ascii_lowercase().as_str() {
-            "bold" | "bold italic" => SelectionFlags::BOLD,
+        // https://github.com/googlefonts/glyphsLib/blob/87da5926/Lib/glyphsLib/builder/names.py#L39
+        match master_name.as_str() {
+            "Bold" | "Bold Italic" | "Bold Oblique" => SelectionFlags::BOLD,
             _ => SelectionFlags::empty(),
         };
         if selection_flags.intersection(SelectionFlags::ITALIC | SelectionFlags::BOLD)
@@ -3829,6 +3829,32 @@ mod tests {
                 static_metadata.misc.selection_flags
             ),
             ("Family Thin", "Italic", SelectionFlags::ITALIC)
+        );
+    }
+
+    #[test]
+    fn bold_oblique_master_is_bold_italic() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("StaticBoldOblique.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let name = |id: NameId| {
+            static_metadata
+                .names
+                .get(&NameKey::new_bmp_only(id))
+                .map(|s| s.as_str())
+                .unwrap_or_default()
+        };
+
+        assert_eq!(
+            (
+                name(NameId::FAMILY_NAME),
+                name(NameId::SUBFAMILY_NAME),
+                static_metadata.misc.selection_flags
+            ),
+            (
+                "Family",
+                "Bold Italic",
+                SelectionFlags::BOLD | SelectionFlags::ITALIC
+            )
         );
     }
 
