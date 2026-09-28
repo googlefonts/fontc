@@ -296,7 +296,8 @@ pub struct Glyph {
     pub export: bool,
     pub layers: Vec<Layer>,
     pub bracket_layers: Vec<Layer>,
-    pub unicode: BTreeSet<u32>,
+    /// The codepoints, in the order listed in the source
+    pub unicode: Vec<u32>,
     /// The left kerning group
     pub left_kern: Option<SmolStr>,
     /// The right kerning group
@@ -2759,7 +2760,7 @@ fn make_glyph_order(glyphs: &[RawGlyph], custom_order: Option<Vec<SmolStr>>) -> 
 }
 
 // glyphs2 uses hex, glyphs3 uses base10
-fn parse_codepoint_str(s: &str, radix: u32) -> BTreeSet<u32> {
+fn parse_codepoint_str(s: &str, radix: u32) -> Vec<u32> {
     s.split(',')
         .map(|cp| u32::from_str_radix(cp, radix).unwrap())
         .collect()
@@ -4801,10 +4802,7 @@ slant = (10);
     #[test]
     fn understand_v2_style_unquoted_hex_unicode() {
         let font = Font::load(&glyphs2_dir().join("Unicode-UnquotedHex.glyphs")).unwrap();
-        assert_eq!(
-            BTreeSet::from([0x1234]),
-            font.glyphs.get("name").unwrap().unicode,
-        );
+        assert_eq!(vec![0x1234], font.glyphs.get("name").unwrap().unicode);
         assert_eq!(1, font.glyphs.len());
     }
 
@@ -4812,7 +4810,7 @@ slant = (10);
     fn understand_v2_style_quoted_hex_unicode_sequence() {
         let font = Font::load(&glyphs2_dir().join("Unicode-QuotedHexSequence.glyphs")).unwrap();
         assert_eq!(
-            BTreeSet::from([0x2044, 0x200D, 0x2215]),
+            vec![0x2044, 0x200D, 0x2215],
             font.glyphs.get("name").unwrap().unicode,
         );
         assert_eq!(1, font.glyphs.len());
@@ -4821,20 +4819,14 @@ slant = (10);
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDec.glyphs")).unwrap();
-        assert_eq!(
-            BTreeSet::from([182]),
-            font.glyphs.get("name").unwrap().unicode
-        );
+        assert_eq!(vec![182], font.glyphs.get("name").unwrap().unicode);
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode_sequence() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs")).unwrap();
-        assert_eq!(
-            BTreeSet::from([1619, 1764]),
-            font.glyphs.get("name").unwrap().unicode,
-        );
+        assert_eq!(vec![1619, 1764], font.glyphs.get("name").unwrap().unicode);
         assert_eq!(1, font.glyphs.len());
     }
 
