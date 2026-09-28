@@ -71,6 +71,17 @@ struct StatInstance {
     manual: Vec<SmolStr>,
 }
 
+impl StatInstance {
+    /// Whether this instance is named just "Italic" or "Regular Italic", which
+    /// marks it as an italic family's regular style.
+    fn is_regular_italic(&self) -> bool {
+        matches!(
+            self.name.trim().to_lowercase().as_str(),
+            "italic" | "regular italic"
+        )
+    }
+}
+
 /// The STAT design axes Glyphs derives from a source: the source axes, point
 /// axes included, plus the synthetic ital axis. `None` means no STAT.
 pub(crate) fn to_stat_axes(font: &Font, axes: &Axes) -> Option<Vec<StatAxis>> {
@@ -151,7 +162,7 @@ fn derive_stat_axes(instances: &[StatInstance], axes: &Axes) -> Option<Vec<StatA
             instances
                 .iter()
                 .copied()
-                .find(|instance| is_regular_italic(instance))
+                .find(|instance| instance.is_regular_italic())
         })
         .flatten();
     let manual = instances.iter().any(|instance| !instance.manual.is_empty());
@@ -182,13 +193,6 @@ fn at_default(instance: &StatInstance, axes: &Axes, skip: Option<usize>) -> bool
 
 fn is_italic(instance: &StatInstance) -> bool {
     instance.is_italic || instance.name.to_lowercase().contains("italic")
-}
-
-fn is_regular_italic(instance: &StatInstance) -> bool {
-    matches!(
-        instance.name.trim().to_lowercase().as_str(),
-        "italic" | "regular italic"
-    )
 }
 
 fn is_elidable(instance: &StatInstance, axis: &Axis) -> bool {
