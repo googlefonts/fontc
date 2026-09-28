@@ -41,6 +41,18 @@ pub enum BadSmartComponent {
     NoLayer(String),
 }
 
+/// Keep a smart component as a plain reference to its glyph.
+fn regular_component(component: &Component) -> SmartComponentInstance {
+    let mut kept = component.clone();
+    kept.smart_component_values.clear();
+    // No anchors here; they'll be propagated through the component ref
+    // by propagate_all_anchors in fontir (see propagate_anchors.rs).
+    SmartComponentInstance {
+        shapes: vec![Shape::Component(kept)],
+        anchors: vec![],
+    }
+}
+
 /// Instantiate an instance of a smart component.
 ///
 /// A smart component is a glyph that defines its own little variation space,
@@ -56,6 +68,24 @@ pub(crate) fn instantiate_for_layer(
     ref_glyph: &Glyph,
 ) -> Result<SmartComponentInstance, BadSmartComponent> {
     assert!(!ref_glyph.smart_component_axes.is_empty());
+
+    // A glyph can declare smart component axes without any layer mapped to a
+    // pole (e.g. left over from duplicating a smart glyph). There is nothing to
+    // interpolate, and Glyphs.app exports it as a regular component.
+    // If only some masters lack poles we still error below, since keeping a
+    // component in one master and decomposing in another is incompatible.
+    if ref_glyph
+        .layers
+        .iter()
+        .all(|layer| layer.smart_component_positions.is_empty())
+    {
+        log::debug!(
+            "smart component {} has no layers mapped to poles, keeping as regular component",
+            component.name
+        );
+        return Ok(regular_component(component));
+    }
+
     let (axis_order, name_to_tag_map) = axes_for_glyph(ref_glyph);
 
     // these are the layers of the glyph that have the same associated master
@@ -89,14 +119,7 @@ pub(crate) fn instantiate_for_layer(
             "smart component {} only has one layer, keeping as regular component",
             component.name
         );
-        let mut kept = component.clone();
-        kept.smart_component_values.clear();
-        // No anchors here; they'll be propagated through the component ref
-        // by propagate_all_anchors in fontir (see propagate_anchors.rs).
-        return Ok(SmartComponentInstance {
-            shapes: vec![Shape::Component(kept)],
-            anchors: vec![],
-        });
+        return Ok(regular_component(component));
     }
 
     validate_relevant_layers(&relevant_layers)?;
@@ -976,5 +999,61 @@ mod tests {
         assert_eq!(comp.transform, Affine::translate((0.0, 376.0)));
         assert!(comp.smart_component_values.is_empty());
         assert!(instance.anchors.is_empty());
+    }
+
+    fn glyph_with_axes_no_poles(master_ids: &[&str]) -> Glyph {
+        let mut glyph = Glyph {
+            name: "_part".into(),
+            ..Default::default()
+        };
+        glyph
+            .smart_component_axes
+            .insert(SmolStr::new("Length"), 0..=100);
+        for master_id in master_ids {
+            glyph.layers.push(Layer {
+                layer_id: (*master_id).into(),
+                width: 300.0.into(),
+                ..Default::default()
+            });
+        }
+        glyph
+    }
+
+    #[test]
+    fn smart_component_without_poles_is_regular_component() {
+        let part = glyph_with_axes_no_poles(&["m01", "m02"]);
+        let caller = Component {
+            name: "_part".into(),
+            transform: Affine::translate((10.0, 20.0)),
+            smart_component_values: [(SmolStr::new("Length"), 50.0)].into_iter().collect(),
+            ..Default::default()
+        };
+
+        for master_id in ["m01", "m02"] {
+            let instance = instantiate_for_layer(master_id, &caller, &part).unwrap();
+            assert_eq!(instance.shapes.len(), 1);
+            let comp = instance.shapes[0].as_component().unwrap();
+            assert_eq!(comp.name.as_str(), "_part");
+            assert_eq!(comp.transform, Affine::translate((10.0, 20.0)));
+            assert!(comp.smart_component_values.is_empty());
+            assert!(instance.anchors.is_empty());
+        }
+    }
+
+    #[test]
+    fn smart_component_missing_poles_in_one_master_is_error() {
+        let mut part = glyph_with_axes_no_poles(&["m01", "m02"]);
+        part.layers[0].smart_component_positions = [(SmolStr::new("Length"), AxisPole::Min)]
+            .into_iter()
+            .collect();
+        let caller = Component {
+            name: "_part".into(),
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            instantiate_for_layer("m02", &caller, &part),
+            Err(BadSmartComponent::NoLayer(_))
+        ));
     }
 }
