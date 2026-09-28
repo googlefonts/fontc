@@ -5555,6 +5555,17 @@ mod tests {
     }
 
     #[test]
+    fn colr_no_cliplist_for_variable_font() {
+        let result = TestCompile::compile_source("glyphs3/COLRv1-var.glyphs");
+        let font = result.font();
+        font.fvar().expect("fvar");
+        let colr = font.colr().unwrap();
+        let base_glyph_list = colr.base_glyph_list().unwrap().unwrap();
+        assert_eq!(1, base_glyph_list.num_base_glyph_paint_records());
+        assert!(colr.clip_list().is_none());
+    }
+
+    #[test]
     fn colr_split_not_required() {
         // Only one paint, no need to split blah.color#
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
