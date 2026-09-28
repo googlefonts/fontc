@@ -1,0 +1,214 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+customParameters = (
+{
+name = "Color Palettes";
+value = (
+(
+(255, 0, 0, 255),
+(0, 255, 0, 255),
+(0, 0, 255, 255)
+)
+);
+}
+);
+familyName = "New Font";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 1;
+};
+layerId = m02;
+associatedMasterId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,250,l),
+(63,250,l)
+);
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 0;
+};
+layerId = m03;
+associatedMasterId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,250,l),
+(542,250,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+glyphname = acute;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(250,550,l),
+(350,550,l),
+(350,650,l),
+(250,650,l)
+);
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 1;
+};
+layerId = m04;
+associatedMasterId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(250,550,l),
+(350,550,l),
+(350,650,l),
+(250,650,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 180;
+},
+{
+glyphname = dot;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(275,-150,l),
+(325,-150,l),
+(325,-100,l),
+(275,-100,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 183;
+},
+{
+glyphname = Aacute;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 0;
+};
+layerId = m05;
+associatedMasterId = m01;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+},
+{
+ref = dot;
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 1;
+};
+layerId = m06;
+associatedMasterId = m01;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 2;
+};
+layerId = m07;
+associatedMasterId = m01;
+shapes = (
+{
+ref = A;
+}
+);
+width = 600;
+}
+);
+unicode = 193;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

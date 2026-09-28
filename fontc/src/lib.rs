@@ -5765,6 +5765,44 @@ mod tests {
     }
 
     #[test]
+    fn colr0_components_reference_palette_layer_glyphs() {
+        let result = TestCompile::compile_source("glyphs3/COLRv0-components.glyphs");
+        assert_colr0(
+            &result,
+            &[
+                ("A", &[("A.color0", 1), ("A.color1", 0)]),
+                ("acute", &[("acute.color0", 1)]),
+                (
+                    "Aacute",
+                    &[
+                        ("Aacute.color0", 0),
+                        ("Aacute.color1", 1),
+                        ("Aacute.color2", 2),
+                    ],
+                ),
+            ],
+        );
+        let components = |name: &str| -> Vec<GlyphId16> {
+            let RawGlyph::Composite(glyph) = result.read_be_glyph(name) else {
+                panic!("{name} should be a composite");
+            };
+            glyph.components().iter().map(|c| c.glyph).collect()
+        };
+        let gids = |names: &[&str]| -> Vec<GlyphId16> {
+            names.iter().map(|n| result.get_gid(n)).collect()
+        };
+        assert_eq!(
+            components("Aacute.color0"),
+            gids(&["A.color1", "acute", "dot"])
+        );
+        assert_eq!(
+            components("Aacute.color1"),
+            gids(&["A.color0", "acute.color0"])
+        );
+        assert_eq!(components("Aacute.color2"), gids(&["A"]));
+    }
+
+    #[test]
     fn colr0_from_ufo() {
         let result = TestCompile::compile_source("COLRv0-var/COLRv0-Regular.ufo");
         assert_colr0(&result, &[("a", &[("a.color0", 0), ("a.color1", 1)])]);

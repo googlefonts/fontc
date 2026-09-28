@@ -452,9 +452,61 @@ fn new_color_glyph(original: &Glyph, nth: &mut usize) -> Glyph {
     new_glyph
 }
 
+fn is_colrv0_layer(layer: &Layer, master_id: &str) -> bool {
+    !layer.shapes.is_empty()
+        && layer.attributes.color_palette.is_some()
+        && layer.associated_master_id.as_deref() == Some(master_id)
+}
+
+/// The glyph each COLRv0 palette layer is split into, keyed by (glyph name, master id).
+///
+/// Each entry lists (palette index, split glyph name) in layer order, numbered
+/// exactly as `split_colrv0_glyph` names the glyphs it creates.
+struct ColrLayerGlyphNames(HashMap<(SmolStr, String), Vec<(i64, SmolStr)>>);
+
+impl ColrLayerGlyphNames {
+    fn new(font: &Font) -> Self {
+        let mut names = HashMap::new();
+        for glyph in font.glyphs.values() {
+            for master in font.masters.iter() {
+                let entries: Vec<_> = glyph
+                    .layers
+                    .iter()
+                    .filter(|layer| is_colrv0_layer(layer, &master.id))
+                    .enumerate()
+                    .map(|(nth, layer)| {
+                        let name = format!("{}.color{nth}", glyph.name).into();
+                        (layer.attributes.color_palette.unwrap(), name)
+                    })
+                    .collect();
+                if !entries.is_empty() {
+                    names.insert((glyph.name.clone(), master.id.clone()), entries);
+                }
+            }
+        }
+        Self(names)
+    }
+
+    /// The glyph a component in a COLRv0 palette layer references.
+    ///
+    /// Glyphs resolves such a component to the first palette layer of the component
+    /// glyph, for the same master, with the same palette index; failing that, to the
+    /// master layer.
+    ///
+    /// <https://github.com/googlefonts/glyphsLib/blob/f40abf38/Lib/glyphsLib/builder/components.py#L50-L72>
+    fn component_name(&self, component: &Component, master_id: &str, palette: i64) -> SmolStr {
+        self.0
+            .get(&(component.name.clone(), master_id.to_string()))
+            .and_then(|layers| layers.iter().find(|(p, _)| *p == palette))
+            .map(|(_, name)| name.clone())
+            .unwrap_or_else(|| component.name.clone())
+    }
+}
+
 fn split_colrv0_glyph(
     original: &Glyph,
     default_master_layer: &Layer,
+    layer_glyph_names: &ColrLayerGlyphNames,
     color_glyphs: &mut IndexMap<SmolStr, Vec<SmolStr>>,
     additions: &mut Vec<(SmolStr, Glyph)>,
 ) -> Result<(), Error> {
@@ -465,17 +517,21 @@ fn split_colrv0_glyph(
     // each color run becomes a new glyph named [original].color[i]
     let mut nth = 0;
     for layer in original.layers.iter() {
-        if layer.shapes.is_empty()
-            || layer.attributes.color_palette.is_none()
-            || layer.associated_master_id.as_deref() != Some(default_master_layer.layer_id.as_str())
-        {
+        if !is_colrv0_layer(layer, &default_master_layer.layer_id) {
             continue;
         }
 
         // Every layer associated with the master that has a palette index becomes a new color glyph
         let mut new_glyph = new_color_glyph(original, &mut nth);
         let mut layer = layer.clone();
-        layer.layer_id = layer.associated_master_id.take().unwrap();
+        let master_id = layer.associated_master_id.take().unwrap();
+        let palette = layer.attributes.color_palette.unwrap();
+        for shape in layer.shapes.iter_mut() {
+            if let Shape::Component(component) = shape {
+                component.name = layer_glyph_names.component_name(component, &master_id, palette);
+            }
+        }
+        layer.layer_id = master_id;
         new_glyph.layers.push(layer);
 
         debug!("Add COLRv0 {}", new_glyph.name);
@@ -577,6 +633,7 @@ fn split_color_glyphs(font: Font) -> Result<(Font, IndexMap<SmolStr, Vec<SmolStr
     let mut font = font;
     let mut color_glyphs: IndexMap<SmolStr, Vec<SmolStr>> = Default::default();
     let default_master_id = font.default_master().id.clone();
+    let layer_glyph_names = ColrLayerGlyphNames::new(&font);
 
     let mut additions: Vec<(SmolStr, Glyph)> = Vec::new();
     for glyph in font.glyphs.values_mut() {
@@ -597,6 +654,7 @@ fn split_color_glyphs(font: Font) -> Result<(Font, IndexMap<SmolStr, Vec<SmolStr
             split_colrv0_glyph(
                 glyph,
                 default_master_layer,
+                &layer_glyph_names,
                 &mut color_glyphs,
                 &mut additions,
             )?;
@@ -743,7 +801,8 @@ pub(crate) fn to_ir_paint(
 
 #[cfg(test)]
 mod tests {
-    use glyphs_reader::{Font, Glyph, Layer, LayerAttributes, Node, Path};
+    use glyphs_reader::{Font, Glyph, Layer, LayerAttributes, Node, Path, Shape};
+    use smol_str::SmolStr;
     use std::path::PathBuf;
     use std::str::FromStr;
 
@@ -856,6 +915,34 @@ mod tests {
             !color_glyphs.contains_key("CR"),
             "Glyph with empty palette layers should not be added to color_glyphs"
         );
+    }
+
+    /// A component in a palette layer references the component glyph's own
+    /// palette layer for the same palette index, when it has one.
+    ///
+    /// <https://github.com/googlefonts/glyphsLib/blob/f40abf38/Lib/glyphsLib/builder/components.py#L50-L72>
+    #[test]
+    fn colrv0_components_reference_matching_palette_layer() {
+        let font = Font::load(&testdata_dir().join("glyphs3/COLRv0-components.glyphs")).unwrap();
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        assert_eq!(
+            color_glyphs.get("Aacute").unwrap(),
+            &["Aacute.color0", "Aacute.color1", "Aacute.color2"]
+        );
+        let components = |name: &str| -> Vec<SmolStr> {
+            font.glyphs[name].layers[0]
+                .shapes
+                .iter()
+                .map(|shape| match shape {
+                    Shape::Component(c) => c.name.clone(),
+                    Shape::Path(_) => panic!("{name} should only have components"),
+                })
+                .collect()
+        };
+        assert_eq!(components("Aacute.color0"), ["A.color1", "acute", "dot"]);
+        assert_eq!(components("Aacute.color1"), ["A.color0", "acute.color0"]);
+        assert_eq!(components("Aacute.color2"), ["A"]);
     }
 
     /// Test that COLRv1 glyphs with empty color layers are not added to color_glyphs.
