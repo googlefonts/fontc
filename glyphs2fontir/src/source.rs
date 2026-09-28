@@ -505,6 +505,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         warn_master_font_custom_param_mismatch(font);
 
+        let master_name = &font.default_master().name;
         let mut selection_flags = match font.custom_parameters.use_typo_metrics.unwrap_or_default() {
             true => SelectionFlags::USE_TYPO_METRICS,
             false => SelectionFlags::empty(),
@@ -512,17 +513,19 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             true => SelectionFlags::WWS,
             false => SelectionFlags::empty(),
         } |
-        // if there is an italic angle we're italic
-        // <https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da540d646b0784ae6d2c3ca834/Lib/glyphsLib/builder/names.py#L25>
-        match italic_angle {
-            0.0 => SelectionFlags::empty(),
-            _ => SelectionFlags::ITALIC,
+        // if there is an italic angle, or the master is named e.g. "Thin Italic", we're italic
+        // <https://github.com/googlefonts/glyphsLib/pull/1178>
+        match italic_angle != 0.0
+            || master_name
+                .split_ascii_whitespace()
+                .any(|word| matches!(word, "Italic" | "Oblique"))
+        {
+            true => SelectionFlags::ITALIC,
+            false => SelectionFlags::empty(),
         } |
         // https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/names.py#L27
-        match font.default_master().name.to_ascii_lowercase().as_str() {
-            "italic" => SelectionFlags::ITALIC,
-            "bold" => SelectionFlags::BOLD,
-            "bold italic" => SelectionFlags::BOLD | SelectionFlags::ITALIC,
+        match master_name.to_ascii_lowercase().as_str() {
+            "bold" | "bold italic" => SelectionFlags::BOLD,
             _ => SelectionFlags::empty(),
         };
         if selection_flags.intersection(SelectionFlags::ITALIC | SelectionFlags::BOLD)
@@ -3804,6 +3807,28 @@ mod tests {
                 "Weight",
                 SelectionFlags::ITALIC
             )
+        );
+    }
+
+    #[test]
+    fn italic_from_master_name_without_angle() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("StaticThinItalic.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let name = |id: NameId| {
+            static_metadata
+                .names
+                .get(&NameKey::new_bmp_only(id))
+                .map(|s| s.as_str())
+                .unwrap_or_default()
+        };
+
+        assert_eq!(
+            (
+                name(NameId::FAMILY_NAME),
+                name(NameId::SUBFAMILY_NAME),
+                static_metadata.misc.selection_flags
+            ),
+            ("Family Thin", "Italic", SelectionFlags::ITALIC)
         );
     }
 
