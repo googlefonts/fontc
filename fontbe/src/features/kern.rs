@@ -37,7 +37,9 @@ use write_fonts::{
 use crate::{
     error::Error,
     features::{
-        properties::{COMMON_SCRIPT, INHERITED_SCRIPT, ScriptDirection, UnicodeShortName},
+        properties::{
+            COMMON_SCRIPT, ExtraSubstitutions, INHERITED_SCRIPT, ScriptDirection, UnicodeShortName,
+        },
         resolve_variable_metric,
     },
     orchestration::{
@@ -910,7 +912,14 @@ fn finalize_kerning(
         })
         .collect();
 
-    let split_ctx = KernSplitContext::new(&char_map, &known_scripts, ast.gsub(), mark_glyphs)?;
+    let extra_substitutions = super::properties::extra_substitutions(static_metadata, glyph_order);
+    let split_ctx = KernSplitContext::new(
+        &char_map,
+        &known_scripts,
+        ast.gsub(),
+        &extra_substitutions,
+        mark_glyphs,
+    )?;
 
     let lookups = split_ctx.make_lookups(pairs);
     let (lookups_by_script, lookups) = split_lookups_by_script(lookups);
@@ -1147,11 +1156,17 @@ impl KernSplitContext {
         char_map: &HashMap<u32, GlyphId16>,
         known_scripts: &HashSet<UnicodeShortName>,
         gsub: Option<Gsub>,
+        extra_substitutions: &ExtraSubstitutions,
         mark_glyphs: HashMap<GlyphId16, MarkSpacing>,
     ) -> Result<Self, ReadError> {
-        let glyph_scripts =
-            super::properties::scripts_by_glyph(char_map, known_scripts, gsub.as_ref())?;
-        let bidi_glyphs = super::properties::glyphs_by_bidi_class(char_map, gsub.as_ref())?;
+        let glyph_scripts = super::properties::scripts_by_glyph(
+            char_map,
+            known_scripts,
+            gsub.as_ref(),
+            extra_substitutions,
+        )?;
+        let bidi_glyphs =
+            super::properties::glyphs_by_bidi_class(char_map, gsub.as_ref(), extra_substitutions)?;
 
         Ok(Self {
             mark_glyphs,
@@ -1596,6 +1611,7 @@ fn merge_scripts(
 #[cfg(test)]
 mod tests {
     use fea_rs::compile::Compilation;
+    use fontir::ir::{Rule, VariableFeature};
     use write_fonts::read::FontRead;
 
     use crate::features::test_helpers::LayoutOutputBuilder;
@@ -1650,6 +1666,7 @@ mod tests {
         opentype_categories: BTreeMap<GlyphName, GlyphClassDef>,
         glyph_order: GlyphOrder,
         user_fea: &'static str,
+        rule_substitutions: Vec<(&'static str, &'static str)>,
     }
 
     trait ToKernSide {
@@ -1710,6 +1727,7 @@ mod tests {
                 non_spacing: Default::default(),
                 user_fea: "",
                 opentype_categories: Default::default(),
+                rule_substitutions: Default::default(),
             }
         }
 
@@ -1754,6 +1772,12 @@ mod tests {
             self
         }
 
+        /// Add designspace rule (or bracket layer) substitutions
+        fn with_rule_substitutions(mut self, subs: &[(&'static str, &'static str)]) -> Self {
+            self.rule_substitutions.extend_from_slice(subs);
+            self
+        }
+
         fn with_rule(mut self, side1: impl ToKernSide, side2: impl ToKernSide, val: i16) -> Self {
             let side1 = side1.to_kern_side(&self);
             let side2 = side2.to_kern_side(&self);
@@ -1771,11 +1795,18 @@ mod tests {
             let categories = GdefCategories {
                 categories: self.opentype_categories,
             };
-            let layout_output = LayoutOutputBuilder::new()
+            let mut builder = LayoutOutputBuilder::new();
+            builder
                 .with_categories(categories)
                 .with_user_fea(self.user_fea)
-                .with_glyph_order(self.glyph_order.clone())
-                .build();
+                .with_glyph_order(self.glyph_order.clone());
+            if !self.rule_substitutions.is_empty() {
+                builder.with_variations(VariableFeature {
+                    features: vec![Tag::new(b"rvrn")],
+                    rules: vec![Rule::for_test(&[], &self.rule_substitutions)],
+                });
+            }
+            let layout_output = builder.build();
             let kerns = finalize_kerning(
                 &pairs,
                 &layout_output.first_pass_fea,
@@ -2615,6 +2646,38 @@ mod tests {
             # 1 PairPos rules
             # lookupflag LookupFlag(8)
             period -20 period
+            "#
+        );
+    }
+
+    // https://github.com/googlefonts/ufo2ft/blob/b4890b5bb5bf88ebf5256b442031eae83a6d6dd1/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L260-L265
+    #[test]
+    fn kern_rule_substitute_gets_script_of_its_source() {
+        let (_kerns, normalized) = KernInput::new(&['V', A_CY, '.'])
+            .with_unmapped_glyphs(["a-cy.alt"])
+            .with_rule_substitutions(&[("a-cy", "a-cy.alt")])
+            .with_rule('.', "a-cy.alt", -20)
+            .with_rule('V', '.', -10)
+            .build();
+
+        assert_eq_ignoring_ws!(
+            normalized,
+            r#"
+            # kern: DFLT/dflt
+            # 2 PairPos rules
+            # lookupflag LookupFlag(8)
+            V -10 period
+            period -20 a-cy.alt
+
+            # kern: cyrl/dflt
+            # 1 PairPos rules
+            # lookupflag LookupFlag(8)
+            period -20 a-cy.alt
+
+            # kern: latn/dflt
+            # 1 PairPos rules
+            # lookupflag LookupFlag(8)
+            V -10 period
             "#
         );
     }

@@ -4,7 +4,9 @@ use std::{collections::HashSet, path::Path, sync::Arc};
 
 use fea_rs::compile::{Compilation, FeatureProvider};
 use fontdrasil::{coords::NormalizedLocation, types::Axes};
-use fontir::ir::{FeatureWriterSpec, GdefCategories, GlyphOrder, NamedInstance, StaticMetadata};
+use fontir::ir::{
+    FeatureWriterSpec, GdefCategories, GlyphOrder, NamedInstance, StaticMetadata, VariableFeature,
+};
 
 use crate::orchestration::FeaFirstPassOutput;
 
@@ -19,6 +21,7 @@ pub(crate) struct LayoutOutputBuilder {
     user_fea: Arc<str>,
     glyph_order: GlyphOrder,
     feature_generation: Option<Vec<FeatureWriterSpec>>,
+    variations: Option<VariableFeature>,
 }
 
 /// A helper for compiling layout tables (including with user-provided features)
@@ -72,6 +75,11 @@ impl LayoutOutputBuilder {
         self
     }
 
+    pub(crate) fn with_variations(&mut self, variations: VariableFeature) -> &mut Self {
+        self.variations = Some(variations);
+        self
+    }
+
     pub(crate) fn build(&self) -> LayoutOutput {
         let mut static_metadata = StaticMetadata::new(
             1000,
@@ -86,6 +94,7 @@ impl LayoutOutputBuilder {
         )
         .unwrap();
         static_metadata.misc.feature_generation = self.feature_generation.clone();
+        static_metadata.variations = self.variations.clone();
 
         let gdef_categories = self.categories.clone().unwrap_or_default();
 
@@ -141,6 +150,7 @@ impl Default for LayoutOutputBuilder {
             user_fea: "languagesystem DFLT dflt;".into(),
             glyph_order: Default::default(),
             feature_generation: None,
+            variations: None,
         }
     }
 }
