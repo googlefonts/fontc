@@ -6293,6 +6293,96 @@ mod tests {
         assert_eq!(get_component_gids(yen_bracket), [peso_bracket_gid]);
     }
 
+    // https://glyphsapp.com/learn/switching-shapes#reverse-bracket-layers
+    // In ReverseBracketLayers, Aacute's Bold master is a [100<wg] layer and its
+    // blank alternate is the design used below 100; in the Mirror file, the
+    // same holds for A. Glyphs 3.5 (3532) exports both files the same way:
+    // one feature variation substituting both glyphs from 100 upwards, with
+    // 'top' anchors at x=10..30 on the default glyph and x=20..40 on the
+    // alternate.
+    #[rstest]
+    #[case::reverse("glyphs3/ReverseBracketLayers.glyphs")]
+    #[case::mirror("glyphs3/ReverseBracketLayersMirror.glyphs")]
+    fn reverse_bracket_layers(#[case] source: &str) {
+        let result = TestCompile::compile_source(source);
+        let static_metadata = result.fe_context.static_metadata.get();
+        let rules = &static_metadata.variations.as_ref().unwrap().rules;
+        assert_eq!(rules.len(), 1);
+        let conditions = rules[0]
+            .conditions
+            .iter()
+            .flat_map(|set| set.iter())
+            .map(|cond| {
+                (
+                    cond.axis,
+                    cond.min.map(|c| c.to_f64()),
+                    cond.max.map(|c| c.to_f64()),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(conditions, [(Tag::new(b"wght"), Some(100.0), Some(150.0))]);
+        let mut subs = rules[0]
+            .substitutions
+            .iter()
+            .map(|sub| (sub.replace.as_str(), sub.with.as_str()))
+            .collect::<Vec<_>>();
+        subs.sort();
+        assert_eq!(
+            subs,
+            [
+                ("A", "A.BRACKET.varAlt01"),
+                ("Aacute", "Aacute.BRACKET.varAlt01")
+            ]
+        );
+
+        for (glyph_name, light_x, bold_x) in [
+            ("Aacute", 10.0, 30.0),
+            ("Aacute.BRACKET.varAlt01", 20.0, 40.0),
+        ] {
+            let anchors = result
+                .fe_context
+                .anchors
+                .get(&FeWorkIdentifier::Anchor(glyph_name.into()));
+            assert_eq!(anchors.anchors.len(), 1);
+            let positions = &anchors.anchors[0].positions;
+            for (wght, x) in [(0.0, light_x), (1.0, bold_x)] {
+                let loc = NormalizedLocation::for_pos(&[("wght", wght)]);
+                assert_eq!(
+                    positions.get(&loc),
+                    Some(&Point::new(x, 700.0)),
+                    "{glyph_name}"
+                );
+            }
+        }
+    }
+
+    // Glyph B has an alternate layer with blank [] axis rules for each master,
+    // stored before the master layer, which also has blank axis rules. Glyphs
+    // 3.5 (3532) exports B from the master layers only, without a substitution
+    // (checked before the Bcomp composite and the anchors were added). Bcomp
+    // then gets no bracket variant either, and takes B's master anchors.
+    #[test]
+    fn blank_alternate_layers() {
+        let result = TestCompile::compile_source("glyphs3/BlankAlternateLayers.glyphs");
+        let static_metadata = result.fe_context.static_metadata.get();
+        assert!(static_metadata.variations.is_none());
+        for name in ["B.BRACKET.varAlt01", "Bcomp.BRACKET.varAlt01"] {
+            assert!(result.get_glyph_index(name).is_none(), "{name}");
+        }
+        let anchors = result
+            .fe_context
+            .anchors
+            .get(&FeWorkIdentifier::Anchor("Bcomp".into()));
+        assert_eq!(anchors.anchors.len(), 1);
+        for (wght, x) in [(0.0, 100.0), (1.0, 200.0)] {
+            let loc = NormalizedLocation::for_pos(&[("wght", wght)]);
+            assert_eq!(
+                anchors.anchors[0].positions.get(&loc),
+                Some(&Point::new(x, 700.0))
+            );
+        }
+    }
+
     #[test]
     fn glyf_loca_work_waits_for_dynamic_notdef() {
         // https://github.com/googlefonts/fontc/issues/1436

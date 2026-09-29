@@ -3215,9 +3215,91 @@ impl RawLayer {
     }
 }
 
+/// Turn "reverse" bracket layers into ordinary ones, like Glyphs.app does.
+///
+/// In a reverse bracket setup, a master layer has axis rules itself, and one
+/// of its alternate layers has blank axis rules, i.e. no bounds on any axis
+/// (`[]` in the Glyphs UI):
+/// <https://glyphsapp.com/learn/switching-shapes#reverse-bracket-layers>
+///
+/// Glyphs.app exports the blank alternate as the glyph's design at that
+/// master, and the master layer as the alternate for its rules, so we swap
+/// the two. Outside that setup, a blank alternate is not exported as a
+/// substitution at all: it loses its axis rules, which leaves it an ordinary
+/// non-master layer that we don't compile.
+fn resolve_reverse_bracket_layers(layers: &mut [RawLayer]) {
+    fn is_bounded(layer: &RawLayer) -> bool {
+        layer
+            .attributes
+            .axis_rules
+            .iter()
+            .any(|rule| rule.min.is_some() || rule.max.is_some())
+    }
+    let is_master = |layer: &RawLayer| {
+        layer.associated_master_id.is_none()
+            || layer.associated_master_id.as_ref() == Some(&layer.layer_id)
+    };
+    let mut pairs = Vec::new();
+    let mut ignored = Vec::new();
+    for (i, master) in layers.iter().enumerate() {
+        if !is_master(master) {
+            continue;
+        }
+        let blank = layers
+            .iter()
+            .enumerate()
+            .filter(|(_, layer)| {
+                !is_master(layer)
+                    && layer.associated_master_id.as_ref() == Some(&master.layer_id)
+                    && !layer.attributes.axis_rules.is_empty()
+                    && !is_bounded(layer)
+                    // only plain alternates: not brace, color or smart
+                    // component layers
+                    && layer.attributes
+                        == LayerAttributes {
+                            axis_rules: layer.attributes.axis_rules.clone(),
+                            ..Default::default()
+                        }
+                    && layer.part_selection.is_empty()
+            })
+            .map(|(j, _)| j)
+            .collect::<Vec<_>>();
+        match blank.as_slice() {
+            [j] if is_bounded(master) => pairs.push((i, *j)),
+            _ => ignored.extend(blank),
+        }
+    }
+    for (i, j) in pairs {
+        log::debug!(
+            "using blank alternate layer '{}' as master '{}'",
+            layers[j].layer_id,
+            layers[i].layer_id
+        );
+        let master_id = layers[i].layer_id.clone();
+        let blank_id = std::mem::replace(&mut layers[j].layer_id, master_id.clone());
+        layers[j].associated_master_id = None;
+        layers[j].attributes.axis_rules.clear();
+        // the old master keeps its axis rules and becomes the alternate
+        layers[i].layer_id = blank_id;
+        layers[i].associated_master_id = Some(master_id);
+        layers.swap(i, j);
+    }
+    for j in ignored {
+        log::debug!("ignoring blank alternate layer '{}'", layers[j].layer_id);
+        layers[j].attributes.axis_rules.clear();
+    }
+}
+
 impl RawGlyph {
     // we pass in the radix because it depends on the version, stored in the font struct
-    fn build(self, format_version: FormatVersion, glyph_data: &GlyphData) -> Result<Glyph, Error> {
+    fn build(
+        mut self,
+        format_version: FormatVersion,
+        glyph_data: &GlyphData,
+    ) -> Result<Glyph, Error> {
+        if format_version == FormatVersion::V3 {
+            resolve_reverse_bracket_layers(&mut self.layers);
+        }
         let mut instances = Vec::new();
         let mut bracket_layers = Vec::new();
         for mut layer in self.layers {
@@ -6218,6 +6300,161 @@ unitsPerEm = 1000;
                 .iter()
                 .all(|l| !l.attributes.axis_rules.is_empty())
         );
+    }
+
+    fn raw_layer(
+        layer_id: &str,
+        master_id: Option<&str>,
+        rules: &[(Option<f64>, Option<f64>)],
+    ) -> RawLayer {
+        RawLayer {
+            name: format!("name-{layer_id}"),
+            layer_id: layer_id.into(),
+            associated_master_id: master_id.map(Into::into),
+            attributes: LayerAttributes {
+                axis_rules: rules
+                    .iter()
+                    .map(|(min, max)| AxisRule {
+                        min: min.map(OrderedFloat),
+                        max: max.map(OrderedFloat),
+                    })
+                    .collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn layer_summary(layers: &[RawLayer]) -> Vec<(&str, Option<&str>, &str, usize)> {
+        layers
+            .iter()
+            .map(|l| {
+                (
+                    l.layer_id.as_str(),
+                    l.associated_master_id.as_deref(),
+                    l.name.as_str(),
+                    l.attributes.axis_rules.len(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn resolve_reverse_bracket_layers_swap_in_every_master() {
+        let min_100 = [(Some(100.0), None)];
+        let blank = [(None, None)];
+        let mut layers = vec![
+            raw_layer("M1", None, &min_100),
+            raw_layer("B1", Some("M1"), &blank),
+            raw_layer("X1", Some("M1"), &[(None, Some(50.0))]),
+            raw_layer("M2", None, &min_100),
+            raw_layer("B2", Some("M2"), &blank),
+        ];
+        resolve_reverse_bracket_layers(&mut layers);
+        assert_eq!(
+            layer_summary(&layers),
+            [
+                ("M1", None, "name-B1", 0),
+                ("B1", Some("M1"), "name-M1", 1),
+                ("X1", Some("M1"), "name-X1", 1),
+                ("M2", None, "name-B2", 0),
+                ("B2", Some("M2"), "name-M2", 1),
+            ]
+        );
+        assert_eq!(
+            layers[1].attributes.axis_rules[0].min,
+            Some(OrderedFloat(100.0))
+        );
+    }
+
+    #[test]
+    fn resolve_reverse_bracket_layers_swap_multiple_axes() {
+        let mut layers = vec![
+            raw_layer("M1", None, &[(Some(100.0), None), (None, None)]),
+            raw_layer("B1", Some("M1"), &[(None, None), (None, None)]),
+        ];
+        resolve_reverse_bracket_layers(&mut layers);
+        assert_eq!(
+            layer_summary(&layers),
+            [("M1", None, "name-B1", 0), ("B1", Some("M1"), "name-M1", 2)]
+        );
+    }
+
+    #[test]
+    fn resolve_reverse_bracket_layers_ignore() {
+        let min_100 = [(Some(100.0), None)];
+        let blank = [(None, None)];
+        for (mut layers, ignored) in [
+            // master without axis rules
+            (
+                vec![
+                    raw_layer("M1", None, &[]),
+                    raw_layer("B1", Some("M1"), &blank),
+                ],
+                vec!["B1"],
+            ),
+            // master with blank axis rules, blank alternate stored first
+            (
+                vec![
+                    raw_layer("B1", Some("M1"), &blank),
+                    raw_layer("M1", None, &blank),
+                ],
+                vec!["B1"],
+            ),
+            // bounded master with more than one blank alternate
+            (
+                vec![
+                    raw_layer("M1", None, &min_100),
+                    raw_layer("B1", Some("M1"), &blank),
+                    raw_layer("B2", Some("M1"), &blank),
+                    raw_layer("X1", Some("M1"), &[(None, Some(50.0))]),
+                ],
+                vec!["B1", "B2"],
+            ),
+        ] {
+            let before = layers.clone();
+            resolve_reverse_bracket_layers(&mut layers);
+            // the ignored layers lose their axis rules, and are then skipped
+            // as drafts; nothing else changes
+            for (layer, old) in layers.iter().zip(&before) {
+                assert_eq!(layer.layer_id, old.layer_id);
+                if ignored.contains(&layer.layer_id.as_str()) {
+                    assert!(layer.attributes.axis_rules.is_empty());
+                    assert!(layer.is_draft());
+                } else {
+                    assert_eq!(layer, old);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_reverse_bracket_layers_not_applicable() {
+        let min_100 = [(Some(100.0), None)];
+        let mut brace = raw_layer("B1", Some("M1"), &[(None, None)]);
+        brace.attributes.coordinates = vec![OrderedFloat(75.0)];
+        let mut smart = raw_layer("B1", Some("M1"), &[(None, None)]);
+        smart.part_selection.insert("Width".into(), 2);
+        for mut layers in [
+            // bounded master without a blank alternate
+            vec![
+                raw_layer("M1", None, &min_100),
+                raw_layer("X1", Some("M1"), &[(None, Some(50.0))]),
+            ],
+            // bounded master with a plain backup layer (no axis rules)
+            vec![
+                raw_layer("M1", None, &min_100),
+                raw_layer("X1", Some("M1"), &[]),
+            ],
+            // the blank alternate is also a brace layer
+            vec![raw_layer("M1", None, &min_100), brace.clone()],
+            // the blank alternate is a smart component layer
+            vec![raw_layer("M1", None, &[]), smart.clone()],
+        ] {
+            let before = layers.clone();
+            resolve_reverse_bracket_layers(&mut layers);
+            assert_eq!(layers, before);
+        }
     }
 
     #[test]
