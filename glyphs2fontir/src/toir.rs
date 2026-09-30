@@ -454,6 +454,47 @@ fn new_color_glyph(original: &Glyph, nth: &mut usize) -> Glyph {
     new_glyph
 }
 
+/// A master's brace color layers, grouped by location and palette index.
+/// Layers with the same location and palette index keep their document order.
+#[derive(Default)]
+struct BraceLayers<'a>(IndexMap<&'a [OrderedFloat<f64>], IndexMap<i64, Vec<&'a Layer>>>);
+
+impl<'a> BraceLayers<'a> {
+    fn insert(&mut self, layer: &'a Layer, palette_idx: i64) {
+        self.0
+            .entry(layer.attributes.coordinates.as_slice())
+            .or_default()
+            .entry(palette_idx)
+            .or_default()
+            .push(layer);
+    }
+
+    fn matching(
+        &self,
+        palette_idx: i64,
+        occurrence: usize,
+    ) -> impl Iterator<Item = &'a Layer> + '_ {
+        self.0.values().filter_map(move |by_palette| {
+            by_palette
+                .get(&palette_idx)
+                .and_then(|layers| layers.get(occurrence))
+                .copied()
+        })
+    }
+
+    fn unmatched<'s>(
+        &'s self,
+        seen: &'s IndexMap<i64, usize>,
+    ) -> impl Iterator<Item = &'a Layer> + 's {
+        self.0.values().flat_map(move |by_palette| {
+            by_palette.iter().flat_map(move |(palette_idx, layers)| {
+                let consumed = seen.get(palette_idx).copied().unwrap_or_default();
+                layers.iter().skip(consumed).copied()
+            })
+        })
+    }
+}
+
 /// Build the split color glyphs for a COLRv0 glyph.
 ///
 /// As in glyphsLib, color layers are matched across masters by position:
@@ -472,11 +513,9 @@ fn colrv0_color_glyphs(
 ) -> Vec<Glyph> {
     let glyph_name = &original.name;
     let mut layers_by_master: IndexMap<&str, Vec<&Layer>> = IndexMap::new();
-    // master => brace location => palette index => layers, in document order.
     // Layers grouped under an id that is not a font master are never read:
     // consumption below is keyed by master_ids
-    type BracesByLocation<'a> = IndexMap<&'a [OrderedFloat<f64>], IndexMap<i64, Vec<&'a Layer>>>;
-    let mut braces_by_master: IndexMap<&str, BracesByLocation> = IndexMap::new();
+    let mut braces_by_master: IndexMap<&str, BraceLayers> = IndexMap::new();
     for layer in original.layers.iter() {
         let Some(palette_idx) = layer.attributes.color_palette else {
             continue;
@@ -491,11 +530,7 @@ fn colrv0_color_glyphs(
             braces_by_master
                 .entry(master_id)
                 .or_default()
-                .entry(layer.attributes.coordinates.as_slice())
-                .or_default()
-                .entry(palette_idx)
-                .or_default()
-                .push(layer);
+                .insert(layer, palette_idx);
         } else {
             layers_by_master.entry(master_id).or_default().push(layer);
         }
@@ -513,12 +548,7 @@ fn colrv0_color_glyphs(
         .collect();
 
     for master_id in master_ids {
-        // this master's brace groups, one per (location, palette index)
-        let brace_groups: Vec<&IndexMap<i64, Vec<&Layer>>> = braces_by_master
-            .get(master_id.as_str())
-            .into_iter()
-            .flat_map(IndexMap::values)
-            .collect();
+        let braces = braces_by_master.get(master_id.as_str());
         // how many color layers of this master used each palette index so
         // far; the n-th intermediate with an index pairs with the n-th
         // color layer with that index (glyphsLib's seen counter)
@@ -545,25 +575,21 @@ fn colrv0_color_glyphs(
             // attach the matching intermediate, if any, at each location;
             // it keeps its associated master and coordinates and so
             // becomes an intermediate source of the color glyph
-            for by_palette in brace_groups.iter() {
-                if let Some(&brace) = by_palette
-                    .get(&palette_idx)
-                    .and_then(|layers| layers.get(nth_with_index))
-                {
-                    new_glyph.layers.push(brace.clone());
-                }
-            }
+            new_glyph.layers.extend(
+                braces
+                    .into_iter()
+                    .flat_map(|braces| braces.matching(palette_idx, nth_with_index))
+                    .cloned(),
+            );
         }
-        for by_palette in brace_groups {
-            for (palette_idx, brace_layers) in by_palette.iter() {
-                let consumed = seen.get(palette_idx).copied().unwrap_or_default();
-                for brace in brace_layers.iter().skip(consumed) {
-                    warn!(
-                        "{glyph_name}: intermediate color layer {} has no matching color layer and will be skipped",
-                        brace.layer_id
-                    );
-                }
-            }
+        for brace in braces
+            .into_iter()
+            .flat_map(|braces| braces.unmatched(&seen))
+        {
+            warn!(
+                "{glyph_name}: intermediate color layer {} has no matching color layer and will be skipped",
+                brace.layer_id
+            );
         }
     }
     new_glyphs
