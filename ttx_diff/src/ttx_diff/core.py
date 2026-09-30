@@ -500,7 +500,7 @@ def source_is_variable(path: Path) -> bool:
             for vm in virtual_masters:
                 for entry in vm:
                     if entry.get("Axis") == axis.name:
-                        values.append(entry["Location"])
+                        values.append(float(entry["Location"]))
             if min(values) != max(values):
                 return True
         return False
