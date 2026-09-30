@@ -146,5 +146,5 @@ class TestSourceIsVariable:
 
     def test_glyphs_virtual_masters_extend_axis_range(self, tmp_path):
         # 1 master at wght=400, virtual master at wght=700
-        path = _write_glyphs(tmp_path, masters=[400], virtual_masters=[700])
+        path = _write_glyphs(tmp_path, masters=[400], virtual_masters=["700"])
         assert source_is_variable(path)
