@@ -7,7 +7,7 @@ use std::{
 
 use indexmap::IndexMap;
 use kurbo::{BezPath, Point};
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use ordered_float::OrderedFloat;
 
 use smol_str::SmolStr;
@@ -454,39 +454,182 @@ fn new_color_glyph(original: &Glyph, nth: &mut usize) -> Glyph {
     new_glyph
 }
 
+/// A master's brace color layers, grouped by location and palette index.
+/// Layers with the same location and palette index keep their document order.
+#[derive(Default)]
+struct BraceLayers<'a>(IndexMap<&'a [OrderedFloat<f64>], IndexMap<i64, Vec<&'a Layer>>>);
+
+impl<'a> BraceLayers<'a> {
+    fn insert(&mut self, layer: &'a Layer, palette_idx: i64) {
+        self.0
+            .entry(layer.attributes.coordinates.as_slice())
+            .or_default()
+            .entry(palette_idx)
+            .or_default()
+            .push(layer);
+    }
+
+    fn matching(
+        &self,
+        palette_idx: i64,
+        occurrence: usize,
+    ) -> impl Iterator<Item = &'a Layer> + '_ {
+        self.0.values().filter_map(move |by_palette| {
+            by_palette
+                .get(&palette_idx)
+                .and_then(|layers| layers.get(occurrence))
+                .copied()
+        })
+    }
+
+    fn unmatched<'s>(
+        &'s self,
+        seen: &'s IndexMap<i64, usize>,
+    ) -> impl Iterator<Item = &'a Layer> + 's {
+        self.0.values().flat_map(move |by_palette| {
+            by_palette.iter().flat_map(move |(palette_idx, layers)| {
+                let consumed = seen.get(palette_idx).copied().unwrap_or_default();
+                layers.iter().skip(consumed).copied()
+            })
+        })
+    }
+}
+
+/// Build the split color glyphs for a COLRv0 glyph.
+///
+/// As in glyphsLib, color layers are matched across masters by position:
+/// the i-th color layer of each master contributes that master's geometry
+/// to `[original].color[i]`, so the color glyphs interpolate. The default
+/// master determines how many color glyphs are created; a master with fewer
+/// color layers simply contributes no source. An intermediate (brace) color
+/// layer becomes a sparse intermediate source of the color glyph whose n-th
+/// color layer shares its palette index (n counted in document order per
+/// location), matching glyphsLib >= 6.14.0.
+/// <https://github.com/googlefonts/glyphsLib/blob/v6.14.0/Lib/glyphsLib/builder/color_layers.py#L33-L107>
+fn colrv0_color_glyphs(
+    original: &Glyph,
+    default_master_id: &str,
+    master_ids: &[String],
+) -> Vec<Glyph> {
+    let glyph_name = &original.name;
+    let mut layers_by_master: IndexMap<&str, Vec<&Layer>> = IndexMap::new();
+    // Layers grouped under an id that is not a font master are never read:
+    // consumption below is keyed by master_ids
+    let mut braces_by_master: IndexMap<&str, BraceLayers> = IndexMap::new();
+    for layer in original.layers.iter() {
+        let Some(palette_idx) = layer.attributes.color_palette else {
+            continue;
+        };
+        if layer.shapes.is_empty() {
+            continue;
+        }
+        let Some(master_id) = layer.associated_master_id.as_deref() else {
+            continue;
+        };
+        if layer.is_intermediate() {
+            braces_by_master
+                .entry(master_id)
+                .or_default()
+                .insert(layer, palette_idx);
+        } else {
+            layers_by_master.entry(master_id).or_default().push(layer);
+        }
+    }
+    let num_color_glyphs = layers_by_master
+        .get(default_master_id)
+        .map(Vec::len)
+        .unwrap_or_default();
+
+    let mut nth = 0;
+    // new_glyphs[i] is named [original].color{i}, aligned with the i-th color
+    // layer of each master below
+    let mut new_glyphs: Vec<Glyph> = (0..num_color_glyphs)
+        .map(|_| new_color_glyph(original, &mut nth))
+        .collect();
+
+    for master_id in master_ids {
+        let braces = braces_by_master.get(master_id.as_str());
+        // how many color layers of this master used each palette index so
+        // far; the n-th intermediate with an index pairs with the n-th
+        // color layer with that index (glyphsLib's seen counter)
+        let mut seen: IndexMap<i64, usize> = IndexMap::new();
+        for (i, &layer) in layers_by_master
+            .get(master_id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let palette_idx = layer.attributes.color_palette.unwrap();
+            let n = seen.entry(palette_idx).or_default();
+            let nth_with_index = *n;
+            *n += 1;
+            let Some(new_glyph) = new_glyphs.get_mut(i) else {
+                // more color layers than the default master has; no color
+                // glyph to attach to
+                continue;
+            };
+            let mut master_layer = layer.clone();
+            master_layer.layer_id = master_id.clone();
+            master_layer.associated_master_id = None;
+            new_glyph.layers.push(master_layer);
+            // attach the matching intermediate, if any, at each location;
+            // it keeps its associated master and coordinates and so
+            // becomes an intermediate source of the color glyph
+            new_glyph.layers.extend(
+                braces
+                    .into_iter()
+                    .flat_map(|braces| braces.matching(palette_idx, nth_with_index))
+                    .cloned(),
+            );
+        }
+        for brace in braces
+            .into_iter()
+            .flat_map(|braces| braces.unmatched(&seen))
+        {
+            warn!(
+                "{glyph_name}: intermediate color layer {} has no matching color layer and will be skipped",
+                brace.layer_id
+            );
+        }
+    }
+    new_glyphs
+}
+
 fn split_colrv0_glyph(
     original: &Glyph,
-    default_master_layer: &Layer,
+    default_master_id: &str,
+    master_ids: &[String],
     color_glyphs: &mut IndexMap<SmolStr, Vec<SmolStr>>,
     additions: &mut Vec<(SmolStr, Glyph)>,
 ) -> Result<(), Error> {
-    let glyph_name = &original.name;
-
     // COLRv0 runs are just consecutive shapes by palette index
     // The original glyph becomes uncolored,
     // each color run becomes a new glyph named [original].color[i]
-    let mut nth = 0;
-    for layer in original.layers.iter() {
-        if layer.shapes.is_empty()
-            || layer.attributes.color_palette.is_none()
-            || layer.associated_master_id.as_deref() != Some(default_master_layer.layer_id.as_str())
-        {
-            continue;
-        }
+    let new_glyphs = colrv0_color_glyphs(original, default_master_id, master_ids);
 
-        // Every layer associated with the master that has a palette index becomes a new color glyph
-        let mut new_glyph = new_color_glyph(original, &mut nth);
-        let mut layer = layer.clone();
-        layer.layer_id = layer.associated_master_id.take().unwrap();
-        new_glyph.layers.push(layer);
-
+    for new_glyph in new_glyphs {
         debug!("Add COLRv0 {}", new_glyph.name);
 
         color_glyphs
-            .entry(glyph_name.clone())
+            .entry(original.name.clone())
             .or_default()
             .push(new_glyph.name.clone());
         additions.push((new_glyph.name.clone(), new_glyph));
+    }
+
+    // The color_glyphs entry drives ColorGlyphsWork::exec: absent = not in
+    // COLR, empty = paint the base glyph itself, non-empty = paint the splits.
+    // Only a color-valued master layer (which glyphsLib reuses as a color
+    // layer painting the base) may reserve an empty entry; an uncolored base
+    // with no splits stays absent
+    if let Some(default_master_layer) = original
+        .layers
+        .iter()
+        .find(|l| l.layer_id == default_master_id)
+        && default_master_layer.is_color()
+        && !default_master_layer.shapes.is_empty()
+    {
+        color_glyphs.entry(original.name.clone()).or_default();
     }
     Ok(())
 }
@@ -579,47 +722,52 @@ fn split_color_glyphs(font: Font) -> Result<(Font, IndexMap<SmolStr, Vec<SmolStr
     let mut font = font;
     let mut color_glyphs: IndexMap<SmolStr, Vec<SmolStr>> = Default::default();
     let default_master_id = font.default_master().id.clone();
+    let master_ids: Vec<String> = font.masters.iter().map(|m| m.id.clone()).collect();
 
     let mut additions: Vec<(SmolStr, Glyph)> = Vec::new();
     for glyph in font.glyphs.values_mut() {
-        let Some(default_master_layer) = glyph
+        if let Some(default_master_layer) = glyph
             .layers
             .iter()
             .find(|l| l.layer_id == default_master_id)
-        else {
-            continue;
-        };
-
-        // If 1..N layers with palette indices are associated this is COLRv0
-        // See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/glyph.py#L289-L292>
-        if glyph.layers.iter().any(|l| {
-            l.attributes.color_palette.is_some()
-                && l.associated_master_id.as_deref() == Some(default_master_layer.layer_id.as_str())
-        }) {
-            split_colrv0_glyph(
-                glyph,
-                default_master_layer,
-                &mut color_glyphs,
-                &mut additions,
-            )?;
-        } else if default_master_layer.is_color() {
-            split_colrv1_glyph(
-                glyph,
-                default_master_layer,
-                &mut color_glyphs,
-                &mut additions,
-            )?;
-        } else {
-            // Not color
-            continue;
+        {
+            // If 1..N layers with palette indices are associated this is COLRv0
+            // See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/glyph.py#L289-L292>
+            if glyph.layers.iter().any(|l| {
+                l.attributes.color_palette.is_some()
+                    && l.associated_master_id.as_deref() == Some(default_master_id.as_str())
+            }) {
+                split_colrv0_glyph(
+                    glyph,
+                    &default_master_id,
+                    &master_ids,
+                    &mut color_glyphs,
+                    &mut additions,
+                )?;
+            } else if default_master_layer.is_color() {
+                split_colrv1_glyph(
+                    glyph,
+                    default_master_layer,
+                    &mut color_glyphs,
+                    &mut additions,
+                )?;
+                // For COLRv1 single-run glyphs (i.e. no split glyphs created, shapes in default layer),
+                // reserve an entry with empty vec so it gets included in COLR (see ColorGlyphsWork::exec).
+                // For v1 multi-run, an non-empty vec already exists from split_colrv1_glyph.
+                if !default_master_layer.shapes.is_empty() {
+                    color_glyphs.entry(glyph.name.clone()).or_default();
+                }
+            }
         }
 
-        // For COLRv1 single-run glyphs (i.e. no split glyphs created, shapes in default layer),
-        // reserve an entry with empty vec so it gets included in COLR (see ColorGlyphsWork::exec).
-        // For COLRv0 and v1 multi-run, an non-empty vec already exists from the split_colr* funcs.
-        if !default_master_layer.shapes.is_empty() {
-            color_glyphs.entry(glyph.name.clone()).or_default();
-        }
+        // Palette-valued intermediates belong to split color glyphs only;
+        // left on the glyph, GlyphIrWork's is_intermediate() filter would
+        // admit them into its own variation (as glyphsLib, which excludes
+        // them from ordinary intermediate handling). Unconditional: one
+        // associated with a non-default master trips no detection above
+        glyph
+            .layers
+            .retain(|l| l.attributes.color_palette.is_none() || !l.is_intermediate());
     }
 
     font.glyph_order
@@ -876,6 +1024,259 @@ mod tests {
         for mark in ["circumflexcomb", "mymark", "mymark2"] {
             assert_eq!(category(mark), nonspacing, "{mark}");
             assert_eq!(category(&format!("{mark}.color0")), nonspacing, "{mark}");
+        }
+    }
+
+    /// Split color glyphs keep every master's geometry and matching brace layers.
+    #[test]
+    fn colrv0_split_keeps_master_and_intermediate_color_layers() {
+        let font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-2masters-brace.glyphs")).unwrap();
+        let brace_shapes = font
+            .glyphs
+            .get("A")
+            .unwrap()
+            .layers
+            .iter()
+            .find(|l| l.layer_id == "cbrace")
+            .unwrap()
+            .shapes
+            .clone();
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        assert_eq!(
+            color_glyphs.get("A").map(Vec::as_slice),
+            Some(["A.color0".into(), "A.color1".into()].as_slice())
+        );
+
+        let original = font.glyphs.get("A").unwrap();
+        // (split glyph, palette index, id of the Bold master's color layer)
+        for (split_name, palette_idx, bold_layer_id) in
+            [("A.color0", 1, "c03"), ("A.color1", 0, "c04")]
+        {
+            // A.color0 also carries the intermediate, checked below.
+            let split_glyph = font.glyphs.get(split_name).unwrap();
+            let masters: Vec<&Layer> = split_glyph
+                .layers
+                .iter()
+                .filter(|l| l.is_master())
+                .collect();
+            assert_eq!(masters.len(), 2, "{split_name}");
+            for (layer, expected_id) in masters.iter().zip(["m01", "m02"]) {
+                assert_eq!(layer.layer_id, expected_id, "{split_name}");
+                assert_eq!(
+                    layer.attributes.color_palette,
+                    Some(palette_idx),
+                    "{split_name} {expected_id}"
+                );
+            }
+            // the Bold layer must carry the Bold color layer's geometry
+            let expected_shapes = &original
+                .layers
+                .iter()
+                .find(|l| l.layer_id == bold_layer_id)
+                .unwrap()
+                .shapes;
+            assert_eq!(&masters[1].shapes, expected_shapes, "{split_name}");
+        }
+
+        // the intermediate has colorPalette = 1, so it belongs to A.color0
+        let color0 = font.glyphs.get("A.color0").unwrap();
+        let brace = color0
+            .layers
+            .iter()
+            .find(|l| l.is_intermediate())
+            .expect("A.color0 should have an intermediate layer");
+        assert_eq!(brace.associated_master_id.as_deref(), Some("m01"));
+        assert_eq!(
+            brace
+                .attributes
+                .coordinates
+                .iter()
+                .map(|c| c.0)
+                .collect::<Vec<_>>(),
+            vec![550.0]
+        );
+        assert_eq!(brace.shapes, brace_shapes);
+        assert_eq!(color0.layers.len(), 3);
+
+        // no intermediate with palette 0, so A.color1 has master layers only
+        let color1 = font.glyphs.get("A.color1").unwrap();
+        assert!(color1.layers.iter().all(|l| !l.is_intermediate()));
+        assert_eq!(color1.layers.len(), 2);
+    }
+
+    fn square_path(dx: f64) -> glyphs_reader::Shape {
+        let mut path = Path::new(true);
+        for (x, y) in [
+            (dx, 0.0),
+            (dx + 100.0, 0.0),
+            (dx + 100.0, 100.0),
+            (dx, 100.0),
+        ] {
+            path.nodes.push(Node {
+                pt: (x, y).into(),
+                node_type: glyphs_reader::NodeType::Line,
+            });
+        }
+        glyphs_reader::Shape::Path(path)
+    }
+
+    fn master_layer(master_id: &str, dx: f64) -> Layer {
+        Layer {
+            layer_id: master_id.to_string(),
+            shapes: vec![square_path(dx)],
+            ..Default::default()
+        }
+    }
+
+    /// A color layer associated with a master; non-empty `coords` makes it an
+    /// intermediate (brace) layer
+    fn palette_layer(id: &str, master_id: &str, dx: f64, palette: i64, coords: &[f64]) -> Layer {
+        Layer {
+            layer_id: id.to_string(),
+            associated_master_id: Some(master_id.to_string()),
+            shapes: vec![square_path(dx)],
+            attributes: LayerAttributes {
+                color_palette: Some(palette),
+                coordinates: coords.iter().map(|c| (*c).into()).collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn insert_glyph(font: &mut Font, name: &str, layers: Vec<Layer>) {
+        let glyph = Glyph {
+            name: name.into(),
+            export: true,
+            layers,
+            ..Default::default()
+        };
+        font.glyphs.insert(name.into(), glyph);
+        font.glyph_order.push(name.into());
+    }
+
+    /// A glyph whose only palette layer is an unmatched intermediate produces
+    /// no split glyphs and must stay out of color_glyphs: an empty entry means
+    /// "paint the (uncolored) base glyph itself" downstream. Palette
+    /// intermediates are stripped from the base glyph either way, including
+    /// when they never trip COLRv0 detection (glyph "B2": associated with a
+    /// non-default master only).
+    #[test]
+    fn colrv0_unmatched_intermediate_does_not_make_base_a_color_glyph() {
+        let mut font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-2masters-brace.glyphs")).unwrap();
+        let master_id = font.default_master().id.clone();
+        insert_glyph(
+            &mut font,
+            "B",
+            vec![
+                master_layer(&master_id, 0.0),
+                palette_layer("bbrace", &master_id, 10.0, 0, &[550.0]),
+            ],
+        );
+        insert_glyph(
+            &mut font,
+            "B2",
+            vec![
+                master_layer(&master_id, 0.0),
+                palette_layer("b2brace", "m02", 10.0, 0, &[550.0]),
+            ],
+        );
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        assert!(!color_glyphs.contains_key("B"));
+        assert!(!font.glyphs.contains_key("B.color0"));
+        for name in ["B", "B2"] {
+            assert!(
+                font.glyphs
+                    .get(name)
+                    .unwrap()
+                    .layers
+                    .iter()
+                    .all(|l| !l.is_intermediate()),
+                "{name} still carries an intermediate color layer"
+            );
+        }
+    }
+
+    /// A master layer that is itself a palette layer (glyphsLib reuses it as a
+    /// color layer painting the base glyph) must keep its COLR entry even when
+    /// the COLRv0 split produces no color glyphs.
+    #[test]
+    fn colrv0_unmatched_intermediate_keeps_colored_master_base() {
+        let mut font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-2masters-brace.glyphs")).unwrap();
+        let master_id = font.default_master().id.clone();
+        insert_glyph(
+            &mut font,
+            "D",
+            vec![
+                Layer {
+                    attributes: LayerAttributes {
+                        color_palette: Some(0),
+                        ..Default::default()
+                    },
+                    ..master_layer(&master_id, 0.0)
+                },
+                palette_layer("dbrace", &master_id, 10.0, 0, &[550.0]),
+            ],
+        );
+
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        // an empty entry means "paint the base glyph itself", correct here
+        // because the base is color-valued
+        assert_eq!(color_glyphs.get("D"), Some(&vec![]));
+        assert!(!font.glyphs.contains_key("D.color0"));
+    }
+
+    /// When several color layers share a palette index, the n-th intermediate
+    /// with that index pairs with the n-th color layer with that index, in
+    /// document order (glyphsLib's seen counter) -- not by index alone.
+    #[test]
+    fn colrv0_duplicate_palette_indices_pair_intermediates_by_occurrence() {
+        let mut font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-2masters-brace.glyphs")).unwrap();
+        let master_id = font.default_master().id.clone();
+        insert_glyph(
+            &mut font,
+            "C",
+            vec![
+                master_layer(&master_id, 0.0),
+                // intermediates listed before the color layers: document order
+                // within each group drives the pairing, not adjacency
+                palette_layer("brace0", &master_id, 10.0, 1, &[550.0]),
+                palette_layer("brace1", &master_id, 20.0, 1, &[550.0]),
+                // Global layer position differs from occurrence within palette 1.
+                palette_layer("c_", &master_id, 50.0, 0, &[]),
+                palette_layer("c0", &master_id, 30.0, 1, &[]),
+                palette_layer("c1", &master_id, 40.0, 1, &[]),
+            ],
+        );
+
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        assert_eq!(
+            color_glyphs.get("C").map(Vec::as_slice),
+            Some(["C.color0".into(), "C.color1".into(), "C.color2".into()].as_slice())
+        );
+        for (split_name, color_dx, brace_dx) in [("C.color1", 30.0, 10.0), ("C.color2", 40.0, 20.0)]
+        {
+            let layers = &font.glyphs.get(split_name).unwrap().layers;
+            assert_eq!(layers.len(), 2, "{split_name}");
+            assert_eq!(
+                layers[0].shapes,
+                vec![square_path(color_dx)],
+                "{split_name}"
+            );
+            assert!(layers[1].is_intermediate(), "{split_name}");
+            assert_eq!(
+                layers[1].shapes,
+                vec![square_path(brace_dx)],
+                "{split_name}"
+            );
         }
     }
 
