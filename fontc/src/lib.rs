@@ -5828,6 +5828,29 @@ mod tests {
     }
 
     #[test]
+    fn colr0_component_anchors_are_not_propagated() {
+        // The color layer's mark component attaches to top at the default
+        // master and top_1 elsewhere. Propagation into the split glyph would
+        // create top_1 without a default value, as in Cairo Play.
+        let result = TestCompile::compile_source("glyphs3/COLRv0-component-anchors.glyphs");
+        // Keep the color layer's explicit anchor, without gaining top/top_1
+        // from its components.
+        let anchors = result.fe_context.get_anchor("A.color0");
+        assert_eq!(anchors.anchors.len(), 1);
+        assert_eq!(anchors.anchors[0].original_name, "bottom");
+        assert_eq!(anchors.anchors[0].positions.len(), 2);
+
+        // The ordinary base glyph still gets its component's anchors.
+        let anchors = result.fe_context.get_anchor("A");
+        assert!(
+            anchors
+                .anchors
+                .iter()
+                .any(|anchor| anchor.original_name == "top")
+        );
+    }
+
+    #[test]
     fn colr0_from_ufo_multi_palette() {
         let result = TestCompile::compile_source("COLRv0-multi-palette.ufo");
         // Two base glyphs: "a" with 2 layers, "b" with 1 layer
