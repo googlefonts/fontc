@@ -950,18 +950,22 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
 fn make_preliminary_glyph_categories(font_info: &FontInfo) -> PreliminaryGdefCategories {
     let font = &font_info.font;
     let axes = &font_info.axes;
-    let mark_category_glyphs = font
-        .glyphs
-        .values()
+    // glyphsLib computes categories before it splits color layers into glyphs
+    // <https://github.com/googlefonts/glyphsLib/blob/bb60aebe/Lib/glyphsLib/builder/builders.py#L255-L258>
+    let color_glyphs: HashSet<&SmolStr> = font_info.color_glyphs.values().flatten().collect();
+    let glyphs = || {
+        font.glyphs
+            .values()
+            .filter(|glyph| !color_glyphs.contains(&glyph.name))
+    };
+    let mark_category_glyphs = glyphs()
         .filter(|glyph| glyph.category == Some(Category::Mark))
         .flat_map(|glyph| {
             std::iter::once(glyph.name.clone().into())
                 .chain(bracket_glyph_names(glyph, axes).map(|(name, _)| name))
         })
         .collect();
-    let categories = font
-        .glyphs
-        .values()
+    let categories = glyphs()
         .flat_map(|glyph| {
             let main = category_for_glyph_preliminary(glyph.category, glyph.sub_category)
                 .map(|cat| (glyph.name.clone().into(), cat));
@@ -976,14 +980,9 @@ fn make_preliminary_glyph_categories(font_info: &FontInfo) -> PreliminaryGdefCat
                 )
         })
         .collect();
-
-    // glyphsLib computes categories before it splits color layers into glyphs
-    // <https://github.com/googlefonts/glyphsLib/blob/bb60aebe/Lib/glyphsLib/builder/builders.py#L255-L258>
-    let excluded = font_info
-        .color_glyphs
-        .values()
-        .flatten()
-        .map(|name| name.clone().into())
+    let excluded = color_glyphs
+        .iter()
+        .map(|name| (*name).clone().into())
         .collect();
 
     PreliminaryGdefCategories {

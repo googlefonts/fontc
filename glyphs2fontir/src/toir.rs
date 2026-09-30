@@ -446,6 +446,8 @@ fn new_color_glyph(original: &Glyph, nth: &mut usize) -> Glyph {
         name: new_glyph_name.clone(),
         production_name: new_production_name,
         export: original.export,
+        category: original.category,
+        sub_category: original.sub_category,
         ..Default::default()
     };
     *nth += 1;
@@ -743,7 +745,10 @@ pub(crate) fn to_ir_paint(
 
 #[cfg(test)]
 mod tests {
-    use glyphs_reader::{Font, Glyph, Layer, LayerAttributes, Node, Path};
+    use glyphs_reader::{
+        Font, Glyph, Layer, LayerAttributes, Node, Path,
+        glyphdata::{Category, Subcategory},
+    };
     use std::path::PathBuf;
     use std::str::FromStr;
 
@@ -856,6 +861,22 @@ mod tests {
             !color_glyphs.contains_key("CR"),
             "Glyph with empty palette layers should not be added to color_glyphs"
         );
+    }
+
+    #[test]
+    fn color_layer_glyphs_inherit_parent_category() {
+        let font = Font::load(&testdata_dir().join("glyphs3/COLRv0-marks.glyphs")).unwrap();
+        let (font, _) = split_color_glyphs(font).unwrap();
+        let category = |name: &str| {
+            let glyph = &font.glyphs[name];
+            (glyph.category, glyph.sub_category)
+        };
+        let nonspacing = (Some(Category::Mark), Some(Subcategory::Nonspacing));
+        // marks by name, by codepoint, and by explicit category
+        for mark in ["circumflexcomb", "mymark", "mymark2"] {
+            assert_eq!(category(mark), nonspacing, "{mark}");
+            assert_eq!(category(&format!("{mark}.color0")), nonspacing, "{mark}");
+        }
     }
 
     /// Test that COLRv1 glyphs with empty color layers are not added to color_glyphs.

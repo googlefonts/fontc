@@ -1970,6 +1970,37 @@ mod tests {
             assert_eq!(categories.get("A.color0"), None, "{source}");
             assert_eq!(categories.get("A.color1"), None, "{source}");
         }
+
+        let result = TestCompile::compile_source("glyphs3/COLRv0-marks.glyphs");
+        let categories = &result.fe_context.gdef_categories.get().categories;
+        for mark in ["circumflexcomb", "mymark", "mymark2"] {
+            assert_eq!(categories.get(mark), Some(&GlyphClassDef::Mark), "{mark}");
+            assert_eq!(categories.get(format!("{mark}.color0").as_str()), None);
+        }
+    }
+
+    // Glyphs.app zeroes the advance of a nonspacing mark's color layer glyphs
+    #[test]
+    fn colr0_mark_layer_glyphs_have_zero_advance() {
+        let result = TestCompile::compile_source("glyphs3/COLRv0-marks.glyphs");
+        let width = |name: &str| {
+            result
+                .fe_context
+                .glyphs
+                .get(&FeWorkIdentifier::Glyph(name.into()))
+                .default_instance()
+                .width
+        };
+        for (name, expected) in [
+            ("circumflexcomb", 0.0),
+            ("circumflexcomb.color0", 0.0),
+            ("mymark", 0.0),
+            ("mymark.color0", 0.0),
+            ("mymark2", 0.0),
+            ("mymark2.color0", 0.0),
+        ] {
+            assert_eq!(width(name), expected, "{name}");
+        }
     }
 
     /// Build mapping from glyphs-reader master id to normalized location.
