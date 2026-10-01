@@ -5833,21 +5833,21 @@ mod tests {
         // master and top_1 elsewhere. Propagation into the split glyph would
         // create top_1 without a default value, as in Cairo Play.
         let result = TestCompile::compile_source("glyphs3/COLRv0-component-anchors.glyphs");
-        // Keep the color layer's explicit anchor, without gaining top/top_1
-        // from its components.
-        let anchors = result.fe_context.get_anchor("A.color0");
-        assert_eq!(anchors.anchors.len(), 1);
-        assert_eq!(anchors.anchors[0].original_name, "bottom");
-        assert_eq!(anchors.anchors[0].positions.len(), 2);
-
-        // The ordinary base glyph still gets its component's anchors.
-        let anchors = result.fe_context.get_anchor("A");
-        assert!(
-            anchors
+        let anchors_of = |glyph_name: &str| {
+            result
+                .fe_context
+                .get_anchor(glyph_name)
                 .anchors
                 .iter()
-                .any(|anchor| anchor.original_name == "top")
-        );
+                .map(|anchor| (anchor.original_name.to_string(), anchor.positions.len()))
+                .collect::<Vec<_>>()
+        };
+        // Keep the color layer's explicit anchor, without gaining top/top_1
+        // from its components.
+        assert_eq!(vec![("bottom".to_string(), 2)], anchors_of("A.color0"));
+
+        // The ordinary base glyph still gets its component's anchors.
+        assert!(anchors_of("A").iter().any(|(name, _)| name == "top"));
     }
 
     #[test]
