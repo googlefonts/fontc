@@ -474,6 +474,22 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 if inst.type_ != InstanceType::Single || !inst.active {
                     return None;
                 }
+                // like fontmake, leave out instances beyond the masters, which
+                // would need extrapolating
+                if let Some((axis, pos)) = axes.iter().zip(&inst.axes_values).find(|(axis, pos)| {
+                    let pos = DesignCoord::new(**pos);
+                    // a decreasing mapping reverses the design endpoints
+                    let a = axis.min.to_design(&axis.converter);
+                    let b = axis.max.to_design(&axis.converter);
+                    !axis.is_point() && (pos < a.min(b) || pos > a.max(b))
+                }) {
+                    warn!(
+                        "Instance {}: {} {pos} is outside the masters, it can't be \
+                         interpolated",
+                        inst.name, axis.name
+                    );
+                    return None;
+                }
                 Some(NamedInstance {
                     name: inst.name.clone(),
                     postscript_name: inst.postscript_name().map(str::to_string),
@@ -2238,7 +2254,7 @@ mod tests {
 
     use ir::{Panose, test_helpers::Round2};
     use kurbo::{Rect, Shape};
-    use write_fonts::types::{NameId, Tag};
+    use write_fonts::types::{Fixed, NameId, Tag};
 
     use crate::source::names;
 
@@ -2351,6 +2367,192 @@ mod tests {
             .unwrap()
             .exec(&task_context)
             .unwrap();
+    }
+
+    #[test]
+    fn extends_instance_mapping_to_masters() {
+        // The instances' mapping, 400:80 700:200, doesn't reach the master at 30:
+        // its first segment is extended out to it
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("InstanceMappingMissesMaster.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
+        assert_eq!(
+            (wght.min, wght.default, wght.max),
+            (
+                UserCoord::new(275.0),
+                UserCoord::new(400.0),
+                UserCoord::new(700.0)
+            )
+        );
+        assert_eq!(
+            DesignCoord::new(30.0).to_user(&wght.converter),
+            UserCoord::new(275.0)
+        );
+    }
+
+    #[test]
+    fn extends_decreasing_instance_mapping_to_masters() {
+        // The instances' decreasing mapping, 400:80 300:200, doesn't reach the
+        // master at 30: its first segment is extended out to it, and both
+        // instances are kept
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("InstanceMappingDecreasing.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
+        assert_eq!(
+            (wght.min, wght.default, wght.max),
+            (
+                UserCoord::new(300.0),
+                UserCoord::new(400.0),
+                UserCoord::new(441.6666717529297)
+            )
+        );
+        assert_eq!(
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|ni| ni.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Regular", "Light"]
+        );
+    }
+
+    #[test]
+    fn ignores_instance_mapping_not_extendable_to_masters() {
+        // Extending the instances' steep mapping, 400:80 900:100, out to the
+        // master at 200 would go beyond weight 1000, so the axis is unmapped
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("InstanceMappingNotExtendable.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
+        assert_eq!(
+            (wght.min, wght.default, wght.max),
+            (
+                UserCoord::new(80.0),
+                UserCoord::new(80.0),
+                UserCoord::new(200.0)
+            )
+        );
+        // unmapped: the Black instance, at design 100, is at user 100 not 900
+        assert_eq!(
+            DesignCoord::new(100.0).to_user(&wght.converter),
+            UserCoord::new(100.0)
+        );
+    }
+
+    #[test]
+    fn instance_mapping_beyond_masters() {
+        // The instances' mapping, 300:30 400:80 600:150 900:250, goes beyond the
+        // masters at 80 and 200: the axis only spans them, the Bold master gets
+        // the user location it interpolates to, and Light and Black are left out
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("InstanceMappingBeyondMasters.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
+        assert_eq!(
+            (wght.min, wght.default, wght.max),
+            (
+                UserCoord::new(400.0),
+                UserCoord::new(400.0),
+                UserCoord::new(750.0)
+            )
+        );
+        assert_eq!(
+            DesignCoord::new(150.0).to_user(&wght.converter),
+            UserCoord::new(600.0)
+        );
+        assert_eq!(
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|ni| ni.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Regular", "SemiBold"]
+        );
+    }
+
+    #[test]
+    fn axis_location_beyond_masters() {
+        // The Black instance's Axis Location, 900 at design 250, goes beyond the
+        // masters at 400:80 and 700:200: the axis only spans them, and Black is
+        // left out
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("AxisLocationBeyondMasters.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
+        assert_eq!(
+            wght.converter
+                .iter()
+                .map(|(user, design, _)| (user, design))
+                .collect::<Vec<_>>(),
+            [
+                (UserCoord::new(400.0), DesignCoord::new(80.0)),
+                (UserCoord::new(700.0), DesignCoord::new(200.0))
+            ]
+        );
+        assert_eq!(
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|ni| ni.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Regular", "Bold"]
+        );
+    }
+
+    #[test]
+    fn axis_location_overrides_master() {
+        // The Black instance's Axis Location, 700 at design 250, overrides the
+        // Bold master's 700 at 200 and goes beyond the masters: the axis only
+        // spans them, and the Bold master gets the user location it
+        // interpolates to
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("AxisLocationOverridesMaster.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
+        assert_eq!(
+            wght.converter
+                .iter()
+                .map(|(user, design, _)| (user, design))
+                .collect::<Vec<_>>(),
+            [
+                (UserCoord::new(400.0), DesignCoord::new(80.0)),
+                (UserCoord::new(611.7647094726562), DesignCoord::new(200.0))
+            ]
+        );
+        assert_eq!(
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|ni| ni.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Regular", "Bold"]
+        );
+    }
+
+    #[test]
+    fn interpolates_default_master_between_instances() {
+        // No instance is at the default master, at 80 between Book (400:70) and
+        // Medium (500:100): it maps to the interpolated user location
+        let (_, context) = build_static_metadata(
+            glyphs2_dir().join("InstanceMappingDefaultBetweenInstances.glyphs"),
+        );
+        let static_metadata = context.static_metadata.get();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
+        let default = Fixed::from_f64(400.0 + 100.0 / 3.0).to_f64();
+        assert_eq!(
+            (wght.min, wght.default, wght.max),
+            (
+                UserCoord::new(300.0),
+                UserCoord::new(default),
+                UserCoord::new(700.0)
+            )
+        );
+        assert_eq!(
+            DesignCoord::new(80.0).to_user(&wght.converter),
+            UserCoord::new(default)
+        );
     }
 
     #[test]

@@ -3002,15 +3002,85 @@ impl AxisUserToDesignMap {
     pub fn is_identity(&self) -> bool {
         self.0.iter().all(|(u, d)| u == d)
     }
+
+    /// The user location that `design` interpolates to, rounded to 16.16
+    /// like in fvar, if it's within the mapping
+    fn user_at(&self, design: OrderedFloat<f64>) -> Option<OrderedFloat<f64>> {
+        let mut points: Vec<_> = self.0.iter().map(|(u, d)| (*d, *u)).collect();
+        points.sort();
+        let w = points
+            .windows(2)
+            .find(|w| w[0].0 <= design && design <= w[1].0)?;
+        let ((d0, u0), (d1, u1)) = (w[0], w[1]);
+        let user = if d0 == d1 {
+            u0.0
+        } else {
+            u0.0 + (u1.0 - u0.0) * (design.0 - d0.0) / (d1.0 - d0.0)
+        };
+        Some(OrderedFloat(
+            write_fonts::types::Fixed::from_f64(user).to_f64(),
+        ))
+    }
+
+    /// The mapping with its end segments extended out to the min and max
+    /// masters beyond them, whether it increases or decreases.
+    ///
+    /// The masters get the user location the segment on their side
+    /// extrapolates to, rounded to 16.16 like in fvar. None if the mapping has
+    /// a single point, if none of its points is within the masters (the
+    /// extended mapping would then keep none of the instances' user locations),
+    /// if that segment is flat, or if the user location isn't valid for the
+    /// axis.
+    fn extended_to_masters(
+        &self,
+        tag: &str,
+        min: OrderedFloat<f64>,
+        max: OrderedFloat<f64>,
+    ) -> Option<Self> {
+        let mut points: Vec<_> = self.0.iter().map(|(u, d)| (*d, *u)).collect();
+        points.sort();
+        if points.len() < 2 || !points.iter().any(|(d, _)| min <= *d && *d <= max) {
+            return None;
+        }
+        let (first, last) = (points[0].0, points[points.len() - 1].0);
+        let mut extended = self.clone();
+        for design in [min, max] {
+            let ((d0, u0), (d1, u1)) = if design < first {
+                (points[0], points[1])
+            } else if design > last {
+                (points[points.len() - 2], points[points.len() - 1])
+            } else {
+                continue;
+            };
+            if d0 == d1 || u0 == u1 {
+                return None;
+            }
+            let user = u0.0 + (design.0 - d0.0) * (u1.0 - u0.0) / (d1.0 - d0.0);
+            let user = write_fonts::types::Fixed::from_f64(user).to_f64();
+            // the valid fvar ranges of the registered axes; beyond them,
+            // extending the instances' mapping isn't a sensible guess
+            let valid = match tag {
+                "wght" => (1.0..=1000.0).contains(&user),
+                "wdth" => user > 0.0,
+                _ => true,
+            };
+            if !valid {
+                return None;
+            }
+            extended.add_if_new(OrderedFloat(user), design);
+        }
+        Some(extended)
+    }
 }
 
 impl UserToDesignMapping {
     /// From most to least preferred: Axis Mappings, Axis Location, mappings from instances, assume user == design
     ///
     /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L155>
-    fn new(from: &mut RawFont, instances: &[Instance]) -> Self {
+    fn new(from: &mut RawFont, instances: &[Instance], default_master_idx: usize) -> Self {
         let from_axis_mapping = user_to_design_from_axis_mapping(from);
         let from_axis_location = user_to_design_from_axis_location(from);
+        let from_instances_only = from_axis_mapping.is_none() && from_axis_location.is_none();
         let (result, incomplete_mapping) = match (from_axis_mapping, from_axis_location) {
             (Some(from_mapping), Some(..)) => {
                 warn!("Axis Mapping *and* Axis Location are defined; using Axis Mapping");
@@ -3024,6 +3094,10 @@ impl UserToDesignMapping {
         if incomplete_mapping {
             //https://github.com/googlefonts/glyphsLib/blob/682ff4b17/Lib/glyphsLib/builder/axes.py#L251
             result.add_instance_mappings(instances);
+            if from_instances_only {
+                result.check_instance_mappings_against_masters(from, default_master_idx);
+            }
+            result.trim_to_masters(from);
             if result.0.is_empty() || result.0.values().all(|v| v.is_identity()) {
                 result.add_master_mappings_if_new(from);
             }
@@ -3056,6 +3130,120 @@ impl UserToDesignMapping {
                             instance.name
                         );
                     }
+                }
+            }
+        }
+    }
+
+    /// Check the mappings from instances against the masters, like glyphsLib
+    /// (<https://github.com/googlefonts/glyphsLib/pull/1197>).
+    ///
+    /// A mapping that doesn't span all the masters would leave some out, or not
+    /// even reach the default one, so we extend its end segments out to them
+    /// (see `AxisUserToDesignMap::extended_to_masters`). When that isn't
+    /// possible (e.g. the single instance of a single-master font, left at the
+    /// default weight value), we remove it: without a mapping, user and design
+    /// locations are the same, like in Glyphs.app.
+    ///
+    /// The default, min and max masters, when between two instances, get the
+    /// user location they interpolate to, rounded to 16.16, as a mapping point
+    /// (see also `trim_to_masters`).
+    fn check_instance_mappings_against_masters(
+        &mut self,
+        from: &RawFont,
+        default_master_idx: usize,
+    ) {
+        for (idx, axis) in from.axes.iter().enumerate() {
+            let Some(mapping) = self.0.get_mut(&axis.name) else {
+                continue;
+            };
+            if mapping.is_identity() {
+                continue;
+            }
+            let masters: Vec<_> = from
+                .font_master
+                .iter()
+                .filter_map(|m| m.axes_values.get(idx).copied())
+                .collect();
+            let covers = |design: &OrderedFloat<f64>| {
+                mapping.iter().any(|(_, d)| d <= design) && mapping.iter().any(|(_, d)| d >= design)
+            };
+            // to_ir_axis needs mapping points at the default, min and max masters
+            let (Some(min), Some(max)) =
+                (masters.iter().min().copied(), masters.iter().max().copied())
+            else {
+                continue;
+            };
+            if !masters.iter().all(covers) {
+                let Some(extended) = mapping.extended_to_masters(&axis.tag, min, max) else {
+                    warn!(
+                        "Axis {}: not using the mapping from the instances, as they don't \
+                         span all the masters; add Axis Location parameters to the masters \
+                         to map the axis",
+                        axis.name
+                    );
+                    self.0.remove(&axis.name);
+                    continue;
+                };
+                warn!(
+                    "Axis {}: the instances don't span all the masters, extending their \
+                     mapping out to the masters; add Axis Location parameters to the \
+                     masters to map the axis explicitly",
+                    axis.name
+                );
+                *mapping = extended;
+            }
+            let default = from
+                .font_master
+                .get(default_master_idx)
+                .and_then(|m| m.axes_values.get(idx).copied());
+            for design in [default, Some(min), Some(max)].into_iter().flatten() {
+                if mapping.iter().any(|(_, d)| *d == design) {
+                    continue;
+                }
+                let Some(user) = mapping.user_at(design) else {
+                    continue;
+                };
+                if Some(design) == default {
+                    warn!(
+                        "Axis {}: no instance is at the default master, mapping it to the \
+                         interpolated user location {user}; add an instance or Axis Location \
+                         parameters to map it explicitly",
+                        axis.name
+                    );
+                }
+                mapping.add_if_new(user, design);
+            }
+        }
+    }
+
+    /// Remove the mapping points beyond the min and max masters, so the axis
+    /// only spans them: instances beyond them would need extrapolating. The
+    /// min and max masters, if between two points, get the user location they
+    /// interpolate to.
+    fn trim_to_masters(&mut self, from: &RawFont) {
+        for (idx, axis) in from.axes.iter().enumerate() {
+            let Some(mapping) = self.0.get_mut(&axis.name) else {
+                continue;
+            };
+            let masters = from
+                .font_master
+                .iter()
+                .filter_map(|m| m.axes_values.get(idx).copied());
+            let (Some(min), Some(max)) = (masters.clone().min(), masters.max()) else {
+                continue;
+            };
+            let untrimmed = mapping.clone();
+            mapping.0.retain(|(_, d)| min <= *d && *d <= max);
+            if mapping.0.len() == untrimmed.0.len() {
+                continue;
+            }
+            for design in [min, max] {
+                if mapping.iter().any(|(_, d)| *d == design) {
+                    continue;
+                }
+                if let Some(user) = untrimmed.user_at(design) {
+                    mapping.add_if_new(user, design);
                 }
             }
         }
@@ -3853,8 +4041,8 @@ impl TryFrom<RawFont> for Font {
         // handled separately from to_custom_params() and need to be taken before the latter
         // is called, to avoid spurious "unknown custom parameter" warnings
         // https://github.com/googlefonts/fontc/issues/1682
-        let axis_mappings = UserToDesignMapping::new(&mut from, &instances);
         let default_master_idx = default_master_idx(&mut from);
+        let axis_mappings = UserToDesignMapping::new(&mut from, &instances, default_master_idx);
 
         let mut custom_parameters = from.custom_parameters.to_custom_params()?;
 
@@ -4489,23 +4677,77 @@ mod tests {
         assert_eq!(font.format_version, FormatVersion::V3);
     }
 
+    fn axis_map(points: &[(f64, f64)]) -> AxisUserToDesignMap {
+        AxisUserToDesignMap(
+            points
+                .iter()
+                .map(|(u, d)| (OrderedFloat(*u), OrderedFloat(*d)))
+                .collect(),
+        )
+    }
+
+    #[rstest]
+    // each master is extended along the segment on its side
+    #[case(
+        &[(400.0, 50.0), (700.0, 100.0), (800.0, 150.0)],
+        (10.0, 160.0),
+        Some(&[(400.0, 50.0), (700.0, 100.0), (800.0, 150.0), (160.0, 10.0), (820.0, 160.0)][..])
+    )]
+    // both masters are beyond the same end, along the same segment
+    #[case(
+        &[(400.0, 50.0), (700.0, 100.0), (800.0, 150.0)],
+        (10.0, 50.0),
+        Some(&[(400.0, 50.0), (700.0, 100.0), (800.0, 150.0), (160.0, 10.0)][..])
+    )]
+    // all the points are beyond the masters, so none would be kept
+    #[case(&[(400.0, 50.0), (700.0, 100.0), (800.0, 150.0)], (10.0, 20.0), None)]
+    // a single point has no segment
+    #[case(&[(400.0, 100.0)], (50.0, 100.0), None)]
+    // a decreasing mapping is extended the same way
+    #[case(
+        &[(400.0, 100.0), (300.0, 150.0)],
+        (50.0, 200.0),
+        Some(&[(400.0, 100.0), (300.0, 150.0), (500.0, 50.0), (200.0, 200.0)][..])
+    )]
+    // the segment is flat
+    #[case(&[(400.0, 100.0), (700.0, 100.0)], (50.0, 100.0), None)]
+    // out of the valid weight range
+    #[case(&[(400.0, 90.0), (900.0, 100.0)], (90.0, 190.0), None)]
+    #[case(&[(100.0, 50.0), (400.0, 100.0)], (0.0, 100.0), None)]
+    fn extend_axis_map_to_masters(
+        #[case] mapping: &[(f64, f64)],
+        #[case] (min, max): (f64, f64),
+        #[case] expected: Option<&[(f64, f64)]>,
+    ) {
+        assert_eq!(
+            axis_map(mapping).extended_to_masters("wght", OrderedFloat(min), OrderedFloat(max)),
+            expected.map(axis_map)
+        );
+    }
+
     #[test]
     fn glyphs3_named_and_numeric_instance_classes() {
         let font = Font::load(&glyphs3_dir().join("InstanceClasses.glyphs")).unwrap();
 
+        let user_locations = |axis_name: &str| {
+            font.instances
+                .iter()
+                .map(|i| i.axis_mappings[axis_name].iter().copied().collect())
+                .collect::<Vec<Vec<_>>>()
+        };
         assert_eq!(
-            font.axis_mappings.get("Weight"),
-            Some(&AxisUserToDesignMap(vec![
-                (OrderedFloat(600.0), OrderedFloat(60.0)),
-                (OrderedFloat(650.0), OrderedFloat(70.0)),
-            ]))
+            user_locations("Weight"),
+            [
+                [(OrderedFloat(600.0), OrderedFloat(60.0))],
+                [(OrderedFloat(650.0), OrderedFloat(70.0))],
+            ]
         );
         assert_eq!(
-            font.axis_mappings.get("Width"),
-            Some(&AxisUserToDesignMap(vec![
-                (OrderedFloat(75.0), OrderedFloat(80.0)),
-                (OrderedFloat(100.0), OrderedFloat(90.0)),
-            ]))
+            user_locations("Width"),
+            [
+                [(OrderedFloat(75.0), OrderedFloat(80.0))],
+                [(OrderedFloat(100.0), OrderedFloat(90.0))],
+            ]
         );
     }
 

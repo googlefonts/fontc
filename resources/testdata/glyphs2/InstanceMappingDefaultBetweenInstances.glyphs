@@ -1,0 +1,62 @@
+{
+familyName = Mapping;
+fontMaster = (
+{
+id = regular;
+weightValue = 80;
+},
+{
+id = light;
+weightValue = 30;
+},
+{
+id = bold;
+weightValue = 200;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = regular;
+width = 200;
+},
+{
+layerId = light;
+width = 100;
+},
+{
+layerId = bold;
+width = 300;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+interpolationWeight = 30;
+name = Light;
+weightClass = Light;
+},
+{
+interpolationWeight = 70;
+name = Book;
+weightClass = Normal;
+},
+{
+interpolationWeight = 100;
+name = Medium;
+weightClass = Medium;
+},
+{
+interpolationWeight = 200;
+name = Bold;
+weightClass = Bold;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
