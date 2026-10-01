@@ -13,6 +13,7 @@ categories = ["text-processing", "parsing", "graphics"]
 [dependencies]
 fontdrasil = { version = "1.0.0", path = "../fontdrasil" }
 fontir = { version = "1.0.0", path = "../fontir" }
+fea-rs = { version = "1.0.0", path = "../fea-rs" }
 
 write-fonts.workspace = true
 
@@ -28,6 +29,8 @@ smol_str.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true
+chrono.workspace = true
+icu_properties.workspace = true
 
 [dev-dependencies]
 diff.workspace = true

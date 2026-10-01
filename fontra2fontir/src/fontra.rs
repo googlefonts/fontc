@@ -13,7 +13,10 @@ use std::{
 };
 
 use fontdrasil::{paths::string_to_filename, types::GlyphName};
-use fontir::error::{BadSource, BadSourceKind, PathConversionError};
+use fontir::{
+    error::{BadSource, BadSourceKind, PathConversionError},
+    ir::DecomposedTransform,
+};
 use serde::Deserialize;
 use smol_str::SmolStr;
 use write_fonts::types::Tag;
@@ -66,6 +69,8 @@ pub(crate) struct FontInfo {
     pub(crate) license_info_url: Option<String>,
     #[serde(rename = "vendorID")]
     pub(crate) vendor_id: Option<String>,
+    #[serde(default)]
+    pub(crate) custom_data: HashMap<String, serde_json::Value>,
 }
 
 /// Corresponds to a Fontra Axes
@@ -138,7 +143,7 @@ pub(crate) struct SubstitutionConditionSet {
 pub(crate) struct SubstitutionRule {
     pub(crate) name: Option<String>,
     pub(crate) condition_sets: Vec<SubstitutionConditionSet>,
-    pub(crate) substitutions: HashMap<String, String>,
+    pub(crate) substitutions: BTreeMap<String, String>,
 }
 
 /// Corresponds to a Fontra ConditionalSubstitutions
@@ -159,11 +164,11 @@ impl Default for ConditionalSubstitutions {
     }
 }
 
-type KerningValues = HashMap<SmolStr, HashMap<SmolStr, Vec<Option<f64>>>>;
+pub(crate) type KerningValues = HashMap<SmolStr, HashMap<SmolStr, Vec<Option<f64>>>>;
 
 /// Corresponds to a Fontra Kerning
 /// <https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/classes.py#L93>
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Kerning {
     pub(crate) groups_side1: HashMap<SmolStr, Vec<SmolStr>>,
@@ -188,6 +193,8 @@ pub(crate) struct Font {
     #[serde(skip)]
     pub(crate) glyph_infos: GlyphInfos, // In Fontra this is a CustomData
     pub(crate) axes: Axes,
+    #[serde(default)]
+    pub(crate) custom_data: HashMap<String, serde_json::Value>,
     pub(crate) sources: BTreeMap<String, FontSource>,
     #[serde(skip)]
     pub(crate) kerning: BTreeMap<String, Kerning>,
@@ -229,6 +236,23 @@ impl Font {
 
         // The kerning lives in kerning.csv
         font.kerning = parse_kerning(path)?;
+
+        // We need at least one font source, Fontra does not enforce this, so
+        // add one at the default location if there are no sources.
+        if font.sources.is_empty() {
+            font.sources.insert(
+                "default".to_string(),
+                FontSource {
+                    name: "Regular".to_string(),
+                    is_sparse: false,
+                    location: Location::default(),
+                    line_metrics_horizontal_layout: HashMap::new(),
+                    line_metrics_vertical_layout: HashMap::new(),
+                    italic_angle: 0.0,
+                    custom_data: Default::default(),
+                },
+            );
+        }
 
         Ok(font)
     }
@@ -496,6 +520,8 @@ pub(crate) struct FontSource {
     pub(crate) line_metrics_vertical_layout: HashMap<String, LineMetric>,
     #[serde(default)]
     pub(crate) italic_angle: f64,
+    #[serde(default)]
+    pub(crate) custom_data: HashMap<String, serde_json::Value>,
     // guidelines
 }
 
@@ -671,6 +697,7 @@ pub(crate) struct StaticGlyph {
     pub(crate) path: Path,
     #[serde(default)]
     pub(crate) components: Vec<Component>,
+    #[serde(default)]
     pub(crate) x_advance: f64,
     pub(crate) y_advance: Option<f64>,
     pub(crate) vertical_origin: Option<f64>,
@@ -718,19 +745,16 @@ pub(crate) struct Point {
 }
 
 impl Point {
-    /// <https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/path.py#L583>
+    /// The type wins over the smooth flag, and a type other than cubic is
+    /// quad, like Fontra's
+    /// [`packPointType`](https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/core/path.py#L583-L590).
     pub(crate) fn point_type(&self) -> Result<PointType, PathConversionError> {
-        match (self.smooth, self.raw_type.as_deref()) {
-            (false, Some("cubic")) => Ok(PointType::OffCurveCubic),
-            (false, Some("quad")) => Ok(PointType::OffCurveQuad),
-            (false, None) => Ok(PointType::OnCurve),
-            (true, None) => Ok(PointType::OnCurveSmooth),
-            _ => Err(PathConversionError::Parse(format!(
-                "Unrecognized combination, smooth {}, type '{}'",
-                self.smooth,
-                self.raw_type.clone().unwrap_or_default()
-            ))),
-        }
+        Ok(match (self.raw_type.as_deref(), self.smooth) {
+            (Some("cubic"), _) => PointType::OffCurveCubic,
+            (Some(_), _) => PointType::OffCurveQuad,
+            (None, true) => PointType::OnCurveSmooth,
+            (None, false) => PointType::OnCurve,
+        })
     }
 }
 
@@ -796,27 +820,33 @@ pub(crate) struct PackedPath {
 
 impl PackedPath {
     // https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/path.py#L168
-    pub(crate) fn unpacked_contours(&self) -> Vec<Contour> {
+    pub(crate) fn unpacked_contours(&self) -> Result<Vec<Contour>, PathConversionError> {
         let mut contours = Vec::with_capacity(self.contour_info.len());
         let mut start = 0;
         for info in &self.contour_info {
+            let point_count = self.point_types.len().min(self.coordinates.len() / 2);
+            if info.end_point < start || info.end_point >= point_count {
+                return Err(PathConversionError::Parse(format!(
+                    "contour end point {} is out of range",
+                    info.end_point
+                )));
+            }
             let points = (start..=info.end_point)
                 .map(|i| {
                     // https://github.com/fontra/fontra/blob/469a001f8/src/fontra/core/path.py#L548
-                    let (raw_type, smooth) =
-                        match self.point_types.get(i).copied().unwrap_or_default() {
-                            t if t == PointType::OffCurveQuad as u8 => {
-                                (Some("quad".to_string()), false)
-                            }
-                            t if t == PointType::OffCurveCubic as u8 => {
-                                (Some("cubic".to_string()), false)
-                            }
-                            t if t == PointType::OnCurveSmooth as u8 => (None, true),
-                            _ => (None, false), // on-curve
-                        };
+                    let (raw_type, smooth) = match self.point_types[i] {
+                        t if t == PointType::OffCurveQuad as u8 => {
+                            (Some("quad".to_string()), false)
+                        }
+                        t if t == PointType::OffCurveCubic as u8 => {
+                            (Some("cubic".to_string()), false)
+                        }
+                        t if t == PointType::OnCurveSmooth as u8 => (None, true),
+                        _ => (None, false), // on-curve
+                    };
                     Point {
-                        x: self.coordinates.get(i * 2).copied().unwrap_or_default(),
-                        y: self.coordinates.get(i * 2 + 1).copied().unwrap_or_default(),
+                        x: self.coordinates[i * 2],
+                        y: self.coordinates[i * 2 + 1],
                         raw_type,
                         smooth,
                     }
@@ -828,7 +858,7 @@ impl PackedPath {
             });
             start = info.end_point + 1;
         }
-        contours
+        Ok(contours)
     }
 }
 
@@ -849,47 +879,11 @@ impl Default for Path {
 }
 
 impl Path {
-    pub(crate) fn contours(&self) -> Cow<'_, [Contour]> {
-        match self {
+    pub(crate) fn contours(&self) -> Result<Cow<'_, [Contour]>, PathConversionError> {
+        Ok(match self {
             Path::Unpacked(unpacked) => Cow::Borrowed(unpacked.contours.as_slice()),
-            Path::Packed(packed) => Cow::Owned(packed.unpacked_contours()),
-        }
-    }
-}
-
-/// Corresponds to a FontTools DecomposedTransform
-/// <https://github.com/fonttools/fonttools/blob/0572f78718/Lib/fontTools/misc/transform.py#L410>
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub(crate) struct DecomposedTransform {
-    pub(crate) translate_x: f64,
-    pub(crate) translate_y: f64,
-    /// in degrees counter-clockwise in font coordinate space
-    pub(crate) rotation: f64,
-    pub(crate) scale_x: f64,
-    pub(crate) scale_y: f64,
-    /// in degrees clockwise in font coordinate space
-    pub(crate) skew_x: f64,
-    /// in degrees counter-clockwise in font coordinate space
-    pub(crate) skew_y: f64,
-    pub(crate) t_center_x: f64,
-    pub(crate) t_center_y: f64,
-}
-
-impl Default for DecomposedTransform {
-    fn default() -> Self {
-        // The identity transform: unit scale, everything else zero.
-        Self {
-            translate_x: 0.0,
-            translate_y: 0.0,
-            rotation: 0.0,
-            scale_x: 1.0,
-            scale_y: 1.0,
-            skew_x: 0.0,
-            skew_y: 0.0,
-            t_center_x: 0.0,
-            t_center_y: 0.0,
-        }
+            Path::Packed(packed) => Cow::Owned(packed.unpacked_contours()?),
+        })
     }
 }
 
@@ -1020,6 +1014,7 @@ mod tests {
                     l.glyph
                         .path
                         .contours()
+                        .unwrap()
                         .iter()
                         .map(|c| c.points.len())
                         .collect::<Vec<_>>()
@@ -1027,7 +1022,7 @@ mod tests {
                 .collect::<HashSet<_>>(),
             "{glyph:#?}"
         );
-        let foreground = glyph.layers["foreground"].glyph.path.contours();
+        let foreground = glyph.layers["foreground"].glyph.path.contours().unwrap();
         let contour = foreground.first().unwrap();
         assert_eq!(PointType::OnCurve, contour.points[0].point_type().unwrap());
         assert_eq!(
@@ -1060,15 +1055,12 @@ mod tests {
     #[test]
     fn transform_defaults_to_identity() {
         let c: Component = serde_json::from_str(r#"{"name":"a"}"#).unwrap();
-        assert_eq!(
-            (1.0, 1.0),
-            (c.transformation.scale_x, c.transformation.scale_y)
-        );
+        assert_eq!(kurbo::Affine::IDENTITY, c.transformation.to_affine());
         let c: Component =
             serde_json::from_str(r#"{"name":"a","transformation":{"translateX":5.0}}"#).unwrap();
-        assert_eq!(5.0, c.transformation.translate_x);
+        assert_eq!(Some(5.0), c.transformation.translate_x);
         assert_eq!(
-            (1.0, 1.0),
+            (None, None),
             (c.transformation.scale_x, c.transformation.scale_y)
         );
     }
@@ -1089,7 +1081,7 @@ mod tests {
             }],
         };
 
-        let contours = packed.unpacked_contours();
+        let contours = packed.unpacked_contours().unwrap();
         assert_eq!(1, contours.len());
         let contour = &contours[0];
         assert!(contour.is_closed);
@@ -1209,6 +1201,25 @@ mod tests {
             vec![None, Some(-65.0), None, None, None],
             kern.values["T"]["A"]
         );
+    }
+
+    #[test]
+    fn packed_path_with_an_end_point_out_of_range_is_an_error() {
+        let packed = PackedPath {
+            coordinates: vec![10.0, 10.0, 20.0, 20.0],
+            point_types: vec![0, 0],
+            contour_info: vec![ContourInfo {
+                end_point: 5,
+                is_closed: true,
+            }],
+        };
+        assert!(packed.unpacked_contours().is_err());
+    }
+
+    #[test]
+    fn a_layer_glyph_without_advance_parses() {
+        let glyph: StaticGlyph = serde_json::from_str("{}").unwrap();
+        assert_eq!(0.0, glyph.x_advance);
     }
 
     #[test]

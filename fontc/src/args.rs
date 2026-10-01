@@ -67,6 +67,10 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub decompose_components: bool,
 
+    /// Emit variable composites as a VARC table instead of decomposing them.
+    #[arg(long, default_value = "false")]
+    pub emit_varc_table: bool,
+
     /// Whether to output timing data in Chrome trace format (written to trace.json in build dir).
     ///
     /// The generated JSON file can be viewed at https://ui.perfetto.dev/.
@@ -148,6 +152,7 @@ impl Args {
             self.decompose_transformed_components,
         );
         flags.set(Flags::DECOMPOSE_COMPONENTS, self.decompose_components);
+        flags.set(Flags::EMIT_VARC_TABLE, self.emit_varc_table);
         flags.set(Flags::KEEP_DIRECTION, self.keep_direction);
         flags.set(Flags::PRODUCTION_NAMES, !self.no_production_names);
 

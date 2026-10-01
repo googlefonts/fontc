@@ -51,5 +51,13 @@
 }
 ]
 },
-"sources": {}
+"sources": {
+"m01": {
+"name": "Regular",
+"location": {
+"Weight": 0,
+"Width": 100
+}
+}
+}
 }
