@@ -220,8 +220,6 @@ jobs:
   build-gs-repeatably:
     runs-on: ubuntu-latest
     name: Build GS and check the result
-    # Skip if PR is from a fork, instead of failing due to missing token
-    if: github.event.pull_request.head.repo.fork == false
     steps:
       - name: Check out fontc source repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -250,7 +248,6 @@ jobs:
         with:
           repository: googlefonts/googlesans
           path: googlesans
-          token: ${{ secrets.GS_READ_FONTC }}
 
       - name: Check out Oswald source repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
