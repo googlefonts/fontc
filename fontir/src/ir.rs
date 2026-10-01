@@ -1513,6 +1513,9 @@ pub struct Glyph {
     pub name: GlyphName,
     /// Whether to "export" in source terms
     pub emit_to_binary: bool,
+    /// Keep explicitly supplied anchors, without propagating anchors from components.
+    #[serde(default)]
+    pub skip_anchor_propagation: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     default_location: NormalizedLocation,
     sources: HashMap<NormalizedLocation, GlyphInstance>,
@@ -1606,6 +1609,7 @@ impl Glyph {
         Ok(Glyph {
             name,
             emit_to_binary,
+            skip_anchor_propagation: false,
             codepoints,
             default_location,
             sources: instances,
@@ -1728,6 +1732,8 @@ impl IdAware<WorkId> for GlyphAnchors {
 pub struct GlyphBuilder {
     pub name: GlyphName,
     pub emit_to_binary: bool,
+    #[serde(default)]
+    pub skip_anchor_propagation: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     pub sources: HashMap<NormalizedLocation, GlyphInstance>,
 }
@@ -1737,6 +1743,7 @@ impl GlyphBuilder {
         Self {
             name,
             emit_to_binary: true,
+            skip_anchor_propagation: false,
             codepoints: HashSet::new(),
             sources: HashMap::new(),
         }
@@ -1764,12 +1771,14 @@ impl GlyphBuilder {
     }
 
     pub fn build(self) -> Result<Glyph, BadGlyph> {
-        Glyph::new(
+        let mut glyph = Glyph::new(
             self.name,
             self.emit_to_binary,
             self.codepoints,
             self.sources,
-        )
+        )?;
+        glyph.skip_anchor_propagation = self.skip_anchor_propagation;
+        Ok(glyph)
     }
 }
 
@@ -1778,6 +1787,7 @@ impl From<Glyph> for GlyphBuilder {
         Self {
             name: value.name,
             emit_to_binary: value.emit_to_binary,
+            skip_anchor_propagation: value.skip_anchor_propagation,
             codepoints: value.codepoints,
             sources: value.sources,
         }

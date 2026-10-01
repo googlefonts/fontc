@@ -1642,6 +1642,14 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
 
         let mut ir_glyph = ir::GlyphBuilder::new(self.glyph_name.clone());
         ir_glyph.emit_to_binary = glyph.export;
+        // Generated color glyphs supply painting outlines; attachment anchors
+        // belong to the base glyph. Skip component-anchor propagation for all
+        // their sources, including brace layers, but keep explicitly supplied anchors.
+        ir_glyph.skip_anchor_propagation = font_info
+            .color_glyphs
+            .values()
+            .flatten()
+            .any(|name| name.as_str() == self.glyph_name.as_str());
         // only non-bracket glyphs get codepoints
         ir_glyph.codepoints = if !self.is_bracket_glyph() {
             glyph.unicode.iter().copied().collect()

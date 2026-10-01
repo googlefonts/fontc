@@ -1,0 +1,224 @@
+{
+.appVersion = "895";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Color Palettes";
+value = (
+(
+(
+1,
+0,
+0,
+1
+)
+)
+);
+}
+);
+familyName = "COLRv0 component anchors";
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+metricValues = (
+);
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+id = m02;
+metricValues = (
+);
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+anchors = (
+{
+name = top;
+pos = (50, 100);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,100,l),
+(0,100,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = top;
+pos = (50, 100);
+}
+);
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,0,l),
+(200,0,l),
+(200,100,l),
+(100,100,l)
+);
+}
+);
+width = 600;
+}
+);
+},
+{
+category = Letter;
+glyphname = A;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+ref = a;
+}
+);
+width = 600;
+},
+{
+associatedMasterId = m01;
+anchors = (
+{
+name = bottom;
+pos = (50,0);
+}
+);
+attr = {
+colorPalette = 0;
+};
+layerId = colorm01;
+shapes = (
+{
+ref = a;
+},
+{
+anchor = top;
+ref = mark;
+}
+);
+width = 600;
+},
+{
+layerId = m02;
+shapes = (
+{
+ref = a;
+}
+);
+width = 600;
+},
+{
+associatedMasterId = m02;
+anchors = (
+{
+name = bottom;
+pos = (100,0);
+}
+);
+attr = {
+colorPalette = 0;
+};
+layerId = colorm02;
+shapes = (
+{
+ref = a;
+},
+{
+anchor = top_1;
+ref = mark;
+}
+);
+width = 600;
+}
+);
+subCategory = Uppercase;
+},
+{
+category = Mark;
+glyphname = mark;
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (50, 0);
+},
+{
+name = top;
+pos = (50, 100);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,100,l),
+(0,100,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = _top;
+pos = (50, 0);
+},
+{
+name = top;
+pos = (50, 100);
+}
+);
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,0,l),
+(200,0,l),
+(200,100,l),
+(100,100,l)
+);
+}
+);
+width = 600;
+}
+);
+subCategory = Nonspacing;
+}
+);
+unitsPerEm = 1000;
+}
