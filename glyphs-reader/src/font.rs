@@ -1651,6 +1651,30 @@ impl RawLayer {
             }
     }
 
+    /// Return true if any of the layer's axis rules has a min or max bound.
+    fn has_bounded_axis_rules(&self) -> bool {
+        self.attributes
+            .axis_rules
+            .iter()
+            .any(|rule| rule.min.is_some() || rule.max.is_some())
+    }
+
+    /// Return true if this is a v3 alternate layer whose axis rules are all
+    /// blank, i.e. no bounds on any axis (`[]` in the Glyphs UI).
+    ///
+    /// Only plain alternates count: not ones that are also brace, color or
+    /// smart component layers.
+    fn is_blank_alternate(&self) -> bool {
+        self.is_bracket_layer(FormatVersion::V3)
+            && !self.has_bounded_axis_rules()
+            && self.attributes
+                == LayerAttributes {
+                    axis_rules: self.attributes.axis_rules.clone(),
+                    ..Default::default()
+                }
+            && self.part_selection.is_empty()
+    }
+
     fn v2_to_v3_attributes(&mut self) {
         // In Glyphs v2, 'brace' or intermediate layer coordinates are stored in the
         // layer name as comma-separated values inside braces
@@ -3228,13 +3252,6 @@ impl RawLayer {
 /// substitution at all: it loses its axis rules, which leaves it an ordinary
 /// non-master layer that we don't compile.
 fn resolve_reverse_bracket_layers(layers: &mut [RawLayer]) {
-    fn is_bounded(layer: &RawLayer) -> bool {
-        layer
-            .attributes
-            .axis_rules
-            .iter()
-            .any(|rule| rule.min.is_some() || rule.max.is_some())
-    }
     let is_master = |layer: &RawLayer| {
         layer.associated_master_id.is_none()
             || layer.associated_master_id.as_ref() == Some(&layer.layer_id)
@@ -3249,23 +3266,13 @@ fn resolve_reverse_bracket_layers(layers: &mut [RawLayer]) {
             .iter()
             .enumerate()
             .filter(|(_, layer)| {
-                !is_master(layer)
+                layer.is_blank_alternate()
                     && layer.associated_master_id.as_ref() == Some(&master.layer_id)
-                    && !layer.attributes.axis_rules.is_empty()
-                    && !is_bounded(layer)
-                    // only plain alternates: not brace, color or smart
-                    // component layers
-                    && layer.attributes
-                        == LayerAttributes {
-                            axis_rules: layer.attributes.axis_rules.clone(),
-                            ..Default::default()
-                        }
-                    && layer.part_selection.is_empty()
             })
             .map(|(j, _)| j)
             .collect::<Vec<_>>();
         match blank.as_slice() {
-            [j] if is_bounded(master) => pairs.push((i, *j)),
+            [j] if master.has_bounded_axis_rules() => pairs.push((i, *j)),
             _ => ignored.extend(blank),
         }
     }
@@ -6429,12 +6436,40 @@ unitsPerEm = 1000;
     }
 
     #[test]
+    fn is_blank_alternate() {
+        let blank = [(None, None)];
+        assert!(raw_layer("B1", Some("M1"), &blank).is_blank_alternate());
+        assert!(raw_layer("B1", Some("M1"), &[(None, None), (None, None)]).is_blank_alternate());
+
+        let mut brace = raw_layer("B1", Some("M1"), &blank);
+        brace.attributes.coordinates = vec![OrderedFloat(75.0)];
+        let mut color = raw_layer("B1", Some("M1"), &blank);
+        color.attributes.color = true;
+        let mut smart = raw_layer("B1", Some("M1"), &blank);
+        smart.part_selection.insert("Width".into(), 2);
+        for (layer, why) in [
+            (raw_layer("M1", None, &blank), "master"),
+            (raw_layer("M1", Some("M1"), &blank), "master with own id"),
+            (raw_layer("B1", Some("M1"), &[]), "no axis rules"),
+            (raw_layer("B1", Some("M1"), &[(Some(100.0), None)]), "min"),
+            (raw_layer("B1", Some("M1"), &[(None, Some(50.0))]), "max"),
+            (
+                raw_layer("B1", Some("M1"), &[(None, None), (Some(1.0), None)]),
+                "bounded second axis",
+            ),
+            (brace, "brace"),
+            (color, "color"),
+            (smart, "smart component"),
+        ] {
+            assert!(!layer.is_blank_alternate(), "{why}");
+        }
+    }
+
+    #[test]
     fn resolve_reverse_bracket_layers_not_applicable() {
         let min_100 = [(Some(100.0), None)];
         let mut brace = raw_layer("B1", Some("M1"), &[(None, None)]);
         brace.attributes.coordinates = vec![OrderedFloat(75.0)];
-        let mut smart = raw_layer("B1", Some("M1"), &[(None, None)]);
-        smart.part_selection.insert("Width".into(), 2);
         for mut layers in [
             // bounded master without a blank alternate
             vec![
@@ -6448,8 +6483,6 @@ unitsPerEm = 1000;
             ],
             // the blank alternate is also a brace layer
             vec![raw_layer("M1", None, &min_100), brace.clone()],
-            // the blank alternate is a smart component layer
-            vec![raw_layer("M1", None, &[]), smart.clone()],
         ] {
             let before = layers.clone();
             resolve_reverse_bracket_layers(&mut layers);
