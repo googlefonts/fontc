@@ -113,7 +113,7 @@ jobs:
           python-version: "3.13"
           architecture: ${{ matrix.platform.python-architecture }}
 
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: stable
           targets: ${{ matrix.platform.target }}
