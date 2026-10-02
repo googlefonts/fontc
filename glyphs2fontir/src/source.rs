@@ -474,7 +474,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 if inst.type_ != InstanceType::Single || !inst.active {
                     return None;
                 }
-                // like fontmake, leave out instances beyond the masters, which
+                // like fontmake, leave out instances outside the axis, which
                 // would need extrapolating
                 if let Some((axis, pos)) = axes.iter().zip(&inst.axes_values).find(|(axis, pos)| {
                     let pos = DesignCoord::new(**pos);
@@ -484,7 +484,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                     !axis.is_point() && (pos < a.min(b) || pos > a.max(b))
                 }) {
                     warn!(
-                        "Instance {}: {} {pos} is outside the masters, it can't be \
+                        "Instance {}: {} {pos} is outside the axis, it can't be \
                          interpolated",
                         inst.name, axis.name
                     );
@@ -2528,6 +2528,32 @@ mod tests {
                 .map(|ni| ni.name.as_str())
                 .collect::<Vec<_>>(),
             ["Regular", "Bold"]
+        );
+    }
+
+    #[test]
+    fn axis_mappings_beyond_masters() {
+        // An explicit Axis Mappings, 300:30 400:80 700:200 900:250, defines the
+        // axis beyond the masters at 80 and 200: Light and Black are kept
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("AxisMappingsBeyondMasters.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
+        assert_eq!(
+            (wght.min, wght.default, wght.max),
+            (
+                UserCoord::new(300.0),
+                UserCoord::new(400.0),
+                UserCoord::new(900.0)
+            )
+        );
+        assert_eq!(
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|ni| ni.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Light", "Regular", "Bold", "Black"]
         );
     }
 
