@@ -10,7 +10,6 @@ use fontir::{ir::GlyphOrder, orchestration::WorkId as FeWorkId};
 use log::warn;
 
 use write_fonts::{
-    dump_table,
     tables::cmap::{
         Cmap, Cmap14, CmapSubtable, DefaultUvs, EncodingRecord, NonDefaultUvs, PlatformId,
         UnicodeRange, UvsMapping, VariationSelector,
@@ -77,17 +76,7 @@ fn variation_sequences_subtable(
     if var_selectors.is_empty() {
         return Ok(None);
     }
-    let mut cmap14 = Cmap14::new(0, var_selectors.len() as u32, var_selectors);
-    // write-fonts computes the length of formats 4 and 12 but writes ours
-    // verbatim, and it includes child tables the packer may dedup, so we
-    // measure the packed bytes rather than sum the parts
-    cmap14.length = dump_table(&cmap14)
-        .map_err(|e| Error::DumpTableError {
-            e,
-            context: "cmap format 14".to_string(),
-        })?
-        .len() as u32;
-    Ok(Some(cmap14))
+    Ok(Some(Cmap14::new(var_selectors)))
 }
 
 /// Group sorted codepoints into runs of consecutive values.
@@ -171,6 +160,7 @@ impl Work<Context, AnyWorkId, Error> for CmapWork {
 #[cfg(test)]
 mod tests {
     use write_fonts::{
+        dump_table,
         read::{FontData, FontRead, tables::cmap as read_cmap},
         validate::Validate,
     };
@@ -207,10 +197,10 @@ mod tests {
         let cmap14 =
             variation_sequences_subtable(&sequences(entries), &mappings, glyph_order).unwrap()?;
         let bytes = dump_table(&cmap14).unwrap();
-        assert_eq!(cmap14.length as usize, bytes.len());
         assert!(cmap14.validate().is_ok());
         let data = FontData::new(&bytes);
         let read = read_cmap::Cmap14::read(data).unwrap();
+        assert_eq!(read.length() as usize, bytes.len());
         assert_eq!(
             read.num_var_selector_records() as usize,
             cmap14.var_selector.len()
