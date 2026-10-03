@@ -29,8 +29,8 @@ smallvec = {version = "1.15", features = ["const_new"]}
 tinystr = "0.8.0"
 
 # fontations etc
-write-fonts = { version = "0.53.0", features = ["serde", "read", "tables"]  }
-skrifa = { version = "0.47.0" }
+write-fonts = { version = "0.54.0", features = ["serde", "read", "tables"]  }
+skrifa = { version = "0.48.0" }
 norad = { version = "0.18.4", default-features = false }
 
 # dev dependencies
