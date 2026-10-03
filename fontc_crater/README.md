@@ -17,6 +17,14 @@ an existing checkout of this repository, which saves time.
 Once sources are identified, they are checked out into a cache directory, where
 they can be reused between runs.
 
+In CI, fontmake's output for each target (the compiled font or a record of
+its failure, the `ttx` dump of that font, and the `otl-normalizer` output for
+it) is cached in the same directory, along with the result of the last
+comparison. The whole cache is cleared when the Python dependencies change. A
+change under `otl-normalizer/` since the last run discards only the cached
+results and normalizer output, and a change under `ttx_diff/` discards only the
+cached results; fontmake's fonts are kept in both cases.
+
 The tool processes and generates JSON outputs for tracking successful and failed font compilations across targets, in addition to an optional HTML report.
 
 ## CI

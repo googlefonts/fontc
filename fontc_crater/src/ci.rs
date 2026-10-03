@@ -142,9 +142,23 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
             log::info!("no changes since last run, skipping");
             return Ok(());
         }
-        if pip_freeze_sha != last_run.pip_freeze_sha || ttx_diff_has_changes(&last_run.fontc_rev) {
-            log::info!("python deps or ttx_diff have changed, clearing cached results");
+        if pip_freeze_sha != last_run.pip_freeze_sha {
+            log::info!("python deps have changed, clearing cache");
             results_cache.delete_all();
+        } else {
+            match comparison_changes_since(&last_run.fontc_rev) {
+                ComparisonChange::OtlNormalizer => {
+                    log::info!(
+                        "otl-normalizer has changed, clearing cached results and normalizer output"
+                    );
+                    results_cache.delete_results_and_normalizer_output();
+                }
+                ComparisonChange::TtxDiff => {
+                    log::info!("ttx_diff has changed, clearing cached results");
+                    results_cache.delete_results();
+                }
+                ComparisonChange::None => (),
+            }
         }
     }
 
@@ -263,14 +277,30 @@ fn result_path_for_current_date() -> String {
     format!("{timestamp}.json")
 }
 
-fn ttx_diff_has_changes(last_run_sha: &str) -> bool {
+/// Which part of the comparison has changed since a previous run.
+///
+/// The variants are ordered by how much of the cache they invalidate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ComparisonChange {
+    None,
+    TtxDiff,
+    OtlNormalizer,
+}
+
+fn comparison_changes_since(last_run_sha: &str) -> ComparisonChange {
     let output = std::process::Command::new("git")
         .args(["diff", "--stat"])
         .arg(last_run_sha)
         .output()
         .unwrap();
     let diff = std::str::from_utf8(&output.stdout).unwrap();
-    diff.contains("ttx_diff/") || diff.contains("otl-normalizer/")
+    if diff.contains("otl-normalizer/") {
+        ComparisonChange::OtlNormalizer
+    } else if diff.contains("ttx_diff/") {
+        ComparisonChange::TtxDiff
+    } else {
+        ComparisonChange::None
+    }
 }
 
 #[derive(Debug, Default)]

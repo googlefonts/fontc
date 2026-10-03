@@ -12,7 +12,9 @@ static CACHE_DIR_NAME: &str = "crater_cached_results";
 // the files that we cache for each target. The font is all that is required;
 // other files are derived from it.
 static FONT_FILE: &str = "fontmake.ttf";
-static DERIVED_FILES: [&str; 2] = ["fontmake.ttx", "fontmake.markkern.txt"];
+static TTX_FILE: &str = "fontmake.ttx";
+static MARKKERN_FILE: &str = "fontmake.markkern.txt";
+static DERIVED_FILES: [&str; 2] = [TTX_FILE, MARKKERN_FILE];
 // what ttx_diff leaves in place of the font when fontmake fails; keep in sync
 // with core.py
 static FAILURE_FILE: &str = "fontmake.failure.json";
@@ -93,6 +95,25 @@ impl ResultsCache {
     pub fn delete_all(&self) {
         if self.base_results_cache_dir.exists() {
             std::fs::remove_dir_all(&self.base_results_cache_dir).expect("failed to remove cache")
+        }
+    }
+
+    /// Delete every cached comparison result, keeping fontmake's output.
+    pub fn delete_results(&self) {
+        self.delete_files(&[RESULT_FILE]);
+    }
+
+    /// Delete every cached comparison result and otl-normalizer output.
+    ///
+    /// The font and its ttx dump are kept.
+    pub fn delete_results_and_normalizer_output(&self) {
+        self.delete_files(&[RESULT_FILE, MARKKERN_FILE]);
+    }
+
+    fn delete_files(&self, names: &[&str]) {
+        if self.base_results_cache_dir.exists() {
+            delete_files_in_tree(&self.base_results_cache_dir, names)
+                .expect("failed to clear cache")
         }
     }
 
@@ -195,6 +216,22 @@ fn copy_cache_files(from_dir: &Path, to_dir: &Path) -> std::io::Result<Option<Fo
         }
     }
     Ok(Some(output))
+}
+
+fn delete_files_in_tree(dir: &Path, names: &[&str]) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            delete_files_in_tree(&path, names)?;
+        } else if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| names.contains(&name))
+        {
+            std::fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -379,6 +416,81 @@ mod tests {
             Some(FontmakeOutput::Font)
         );
         assert_eq!(file_names(&next_build_dir), [FONT_FILE]);
+    }
+
+    fn populated_cache(tempdir: &Path, files: &[&str]) -> (ResultsCache, Target) {
+        let cache = ResultsCache::in_dir(tempdir);
+        let target = test_target();
+        write_files(&target.cache_dir(&cache.base_results_cache_dir), files);
+        cache.save_result(
+            &target,
+            "abc123".into(),
+            &RunResult::Success(DiffOutput::Identical),
+        );
+        assert!(cache.load_result(&target).is_some());
+        (cache, target)
+    }
+
+    #[test]
+    fn ttx_diff_change_keeps_all_fontmake_output() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let (cache, target) =
+            populated_cache(tempdir.path(), &[FONT_FILE, TTX_FILE, MARKKERN_FILE]);
+        cache.delete_results();
+
+        assert!(cache.load_result(&target).is_none());
+        let next_build_dir = tempdir.path().join("next_build");
+        assert_eq!(
+            cache.copy_cached_files_to_build_dir(&target, &next_build_dir),
+            Some(FontmakeOutput::Font)
+        );
+        assert_eq!(
+            file_names(&next_build_dir),
+            ["fontmake.markkern.txt", "fontmake.ttf", "fontmake.ttx"]
+        );
+    }
+
+    #[test]
+    fn normalizer_change_keeps_font_and_ttx() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let (cache, target) =
+            populated_cache(tempdir.path(), &[FONT_FILE, TTX_FILE, MARKKERN_FILE]);
+        cache.delete_results_and_normalizer_output();
+
+        assert!(cache.load_result(&target).is_none());
+        let next_build_dir = tempdir.path().join("next_build");
+        assert_eq!(
+            cache.copy_cached_files_to_build_dir(&target, &next_build_dir),
+            Some(FontmakeOutput::Font)
+        );
+        assert_eq!(
+            file_names(&next_build_dir),
+            ["fontmake.ttf", "fontmake.ttx"]
+        );
+    }
+
+    #[test]
+    fn cached_failure_survives_comparison_changes() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let (cache, target) = populated_cache(tempdir.path(), &[FAILURE_FILE]);
+        cache.delete_results();
+        cache.delete_results_and_normalizer_output();
+
+        assert!(cache.load_result(&target).is_none());
+        let next_build_dir = tempdir.path().join("next_build");
+        assert_eq!(
+            cache.copy_cached_files_to_build_dir(&target, &next_build_dir),
+            Some(FontmakeOutput::Failure)
+        );
+        assert_eq!(file_names(&next_build_dir), [FAILURE_FILE]);
+    }
+
+    #[test]
+    fn delete_results_without_a_cache_dir_is_fine() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        cache.delete_results();
+        cache.delete_results_and_normalizer_output();
     }
 
     #[test]
