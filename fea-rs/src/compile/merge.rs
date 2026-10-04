@@ -297,6 +297,14 @@ mod tests {
     }
 
     #[test]
+    fn insert_markers_may_sit_at_different_offsets() {
+        let a = "lookup L { pos a b -20; } L; feature kern { # Automatic Code\n lookup L; } kern;";
+        let b = "lookup L { pos a b -150; } L; feature kern { # Automatic Code\n lookup L; } kern;";
+        let merged = merge_masters(&[a, b]).unwrap();
+        assert_eq!(merged.insert_markers, pending(a).insert_markers);
+    }
+
+    #[test]
     fn gdef_glyph_classes_are_unioned() {
         let a = "table GDEF { GlyphClassDef [a], , [acute], ; } GDEF;";
         let b = "table GDEF { GlyphClassDef [b], , [acute], ; } GDEF;";

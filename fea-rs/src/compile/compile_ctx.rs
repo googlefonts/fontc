@@ -102,8 +102,9 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     // on where we should merge in code generated from an external provider.
     // when we encounter these we record what lookup id would be logically next,
     // and we will use that for the generated lookups.
-    // We also store the start pos of the comment, to break ties.
+    // We also store how many markers came before this one, to break ties.
     insert_markers: HashMap<Tag, InsertionPoint>,
+    n_insert_markers_seen: usize,
 }
 
 impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
@@ -137,6 +138,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             mark_filter_sets: Default::default(),
             opts,
             insert_markers: Default::default(),
+            n_insert_markers_seen: 0,
         }
     }
 
@@ -1948,15 +1950,15 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
             // we can have multiple markers in a row without any lookups between,
             // but we care about the order; so along with the lookup id we also
-            // store the comment position, which breaks ties.
-            let priority = item.range().start;
+            // store the marker's index in source order, which breaks ties.
             self.insert_markers.insert(
                 current_feature,
                 InsertionPoint {
                     lookup_id: self.lookups.next_gpos_id(),
-                    priority,
+                    priority: self.n_insert_markers_seen,
                 },
             );
+            self.n_insert_markers_seen += 1;
         } else {
             let span = match item {
                 NodeOrToken::Token(t) => t.range(),
