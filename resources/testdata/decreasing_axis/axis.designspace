@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<designspace format="4.1">
+  <axes>
+    <axis tag="opsz" name="Optical Size" minimum="9" maximum="144" default="144">
+      <map input="9" output="38"/>
+      <map input="42" output="33"/>
+      <map input="72" output="28"/>
+      <map input="144" output="23"/>
+    </axis>
+  </axes>
+  <sources>
+    <source filename="../WghtVar-Regular.ufo" name="Regular">
+      <lib copy="1"/><groups copy="1"/><features copy="1"/><info copy="1"/>
+      <location><dimension name="Optical Size" xvalue="23"/></location>
+    </source>
+    <source filename="../WghtVar-Regular.ufo" name="Intermediate" layer="{600}">
+      <location><dimension name="Optical Size" xvalue="28"/></location>
+    </source>
+    <source filename="../WghtVar-Bold.ufo" name="Bold">
+      <location><dimension name="Optical Size" xvalue="38"/></location>
+    </source>
+  </sources>
+  <rules>
+    <rule name="narrow">
+      <conditionset><condition name="Optical Size" minimum="28" maximum="33"/></conditionset>
+      <sub name="bar" with="plus"/>
+    </rule>
+  </rules>
+</designspace>

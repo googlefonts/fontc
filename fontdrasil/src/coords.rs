@@ -630,6 +630,34 @@ mod tests {
     }
 
     #[test]
+    fn mapped_coords_follow_user_direction() {
+        for (design_values, default_idx, expected) in [
+            (
+                [23.0, 28.0, 33.0, 38.0],
+                0,
+                [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0],
+            ),
+            (
+                [38.0, 33.0, 28.0, 23.0],
+                3,
+                [-1.0, -2.0 / 3.0, -1.0 / 3.0, 0.0],
+            ),
+            ([38.0, 33.0, 28.0, 23.0], 2, [-1.0, -0.5, 0.0, 1.0]),
+        ] {
+            let mappings: Vec<_> = [9.0, 42.0, 72.0, 144.0]
+                .into_iter()
+                .zip(design_values)
+                .map(|(user, design)| (UserCoord::new(user), DesignCoord::new(design)))
+                .collect();
+            let converter = CoordConverter::new(mappings.clone(), default_idx).unwrap();
+            for ((user, design), expected) in mappings.into_iter().zip(expected) {
+                assert!((design.to_normalized(&converter).to_f64() - expected).abs() < 1e-12);
+                assert!((user.to_normalized(&converter).to_f64() - expected).abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
     pub fn duplicate_user_coords() {
         // Two design coords for user=400 are ambiguous; one gets silently dropped.
         let ambiguous = vec![
