@@ -331,7 +331,42 @@ pub struct InsertionPoint {
     /// This is common! For instance if you have FEA with two feature blocks
     /// that contain `# Automatic Code` comments and nothing else, this is used
     /// to order them.
+    ///
+    /// This is the marker's index among all the markers in the source, so it
+    /// does not depend on the source's text: two sources that differ only in
+    /// their values have the same insertion points.
     pub priority: usize,
+}
+
+/// Where a group of generated lookups is inserted.
+#[derive(Clone, Copy, Debug)]
+enum Placement {
+    /// At an insertion marker.
+    Marker(InsertionPoint),
+    /// Immediately before whatever is placed at an insertion marker.
+    BeforeMarker(InsertionPoint),
+    /// After the last lookup, in the order the groups were appended.
+    Append { lookup_id: LookupId, order: usize },
+}
+
+impl Placement {
+    fn lookup_id(self) -> LookupId {
+        match self {
+            Placement::Marker(point) | Placement::BeforeMarker(point) => point.lookup_id,
+            Placement::Append { lookup_id, .. } => lookup_id,
+        }
+    }
+
+    /// The key that orders groups for insertion.
+    ///
+    /// Groups with equal keys keep the order they were added in.
+    fn sort_key(self) -> (LookupId, usize, usize) {
+        match self {
+            Placement::BeforeMarker(point) => (point.lookup_id, point.priority, 0),
+            Placement::Marker(point) => (point.lookup_id, point.priority, 1),
+            Placement::Append { lookup_id, order } => (lookup_id, usize::MAX, order),
+        }
+    }
 }
 
 struct MergeCtx<'a> {
@@ -346,10 +381,10 @@ struct MergeCtx<'a> {
     ext_features: BTreeMap<FeatureKey, FeatureLookups>,
     feature_variations: Option<RawFeatureVariations>,
     // ready for insertion
-    processed_lookups: Vec<(InsertionPoint, Vec<(LookupId, PositionLookup)>)>,
+    processed_lookups: Vec<(Placement, Vec<(LookupId, PositionLookup)>)>,
     // track how many groups of lookups have been appended on the end,
-    // so we can give them the right priority
-    append_priority: usize,
+    // so we can keep them in order
+    n_appended: usize,
 }
 
 impl MergeCtx<'_> {
@@ -393,7 +428,8 @@ impl MergeCtx<'_> {
     }
 
     fn finalize_gpos(&mut self) -> LookupIdMap {
-        self.processed_lookups.sort_by_key(|(key, _)| *key);
+        self.processed_lookups
+            .sort_by_key(|(placement, _)| placement.sort_key());
 
         // this is the actual logic for inserting the lookups into the main
         // lookup list, keeping track of how the ids change.
@@ -404,8 +440,8 @@ impl MergeCtx<'_> {
         // 'adjustments' stores the state we need to remap existing ids, if needed.
         let mut adjustments = Vec::new();
 
-        for (insert_point, lookups) in &mut self.processed_lookups {
-            let first_id = insert_point.lookup_id.to_raw();
+        for (placement, lookups) in &mut self.processed_lookups {
+            let first_id = placement.lookup_id().to_raw();
             // within a feature, the lookups should honor the ordering they were
             // assigned by the user
             lookups.sort_by_key(|(key, _)| *key);
@@ -532,17 +568,18 @@ impl MergeCtx<'_> {
     /// An append-forced feature ignores insertion markers entirely; otherwise
     /// the first marker among `features` wins, and everything else falls
     /// through to append placement.
-    fn insert_pos_for_features(&mut self, features: &[Tag]) -> InsertionPoint {
+    fn insert_pos_for_features(&mut self, features: &[Tag]) -> Placement {
         if features
             .iter()
             .any(|tag| self.append_features.contains(tag))
         {
-            return self.insertion_point_for_append();
+            return self.placement_for_append();
         }
         features
             .iter()
             .find_map(|tag| self.insert_markers.get(tag).copied())
-            .unwrap_or_else(|| self.insertion_point_for_append())
+            .map(Placement::Marker)
+            .unwrap_or_else(|| self.placement_for_append())
     }
 
     fn do_curs(&mut self) {
@@ -569,11 +606,11 @@ impl MergeCtx<'_> {
         // either applies to whichever of them we write.
         let features_we_are_writing: Vec<_> =
             features_we_are_writing.into_iter().flatten().collect();
-        let marker = self.insert_pos_for_features(&features_we_are_writing);
+        let placement = self.insert_pos_for_features(&features_we_are_writing);
 
         let lookups = self.take_lookups_for_features(&[KERN, DIST]);
         if !lookups.is_empty() {
-            self.processed_lookups.push((marker, lookups));
+            self.processed_lookups.push((placement, lookups));
         }
     }
 
@@ -603,22 +640,19 @@ impl MergeCtx<'_> {
             .collect::<HashSet<_>>();
         for (i, tag) in ORDER.iter().enumerate() {
             if features_we_write.contains(tag) && !is_append[i] {
-                inserts[i] = self.insert_markers.get(tag).copied();
+                inserts[i] = self.insert_markers.get(tag).copied().map(Placement::Marker);
             }
         }
 
         for i in 0..ORDER.len() {
-            if let Some(insert) = inserts[i] {
+            if let Some(Placement::Marker(marker)) = inserts[i] {
                 // if a later feature has an explicit position, put the earlier
                 // features in front of it
                 for j in 0..i {
                     let j = i - j - 1; // we want to go in reverse order,
                     // prepending each time
                     if inserts[j].is_none() && !is_append[j] {
-                        inserts[j] = Some(InsertionPoint {
-                            lookup_id: insert.lookup_id,
-                            priority: insert.priority - 1,
-                        })
+                        inserts[j] = Some(Placement::BeforeMarker(marker));
                     }
                 }
             }
@@ -628,7 +662,7 @@ impl MergeCtx<'_> {
         // lets fill in any features that were not assigned positions this way:
         for insert in inserts.iter_mut() {
             if insert.is_none() {
-                *insert = Some(self.insertion_point_for_append());
+                *insert = Some(self.placement_for_append());
             }
         }
 
@@ -639,10 +673,10 @@ impl MergeCtx<'_> {
         self.finalize_lookups_for_feature(MKMK, inserts[3].unwrap());
     }
 
-    fn finalize_lookups_for_feature(&mut self, feature: Tag, pos: InsertionPoint) {
+    fn finalize_lookups_for_feature(&mut self, feature: Tag, placement: Placement) {
         let lookups = self.take_lookups_for_features(&[feature]);
         if !lookups.is_empty() {
-            self.processed_lookups.push((pos, lookups));
+            self.processed_lookups.push((placement, lookups));
         }
     }
 
@@ -661,12 +695,11 @@ impl MergeCtx<'_> {
             .collect()
     }
 
-    fn insertion_point_for_append(&mut self) -> InsertionPoint {
-        let lookup_id = self.all_lookups.next_gpos_id();
-        self.append_priority += 1;
-        InsertionPoint {
-            lookup_id,
-            priority: self.append_priority,
+    fn placement_for_append(&mut self) -> Placement {
+        self.n_appended += 1;
+        Placement::Append {
+            lookup_id: self.all_lookups.next_gpos_id(),
+            order: self.n_appended,
         }
     }
 }
@@ -689,7 +722,7 @@ impl ExternalFeatures {
             insert_markers: markers,
             append_features: self.append_features.clone(),
             processed_lookups: Default::default(),
-            append_priority: 1_000_000_000,
+            n_appended: 0,
         };
         ctx.merge();
     }
@@ -893,7 +926,7 @@ mod tests {
                     tag,
                     InsertionPoint {
                         lookup_id: LookupId::Gpos(0),
-                        priority: i + 10,
+                        priority: i,
                     },
                 )
             })
@@ -978,6 +1011,17 @@ mod tests {
             // abvm/blwm/mark all have to go before mkmk
             [ABVM, BLWM, MARK, MKMK, KERN, DIST]
         );
+    }
+
+    #[test]
+    fn placed_before_a_marker_stays_after_the_previous_marker() {
+        let mut external = mock_external_features(&[ABVM, BLWM, MARK]);
+        let markers = make_markers_with_order([MARK, BLWM]);
+        let mut all = AllLookups::default();
+        let mut all_feats = AllFeatures::default();
+        external.merge_into(&mut all, &mut all_feats, &markers);
+        // abvm goes immediately before blwm, which is after mark
+        assert_eq!(all_feats.feature_order_for_test(), [MARK, ABVM, BLWM]);
     }
 
     #[test]
