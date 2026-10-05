@@ -198,22 +198,22 @@ impl CoordConverter {
                 .collect(),
         )?;
 
-        let design_coords: Vec<_> = mappings.iter().map(|(_, d)| d).collect();
         #[allow(clippy::unwrap_used)] // We checked above that mappings is not empty
-        let design_min = design_coords.iter().min().unwrap();
+        let (_, design_at_user_min) = mappings.iter().min_by_key(|(u, _)| u).unwrap();
         #[allow(clippy::unwrap_used)] // We checked above that mappings is not empty
-        let design_max = design_coords.iter().max().unwrap();
-        let design_default = design_coords
+        let (_, design_at_user_max) = mappings.iter().max_by_key(|(u, _)| u).unwrap();
+        let (_, design_default) = mappings
             .get(default_idx)
             .ok_or(Error::DefaultOutOfBounds(default_idx, mappings.len()))?;
 
+        // Normalized signs follow the user axis, even when design values decrease.
         let mut examples = Vec::new();
-        if *design_min < design_default {
-            examples.push((design_min.into_inner(), (-1.0).into())); // leftmost of default *must* be -1
+        if design_at_user_min != design_default {
+            examples.push((design_at_user_min.into_inner(), (-1.0).into()));
         }
-        examples.push((design_default.into_inner(), 0.0.into())); // default *must* land at 0
-        if *design_max > design_default {
-            examples.push((design_max.into_inner(), 1.0.into())); // right of default *must* be +1
+        examples.push((design_default.into_inner(), 0.0.into()));
+        if design_at_user_max != design_default {
+            examples.push((design_at_user_max.into_inner(), 1.0.into()));
         }
         let design_to_normalized = PiecewiseLinearMap::new(examples)?;
 

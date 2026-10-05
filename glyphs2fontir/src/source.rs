@@ -850,12 +850,10 @@ fn nbox_to_condset(nbox: NBox, axes: &Axes) -> ConditionSet {
     nbox.iter()
         .map(|(tag, (min, max))| {
             let axis = axes.get(&tag).unwrap();
+            let min = min.to_design(&axis.converter);
+            let max = max.to_design(&axis.converter);
 
-            Condition::new(
-                tag,
-                Some(min.to_design(&axis.converter)),
-                Some(max.to_design(&axis.converter)),
-            )
+            Condition::new(tag, Some(min.min(max)), Some(min.max(max)))
         })
         .collect()
 }
@@ -867,6 +865,7 @@ fn condset_to_nbox(condset: ConditionSet, axes: &Axes) -> NBox {
             let axis = axes.get(&cond.axis)?;
             let axis_min = axis.min.to_design(&axis.converter);
             let axis_max = axis.max.to_design(&axis.converter);
+            let (axis_min, axis_max) = (axis_min.min(axis_max), axis_min.max(axis_max));
             // we can filter out conditions with no min/max, or when min/max are
             // equal to the axis defaults: these are equivalent and lead to us
             // generating unnecessary conditions (since by default a missing
@@ -877,17 +876,9 @@ fn condset_to_nbox(condset: ConditionSet, axes: &Axes) -> NBox {
             if (cond_min, cond_max) == (&axis_min, &axis_max) {
                 return None;
             }
-            Some((
-                cond.axis,
-                (
-                    cond.min
-                        .map(|ds| ds.to_normalized(&axis.converter))
-                        .unwrap_or_else(|| axis.min.to_normalized(&axis.converter)),
-                    cond.max
-                        .map(|ds| ds.to_normalized(&axis.converter))
-                        .unwrap_or_else(|| axis.max.to_normalized(&axis.converter)),
-                ),
-            ))
+            let min = cond_min.to_normalized(&axis.converter);
+            let max = cond_max.to_normalized(&axis.converter);
+            Some((cond.axis, (min.min(max), min.max(max))))
         })
         .collect()
 }
@@ -933,14 +924,16 @@ fn get_bracket_info(layer: &Layer, axes: &Axes) -> ConditionSet {
         .filter(|ax| !ax.is_point())
         .zip(&layer.attributes.axis_rules)
         .map(|(axis, rule)| {
+            let axis_min = axis.min.to_design(&axis.converter);
+            let axis_max = axis.max.to_design(&axis.converter);
             let min = rule
                 .min
                 .map(DesignCoord::new)
-                .unwrap_or(axis.min.to_design(&axis.converter));
+                .unwrap_or(axis_min.min(axis_max));
             let max = rule
                 .max
                 .map(DesignCoord::new)
-                .unwrap_or(axis.max.to_design(&axis.converter));
+                .unwrap_or(axis_min.max(axis_max));
             Condition::new(axis.tag, min.into(), max.into())
         })
         .collect()

@@ -219,9 +219,10 @@ fn to_ir_axis(
         let max_idx = find_by_design_coord(&mappings, max, axis.name.as_str(), "max")?;
         // Use user-space values directly from the mapping, matching glyphsLib.
         // Don't round-trip via design_to_user which is lossy for many-to-one maps.
-        let user_min = mappings[min_idx].0;
+        // A decreasing mapping reverses the design endpoints' user order.
+        let user_min = mappings[min_idx].0.min(mappings[max_idx].0);
         let user_default = mappings[default_idx].0;
-        let user_max = mappings[max_idx].0;
+        let user_max = mappings[min_idx].0.max(mappings[max_idx].0);
         (
             CoordConverter::new(mappings, default_idx)?,
             user_min,
