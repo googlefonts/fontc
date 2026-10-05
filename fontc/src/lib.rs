@@ -1619,6 +1619,115 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case("axis.designspace")]
+    #[case("axis.glyphs")]
+    fn mapped_axis_uses_user_direction(#[case] source: &str) {
+        // Three masters sit at design values 23, 28 and 38.
+        // Normalized signs must follow the user axis even when those values decrease.
+        let result = TestCompile::compile_source(&format!("decreasing_axis/{source}"));
+        let font = result.font();
+        let axis = &font.fvar().unwrap().axes().unwrap()[0];
+        assert_eq!(
+            (9.0, 144.0, 144.0),
+            (
+                axis.min_value().to_f64(),
+                axis.default_value().to_f64(),
+                axis.max_value().to_f64()
+            )
+        );
+
+        let avar = font.avar().unwrap();
+        let mapping = avar.axis_segment_maps().get(0).unwrap().unwrap();
+        let mapping: Vec<_> = mapping
+            .axis_value_maps()
+            .iter()
+            .map(|m| (m.from_coordinate(), m.to_coordinate()))
+            .collect();
+        let f2dot14 = F2Dot14::from_f64;
+        assert_eq!(
+            [
+                (-1.0, -1.0),
+                (-102.0 / 135.0, -2.0 / 3.0),
+                (-72.0 / 135.0, -1.0 / 3.0),
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ]
+            .into_iter()
+            .map(|(from, to)| (f2dot14(from), f2dot14(to)))
+            .collect::<Vec<_>>(),
+            mapping
+        );
+
+        let gvar = font.gvar().unwrap();
+        let data = gvar
+            .glyph_variation_data(result.get_gid("bar").into())
+            .unwrap()
+            .unwrap();
+        let mut peaks: Vec<_> = data.tuples().map(|t| t.peak().get(0).unwrap()).collect();
+        peaks.sort();
+        assert_eq!(vec![f2dot14(-1.0), f2dot14(-1.0 / 3.0)], peaks);
+    }
+
+    #[rstest]
+    #[case("axis.designspace", -2.0/3.0, -1.0/3.0, None)]
+    #[case("axis.designspace", -1.0, -1.0/3.0, Some(" maximum=\"33\""))]
+    #[case("axis.designspace", -2.0/3.0, 0.0, Some(" minimum=\"28\""))]
+    #[case("axis.glyphs", -2.0/3.0, -1.0/3.0, None)]
+    #[case("axis.glyphs", -1.0, -1.0/3.0, Some("max = 33;"))]
+    #[case("axis.glyphs", -2.0/3.0, 0.0, Some("min = 28;"))]
+    fn decreasing_axis_rule_bounds(
+        #[case] source: &str,
+        #[case] min: f64,
+        #[case] max: f64,
+        #[case] omit_bound: Option<&str>,
+    ) {
+        let temp = tempdir().unwrap();
+        let source = testdata_dir()
+            .join("decreasing_axis")
+            .join(source)
+            .canonicalize()
+            .unwrap();
+        let source = if let Some(bound) = omit_bound {
+            // Reuse the sources for open-ended rules and brackets.
+            let text = fs::read_to_string(&source).unwrap().replace(bound, "");
+            let text = text.replace(
+                "filename=\"../",
+                &format!(
+                    "filename=\"{}/",
+                    testdata_dir().canonicalize().unwrap().display()
+                ),
+            );
+            let path = temp.path().join(source.file_name().unwrap());
+            fs::write(&path, text).unwrap();
+            path
+        } else {
+            source
+        };
+        let result = TestCompile::compile_source(source.to_str().unwrap());
+        let font = result.font();
+        let gsub = font.gsub().unwrap();
+        let variations = gsub.feature_variations().unwrap().unwrap();
+        let records = variations.feature_variation_records();
+        assert_eq!(records.len(), 1);
+        let conditions = records[0]
+            .condition_set(variations.offset_data())
+            .unwrap()
+            .unwrap();
+        let condition = conditions.conditions().get(0).unwrap();
+        let write_fonts::read::tables::layout::Condition::Format1AxisRange(condition) = condition
+        else {
+            panic!("expected axis range condition");
+        };
+        assert_eq!(
+            (F2Dot14::from_f64(min), F2Dot14::from_f64(max)),
+            (
+                condition.filter_range_min_value(),
+                condition.filter_range_max_value()
+            )
+        );
+    }
+
     /// Instance Axis Location may override a master's Axis Location for the same user value.
     /// <https://github.com/googlefonts/fontc/issues/1866>
     #[test]
