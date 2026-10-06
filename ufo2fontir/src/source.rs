@@ -787,6 +787,9 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<Option<PostscriptNa
     let postscript_names_lib = raw_postscript_names.as_dictionary().ok_or_else(|| {
         BadSource::custom("lib.plist", "public.postscriptNames isn't a dictionary")
     })?;
+    if postscript_names_lib.is_empty() {
+        return Ok(None);
+    }
 
     let postscript_names: HashMap<GlyphName, GlyphName> = postscript_names_lib
         .iter()
@@ -3309,6 +3312,16 @@ mod tests {
     fn no_postscript_names() {
         let lib_plist = plist::Dictionary::new();
         assert!(postscript_names(&lib_plist).is_ok());
+        assert!(postscript_names(&lib_plist).unwrap().is_none());
+    }
+
+    #[test]
+    fn empty_postscript_names() {
+        let mut lib_plist = plist::Dictionary::new();
+        lib_plist.insert(
+            String::from("public.postscriptNames"),
+            plist::Dictionary::new().into(),
+        );
         assert!(postscript_names(&lib_plist).unwrap().is_none());
     }
 
