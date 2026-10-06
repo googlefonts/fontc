@@ -324,10 +324,9 @@ pub enum GlyphDataError {
 
 impl GlyphDataError {
     // a little helper here makes our parsing code cleaner
-    fn missing_attr(name: &'static str, raw_attrs: &[u8]) -> Self {
-        let attributes = String::from_utf8_lossy(raw_attrs).into_owned();
+    fn missing_attr(name: &'static str, raw_attrs: &str) -> Self {
         Self::MissingRequiredAttribute {
-            attributes,
+            attributes: raw_attrs.to_owned(),
             missing: name,
         }
     }
@@ -342,7 +341,7 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
                 Event::Comment(_) => (),
                 Event::Decl(_) => (),
                 Event::DocType(_) => (),
-                Event::Start(start) if start.name().as_ref() == b"glyphData" => return Ok(()),
+                Event::Start(start) if start.name().as_ref() == "glyphData" => return Ok(()),
                 _other => {
                     return Err(GlyphDataError::WrongFirstElement);
                 }
@@ -428,19 +427,15 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
         // so per the XML spec version 1.0 is assumed.
         let value = attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)?;
         match attr.key.as_ref() {
-            b"name" => name = Some(value),
-            b"category" => category = Some(value),
-            b"subCategory" => subcategory = Some(value),
-            b"unicode" => unicode = Some(value),
-            b"altNames" => alt_names = Some(value),
-            b"script" => script = Some(value),
-            b"production" => production_name = Some(value.as_ref().into()),
-            b"unicodeLegacy" | b"case" | b"direction" | b"description" => (),
-            other => {
-                return Err(GlyphDataError::UnknownAttribute(
-                    String::from_utf8_lossy(other).into_owned(),
-                ));
-            }
+            "name" => name = Some(value),
+            "category" => category = Some(value),
+            "subCategory" => subcategory = Some(value),
+            "unicode" => unicode = Some(value),
+            "altNames" => alt_names = Some(value),
+            "script" => script = Some(value),
+            "production" => production_name = Some(value.as_ref().into()),
+            "unicodeLegacy" | "case" | "direction" | "description" => (),
+            other => return Err(GlyphDataError::UnknownAttribute(other.to_owned())),
         }
     }
 
