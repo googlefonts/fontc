@@ -1,0 +1,5 @@
+warning: duplicate language statement: this is handled differently by different tools, and is probably a mistake
+in compile-tests/mini-latin/good/repeated_language_stmt.fea at 9:4
+  | 
+9 |     language CAT;
+  |     ^^^^^^^^^^^^^

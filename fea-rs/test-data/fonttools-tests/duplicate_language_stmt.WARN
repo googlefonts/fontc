@@ -1,0 +1,5 @@
+warning: duplicate language statement: this is handled differently by different tools, and is probably a mistake
+in fonttools-tests/duplicate_language_stmt.fea at 15:4
+   | 
+15 |     language NLD;
+   |     ^^^^^^^^^^^^^

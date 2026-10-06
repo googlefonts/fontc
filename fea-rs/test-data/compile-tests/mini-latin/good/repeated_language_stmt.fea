@@ -1,0 +1,10 @@
+# the shape in Roboto Flex's locl (googlefonts/roboto-flex#467): the second
+# statement warns, and only the first decides the default lookups.
+feature locl {
+    script latn;
+    language CAT exclude_dflt;
+    lookup LDOT {
+        sub a by b;
+    } LDOT;
+    language CAT;
+} locl;
