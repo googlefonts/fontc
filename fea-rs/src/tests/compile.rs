@@ -405,3 +405,44 @@ markClass a <anchor 150 -10> @top;
         "mark_class_in_glyph_class",
     );
 }
+
+// FeatureTableSubstitution records must be in increasing FeatureIndex order
+// (OpenType spec); they used to come out in HashMap order.
+#[test]
+fn feature_variation_substitutions_sorted_by_feature_index() {
+    let compilation = compile_fea_variable(
+        "\
+languagesystem DFLT dflt;
+conditionset heavy { wght 600 900; } heavy;
+variation calt heavy { sub a by b; } calt;
+variation rlig heavy { sub b by c; } rlig;
+variation liga heavy { sub c by d; } liga;
+variation ss01 heavy { sub d by e; } ss01;
+variation ss02 heavy { sub e by f; } ss02;
+variation ss03 heavy { sub f by g; } ss03;
+",
+        "feature_variation_substitution_order",
+    );
+
+    let gsub = compilation.gsub.expect("expected GSUB");
+    let variations = gsub
+        .feature_variations
+        .as_ref()
+        .expect("expected FeatureVariations");
+    let records = &variations.feature_variation_records;
+    assert_eq!(records.len(), 1);
+    let subst = records[0]
+        .feature_table_substitution
+        .as_ref()
+        .expect("expected FeatureTableSubstitution");
+    let indices = subst
+        .substitutions
+        .iter()
+        .map(|record| record.feature_index)
+        .collect::<Vec<_>>();
+    assert_eq!(indices.len(), 6);
+    assert!(
+        indices.windows(2).all(|pair| pair[0] < pair[1]),
+        "substitutions not in increasing feature index order: {indices:?}"
+    );
+}
