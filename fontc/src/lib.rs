@@ -939,6 +939,16 @@ mod tests {
     }
 
     #[test]
+    fn glyphs_smart_component_cycle_is_an_error() {
+        // cyca and cycb are smart components that use each other; this used to
+        // panic while ordering the smart components for instantiation
+        assert_component_cycle_error(
+            "glyphs3/SmartComponentCycle.glyphs",
+            "Component cycle through glyphs [cyca, cycb, selfref]",
+        );
+    }
+
+    #[test]
     fn compile_sets_xmin_eq_lsb_flag() {
         let result = TestCompile::compile_source("fontinfo.designspace");
         let head = result.font().head().unwrap();
