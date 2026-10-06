@@ -2692,7 +2692,7 @@ impl RawFont {
     fn v2_to_v3_instances(&mut self) -> Result<(), Error> {
         for instance in self.instances.iter_mut() {
             if let Some(custom_weight_class) = instance.custom_parameters.take("weightClass") {
-                instance.weight_class = custom_weight_class.to_string().into();
+                instance.weight_class = Some(custom_weight_class.to_string()?);
             }
 
             instance.properties.extend(v2_to_v3_name(

@@ -73,6 +73,8 @@ pub enum Error {
     },
     #[error("parsing failed: '{0}'")]
     Parse(String),
+    #[error("Cannot write non-finite float '{0}': the plist format has no spelling for it")]
+    NonFiniteFloat(OrderedFloat<f64>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -334,28 +336,32 @@ impl Plist {
             if let Ok(num) = s.parse() {
                 return Plist::Integer(num);
             }
-            if let Ok(num) = s.parse() {
-                return Plist::Float(num);
+            // a signed spelling ("-inf") or an overflow ("1e999") still
+            // parses as a non-finite f64, which no plist can write back
+            if let Ok(num) = s.parse::<f64>()
+                && num.is_finite()
+            {
+                return Plist::Float(num.into());
             }
         }
         Plist::String(s.into())
     }
 
-    #[allow(clippy::inherent_to_string, unused)]
-    pub fn to_string(&self) -> String {
+    /// Fails on a NaN or infinite float, which the plist format cannot represent.
+    pub fn to_string(&self) -> Result<String, Error> {
         let mut s = String::new();
-        self.push_to_string(&mut s);
-        s
+        self.push_to_string(&mut s)?;
+        Ok(s)
     }
 
-    fn push_to_string(&self, s: &mut String) {
+    fn push_to_string(&self, s: &mut String) -> Result<(), Error> {
         match self {
             Plist::Array(a) => {
                 s.push('(');
                 let mut delim = "\n";
                 for el in a {
                     s.push_str(delim);
-                    el.push_to_string(s);
+                    el.push_to_string(s)?;
                     delim = ",\n";
                 }
                 s.push_str("\n)");
@@ -369,7 +375,7 @@ impl Plist {
                     // TODO: quote if needed?
                     escape_string(s, k);
                     s.push_str(" = ");
-                    el.push_to_string(s);
+                    el.push_to_string(s)?;
                     s.push_str(";\n");
                 }
                 s.push('}');
@@ -379,6 +385,9 @@ impl Plist {
                 s.push_str(&format!("{i}"));
             }
             Plist::Float(f) => {
+                if !f.is_finite() {
+                    return Err(Error::NonFiniteFloat(*f));
+                }
                 s.push_str(&format!("{f}"));
             }
             Plist::Data(data) => {
@@ -389,6 +398,7 @@ impl Plist {
                 s.push('>');
             }
         }
+        Ok(())
     }
 }
 
@@ -948,6 +958,7 @@ impl FromPlist for Affine {
 #[cfg(test)]
 mod tests {
     use ascii_plist_derive::FromPlist;
+    use rstest::rstest;
     use std::collections::BTreeMap;
 
     use super::*;
@@ -1043,6 +1054,42 @@ mod tests {
         let plist = Plist::parse(contents).unwrap();
         let data = plist.get("mydata").unwrap().clone().expect_data().unwrap();
         assert_eq!(data, [0xde, 0xad, 0xbe, 0xef])
+    }
+
+    #[test]
+    fn to_string_round_trips_floats() {
+        let plist = Plist::Array(vec![
+            Plist::Float(0.5.into()),
+            Plist::Float((-12.25).into()),
+        ]);
+        let text = plist.to_string().unwrap();
+        assert_eq!(Plist::parse(&text).unwrap(), plist);
+    }
+
+    #[rstest]
+    #[case::nan("nan")]
+    #[case::inf("inf")]
+    #[case::infinity("Infinity")]
+    #[case::neg_inf("-inf")]
+    #[case::neg_nan("-NaN")]
+    #[case::neg_infinity("-infinity")]
+    #[case::overflow("1e999")]
+    #[case::neg_overflow("-1e999")]
+    fn non_finite_atoms_parse_as_strings(#[case] atom: &str) {
+        assert_eq!(Plist::parse(atom).unwrap(), Plist::String(atom.into()));
+    }
+
+    #[rstest]
+    #[case::nan(f64::NAN)]
+    #[case::infinity(f64::INFINITY)]
+    #[case::neg_infinity(f64::NEG_INFINITY)]
+    fn to_string_rejects_non_finite_float(#[case] value: f64) {
+        // nested, so the error has to travel up through both containers
+        let plist = Plist::Array(vec![Plist::Dictionary(BTreeMap::from([(
+            SmolStr::new("x"),
+            Plist::Float(value.into()),
+        )]))]);
+        assert_eq!(plist.to_string(), Err(Error::NonFiniteFloat(value.into())));
     }
 
     #[test]
