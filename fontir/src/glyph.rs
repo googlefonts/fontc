@@ -168,7 +168,7 @@ enum GlyphOp {
 
 /// Fix glyphs with mixed components/contours.
 ///
-/// We presume component cycles are checked elsewhere and do not check for them here
+/// Component cycles must have been rejected already, see [`check_component_cycles`]
 fn resolve_inconsistencies(
     context: &Context,
     mut todo: VecDeque<(GlyphOp, Arc<Glyph>)>,
@@ -253,6 +253,27 @@ fn prune_missing_components(context: &Context) {
         }
         context.glyphs.set(new_glyph);
     }
+}
+
+/// Fail if any glyph is part of a component cycle.
+///
+/// Everything after this point that walks the component graph assumes there
+/// are no cycles, and would otherwise loop forever or overflow the stack.
+/// fontmake also refuses to build such fonts.
+/// See <https://github.com/googlefonts/fontc/issues/1062>
+fn check_component_cycles(context: &Context) -> Result<(), Error> {
+    let glyphs = context.glyphs.all();
+    let glyphs = glyphs
+        .iter()
+        .map(|g| (g.1.name.clone().into_inner(), g.1.as_ref()))
+        .collect();
+    let cycles = fontdrasil::util::component_cycles(&glyphs);
+    if !cycles.is_empty() {
+        return Err(Error::ComponentCycle(
+            cycles.into_iter().map(GlyphName::from).collect(),
+        ));
+    }
+    Ok(())
 }
 
 /// Equivalent to 'SkipExportGlyphsFilter' in pythonland:
@@ -843,6 +864,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // missing component can't cause its glyph (or its siblings) to be
         // decomposed. See https://github.com/googlefonts/fontc/issues/1858
         prune_missing_components(context);
+        check_component_cycles(context)?;
 
         // Propagate anchors from components to composites (if enabled)
         // This must happen BEFORE flattening non-export components, because after
@@ -1871,6 +1893,53 @@ mod tests {
         let a = context.get_glyph("a");
         assert!(a.default_instance().components.is_empty());
         assert!(a.default_instance().contours.is_empty());
+    }
+
+    #[test]
+    fn component_cycles_are_an_error() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.add_component("c", (0, 0));
+        });
+        builder.add_glyph_fancy("c", |c| {
+            c.add_contour(simple_square_path());
+            c.add_component("b", (0, 0));
+        });
+        builder.add_glyph_fancy("d", |d| {
+            d.add_component("a", (0, 0));
+            d.add_component("b", (0, 0));
+        });
+        builder.add_glyph_fancy("e", |e| {
+            e.add_component("e", (10, 0));
+        });
+
+        let context = builder.into_context();
+        let Err(Error::ComponentCycle(glyphs)) = check_component_cycles(&context) else {
+            panic!("expected a component cycle error");
+        };
+        // 'd' uses a glyph in a cycle but isn't in one itself
+        assert_eq!(glyphs, ["b", "c", "e"].map(GlyphName::from));
+    }
+
+    #[test]
+    fn no_component_cycles() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.add_component("a", (0, 0));
+        });
+        builder.add_glyph_fancy("c", |c| {
+            c.add_component("b", (0, 0));
+            c.add_component("a", (0, 0));
+        });
+
+        let context = builder.into_context();
+        check_component_cycles(&context).unwrap();
     }
 
     #[test]

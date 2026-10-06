@@ -44,6 +44,8 @@ pub enum Error {
     MissingAxisMapping(Tag),
     #[error("no glyph for name '{0}'")]
     NoGlyphForName(GlyphName),
+    #[error("Component cycle through glyphs {0:?}")]
+    ComponentCycle(Vec<GlyphName>),
     #[error("Missing required axis values for {0}")]
     NoAxisDefinitions(String),
     #[error("Axis {0} has no entry in axes")]
