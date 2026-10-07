@@ -42,6 +42,11 @@ pub enum BadCornerComponentReason {
 }
 
 impl BadCornerComponentReason {
+    /// Whether the problem is with this one corner, which we can leave out.
+    fn skips_corner(&self) -> bool {
+        matches!(self, Self::BadShapeIndex(_))
+    }
+
     // convenience to turn this into the actual error type we return
     fn add_name(self, component: SmolStr) -> BadCornerComponent {
         BadCornerComponent {
@@ -102,10 +107,13 @@ pub(crate) fn insert_corner_components_for_layer(
             .map_err(|e| e.add_name(hint.name.clone()))?;
 
         let n_points = component.corner_path.nodes.len() - 1;
-        layer
-            .insert_corner_component(component, &hint, inserted_pts)
-            .map_err(|e| e.add_name(hint.name.clone()))?;
-        inserted_pts += n_points;
+        match layer.insert_corner_component(component, &hint, inserted_pts) {
+            Ok(()) => inserted_pts += n_points,
+            Err(e) if e.skips_corner() => {
+                log::warn!("skipping corner component '{}': {e}", hint.name);
+            }
+            Err(e) => return Err(e.add_name(hint.name.clone())),
+        }
     }
 
     // Clear hints after applying
@@ -556,6 +564,26 @@ mod tests {
 
         // Compare the results
         compare_paths(test_layer, expectation_layer, glyph_name);
+    }
+
+    // A hint on a path that isn't there (Aoboshi One's uni5B57) is skipped,
+    // rather than failing the whole font.
+    #[test]
+    fn hint_on_missing_path_is_skipped() {
+        let font = Font::load_raw(glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+        let mut layer = font
+            .glyphs
+            .values()
+            .flat_map(|glyph| glyph.layers.iter())
+            .find(|layer| layer.hints.iter().any(|h| h.type_ == HintType::Corner))
+            .unwrap()
+            .clone();
+        for hint in layer.hints.iter_mut() {
+            hint.shape_index = 9;
+        }
+        let shapes = layer.shapes.clone();
+        insert_corner_components_for_layer(&mut layer, &font.glyphs).unwrap();
+        assert_eq!(layer.shapes, shapes);
     }
 
     #[rstest]
