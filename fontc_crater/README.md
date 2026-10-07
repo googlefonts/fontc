@@ -68,6 +68,16 @@ $ RUST_LOG=debug cargo run --release -p fontc_crater \
 
 ```
 
+To test a change to python dependencies without invalidating the cache of
+fontmake's output, pass `--no-results-cache` and a scratch `--out` directory. To
+compare against an existing run, first copy its `summary.json` and the results
+file its last entry names into the scratch directory.
+
+```shell
+$ cargo run --release -p fontc_crater \
+-- ci ../fontc_crater/targets.json --out scratch-results/ --no-results-cache
+```
+
 [google-fonts-sources]: https://github.com/googlefonts/google-fonts-sources
 [google/fonts]: https://github.com/google/fonts
 [rust-lang/crater]: https://github.com/rust-lang/crater

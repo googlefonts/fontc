@@ -47,6 +47,14 @@ pub(super) struct CiArgs {
     /// only generate html (for the provided out_dir)
     #[arg(long)]
     pub(super) html_only: bool,
+    /// Rebuild every target without reading or writing cached results.
+    ///
+    /// Source checkouts in the cache dir are still used. This is for testing
+    /// changes to python dependencies without invalidating the cache; use it
+    /// with a scratch `--out` dir, since the next normal run compares against
+    /// the last run recorded there.
+    #[arg(long)]
+    pub(super) no_results_cache: bool,
 }
 
 impl CiArgs {

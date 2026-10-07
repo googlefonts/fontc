@@ -132,9 +132,11 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let cache_dir = args.cache_dir();
     inputs.update_fonts_repo(&cache_dir)?;
     log::info!("using cache dir {}", cache_dir.display());
-    let results_cache = ResultsCache::in_dir(&cache_dir);
+    let results_cache = (!args.no_results_cache).then(|| ResultsCache::in_dir(&cache_dir));
 
-    if let Some(last_run) = prev_runs.last() {
+    if let Some(last_run) = prev_runs.last()
+        && let Some(results_cache) = &results_cache
+    {
         if last_run.fontc_rev == fontc_rev
             && input_file_sha == last_run.input_file_sha
             && pip_freeze_sha == last_run.pip_freeze_sha
