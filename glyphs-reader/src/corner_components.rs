@@ -468,7 +468,6 @@ struct AlignmentState {
 mod tests {
     use super::*;
     use crate::font::Font;
-    use rstest::rstest;
     use std::path::{Path as FilePath, PathBuf};
 
     fn testdata_dir() -> PathBuf {
@@ -483,120 +482,315 @@ mod tests {
         testdata_dir().join("glyphs3")
     }
 
-    /// Compare two layers' paths for equality
-    fn compare_paths(test_layer: &Layer, expectation_layer: &Layer, glyph_name: &str) {
-        // Extract only Path shapes, ignoring Components
-        let test_paths: Vec<_> = test_layer
+    // Each case in CornerComponents.glyphs has a <case>.expectation glyph with
+    // Glyphs 3.5's own decomposition of its corners, made by glyphsLib's
+    // tests/tools/corner_components_expectations.py.
+    //
+    // Cases where we don't yet match Glyphs:
+    const MISMATCHES: &[&str] = &[
+        "ad_curved_instroke",
+        "ak_right_slanted",
+        "al_unaligned",
+        "align_instroke_concave",
+        "align_instroke_flipx_concave",
+        "align_instroke_flipxy_acute",
+        "align_instroke_squashed",
+        "align_middle_concave",
+        "align_middle_flipx_acute",
+        "align_middle_flipx_concave",
+        "align_middle_flipy_acute",
+        "align_middle_squashed",
+        "align_outstroke_flipx_acute",
+        "align_outstroke_flipx_concave",
+        "align_outstroke_flipy_acute",
+        "align_unaligned_concave",
+        "align_unaligned_flipx_acute",
+        "align_unaligned_flipx_concave",
+        "align_unaligned_flipxy_acute",
+        "align_unaligned_flipy_acute",
+        "anchor_left_instroke",
+        "anchor_left_instroke_flipx",
+        "anchor_left_instroke_square",
+        "anchor_left_middle",
+        "anchor_left_middle_flipx",
+        "anchor_left_on_path_instroke",
+        "anchor_left_on_path_instroke_flipx",
+        "anchor_left_on_path_middle",
+        "anchor_left_on_path_middle_flipx",
+        "anchor_left_on_path_outstroke_flipx",
+        "anchor_left_on_path_unaligned",
+        "anchor_left_on_path_unaligned_flipx",
+        "anchor_left_outstroke_flipx",
+        "anchor_left_right_instroke",
+        "anchor_left_right_instroke_flipx",
+        "anchor_left_right_middle",
+        "anchor_left_right_middle_flipx",
+        "anchor_left_right_outstroke",
+        "anchor_left_right_outstroke_flipx",
+        "anchor_left_right_unaligned",
+        "anchor_left_right_unaligned_flipx",
+        "anchor_left_unaligned_flipx",
+        "anchor_origin_instroke",
+        "anchor_origin_left",
+        "anchor_origin_left_flipx",
+        "anchor_origin_outstroke_flipx",
+        "anchor_right_instroke",
+        "anchor_right_instroke_flipx",
+        "anchor_right_instroke_square",
+        "anchor_right_middle",
+        "anchor_right_middle_flipx",
+        "anchor_right_outstroke",
+        "anchor_right_outstroke_flipx",
+        "anchor_right_outstroke_square",
+        "anchor_right_unaligned",
+        "anchor_right_unaligned_flipx",
+        "angle_concave",
+        "angle_counter",
+        "ap_twoofthem",
+        "au_left_anchoronpath",
+        "av_left_anchoroffpath",
+        "curve_bracketed_instroke_curvedboth",
+        "curve_bracketed_instroke_curvedin",
+        "curve_bracketed_instroke_curvedout",
+        "curve_bracketed_instroke_tight",
+        "curve_bracketed_outstroke_curvedboth",
+        "curve_bracketed_outstroke_curvedin",
+        "curve_bracketed_outstroke_curvedout",
+        "curve_bracketed_outstroke_tight",
+        "curve_cupped_instroke_curvedboth",
+        "curve_cupped_instroke_curvedin",
+        "curve_cupped_instroke_curvedout",
+        "curve_cupped_instroke_tight",
+        "curve_cupped_outstroke_tight",
+        "curve_flare_instroke_curvedboth",
+        "curve_flare_instroke_curvedin",
+        "curve_flare_instroke_flipx_curvedin",
+        "curve_flare_instroke_tight",
+        "curve_flare_outstroke_curvedboth",
+        "curve_flare_outstroke_curvedin",
+        "curve_flare_outstroke_curvedout",
+        "curve_flare_outstroke_flipx_curvedin",
+        "curve_flare_outstroke_tight",
+        "curve_flare_turned_instroke_curvedboth",
+        "curve_flare_turned_instroke_curvedin",
+        "curve_flare_turned_instroke_curvedout",
+        "curve_flare_turned_instroke_square",
+        "curve_flare_turned_instroke_tight",
+        "curve_flare_turned_outstroke_curvedboth",
+        "curve_flare_turned_outstroke_curvedin",
+        "curve_flare_turned_outstroke_curvedout",
+        "curve_flare_turned_outstroke_square",
+        "curve_flare_turned_outstroke_tight",
+        "multi_concave",
+        "multi_flipx",
+        "multi_instroke_acute",
+        "orient_mirrored_acute",
+        "orient_mirrored_square",
+        "orient_mirrored_turned_acute",
+        "orient_mirrored_turned_concave",
+        "orient_mirrored_turned_square",
+        "orient_reversed_acute",
+        "orient_reversed_concave",
+        "orient_reversed_square",
+        "orient_tilted_acute",
+        "orient_tilted_concave",
+        "orient_turned_acute",
+        "orient_turned_back_acute",
+        "orient_turned_back_concave",
+        "orient_turned_back_square",
+        "orient_turned_concave",
+        "orient_turned_square",
+        "orient_upside_down_concave",
+        "real_alkatra_l",
+        "real_aoboshi_g",
+        "real_aoboshi_l",
+        "real_aoboshi_x",
+        "real_bellota_p",
+        "real_bellota_sha",
+        "real_hina_uroko",
+        "real_hina_yoko",
+        "real_iansui_rhook",
+        "real_iansui_sturn",
+        "real_inconsolata_d",
+        "real_montagu_k_arm",
+        "real_montagu_k_leg",
+        "real_playfair_de",
+        "real_playfair_descender",
+        "real_plexkr_mil",
+        "where_duplicate",
+        "where_short_instroke",
+        "where_short_outstroke",
+        "where_straight_node",
+    ];
+
+    fn master_layer<'a>(font: &'a Font, glyph_name: &str) -> Option<&'a Layer> {
+        font.glyphs
+            .get(glyph_name)?
+            .layers
+            .iter()
+            .find(|layer| layer.layer_id == font.masters[0].id)
+    }
+
+    fn on_curves(layer: &Layer) -> Vec<Vec<Point>> {
+        layer
             .shapes
             .iter()
             .filter_map(Shape::as_path)
-            .collect();
+            .map(|path| {
+                path.nodes
+                    .iter()
+                    .filter(|node| node.node_type != NodeType::OffCurve)
+                    .map(|node| node.pt)
+                    .collect()
+            })
+            .collect()
+    }
 
-        let expectation_paths: Vec<_> = expectation_layer
-            .shapes
+    fn node_distance(nodes: &[Point], others: impl Iterator<Item = Point>) -> f64 {
+        nodes
             .iter()
-            .filter_map(Shape::as_path)
+            .zip(others)
+            .map(|(a, b)| (a.x - b.x).abs().max((a.y - b.y).abs()))
+            .fold(0.0, f64::max)
+    }
+
+    /// The furthest any of our nodes is from Glyphs'.
+    ///
+    /// Each of our contours is matched with whichever of Glyphs' contours and
+    /// start points fits it best.
+    fn furthest_node(ours: &[Vec<Point>], glyphs: &[Vec<Point>]) -> f64 {
+        let lengths = |contours: &[Vec<Point>]| {
+            let mut lengths: Vec<_> = contours.iter().map(Vec::len).collect();
+            lengths.sort();
+            lengths
+        };
+        if lengths(ours) != lengths(glyphs) {
+            return f64::INFINITY;
+        }
+        let mut glyphs = glyphs.to_vec();
+        let mut furthest = 0.0f64;
+        for contour in ours {
+            let (distance, i) = glyphs
+                .iter()
+                .enumerate()
+                .filter(|(_, other)| other.len() == contour.len())
+                .flat_map(|(i, other)| {
+                    (0..other.len().max(1)).map(move |k| {
+                        let rotated = other.iter().cycle().skip(k).copied();
+                        (node_distance(contour, rotated), i)
+                    })
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .unwrap();
+            furthest = furthest.max(distance);
+            glyphs.remove(i);
+        }
+        furthest
+    }
+
+    /// The outline as straight lines, with curves flattened.
+    fn outline(layer: &Layer) -> Vec<Line> {
+        let mut lines = Vec::new();
+        for path in layer.shapes.iter().filter_map(Shape::as_path) {
+            let on_curves: Vec<_> = (0..path.nodes.len())
+                .filter(|i| path.nodes[*i].node_type != NodeType::OffCurve)
+                .collect();
+            let n_segments = if path.closed {
+                on_curves.len()
+            } else {
+                on_curves.len().saturating_sub(1)
+            };
+            for &i in &on_curves[..n_segments] {
+                match path.get_next_segment(i).unwrap() {
+                    PathSeg::Line(line) => lines.push(line),
+                    curve => {
+                        let points: Vec<_> =
+                            (0..=24).map(|j| curve.eval(j as f64 / 24.0)).collect();
+                        lines.extend(points.windows(2).map(|pair| Line::new(pair[0], pair[1])));
+                    }
+                }
+            }
+        }
+        lines
+    }
+
+    fn distance_to_line(pt: Point, line: Line) -> f64 {
+        let d = line.p1 - line.p0;
+        let t = match d.hypot2() {
+            0.0 => 0.0,
+            length2 => ((pt - line.p0).dot(d) / length2).clamp(0.0, 1.0),
+        };
+        pt.distance(line.eval(t))
+    }
+
+    /// The furthest any point on `lines` is from `others`, checking every few units.
+    fn furthest_point(lines: &[Line], others: &[Line]) -> f64 {
+        const STEP: f64 = 3.0;
+        let mut furthest = 0.0f64;
+        for line in lines {
+            let n = (line.length() / STEP).ceil().max(1.0) as usize;
+            for i in 0..n {
+                let pt = line.eval(i as f64 / n as f64);
+                let nearest = others
+                    .iter()
+                    .map(|other| distance_to_line(pt, *other))
+                    .fold(f64::INFINITY, f64::min);
+                furthest = furthest.max(nearest);
+            }
+        }
+        furthest
+    }
+
+    /// Decompose the corners in `case` and compare the result with Glyphs'.
+    ///
+    /// We and Glyphs round to whole units at different points, so we allow a
+    /// unit's difference. Handles are only compared through the outline: one a
+    /// few units off can move the curve by less than one.
+    fn check_case(font: &Font, case: &str) -> Result<(), String> {
+        let mut ours = master_layer(font, case).unwrap().clone();
+        let glyphs = master_layer(font, &format!("{case}.expectation")).ok_or("no expectation")?;
+        insert_corner_components_for_layer(&mut ours, &font.glyphs).map_err(|e| e.to_string())?;
+        let node = furthest_node(&on_curves(&ours), &on_curves(glyphs));
+        if node > 1.0 {
+            return Err(format!("a node is {node} units from Glyphs'"));
+        }
+        let (ours, glyphs) = (outline(&ours), outline(glyphs));
+        let outline = furthest_point(&ours, &glyphs).max(furthest_point(&glyphs, &ours));
+        if outline > 1.0 {
+            return Err(format!("the outline is {outline:.1} units from Glyphs'"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn corner_components_match_glyphs() {
+        let font = Font::load_raw(glyphs3_dir().join("CornerComponents.glyphs")).unwrap();
+        let cases: Vec<_> = font
+            .glyphs
+            .keys()
+            .filter(|name| {
+                master_layer(&font, name)
+                    .is_some_and(|layer| layer.hints.iter().any(|h| h.type_ == HintType::Corner))
+            })
             .collect();
-
-        assert_eq!(
-            test_paths.len(),
-            expectation_paths.len(),
-            "Number of paths differs for glyph '{glyph_name}': expected {}, got {}",
-            expectation_paths.len(),
-            test_paths.len()
-        );
-
-        for (i, (test_path, expectation_path)) in
-            test_paths.iter().zip(expectation_paths.iter()).enumerate()
-        {
-            assert_eq!(
-                test_path.to_points(),
-                expectation_path.to_points(),
-                "Path {i} differs for glyph '{glyph_name}'",
+        for name in MISMATCHES {
+            assert!(
+                cases.iter().any(|case| case == name),
+                "no such case '{name}'"
             );
         }
-    }
-
-    fn test_corner_component_glyph(glyph_name: &str) {
-        let font_path = glyphs3_dir().join("CornerComponents.glyphs");
-        let font = Font::load_raw(&font_path).expect("Failed to load CornerComponents.glyphs");
-
-        let mut test_glyph = font
-            .glyphs
-            .get(glyph_name)
-            .cloned()
-            .unwrap_or_else(|| panic!("Test glyph '{}' not found", glyph_name));
-
-        let expectation_glyph_name = format!("{}.expectation", glyph_name);
-
-        // Apply corner components to the test glyph
-        for layer in &mut test_glyph.layers {
-            insert_corner_components_for_layer(layer, &font.glyphs)
-                .expect("Failed to insert corner components");
-        }
-
-        let expectation_glyph = font
-            .glyphs
-            .get(expectation_glyph_name.as_str())
-            .unwrap_or_else(|| panic!("Expectation glyph '{}' not found", expectation_glyph_name));
-
-        // Get the first master's layer (assuming single master for test)
-        assert!(
-            !test_glyph.layers.is_empty(),
-            "Test glyph '{glyph_name}' has no layers",
-        );
-        assert!(
-            !expectation_glyph.layers.is_empty(),
-            "Expectation glyph '{}' has no layers",
-            expectation_glyph_name
-        );
-
-        let test_layer = &test_glyph.layers[0];
-        let expectation_layer = &expectation_glyph.layers[0];
-
-        // Compare the results
-        compare_paths(test_layer, expectation_layer, glyph_name);
-    }
-
-    #[rstest]
-    #[case::aa_simple_angleinstroke("aa_simple_angleinstroke")]
-    #[case::ab_simple_angled("ab_simple_angled")]
-    #[case::ac_scale("ac_scale")]
-    #[case::ad_curved_instroke("ad_curved_instroke")]
-    #[case::ae_curved_corner_firstseg("ae_curved_corner_firstseg")]
-    #[case::af_curved_corner_firstseg_slanted("af_curved_corner_firstseg_slanted")]
-    #[case::ag_curved_corner_bothsegs("ag_curved_corner_bothsegs")]
-    #[case::ag_curved_corner_bothsegs_rotated("ag_curved_corner_bothsegs_rotated")]
-    #[case::ah_origin("ah_origin")]
-    #[case::ai_curved_outstroke("ai_curved_outstroke")]
-    #[case::aj_right_alignment("aj_right_alignment")]
-    #[case::ak_right_slanted("ak_right_slanted")]
-    #[case::al_unaligned("al_unaligned")]
-    #[case::am_middle("am_middle")]
-    #[case::an_flippy("an_flippy")]
-    #[case::ao_firstnode("ao_firstnode")]
-    #[case::ap_twoofthem("ap_twoofthem")]
-    #[case::aq_rightleg("aq_rightleg")]
-    #[case::ar_leftleg("ar_leftleg")]
-    #[case::as_closedpaths("as_closedpaths")]
-    #[case::at_unaligned_lastseg("at_unaligned_lastseg")]
-    #[case::au_left_anchoronpath("au_left_anchoronpath")]
-    #[case::av_left_anchoroffpath("av_left_anchoroffpath")]
-    #[case::aw_direction("aw_direction")]
-    #[case::ax_curved_instroke2("ax_curved_instroke2")]
-    // ported from glyphsLib: https://github.com/googlefonts/glyphsLib/blob/f90e4060ba/tests/corner_components_test.py#L14
-    fn test_corner_components(#[case] glyph_name: &str) {
-        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        // Skip glyphs with left_anchor as noted in the Python test
-        if glyph_name.contains("left_anchor") {
-            // In rstest we can't easily skip tests, so we just return early
-            log::info!(
-                "Skipping '{}': left anchors not quite working yet",
-                glyph_name
-            );
-            return;
-        }
-
-        test_corner_component_glyph(glyph_name);
+        let unexpected: Vec<_> = cases
+            .iter()
+            .filter_map(|case| {
+                match (check_case(&font, case), MISMATCHES.contains(&case.as_str())) {
+                    (Ok(()), true) => {
+                        Some(format!("{case}: matches Glyphs, remove it from MISMATCHES"))
+                    }
+                    (Err(e), false) => Some(format!("{case}: {e}")),
+                    _ => None,
+                }
+            })
+            .collect();
+        assert!(unexpected.is_empty(), "{}", unexpected.join("\n"));
     }
 }
