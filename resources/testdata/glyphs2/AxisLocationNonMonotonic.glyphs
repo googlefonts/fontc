@@ -1,0 +1,90 @@
+{
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Width;
+Tag = wdth;
+}
+);
+}
+);
+familyName = Mapping;
+fontMaster = (
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Width;
+Location = 300;
+}
+);
+}
+);
+id = condensed;
+weightValue = 300;
+},
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Width;
+Location = 500;
+}
+);
+}
+);
+id = normal;
+weightValue = 500;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = condensed;
+width = 200;
+},
+{
+layerId = normal;
+width = 300;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+interpolationWeight = 300;
+name = Condensed;
+},
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Width;
+Location = 85;
+}
+);
+}
+);
+interpolationWeight = 400;
+name = "Semi Condensed";
+},
+{
+interpolationWeight = 500;
+name = Normal;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

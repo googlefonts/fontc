@@ -215,14 +215,17 @@ fn to_ir_axis(
             .map(|(u, d)| (UserCoord::new(*u), DesignCoord::new(*d)))
             .collect();
         let default_idx = find_by_design_coord(&mappings, default, axis.name.as_str(), "default")?;
-        let min_idx = find_by_design_coord(&mappings, min, axis.name.as_str(), "min")?;
-        let max_idx = find_by_design_coord(&mappings, max, axis.name.as_str(), "max")?;
+        // the min and max masters must be mapped too
+        find_by_design_coord(&mappings, min, axis.name.as_str(), "min")?;
+        find_by_design_coord(&mappings, max, axis.name.as_str(), "max")?;
         // Use user-space values directly from the mapping, matching glyphsLib.
         // Don't round-trip via design_to_user which is lossy for many-to-one maps.
-        // A decreasing mapping reverses the design endpoints' user order.
-        let user_min = mappings[min_idx].0.min(mappings[max_idx].0);
+        // The axis spans the whole mapping, like in glyphsLib: an explicit Axis
+        // Mappings may go beyond the masters, while the mappings we derive from
+        // Axis Location or the instances only span them.
+        let user_min = mappings.iter().map(|(u, _)| *u).min().unwrap();
         let user_default = mappings[default_idx].0;
-        let user_max = mappings[min_idx].0.max(mappings[max_idx].0);
+        let user_max = mappings.iter().map(|(u, _)| *u).max().unwrap();
         (
             CoordConverter::new(mappings, default_idx)?,
             user_min,
