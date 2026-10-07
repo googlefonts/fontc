@@ -475,13 +475,12 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                     return None;
                 }
                 // like fontmake, leave out instances outside the axis, which
-                // would need extrapolating
+                // would need extrapolating. Compare in user space like fontTools'
+                // designspaceLib.split: the axis ends need not map to the extreme
+                // design values, e.g. with a decreasing or non-monotonic mapping
                 if let Some((axis, pos)) = axes.iter().zip(&inst.axes_values).find(|(axis, pos)| {
-                    let pos = DesignCoord::new(**pos);
-                    // a decreasing mapping reverses the design endpoints
-                    let a = axis.min.to_design(&axis.converter);
-                    let b = axis.max.to_design(&axis.converter);
-                    !axis.is_point() && (pos < a.min(b) || pos > a.max(b))
+                    let pos = DesignCoord::new(**pos).to_user(&axis.converter);
+                    !axis.is_point() && (pos < axis.min || pos > axis.max)
                 }) {
                     warn!(
                         "Instance {}: {} {pos} is outside the axis, it can't be \
@@ -2528,6 +2527,59 @@ mod tests {
                 .map(|ni| ni.name.as_str())
                 .collect::<Vec<_>>(),
             ["Regular", "Bold"]
+        );
+    }
+
+    #[test]
+    fn axis_location_non_monotonic() {
+        // Like Barlow: the Semi Condensed instance's Axis Location, 85 at design
+        // 400, makes the mapping 85:400 300:300 500:500. The axis is 85..500, like
+        // in glyphsLib, and the Condensed instance at design 300 stays on it even
+        // though the axis min maps to design 400
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("AxisLocationNonMonotonic.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let wdth = static_metadata.axes.get(&Tag::new(b"wdth")).unwrap();
+        assert_eq!(
+            (wdth.min, wdth.default, wdth.max),
+            (
+                UserCoord::new(85.0),
+                UserCoord::new(300.0),
+                UserCoord::new(500.0)
+            )
+        );
+        assert_eq!(
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|ni| ni.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Condensed", "Semi Condensed", "Normal"]
+        );
+    }
+
+    #[test]
+    fn axis_location_ignores_instances_without_it() {
+        // The masters have Axis Location, opsz 16 at design 1 and 36 at 2: the
+        // Display instance at design 2, without one, doesn't add a 2:2 point
+        // that would stretch the axis down to 2
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("AxisLocationInstanceWithout.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let opsz = static_metadata.axes.get(&Tag::new(b"opsz")).unwrap();
+        assert_eq!(
+            opsz.converter
+                .iter()
+                .map(|(user, design, _)| (user, design))
+                .collect::<Vec<_>>(),
+            [
+                (UserCoord::new(16.0), DesignCoord::new(1.0)),
+                (UserCoord::new(36.0), DesignCoord::new(2.0))
+            ]
+        );
+        assert_eq!(
+            (opsz.min, opsz.max),
+            (UserCoord::new(16.0), UserCoord::new(36.0))
         );
     }
 

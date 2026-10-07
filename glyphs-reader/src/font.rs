@@ -3840,11 +3840,13 @@ impl Instance {
         // location defaults to the design location (identity mapping), matching
         // glyphsLib's AxisDefinition.get_user_loc() behavior:
         // https://github.com/googlefonts/glyphsLib/blob/75c07d42/Lib/glyphsLib/builder/axes.py#L403-L405
+        // When the masters have "Axis Location", glyphsLib only reads the instances'
+        // own (`cp_only=True`), so we don't guess here either.
         for (i, axis) in axes.iter().enumerate() {
             if tags_done.contains(axis.tag.as_str()) {
                 continue;
             }
-            if axis.tag == "wght" || axis.tag == "wdth" {
+            if axis.tag == "wght" || axis.tag == "wdth" || masters_have_axis_locations {
                 continue;
             }
             if let Some(&design) = value.axes_values.get(i) {
