@@ -927,7 +927,6 @@ dependencies = [
  "ordered-float",
  "pretty_assertions",
  "quick-xml",
- "regex",
  "rstest",
  "serde",
  "smol_str",

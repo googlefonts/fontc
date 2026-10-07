@@ -4,7 +4,6 @@
 //! There are lots of other ways this could go, including something serde-like
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
@@ -21,7 +20,6 @@ use indexmap::{IndexMap, IndexSet};
 use kurbo::{Affine, CubicBez, Line, PathSeg, Point, QuadBez};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
-use regex::Regex;
 use smol_str::SmolStr;
 
 use crate::error::Error;
@@ -1573,7 +1571,7 @@ struct RawGlyph {
     kern_left: Option<SmolStr>,
     #[fromplist(alt_name = "rightKerningGroup")]
     kern_right: Option<SmolStr>,
-    unicode: Option<String>,
+    unicode: Option<RawCodepoints>,
     category: Option<SmolStr>,
     sub_category: Option<SmolStr>,
     #[fromplist(alt_name = "production")]
@@ -1581,6 +1579,25 @@ struct RawGlyph {
     parts_settings: Vec<RawPartSetting>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
+}
+
+/// A glyph's codepoints as written, comma-separated, e.g. "1619,1764"
+///
+/// Glyphs has a wide variety of unicode definitions: a single unquoted value
+/// (`unicode = 0041;`), a quoted list (`unicode = "2044,200D";`) or a list in
+/// parentheses (`unicode = (1619,1764);`), on one line or spread over several.
+/// We keep the digits as text because their radix depends on the format version.
+#[derive(Default, Clone, Debug, PartialEq)]
+struct RawCodepoints(String);
+
+impl FromPlist for RawCodepoints {
+    fn parse(tokenizer: &mut Tokenizer) -> Result<Self, crate::plist::Error> {
+        if matches!(tokenizer.peek(), Ok(Token::OpenParen)) {
+            let values: Vec<String> = tokenizer.parse()?;
+            return Ok(RawCodepoints(values.join(",")));
+        }
+        tokenizer.parse().map(RawCodepoints)
+    }
 }
 
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
@@ -2319,8 +2336,7 @@ fn v2_to_v3_name(v2_prop: Option<&str>, v3_name: &str) -> Option<RawName> {
 
 impl RawFont {
     pub fn load_from_string(raw_content: &str) -> Result<Self, crate::plist::Error> {
-        let raw_content = preprocess_unparsed_plist(raw_content);
-        Self::parse_plist(&raw_content)
+        Self::parse_plist(raw_content)
     }
 
     pub fn load(glyphs_file: &path::Path) -> Result<Self, Error> {
@@ -2354,7 +2370,6 @@ impl RawFont {
                 let path = entry.path();
                 if path.extension() == Some(OsStr::new("glyph")) {
                     let glyph_data = fs::read_to_string(&path).map_err(Error::IoError)?;
-                    let glyph_data = preprocess_unparsed_plist(&glyph_data);
                     let glyph = RawGlyph::parse_plist(&glyph_data)
                         .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
                     if glyph.glyphname.is_empty() {
@@ -3354,7 +3369,8 @@ impl RawGlyph {
 
         let codepoints = self
             .unicode
-            .map(|s| parse_codepoint_str(&s, format_version.codepoint_radix()))
+            .filter(|RawCodepoints(s)| !s.is_empty())
+            .map(|RawCodepoints(s)| parse_codepoint_str(&s, format_version.codepoint_radix()))
             .unwrap_or_default();
 
         if (category.is_none() || sub_category.is_none() || production_name.is_none())
@@ -3971,15 +3987,6 @@ impl TryFrom<RawFont> for Font {
             user_data: from.user_data,
         })
     }
-}
-
-fn preprocess_unparsed_plist(s: &str) -> Cow<'_, str> {
-    // Glyphs has a wide variety of unicode definitions, not all of them parser friendly
-    // Make unicode always a string, without any wrapping () so we can parse as csv, radix based on format version
-    let unicode_re =
-        Regex::new(r"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$")
-            .unwrap();
-    unicode_re.replace_all(s, r#"$prefix"$value";"#)
 }
 
 fn variable_instance_for<'a>(instances: &'a [Instance], name: &str) -> Option<&'a Instance> {
@@ -4917,6 +4924,34 @@ slant = (10);
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs")).unwrap();
         assert_eq!(vec![1619, 1764], font.glyphs.get("name").unwrap().unicode);
         assert_eq!(1, font.glyphs.len());
+    }
+
+    // The regex that used to rewrite unicode values only matched a value on a
+    // line of its own, so a list laid out any other way failed the whole file
+    #[rstest]
+    #[case::spread_over_lines(
+        |s: String| s.replace("unicode = (1619,1764);", "unicode = (
+1619,
+1764
+);"),
+        &[1619, 1764]
+    )]
+    #[case::written_by_plist_to_string(
+        |s: String| Plist::parse(&s).unwrap().to_string(),
+        &[1619, 1764]
+    )]
+    #[case::whole_file_on_one_line(|s: String| s.lines().collect::<Vec<_>>().join(" "), &[1619, 1764])]
+    #[case::empty_list(|s: String| s.replace("unicode = (1619,1764);", "unicode = ();"), &[])]
+    #[case::empty_string(|s: String| s.replace("unicode = (1619,1764);", "unicode = \"\";"), &[])]
+    fn understand_unicode_sequence_layouts(
+        #[case] rewrite: fn(String) -> String,
+        #[case] expected: &[u32],
+    ) {
+        let raw =
+            fs::read_to_string(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs")).unwrap();
+        assert!(raw.contains("unicode = (1619,1764);"));
+        let font = Font::load_from_string(&rewrite(raw)).unwrap();
+        assert_eq!(expected, font.glyphs.get("name").unwrap().unicode);
     }
 
     #[test]
