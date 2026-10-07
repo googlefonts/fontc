@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use fontdrasil::open_corners::open_corner;
 use kurbo::{Affine, CubicBez, Line, ParamCurve, PathSeg, Point, Vec2};
 use smol_str::SmolStr;
 use thiserror::Error;
@@ -89,6 +90,7 @@ pub(crate) fn insert_corner_components_for_layer(
     if corner_hints.is_empty() {
         return Ok(());
     }
+    let corner_hints = erase_open_corners(layer, corner_hints);
 
     // if we insert points for one corner, it will change the index of
     // a subsequent corner, so we track how many points we've inserted.
@@ -134,6 +136,53 @@ pub(crate) fn insert_corner_components_for_layer(
     }
 
     Ok(())
+}
+
+/// Erase the open corners in a layer that has corners to apply.
+///
+/// Glyphs erases the open corners in all of a glyph's paths before it applies
+/// corners, so a corner on the start of an open corner's line goes on the
+/// erased corner, and one on the line's end is lost along with its node.
+///
+/// Returns the hints that are left, with their node indices updated.
+fn erase_open_corners(layer: &mut Layer, hints: Vec<Hint>) -> Vec<Hint> {
+    // for each path, its original length and the original index of each of
+    // its remaining nodes
+    let mut originals: BTreeMap<usize, (usize, Vec<usize>)> = BTreeMap::new();
+    for (shape_index, shape) in layer.shapes.iter_mut().enumerate() {
+        let Shape::Path(path) = shape else {
+            continue;
+        };
+        let original_len = path.nodes.len().max(1);
+        let mut kept: Vec<usize> = (0..path.nodes.len()).collect();
+        // like a UFO contour, start from the last node
+        'erase: loop {
+            let n = path.nodes.len();
+            for idx in (0..n).map(|i| (i + n - 1) % n) {
+                if let Some(removed) = path.erase_open_corner_at(idx) {
+                    kept.remove(removed);
+                    continue 'erase;
+                }
+            }
+            break;
+        }
+        originals.insert(shape_index, (original_len, kept));
+    }
+    hints
+        .into_iter()
+        .filter_map(|mut hint| {
+            let Some((original_len, kept)) = originals.get(&hint.shape_index) else {
+                return Some(hint);
+            };
+            let original = hint.node_index % original_len;
+            let Some(idx) = kept.iter().position(|&o| o == original) else {
+                log::warn!("corner component '{}' lost with its open corner", hint.name);
+                return None;
+            };
+            hint.node_index = idx;
+            Some(hint)
+        })
+        .collect()
 }
 
 impl Layer {
@@ -323,6 +372,48 @@ impl Path {
     fn set_point(&mut self, idx: usize, point: Point) {
         self.nodes[idx].pt = point;
         self.nodes[idx] = self.nodes[idx].ot_round();
+    }
+
+    /// The segments either side of the line from the node at `idx`, if it starts one.
+    fn around_line_from(&self, idx: usize) -> Option<(PathSeg, PathSeg)> {
+        let next = self.next_idx(idx);
+        if !self.closed
+            || self.nodes.len() < 4
+            || self.nodes[idx].node_type == NodeType::OffCurve
+            || self.nodes[next].node_type == NodeType::OffCurve
+        {
+            return None;
+        }
+        let one = line_or_cubic(self.get_previous_segment(idx)).ok()?;
+        let two = line_or_cubic(self.get_next_segment(next)).ok()?;
+        Some((one, two))
+    }
+
+    /// Erase the open corner made by the line from the node at `idx`, if there is one.
+    ///
+    /// The node moves to where the segments either side of the line cross,
+    /// and the line's end node is removed; returns that node's index.
+    fn erase_open_corner_at(&mut self, idx: usize) -> Option<usize> {
+        let (one, two) = self.around_line_from(idx)?;
+        let crossing = open_corner(one, two)?;
+        let next = self.next_idx(idx);
+        if let PathSeg::Cubic(cubic) = one {
+            let before = cubic.subsegment(0.0..crossing.t0);
+            let p2 = self.prev_idx(idx);
+            let p1 = self.prev_idx(p2);
+            self.nodes[p1].pt = before.p1;
+            self.nodes[p2].pt = before.p2;
+        }
+        self.nodes[idx].pt = one.eval(crossing.t0);
+        if let PathSeg::Cubic(cubic) = two {
+            let after = cubic.subsegment(crossing.t1..1.0);
+            let p1 = self.next_idx(next);
+            let p2 = self.next_idx(p1);
+            self.nodes[p1].pt = after.p1;
+            self.nodes[p2].pt = after.p2;
+        }
+        self.nodes.remove(next);
+        Some(next)
     }
 
     /// Make the cubic ending at `point_idx` a line, ending at `point`.
@@ -817,7 +908,7 @@ mod tests {
     // tests/tools/corner_components_expectations.py.
     //
     // Cases where we don't yet match Glyphs:
-    const MISMATCHES: &[&str] = &["real_aoboshi_g"];
+    const MISMATCHES: &[&str] = &[];
 
     fn master_layer<'a>(font: &'a Font, glyph_name: &str) -> Option<&'a Layer> {
         font.glyphs
@@ -1292,6 +1383,52 @@ mod tests {
         ];
         let result = apply_corners(&corner, &[], &host, &[hint]);
         assert_eq!(result, nodes(&host));
+    }
+
+    // An open corner: the stroke up overshoots to (500,340), the line goes on
+    // to (520,320), and the stroke back left crosses it at (500,320).
+    // Glyphs erases it before applying corners, so a corner on the line's end
+    // goes with that node.
+    #[test]
+    fn corner_on_open_corner_end_is_lost() {
+        let corner = [(0, 50, 'l'), (-50, 50, 'l'), (-50, 0, 'l')];
+        let host = [
+            (100, 100, 'l'),
+            (500, 100, 'l'),
+            (500, 340, 'l'),
+            (520, 320, 'l'),
+            (100, 320, 'l'),
+        ];
+        let result = apply_corners(&corner, &[], &host, &[corner_hint(3)]);
+        let erased = [
+            (100, 100, 'l'),
+            (500, 100, 'l'),
+            (500, 320, 'l'),
+            (100, 320, 'l'),
+        ];
+        assert_eq!(result, nodes(&erased));
+    }
+
+    // Once a glyph has a corner to apply, Glyphs erases the open corners in
+    // all of its paths, not just the ones with corners. (Glyphs 3.5)
+    #[test]
+    fn open_corners_erased_in_every_path() {
+        let corner = [(0, 50, 'l'), (-50, 50, 'l'), (-50, 0, 'l')];
+        let host: &[_] = &[
+            (100, 100, 'l'),
+            (500, 100, 'l'),
+            (500, 340, 'l'),
+            (520, 320, 'l'),
+            (100, 320, 'l'),
+        ];
+        let result = apply_corners_to_paths(&corner, &[], &[host, host], &[corner_hint(0)]);
+        let erased = [
+            (100, 100, 'l'),
+            (500, 100, 'l'),
+            (500, 320, 'l'),
+            (100, 320, 'l'),
+        ];
+        assert_eq!(result[1], nodes(&erased));
     }
 
     #[rstest]
