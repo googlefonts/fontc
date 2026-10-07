@@ -3,6 +3,7 @@
 pub mod agl;
 pub mod coords;
 pub mod error;
+pub mod open_corners;
 pub mod orchestration;
 pub mod paths;
 mod piecewise_linear_map;
