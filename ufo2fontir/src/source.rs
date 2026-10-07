@@ -2851,7 +2851,7 @@ mod tests {
                 ),
                 (
                     NameKey::new_bmp_only(NameId::UNIQUE_ID),
-                    String::from("0.000;NONE;NewFont-Regular")
+                    String::from("0.000;    ;NewFont-Regular")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::FULL_NAME),

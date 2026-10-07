@@ -828,6 +828,13 @@ def normalize_null_tags(ttx: etree.ElementTree, xpath: str, attr):
                 el.text = "    "
 
 
+def normalize_null_vendor_in_unique_id(ttx: etree.ElementTree):
+    """treat a 'NONE' or blank vendor in the 'version;vendor;name' unique ID as '    '"""
+    for record in ttx.xpath("//name/namerecord[@nameID='3']"):
+        if record.text:
+            record.text = re.sub(r";(?:NONE| *);", ";    ;", record.text, count=1)
+
+
 # https://github.com/googlefonts/fontc/issues/1173
 def erase_type_from_stranded_points(ttx):
     for contour in ttx.xpath("//glyf/TTGlyph/contour"):
@@ -1286,6 +1293,7 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
             name_id_to_name(ttx, "STAT//ValueNameID", "value")
             name_id_to_name(ttx, "STAT//ElidedFallbackNameID", "value")
         normalize_null_tags(ttx, "//OS_2/achVendID", "value")
+        normalize_null_vendor_in_unique_id(ttx)
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
         drop_weird_names(ttx)

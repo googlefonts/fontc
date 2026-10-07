@@ -2828,7 +2828,7 @@ mod tests {
                 ),
                 (
                     NameKey::new_bmp_only(NameId::UNIQUE_ID),
-                    String::from("42.042;NONE;FamilyName-Light"),
+                    String::from("42.042;    ;FamilyName-Light"),
                 ),
                 (
                     NameKey::new_bmp_only(NameId::FULL_NAME),
@@ -3799,7 +3799,7 @@ mod tests {
             (
                 "An Light",
                 "Italic",
-                "1.000;NONE;An-LightItalic",
+                "1.000;    ;An-LightItalic",
                 "An Light Italic",
                 "An-LightItalic",
                 "An",
@@ -3923,7 +3923,7 @@ mod tests {
     fn invalid_vendor_id_no_crashy() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("InvalidVendorID.glyphs"));
         let static_metadata = context.static_metadata.get();
-        assert_eq!(Tag::new(b"NONE"), static_metadata.misc.vendor_id);
+        assert_eq!(Tag::new(b"    "), static_metadata.misc.vendor_id);
     }
 
     #[test]

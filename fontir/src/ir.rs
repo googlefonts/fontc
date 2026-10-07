@@ -48,7 +48,8 @@ pub use static_metadata::{
     PreliminaryGdefCategories, Rule, StatAxis, StaticMetadata, Substitution, VariableFeature,
 };
 
-pub const DEFAULT_VENDOR_ID: &str = "NONE";
+/// A blank vendor ID, which the OS/2 spec allows when there is no vendor.
+pub const DEFAULT_VENDOR_ID: &str = "    ";
 
 /// The name of every glyph, in the order it will be emitted
 ///
@@ -1025,7 +1026,6 @@ impl NameBuilder {
                 .get(NameId::VERSION_STRING)
                 .unwrap()
                 .replace("Version ", "");
-            // fontmake pulls the openTypeOS2VendorID but we don't have that so just use their default
             let postscript_name = self.get(NameId::POSTSCRIPT_NAME).unwrap();
             self.add(
                 NameId::UNIQUE_ID,
@@ -2330,7 +2330,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "New Font"),
                 (NameId::SUBFAMILY_NAME, "Regular"),
-                (NameId::UNIQUE_ID, "0.000;NONE;NewFont-Regular"),
+                (NameId::UNIQUE_ID, "0.000;    ;NewFont-Regular"),
                 (NameId::FULL_NAME, "New Font Regular"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "NewFont-Regular"),
@@ -2346,7 +2346,7 @@ mod tests {
         let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_name(&names, "Version 1.002", NameId::VERSION_STRING);
-        assert_name(&names, "1.002;NONE;NewFont-Regular", NameId::UNIQUE_ID);
+        assert_name(&names, "1.002;    ;NewFont-Regular", NameId::UNIQUE_ID);
     }
 
     #[test]
@@ -2360,7 +2360,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Family"),
                 (NameId::SUBFAMILY_NAME, "Bold Italic"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-BoldItalic"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-BoldItalic"),
                 (NameId::FULL_NAME, "Family Bold Italic"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-BoldItalic"),
@@ -2380,7 +2380,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Family Subfamily"),
                 (NameId::SUBFAMILY_NAME, "Regular"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-Subfamily"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-Subfamily"),
                 (NameId::FULL_NAME, "Family Subfamily"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-Subfamily"),
@@ -2441,7 +2441,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Legacy Family"),
                 (NameId::SUBFAMILY_NAME, "Regular"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-Subfamily"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-Subfamily"),
                 (NameId::FULL_NAME, "Family Subfamily"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-Subfamily"),
@@ -2465,7 +2465,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Family"),
                 (NameId::SUBFAMILY_NAME, "Subfamily"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-Subfamily"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-Subfamily"),
                 (NameId::FULL_NAME, "Family Subfamily"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-Subfamily"),
@@ -2486,7 +2486,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Family"),
                 (NameId::SUBFAMILY_NAME, "Italic"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-Italic"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-Italic"),
                 (NameId::FULL_NAME, "Family Italic"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-Italic"),

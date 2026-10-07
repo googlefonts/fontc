@@ -4741,7 +4741,7 @@ mod tests {
             vec![
                 (NameId::FAMILY_NAME, "Wght Var".to_string()),
                 (NameId::SUBFAMILY_NAME, "Regular".to_string()),
-                (NameId::UNIQUE_ID, "0.000;NONE;WghtVar-Regular".to_string()),
+                (NameId::UNIQUE_ID, "0.000;    ;WghtVar-Regular".to_string()),
                 (NameId::FULL_NAME, "Wght Var Regular".to_string()),
                 (NameId::VERSION_STRING, "Version 0.000".to_string()),
                 (NameId::POSTSCRIPT_NAME, "WghtVar-Regular".to_string()),
@@ -5080,7 +5080,7 @@ mod tests {
                 (
                     NameId::UNIQUE_ID,
                     0x0409,
-                    "1.234;NONE;WghtVar-Regular".to_owned()
+                    "1.234;    ;WghtVar-Regular".to_owned()
                 ),
                 (NameId::FULL_NAME, 0x0409, "WghtVar Regular".to_owned()),
                 (NameId::VERSION_STRING, 0x0409, "Version 1.234".to_owned()),
@@ -5154,7 +5154,7 @@ mod tests {
             [
                 (NameId::FAMILY_NAME, "Wght Var".to_string()),
                 (NameId::SUBFAMILY_NAME, "Regular".to_string()),
-                (NameId::UNIQUE_ID, "0.000;NONE;WghtVar-Regular".to_string()),
+                (NameId::UNIQUE_ID, "0.000;    ;WghtVar-Regular".to_string()),
                 (NameId::FULL_NAME, "set from FEA name table".to_string()),
                 (NameId::VERSION_STRING, "Version 0.000".to_string()),
                 (NameId::POSTSCRIPT_NAME, "WghtVar-Regular".to_string()),
@@ -5229,7 +5229,7 @@ mod tests {
             [
                 (NameId::FAMILY_NAME, "New Font".to_string()),
                 (NameId::SUBFAMILY_NAME, "Regular".to_string()),
-                (NameId::UNIQUE_ID, "0.000;NONE;NewFont-Regular".to_string()),
+                (NameId::UNIQUE_ID, "0.000;    ;NewFont-Regular".to_string()),
                 (NameId::FULL_NAME, "New Font Regular".to_string()),
                 (NameId::VERSION_STRING, "Version 0.000".to_string()),
                 (NameId::POSTSCRIPT_NAME, "NewFont-Regular".to_string()),

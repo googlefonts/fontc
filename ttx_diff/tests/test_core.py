@@ -14,6 +14,7 @@ from ttx_diff.core import (
     hash_file,
     jsonify_output,
     load_fontmake_failure,
+    normalize_null_vendor_in_unique_id,
     save_fontmake_failure,
     strip_fontc_version_tag,
     unwrap_extension_lookups,
@@ -160,6 +161,34 @@ def test_strip_keeps_non_stamp_fontc_note():
     want = _name_tree("Version 1.000;fontc is broken")
     strip_fontc_version_tag(got)
     assert etree.tostring(got) == etree.tostring(want)
+
+
+def _unique_id_tree(unique_id):
+    return _make_tree(
+        f"""\
+<ttFont>
+  <name>
+    <namerecord nameID="3" platformID="3" platEncID="1" langID="0x409">
+      {unique_id}
+    </namerecord>
+  </name>
+</ttFont>"""
+    )
+
+
+@pytest.mark.parametrize("vendor", ["NONE", "", "    "])
+def test_null_vendor_in_unique_id_is_blank(vendor):
+    got = _unique_id_tree(f"1.000;{vendor};Font-Regular")
+    want = _unique_id_tree("1.000;    ;Font-Regular")
+    normalize_null_vendor_in_unique_id(got)
+    assert etree.tostring(got) == etree.tostring(want)
+
+
+def test_real_vendor_in_unique_id_is_kept():
+    tree = _unique_id_tree("1.000;GOOG;Font-Regular")
+    before = etree.tostring(tree)
+    normalize_null_vendor_in_unique_id(tree)
+    assert etree.tostring(tree) == before
 
 
 def test_hash_file_matches_hashlib(tmp_path):

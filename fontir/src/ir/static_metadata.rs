@@ -493,7 +493,7 @@ impl std::ops::Deref for ConditionSet {
 }
 
 impl StaticMetadata {
-    const DEFAULT_VENDOR_ID_TAG: Tag = Tag::new(b"NONE");
+    const DEFAULT_VENDOR_ID_TAG: Tag = Tag::new(b"    ");
     // TODO: we could consider a builder or something for this?
     #[allow(clippy::too_many_arguments)]
     pub fn new(
