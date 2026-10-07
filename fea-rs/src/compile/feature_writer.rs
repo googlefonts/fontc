@@ -566,7 +566,7 @@ impl MergeCtx<'_> {
     /// The insertion position for a group of features' generated lookups.
     ///
     /// An append-forced feature ignores insertion markers entirely; otherwise
-    /// the first marker among `features` wins, and everything else falls
+    /// the earliest marker among `features` wins, and everything else falls
     /// through to append placement.
     fn insert_pos_for_features(&mut self, features: &[Tag]) -> Placement {
         if features
@@ -577,7 +577,8 @@ impl MergeCtx<'_> {
         }
         features
             .iter()
-            .find_map(|tag| self.insert_markers.get(tag).copied())
+            .filter_map(|tag| self.insert_markers.get(tag).copied())
+            .min()
             .map(Placement::Marker)
             .unwrap_or_else(|| self.placement_for_append())
     }
@@ -975,6 +976,16 @@ mod tests {
         let mut all_feats = AllFeatures::default();
         external.merge_into(&mut all, &mut all_feats, &markers);
         assert_eq!(all_feats.feature_order_for_test(), [DIST, KERN, CURS]);
+    }
+
+    #[test]
+    fn kern_and_dist_use_earliest_marker() {
+        let mut external = mock_external_features(&[KERN, DIST, CURS]);
+        let markers = make_markers_with_order([KERN, CURS, DIST]);
+        let mut all = AllLookups::default();
+        let mut all_feats = AllFeatures::default();
+        external.merge_into(&mut all, &mut all_feats, &markers);
+        assert_eq!(all_feats.feature_order_for_test(), [KERN, DIST, CURS]);
     }
 
     #[test]

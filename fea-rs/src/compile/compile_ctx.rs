@@ -101,7 +101,8 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     // feature blocks can include `# Automatic Code` comments that instruct us
     // on where we should merge in code generated from an external provider.
     // when we encounter these we record what lookup id would be logically next,
-    // and we will use that for the generated lookups.
+    // and we will use that for the generated lookups. Only the first marker
+    // for each feature is used.
     // We also store how many markers came before this one, to break ties.
     insert_markers: HashMap<Tag, InsertionPoint>,
     n_insert_markers_seen: usize,
@@ -1935,6 +1936,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 );
                 return;
             };
+            let current_feature = self.active_feature.as_ref().unwrap().tag;
+            if self.insert_markers.contains_key(&current_feature) {
+                return;
+            }
 
             // make sure we finish any active lookup before assigning the lookupid
             if let Some((id, _name)) = self.lookups.finish_current() {
@@ -1946,7 +1951,6 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 }
                 self.add_lookup_to_current_feature_if_present(id);
             }
-            let current_feature = self.active_feature.as_ref().unwrap().tag;
 
             // we can have multiple markers in a row without any lookups between,
             // but we care about the order; so along with the lookup id we also

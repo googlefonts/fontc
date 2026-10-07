@@ -193,8 +193,10 @@ pub(crate) struct PosSubBuilder<T> {
     scripts: BTreeMap<Tag, BTreeMap<Tag, LangSys>>,
     // map a feature tag + set of lookups to an index
     features: BTreeMap<(Tag, Vec<LookupIdx>), FeatureIdx>,
-    // map a conditionset to a map of target features and the lookups to substitute
-    variations: HashMap<RawConditionSet, HashMap<FeatureIdx, Vec<LookupIdx>>>,
+    // map a conditionset to a map of target features and the lookups to substitute.
+    // The inner map is ordered: FeatureTableSubstitution records must be sorted
+    // by feature index, and the output must not depend on hash order.
+    variations: HashMap<RawConditionSet, BTreeMap<FeatureIdx, Vec<LookupIdx>>>,
 }
 
 trait RemapIds {

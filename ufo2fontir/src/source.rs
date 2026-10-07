@@ -528,7 +528,7 @@ fn default_master(
         .map(|a| {
             let tag = Tag::from_str(&a.tag).unwrap();
             let converter = &axes.get(&tag).unwrap().converter;
-            (tag, UserCoord::new(a.default as f64).to_design(converter))
+            (tag, UserCoord::new(a.default).to_design(converter))
         })
         .collect();
     for (idx, source) in designspace.sources.iter().enumerate() {
@@ -787,6 +787,9 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<Option<PostscriptNa
     let postscript_names_lib = raw_postscript_names.as_dictionary().ok_or_else(|| {
         BadSource::custom("lib.plist", "public.postscriptNames isn't a dictionary")
     })?;
+    if postscript_names_lib.is_empty() {
+        return Ok(None);
+    }
 
     let postscript_names: HashMap<GlyphName, GlyphName> = postscript_names_lib
         .iter()
@@ -1555,8 +1558,8 @@ fn to_ir_condition_set(
         if !axis_map.contains(&tag) {
             return Err(Error::UnknownEntry("axis", tag.to_string()));
         }
-        let min = ds_cond.minimum.map(|min| DesignCoord::new(min as f64));
-        let max = ds_cond.maximum.map(|max| DesignCoord::new(max as f64));
+        let min = ds_cond.minimum.map(DesignCoord::new);
+        let max = ds_cond.maximum.map(DesignCoord::new);
         if min.is_none() && max.is_none() {
             return Err(Error::InvalidEntry(
                 "designspace condition",
@@ -3309,6 +3312,16 @@ mod tests {
     fn no_postscript_names() {
         let lib_plist = plist::Dictionary::new();
         assert!(postscript_names(&lib_plist).is_ok());
+        assert!(postscript_names(&lib_plist).unwrap().is_none());
+    }
+
+    #[test]
+    fn empty_postscript_names() {
+        let mut lib_plist = plist::Dictionary::new();
+        lib_plist.insert(
+            String::from("public.postscriptNames"),
+            plist::Dictionary::new().into(),
+        );
         assert!(postscript_names(&lib_plist).unwrap().is_none());
     }
 

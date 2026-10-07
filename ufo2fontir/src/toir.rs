@@ -38,7 +38,7 @@ pub(crate) fn to_design_location(
                 return None;
             };
             Some(match d.xvalue {
-                Some(x) => Ok((*tag, DesignCoord::new(x as f64))),
+                Some(x) => Ok((*tag, DesignCoord::new(x))),
                 None => Err(Error::InvalidEntry(
                     "source location",
                     format!(
@@ -81,12 +81,12 @@ pub(crate) fn to_instance_design_location(
             continue;
         };
         let coord = match (d.xvalue, d.uservalue) {
-            (Some(x), _) => DesignCoord::new(x as f64),
+            (Some(x), _) => DesignCoord::new(x),
             (None, Some(u)) => {
                 let axis = axes
                     .get(tag)
                     .ok_or_else(|| Error::NoEntryInAxes(tag.to_string()))?;
-                UserCoord::new(u as f64).convert(&axis.converter)
+                UserCoord::new(u).convert(&axis.converter)
             }
             (None, None) => {
                 return Err(Error::InvalidEntry(
@@ -264,20 +264,15 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
     })?;
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
-    let min = UserCoord::new(axis.minimum.unwrap() as f64);
-    let default = UserCoord::new(axis.default as f64);
-    let max = UserCoord::new(axis.maximum.unwrap() as f64);
+    let min = UserCoord::new(axis.minimum.unwrap());
+    let default = UserCoord::new(axis.default);
+    let max = UserCoord::new(axis.maximum.unwrap());
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#map-element>
     let converter = if let Some(mappings) = &axis.map {
         let examples: Vec<_> = mappings
             .iter()
-            .map(|map| {
-                (
-                    UserCoord::new(map.input as f64),
-                    DesignCoord::new(map.output as f64),
-                )
-            })
+            .map(|map| (UserCoord::new(map.input), DesignCoord::new(map.output)))
             .collect();
 
         // make sure we have min/max/default mappings:
@@ -573,7 +568,7 @@ mod tests {
         }])
     }
 
-    fn dim(name: &str, xvalue: Option<f32>, uservalue: Option<f32>) -> Dimension {
+    fn dim(name: &str, xvalue: Option<f64>, uservalue: Option<f64>) -> Dimension {
         Dimension {
             name: name.into(),
             xvalue,
