@@ -528,7 +528,7 @@ fn default_master(
         .map(|a| {
             let tag = Tag::from_str(&a.tag).unwrap();
             let converter = &axes.get(&tag).unwrap().converter;
-            (tag, UserCoord::new(a.default as f64).to_design(converter))
+            (tag, UserCoord::new(a.default).to_design(converter))
         })
         .collect();
     for (idx, source) in designspace.sources.iter().enumerate() {
@@ -1558,8 +1558,8 @@ fn to_ir_condition_set(
         if !axis_map.contains(&tag) {
             return Err(Error::UnknownEntry("axis", tag.to_string()));
         }
-        let min = ds_cond.minimum.map(|min| DesignCoord::new(min as f64));
-        let max = ds_cond.maximum.map(|max| DesignCoord::new(max as f64));
+        let min = ds_cond.minimum.map(DesignCoord::new);
+        let max = ds_cond.maximum.map(DesignCoord::new);
         if min.is_none() && max.is_none() {
             return Err(Error::InvalidEntry(
                 "designspace condition",
