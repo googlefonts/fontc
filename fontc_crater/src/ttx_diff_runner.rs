@@ -22,7 +22,7 @@ pub(super) struct TtxContext {
     pub fontc_path: PathBuf,
     pub normalizer_path: PathBuf,
     pub source_cache: PathBuf,
-    pub results_cache: ResultsCache,
+    pub results_cache: Option<ResultsCache>,
     pub reused_cached_results: AtomicUsize,
     pub reused_fontmake_failures: AtomicUsize,
 }
@@ -33,15 +33,17 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
     let source_path = target.source_path(&ctx.source_cache);
     let compare = target.build.name();
     let build_dir = outdir.join(compare);
-    let reused_fontmake = ctx
-        .results_cache
-        .copy_cached_files_to_build_dir(target, &build_dir);
+    let results_cache = ctx.results_cache.as_ref();
+    let reused_fontmake =
+        results_cache.and_then(|cache| cache.copy_cached_files_to_build_dir(target, &build_dir));
     if reused_fontmake == Some(FontmakeOutput::Failure) {
         ctx.reused_fontmake_failures.fetch_add(1, Ordering::Relaxed);
     }
     // we can only trust a cached result if fontmake's half of the comparison is
     // the same one that produced it, which is only true if it came from the cache
-    let cached = reused_fontmake.and_then(|_| ctx.results_cache.load_result(target));
+    let cached = reused_fontmake
+        .and(results_cache)
+        .and_then(|cache| cache.load_result(target));
     let mut cmd = Command::new("python3");
     cmd.args([
         "-m",
@@ -130,11 +132,12 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
 
     // a runtime error says nothing about fontmake; otherwise the build dir
     // holds its font or a record of its failure, either of which we can reuse
-    if !matches!(result, RunResult::Fail(DiffError::Other(_))) {
-        ctx.results_cache
-            .save_built_files_to_cache(target, &build_dir);
+    if let Some(cache) = results_cache
+        && !matches!(result, RunResult::Fail(DiffError::Other(_)))
+    {
+        cache.save_built_files_to_cache(target, &build_dir);
         if let Some(hash) = read_fontc_ttf_hash(&build_dir) {
-            ctx.results_cache.save_result(target, hash, &result);
+            cache.save_result(target, hash, &result);
         }
     }
     result
