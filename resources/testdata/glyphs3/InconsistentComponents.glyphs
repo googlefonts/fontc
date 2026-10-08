@@ -1,0 +1,86 @@
+{
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+familyName = InconsistentComponents;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+id = m02;
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(50,100,l)
+);
+}
+);
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(200,0,l),
+(100,100,l)
+);
+}
+);
+}
+);
+},
+{
+glyphname = b;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+ref = a;
+}
+);
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(200,0,l),
+(100,100,l)
+);
+}
+);
+}
+);
+}
+);
+unitsPerEm = 1000;
+}

@@ -5,7 +5,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeSet, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -21,7 +21,7 @@ use ordered_float::OrderedFloat;
 use write_fonts::{OtRound, types::GlyphId16};
 
 use crate::{
-    error::{BadGlyph, Error},
+    error::{BadGlyph, BadGlyphKind, Error},
     ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, StaticMetadata},
     orchestration::{Context, Flags, IrWork, WorkId},
     propagate_anchors::propagate_all_anchors,
@@ -92,48 +92,42 @@ impl HashableComponent {
     }
 }
 
-/// Every distinct set of components glyph names used at some position in designspace.
+/// Every distinct sequence of component glyph names used at some position in
+/// designspace, with the locations that use it.
 ///
 /// Only the glyph name is considered for uniqueness.
-///
-/// Primary use is expected to be checking if there is >1 or not.
-fn distinct_component_glyph_seqs(glyph: &Glyph) -> HashSet<Vec<GlyphName>> {
-    glyph
-        .sources()
-        .values()
-        .map(|inst| {
-            inst.components
-                .iter()
-                .map(|c| c.base.clone())
-                .collect::<Vec<_>>()
-        })
-        .collect()
+fn distinct_component_glyph_seqs(
+    glyph: &Glyph,
+) -> BTreeMap<Vec<GlyphName>, BTreeSet<NormalizedLocation>> {
+    let mut seqs: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
+    for (loc, inst) in glyph.sources() {
+        let names = inst.components.iter().map(|c| c.base.clone()).collect();
+        seqs.entry(names).or_default().insert(loc.clone());
+    }
+    seqs
 }
 
 /// Returns components transformed by the input transform
 ///
-/// Panics if the sequence of glyphs used as components (ignoring transform) is
+/// Errors if the sequence of glyphs used as components (ignoring transform) is
 /// different at any point in design space.
 fn components(
     glyph: &Glyph,
     transform: Affine,
-) -> VecDeque<(NormalizedLocation, HashableComponent)> {
+) -> Result<VecDeque<(NormalizedLocation, HashableComponent)>, BadGlyph> {
     if glyph.sources().is_empty() {
-        return Default::default();
+        return Ok(Default::default());
     }
 
-    // Kerplode if the set of unique components is inconsistent across sources
     let component_glyph_seqs = distinct_component_glyph_seqs(glyph);
     if component_glyph_seqs.len() != 1 {
-        panic!(
-            "'{}' has {} unique sets of components; must have exactly 1\n{:?}",
-            glyph.name,
-            component_glyph_seqs.len(),
-            component_glyph_seqs
-        );
+        return Err(BadGlyph::new(
+            &glyph.name,
+            BadGlyphKind::InconsistentComponents(component_glyph_seqs),
+        ));
     }
 
-    glyph
+    Ok(glyph
         .sources()
         .iter()
         .flat_map(|(loc, inst)| inst.components.iter().map(|c| (loc.clone(), c)))
@@ -154,7 +148,7 @@ fn components(
                 },
             )
         })
-        .collect()
+        .collect())
 }
 
 // Operations performed on glyphs with mixed contours/components
@@ -443,7 +437,7 @@ fn collect_component_locations_nested(
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), BadGlyph> {
     let original = ensure_composite_defined_at_component_locations(context, original)?;
     // Component until you can't component no more
-    let mut frontier: VecDeque<_> = components(&original, Affine::IDENTITY);
+    let mut frontier: VecDeque<_> = components(&original, Affine::IDENTITY)?;
 
     let mut simple = GlyphBuilder::from(original.clone());
     simple.clear_components();
@@ -469,7 +463,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
         let referenced_glyph =
             ensure_component_has_consistent_layers(&original, &referenced_glyph, context)?;
         frontier.extend(
-            components(&referenced_glyph, component_affine)
+            components(&referenced_glyph, component_affine)?
                 .iter()
                 .filter(|(component_loc, _)| *component_loc == loc)
                 .cloned(),
@@ -1468,6 +1462,70 @@ mod tests {
                 .iter()
                 .map(|bez| bez.to_svg())
                 .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn components_to_contours_inconsistent_components_is_error() {
+        let [loc0, loc1, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone(), loc2.clone()]);
+        context.glyphs.set(static_contour_glyph("a"));
+        context.glyphs.set(static_contour_glyph("b"));
+
+        // same components, but in a different order at one location
+        let instance = |names: &[&str]| GlyphInstance {
+            components: names
+                .iter()
+                .map(|name| Component::new(*name, Affine::IDENTITY))
+                .collect(),
+            ..Default::default()
+        };
+        let glyph = Glyph::new(
+            "g".into(),
+            true,
+            Default::default(),
+            HashMap::from([
+                (loc0, instance(&["a", "b"])),
+                (loc1, instance(&["b", "a"])),
+                (loc2, instance(&["a", "b"])),
+            ]),
+        )
+        .unwrap();
+
+        let err = convert_components_to_contours(&context, &glyph).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid source glyph 'g': 'components differ between sources: \
+             [a, b] at Normalized {wght: 0.00}, Normalized {wght: 1.00}; \
+             [b, a] at Normalized {wght: 0.50}'"
+        );
+    }
+
+    #[test]
+    fn components_to_contours_inconsistent_nested_components_is_error() {
+        let [loc0, loc1] = make_wght_locations([0.0, 1.0]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+        context.glyphs.set(static_contour_glyph("slash"));
+
+        // 'backslash' is a component in one master and contours in the other
+        let mut backslash = TestGlyph::new("backslash");
+        backslash
+            .add_var_component("slash", &[(&loc0, Affine::IDENTITY)])
+            .add_var_contour(&[(&loc1, contour())]);
+        context.glyphs.set(backslash.0);
+
+        let mut glyph = TestGlyph::new("g");
+        glyph.add_var_component(
+            "backslash",
+            &[(&loc0, Affine::IDENTITY), (&loc1, Affine::IDENTITY)],
+        );
+
+        // the error names the inconsistent component, not the composite
+        let err = convert_components_to_contours(&context, &glyph.0).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid source glyph 'backslash': 'components differ between sources: \
+             [] at Normalized {wght: 1.00}; [slash] at Normalized {wght: 0.00}'"
         );
     }
 
