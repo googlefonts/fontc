@@ -50,7 +50,7 @@ impl Input {
             .ok_or_else(|| Error::UnrecognizedSource(path.to_path_buf()))?;
         match ext {
             "designspace" => Ok(Input::DesignSpacePath(path.to_path_buf())),
-            "ufo" => Ok(Input::DesignSpacePath(path.to_path_buf())),
+            "ufo" | "ufoz" => Ok(Input::DesignSpacePath(path.to_path_buf())),
             "glyphs" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "glyphspackage" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "fontra" => Ok(Input::FontraPath(path.to_path_buf())),
@@ -6891,5 +6891,99 @@ mod tests {
             appended,
             "the source-derived kern lookup should be appended to the kern feature"
         );
+    }
+
+    fn copy_dir(src: &Path, dst: &Path) {
+        fs::create_dir_all(dst).unwrap();
+        for entry in fs::read_dir(src).unwrap() {
+            let entry = entry.unwrap();
+            let dst = dst.join(entry.file_name());
+            if entry.path().is_dir() {
+                copy_dir(&entry.path(), &dst);
+            } else {
+                fs::copy(entry.path(), &dst).unwrap();
+            }
+        }
+    }
+
+    /// All files under `dir`, recursively, sorted for deterministic zip order.
+    fn walk_files(dir: &Path) -> Vec<std::path::PathBuf> {
+        let mut files = Vec::new();
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files.extend(walk_files(&path));
+            } else {
+                files.push(path);
+            }
+        }
+        files.sort();
+        files
+    }
+
+    /// Zip `ufo_dir` (e.g. `.../Foo.ufo`) into `dest_dir/Foo.ufoz`.
+    ///
+    /// Entries are nested under a single `Foo.ufo/` root directory, as the UFO
+    /// spec requires.
+    fn zip_ufo(ufo_dir: &Path, dest_dir: &Path) -> std::path::PathBuf {
+        let ufo_name = ufo_dir.file_name().unwrap().to_str().unwrap();
+        let stem = ufo_dir.file_stem().unwrap().to_str().unwrap();
+        let dest = dest_dir.join(format!("{stem}.ufoz"));
+        let mut writer = zip::ZipWriter::new(fs::File::create(&dest).unwrap());
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for entry in walk_files(ufo_dir) {
+            let rel = entry.strip_prefix(ufo_dir).unwrap();
+            let zip_name = format!("{ufo_name}/{}", rel.to_string_lossy());
+            writer.start_file(zip_name, opts).unwrap();
+            std::io::Write::write_all(&mut writer, &fs::read(&entry).unwrap()).unwrap();
+        }
+        writer.finish().unwrap();
+        dest
+    }
+
+    /// A copy of `wght_var.designspace` in a tempdir with `WghtVar-Regular.ufo`
+    /// replaced by a `.ufoz` of the same content; `WghtVar-Bold.ufo` stays a
+    /// directory.
+    fn zipped_wght_var_designspace(tmp: &Path) -> std::path::PathBuf {
+        copy_dir(
+            &testdata_dir().join("WghtVar-Bold.ufo"),
+            &tmp.join("WghtVar-Bold.ufo"),
+        );
+        zip_ufo(&testdata_dir().join("WghtVar-Regular.ufo"), tmp);
+        let designspace = tmp.join("wght_var.designspace");
+        fs::write(
+            &designspace,
+            fs::read_to_string(testdata_dir().join("wght_var.designspace"))
+                .unwrap()
+                .replace(
+                    r#"filename="WghtVar-Regular.ufo""#,
+                    r#"filename="WghtVar-Regular.ufoz""#,
+                ),
+        )
+        .unwrap();
+        designspace
+    }
+
+    #[test]
+    fn zipped_ufo_designspace_compiles_identically_to_directory() {
+        let tmp = tempdir().unwrap();
+        let designspace = zipped_wght_var_designspace(tmp.path());
+
+        let zipped = TestCompile::compile_source(designspace.to_str().unwrap());
+        let dir = TestCompile::compile_source("wght_var.designspace");
+
+        assert_eq!(zipped.raw_font, dir.raw_font);
+    }
+
+    #[test]
+    fn bare_ufoz_compiles_identically_to_directory() {
+        let tmp = tempdir().unwrap();
+        let ufoz = zip_ufo(&testdata_dir().join("WghtVar-Regular.ufo"), tmp.path());
+
+        let zipped = TestCompile::compile_source(ufoz.to_str().unwrap());
+        let dir = TestCompile::compile_source("WghtVar-Regular.ufo");
+
+        assert_eq!(zipped.raw_font, dir.raw_font);
     }
 }

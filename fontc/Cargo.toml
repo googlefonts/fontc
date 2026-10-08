@@ -66,6 +66,7 @@ ordered-float.workspace = true
 rstest.workspace = true
 criterion.workspace = true
 glyphs-reader = { path = "../glyphs-reader" }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 vergen-gitcl = { version = "10.0", features = ["build", "cargo", "rustc"] }

@@ -212,7 +212,7 @@ fn load_designspace(
                 other => BadSourceKind::Custom(other.to_string()),
             })?
         }
-        Some("ufo") => {
+        Some("ufo" | "ufoz") => {
             let filename = designspace_or_ufo
                 .file_name()
                 .and_then(OsStr::to_str)
@@ -2414,6 +2414,7 @@ impl Work<Context, WorkId, Error> for PaintGraphWork {
 mod tests {
     use std::{
         collections::{HashMap, HashSet},
+        io::Write,
         path::{Path, PathBuf},
     };
 
@@ -3200,6 +3201,160 @@ mod tests {
                     KernSide::Glyph("bar".into())
                 ),
             ],
+        );
+    }
+
+    /// All files under `dir`, recursively, sorted for deterministic zip order.
+    fn walk_files(dir: &Path) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files.extend(walk_files(&path));
+            } else {
+                files.push(path);
+            }
+        }
+        files.sort();
+        files
+    }
+
+    /// Zip `ufo_dir` (e.g. `.../Foo.ufo`) into `dest_dir/Foo.ufoz`.
+    ///
+    /// Entries are nested under a single `Foo.ufo/` root directory, as the UFO
+    /// spec requires.
+    fn zip_ufo(ufo_dir: &Path, dest_dir: &Path) -> PathBuf {
+        let ufo_name = ufo_dir.file_name().unwrap().to_str().unwrap();
+        let stem = ufo_dir.file_stem().unwrap().to_str().unwrap();
+        let dest = dest_dir.join(format!("{stem}.ufoz"));
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&dest).unwrap());
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for entry in walk_files(ufo_dir) {
+            let rel = entry.strip_prefix(ufo_dir).unwrap();
+            let zip_name = format!("{ufo_name}/{}", rel.to_string_lossy());
+            writer.start_file(zip_name, opts).unwrap();
+            writer.write_all(&std::fs::read(&entry).unwrap()).unwrap();
+        }
+        writer.finish().unwrap();
+        dest
+    }
+
+    /// A copy of `wght_var.designspace` in a tempdir with `WghtVar-Regular.ufo`
+    /// replaced by a `.ufoz` of the same content; `WghtVar-Bold.ufo` stays a
+    /// directory. Returns the tempdir (kept alive for the caller) and the
+    /// designspace path.
+    fn zipped_wght_var_designspace() -> (tempfile::TempDir, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        copy_dir(
+            &testdata_dir().join("WghtVar-Bold.ufo"),
+            &tmp.path().join("WghtVar-Bold.ufo"),
+        );
+        zip_ufo(&testdata_dir().join("WghtVar-Regular.ufo"), tmp.path());
+        let designspace = tmp.path().join("wght_var.designspace");
+        std::fs::write(
+            &designspace,
+            std::fs::read_to_string(testdata_dir().join("wght_var.designspace"))
+                .unwrap()
+                .replace(
+                    r#"filename="WghtVar-Regular.ufo""#,
+                    r#"filename="WghtVar-Regular.ufoz""#,
+                ),
+        )
+        .unwrap();
+        (tmp, designspace)
+    }
+
+    #[test]
+    fn zipped_designspace_glyphs_match_directory() {
+        let (_tmp, designspace) = zipped_wght_var_designspace();
+        let (_, zipped) = build_glyphs(designspace.to_str().unwrap());
+        let (_, dir) = build_glyphs("wght_var.designspace");
+        for name in ["bar", "plus"] {
+            assert_eq!(
+                zipped.glyphs.get(&WorkId::Glyph(name.into())),
+                dir.glyphs.get(&WorkId::Glyph(name.into())),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn zipped_designspace_static_metadata_matches_directory() {
+        let (_tmp, designspace) = zipped_wght_var_designspace();
+        let (_, zipped) = build_glyphs(designspace.to_str().unwrap());
+        let (_, dir) = build_glyphs("wght_var.designspace");
+        assert_eq!(zipped.static_metadata.get(), dir.static_metadata.get());
+        assert_eq!(zipped.glyph_order.get(), dir.glyph_order.get());
+    }
+
+    #[test]
+    fn zipped_designspace_kerning_matches_directory() {
+        let (_tmp, designspace) = zipped_wght_var_designspace();
+        let (_, zipped) = build_kerning(designspace.to_str().unwrap());
+        let (_, dir) = build_kerning("wght_var.designspace");
+        assert_eq!(zipped.kerning_locations.get(), dir.kerning_locations.get());
+        for location in zipped.kerning_locations.get().locations.iter() {
+            assert_eq!(
+                zipped
+                    .kerning_at
+                    .get(&WorkId::KernInstance(location.clone())),
+                dir.kerning_at.get(&WorkId::KernInstance(location.clone())),
+                "{location:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bare_ufoz_glyphs_match_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ufoz = zip_ufo(&testdata_dir().join("WghtVar-Regular.ufo"), tmp.path());
+        let (_, zipped) = build_glyphs(ufoz.to_str().unwrap());
+        let (_, dir) = build_glyphs("WghtVar-Regular.ufo");
+        for name in ["bar", "plus"] {
+            assert_eq!(
+                zipped.glyphs.get(&WorkId::Glyph(name.into())),
+                dir.glyphs.get(&WorkId::Glyph(name.into())),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn zipped_master_fea_groups_with_directory_master() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fea_dir = tmp.path().join("fea_include_ufo");
+        copy_dir(&testdata_dir().join("fea_include_ufo"), &fea_dir);
+        zip_ufo(&fea_dir.join("FeaInc-Regular.ufo"), &fea_dir);
+        let designspace = tmp.path().join("fea_include.designspace");
+        std::fs::write(
+            &designspace,
+            std::fs::read_to_string(testdata_dir().join("fea_include.designspace"))
+                .unwrap()
+                .replace(
+                    r#"filename="fea_include_ufo/FeaInc-Regular.ufo""#,
+                    r#"filename="fea_include_ufo/FeaInc-Regular.ufoz""#,
+                ),
+        )
+        .unwrap();
+
+        let source = DesignSpaceIrSource::new(&designspace).unwrap();
+        let sources = group_fea_files(&source.fea_files).unwrap();
+        assert_eq!(sources.n_sources(), 1);
+        assert_eq!(sources.get(0).unwrap().locations.len(), 2);
+
+        assert!(
+            matches!(
+                &source.fea_files[0].1,
+                FeaturesSource::Memory { include_dir, .. } if include_dir.as_deref() == Some(fea_dir.as_path())
+            ),
+            "zipped master should be a Memory source, got {:?}",
+            source.fea_files[0].1
+        );
+        assert!(
+            matches!(&source.fea_files[1].1, FeaturesSource::File { .. }),
+            "directory master should be a File source, got {:?}",
+            source.fea_files[1].1
         );
     }
 

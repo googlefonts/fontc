@@ -43,3 +43,4 @@ tempfile.workspace = true
 pretty_assertions.workspace = true
 rstest.workspace = true
 tracing-subscriber.workspace = true
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
