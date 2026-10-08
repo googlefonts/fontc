@@ -127,7 +127,7 @@ pub(crate) fn insert_corner_components_for_layer(
             .map_err(|e| e.add_name(hint.name.clone()))?;
 
         match layer.insert_corner_component(component, &hint, inserted_pts) {
-            Ok(shift) => inserted_pts += shift,
+            Ok(n_points) => inserted_pts += n_points,
             Err(e) if e.skips_corner() => {
                 log::warn!("skipping corner component '{}': {e}", hint.name);
             }
@@ -191,8 +191,8 @@ impl Layer {
         &mut self,
         mut component: CornerComponent,
         hint: &Hint,
-        delta_pt_index: isize,
-    ) -> Result<isize, BadCornerComponentReason> {
+        delta_pt_index: usize,
+    ) -> Result<usize, BadCornerComponentReason> {
         let path = match self.shapes.get_mut(hint.shape_index) {
             Some(Shape::Path(p)) => p,
             _ => return Err(BadCornerComponentReason::BadShapeIndex(hint.shape_index)),
@@ -201,8 +201,7 @@ impl Layer {
         if path.nodes.len() < 2 {
             return Err(BadCornerComponentReason::PathTooShort);
         }
-        let point_idx = (hint.node_index as isize + delta_pt_index)
-            .rem_euclid(path.nodes.len() as isize) as usize;
+        let point_idx = (hint.node_index + delta_pt_index) % path.nodes.len();
         if path.nodes[point_idx].node_type == NodeType::OffCurve {
             return Err(BadCornerComponentReason::OffCurveNode(hint.node_index));
         }
@@ -315,11 +314,20 @@ impl Layer {
         // them as the fitted ends were from the origin before the corner slid
         // into place, and the instroke's cut takes the first node's place.
         let first = component.ends().0;
-        let target_idx = point_idx;
-        let mut point_idx = point_idx;
         match instroke {
-            PathSeg::Cubic(_) if straight_instroke => {
-                point_idx = path.straighten_instroke(point_idx, first);
+            // Glyphs makes it a line, but we keep it a curve, so that it stays
+            // compatible with masters where it isn't straightened
+            PathSeg::Cubic(cubic) if straight_instroke => {
+                let (x, y) = first.ot_round();
+                let end = Point::new(x as _, y as _);
+                let start = cubic.p0;
+                let line = CubicBez::new(
+                    start,
+                    start.lerp(end, 1.0 / 3.0),
+                    start.lerp(end, 2.0 / 3.0),
+                    end,
+                );
+                path.replace_instroke(point_idx, line);
             }
             PathSeg::Cubic(cubic) => {
                 let t = t_at_distance(instroke.reverse(), instroke_cut);
@@ -357,8 +365,7 @@ impl Layer {
             self.shapes.push(Shape::Path(path));
         }
 
-        // how far this moved the nodes after the target node along
-        Ok(added_points as isize - (target_idx - point_idx) as isize)
+        Ok(added_points)
     }
 }
 
@@ -414,21 +421,6 @@ impl Path {
         }
         self.nodes.remove(next);
         Some(next)
-    }
-
-    /// Make the cubic ending at `point_idx` a line, ending at `point`.
-    ///
-    /// Returns the node's index once the handles are gone.
-    fn straighten_instroke(&mut self, point_idx: usize, point: Point) -> usize {
-        let p2 = self.prev_idx(point_idx);
-        let p1 = self.prev_idx(p2);
-        let removed_before = [p1, p2].into_iter().filter(|&i| i < point_idx).count();
-        self.nodes.remove(p1.max(p2));
-        self.nodes.remove(p1.min(p2));
-        let idx = point_idx - removed_before;
-        self.nodes[idx].node_type = NodeType::Line;
-        self.set_point(idx, point);
-        idx
     }
 
     /// Replace the cubic ending at `point_idx`, keeping its start.
@@ -1325,22 +1317,6 @@ mod tests {
         Hint { alignment: Alignment::Middle, ..corner_hint(3) },
         &[(335, 250), (243, 158), (201, 201), (271, 271)],
     )]
-    // The corner's first node reaches past the start of the short curved
-    // instroke, so Glyphs straightens it, and ends it at the corner's first
-    // node like a line. (Iansui's uni5320)
-    #[case::straightened_instroke(
-        &[
-            (0, 168, 'l'), (-1, 47, 'l'), (-1, 26, 'o'), (4, 7, 'o'), (21, -2, 'c'), (27, -6, 'o'),
-            (33, -7, 'o'), (39, -7, 'c'), (48, -7, 'o'), (57, -3, 'o'), (69, -3, 'c'), (184, 0, 'l'),
-        ],
-        &[],
-        &[
-            (913, -31, 'l'), (913, 300, 'l'), (159, 300, 'l'), (159, 72, 'l'), (159, 56, 'o'),
-            (153, -36, 'o'), (158, -52, 'c'),
-        ],
-        corner_hint(6),
-        &[(159, 72), (159, 116), (156, -5), (179, -53), (197, -58), (227, -53), (342, -47), (913, -31)],
-    )]
     fn corner_matches_glyphs(
         #[case] corner: &[(i32, i32, char)],
         #[case] anchors: &[(&str, (i32, i32))],
@@ -1353,6 +1329,66 @@ mod tests {
             .iter()
             .filter(|node| node.node_type != NodeType::OffCurve);
         assert_run(on_curves, expected);
+    }
+
+    // The corner's first node reaches past the start of the short curved
+    // instroke, so Glyphs runs the instroke straight to it, as a line. We draw
+    // the same line but keep it a curve, so that a master where the cut stays
+    // on the curve has as many nodes. (Iansui's uni5320)
+    #[test]
+    fn straightened_instroke_keeps_its_handles() {
+        let corner = [
+            (0, 168, 'l'),
+            (-1, 47, 'l'),
+            (-1, 26, 'o'),
+            (4, 7, 'o'),
+            (21, -2, 'c'),
+            (27, -6, 'o'),
+            (33, -7, 'o'),
+            (39, -7, 'c'),
+            (48, -7, 'o'),
+            (57, -3, 'o'),
+            (69, -3, 'c'),
+            (184, 0, 'l'),
+        ];
+        let host = [
+            (913, -31, 'l'),
+            (913, 300, 'l'),
+            (159, 300, 'l'),
+            (159, 72, 'l'),
+            (159, 56, 'o'),
+            (153, -36, 'o'),
+            (158, -52, 'c'),
+        ];
+        let result = apply_corners(&corner, &[], &host, &[corner_hint(6)]);
+        let on_curves = result
+            .iter()
+            .filter(|node| node.node_type != NodeType::OffCurve);
+        // Glyphs' nodes
+        assert_run(
+            on_curves,
+            &[
+                (159, 72),
+                (159, 116),
+                (156, -5),
+                (179, -53),
+                (197, -58),
+                (227, -53),
+                (342, -47),
+                (913, -31),
+            ],
+        );
+        let straightened = [
+            (159, 72, 'l'),
+            (159, 87, 'o'),
+            (159, 101, 'o'),
+            (159, 116, 'c'),
+        ];
+        let start = result
+            .iter()
+            .position(|node| node.pt == Point::new(159.0, 72.0))
+            .unwrap();
+        assert_eq!(result[start..start + 4], nodes(&straightened));
     }
 
     // The first corner replaces the node, so in Glyphs a second one on the
