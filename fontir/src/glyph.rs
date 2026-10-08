@@ -1449,6 +1449,70 @@ mod tests {
         );
     }
 
+    #[test]
+    fn components_to_contours_inconsistent_components_is_error() {
+        let [loc0, loc1, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone(), loc2.clone()]);
+        context.glyphs.set(static_contour_glyph("a"));
+        context.glyphs.set(static_contour_glyph("b"));
+
+        // same components, but in a different order at one location
+        let instance = |names: &[&str]| GlyphInstance {
+            components: names
+                .iter()
+                .map(|name| Component::new(*name, Affine::IDENTITY))
+                .collect(),
+            ..Default::default()
+        };
+        let glyph = Glyph::new(
+            "g".into(),
+            true,
+            Default::default(),
+            HashMap::from([
+                (loc0, instance(&["a", "b"])),
+                (loc1, instance(&["b", "a"])),
+                (loc2, instance(&["a", "b"])),
+            ]),
+        )
+        .unwrap();
+
+        let err = convert_components_to_contours(&context, &glyph).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid source glyph 'g': 'components differ between sources: \
+             [a, b] at Normalized {wght: 0.00}, Normalized {wght: 1.00}; \
+             [b, a] at Normalized {wght: 0.50}'"
+        );
+    }
+
+    #[test]
+    fn components_to_contours_inconsistent_nested_components_is_error() {
+        let [loc0, loc1] = make_wght_locations([0.0, 1.0]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+        context.glyphs.set(static_contour_glyph("slash"));
+
+        // 'backslash' is a component in one master and contours in the other
+        let mut backslash = TestGlyph::new("backslash");
+        backslash
+            .add_var_component("slash", &[(&loc0, Affine::IDENTITY)])
+            .add_var_contour(&[(&loc1, contour())]);
+        context.glyphs.set(backslash.0);
+
+        let mut glyph = TestGlyph::new("g");
+        glyph.add_var_component(
+            "backslash",
+            &[(&loc0, Affine::IDENTITY), (&loc1, Affine::IDENTITY)],
+        );
+
+        // the error names the inconsistent component, not the composite
+        let err = convert_components_to_contours(&context, &glyph.0).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid source glyph 'backslash': 'components differ between sources: \
+             [] at Normalized {wght: 1.00}; [slash] at Normalized {wght: 0.00}'"
+        );
+    }
+
     fn adjust_transform_for_each_instance(
         glyph: &Glyph,
         adjust_nth: impl Fn(usize) -> Affine,

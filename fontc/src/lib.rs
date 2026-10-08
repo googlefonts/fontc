@@ -822,6 +822,22 @@ mod tests {
     }
 
     #[test]
+    fn inconsistent_components_are_an_error() {
+        // 'b' is a component of 'a' in Regular but a contour in Bold
+        let mut result =
+            TestCompile::new("glyphs3/InconsistentComponents.glyphs", |options| options);
+        let error = result.run_expect_err();
+        let Error::FontIrError(fontir::error::Error::BadGlyph(error)) = &error else {
+            panic!("expected a BadGlyph error, got {error:?}");
+        };
+        assert_eq!(
+            error.to_string(),
+            "Invalid source glyph 'b': 'components differ between sources: \
+             [] at Normalized {wght: 1.00}; [a] at Normalized {wght: 0.00}'"
+        );
+    }
+
+    #[test]
     fn compile_simple_binary_glyph() {
         let result = TestCompile::compile_source("static.designspace");
 
