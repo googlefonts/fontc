@@ -1,4 +1,9 @@
-use std::{fmt::Display, io, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Display,
+    io,
+    path::PathBuf,
+};
 
 use fontdrasil::{
     coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
@@ -148,6 +153,8 @@ pub enum BadGlyphKind {
     PathConversion(PathConversionError),
     Anchor(BadAnchor),
     BadDeltas(DeltaError),
+    // each distinct sequence of component glyph names -> locations that use it
+    InconsistentComponents(BTreeMap<Vec<GlyphName>, BTreeSet<NormalizedLocation>>),
     FrontendSpecific(String),
 }
 
@@ -291,6 +298,22 @@ impl std::fmt::Display for BadGlyphKind {
             BadGlyphKind::NoAxisPosition(axis) => write!(f, "no position on '{axis}' axis"),
             BadGlyphKind::Anchor(e) => write!(f, "bad anchor: '{e}'"),
             BadGlyphKind::BadDeltas(e) => write!(f, "delta error: '{e}'"),
+            BadGlyphKind::InconsistentComponents(seqs) => {
+                f.write_str("components differ between sources: ")?;
+                for (i, (names, locs)) in seqs.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str("; ")?;
+                    }
+                    write!(f, "{names:?} at ")?;
+                    for (j, loc) in locs.iter().enumerate() {
+                        if j > 0 {
+                            f.write_str(", ")?;
+                        }
+                        write!(f, "{loc:?}")?;
+                    }
+                }
+                Ok(())
+            }
             BadGlyphKind::FrontendSpecific(e) => write!(f, "{}", e),
         }
     }
