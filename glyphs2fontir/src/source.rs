@@ -1212,6 +1212,7 @@ impl Work<Context, WorkId, Error> for FeatureWork {
 
         context.features.set(to_ir_features(
             &font.features,
+            self.font_file_path.as_deref().map(Path::to_path_buf),
             self.font_file_path.as_ref().map(|path| {
                 path.canonicalize()
                     .expect("path cannot be canonicalized")
@@ -2347,6 +2348,22 @@ mod tests {
         .map(|s| (*s).into())
         .collect();
         assert_eq!(expected, *context.preliminary_glyph_order.get());
+    }
+
+    #[test]
+    fn features_are_named_for_the_glyphs_file() {
+        let glyphs_file = glyphs3_dir().join("WghtVar.glyphs");
+        let (source, context) = context_for(&glyphs_file);
+        let task_context = context.copy_for_work(Access::None, Access::Variant(WorkId::Features));
+        source
+            .create_feature_ir_work()
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        assert_eq!(
+            glyphs_file.display().to_string(),
+            context.features.get().default_source().to_string()
+        );
     }
 
     #[test]
