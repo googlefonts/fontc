@@ -4362,6 +4362,8 @@ impl Font {
                     layer.anchors.iter().map(|a| a.name.clone()).collect();
                 let old_shapes = std::mem::take(&mut layer.shapes);
                 let mut new_shapes = Vec::new();
+                // where each old shape ends up, if it isn't a smart component
+                let mut new_indices = Vec::with_capacity(old_shapes.len());
                 for shape in old_shapes {
                     if let Some(comp) = shape.as_component()
                         && let Some(ref_glyph) = self
@@ -4385,6 +4387,7 @@ impl Font {
                             issue,
                         })?;
                         new_shapes.extend(instance.shapes);
+                        new_indices.push(None);
                         // Add anchors from smart component, skipping any that
                         // would override the glyph's explicit anchors.
                         let new_anchors: Vec<_> = instance
@@ -4399,10 +4402,21 @@ impl Font {
                         layer.anchors.retain(|a| !new_names.contains(&a.name));
                         layer.anchors.extend(new_anchors);
                     } else {
+                        new_indices.push(Some(layer.shapes.len()));
                         layer.shapes.push(shape);
                     }
                 }
                 layer.shapes.extend(new_shapes);
+                layer
+                    .hints
+                    .retain_mut(|hint| match new_indices.get(hint.shape_index) {
+                        Some(Some(idx)) => {
+                            hint.shape_index = *idx;
+                            true
+                        }
+                        Some(None) => false,
+                        None => true,
+                    });
             }
             // replace the old glyph with the new, component-free glyph
             self.glyphs.insert(glyph.name.clone(), glyph);
@@ -7068,6 +7082,61 @@ unitsPerEm = 1000;
             .collect::<Vec<_>>();
 
         assert_eq!(paths, [expected1, expected2]);
+    }
+
+    // Instantiating a smart component moves its paths to the end of the
+    // layer, so a corner on a path after it has to follow that path.
+    // (Iansui's uni80CD)
+    #[test]
+    fn corner_after_smart_component() {
+        let mut font = Font::load_raw(glyphs3_dir().join("SmartComponents.glyphs")).unwrap();
+        let line = |x, y| Node {
+            pt: Point::new(x, y),
+            node_type: NodeType::Line,
+        };
+        let corner = Layer {
+            layer_id: "m01".into(),
+            shapes: vec![Shape::Path(crate::Path {
+                nodes: vec![line(0., 20.), line(-20., 20.), line(-20., 0.)],
+                ..Default::default()
+            })],
+            ..Default::default()
+        };
+        font.glyphs.insert(
+            "_corner.test".into(),
+            Glyph {
+                name: "_corner.test".into(),
+                layers: vec![corner],
+                ..Default::default()
+            },
+        );
+        let layer = &mut font.glyphs.get_mut("n").unwrap().layers[0];
+        layer.shapes.push(Shape::Path(crate::Path {
+            closed: true,
+            nodes: vec![
+                line(400., 0.),
+                line(500., 0.),
+                line(500., 100.),
+                line(400., 100.),
+            ],
+            ..Default::default()
+        }));
+        layer.hints.push(Hint {
+            type_: HintType::Corner,
+            name: "_corner.test".into(),
+            shape_index: 2,
+            node_index: 0,
+            scale: Scale::default(),
+            alignment: Alignment::OutStroke,
+        });
+        font.preprocess().unwrap();
+
+        let lengths: Vec<_> = font.glyphs["n"].layers[0]
+            .shapes
+            .iter()
+            .map(|shape| shape.as_path().unwrap().nodes.len())
+            .collect();
+        assert_eq!(lengths, [11, 6, 20]);
     }
 
     #[test]
