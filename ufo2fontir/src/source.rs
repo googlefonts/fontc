@@ -922,6 +922,7 @@ fn features_source(ufo: &Ufo) -> Result<Option<FeaturesSource>, BadSource> {
         Some(_) => FeaturesSource::from_file(fea_file, Some(include_dir)),
         None => FeaturesSource::Memory {
             fea_content: String::from_utf8(content).map_err(|e| BadSource::custom(&fea_file, e))?,
+            path: Some(fea_file),
             include_dir: Some(include_dir),
         },
     }))
@@ -945,12 +946,13 @@ fn fea_content(source: &FeaturesSource) -> Result<(Cow<'_, str>, PathBuf, PathBu
         }
         FeaturesSource::Memory {
             fea_content,
+            path,
             include_dir,
-        } => {
-            let include_dir = include_dir.clone().unwrap_or_default();
-            let fea_file = include_dir.join("features.fea");
-            Ok((Cow::Borrowed(fea_content), fea_file, include_dir))
-        }
+        } => Ok((
+            Cow::Borrowed(fea_content),
+            path.clone().unwrap_or_default(),
+            include_dir.clone().unwrap_or_default(),
+        )),
         FeaturesSource::Empty => Ok((Cow::Borrowed(""), PathBuf::new(), PathBuf::new())),
     }
 }

@@ -1099,6 +1099,11 @@ pub enum FeaturesSource {
     },
     Memory {
         fea_content: String,
+        /// The file the content came from, used to name it in diagnostics.
+        ///
+        /// This need not be a file on disk: a zipped UFO's features are named
+        /// as if the archive were a directory, e.g. `Foo.ufoz/features.fea`.
+        path: Option<PathBuf>,
         include_dir: Option<PathBuf>,
     },
 }
@@ -1118,6 +1123,7 @@ impl FeaturesSource {
     pub fn from_string(fea_content: String) -> FeaturesSource {
         FeaturesSource::Memory {
             fea_content,
+            path: None,
             include_dir: None,
         }
     }
@@ -1128,7 +1134,10 @@ impl Display for FeaturesSource {
         match self {
             FeaturesSource::Empty => f.write_str("<no features>"),
             FeaturesSource::File { fea_file, .. } => write!(f, "{}", fea_file.display()),
-            FeaturesSource::Memory { .. } => f.write_str("<memory>"),
+            FeaturesSource::Memory {
+                path: Some(path), ..
+            } => write!(f, "{}", path.display()),
+            FeaturesSource::Memory { path: None, .. } => f.write_str("<memory>"),
         }
     }
 }

@@ -675,15 +675,19 @@ fn get_resolver_and_root_path(features: &FeaturesSource) -> (Box<dyn SourceResol
         }
         FeaturesSource::Memory {
             fea_content,
+            path,
             include_dir,
-        } => (
-            Box::new(InMemoryResolver {
-                include_dir: include_dir.to_owned(),
-                content_path: PathBuf::new(),
-                content: fea_content.as_str().into(),
-            }),
-            PathBuf::new(),
-        ),
+        } => {
+            let path = path.clone().unwrap_or_default();
+            (
+                Box::new(InMemoryResolver {
+                    include_dir: include_dir.to_owned(),
+                    content_path: path.clone(),
+                    content: fea_content.as_str().into(),
+                }),
+                path,
+            )
+        }
         FeaturesSource::Empty => (Box::new(InMemoryResolver::empty()), Default::default()),
     }
 }

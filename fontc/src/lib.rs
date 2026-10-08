@@ -6986,4 +6986,42 @@ mod tests {
 
         assert_eq!(zipped.raw_font, dir.raw_font);
     }
+
+    #[test]
+    fn zipped_master_fea_error_names_its_features_file() {
+        let tmp = tempdir().unwrap();
+        let src_dir = testdata_dir().join("variable_fea");
+        for name in ["VarFea-Regular.ufo", "VarFea-Bold.ufo"] {
+            copy_dir(&src_dir.join(name), &tmp.path().join(name));
+        }
+        fs::write(
+            tmp.path().join("VarFea-Bold.ufo/features.fea"),
+            "feature ss01 {\n    pos A <30 0 40 0;\n} ss01;\n",
+        )
+        .unwrap();
+        let regular = zip_ufo(&tmp.path().join("VarFea-Regular.ufo"), tmp.path());
+        let bold = zip_ufo(&tmp.path().join("VarFea-Bold.ufo"), tmp.path());
+        let designspace = tmp.path().join("VarFea.designspace");
+        fs::write(
+            &designspace,
+            fs::read_to_string(src_dir.join("VarFea.designspace"))
+                .unwrap()
+                .replace(".ufo\"", ".ufoz\""),
+        )
+        .unwrap();
+
+        let mut result = TestCompile::new(designspace.to_str().unwrap(), |options| options);
+        let error = result.run_expect_err();
+        let Error::Backend(fontbe::error::Error::FeaCompileError(error)) = &error else {
+            panic!("expected a FEA error, got {error:?}");
+        };
+        let diagnostics = error.diagnostics().unwrap().display().to_string();
+        let bold_fea = bold.join("features.fea").display().to_string();
+        let regular_fea = regular.join("features.fea").display().to_string();
+        assert!(
+            diagnostics.contains(&format!(" {bold_fea} ")),
+            "expected {bold_fea} in:\n{diagnostics}"
+        );
+        assert!(!diagnostics.contains(&regular_fea), "{diagnostics}");
+    }
 }
