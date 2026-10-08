@@ -1927,7 +1927,7 @@ fn process_layer(
     let (mut contours, mut components) = match to_ir_contours_and_components(
         glyph.name.clone().into(),
         &instance.shapes,
-        erase_open_corners,
+        erase_open_corners && !instance.open_corners_erased,
     ) {
         Ok(result) => result,
         // fontmake only draws a non-exporting glyph if something uses it as a
