@@ -6687,6 +6687,22 @@ mod tests {
         assert_eq!(glyph.num_points(), 3); // instead of the 4 points in the source.
     }
 
+    // Bellota's n, Bold master, cut down to its stem. The corner leaves a spur
+    // whose neighbouring segments cross, like an open corner. Glyphs erases
+    // open corners before it applies corners but not after, so it keeps the
+    // spur. 'plain' is the same outline without the corner, and loses it.
+    #[test]
+    fn open_corners_not_erased_after_corners() {
+        let result = TestCompile::compile_source("glyphs3/OpenCornerAfterCorner.glyphs");
+        let svg = |name| result.read_ir_glyph(name).default_instance().contours[0].to_svg();
+        let host = svg("host");
+        assert_eq!(
+            host,
+            "M165,-1 L152,436 L165,431 L165,388 C164,447 126,498 96,515 L41,464 C67,442 83,406 83,350 L83,-1 L165,-1 Z"
+        );
+        assert_ne!(svg("plain"), host);
+    }
+
     #[test]
     fn generate_variable_notdef() {
         let result = TestCompile::compile_source("glyphs3/empty_font_needs_variable_notdef.glyphs");

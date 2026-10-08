@@ -168,6 +168,7 @@ fn erase_open_corners(layer: &mut Layer, hints: Vec<Hint>) -> Vec<Hint> {
         }
         originals.insert(shape_index, (original_len, kept));
     }
+    layer.open_corners_erased = true;
     hints
         .into_iter()
         .filter_map(|mut hint| {

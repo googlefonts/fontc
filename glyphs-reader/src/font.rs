@@ -525,6 +525,10 @@ pub struct Layer {
     pub smart_component_positions: BTreeMap<SmolStr, AxisPole>,
     /// Hints for this layer (e.g., corner components, stem hints, etc.)
     pub hints: Vec<Hint>,
+    /// Whether open corners were erased before applying corner components.
+    ///
+    /// Glyphs doesn't erase them again once the corners are applied.
+    pub open_corners_erased: bool,
 }
 
 impl Layer {
@@ -3438,6 +3442,7 @@ impl RawLayer {
             attributes,
             smart_component_positions,
             hints,
+            open_corners_erased: false,
         })
     }
 }
