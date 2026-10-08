@@ -897,6 +897,57 @@ mod tests {
         assert_eq!(comp_gids, vec![b_gid], "'A' should reference only 'B'");
     }
 
+    // A component cycle used to hang the build or overflow the stack, depending
+    // on whether the glyphs in the cycle also have contours.
+    // https://github.com/googlefonts/fontc/issues/1062
+    fn assert_component_cycle_error(source: &str, expected: &str) {
+        let mut result = TestCompile::new(source, |options| options);
+        let error = result.run_expect_err();
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[test]
+    fn component_cycle_with_contours_is_an_error() {
+        assert_component_cycle_error(
+            "ComponentCycleMixed.designspace",
+            "Component cycle through glyphs [cyca, cycb]",
+        );
+    }
+
+    #[test]
+    fn component_cycle_is_an_error() {
+        assert_component_cycle_error(
+            "ComponentCycle.ufo",
+            "Component cycle through glyphs [cyca, cycb]",
+        );
+    }
+
+    #[test]
+    fn component_self_reference_is_an_error() {
+        assert_component_cycle_error(
+            "ComponentSelfReference.ufo",
+            "Component cycle through glyphs [selfref]",
+        );
+    }
+
+    #[test]
+    fn glyphs_component_cycle_is_an_error() {
+        assert_component_cycle_error(
+            "glyphs3/ComponentCycle.glyphs",
+            "Component cycle through glyphs [cyca, cycb, selfref]",
+        );
+    }
+
+    #[test]
+    fn glyphs_smart_component_cycle_is_an_error() {
+        // cyca and cycb are smart components that use each other; this used to
+        // panic while ordering the smart components for instantiation
+        assert_component_cycle_error(
+            "glyphs3/SmartComponentCycle.glyphs",
+            "Component cycle through glyphs [cyca, cycb, selfref]",
+        );
+    }
+
     #[test]
     fn compile_sets_xmin_eq_lsb_flag() {
         let result = TestCompile::compile_source("fontinfo.designspace");

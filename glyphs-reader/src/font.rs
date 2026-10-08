@@ -4356,7 +4356,10 @@ impl Font {
             .map(|(rank, name)| (name, rank))
             .collect::<HashMap<_, _>>();
 
-        glyphs_with_smart_components.sort_by_key(|g| depth_ranked.get(&g.name).unwrap());
+        // glyphs in a component cycle have no depth; put them last and leave it
+        // to fontir to report the cycle
+        glyphs_with_smart_components
+            .sort_by_key(|g| depth_ranked.get(&g.name).copied().unwrap_or(usize::MAX));
 
         // convert the smart components to normal outlines, per-glyph
         for mut glyph in glyphs_with_smart_components {

@@ -1,0 +1,82 @@
+{
+.appVersion = "3414";
+.formatVersion = 3;
+familyName = "Component Cycle";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(50,0,l),
+(450,0,l),
+(450,500,l),
+(50,500,l)
+);
+}
+);
+width = 500;
+}
+);
+unicode = 97;
+},
+{
+glyphname = cyca;
+layers = (
+{
+layerId = m01;
+shapes = (
+{ ref = cycb; }
+);
+width = 500;
+}
+);
+},
+{
+glyphname = cycb;
+layers = (
+{
+layerId = m01;
+shapes = (
+{ ref = cyca; }
+);
+width = 500;
+}
+);
+},
+{
+glyphname = selfref;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(50,0,l),
+(50,50,l),
+(0,50,l)
+);
+},
+{ pos = (10,0); ref = selfref; }
+);
+width = 500;
+}
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
