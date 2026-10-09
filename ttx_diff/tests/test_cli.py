@@ -3,7 +3,11 @@
 import subprocess
 import sys
 
-from ttx_diff.core import source_is_variable
+import pytest
+from glyphsLib import GSFont
+from glyphsLib.classes import GSInstance, InstanceType
+
+from ttx_diff.core import builds_static_export, source_is_variable
 
 
 def _write_designspace(tmp_path, axes, sources):
@@ -153,3 +157,35 @@ class TestSourceIsVariable:
         # 1 master at wght=400, virtual master at wght=700
         path = _write_glyphs(tmp_path, masters=[400], virtual_masters=["700"])
         assert source_is_variable(path)
+
+
+def _instance(name, active=True, type=InstanceType.SINGLE):
+    instance = GSInstance()
+    instance.name = name
+    instance.active = active
+    instance.type = type
+    return instance
+
+
+@pytest.mark.parametrize(
+    "instances, expected",
+    [
+        ([_instance("Heavy")], True),
+        ([_instance("Heavy", active=False)], False),
+        (
+            [
+                _instance("Heavy"),
+                _instance("Other", active=False),
+                _instance("Variable Font Settings", type=InstanceType.VARIABLE),
+            ],
+            True,
+        ),
+        ([_instance("Heavy"), _instance("Other")], False),
+        ([], False),
+    ],
+)
+def test_builds_static_export(instances, expected):
+    """Only one active static instance is built with fontmake -i."""
+    font = GSFont()
+    font.instances = instances
+    assert builds_static_export(font) == expected
