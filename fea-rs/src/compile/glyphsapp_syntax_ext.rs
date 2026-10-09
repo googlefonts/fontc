@@ -49,13 +49,7 @@ impl Value {
     ///
     /// If the two sides are the same variant, the result is the same variant.
     /// If the two sides differ, the result is always a map (the 'Named' variant)
-    fn apply(&mut self, mut rhs: Self, op: Operator) {
-        // to simplify op logic, if two types are different ensure Named
-        // is always the lhs
-        if matches!((&self, &rhs), (Value::Lit(_), Value::Named(_))) {
-            std::mem::swap(self, &mut rhs);
-        }
-
+    fn apply(&mut self, rhs: Self, op: Operator) {
         match op {
             Operator::Plus => self.do_op(rhs, f64::add_assign),
             Operator::Minus => self.do_op(rhs, f64::sub_assign),
@@ -65,7 +59,7 @@ impl Value {
     }
 
     fn do_op(&mut self, rhs: Self, op: impl Fn(&mut f64, f64)) {
-        match (self, rhs) {
+        match (&mut *self, rhs) {
             (Value::Lit(v1), Value::Lit(v2)) => op(v1, v2),
             (Value::Named(v1), Value::Named(v2)) => {
                 for (k, v) in v1.iter_mut() {
@@ -75,7 +69,14 @@ impl Value {
             (Value::Named(v1), Value::Lit(v2)) => {
                 v1.values_mut().for_each(|v| op(v, v2));
             }
-            _ => unreachable!("normalized in apply"),
+            (Value::Lit(v1), Value::Named(mut v2)) => {
+                for v in v2.values_mut() {
+                    let mut result = *v1;
+                    op(&mut result, *v);
+                    *v = result;
+                }
+                *self = Value::Named(v2);
+            }
         }
     }
 }
@@ -198,6 +199,27 @@ mod tests {
         let expr = parse_expr(text);
         let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
         assert!(ordered_eq(&val, [20i16, 46]));
+    }
+
+    #[test]
+    fn literal_minus_number_value() {
+        let expr = parse_expr("${100 - padding}");
+        let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
+        assert!(ordered_eq(&val, [90i16, 77]));
+    }
+
+    #[test]
+    fn literal_div_number_value() {
+        let expr = parse_expr("${100 / padding}");
+        let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
+        assert!(ordered_eq(&val, [10i16, 4]));
+    }
+
+    #[test]
+    fn literal_minus_number_value_product() {
+        let expr = parse_expr("${50 - padding * 2}");
+        let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
+        assert!(ordered_eq(&val, [30i16, 4]));
     }
 
     #[test]
