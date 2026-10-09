@@ -51,6 +51,8 @@ static IGNORED_TESTS: &[&str] = &[
 /// This can be set during debugging if you want to inspect the generated files.
 static TEMP_DIR_ENV: &str = "TTX_TEMP_DIR";
 
+static WARNINGS_EXTENSION: &str = "WARN";
+
 /// The combined results of this set of tests
 #[derive(Default, Serialize, Deserialize)]
 pub struct Report {
@@ -110,6 +112,9 @@ pub enum TestResult {
     /// the actual diff.
     #[allow(missing_docs)]
     ExpectedDiffFail { expected: String, result: String },
+    /// Compilation succeeded, but the warnings did not match the expectation
+    #[allow(missing_docs)]
+    WarningsFail { expected: String, result: String },
 }
 
 struct ReasonPrinter<'a> {
@@ -289,7 +294,10 @@ pub(crate) fn run_test(
             compiler = compiler.with_feature_writer(&TestFeatureProvider)
         }
 
-        match compiler.compile_binary() {
+        let result = compiler
+            .compile_with_warnings()
+            .and_then(|(compilation, warnings)| Ok((compilation.to_binary(glyph_map)?, warnings)));
+        match result {
             // this means we have a test case that doesn't exist or something weird
             Err(CompilerError::SourceLoad(err)) => panic!("{err}"),
             Err(CompilerError::WriteFail(err)) => panic!("{err}"),
@@ -297,7 +305,9 @@ pub(crate) fn run_test(
             Err(CompilerError::ValidationFail(errs) | CompilerError::CompilationFail(errs)) => {
                 Err(TestResult::CompileFail(errs.to_string(true)))
             }
-            Ok(result) => compare_ttx(&result, &path),
+            Ok((font_data, warnings)) => {
+                compare_ttx(&font_data, &path).and_then(|_| compare_warnings(warnings, &path))
+            }
         }
     });
 
@@ -404,6 +414,31 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestResult> {
         result,
         diff_percent,
     })
+}
+
+/// Compare the warnings from compiling `fea_path` to its `.WARN` file.
+///
+/// A test without a `.WARN` file is expected to compile without warnings.
+/// Paths are written relative to the test data directory, so that the output
+/// doesn't depend on where the tests are run from.
+fn compare_warnings(mut warnings: DiagnosticSet, fea_path: &Path) -> Result<(), TestResult> {
+    warnings.set_max_to_print(usize::MAX);
+    let data_dir = format!("{}/", test_data_dir().display());
+    let result = warnings.to_string(false).replace(&data_dir, "");
+    let warn_path = fea_path.with_extension(WARNINGS_EXTENSION);
+    let expected = std::fs::read_to_string(&warn_path).unwrap_or_default();
+    if expected == result {
+        return Ok(());
+    }
+
+    if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
+        if result.is_empty() {
+            std::fs::remove_file(&warn_path).unwrap();
+        } else {
+            std::fs::write(&warn_path, &result).unwrap();
+        }
+    }
+    Err(TestResult::WarningsFail { expected, result })
 }
 
 // we want to be able to add a comment when we save an 'expected diff', so that
@@ -660,7 +695,8 @@ impl Report {
                 TestResult::CompileFail(_) => summary.compile += 1,
                 TestResult::UnexpectedSuccess
                 | TestResult::TtxFail { .. }
-                | TestResult::ExpectedDiffFail { .. } => summary.other += 1,
+                | TestResult::ExpectedDiffFail { .. }
+                | TestResult::WarningsFail { .. } => summary.other += 1,
                 TestResult::CompareFail { diff_percent, .. } => {
                     summary.compare += 1;
                     summary.sum_compare_perc += diff_percent;
@@ -681,6 +717,7 @@ impl TestResult {
             Self::UnexpectedSuccess => 6,
             Self::TtxFail { .. } => 10,
             Self::ExpectedDiffFail { .. } => 15,
+            Self::WarningsFail { .. } => 20,
             Self::CompareFail { .. } => 50,
         }
     }
@@ -849,6 +886,14 @@ impl Display for ReasonPrinter<'_> {
                     super::write_line_diff(f, expected, result)
                 } else {
                     write!(f, "{}", Color::Yellow.paint("expected diff fail"))
+                }
+            }
+            TestResult::WarningsFail { expected, result } => {
+                if self.verbose {
+                    writeln!(f, "warnings mismatch")?;
+                    super::write_line_diff(f, expected, result)
+                } else {
+                    write!(f, "{}", Color::Yellow.paint("warnings mismatch"))
                 }
             }
             TestResult::CompareFail {

@@ -11,6 +11,10 @@ Files in the 'good' directory are expected to compile successfuly. The expected
 result of compilation is represented as a `.ttx` file, stored alongside the test
 case.
 
+A case that is expected to produce warnings also has a `.WARN` file, which
+contains the expected warning output; a case without one is expected to
+compile without warnings. The same applies to the fonttools tests.
+
 ## the bad
 
 Files in the 'bad' directory are expected failures. Each of these has a
@@ -35,5 +39,5 @@ Some per-case compiler configuration is keyed off the test's file name; see
 To add a new test, you can just add a new `.fea` file to the appropriate
 directory. If necessary, you can add new glyphs to `glyph_order.txt`. After
 adding your test cases, you can pass `FEA_WRITE_TEST_OUTPUT=1` as an environment
-variable when running the tests in order to regenerate the corresponding `.ttx`
-or `.ERR` files (which you need to manually verify before commiting!)
+variable when running the tests in order to regenerate the corresponding `.ttx`,
+`.WARN` or `.ERR` files (which you need to manually verify before commiting!)

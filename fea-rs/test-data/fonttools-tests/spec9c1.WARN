@@ -1,0 +1,5 @@
+warning: version number should have exactly three decimal places
+in fonttools-tests/spec9c1.fea at 3:18
+  | 
+3 |     FontRevision 1.1;
+  |                   ^

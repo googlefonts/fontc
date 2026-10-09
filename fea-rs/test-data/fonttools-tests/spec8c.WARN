@@ -1,0 +1,5 @@
+warning: character encoding unsupported
+in fonttools-tests/spec8c.fea at 9:13
+  | 
+9 |         name 1 1 12 "Feature description for Apple Platform, script Japanese, language Japanese";
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
