@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    DiagnosticSet, GlyphMap,
+    Diagnostic, DiagnosticSet, GlyphMap,
     parse::{FileSystemResolver, SourceResolver},
 };
 
@@ -119,6 +119,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
     ///
     /// [`compile_binary`]: Self::compile_binary
     pub fn compile(self) -> Result<Compilation, CompilerError> {
+        self.compile_with_warnings()
+            .map(|(compilation, _)| compilation)
+    }
+
+    /// Parse, validate and compile this source, also returning any warnings.
+    pub(crate) fn compile_with_warnings(
+        self,
+    ) -> Result<(Compilation, DiagnosticSet), CompilerError> {
         let resolver = self.resolver.unwrap_or_else(|| {
             let project_root = self.project_root.unwrap_or_else(|| {
                 Path::new(&self.root_path)
@@ -129,14 +137,25 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
             Box::new(FileSystemResolver::new(project_root))
         });
 
+        let mut warnings = Vec::new();
         let (tree, diagnostics) =
             crate::parse::ParseContext::parse(self.root_path, Some(self.glyph_map), resolver)?
                 .generate_parse_tree();
-        print_warnings_return_errors(diagnostics, self.print_warnings, self.max_n_errors)
-            .map_err(CompilerError::ParseFail)?;
+        take_warnings(
+            diagnostics,
+            &mut warnings,
+            self.print_warnings,
+            self.max_n_errors,
+        )
+        .map_err(CompilerError::ParseFail)?;
         let diagnostics = super::validate(&tree, self.glyph_map, self.var_info);
-        print_warnings_return_errors(diagnostics, self.print_warnings, self.max_n_errors)
-            .map_err(CompilerError::ValidationFail)?;
+        take_warnings(
+            diagnostics,
+            &mut warnings,
+            self.print_warnings,
+            self.max_n_errors,
+        )
+        .map_err(CompilerError::ValidationFail)?;
         let mut ctx = super::CompilationCtx::new(
             self.glyph_map,
             &tree,
@@ -153,9 +172,15 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
             CompilerError::CompilationFail(DiagnosticSet::new(errors, &tree, self.max_n_errors))
         })?;
         let diagnostics = DiagnosticSet::new(messages, &tree, self.max_n_errors);
-        print_warnings_return_errors(diagnostics, self.print_warnings, self.max_n_errors)
-            .map_err(CompilerError::CompilationFail)?;
-        Ok(compilation)
+        take_warnings(
+            diagnostics,
+            &mut warnings,
+            self.print_warnings,
+            self.max_n_errors,
+        )
+        .map_err(CompilerError::CompilationFail)?;
+        let warnings = DiagnosticSet::new(warnings, &tree, self.max_n_errors);
+        Ok((compilation, warnings))
     }
 
     /// Compile to a binary font.
@@ -165,18 +190,22 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
     }
 }
 
-fn print_warnings_return_errors(
+/// Move the warnings in `diagnostics` into `warnings`, returning any errors.
+///
+/// Warnings are printed as they are moved, if `print_warnings` is set.
+fn take_warnings(
     mut diagnostics: DiagnosticSet,
+    warnings: &mut Vec<Diagnostic>,
     print_warnings: bool,
     max_to_print: usize,
 ) -> Result<(), DiagnosticSet> {
     diagnostics.set_max_to_print(max_to_print);
-    let warnings = diagnostics.split_off_warnings();
-    if let Some(warnings) = warnings
-        && print_warnings
-    {
-        // get around a CI check denying eprintln
-        let _ = writeln!(std::io::stderr(), "{}", warnings.display());
+    if let Some(taken) = diagnostics.split_off_warnings() {
+        if print_warnings {
+            // get around a CI check denying eprintln
+            let _ = writeln!(std::io::stderr(), "{}", taken.display());
+        }
+        warnings.extend(taken.messages);
     }
 
     if diagnostics.is_empty() {

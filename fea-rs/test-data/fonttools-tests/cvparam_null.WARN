@@ -1,0 +1,17 @@
+warning: missing 'FeatUiTooltipTextNameIdKw' node
+in fonttools-tests/cvparam_null.fea at 4:4
+  | 
+4 |     cvParameters {
+  |     ^^^^^^^^^^^^
+
+warning: missing 'SampleTextNameId' node
+in fonttools-tests/cvparam_null.fea at 4:4
+  | 
+4 |     cvParameters {
+  |     ^^^^^^^^^^^^
+
+warning: missing 'ParamUiLabelNameId' node
+in fonttools-tests/cvparam_null.fea at 4:4
+  | 
+4 |     cvParameters {
+  |     ^^^^^^^^^^^^
