@@ -18,7 +18,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
+    error::{BadGlyph, BadGlyphKind, BadSource, Error, PathConversionError},
     ir::{
         self, Color, ColorStop, GlyphPathBuilder, Paint, PaintLinearGradient, PaintRadialGradient,
         PaintSolid,
@@ -304,6 +304,10 @@ fn ir_axes(font: &Font) -> Result<fontdrasil::types::Axes, Error> {
 #[derive(Debug)]
 pub(crate) struct FontInfo {
     pub font: Font,
+    /// Index into `font.instances` of the export whose metadata the build
+    /// applies: for now, the active static instance when the font is static.
+    // TODO(anthrotype): the Variable Font Settings being built, for variable fonts.
+    pub export: Option<usize>,
     /// Index by master id
     pub master_indices: HashMap<String, usize>,
     // Master id => location
@@ -331,6 +335,34 @@ impl TryFrom<Font> for FontInfo {
             .collect();
 
         let axes = ir_axes(&font)?;
+        // Like StaticMetadata, a font whose axes are all points is static.
+        let export = if axes.iter().all(|axis| axis.is_point()) {
+            let exports: Vec<_> = font
+                .instances
+                .iter()
+                .enumerate()
+                .filter(|(_, instance)| {
+                    instance.active && instance.type_ == glyphs_reader::InstanceType::Single
+                })
+                .collect();
+            if exports.len() > 1 {
+                return Err(BadSource::custom(
+                    "<Glyphs source>",
+                    format!(
+                        "Ambiguous static exports: {}. Disable all but one static instance.",
+                        exports
+                            .iter()
+                            .map(|(_, instance)| instance.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                )
+                .into());
+            }
+            exports.first().map(|(index, _)| *index)
+        } else {
+            None
+        };
 
         let locations: HashMap<_, _> = font
             .masters
@@ -373,6 +405,7 @@ impl TryFrom<Font> for FontInfo {
 
         Ok(FontInfo {
             font,
+            export,
             master_indices,
             master_positions,
             locations,

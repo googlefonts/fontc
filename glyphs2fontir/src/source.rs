@@ -82,7 +82,11 @@ impl Source for GlyphsIrSource {
                 glyphs_file.to_path_buf(),
                 format!("Unable to read glyphs file: {e}"),
             )
-        })?)?;
+        })?)
+        .map_err(|error| match error {
+            Error::BadSource(error) => BadSource::custom(glyphs_file, error.kind).into(),
+            other => other,
+        })?;
 
         Ok(Self {
             font_info: Arc::new(font_info),
@@ -223,7 +227,8 @@ fn try_name_id(name: &str) -> Option<NameId> {
         "uniqueID" => Some(NameId::UNIQUE_ID),
         // Python appears to *only* use this for CFF topDict construction, not name
         // "postscriptFullName" => Some(NameId::FULL_NAME),
-        "version" => Some(NameId::VERSION_STRING),
+        // the font's versionString is renamed on load, an instance's isn't
+        "version" | "versionString" => Some(NameId::VERSION_STRING),
         "postscriptFontName" => Some(NameId::POSTSCRIPT_NAME),
         "trademarks" => Some(NameId::TRADEMARK),
         "manufacturers" => Some(NameId::MANUFACTURER),
@@ -236,11 +241,14 @@ fn try_name_id(name: &str) -> Option<NameId> {
         // ttx_diff suggests python doesn't care about this one
         //"compatibleFullNames" => Some(NameId::COMPATIBLE_FULL_NAME),
         "sampleTexts" => Some(NameId::SAMPLE_TEXT),
+        "WWSSubfamilyName" => Some(NameId::WWS_SUBFAMILY_NAME),
         "WWSFamilyName" => Some(NameId::WWS_FAMILY_NAME),
         "preferredFamilyNames" => Some(NameId::TYPOGRAPHIC_FAMILY_NAME),
         "preferredSubfamilyNames" => Some(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
         "variationsPostScriptNamePrefix" => Some(NameId::VARIATIONS_POSTSCRIPT_NAME_PREFIX),
         "vendorID" => None, // handled separately
+        // instance style names, handled with the name IDs 1/2/17 they feed
+        "styleNames" | "styleMapFamilyNames" | "styleMapStyleNames" => None,
         _ => {
             warn!("Unknown 'name' entry {name}");
             None
@@ -256,16 +264,31 @@ fn try_language_id(lang: &str) -> Option<u16> {
     lang_id
 }
 
-fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
+/// The name table: the font's default-language names, with those of the
+/// static export (if any) on top.
+///
+/// Without an export, the default master's name stands in for the instance
+/// name in IDs 1 and 17, as in glyphsLib.
+// TODO(anthrotype): accept the Variable Font Settings being built too.
+fn names(
+    font: &Font,
+    export: Option<&glyphs_reader::Instance>,
+    flags: SelectionFlags,
+) -> HashMap<NameKey, String> {
+    debug_assert!(export.is_none_or(|instance| instance.type_ == InstanceType::Single));
     let mut builder = NameBuilder::default();
     builder.set_version(font.version_major, font.version_minor);
 
-    for (name, value) in font.default_names() {
+    let export_names = export
+        .into_iter()
+        .flat_map(|instance| instance.default_names());
+    for (name, value) in font.default_names().chain(export_names) {
         if let Some(name_id) = try_name_id(name) {
             builder.add(name_id, value.to_string());
         }
     }
 
+    // ID 2 follows the flags, which the export's isBold/isItalic already set
     let subfamily = if flags.contains(SelectionFlags::BOLD | SelectionFlags::ITALIC) {
         "Bold Italic"
     } else if flags.contains(SelectionFlags::BOLD) {
@@ -277,35 +300,48 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     };
     builder.add(NameId::SUBFAMILY_NAME, subfamily.to_string());
 
+    let style_name = export.map_or(font.default_master().name.as_str(), |instance| {
+        instance.name.as_str()
+    });
     let original_family = builder
         .get(NameId::FAMILY_NAME)
         .map(|s| s.to_string())
         .unwrap_or_default();
-    let family =
-        NameBuilder::style_map_family_name(&original_family, &font.default_master().name, flags);
-    builder.add(NameId::FAMILY_NAME, family.clone());
+    let family = match export
+        .and_then(|instance| instance.link_style.as_deref())
+        .filter(|name| !name.is_empty() && *name != "Regular")
+    {
+        Some(link) => format!("{original_family} {link}"),
+        None => NameBuilder::style_map_family_name(&original_family, style_name, flags),
+    };
+    builder.add(NameId::FAMILY_NAME, family);
 
-    if let Some(typographic_family) = &builder
+    let typographic_family = builder
         .get(NameId::TYPOGRAPHIC_FAMILY_NAME)
-        .or(Some(&original_family))
-    {
-        builder.add(
-            NameId::TYPOGRAPHIC_FAMILY_NAME,
-            typographic_family.to_string(),
-        );
-    }
-
-    if let Some(typographic_subfamily) = &builder
+        .unwrap_or(&original_family)
+        .to_string();
+    builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, typographic_family);
+    let typographic_subfamily = builder
         .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
-        .or(Some(&font.default_master().name))
-    {
-        builder.add(
-            NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
-            typographic_subfamily.to_string(),
-        );
+        .unwrap_or(style_name)
+        .to_string();
+    builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, typographic_subfamily);
+
+    if let Some(instance) = export {
+        if let Some(ps) = instance.postscript_name() {
+            builder.add(NameId::POSTSCRIPT_NAME, ps.to_string());
+        }
+        if instance.get_default_name("versionString").is_none()
+            && let Some(version) = &instance.custom_parameters.version_string
+        {
+            builder.add(NameId::VERSION_STRING, version.clone());
+        }
     }
 
-    let vendor = font.vendor_id().unwrap_or(DEFAULT_VENDOR_ID);
+    let vendor = export
+        .and_then(|instance| instance.custom_parameters.vendor_id.as_deref())
+        .or(font.vendor_id())
+        .unwrap_or(DEFAULT_VENDOR_ID);
 
     for (key, lang, value) in font.localized_names() {
         let Some(name_id) = try_name_id(key) else {
@@ -320,7 +356,15 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
         builder.add_record(name_key, value.to_string());
     }
 
-    for entry in &font.custom_parameters.name_table_entries {
+    let export_entries = export
+        .into_iter()
+        .flat_map(|instance| &instance.custom_parameters.name_table_entries);
+    for entry in font
+        .custom_parameters
+        .name_table_entries
+        .iter()
+        .chain(export_entries)
+    {
         let key = NameKey {
             name_id: NameId::new(entry.name_id),
             platform_id: entry.platform_id,
@@ -465,6 +509,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             font.get_default_name("familyNames")
                 .unwrap_or("<nameless family>")
         );
+        let export = font_info.export();
         let axes = font_info.axes.clone();
         let named_instances = font
             .instances
@@ -542,6 +587,29 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             "Bold" | "Bold Italic" | "Bold Oblique" => SelectionFlags::BOLD,
             _ => SelectionFlags::empty(),
         };
+        if let Some(instance) = export {
+            selection_flags.remove(SelectionFlags::ITALIC | SelectionFlags::BOLD);
+            if instance.is_bold {
+                selection_flags.insert(SelectionFlags::BOLD);
+            }
+            if instance.is_italic {
+                selection_flags.insert(SelectionFlags::ITALIC);
+            }
+            if let Some(value) = instance.custom_parameters.use_typo_metrics {
+                if value {
+                    selection_flags.insert(SelectionFlags::USE_TYPO_METRICS);
+                } else {
+                    selection_flags.remove(SelectionFlags::USE_TYPO_METRICS);
+                }
+            }
+            if let Some(value) = instance.custom_parameters.has_wws_names {
+                if value {
+                    selection_flags.insert(SelectionFlags::WWS);
+                } else {
+                    selection_flags.remove(SelectionFlags::WWS);
+                }
+            }
+        }
         if selection_flags.intersection(SelectionFlags::ITALIC | SelectionFlags::BOLD)
             == SelectionFlags::empty()
         {
@@ -574,11 +642,13 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .values()
             .flat_map(|glyph| glyph.layers.iter())
             .any(|layer| layer.vert_width.is_some() || layer.vert_origin.is_some());
-        let build_vertical = has_vhea_params || has_glyph_vertical_attrs;
+        let build_vertical = has_vhea_params
+            || has_glyph_vertical_attrs
+            || export.is_some_and(|instance| has_all_vhea_params(&instance.custom_parameters));
 
-        let dont_use_prod_names = font
-            .custom_parameters
-            .dont_use_production_names
+        let dont_use_prod_names = export
+            .and_then(|instance| instance.custom_parameters.dont_use_production_names)
+            .or(font.custom_parameters.dont_use_production_names)
             .unwrap_or(false);
 
         let postscript_names =
@@ -608,7 +678,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         let variations = make_feature_variations(font_info);
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
-            names(font, selection_flags),
+            names(font, export, selection_flags),
             axes.into_inner(),
             named_instances,
             global_locations,
@@ -654,8 +724,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .map(|bits| bits.iter().copied().collect());
 
         let default_master = font.default_master();
-        let default_instance = font.variable_export_settings(default_master);
-        if let Some(raw_panose) = default_instance
+        // PANOSE and meta also come from the Variable Font Settings named like
+        // the default master, if there's no static export.
+        let export_settings = export.or_else(|| font.variable_export_settings(default_master));
+        if let Some(raw_panose) = export_settings
             .and_then(|di| di.custom_parameters.panose.as_ref())
             .or(default_master.custom_parameters.panose.as_ref())
             .or(font.custom_parameters.panose.as_ref())
@@ -696,7 +768,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             })
             .or(static_metadata.misc.created);
 
-        if let Some(meta_table) = default_instance
+        if let Some(meta_table) = export_settings
             .and_then(|di| di.custom_parameters.meta_table.as_ref())
             .or(default_master.custom_parameters.meta_table.as_ref())
             .or(font.custom_parameters.meta_table.as_ref())
@@ -707,7 +779,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             });
         }
 
-        if let Some(gasp) = &font.custom_parameters.gasp_table {
+        if let Some(gasp) = export
+            .and_then(|instance| instance.custom_parameters.gasp_table.as_ref())
+            .or(font.custom_parameters.gasp_table.as_ref())
+        {
             for (max_ppem, behavior) in gasp.iter() {
                 let Ok(range_max_ppem) = (*max_ppem).try_into() else {
                     warn!(
@@ -726,6 +801,44 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                     range_max_ppem,
                     range_gasp_behavior,
                 });
+            }
+        }
+
+        if let Some(instance) = export {
+            let cp = &instance.custom_parameters;
+            // Classes remain meaningful after StaticMetadata removes point axes.
+            // Glyphs.app exports the instance's own classes, whatever its
+            // location and the axis mappings; glyphsLib derives them from
+            // the instance's user location.
+            static_metadata.misc.us_weight_class =
+                Some(instance.weight_class.unwrap_or(400).clamp(1, 1000));
+            static_metadata.misc.us_width_class = Some(instance.width_class.unwrap_or(5));
+            static_metadata.misc.fs_type = cp.fs_type.or(static_metadata.misc.fs_type);
+            static_metadata.misc.is_fixed_pitch =
+                cp.is_fixed_pitch.or(static_metadata.misc.is_fixed_pitch);
+            if let Some(bits) = &cp.unicode_range_bits {
+                static_metadata.misc.unicode_range_bits = Some(bits.iter().copied().collect());
+            }
+            if let Some(bits) = &cp.codepage_range_bits {
+                static_metadata.misc.codepage_range_bits = Some(bits.iter().copied().collect());
+            }
+            if let Some(ppem) = cp.lowest_rec_ppem {
+                static_metadata.misc.lowest_rec_ppm = ppem as _;
+            }
+            if let Some(bits) = &cp.head_flags {
+                static_metadata.misc.head_flags = head::Flags::from_bits_truncate(
+                    bits.iter().fold(0u16, |flags, bit| flags | (1 << bit)),
+                );
+            }
+            if let Some(vendor) = cp.vendor_id.as_deref().or(font.vendor_id()) {
+                static_metadata.misc.vendor_id = if vendor.trim().is_empty() {
+                    Tag::new(b"    ")
+                } else {
+                    vendor.parse().map_err(|cause| Error::InvalidTag {
+                        raw_tag: vendor.to_owned(),
+                        cause,
+                    })?
+                };
             }
         }
 
@@ -1061,6 +1174,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
 
         let static_metadata = context.static_metadata.get();
         let mut metrics = GlobalMetricsBuilder::new();
+        let export_cp = font_info.export().map(|export| &export.custom_parameters);
 
         for master in font.masters.iter() {
             let pos = font_info.locations.get(&master.axes_values).unwrap();
@@ -1079,9 +1193,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             metrics.set_if_some(
                 GlobalMetric::Os2WinDescent,
                 pos.clone(),
-                master
-                    .custom_parameters
-                    .win_descent
+                export_cp
+                    .and_then(|cp| cp.win_descent)
+                    .or(master.custom_parameters.win_descent)
                     .or(font.custom_parameters.win_descent)
                     .map(|v| v.abs() as f64),
             );
@@ -1091,9 +1205,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                 ($variant:ident, $field_name:ident) => {
                     set_metric!(
                         $variant,
-                        master
-                            .custom_parameters
-                            .$field_name
+                        export_cp
+                            .and_then(|cp| cp.$field_name)
+                            .or(master.custom_parameters.$field_name)
                             .or(font.custom_parameters.$field_name)
                             .map(|v| v as f64)
                     )
@@ -1102,9 +1216,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                 ($variant:ident, $field_name:ident, $fallback:literal) => {
                     set_metric!(
                         $variant,
-                        master
-                            .custom_parameters
-                            .$field_name
+                        export_cp
+                            .and_then(|cp| cp.$field_name)
+                            .or(master.custom_parameters.$field_name)
                             .or(font.custom_parameters.$field_name)
                             .or(Some($fallback.into()))
                     )
@@ -1146,9 +1260,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             metrics.set(
                 GlobalMetric::VheaAscender,
                 pos.clone(),
-                master
-                    .custom_parameters
-                    .vhea_ascender
+                export_cp
+                    .and_then(|cp| cp.vhea_ascender)
+                    .or(master.custom_parameters.vhea_ascender)
                     .or(font.custom_parameters.vhea_ascender)
                     .map(|v| v as f64)
                     .unwrap_or(font.units_per_em as f64 / 2.0),
@@ -1156,9 +1270,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             metrics.set(
                 GlobalMetric::VheaDescender,
                 pos.clone(),
-                master
-                    .custom_parameters
-                    .vhea_descender
+                export_cp
+                    .and_then(|cp| cp.vhea_descender)
+                    .or(master.custom_parameters.vhea_descender)
                     .or(font.custom_parameters.vhea_descender)
                     .map(|v| v as f64)
                     .unwrap_or(-(font.units_per_em as f64 / 2.0)),
@@ -1166,9 +1280,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             metrics.set(
                 GlobalMetric::VheaLineGap,
                 pos.clone(),
-                master
-                    .custom_parameters
-                    .vhea_line_gap
+                export_cp
+                    .and_then(|cp| cp.vhea_line_gap)
+                    .or(master.custom_parameters.vhea_line_gap)
                     .or(font.custom_parameters.vhea_line_gap)
                     .map(|v| v as f64)
                     .unwrap_or(font.units_per_em as f64),
@@ -1313,6 +1427,15 @@ impl Work<Context, WorkId, Error> for KerningLocationsWork {
 }
 
 impl FontInfo {
+    /// The export whose metadata applies on top of the font's: the static
+    /// export, if there is one.
+    // TODO(anthrotype): fall back to the Variable Font Settings being built. Only
+    // PANOSE, meta and the names merged at load time use them so far, and they
+    // pick one in two different ways.
+    fn export(&self) -> Option<&glyphs_reader::Instance> {
+        self.export.map(|index| &self.font.instances[index])
+    }
+
     /// The kern-group partition, from the font's per-glyph kern attributes.
     ///
     /// Glyphs kerning groups are per-glyph properties, so unlike UFO sources
@@ -3096,7 +3219,9 @@ mod tests {
     #[test]
     fn name_table() {
         let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
-        let mut names: Vec<_> = names(&font, SelectionFlags::BOLD).into_iter().collect();
+        let mut names: Vec<_> = names(&font, None, SelectionFlags::BOLD)
+            .into_iter()
+            .collect();
         names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
         // typographic family name == family name and should NOT be present
         assert_eq!(the_best_names(), names);
@@ -3105,7 +3230,9 @@ mod tests {
     #[test]
     fn name_table_with_basic_names_light_origin() {
         let font = Font::load(&glyphs3_dir().join("LightOriginNames.glyphs")).unwrap();
-        let mut names: Vec<_> = names(&font, SelectionFlags::REGULAR).into_iter().collect();
+        let mut names: Vec<_> = names(&font, None, SelectionFlags::REGULAR)
+            .into_iter()
+            .collect();
         names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
 
         // Expected taken from fontmake output
@@ -3151,7 +3278,9 @@ mod tests {
     #[test]
     fn name_table_with_preferred_names() {
         let font = Font::load(&glyphs3_dir().join("PreferableNames.glyphs")).unwrap();
-        let mut names: Vec<_> = names(&font, SelectionFlags::BOLD).into_iter().collect();
+        let mut names: Vec<_> = names(&font, None, SelectionFlags::BOLD)
+            .into_iter()
+            .collect();
         names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
         // typographic family and subfamily should be present now
         let mut expected_names = the_best_names();
@@ -3185,7 +3314,7 @@ mod tests {
     fn family_name_keeps_style_parts_the_flags_do_not_account_for() {
         let font = Font::load(&glyphs3_dir().join("StaticBoldItalic.glyphs")).unwrap();
         let family_name = |flags| {
-            names(&font, flags)
+            names(&font, None, flags)
                 .remove(&NameKey::new(NameId::FAMILY_NAME))
                 .unwrap()
         };
@@ -3200,7 +3329,7 @@ mod tests {
     #[test]
     fn name_table_with_localized_properties() {
         let font = Font::load(&glyphs3_dir().join("LocalizedNames.glyphs")).unwrap();
-        let names = names(&font, SelectionFlags::REGULAR);
+        let names = names(&font, None, SelectionFlags::REGULAR);
 
         assert_eq!(
             "Copyright Default",
@@ -3351,7 +3480,7 @@ mod tests {
     #[test]
     fn localized_name_outside_bmp_keeps_windows_bmp_encoding() {
         let font = Font::load(&glyphs3_dir().join("LocalizedNames.glyphs")).unwrap();
-        let names = names(&font, SelectionFlags::REGULAR);
+        let names = names(&font, None, SelectionFlags::REGULAR);
         let key = NameKey {
             name_id: NameId::FAMILY_NAME,
             platform_id: 3,
@@ -3369,7 +3498,7 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         assert_eq!(
             "New Value",
-            names(&font, SelectionFlags::empty())
+            names(&font, None, SelectionFlags::empty())
                 .get(&NameKey::new(NameId::VERSION_STRING))
                 .unwrap()
         );
@@ -3380,7 +3509,7 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("VersionMajorMinor.glyphs")).unwrap();
         assert_eq!(
             "Version 42.043",
-            names(&font, SelectionFlags::empty())
+            names(&font, None, SelectionFlags::empty())
                 .get(&NameKey::new(NameId::VERSION_STRING))
                 .unwrap()
         );
@@ -3391,7 +3520,7 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("infinity.glyphs")).unwrap();
         assert_eq!(
             "Version 0.000",
-            names(&font, SelectionFlags::empty())
+            names(&font, None, SelectionFlags::empty())
                 .get(&NameKey::new(NameId::VERSION_STRING))
                 .unwrap()
         );
@@ -3401,7 +3530,7 @@ mod tests {
     fn ignore_empty_name() {
         let font = Font::load(&glyphs3_dir().join("EmptyName.glyphs")).unwrap();
 
-        let names = names(&font, SelectionFlags::empty());
+        let names = names(&font, None, SelectionFlags::empty());
         assert!(!names.contains_key(&NameKey::new(NameId::TRADEMARK)));
     }
 
@@ -3409,7 +3538,7 @@ mod tests {
     fn reads_name_table_entry_custom_param() {
         let font = Font::load(&glyphs3_dir().join("NameTableEntry.glyphs")).unwrap();
 
-        let names = names(&font, SelectionFlags::empty());
+        let names = names(&font, None, SelectionFlags::empty());
         let key_ch_tw = NameKey {
             name_id: NameId::new(16),
             platform_id: 3,
@@ -4949,6 +5078,60 @@ unitsPerEm = 1000;
 
         fn create_static_metadata(&self, source: &impl Source) -> Arc<StaticMetadata> {
             self.try_create_static_metadata(source).unwrap()
+        }
+    }
+
+    #[test]
+    fn ambiguous_static_exports_fail_from_memory() {
+        let result = GlyphsIrSource::new_from_memory(
+            r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+unitsPerEm = 1000;
+instances = ({ name = Regular; }, { name = Bold; });
+}"#,
+        );
+        assert!(
+            result.is_err(),
+            "multiple static exports must not silently select one"
+        );
+        let message = result.unwrap_err().to_string();
+        assert!(
+            message.contains("Regular") && message.contains("Bold"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn static_export_counts_active_single_instances_of_static_sources() {
+        // The counterpart of ambiguous_static_exports_fail_from_memory: shapes
+        // that must not be ambiguous, and the export each one picks.
+        for (case, parameters, instances, expected) in [
+            // Nothing to pick: the master is built as before
+            ("no_instances", "", "", None),
+            // Disabled instances and Variable Font Settings don't count
+            (
+                "inactive_and_variable_ignored",
+                "",
+                "{ name = Disabled; active = 0; axesValues = (100); }, { name = VF; type = variable; axesValues = (100); }, { name = Regular; axesValues = (100); }",
+                Some(2),
+            ),
+            // A Virtual Master widens the axis derived from the masters, so the
+            // source is variable and its two instances aren't ambiguous
+            (
+                "virtual_master_keeps_it_variable",
+                "customParameters = ({ name = \"Virtual Master\"; value = ({ Axis = Weight; Location = 200; }); });",
+                "{ name = Regular; axesValues = (100); }, { name = Bold; axesValues = (200); }",
+                None,
+            ),
+        ] {
+            let data = format!(
+                "{{ .formatVersion = 3; familyName = Example; axes = ({{ name = Weight; tag = wght; }}); fontMaster = ({{ id = m01; axesValues = (100); }}); unitsPerEm = 1000; {parameters} instances = ({instances}); }}"
+            );
+            let source = GlyphsIrSource::new_from_memory(&data)
+                .unwrap_or_else(|error| panic!("{case}: {error}"));
+            assert_eq!(source.font_info.export, expected, "{case}");
         }
     }
 
