@@ -1,0 +1,7 @@
+# The first rule maps 'f' to 'f g' in an anonymous lookup, so the class rule
+# needs a second anonymous lookup for 'f -> f i', while 'g' and 'h' can reuse
+# the first one. Each glyph must be routed to its own lookup.
+lookup test {
+    sub a f' by f g;
+    sub b [f g h]' by [f g h] i;
+} test;

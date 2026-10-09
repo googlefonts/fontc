@@ -646,6 +646,13 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     fn add_contextual_sub(&mut self, node: &typed::Gsub6) {
         let backtrack = self.resolve_backtrack_sequence(node.backtrack().items());
         let lookahead = self.resolve_lookahead_sequence(node.lookahead().items());
+        if let Some(rule) = node.inline_rule().filter(|rule| {
+            node.input().items().nth(1).is_none()
+                && (rule.null().is_some() || rule.replacements().count() != 1)
+        }) {
+            self.add_contextual_multiple_sub(node, &rule, backtrack, lookahead);
+            return;
+        }
         // does this have an inline rule?
         let mut inline = node.inline_rule().and_then(|rule| {
             let input = node.input();
@@ -684,65 +691,18 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 )
             } else {
                 let target = input.items().next().unwrap().target();
-                let arity = rule.replacements().count();
-                if arity == 1 && rule.null().is_none() {
-                    let replacement = rule.replacements().next().unwrap();
-                    if let Some((target, replacement)) =
-                        self.validate_single_sub_inputs(&target, Some(&replacement))
-                    {
-                        let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
-                        Some(
-                            lookup
-                                .as_gsub_contextual()
-                                .add_anon_gsub_type_1(target, replacement),
-                        )
-                    } else {
-                        None
-                    }
+                let replacement = rule.replacements().next().unwrap();
+                if let Some((target, replacement)) =
+                    self.validate_single_sub_inputs(&target, Some(&replacement))
+                {
+                    let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
+                    Some(
+                        lookup
+                            .as_gsub_contextual()
+                            .add_anon_gsub_type_1(target, replacement),
+                    )
                 } else {
-                    let replacements = if rule.null().is_some() {
-                        Vec::new()
-                    } else {
-                        rule.replacements()
-                            .map(|g| self.resolve_glyph_or_class(&g))
-                            .collect::<Vec<_>>()
-                    };
-
-                    let targets = self.resolve_glyph_or_class(&target);
-                    // ensure that if replacement contains any classes, they have equal length
-                    // to the target
-                    for (i, item) in replacements.iter().enumerate() {
-                        if item.is_class() && item.len() != targets.len() {
-                            let raw = rule.replacements().nth(i).unwrap();
-                            self.error(
-                                raw.range(),
-                                "replacement class must have same length as target",
-                            );
-                            return None;
-                        }
-                    }
-                    if targets.iter().next().is_some() {
-                        let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
-                        let mut lookup_id = None;
-                        for (i, target) in targets.iter().enumerate() {
-                            let replacement = replacements
-                                .iter()
-                                .filter_map(|r| match r {
-                                    GlyphOrClass::Glyph(gid) => Some(*gid),
-                                    GlyphOrClass::Class(cls) => cls.items().get(i).copied(),
-                                    GlyphOrClass::Null => None,
-                                })
-                                .collect();
-                            lookup_id = Some(
-                                lookup
-                                    .as_gsub_contextual()
-                                    .add_anon_gsub_type_2(target, replacement),
-                            );
-                        }
-                        lookup_id
-                    } else {
-                        None
-                    }
+                    None
                 }
             }
         });
@@ -780,6 +740,65 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
         let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
         lookup.add_contextual_rule(backtrack, context, lookahead);
+    }
+
+    /// Add a contextual multiple substitution, with one rule per target glyph.
+    ///
+    /// Each target glyph may land in a different anonymous lookup, so each
+    /// gets its own rule pointing at that lookup. Adjacent rules that share a
+    /// lookup are merged as they are added.
+    fn add_contextual_multiple_sub(
+        &mut self,
+        node: &typed::Gsub6,
+        rule: &typed::InlineSubRule,
+        backtrack: Vec<GlyphOrClass>,
+        lookahead: Vec<GlyphOrClass>,
+    ) {
+        let target = node.input().items().next().unwrap().target();
+        let replacements = if rule.null().is_some() {
+            Vec::new()
+        } else {
+            rule.replacements()
+                .map(|g| self.resolve_glyph_or_class(&g))
+                .collect::<Vec<_>>()
+        };
+
+        let targets = self.resolve_glyph_or_class(&target);
+        // ensure that if replacement contains any classes, they have equal length
+        // to the target
+        for (i, item) in replacements.iter().enumerate() {
+            if item.is_class() && item.len() != targets.len() {
+                let raw = rule.replacements().nth(i).unwrap();
+                self.error(
+                    raw.range(),
+                    "replacement class must have same length as target",
+                );
+                return;
+            }
+        }
+        if self.report_empty_glyph_class(&targets, target.range()) {
+            return;
+        }
+
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType6, node.range());
+        for (i, target) in targets.iter().enumerate() {
+            let replacement = replacements
+                .iter()
+                .filter_map(|r| match r {
+                    GlyphOrClass::Glyph(gid) => Some(*gid),
+                    GlyphOrClass::Class(cls) => cls.items().get(i).copied(),
+                    GlyphOrClass::Null => None,
+                })
+                .collect();
+            let lookup_id = lookup
+                .as_gsub_contextual()
+                .add_anon_gsub_type_2(target, replacement);
+            lookup.add_contextual_rule(
+                backtrack.clone(),
+                vec![(GlyphOrClass::Glyph(target), vec![lookup_id])],
+                lookahead.clone(),
+            );
+        }
     }
 
     fn add_contextual_sub_ignore(&mut self, node: &typed::GsubIgnore) {
