@@ -2070,6 +2070,90 @@ mod tests {
     }
 
     #[test]
+    fn static_export_metadata_reaches_font_tables() {
+        // #1874: the one static export supplies metadata, while the master
+        // supplies glyphs. Expected values also match fontmake -i -o ttf.
+        // The fixture's font has preferred family/subfamily names and vendor
+        // DUCK, its master strikeout size and underline position parameters.
+        // The "Heavy Condensed" instance has weight class 800 and width class 3,
+        // and parameters for family name, PostScript name, a blank vendor,
+        // PANOSE, strikeout and underline. Its isBold/isItalic flags (italic,
+        // not bold) deliberately disagree with its name and weight class, to
+        // show the style bits come from the flags alone.
+        let result = TestCompile::compile_source("static_export_metadata.glyphs");
+        let font = result.font();
+        let names = font.name().unwrap();
+        for (id, expected) in [
+            (1, "Export Family Heavy Condensed"),
+            (2, "Italic"),
+            (4, "Inherited Preferred Family Inherited Preferred Style"),
+            (6, "ExportFamily-HeavyCondensed"),
+            (16, "Inherited Preferred Family"),
+            (17, "Inherited Preferred Style"),
+        ] {
+            assert_eq!(
+                resolve_name(&names, NameId::new(id)).as_deref(),
+                Some(expected)
+            );
+        }
+        let os2 = font.os2().unwrap();
+        assert_eq!(os2.ach_vend_id(), Tag::new(b"    "));
+        assert_eq!(
+            resolve_name(&names, NameId::UNIQUE_ID).as_deref(),
+            Some("1.000;    ;ExportFamily-HeavyCondensed")
+        );
+        assert_eq!((os2.us_weight_class(), os2.us_width_class()), (800, 3));
+        // A heavy weight class does not imply style-linked bold.
+        assert_eq!(os2.fs_selection(), SelectionFlags::ITALIC);
+        assert_eq!(font.head().unwrap().mac_style().bits(), 2);
+        assert_eq!(os2.panose_10(), &[2, 11, 8, 3, 2, 2, 3, 2, 2, 4]);
+        assert_eq!(
+            (os2.y_strikeout_size(), os2.y_strikeout_position()),
+            (67, 345)
+        );
+        let post = font.post().unwrap();
+        assert_eq!(post.underline_position().to_i16(), -123);
+        assert_eq!(post.underline_thickness().to_i16(), 89);
+        assert_eq!(
+            font.hmtx().unwrap().h_metrics()[result.get_gid("space").to_u32() as usize].advance(),
+            200
+        );
+        assert!(font.fvar().is_err());
+        assert!(font.gvar().is_err());
+        assert!(font.hvar().is_err());
+    }
+
+    #[rstest]
+    // Instance at wght 100, wdth 100, the only master at 90, 120; the
+    // instance's weight class 700 and width class 3 apply
+    #[case("static_export_off_master.glyphs", 700, 3)]
+    // Master Axis Location at Weight 300, instance weight class 800: the
+    // instance's class applies (fontmake gives 300, from the location)
+    #[case("static_export_axis_location.glyphs", 800, 5)]
+    // Only a Width axis: the instance's weight class 700 still applies
+    // (glyphsLib drops it)
+    #[case("static_export_width_axis_only.glyphs", 700, 5)]
+    // Only a Weight axis: the instance's width class 3 still applies
+    #[case("static_export_weight_axis_only.glyphs", 400, 3)]
+    fn static_export_classes_are_the_instance_classes(
+        #[case] source: &str,
+        #[case] weight: u16,
+        #[case] width: u16,
+    ) {
+        // Expected values are Glyphs.app 3.5 exports: the instance's own
+        // weight and width classes, whatever its location, the axes and their
+        // mappings.
+        let result = TestCompile::compile_source(source);
+        let font = result.font();
+        let os2 = font.os2().unwrap();
+        assert_eq!(
+            (os2.us_weight_class(), os2.us_width_class()),
+            (weight, width)
+        );
+        assert!(font.fvar().is_err());
+    }
+
+    #[test]
     fn populates_unicode_range() {
         let result = TestCompile::compile_source("static.designspace");
         let font = result.font();
