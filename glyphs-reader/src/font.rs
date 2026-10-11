@@ -608,6 +608,12 @@ impl Layer {
 #[derive(Clone, Default, Debug, PartialEq, Hash)]
 pub struct LayerAttributes {
     pub coordinates: Vec<OrderedFloat<f64>>,
+    /// Whether the layer has a `coordinates` key, even an empty one.
+    ///
+    /// Glyphs 4 interpolates the layers of a smart glyph that have one, and
+    /// ignores the others, like backup layers. Only used to convert v4 smart
+    /// glyphs, and false once the font is loaded.
+    pub has_coordinates: bool,
     pub color: bool,
     // in the same order that axes are declared for the font
     pub axis_rules: Vec<AxisRule>,
@@ -671,6 +677,7 @@ fn parse_layer_coordinates(
 impl FromPlist for LayerAttributes {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
         let mut coordinates = Vec::new();
+        let mut has_coordinates = false;
         let mut color = false;
         let mut axis_rules = Vec::new();
         let mut color_palette = None;
@@ -685,7 +692,10 @@ impl FromPlist for LayerAttributes {
             let key: String = tokenizer.parse()?;
             tokenizer.eat(b'=')?;
             match key.as_str() {
-                "coordinates" => coordinates = parse_layer_coordinates(tokenizer)?,
+                "coordinates" => {
+                    coordinates = parse_layer_coordinates(tokenizer)?;
+                    has_coordinates = true;
+                }
                 "color" => color = tokenizer.parse()?,
                 "axisRules" => axis_rules = tokenizer.parse()?,
                 "colorPalette" => {
@@ -710,6 +720,7 @@ impl FromPlist for LayerAttributes {
 
         Ok(LayerAttributes {
             coordinates,
+            has_coordinates,
             color,
             axis_rules,
             color_palette,
@@ -3352,6 +3363,8 @@ impl RawFont {
 /// Like Glyphs 4 when saving as v3, a layer that isn't a master layer leaves
 /// an unset axis out of its part selection, which means "at the value of the
 /// master layer"; when that isn't the default, we put the default in instead.
+/// That is, unless the layer has no `coordinates` at all, like a backup layer:
+/// Glyphs 4 ignores it, and so its part selection stays empty.
 fn v4_to_v3_smart_glyph(glyph: &mut RawGlyph, font_axis_count: usize) -> Result<(), String> {
     let name = &glyph.glyphname;
     let axis_count = font_axis_count + glyph.axes.len();
@@ -3463,6 +3476,7 @@ fn v4_to_v3_smart_glyph(glyph: &mut RawGlyph, font_axis_count: usize) -> Result<
             let value = match value {
                 Some(value) => value,
                 None if is_master(layer) => default,
+                None if !layer.attributes.has_coordinates => continue,
                 None => match master.map(|values| values[i]) {
                     Some(master_value) if master_value != default => default,
                     _ => continue,
@@ -4831,6 +4845,10 @@ impl Font {
             from.v4_to_v3_names();
             from.v4_to_v3_color_palettes()?;
             from.v4_to_v3_smart_glyphs()?;
+        }
+        // see LayerAttributes::has_coordinates
+        for layer in from.glyphs.iter_mut().flat_map(|g| g.layers.iter_mut()) {
+            layer.attributes.has_coordinates = false;
         }
         if from.format_version.is_v2() {
             from.v2_to_v3()?;
