@@ -898,6 +898,8 @@ impl FromPlist for RawColorStop {
         let color = tokenizer.parse()?;
         tokenizer.eat(b',')?;
         let stop_offset = tokenizer.parse::<f64>()?;
+        // v4 writes a trailing comma
+        let _ = tokenizer.eat(b',');
         tokenizer.eat(b')')?;
 
         Ok(RawColorStop { color, stop_offset })
@@ -2332,8 +2334,9 @@ fn parse_node_from_string(value: &str) -> Node {
     Node { pt, node_type }
 }
 
+/// Parse a v3+ node, `(x,y,type[,attrs])`, after the opening paren and up to
+/// and including the closing one
 fn parse_node_from_tokenizer(tokenizer: &mut Tokenizer<'_>) -> Result<Node, crate::plist::Error> {
-    // (x,y,type)
     let x: f64 = tokenizer.parse()?;
     tokenizer.eat(b',')?;
     let y: f64 = tokenizer.parse()?;
@@ -2341,22 +2344,30 @@ fn parse_node_from_tokenizer(tokenizer: &mut Tokenizer<'_>) -> Result<Node, crat
     let node_type: String = tokenizer.parse()?;
     let node_type = NodeType::from_str(&node_type)
         .map_err(|_| crate::plist::Error::Parse(format!("unknown node type '{node_type}'")))?;
-
-    // Sometimes there is userData; ignore it. In v4 this is a dict of node
-    // attributes, which can also hold higher-order interpolation info.
-    if tokenizer.eat(b',').is_ok() {
-        let attrs: Plist = tokenizer.parse()?;
-        if attrs.get("hoi").is_some() {
-            return Err(crate::plist::Error::Parse(
-                "Glyphs 4 higher-order interpolation ('hoi') is not supported".into(),
-            ));
-        }
-    }
-
-    Ok(Node {
+    let node = Node {
         pt: Point { x, y },
         node_type,
-    })
+    };
+
+    if tokenizer.eat(b',').is_err() {
+        tokenizer.eat(b')')?;
+        return Ok(node);
+    }
+    // allow a trailing comma, like other arrays
+    if tokenizer.eat(b')').is_ok() {
+        return Ok(node);
+    }
+    // Sometimes there is userData; ignore it. In v4 this is a dict of node
+    // attributes, which can also hold higher-order interpolation info.
+    let attrs: Plist = tokenizer.parse()?;
+    if attrs.get("hoi").is_some() {
+        return Err(crate::plist::Error::Parse(
+            "Glyphs 4 higher-order interpolation ('hoi') is not supported".into(),
+        ));
+    }
+    let _ = tokenizer.eat(b',');
+    tokenizer.eat(b')')?;
+    Ok(node)
 }
 
 impl std::str::FromStr for NodeType {
@@ -2392,11 +2403,7 @@ impl FromPlist for Node {
         let node = match &tok {
             Token::Atom(value) => parse_node_from_string(value),
             Token::String(value) => parse_node_from_string(value),
-            Token::OpenParen => {
-                let node = parse_node_from_tokenizer(tokenizer)?;
-                tokenizer.eat(b')')?;
-                node
-            }
+            Token::OpenParen => parse_node_from_tokenizer(tokenizer)?,
             _ => return Err(Error::ExpectedString),
         };
         Ok(node)
@@ -5252,7 +5259,13 @@ mod tests {
     #[case::instance_static("instance-static", "instance type 'static'")]
     #[case::instance_icon("instance-icon", "instance type 'icon'")]
     #[case::instance_particles("instance-particles", "instance type 'particles'")]
+    #[case::gradient_conic("gradient-conic", "conic gradient in glyph 'A'")]
+    #[case::gradient_extend("gradient-extend", "gradient extend 'repeat' in glyph 'A'")]
+    #[case::gradient_angle("gradient-radial-angle", "gradient angle in glyph")]
+    #[case::gradient_start_radius("gradient-start-radius", "gradient start radius in glyph")]
     #[case::palette_ref("palette-ref", "palette color references")]
+    #[case::shape_opacity("shape-opacity", "shape opacity in glyph 'A'")]
+    #[case::shape_compositing("shape-compositing", "shape compositing in glyph 'A'")]
     // TODO: expect the hidden shape once we read v4 booleans
     #[case::shape_hidden("shape-hidden", "boolean literal ':true'")]
     fn reject_unsupported_glyphs4(#[case] name: &str, #[case] expected: &str) {
@@ -5399,6 +5412,24 @@ mod tests {
             },
             node
         );
+    }
+
+    #[rstest]
+    #[case::plain("(354,183,l,)")]
+    #[case::userdata("(354,183,l,{name = hr00;},)")]
+    fn glyphs_node_trailing_comma(#[case] plist: &str) {
+        let node = Node::parse_plist(plist).unwrap();
+        assert_eq!(
+            (node.pt, node.node_type),
+            (Point::new(354.0, 183.0), NodeType::Line)
+        );
+    }
+
+    #[test]
+    fn glyphs4_color_stop_trailing_comma() {
+        let stop = RawColorStop::parse_plist("(\n(1,0,0,1),\n0.5,\n)").unwrap();
+        assert_eq!(stop.color, RawColor(vec![1.0, 0.0, 0.0, 1.0]));
+        assert_eq!(stop.stop_offset, 0.5);
     }
 
     #[test]

@@ -21,3 +21,11 @@ saved with `formatVersion=4`:
 * `instance-static`, `instance-icon`, `instance-particles`: `WghtVar`, a new
   instance with `setType_(2)`, `setType_(3)` and `setType_(4)`
 * `palette-ref`: `COLRv1-gradient`, a `GSPaletteColor` fill color
+* `gradient-conic`: `COLRv1-gradient`, a `GSConicGradient` with the color line
+  of the first gradient
+* `gradient-extend`: `COLRv1-gradient`, `gradient.setExtendMode_(1)`
+* `gradient-radial-angle`: `COLRv1-gradient`, `setAngle_(30)` on a radial gradient
+* `gradient-start-radius`: `COLRv1-gradient`, `setStartRadius_(0.2)` on a radial
+  gradient
+* `shape-opacity`: `COLRv1-gradient`, `path.setOpacity_(0.5)`
+* `shape-compositing`: `COLRv1-gradient`, `path.attributes["compositing"] = "multiply"`
