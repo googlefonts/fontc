@@ -73,6 +73,12 @@ flags.DEFINE_bool(
 flags.DEFINE_bool(
     "keep_direction", False, "Preserve contour winding direction from source."
 )
+flags.DEFINE_string(
+    "export",
+    default=None,
+    help="Full name of the static export to build, passed to fontc --export "
+    "and, escaped as a regex, to fontmake -i. Only with --compare default.",
+)
 flags.DEFINE_bool("timings", False, "Print timing for each step to stderr.")
 flags.DEFINE_bool(
     "unwrap_extensions",
