@@ -1,0 +1,82 @@
+{
+.appVersion = "3343";
+.formatVersion = 4;
+date = "2026-10-11 20:05:10 +0000";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+},
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(0.251,1),
+0,
+),
+(
+(0,1),
+1,
+),
+);
+end = (0.9,0.9);
+start = (0.1,0.1);
+};
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(242,0,l),
+(242,500,l),
+(63,500,l),
+);
+},
+{
+attr = {
+fillColor = (0.694,0.847,0.953,1);
+};
+closed = 1;
+nodes = (
+(256,0,l),
+(542,0,l),
+(542,500,l),
+(256,500,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 65;
+},
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = "New Font";
+},
+);
+},
+);
+settings = {
+colorSpace = "apple-rgb";
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

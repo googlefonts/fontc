@@ -1,0 +1,43 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Color Palettes";
+value = (
+(
+(1,4),
+(5,8)
+)
+);
+}
+);
+date = "2026-10-11 20:05:10 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+iconName = Bold;
+id = m02;
+name = Bold;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

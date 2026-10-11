@@ -1,0 +1,59 @@
+{
+.appVersion = "3343";
+.formatVersion = 4;
+axes = (
+{
+name = Weight;
+tag = wght;
+},
+);
+customParameters = (
+{
+name = "Color Palettes";
+value = {
+palettes = (
+{
+colors = (
+(0.00583,0.01569),
+(0.0185,0.03137),
+);
+},
+);
+};
+},
+);
+date = "2026-10-11 20:05:10 +0000";
+fontMaster = (
+{
+axesValues = (
+400,
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700,
+);
+id = m02;
+name = Bold;
+},
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = "New Font";
+},
+);
+},
+);
+settings = {
+colorSpace = "apple-rgb";
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

@@ -1,0 +1,148 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+customParameters = (
+{
+name = "Color Palettes";
+value = (
+(
+(1,4)
+)
+);
+}
+);
+date = "2026-10-11 20:05:10 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = circumflexcomb;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,600,l),
+(400,600,l),
+(400,700,l),
+(100,700,l)
+);
+}
+);
+width = 500;
+},
+{
+associatedMasterId = m01;
+attr = {
+colorPalette = 0;
+};
+layerId = "circumflexcomb-0";
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,600,l),
+(250,600,l),
+(250,700,l),
+(100,700,l)
+);
+}
+);
+width = 500;
+}
+);
+unicode = 770;
+},
+{
+glyphname = mymark;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,600,l),
+(400,600,l),
+(400,700,l),
+(100,700,l)
+);
+}
+);
+width = 500;
+},
+{
+associatedMasterId = m01;
+attr = {
+colorPalette = 0;
+};
+layerId = "mymark-0";
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,600,l),
+(250,600,l),
+(250,700,l),
+(100,700,l)
+);
+}
+);
+width = 500;
+}
+);
+unicode = 785;
+},
+{
+category = Mark;
+glyphname = mymark2;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,600,l),
+(400,600,l),
+(400,700,l),
+(100,700,l)
+);
+}
+);
+width = 500;
+},
+{
+associatedMasterId = m01;
+attr = {
+colorPalette = 0;
+};
+layerId = "mymark2-0";
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,600,l),
+(250,600,l),
+(250,700,l),
+(100,700,l)
+);
+}
+);
+width = 500;
+}
+);
+subCategory = Nonspacing;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

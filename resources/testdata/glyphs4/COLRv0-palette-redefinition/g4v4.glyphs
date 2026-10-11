@@ -1,0 +1,112 @@
+{
+.appVersion = "3343";
+.formatVersion = 4;
+customParameters = (
+{
+name = "Color Palettes";
+value = {
+palettes = (
+{
+colors = (
+(0.00583,0.01569),
+(0.0185,0.03137),
+);
+},
+{
+colors = (
+(0.03699,0.04706),
+(0.0637,0.06275),
+);
+},
+);
+};
+},
+);
+date = "2026-10-11 20:05:10 +0000";
+fontMaster = (
+{
+customParameters = (
+{
+name = "Color Palettes";
+value = {
+palettes = (
+{
+colors = (
+(0.10631,0.0902),
+(0.129,0.10588),
+);
+},
+{
+colors = (
+(0.15079,0.12157),
+(0.17184,0.13725),
+);
+},
+);
+};
+},
+);
+id = m01;
+name = Regular;
+},
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l),
+);
+},
+);
+width = 600;
+},
+{
+associatedMasterId = m01;
+attr = {
+colorPalette = 1;
+};
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 65;
+},
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = "New Font";
+},
+);
+},
+);
+settings = {
+colorSpace = "apple-rgb";
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

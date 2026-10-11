@@ -1,0 +1,109 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+customParameters = (
+{
+name = "Color Palettes";
+value = (
+(
+(1,4),
+(5,8)
+),
+(
+(9,12),
+(16,16)
+)
+);
+}
+);
+date = "2026-10-11 20:05:10 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+anchors = (
+{
+name = top;
+pos = (300,500);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = top;
+pos = (300,500);
+}
+);
+associatedMasterId = m01;
+attr = {
+colorPalette = 1;
+};
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = top;
+pos = (300,500);
+}
+);
+associatedMasterId = m01;
+attr = {
+colorPalette = 0;
+};
+layerId = m03;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 65;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

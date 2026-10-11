@@ -7651,6 +7651,23 @@ mod tests {
     #[case::intermediate_layer("IntermediateLayer")]
     #[case::bracket_rules("bracket-rules-processed-in-glyph-order")]
     #[case::oswald_ae_comb("Oswald-AE-comb")]
+    #[case::colrv0_1layer("COLRv0-1layer")]
+    #[case::colrv0_2layers("COLRv0-2layers")]
+    #[case::colrv0_2masters_brace("COLRv0-2masters-brace")]
+    #[case::colrv0_2masters_brace_pkg("COLRv0-2masters-brace-pkg")]
+    #[case::colrv0_component_anchors("COLRv0-component-anchors")]
+    #[case::colrv0_components("COLRv0-components")]
+    #[case::colrv0_marks("COLRv0-marks")]
+    #[case::colrv0_palette_redefinition("COLRv0-palette-redefinition")]
+    #[case::colrv0_reordered("COLRv0-reordered")]
+    #[case::colrv1_solid("COLRv1-solid")]
+    #[case::colrv1_solidnoncolor("COLRv1-solidnoncolor")]
+    #[case::colrv1_cliprun("COLRv1-cliprun")]
+    #[case::colrv1_gradientsolid("COLRv1-gradientsolid")]
+    #[case::colrv1_grayscale("COLRv1-grayscale")]
+    #[case::colrv1_manyshapes_per_glyph("COLRv1-manyshapes-per-glyph")]
+    #[case::colrv1_reordered("COLRv1-reordered")]
+    #[case::colrv1_var("COLRv1-var")]
     fn compile_glyphs4_like_glyphs3(#[case] name: &str) {
         let dir = testdata_dir().join("glyphs4").join(name);
         let ext = if dir.join("g4v3.glyphspackage").exists() {

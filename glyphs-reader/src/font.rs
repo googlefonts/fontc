@@ -835,10 +835,6 @@ impl RawShapeAttributes {
                 .transpose()?,
         })
     }
-
-    fn has_colors(&self) -> bool {
-        self.gradient.is_some() || self.fill_color.is_some()
-    }
 }
 
 impl RawGradient {
@@ -862,10 +858,25 @@ impl RawGradient {
 }
 
 impl RawColor {
-    fn build(self, _format_version: FormatVersion) -> Result<Color, Error> {
-        // v2/v3 components are 0..255, truncated like any other integer
-        let components = self.0.iter().map(|c| *c as i64).collect::<Vec<_>>();
+    fn build(self, format_version: FormatVersion) -> Result<Color, Error> {
+        let components = self
+            .0
+            .iter()
+            .map(|c| color_component(*c, format_version))
+            .collect::<Vec<_>>();
         Ok(Color::from_glyphs_color(&components)?)
+    }
+}
+
+/// Convert a color component to 0..255.
+///
+/// v4 normalized color components to 0..1 (with up to 5 decimals); v2/v3
+/// components are 0..255, truncated like any other integer.
+fn color_component(value: f64, format_version: FormatVersion) -> i64 {
+    if format_version.is_v4() {
+        (value * 255.0).round() as i64
+    } else {
+        value as i64
     }
 }
 
@@ -3031,13 +3042,6 @@ impl RawFont {
             }
         }
 
-        // temporary, until we convert v4 colors (and palettes)
-        if std::iter::once(&self.custom_parameters)
-            .chain(self.font_master.iter().map(|m| &m.custom_parameters))
-            .any(|params| params.contains("Color Palettes"))
-        {
-            add("Color Palettes".into());
-        }
         // temporary, until we read features from package files
         for feature in self
             .classes
@@ -3103,10 +3107,6 @@ impl RawFont {
                             add(format!("gradient start radius in glyph '{name}'"));
                         }
                     }
-                    // temporary, until we convert v4 colors
-                    if attrs.has_colors() {
-                        add(format!("shape colors in glyph '{name}'"));
-                    }
                 }
             }
         }
@@ -3153,6 +3153,29 @@ impl RawFont {
         }
     }
 
+    /// Convert v4 `Color Palettes` custom parameters to the v3 structure.
+    ///
+    /// v3 has an array of palettes, each an array of 0..255 colors; v4 has
+    /// `{palettes = ({colors = (...);}, ...);}` with 0..1 color components.
+    fn v4_to_v3_color_palettes(&mut self) -> Result<(), Error> {
+        let all_params = std::iter::once(&mut self.custom_parameters).chain(
+            self.font_master
+                .iter_mut()
+                .map(|m| &mut m.custom_parameters),
+        );
+        for params in all_params {
+            for param in params.0.iter_mut() {
+                if param.name != "Color Palettes" {
+                    continue;
+                }
+                param.value = v4_to_v3_color_palettes(&param.value).ok_or_else(|| {
+                    Error::BadValue(format!("bad v4 Color Palettes {:?}", param.value))
+                })?;
+            }
+        }
+        Ok(())
+    }
+
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
         self.v2_to_v3_axes()?;
@@ -3162,6 +3185,35 @@ impl RawFont {
         self.v2_to_v3_layer_attributes();
         Ok(())
     }
+}
+
+/// See [`RawFont::v4_to_v3_color_palettes`]
+fn v4_to_v3_color_palettes(value: &Plist) -> Option<Plist> {
+    let palettes = value.get("palettes")?.as_array()?;
+    palettes
+        .iter()
+        .map(|palette| {
+            palette
+                .get("colors")?
+                .as_array()?
+                .iter()
+                .map(|color| {
+                    color
+                        .as_array()?
+                        .iter()
+                        .map(|c| {
+                            // not a palette color reference
+                            let c = c.as_f64().filter(|_| c.as_str().is_none())?;
+                            Some(Plist::Integer(color_component(c, FormatVersion::V4)))
+                        })
+                        .collect::<Option<Vec<_>>>()
+                        .map(Plist::Array)
+                })
+                .collect::<Option<Vec<_>>>()
+                .map(Plist::Array)
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(Plist::Array)
 }
 
 // in the form '{INT, INT}'
@@ -4462,6 +4514,7 @@ impl Font {
         if from.format_version.is_v4() {
             from.check_v4_supported()?;
             from.v4_to_v3_names();
+            from.v4_to_v3_color_palettes()?;
         }
         if from.format_version.is_v2() {
             from.v2_to_v3()?;
@@ -5295,8 +5348,7 @@ mod tests {
     #[case::palette_ref("palette-ref", "palette color references")]
     #[case::shape_opacity("shape-opacity", "shape opacity in glyph 'A'")]
     #[case::shape_compositing("shape-compositing", "shape compositing in glyph 'A'")]
-    // TODO: expect the hidden shape once we read v4 booleans
-    #[case::shape_hidden("shape-hidden", "boolean literal ':true'")]
+    #[case::shape_hidden("shape-hidden", "hidden shape in glyph 'exclam'")]
     fn reject_unsupported_glyphs4(#[case] name: &str, #[case] expected: &str) {
         let path = glyphs4_dir().join(format!("fence/{name}.glyphs"));
         let err = Font::load(&path).unwrap_err().to_string();
@@ -5330,6 +5382,23 @@ mod tests {
     #[case::intermediate_layer("IntermediateLayer")]
     #[case::bracket_rules("bracket-rules-processed-in-glyph-order")]
     #[case::oswald_ae_comb("Oswald-AE-comb")]
+    #[case::colrv0_1layer("COLRv0-1layer")]
+    #[case::colrv0_2layers("COLRv0-2layers")]
+    #[case::colrv0_2masters_brace("COLRv0-2masters-brace")]
+    #[case::colrv0_2masters_brace_pkg("COLRv0-2masters-brace-pkg")]
+    #[case::colrv0_component_anchors("COLRv0-component-anchors")]
+    #[case::colrv0_components("COLRv0-components")]
+    #[case::colrv0_marks("COLRv0-marks")]
+    #[case::colrv0_palette_redefinition("COLRv0-palette-redefinition")]
+    #[case::colrv0_reordered("COLRv0-reordered")]
+    #[case::colrv1_solid("COLRv1-solid")]
+    #[case::colrv1_solidnoncolor("COLRv1-solidnoncolor")]
+    #[case::colrv1_cliprun("COLRv1-cliprun")]
+    #[case::colrv1_gradientsolid("COLRv1-gradientsolid")]
+    #[case::colrv1_grayscale("COLRv1-grayscale")]
+    #[case::colrv1_manyshapes_per_glyph("COLRv1-manyshapes-per-glyph")]
+    #[case::colrv1_reordered("COLRv1-reordered")]
+    #[case::colrv1_var("COLRv1-var")]
     fn read_glyphs4_like_glyphs3(#[case] name: &str) {
         let (v3, v4) = glyphs4_pair(name);
         let g3 = Font::load(&v3).unwrap();

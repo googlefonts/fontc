@@ -280,7 +280,6 @@ impl Plist {
     fn parse_rec(s: &str, ix: usize) -> Result<(Plist, usize), Error> {
         let (tok, mut ix) = Token::lex(s, ix)?;
         match tok {
-            Token::Atom(s) if is_bool_atom(s) => Err(bool_atom_error(s)),
             Token::Atom(s) => Ok((Plist::parse_atom(s), ix)),
             Token::String(s) => Ok((Plist::String(s.into()), ix)),
             Token::Data(bytes) => Ok((Plist::Data(bytes), ix)),
@@ -331,6 +330,9 @@ impl Plist {
     }
 
     fn parse_atom(s: &str) -> Plist {
+        if let Some(num) = parse_bool_atom(s) {
+            return Plist::Integer(num);
+        }
         if numeric_ok(s) {
             if let Ok(num) = s.parse() {
                 return Plist::Integer(num);
@@ -656,21 +658,21 @@ impl From<Dictionary> for Plist {
     }
 }
 
-/// Glyphs 4 writes `:true`/`:false` for booleans stored in untyped dictionaries.
-// TODO: support these, they aren't in the v4 spec but Glyphs 4 writes them
-fn is_bool_atom(s: &str) -> bool {
-    matches!(s, ":true" | ":false")
-}
-
-fn bool_atom_error(s: &str) -> Error {
-    Error::Parse(format!(
-        "the Glyphs 4 boolean literal '{s}' is not supported yet"
-    ))
+/// Glyphs 4 writes `:true`/`:false` for booleans stored in untyped
+/// dictionaries (e.g. layer attributes), where Glyphs 3 wrote 1 and 0.
+///
+/// These are in neither the v4 spec nor its schema.
+fn parse_bool_atom(s: &str) -> Option<i64> {
+    match s {
+        ":true" => Some(1),
+        ":false" => Some(0),
+        _ => None,
+    }
 }
 
 pub(crate) fn parse_int(s: &str) -> Result<i64, Error> {
-    if is_bool_atom(s) {
-        return Err(bool_atom_error(s));
+    if let Some(num) = parse_bool_atom(s) {
+        return Ok(num);
     }
     if let Ok(num) = s.parse::<i64>() {
         return Ok(num);
@@ -1011,6 +1013,15 @@ mod tests {
         let foobar = BTreeMap::<SmolStr, i64>::parse_plist(contents).unwrap();
         assert_eq!(foobar.get("foo"), Some(&5));
         assert_eq!(foobar.get("bar"), Some(&32));
+    }
+
+    #[test]
+    fn parse_glyphs4_bool_atoms() {
+        let plist = Plist::parse("{a = :true; b = :false;}").unwrap();
+        assert_eq!(plist.get("a"), Some(&Plist::Integer(1)));
+        assert_eq!(plist.get("b"), Some(&Plist::Integer(0)));
+        assert_eq!(bool::parse_plist(":true"), Ok(true));
+        assert_eq!(bool::parse_plist(":false"), Ok(false));
     }
 
     #[test]
