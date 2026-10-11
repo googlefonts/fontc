@@ -1024,6 +1024,15 @@ struct RawFont {
     kerning_context: Option<Plist>,
 }
 
+/// The kerning.plist file of a v4 package
+#[derive(Default, Debug, PartialEq, FromPlist)]
+#[allow(non_snake_case)]
+struct RawPackageKerning {
+    kerning_LTR: Kerning,
+    kerning_RTL: Kerning,
+    kerning_context: Option<Plist>,
+}
+
 #[derive(Default, Debug, PartialEq, FromPlist)]
 struct NumberName {
     name: SmolStr,
@@ -2623,12 +2632,52 @@ impl RawFont {
 
         // ignore UIState.plist which stuff like displayStrings that are not used by us
 
-        // v4 packages store kerning separately
-        // TODO: read it
-        if glyphs_package.join("kerning.plist").exists() {
-            return Err(Error::UnsupportedGlyphs4(vec![
-                "kerning in the package's kerning.plist".into(),
-            ]));
+        // v4 packages store kerning in a file of its own
+        let kerning_file = glyphs_package.join("kerning.plist");
+        if kerning_file.exists() {
+            let kerning_data = fs::read_to_string(&kerning_file).map_err(Error::IoError)?;
+            let kerning = RawPackageKerning::parse_plist(&kerning_data)
+                .map_err(|e| Error::ParseError(kerning_file.clone(), e.to_string()))?;
+            let empty = Kerning::default();
+            if raw_font.kerning_LTR != empty
+                || raw_font.kerning_RTL != empty
+                || raw_font.kerning_context.is_some()
+            {
+                return Err(Error::ParseError(
+                    kerning_file,
+                    "kerning is also defined in fontinfo.plist".into(),
+                ));
+            }
+            raw_font.kerning_LTR = kerning.kerning_LTR;
+            raw_font.kerning_RTL = kerning.kerning_RTL;
+            raw_font.kerning_context = kerning.kerning_context;
+        }
+
+        // v4 packages store feature code in files of their own
+        let features_dir = glyphs_package.join("features");
+        for feature in raw_font
+            .classes
+            .iter_mut()
+            .chain(raw_font.feature_prefixes.iter_mut())
+            .chain(raw_font.features.iter_mut())
+        {
+            let Some(file) = feature.file.take() else {
+                continue;
+            };
+            // the files are named after the feature, but the name can change
+            // when there's a clash, so always go by what the font says
+            let path = features_dir.join(&file);
+            if file.contains(['/', '\\']) || file.starts_with('.') {
+                return Err(Error::ParseError(path, "bad feature file name".into()));
+            }
+            if !feature.code.is_empty() {
+                return Err(Error::ParseError(
+                    path,
+                    "feature has both code and a file".into(),
+                ));
+            }
+            feature.code = fs::read_to_string(&path)
+                .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
         }
 
         Ok(raw_font)
@@ -3049,7 +3098,7 @@ impl RawFont {
             }
         }
 
-        // temporary, until we read features from package files
+        // only valid in packages, where we read it
         for feature in self
             .classes
             .iter()
@@ -3057,7 +3106,7 @@ impl RawFont {
             .chain(&self.features)
         {
             if let Some(file) = &feature.file {
-                add(format!("feature code in package file '{file}'"));
+                add(format!("feature code in file '{file}' outside a package"));
             }
         }
 
@@ -5394,6 +5443,10 @@ mod tests {
     #[case::intermediate_layer("IntermediateLayer")]
     #[case::bracket_rules("bracket-rules-processed-in-glyph-order")]
     #[case::oswald_ae_comb("Oswald-AE-comb")]
+    #[case::wght_var_pkg("WghtVar-pkg")]
+    #[case::wght_var_instances_pkg("WghtVar_Instances-pkg")]
+    #[case::features("Features")]
+    #[case::features_pkg("Features-pkg")]
     #[case::colrv0_1layer("COLRv0-1layer")]
     #[case::colrv0_2layers("COLRv0-2layers")]
     #[case::colrv0_2masters_brace("COLRv0-2masters-brace")]
@@ -5450,6 +5503,46 @@ mod tests {
         // in glyph name order, K to N
         assert_eq!(radii, vec![0.70743, 1.28081, 1.41486, 1.41486]);
         assert_fonts_equal(&g3, &g4, &format!("{v3:?} vs {v4:?}"));
+    }
+
+    fn copy_dir(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let path = entry.unwrap().path();
+            let dest = to.join(path.file_name().unwrap());
+            if path.is_dir() {
+                copy_dir(&path, &dest);
+            } else {
+                std::fs::copy(&path, &dest).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn glyphs4_package_missing_feature_file() {
+        let (_, v4) = glyphs4_pair("Features-pkg");
+        let package = std::env::temp_dir()
+            .join(format!("fontc-{}", std::process::id()))
+            .join("missing-feature-file.glyphspackage");
+        let _ = std::fs::remove_dir_all(&package);
+        copy_dir(&v4, &package);
+        std::fs::remove_file(package.join("features/ss01.2.fea")).unwrap();
+        let err = Font::load(&package).unwrap_err().to_string();
+        std::fs::remove_dir_all(&package).unwrap();
+        assert!(err.contains("ss01.2.fea"), "{err}");
+    }
+
+    #[test]
+    fn glyphs4_feature_file_outside_package() {
+        let err = Font::load_from_string(
+            "{.formatVersion = 4; features = ({file = liga.fea; tag = liga;},);}",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("feature code in file 'liga.fea' outside a package"),
+            "{err}"
+        );
     }
 
     fn axis_map(points: &[(f64, f64)]) -> AxisUserToDesignMap {

@@ -12,6 +12,10 @@ should read and compile the same.
 Glyphs 4 also changes some v3 content when saving (e.g. grey palette colors and
 pre-3170 `Axis Mappings`), so compare the two saves rather than the original.
 
+`Features` is `glyphs3/WghtVarWithStylisticSet` with a class, a feature prefix
+and a second `ss01` feature added through the Python API, to cover the feature
+files of v4 packages (including the `ss01.2.fea` name clash).
+
 ## fence/
 
 Glyphs 4 constructs fontc does not support yet. Each file is a copy of a

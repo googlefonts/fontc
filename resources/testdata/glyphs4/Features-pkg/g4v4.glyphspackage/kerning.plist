@@ -1,0 +1,31 @@
+{
+kerningLTR = {
+m01 = {
+"@MMK_L_bracketleft_R" = {
+exclam = -165;
+};
+bracketleft = {
+bracketright = -300;
+};
+exclam = {
+"@MMK_R_bracketright_L" = -160;
+exclam = -360;
+hyphen = 20;
+};
+hyphen = {
+hyphen = -150;
+};
+};
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+bracketleft = {
+bracketright = -150;
+};
+exclam = {
+exclam = -100;
+};
+hyphen = {
+hyphen = -50;
+};
+};
+};
+}
