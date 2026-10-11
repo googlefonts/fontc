@@ -647,10 +647,10 @@ impl AxisRule {
 
 /// Parse brace layer coordinates.
 ///
-/// Glyphs 4 also writes the glyph-local axis coordinates of smart glyph layers
-/// here, where '-' means the axis default. We don't support those (yet): they
-/// are read as NaN, so we can report them with the glyph they are in, and a
-/// layer with them fails to build.
+/// Glyphs 4 also writes the glyph axis coordinates of smart glyph layers here,
+/// and '-' for the axis default. We read that as NaN: for smart glyphs, it is
+/// converted with the rest (see [`v4_to_v3_smart_glyph`]); elsewhere we don't
+/// support it, and a layer with it fails to build.
 fn parse_layer_coordinates(
     tokenizer: &mut Tokenizer<'_>,
 ) -> Result<Vec<OrderedFloat<f64>>, crate::plist::Error> {
@@ -1774,8 +1774,8 @@ struct RawGlyph {
     #[fromplist(alt_name = "production")]
     production_name: Option<SmolStr>,
     parts_settings: Vec<RawPartSetting>,
-    // v4 smart glyph axes
-    axes: Vec<Plist>,
+    // v4 smart glyph axes, which replace parts_settings
+    axes: Vec<RawGlyphAxis>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
 }
@@ -1797,6 +1797,13 @@ impl FromPlist for RawCodepoints {
         }
         tokenizer.parse().map(RawCodepoints)
     }
+}
+
+/// A v4 smart glyph axis
+#[derive(Default, Clone, Debug, PartialEq, FromPlist)]
+struct RawGlyphAxis {
+    name: SmolStr,
+    default: Option<f64>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
@@ -3161,17 +3168,20 @@ impl RawFont {
 
         for glyph in &self.glyphs {
             let name = &glyph.glyphname;
-            if !glyph.axes.is_empty() {
-                add(format!("smart glyph axes in glyph '{name}'"));
-            }
             for layer in &glyph.layers {
                 if layer.active == Some(false) {
                     add(format!("inactive layer in glyph '{name}'"));
                 }
-                if layer.attributes.coordinates.len() > self.axes.len()
-                    || layer.attributes.coordinates.iter().any(|c| c.is_nan())
-                {
-                    add(format!("smart glyph layer coordinates in glyph '{name}'"));
+                // smart glyph coordinates are checked when converting them
+                if glyph.axes.is_empty() {
+                    let coordinates = &layer.attributes.coordinates;
+                    if coordinates.len() > self.axes.len() {
+                        add(format!(
+                            "more layer coordinates than axes in glyph '{name}'"
+                        ));
+                    } else if coordinates.iter().any(|c| c.is_nan()) {
+                        add(format!("unset ('-') layer coordinates in glyph '{name}'"));
+                    }
                 }
                 for shape in &layer.shapes {
                     if shape.traverse_anchors == Some(false) {
@@ -3242,6 +3252,24 @@ impl RawFont {
         }
     }
 
+    /// Convert v4 smart glyph axes and layer coordinates to v3 part settings.
+    ///
+    /// See [`v4_to_v3_smart_glyph`].
+    fn v4_to_v3_smart_glyphs(&mut self) -> Result<(), Error> {
+        let font_axis_count = self.axes.len();
+        let issues = self
+            .glyphs
+            .iter_mut()
+            .filter(|glyph| !glyph.axes.is_empty())
+            .filter_map(|glyph| v4_to_v3_smart_glyph(glyph, font_axis_count).err())
+            .collect::<Vec<_>>();
+        if issues.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::UnsupportedGlyphs4(issues))
+        }
+    }
+
     /// Glyphs 4 no longer writes the root `familyName` nor the instance `name`.
     ///
     /// They become the default (`dflt`) values of the `familyNames` and
@@ -3309,6 +3337,163 @@ impl RawFont {
         self.v2_to_v3_layer_attributes();
         Ok(())
     }
+}
+
+/// Convert the axes of a v4 smart glyph and its layer coordinates to v3 part
+/// settings and part selections, or describe why v3 can't express them.
+///
+/// v4 smart glyphs have axes like the font, with a default value (0 if unset)
+/// but no range. Layer coordinates list the font axes first, then the glyph
+/// axes, and '-' (or no value at all) means the axis default. Glyphs 4 can
+/// interpolate layers anywhere on a glyph axis, v3 only at its extremes: the
+/// range of each axis is that of its default and layer values, and each of
+/// these must be at one end of it.
+///
+/// Like Glyphs 4 when saving as v3, a layer that isn't a master layer leaves
+/// an unset axis out of its part selection, which means "at the value of the
+/// master layer"; when that isn't the default, we put the default in instead.
+fn v4_to_v3_smart_glyph(glyph: &mut RawGlyph, font_axis_count: usize) -> Result<(), String> {
+    let name = &glyph.glyphname;
+    let axis_count = font_axis_count + glyph.axes.len();
+    if glyph
+        .layers
+        .iter()
+        .any(|layer| layer.attributes.coordinates.len() > axis_count)
+    {
+        return Err(format!(
+            "more layer coordinates than axes in glyph '{name}'"
+        ));
+    }
+    // The glyph axis values of a layer, None where unset
+    let glyph_values = |layer: &RawLayer| {
+        (0..glyph.axes.len())
+            .map(|i| {
+                layer
+                    .attributes
+                    .coordinates
+                    .get(font_axis_count + i)
+                    .filter(|value| !value.is_nan())
+                    .map(|value| value.0)
+            })
+            .collect::<Vec<_>>()
+    };
+    let defaults = glyph
+        .axes
+        .iter()
+        .map(|axis| axis.default.unwrap_or_default())
+        .collect::<Vec<_>>();
+
+    let mut ranges = defaults.iter().map(|d| (*d, *d)).collect::<Vec<_>>();
+    for layer in &glyph.layers {
+        for ((min, max), value) in ranges.iter_mut().zip(glyph_values(layer)) {
+            if let Some(value) = value {
+                *min = min.min(value);
+                *max = max.max(value);
+            }
+        }
+    }
+    let to_int = |axis: &RawGlyphAxis, value: f64| {
+        if value.fract() == 0.0 {
+            Ok(value as i64)
+        } else {
+            Err(format!(
+                "non-integer value {value} of smart glyph axis '{}' in glyph '{name}'",
+                axis.name
+            ))
+        }
+    };
+    let parts_settings = glyph
+        .axes
+        .iter()
+        .zip(&ranges)
+        .map(|(axis, (min, max))| {
+            Ok(RawPartSetting {
+                name: axis.name.clone(),
+                bottom_value: to_int(axis, *min)?,
+                top_value: to_int(axis, *max)?,
+                ..Default::default()
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let is_master = |layer: &RawLayer| {
+        layer
+            .associated_master_id
+            .as_ref()
+            .is_none_or(|id| *id == layer.layer_id)
+    };
+    // The glyph axis values of each master layer, by master id
+    let master_values = glyph
+        .layers
+        .iter()
+        .filter(|layer| is_master(layer))
+        .map(|layer| {
+            let values = glyph_values(layer)
+                .iter()
+                .zip(&defaults)
+                .map(|(value, default)| value.unwrap_or(*default))
+                .collect::<Vec<_>>();
+            (layer.layer_id.clone(), values)
+        })
+        .collect::<HashMap<_, _>>();
+
+    let mut part_selections = Vec::with_capacity(glyph.layers.len());
+    for layer in &glyph.layers {
+        let coordinates = &layer.attributes.coordinates;
+        let font_coordinates = &coordinates[..coordinates.len().min(font_axis_count)];
+        if !font_coordinates.iter().all(|c| c.is_nan()) {
+            if font_coordinates.iter().any(|c| c.is_nan()) {
+                return Err(format!(
+                    "partly unset ('-') font axis coordinates in glyph '{name}'"
+                ));
+            }
+            // Glyphs 4 doesn't save these as v3 correctly, so we have
+            // nothing to compare with
+            return Err(format!("intermediate layer in smart glyph '{name}'"));
+        }
+        let master = master_values.get(
+            layer
+                .associated_master_id
+                .as_ref()
+                .unwrap_or(&layer.layer_id),
+        );
+        let mut part_selection = BTreeMap::new();
+        for (i, value) in glyph_values(layer).into_iter().enumerate() {
+            let default = defaults[i];
+            let value = match value {
+                Some(value) => value,
+                None if is_master(layer) => default,
+                None => match master.map(|values| values[i]) {
+                    Some(master_value) if master_value != default => default,
+                    _ => continue,
+                },
+            };
+            let axis = &glyph.axes[i];
+            let (min, max) = ranges[i];
+            let pole = if min == max {
+                continue;
+            } else if value == min {
+                1
+            } else if value == max {
+                2
+            } else {
+                return Err(format!(
+                    "intermediate value {value} of smart glyph axis '{}' in glyph '{name}'",
+                    axis.name
+                ));
+            };
+            part_selection.insert(axis.name.clone(), pole);
+        }
+        part_selections.push(part_selection);
+    }
+
+    for (layer, part_selection) in glyph.layers.iter_mut().zip(part_selections) {
+        // the font axis coordinates are all unset, see above
+        layer.attributes.coordinates.clear();
+        layer.part_selection = part_selection;
+    }
+    glyph.parts_settings = parts_settings;
+    Ok(())
 }
 
 /// See [`RawFont::v4_to_v3_color_palettes`]
@@ -4645,6 +4830,7 @@ impl Font {
             from.check_v4_supported()?;
             from.v4_to_v3_names();
             from.v4_to_v3_color_palettes()?;
+            from.v4_to_v3_smart_glyphs()?;
         }
         if from.format_version.is_v2() {
             from.v2_to_v3()?;
