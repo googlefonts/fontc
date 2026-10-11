@@ -645,6 +645,28 @@ impl AxisRule {
     }
 }
 
+/// Parse brace layer coordinates.
+///
+/// Glyphs 4 also writes the glyph-local axis coordinates of smart glyph layers
+/// here, where '-' means the axis default; we don't support those (yet).
+fn parse_layer_coordinates(
+    tokenizer: &mut Tokenizer<'_>,
+) -> Result<Vec<OrderedFloat<f64>>, crate::plist::Error> {
+    let values: Vec<Plist> = tokenizer.parse()?;
+    values
+        .iter()
+        .map(|value| match value {
+            Plist::Integer(i) => Ok((*i as f64).into()),
+            Plist::Float(f) => Ok(*f),
+            Plist::String(s) if s == "-" => Err(crate::plist::Error::Parse(
+                "Glyphs 4 smart glyph layer coordinates ('-') are not supported".into(),
+            )),
+            Plist::String(s) => crate::plist::parse_float(s).map(Into::into),
+            _ => Err(crate::plist::Error::ExpectedNumber),
+        })
+        .collect()
+}
+
 // hand-parse because they can take multiple shapes
 impl FromPlist for LayerAttributes {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
@@ -663,7 +685,7 @@ impl FromPlist for LayerAttributes {
             let key: String = tokenizer.parse()?;
             tokenizer.eat(b'=')?;
             match key.as_str() {
-                "coordinates" => coordinates = tokenizer.parse()?,
+                "coordinates" => coordinates = parse_layer_coordinates(tokenizer)?,
                 "color" => color = tokenizer.parse()?,
                 "axisRules" => axis_rules = tokenizer.parse()?,
                 "colorPalette" => {
@@ -695,7 +717,7 @@ impl FromPlist for LayerAttributes {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, FromPlist)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
 pub struct ShapeAttributes {
     pub gradient: Option<Gradient>,
     pub fill_color: Option<Color>,
@@ -710,12 +732,11 @@ impl ShapeAttributes {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, FromPlist)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
 pub struct Gradient {
     pub start: Vec<OrderedFloat<f64>>,
     pub end: Vec<OrderedFloat<f64>>,
     pub colors: Vec<ColorStop>,
-    #[fromplist(key = "type")]
     pub style: String,
 }
 
@@ -761,28 +782,125 @@ impl Color {
     }
 }
 
-// hand-parse because it's a list of inconsistent types
-impl FromPlist for Color {
-    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
-        let colors = tokenizer.parse::<Vec<i64>>()?;
-        Color::from_glyphs_color(&colors)
+/// Shape attributes as written, before converting colors (which depends on the
+/// format version)
+#[derive(Clone, Default, Debug, PartialEq, FromPlist)]
+struct RawShapeAttributes {
+    gradient: Option<RawGradient>,
+    fill_color: Option<RawColor>,
+    // v4: the id of the shape group this shape belongs to
+    group: Option<String>,
+    // v4
+    hidden: Option<bool>,
+    // v4
+    opacity: Option<f64>,
+    // v4
+    compositing: Option<String>,
+}
+
+#[derive(Clone, Default, Debug, PartialEq, FromPlist)]
+struct RawGradient {
+    start: Vec<OrderedFloat<f64>>,
+    end: Vec<OrderedFloat<f64>>,
+    colors: Vec<RawColorStop>,
+    #[fromplist(key = "type")]
+    style: String,
+    // v4
+    angle: Option<f64>,
+    // v4
+    start_radius: Option<f64>,
+    // v4
+    end_radius: Option<f64>,
+    // v4
+    extend: Option<String>,
+}
+
+/// The color components as written; their range depends on the format version
+#[derive(Clone, Default, Debug, PartialEq)]
+struct RawColor(Vec<f64>);
+
+#[derive(Clone, Default, Debug, PartialEq)]
+struct RawColorStop {
+    color: RawColor,
+    stop_offset: f64,
+}
+
+impl RawShapeAttributes {
+    fn build(self, format_version: FormatVersion) -> Result<ShapeAttributes, Error> {
+        Ok(ShapeAttributes {
+            gradient: self.gradient.map(|g| g.build(format_version)).transpose()?,
+            fill_color: self
+                .fill_color
+                .map(|c| c.build(format_version))
+                .transpose()?,
+        })
+    }
+
+    fn has_colors(&self) -> bool {
+        self.gradient.is_some() || self.fill_color.is_some()
+    }
+}
+
+impl RawGradient {
+    fn build(self, format_version: FormatVersion) -> Result<Gradient, Error> {
+        Ok(Gradient {
+            start: self.start,
+            end: self.end,
+            colors: self
+                .colors
+                .into_iter()
+                .map(|stop| {
+                    Ok(ColorStop {
+                        color: stop.color.build(format_version)?,
+                        stop_offset: stop.stop_offset.into(),
+                    })
+                })
+                .collect::<Result<_, Error>>()?,
+            style: self.style,
+        })
+    }
+}
+
+impl RawColor {
+    fn build(self, _format_version: FormatVersion) -> Result<Color, Error> {
+        // v2/v3 components are 0..255, truncated like any other integer
+        let components = self.0.iter().map(|c| *c as i64).collect::<Vec<_>>();
+        Ok(Color::from_glyphs_color(&components)?)
     }
 }
 
 // hand-parse because it's a list of inconsistent types
-impl FromPlist for ColorStop {
+impl FromPlist for RawColor {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+        let components: Vec<Plist> = tokenizer.parse()?;
+        components
+            .iter()
+            .map(|c| match c {
+                Plist::Integer(i) => Ok(*i as f64),
+                Plist::Float(f) => Ok(f.into_inner()),
+                // v4 palette color reference, ("p", index, alpha)
+                Plist::String(s) if s == "p" => Err(crate::plist::Error::Parse(
+                    "Glyphs 4 palette color references are not supported".into(),
+                )),
+                Plist::String(s) => crate::plist::parse_float(s),
+                _ => Err(crate::plist::Error::ExpectedNumber),
+            })
+            .collect::<Result<_, _>>()
+            .map(RawColor)
+    }
+}
+
+// hand-parse because it's a list of inconsistent types
+impl FromPlist for RawColorStop {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
         tokenizer.eat(b'(')?;
 
-        let color = Color::parse(tokenizer)?;
+        let color = tokenizer.parse()?;
         tokenizer.eat(b',')?;
         let stop_offset = tokenizer.parse::<f64>()?;
         tokenizer.eat(b')')?;
 
-        Ok(ColorStop {
-            color,
-            stop_offset: stop_offset.into(),
-        })
+        Ok(RawColorStop { color, stop_offset })
     }
 }
 
@@ -847,6 +965,7 @@ enum FormatVersion {
     #[default]
     V2,
     V3,
+    V4,
 }
 
 // The font you get directly from a plist, minimally modified
@@ -881,6 +1000,8 @@ struct RawFont {
     custom_parameters: RawCustomParameters,
     numbers: Vec<NumberName>,
     user_data: BTreeMap<SmolStr, Plist>,
+    // v4
+    kerning_context: Option<Plist>,
 }
 
 #[derive(Default, Debug, PartialEq, FromPlist)]
@@ -913,13 +1034,13 @@ impl RawCustomParameterValue {
 impl FromPlist for FormatVersion {
     fn parse(tokenizer: &mut Tokenizer) -> Result<Self, crate::plist::Error> {
         let raw: i64 = FromPlist::parse(tokenizer)?;
-        if raw == 3 {
-            Ok(FormatVersion::V3)
-        } else {
+        match raw {
+            3 => Ok(FormatVersion::V3),
+            4 => Ok(FormatVersion::V4),
             // format version 2 is the default value, if no explicit version is set
-            Err(crate::plist::Error::Parse(
-                "'3' is the only known format version".into(),
-            ))
+            _ => Err(crate::plist::Error::Parse(format!(
+                "unknown format version '{raw}', expected 3 or 4"
+            ))),
         }
     }
 }
@@ -929,10 +1050,14 @@ impl FormatVersion {
         self == FormatVersion::V2
     }
 
+    fn is_v4(self) -> bool {
+        self == FormatVersion::V4
+    }
+
     fn codepoint_radix(self) -> u32 {
         match self {
             FormatVersion::V2 => 16,
-            FormatVersion::V3 => 10,
+            FormatVersion::V3 | FormatVersion::V4 => 10,
         }
     }
 }
@@ -1571,6 +1696,8 @@ struct RawFeature {
     notes: Option<String>,
     code: String,
     labels: Vec<RawNameValue>,
+    // v4 packages store the code in features/<file>
+    file: Option<String>,
 
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
@@ -1600,6 +1727,8 @@ struct RawGlyph {
     #[fromplist(alt_name = "production")]
     production_name: Option<SmolStr>,
     parts_settings: Vec<RawPartSetting>,
+    // v4 smart glyph axes
+    axes: Vec<Plist>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
 }
@@ -1652,6 +1781,8 @@ struct RawLayer {
     part_selection: BTreeMap<SmolStr, i64>,
     // glyphs2 only?
     user_data: LayerUserData,
+    // v4
+    active: Option<bool>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
 }
@@ -1687,7 +1818,7 @@ impl RawLayer {
             //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d5/Lib/glyphsLib/classes.py#L3942
             && match format_version {
                 FormatVersion::V2 => AxisRule::from_layer_name(&self.name).is_some(),
-                FormatVersion::V3 => !self.attributes.axis_rules.is_empty(),
+                FormatVersion::V3 | FormatVersion::V4 => !self.attributes.axis_rules.is_empty(),
             }
     }
 
@@ -1766,7 +1897,17 @@ struct RawShape {
     slant: Vec<f64>,
 
     #[fromplist(alt_name = "attr")]
-    attributes: ShapeAttributes,
+    attributes: RawShapeAttributes,
+
+    // v4 component
+    traverse_anchors: Option<bool>,
+    // v4 image shape
+    image_path: Option<String>,
+    // v4 image shape
+    #[fromplist(key = "imageURL")]
+    image_url: Option<String>,
+    // v4 shape group
+    group_id: Option<String>,
 }
 
 /// <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#spec-glyphs-3-path>
@@ -1774,6 +1915,8 @@ struct RawShape {
 pub struct Path {
     pub closed: bool,
     pub nodes: Vec<Node>,
+    // glyphs v2 paths have no attributes; v3 ones are read from RawShape
+    #[fromplist(ignore)]
     pub attributes: ShapeAttributes,
 }
 
@@ -1795,6 +1938,8 @@ pub struct Component {
     /// a position in user coords.
     #[fromplist(alt_name = "piece")]
     pub smart_component_values: BTreeMap<SmolStr, f64>,
+    // glyphs v2 components have no attributes; v3 ones are read from RawShape
+    #[fromplist(ignore)]
     pub attributes: ShapeAttributes,
 }
 
@@ -1982,6 +2127,8 @@ struct RawFontMaster {
     custom_parameters: RawCustomParameters,
     number_values: Vec<OrderedFloat<f64>>,
     user_data: BTreeMap<SmolStr, Plist>,
+    // v4
+    active: Option<bool>,
 
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
@@ -2195,9 +2342,15 @@ fn parse_node_from_tokenizer(tokenizer: &mut Tokenizer<'_>) -> Result<Node, crat
     let node_type = NodeType::from_str(&node_type)
         .map_err(|_| crate::plist::Error::Parse(format!("unknown node type '{node_type}'")))?;
 
-    // Sometimes there is userData; ignore it
+    // Sometimes there is userData; ignore it. In v4 this is a dict of node
+    // attributes, which can also hold higher-order interpolation info.
     if tokenizer.eat(b',').is_ok() {
-        tokenizer.skip_rec()?;
+        let attrs: Plist = tokenizer.parse()?;
+        if attrs.get("hoi").is_some() {
+            return Err(crate::plist::Error::Parse(
+                "Glyphs 4 higher-order interpolation ('hoi') is not supported".into(),
+            ));
+        }
     }
 
     Ok(Node {
@@ -2444,6 +2597,14 @@ impl RawFont {
         raw_font.glyphs = ordered_glyphs;
 
         // ignore UIState.plist which stuff like displayStrings that are not used by us
+
+        // v4 packages store kerning separately
+        // TODO: read it
+        if glyphs_package.join("kerning.plist").exists() {
+            return Err(Error::UnsupportedGlyphs4(vec![
+                "kerning in the package's kerning.plist".into(),
+            ]));
+        }
 
         Ok(raw_font)
     }
@@ -2828,6 +2989,133 @@ impl RawFont {
             }
         }
         Ok(())
+    }
+
+    /// Fail on the Glyphs 4 constructs we don't (yet) handle.
+    ///
+    /// Most of these are new in format version 4 and unknown keys are skipped
+    /// while parsing, so without this check they would be silently ignored,
+    /// producing a different font than Glyphs would.
+    ///
+    /// See <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs4/GlyphsFileFormat/GlyphsFileFormatv4.md>
+    fn check_v4_supported(&self) -> Result<(), Error> {
+        let mut issues = BTreeSet::new();
+        let mut add = |issue: String| {
+            issues.insert(issue);
+        };
+
+        if self
+            .kerning_context
+            .as_ref()
+            .is_some_and(|k| k.as_dict().is_none_or(|d| !d.is_empty()))
+        {
+            add("contextual kerning (kerningContext)".into());
+        }
+        for master in &self.font_master {
+            if master.active == Some(false) {
+                add(format!("inactive master '{}'", master.id));
+            }
+        }
+        for instance in &self.instances {
+            if let Some(type_) = instance.type_.as_deref()
+                && matches!(type_, "static" | "icon" | "particles")
+            {
+                add(format!("instance type '{type_}'"));
+            }
+        }
+
+        // temporary, until we read names from properties
+        if self.family_name.is_empty() {
+            add("family name from the familyNames property".into());
+        }
+        if self.instances.iter().any(|i| i.name.is_empty()) {
+            add("instance name from the styleNames property".into());
+        }
+        // temporary, until we convert v4 colors (and palettes)
+        if std::iter::once(&self.custom_parameters)
+            .chain(self.font_master.iter().map(|m| &m.custom_parameters))
+            .any(|params| params.contains("Color Palettes"))
+        {
+            add("Color Palettes".into());
+        }
+        // temporary, until we read features from package files
+        for feature in self
+            .classes
+            .iter()
+            .chain(&self.feature_prefixes)
+            .chain(&self.features)
+        {
+            if let Some(file) = &feature.file {
+                add(format!("feature code in package file '{file}'"));
+            }
+        }
+
+        for glyph in &self.glyphs {
+            let name = &glyph.glyphname;
+            if !glyph.axes.is_empty() {
+                add(format!("smart glyph axes in glyph '{name}'"));
+            }
+            for layer in &glyph.layers {
+                if layer.active == Some(false) {
+                    add(format!("inactive layer in glyph '{name}'"));
+                }
+                if layer.attributes.coordinates.len() > self.axes.len() {
+                    add(format!("smart glyph layer coordinates in glyph '{name}'"));
+                }
+                for shape in &layer.shapes {
+                    if shape.traverse_anchors == Some(false) {
+                        add(format!(
+                            "component not traversing anchors in glyph '{name}'"
+                        ));
+                    }
+                    if shape.image_path.is_some() || shape.image_url.is_some() {
+                        add(format!("image shape in glyph '{name}'"));
+                    }
+                    if shape.group_id.is_some() || shape.attributes.group.is_some() {
+                        add(format!("shape group in glyph '{name}'"));
+                    }
+                    let attrs = &shape.attributes;
+                    if attrs.hidden == Some(true) {
+                        add(format!("hidden shape in glyph '{name}'"));
+                    }
+                    if attrs.opacity.is_some_and(|o| o != 1.0) {
+                        add(format!("shape opacity in glyph '{name}'"));
+                    }
+                    if attrs.compositing.is_some() {
+                        add(format!("shape compositing in glyph '{name}'"));
+                    }
+                    if let Some(gradient) = &attrs.gradient {
+                        match gradient.style.as_str() {
+                            "conic" => add(format!("conic gradient in glyph '{name}'")),
+                            // temporary, until we map the radius
+                            "radial" => add(format!("radial gradient in glyph '{name}'")),
+                            _ => (),
+                        }
+                        if let Some(extend) = &gradient.extend
+                            && extend != "pad"
+                        {
+                            add(format!("gradient extend '{extend}' in glyph '{name}'"));
+                        }
+                        if gradient.angle.is_some_and(|a| a != 0.0) {
+                            add(format!("gradient angle in glyph '{name}'"));
+                        }
+                        if gradient.start_radius.is_some_and(|r| r != 0.0) {
+                            add(format!("gradient start radius in glyph '{name}'"));
+                        }
+                    }
+                    // temporary, until we convert v4 colors
+                    if attrs.has_colors() {
+                        add(format!("shape colors in glyph '{name}'"));
+                    }
+                }
+            }
+        }
+
+        if issues.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::UnsupportedGlyphs4(issues.into_iter().collect()))
+        }
     }
 
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
@@ -3343,12 +3631,12 @@ impl UserToDesignMapping {
     }
 }
 
-impl TryFrom<RawShape> for Shape {
-    type Error = Error;
-
-    fn try_from(from: RawShape) -> Result<Self, Self::Error> {
+impl RawShape {
+    fn build(self, format_version: FormatVersion) -> Result<Shape, Error> {
         // TODO: handle numerous unsupported attributes
         // See <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
+        let from = self;
+        let attributes = from.attributes.build(format_version)?;
 
         let shape = if let Some(glyph_name) = from.glyph_name {
             assert!(!glyph_name.is_empty(), "A pointless component");
@@ -3401,15 +3689,15 @@ impl TryFrom<RawShape> for Shape {
                 name: glyph_name,
                 transform,
                 anchor: from.anchor,
-                attributes: from.attributes,
+                attributes,
                 smart_component_values: from.piece,
             })
         } else {
             // no ref; presume it's a path
             Shape::Path(Path {
                 closed: from.closed.unwrap_or_default(),
-                nodes: from.nodes.clone(),
-                attributes: from.attributes,
+                nodes: from.nodes,
+                attributes,
             })
         };
         Ok(shape)
@@ -3461,7 +3749,7 @@ impl RawLayer {
 
         // Glyphs v3 uses shapes for both
         for raw_shape in self.shapes {
-            shapes.push(raw_shape.try_into()?);
+            shapes.push(raw_shape.build(format_version)?);
         }
 
         let anchors = self
@@ -3590,7 +3878,7 @@ impl RawGlyph {
         format_version: FormatVersion,
         glyph_data: &GlyphData,
     ) -> Result<Glyph, Error> {
-        if format_version == FormatVersion::V3 {
+        if !format_version.is_v2() {
             resolve_reverse_bracket_layers(&mut self.layers);
         }
         let mut instances = Vec::new();
@@ -4136,6 +4424,9 @@ impl Font {
     /// Build a font from its raw form, using `glyph_data` to fill in glyph
     /// categories and production names the source doesn't set.
     fn from_raw(mut from: RawFont, glyph_data: &GlyphData) -> Result<Self, Error> {
+        if from.format_version.is_v4() {
+            from.check_v4_supported()?;
+        }
         if from.format_version.is_v2() {
             from.v2_to_v3()?;
         } else {
@@ -4925,6 +5216,54 @@ mod tests {
         assert_eq!(font.format_version, FormatVersion::V3);
     }
 
+    fn glyphs4_dir() -> PathBuf {
+        testdata_dir().join("glyphs4")
+    }
+
+    #[test]
+    fn v4_format_version() {
+        let font = RawFont::load(&glyphs4_dir().join("fence/master-inactive.glyphs")).unwrap();
+        assert_eq!(font.format_version, FormatVersion::V4);
+    }
+
+    #[test]
+    fn unknown_format_version() {
+        let result = RawFont::load_from_string("{.formatVersion = 5;}");
+        assert!(
+            matches!(&result, Err(crate::plist::Error::Parse(msg)) if msg.contains("'5'")),
+            "{result:?}"
+        );
+    }
+
+    /// Glyphs 4 constructs we don't support must fail, not be silently dropped.
+    ///
+    /// The files were saved by Glyphs 4.1.1, see the README in the testdata dir.
+    #[rstest]
+    #[case::master_inactive("master-inactive", "inactive master")]
+    #[case::layer_inactive("layer-inactive", "inactive layer in glyph 'exclam'")]
+    #[case::kerning_context("kerning-context", "contextual kerning")]
+    #[case::traverse_anchors(
+        "traverse-anchors",
+        "component not traversing anchors in glyph 'manual-component'"
+    )]
+    #[case::node_hoi("node-hoi", "higher-order interpolation ('hoi')")]
+    #[case::image_shape("image-shape", "image shape in glyph 'exclam'")]
+    #[case::shape_group("shape-group", "shape group in glyph 'exclam'")]
+    #[case::instance_static("instance-static", "instance type 'static'")]
+    #[case::instance_icon("instance-icon", "instance type 'icon'")]
+    #[case::instance_particles("instance-particles", "instance type 'particles'")]
+    #[case::palette_ref("palette-ref", "palette color references")]
+    // TODO: expect the hidden shape once we read v4 booleans
+    #[case::shape_hidden("shape-hidden", "boolean literal ':true'")]
+    fn reject_unsupported_glyphs4(#[case] name: &str, #[case] expected: &str) {
+        let path = glyphs4_dir().join(format!("fence/{name}.glyphs"));
+        let err = Font::load(&path).unwrap_err().to_string();
+        assert!(
+            err.contains(expected),
+            "{name}: expected '{expected}' in '{err}'"
+        );
+    }
+
     fn axis_map(points: &[(f64, f64)]) -> AxisUserToDesignMap {
         AxisUserToDesignMap(
             points
@@ -5284,9 +5623,9 @@ mod tests {
 
     /// Parse a Glyphs 3 component plist fragment and return its transform.
     fn component_transform(shape_plist: &str) -> Affine {
-        let shape: Shape = RawShape::parse_plist(shape_plist)
+        let shape = RawShape::parse_plist(shape_plist)
             .unwrap()
-            .try_into()
+            .build(FormatVersion::V3)
             .unwrap();
         let Shape::Component(component) = shape else {
             panic!("{shape:?} should be a component");
@@ -5400,7 +5739,7 @@ slant = (10);
         "#,
         )
         .unwrap();
-        let result = Shape::try_from(raw);
+        let result = raw.build(FormatVersion::V3);
         assert!(
             matches!(&result, Err(Error::StructuralError(msg)) if msg.starts_with("Bad slant")),
             "{result:?}"

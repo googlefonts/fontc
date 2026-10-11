@@ -280,6 +280,7 @@ impl Plist {
     fn parse_rec(s: &str, ix: usize) -> Result<(Plist, usize), Error> {
         let (tok, mut ix) = Token::lex(s, ix)?;
         match tok {
+            Token::Atom(s) if is_bool_atom(s) => Err(bool_atom_error(s)),
             Token::Atom(s) => Ok((Plist::parse_atom(s), ix)),
             Token::String(s) => Ok((Plist::String(s.into()), ix)),
             Token::Data(bytes) => Ok((Plist::Data(bytes), ix)),
@@ -655,7 +656,22 @@ impl From<Dictionary> for Plist {
     }
 }
 
+/// Glyphs 4 writes `:true`/`:false` for booleans stored in untyped dictionaries.
+// TODO: support these, they aren't in the v4 spec but Glyphs 4 writes them
+fn is_bool_atom(s: &str) -> bool {
+    matches!(s, ":true" | ":false")
+}
+
+fn bool_atom_error(s: &str) -> Error {
+    Error::Parse(format!(
+        "the Glyphs 4 boolean literal '{s}' is not supported yet"
+    ))
+}
+
 pub(crate) fn parse_int(s: &str) -> Result<i64, Error> {
+    if is_bool_atom(s) {
+        return Err(bool_atom_error(s));
+    }
     if let Ok(num) = s.parse::<i64>() {
         return Ok(num);
     }

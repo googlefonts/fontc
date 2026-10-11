@@ -30,6 +30,8 @@ pub enum Error {
     BadValue(String),
     #[error("Duplicate glyph name '{0}'")]
     DuplicateGlyphName(SmolStr),
+    #[error("Unsupported Glyphs 4 constructs: {}", .0.join("; "))]
+    UnsupportedGlyphs4(Vec<String>),
     #[error("Bad smart component '{component}' in glyph '{glyph}': {issue}")]
     BadSmartComponent {
         glyph: SmolStr,
