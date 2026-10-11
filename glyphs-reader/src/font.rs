@@ -5410,6 +5410,8 @@ mod tests {
     #[case::shape_opacity("shape-opacity", "shape opacity in glyph 'A'")]
     #[case::shape_compositing("shape-compositing", "shape compositing in glyph 'A'")]
     #[case::shape_hidden("shape-hidden", "hidden shape in glyph 'exclam'")]
+    #[case::smart_component_coordinates("smart-components", "smart glyph layer coordinates ('-')")]
+    #[case::smart_component_axes("smart-component-axes", "smart glyph axes in glyph '_part.")]
     fn reject_unsupported_glyphs4(#[case] name: &str, #[case] expected: &str) {
         let path = glyphs4_dir().join(format!("fence/{name}.glyphs"));
         let err = Font::load(&path).unwrap_err().to_string();

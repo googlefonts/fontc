@@ -41,3 +41,6 @@ saved with `formatVersion=4`:
   gradient
 * `shape-opacity`: `COLRv1-gradient`, `path.setOpacity_(0.5)`
 * `shape-compositing`: `COLRv1-gradient`, `path.attributes["compositing"] = "multiply"`
+* `smart-components`, `smart-component-axes`: `glyphs3/SmartComponents` and
+  `glyphs3/SmartComponentExplicitAnchors` saved as is: v4 writes smart glyph
+  axes on the glyph and layer coordinates for them, with `"-"` for the default
