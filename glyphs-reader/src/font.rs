@@ -5861,7 +5861,8 @@ mod tests {
     }
 
     /// '-' is the axis default; leaving the axis out of the v3 part selection
-    /// of a layer only means the same when its master layer is at the default
+    /// of a layer only means the same when its master layer is at the default.
+    /// Glyphs 4 ignores a layer without coordinates, like a backup layer.
     #[test]
     fn glyphs4_unset_smart_glyph_coordinates() {
         let font = glyphs4_smart_glyph(
@@ -5870,7 +5871,9 @@ mod tests {
             {associatedMasterId = m01; layerId = l1; attr = {coordinates = ("-", "-", "-");};
             width = 600;}, {associatedMasterId = m01; layerId = l2; attr = {coordinates =
             ("-", "-", 0);}; width = 600;}, {associatedMasterId = m02; layerId = l3; attr =
-            {coordinates = ("-", "-", "-");}; width = 600;}"#,
+            {coordinates = ("-", "-", "-");}; width = 600;}, {associatedMasterId = m02;
+            layerId = l4; attr = {coordinates = ();}; width = 600;},
+            {associatedMasterId = m02; layerId = backup; width = 600;}"#,
         )
         .unwrap();
         let glyph = &font.glyphs["_part"];
@@ -5892,7 +5895,8 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        // l1 is at its master's location, so it is a draft and dropped
+        // l1 is at its master's location, and the backup layer, without
+        // coordinates, has no location; so they are drafts and dropped
         assert_eq!(
             positions,
             vec![
@@ -5900,6 +5904,7 @@ mod tests {
                 ("m02", 0, vec![("A", AxisPole::Min)]),
                 ("l2", 0, vec![("A", AxisPole::Min)]),
                 ("l3", 0, vec![("A", AxisPole::Max)]),
+                ("l4", 0, vec![("A", AxisPole::Max)]),
             ]
         );
     }
