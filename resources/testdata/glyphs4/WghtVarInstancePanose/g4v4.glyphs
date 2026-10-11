@@ -1,0 +1,222 @@
+{
+.appVersion = "4108";
+.formatVersion = 4;
+axes = (
+{
+name = Weight;
+tag = wght;
+},
+);
+customParameters = (
+{
+name = panose;
+value = (
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+);
+},
+);
+date = "2026-10-11 20:05:26 +0000";
+fontMaster = (
+{
+axesValues = (
+400,
+);
+customParameters = (
+{
+name = panose;
+value = (
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+);
+},
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700,
+);
+customParameters = (
+{
+name = panose;
+value = (
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+);
+},
+);
+id = m02;
+name = Bold;
+},
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = m02;
+width = 250;
+},
+);
+unicode = 32;
+},
+);
+instances = (
+{
+customParameters = (
+{
+name = panose;
+value = (
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+);
+},
+);
+id = "D98AAC09-CD7A-42A6-846C-98B83D144178";
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = Regular;
+},
+);
+},
+);
+type = variable;
+},
+{
+axesValues = (
+400,
+);
+customParameters = (
+{
+name = panose;
+value = (
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+);
+},
+);
+id = "FE7049BE-CFDA-4ACD-BF95-3E5F2D6EAC2D";
+instanceInterpolations = {
+m01 = 1;
+};
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = Regular;
+},
+);
+},
+);
+},
+{
+axesValues = (
+700,
+);
+customParameters = (
+{
+name = panose;
+value = (
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+);
+},
+);
+id = "94C4689C-68AD-4C2F-8649-0299BBF6413C";
+instanceInterpolations = {
+m02 = 1;
+};
+isBold = 1;
+linkStyle = Regular;
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = Bold;
+},
+);
+},
+);
+weightClass = 700;
+},
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = WghtVarInstancePanose;
+},
+);
+},
+);
+settings = {
+colorSpace = "apple-rgb";
+};
+unitsPerEm = 1024;
+versionMajor = 42;
+versionMinor = 42;
+}

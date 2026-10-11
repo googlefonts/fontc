@@ -1,0 +1,96 @@
+{
+.appVersion = "4108";
+.formatVersion = 4;
+date = "2026-10-11 20:05:24 +0000";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+},
+);
+glyphs = (
+);
+instances = (
+{
+customParameters = (
+{
+disabled = 1;
+name = "Export STAT Table";
+value = 1;
+},
+{
+name = "Export STAT Table";
+value = 0;
+},
+{
+name = "Elidable STAT Axis Value Name";
+value = Regular;
+},
+{
+disabled = 1;
+name = "Elidable STAT Axis Value Name";
+value = Ignored;
+},
+{
+name = "Elidable STAT Axis Value Name";
+value = Regular;
+},
+{
+name = "Style Name as STAT entry";
+value = Bold;
+},
+{
+name = "Style Name as STAT entry";
+value = "Bold Italic";
+},
+);
+id = "744F91AA-8795-41CC-852D-31B3FE8F3EF3";
+isBold = 1;
+isItalic = 1;
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = "Bold Italic Variable";
+},
+);
+},
+);
+type = variable;
+},
+{
+id = "6C27258A-9605-4598-B32B-79723D18707F";
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = Upright;
+},
+);
+},
+);
+type = variable;
+},
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = Test;
+},
+);
+},
+);
+settings = {
+colorSpace = "apple-rgb";
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

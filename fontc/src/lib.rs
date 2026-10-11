@@ -7621,4 +7621,54 @@ mod tests {
             )
         );
     }
+
+    /// The font's tables, with the head timestamps and checksum adjustment zeroed
+    fn tables_sans_head_timestamps(font: &FontRef) -> Vec<(Tag, Vec<u8>)> {
+        font.table_directory
+            .table_records()
+            .iter()
+            .map(|record| {
+                let tag = record.tag();
+                let mut data = font.table_data(tag).unwrap().as_bytes().to_vec();
+                if tag == Tag::new(b"head") {
+                    // checksumAdjustment, then created and modified
+                    data[8..12].fill(0);
+                    data[20..36].fill(0);
+                }
+                (tag, data)
+            })
+            .collect()
+    }
+
+    /// Glyphs 4 can save as format version 3 or 4: both should compile the same
+    #[rstest]
+    #[case::preferable_names("PreferableNames")]
+    #[case::the_best_names("TheBestNames")]
+    #[case::localized_names("LocalizedNames")]
+    #[case::wght_var_instances("WghtVar_Instances")]
+    #[case::wght_var_instance_panose("WghtVarInstancePanose")]
+    #[case::stat_instance_metadata("StatInstanceMetadata")]
+    #[case::intermediate_layer("IntermediateLayer")]
+    #[case::bracket_rules("bracket-rules-processed-in-glyph-order")]
+    #[case::oswald_ae_comb("Oswald-AE-comb")]
+    fn compile_glyphs4_like_glyphs3(#[case] name: &str) {
+        let dir = testdata_dir().join("glyphs4").join(name);
+        let ext = if dir.join("g4v3.glyphspackage").exists() {
+            "glyphspackage"
+        } else {
+            "glyphs"
+        };
+        let v3 = TestCompile::compile_source(&format!("glyphs4/{name}/g4v3.{ext}"));
+        let v4 = TestCompile::compile_source(&format!("glyphs4/{name}/g4v4.{ext}"));
+        let v3_tables = tables_sans_head_timestamps(&v3.font());
+        let v4_tables = tables_sans_head_timestamps(&v4.font());
+        // compare tags first, for a more readable failure
+        assert_eq!(
+            v3_tables.iter().map(|(tag, _)| *tag).collect::<Vec<_>>(),
+            v4_tables.iter().map(|(tag, _)| *tag).collect::<Vec<_>>()
+        );
+        for ((tag, v3_data), (_, v4_data)) in v3_tables.iter().zip(&v4_tables) {
+            assert!(v3_data == v4_data, "{name}: '{tag}' differs");
+        }
+    }
 }

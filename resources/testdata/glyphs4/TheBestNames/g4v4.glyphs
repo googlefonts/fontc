@@ -1,0 +1,371 @@
+{
+.appVersion = "3151";
+.formatVersion = 4;
+axes = (
+{
+name = Weight;
+tag = wght;
+},
+);
+customParameters = (
+{
+name = "Variable Font Origin";
+value = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+},
+);
+date = "2026-10-11 20:05:24 +0000";
+fontMaster = (
+{
+axesValues = (
+400,
+);
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+},
+{
+},
+);
+name = Regular;
+},
+{
+axesValues = (
+700,
+);
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+metricValues = (
+{
+pos = 800;
+},
+{
+},
+{
+pos = -200;
+},
+{
+pos = 700;
+},
+{
+pos = 500;
+},
+);
+name = Bold;
+},
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+},
+);
+unicode = 32;
+},
+{
+glyphname = exclam;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(354,183,l),
+(414,585,l),
+(178,585,l),
+(238,182,l),
+);
+},
+{
+closed = 1;
+nodes = (
+(354,0,l),
+(354,107,l),
+(238,107,l),
+(238,0,l),
+);
+},
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(364,176,l),
+(434,605,l),
+(159,605,l),
+(228,174,l),
+);
+},
+{
+closed = 1;
+nodes = (
+(364,-20,l),
+(364,94,l),
+(228,94,l),
+(228,-20,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 33;
+},
+{
+glyphname = hyphen;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(131,250,l),
+(470,250,l),
+(470,330,l),
+(131,330,l),
+);
+},
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(92,224,l),
+(508,224,l),
+(508,356,l),
+(92,356,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 45;
+},
+{
+glyphname = "manual-component";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+pos = (0,100);
+ref = hyphen;
+},
+{
+ref = hyphen;
+},
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+pos = (10,100);
+ref = hyphen;
+scale = (1.15,1.25);
+},
+{
+ref = hyphen;
+},
+);
+width = 600;
+},
+);
+unicode = 61;
+},
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+);
+properties = (
+{
+key = compatibleFullNames;
+values = (
+{
+language = WRONG;
+value = "For the BeOS only";
+},
+{
+language = ENG;
+value = "For the Mac's only";
+},
+);
+},
+{
+key = copyrights;
+values = (
+{
+language = default;
+value = "Wrong answer";
+},
+{
+language = dflt;
+value = "Copy!";
+},
+);
+},
+{
+key = descriptions;
+values = (
+{
+language = dflt;
+value = "The greatest weight var";
+},
+);
+},
+{
+key = designers;
+values = (
+{
+language = IT_CAN_BE_ANYTHING;
+value = "Designed by me!";
+},
+{
+language = NOT_THIS_ONE;
+value = "Designed by ... you?!";
+},
+);
+},
+{
+key = designerURL;
+value = "https://example.com/designer";
+},
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = "";
+},
+);
+},
+{
+key = licenses;
+values = (
+{
+language = dflt;
+value = "Licensed to thrill";
+},
+);
+},
+{
+key = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+key = manufacturers;
+values = (
+{
+language = ENG;
+value = "Wrong answer :(";
+},
+{
+language = dflt;
+value = "Who made you?!";
+},
+);
+},
+{
+key = manufacturerURL;
+value = "https://example.com/manufacturer";
+},
+{
+key = postscriptFontName;
+value = "Postscript Name";
+},
+{
+key = postscriptFullName;
+value = "Full of names";
+},
+{
+key = sampleTexts;
+values = (
+{
+language = MEH;
+value = "Don't pull this text";
+},
+{
+language = ENG;
+value = "Also bad";
+},
+{
+language = default;
+value = "Sam pull text";
+},
+);
+},
+{
+key = trademarks;
+values = (
+{
+language = dflt;
+value = "A trade in marks";
+},
+);
+},
+{
+key = uniqueID;
+value = "We are all unique";
+},
+{
+key = vendorID;
+value = RODS;
+},
+{
+key = versionString;
+value = "New Value";
+},
+{
+key = WWSFamilyName;
+value = "We Will Slant you";
+},
+);
+settings = {
+colorSpace = "apple-rgb";
+};
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}

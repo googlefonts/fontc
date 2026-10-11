@@ -3031,13 +3031,6 @@ impl RawFont {
             }
         }
 
-        // temporary, until we read names from properties
-        if self.family_name.is_empty() {
-            add("family name from the familyNames property".into());
-        }
-        if self.instances.iter().any(|i| i.name.is_empty()) {
-            add("instance name from the styleNames property".into());
-        }
         // temporary, until we convert v4 colors (and palettes)
         if std::iter::once(&self.custom_parameters)
             .chain(self.font_master.iter().map(|m| &m.custom_parameters))
@@ -3122,6 +3115,41 @@ impl RawFont {
             Ok(())
         } else {
             Err(Error::UnsupportedGlyphs4(issues.into_iter().collect()))
+        }
+    }
+
+    /// Glyphs 4 no longer writes the root `familyName` nor the instance `name`.
+    ///
+    /// They become the default (`dflt`) values of the `familyNames` and
+    /// `styleNames` properties; take them back out, so we can treat v4 names
+    /// like v3 ones.
+    fn v4_to_v3_names(&mut self) {
+        if self.family_name.is_empty()
+            && let Some(name) = self.properties.iter().find(|p| p.key == "familyNames")
+        {
+            self.family_name = name.get_value().unwrap_or_default().to_string();
+        }
+        for instance in self.instances.iter_mut() {
+            if !instance.name.is_empty() {
+                continue;
+            }
+            let Some(idx) = instance
+                .properties
+                .iter()
+                .position(|p| p.key == "styleNames")
+            else {
+                continue;
+            };
+            let style_names = &mut instance.properties[idx];
+            instance.name = style_names.get_value().unwrap_or_default().to_string();
+            // in v3, styleNames only has the localized names
+            style_names.value = None;
+            style_names
+                .values
+                .retain(|v| !(v.language == "dflt" && v.value == instance.name));
+            if style_names.is_empty() {
+                instance.properties.remove(idx);
+            }
         }
     }
 
@@ -4433,6 +4461,7 @@ impl Font {
     fn from_raw(mut from: RawFont, glyph_data: &GlyphData) -> Result<Self, Error> {
         if from.format_version.is_v4() {
             from.check_v4_supported()?;
+            from.v4_to_v3_names();
         }
         if from.format_version.is_v2() {
             from.v2_to_v3()?;
@@ -5275,6 +5304,37 @@ mod tests {
             err.contains(expected),
             "{name}: expected '{expected}' in '{err}'"
         );
+    }
+
+    /// The same source, saved by Glyphs 4 as format version 3 and as 4
+    fn glyphs4_pair(name: &str) -> (PathBuf, PathBuf) {
+        let dir = glyphs4_dir().join(name);
+        let ext = if dir.join("g4v3.glyphspackage").exists() {
+            "glyphspackage"
+        } else {
+            "glyphs"
+        };
+        (
+            dir.join(format!("g4v3.{ext}")),
+            dir.join(format!("g4v4.{ext}")),
+        )
+    }
+
+    #[rstest]
+    #[case::preferable_names("PreferableNames")]
+    #[case::the_best_names("TheBestNames")]
+    #[case::localized_names("LocalizedNames")]
+    #[case::wght_var_instances("WghtVar_Instances")]
+    #[case::wght_var_instance_panose("WghtVarInstancePanose")]
+    #[case::stat_instance_metadata("StatInstanceMetadata")]
+    #[case::intermediate_layer("IntermediateLayer")]
+    #[case::bracket_rules("bracket-rules-processed-in-glyph-order")]
+    #[case::oswald_ae_comb("Oswald-AE-comb")]
+    fn read_glyphs4_like_glyphs3(#[case] name: &str) {
+        let (v3, v4) = glyphs4_pair(name);
+        let g3 = Font::load(&v3).unwrap();
+        let g4 = Font::load(&v4).unwrap();
+        assert_fonts_equal(&g3, &g4, &format!("{v3:?} vs {v4:?}"));
     }
 
     fn axis_map(points: &[(f64, f64)]) -> AxisUserToDesignMap {
