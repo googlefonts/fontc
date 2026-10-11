@@ -2226,9 +2226,11 @@ pub struct PaintRadialGradient {
     /// None means 0 (gradient radiating from center, not a ring).
     pub r0: Option<OrderedFloat<f32>>,
     pub p1: Point,
-    /// Outer radius, relative to the bounding box: it is scaled by the square
-    /// root of the box's area, like Glyphs 4 does. None means calculate as max
-    /// distance from center to bounding box corners (like Glyphs 3 does).
+    /// Outer radius, relative to the bounding box of the painted glyph: it is
+    /// scaled by the square root of the box's area. Glyphs 4 radii are relative
+    /// to the bounds of a single shape, so they are only accepted when the
+    /// painted glyph is one shape. None means calculate as max distance from
+    /// center to bounding box corners (like Glyphs 3 does).
     pub r1: Option<OrderedFloat<f32>>,
 }
 

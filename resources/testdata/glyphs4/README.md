@@ -41,6 +41,10 @@ saved with `formatVersion=4`:
   gradient
 * `shape-opacity`: `COLRv1-gradient`, `path.setOpacity_(0.5)`
 * `shape-compositing`: `COLRv1-gradient`, `path.attributes["compositing"] = "multiply"`
+* `radial-shared`: `COLRv1-gradient` with a second rectangle, with the same
+  circle gradient, added to `K` (by hand to the v3 file, then loaded and saved
+  by Glyphs 4). Glyphs 4 radial radii are relative to the bounds of each shape,
+  so one gradient over the bounds of both does not match.
 * `smart-components`, `smart-component-axes`: `glyphs3/SmartComponents` and
   `glyphs3/SmartComponentExplicitAnchors` saved as is: v4 writes smart glyph
   axes on the glyph and layer coordinates for them, with `"-"` for the default

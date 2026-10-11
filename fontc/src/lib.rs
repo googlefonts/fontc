@@ -7694,4 +7694,20 @@ mod tests {
             assert!(v3_data == v4_data, "{name}: '{tag}' differs");
         }
     }
+
+    /// A Glyphs 4 radial gradient radius is relative to the bounds of its shape,
+    /// so it can't be shared by several shapes painted as one
+    #[test]
+    fn glyphs4_radial_gradient_shared_by_shapes() {
+        let input = Input::new(&testdata_dir().join("glyphs4/fence/radial-shared.glyphs")).unwrap();
+        let error = input
+            .create_source(&SourceOptions::default())
+            .err()
+            .expect("shared radial gradient should fail")
+            .to_string();
+        assert!(
+            error.contains("radial gradient shared by 2 consecutive shapes"),
+            "{error}"
+        );
+    }
 }

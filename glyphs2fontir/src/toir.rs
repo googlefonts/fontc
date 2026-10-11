@@ -996,6 +996,21 @@ fn split_colrv1_glyph(
         }
     }
 
+    // A v4 radial gradient radius is relative to the bounds of its own shape,
+    // but a run is painted with one gradient scaled to the bounds of all its
+    // shapes: that is only the same for a single shape.
+    if let Some(run) = runs.iter().find(|run| {
+        matches!(run.run_type, Colrv1RunType::Radial(_, _, Some(_), _)) && run.end - run.start > 1
+    }) {
+        return Err(Error::BadGlyph(BadGlyph::new(
+            glyph_name.clone(),
+            BadGlyphKind::FrontendSpecific(format!(
+                "Glyphs 4 radial gradient shared by {} consecutive shapes is not supported",
+                run.end - run.start
+            )),
+        )));
+    }
+
     // Only one run we're done
     if runs.len() <= 1 {
         return Ok(());
