@@ -648,7 +648,9 @@ impl AxisRule {
 /// Parse brace layer coordinates.
 ///
 /// Glyphs 4 also writes the glyph-local axis coordinates of smart glyph layers
-/// here, where '-' means the axis default; we don't support those (yet).
+/// here, where '-' means the axis default. We don't support those (yet): they
+/// are read as NaN, so we can report them with the glyph they are in, and a
+/// layer with them fails to build.
 fn parse_layer_coordinates(
     tokenizer: &mut Tokenizer<'_>,
 ) -> Result<Vec<OrderedFloat<f64>>, crate::plist::Error> {
@@ -658,9 +660,7 @@ fn parse_layer_coordinates(
         .map(|value| match value {
             Plist::Integer(i) => Ok((*i as f64).into()),
             Plist::Float(f) => Ok(*f),
-            Plist::String(s) if s == "-" => Err(crate::plist::Error::Parse(
-                "Glyphs 4 smart glyph layer coordinates ('-') are not supported".into(),
-            )),
+            Plist::String(s) if s == "-" => Ok(f64::NAN.into()),
             Plist::String(s) => crate::plist::parse_float(s).map(Into::into),
             _ => Err(crate::plist::Error::ExpectedNumber),
         })
@@ -825,7 +825,12 @@ struct RawGradient {
 
 /// The color components as written; their range depends on the format version
 #[derive(Clone, Default, Debug, PartialEq)]
-struct RawColor(Vec<f64>);
+struct RawColor {
+    components: Vec<f64>,
+    /// A v4 palette color reference, `("p", index, alpha)`, which we don't
+    /// support (yet)
+    palette_ref: bool,
+}
 
 #[derive(Clone, Default, Debug, PartialEq)]
 struct RawColorStop {
@@ -868,8 +873,13 @@ impl RawGradient {
 
 impl RawColor {
     fn build(self, format_version: FormatVersion) -> Result<Color, Error> {
+        if self.palette_ref {
+            return Err(Error::BadValue(
+                "Glyphs 4 palette color references are not supported".into(),
+            ));
+        }
         let components = self
-            .0
+            .components
             .iter()
             .map(|c| color_component(*c, format_version))
             .collect::<Vec<_>>();
@@ -892,21 +902,27 @@ fn color_component(value: f64, format_version: FormatVersion) -> i64 {
 // hand-parse because it's a list of inconsistent types
 impl FromPlist for RawColor {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
-        let components: Vec<Plist> = tokenizer.parse()?;
-        components
+        let values: Vec<Plist> = tokenizer.parse()?;
+        // v4 palette color reference, ("p", index, alpha)
+        if values.first().and_then(Plist::as_str) == Some("p") {
+            return Ok(RawColor {
+                components: Vec::new(),
+                palette_ref: true,
+            });
+        }
+        let components = values
             .iter()
             .map(|c| match c {
                 Plist::Integer(i) => Ok(*i as f64),
                 Plist::Float(f) => Ok(f.into_inner()),
-                // v4 palette color reference, ("p", index, alpha)
-                Plist::String(s) if s == "p" => Err(crate::plist::Error::Parse(
-                    "Glyphs 4 palette color references are not supported".into(),
-                )),
                 Plist::String(s) => crate::plist::parse_float(s),
                 _ => Err(crate::plist::Error::ExpectedNumber),
             })
-            .collect::<Result<_, _>>()
-            .map(RawColor)
+            .collect::<Result<_, _>>()?;
+        Ok(RawColor {
+            components,
+            palette_ref: false,
+        })
     }
 }
 
@@ -3089,7 +3105,8 @@ impl RawFont {
         }
         for master in &self.font_master {
             if master.active == Some(false) {
-                add(format!("inactive master '{}'", master.id));
+                let name = master.name.as_deref().unwrap_or(&master.id);
+                add(format!("inactive master '{name}'"));
             }
         }
         // v3 has no names for palettes and colors, which would go in CPAL v1
@@ -3151,7 +3168,9 @@ impl RawFont {
                 if layer.active == Some(false) {
                     add(format!("inactive layer in glyph '{name}'"));
                 }
-                if layer.attributes.coordinates.len() > self.axes.len() {
+                if layer.attributes.coordinates.len() > self.axes.len()
+                    || layer.attributes.coordinates.iter().any(|c| c.is_nan())
+                {
                     add(format!("smart glyph layer coordinates in glyph '{name}'"));
                 }
                 for shape in &layer.shapes {
@@ -3178,6 +3197,15 @@ impl RawFont {
                     }
                     if attrs.mask.is_some_and(|m| m != 0) {
                         add(format!("shape mask in glyph '{name}'"));
+                    }
+                    let gradient_colors = attrs.gradient.iter().flat_map(|g| &g.colors);
+                    if attrs
+                        .fill_color
+                        .iter()
+                        .chain(gradient_colors.map(|stop| &stop.color))
+                        .any(|c| c.palette_ref)
+                    {
+                        add(format!("palette color reference in glyph '{name}'"));
                     }
                     if let Some(gradient) = &attrs.gradient {
                         match gradient.style.as_str() {
@@ -3951,6 +3979,12 @@ impl RawLayer {
             .collect();
 
         let mut attributes = self.attributes;
+        if attributes.coordinates.iter().any(|c| c.is_nan()) {
+            return Err(Error::BadValue(format!(
+                "Glyphs 4 smart glyph layer coordinates ('-') in layer '{}' are not supported",
+                self.layer_id
+            )));
+        }
         // convert v2 bracket layers (based on name) into AxisRule attrs
         if let Some(axis_rule) =
             AxisRule::from_layer_name(&self.name).filter(|_| format_version.is_v2())
@@ -5424,7 +5458,7 @@ mod tests {
     ///
     /// The files were saved by Glyphs 4.1.1, see the README in the testdata dir.
     #[rstest]
-    #[case::master_inactive("master-inactive", "inactive master")]
+    #[case::master_inactive("master-inactive", "inactive master 'Bold'")]
     #[case::layer_inactive("layer-inactive", "inactive layer in glyph 'exclam'")]
     #[case::kerning_context("kerning-context", "contextual kerning")]
     #[case::traverse_anchors(
@@ -5441,7 +5475,7 @@ mod tests {
     #[case::gradient_extend("gradient-extend", "gradient extend 'repeat' in glyph 'A'")]
     #[case::gradient_angle("gradient-radial-angle", "gradient angle in glyph")]
     #[case::gradient_start_radius("gradient-start-radius", "gradient start radius in glyph")]
-    #[case::palette_ref("palette-ref", "palette color references")]
+    #[case::palette_ref("palette-ref", "palette color reference in glyph 'A'")]
     #[case::shape_opacity("shape-opacity", "shape opacity in glyph 'A'")]
     #[case::shape_compositing("shape-compositing", "shape compositing in glyph 'A'")]
     #[case::shape_hidden("shape-hidden", "hidden shape in glyph 'exclam'")]
@@ -5449,7 +5483,10 @@ mod tests {
     #[case::palette_color_names("palette-color-names", "color names in Color Palettes")]
     #[case::palette_name("palette-name", "palette name in Color Palettes")]
     #[case::palette_background("palette-background", "palette background style in Color Palettes")]
-    #[case::smart_component_coordinates("smart-components", "smart glyph layer coordinates ('-')")]
+    #[case::smart_component_coordinates(
+        "smart-components",
+        "smart glyph layer coordinates in glyph '_part.shoulder'"
+    )]
     #[case::smart_component_axes("smart-component-axes", "smart glyph axes in glyph '_part.")]
     fn reject_unsupported_glyphs4(#[case] name: &str, #[case] expected: &str) {
         let path = glyphs4_dir().join(format!("fence/{name}.glyphs"));
@@ -5584,6 +5621,118 @@ mod tests {
             err.contains("feature code in file 'liga.fea' outside a package"),
             "{err}"
         );
+    }
+
+    /// A v4 font with one glyph, with a gradient on its one shape
+    fn glyphs4_gradient_error(gradient: &str) -> String {
+        Font::load_from_string(&format!(
+            "{{.formatVersion = 4; fontMaster = ({{id = m01;}}); glyphs = ({{glyphname = A; \
+             layers = ({{layerId = m01; attr = {{color = 1;}}; shapes = ({{attr = {{gradient = \
+             {{colors = (((1,0,0,1),0),((0,0,1,1),1)); {gradient}}};}}; closed = 1; \
+             nodes = ((0,0,l),(100,0,l),(100,100,l));}});}});}});}}"
+        ))
+        .unwrap_err()
+        .to_string()
+    }
+
+    // toir only reads the start of a radial gradient
+    #[test]
+    fn glyphs4_radial_gradient_distinct_centers() {
+        let err = glyphs4_gradient_error(
+            "type = radial; start = (0.5,0.5); end = (0.2,0.5); endRadius = 0.7;",
+        );
+        assert!(
+            err.contains("radial gradient with distinct centers in glyph 'A'"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn glyphs4_radial_gradient_without_radius() {
+        let err = glyphs4_gradient_error("type = radial; start = (0.5,0.5); end = (0.5,0.5);");
+        assert!(
+            err.contains("radial gradient without radius in glyph 'A'"),
+            "{err}"
+        );
+    }
+
+    /// Only v4 writes '-' coordinates, but they must not be read as a location
+    #[test]
+    fn glyphs3_default_layer_coordinates() {
+        let err = Font::load_from_string(
+            "{.formatVersion = 3; axes = ({name = Weight; tag = wght;}); \
+             fontMaster = ({id = m01; axesValues = (400);}); glyphs = ({glyphname = A; \
+             layers = ({layerId = m01; width = 600;}, {layerId = brace; \
+             associatedMasterId = m01; attr = {coordinates = (\"-\");}; width = 600;});});}",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("smart glyph layer coordinates ('-') in layer 'brace'"),
+            "{err}"
+        );
+    }
+
+    /// Load a package made of the given files, return its error
+    fn glyphs4_package_error(name: &str, files: &[(&str, &str)]) -> String {
+        let package = std::env::temp_dir()
+            .join(format!("fontc-{}", std::process::id()))
+            .join(format!("{name}.glyphspackage"));
+        let _ = std::fs::remove_dir_all(&package);
+        for (path, content) in files {
+            let path = package.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, content).unwrap();
+        }
+        let err = Font::load(&package).unwrap_err().to_string();
+        std::fs::remove_dir_all(&package).unwrap();
+        err
+    }
+
+    #[test]
+    fn glyphs4_package_kerning_in_both_files() {
+        let kerning = "kerningLTR = {m01 = {A = {B = -10;};};};";
+        let err = glyphs4_package_error(
+            "kerning-in-both-files",
+            &[
+                (
+                    "fontinfo.plist",
+                    &format!("{{.formatVersion = 4; {kerning}}}"),
+                ),
+                ("kerning.plist", &format!("{{{kerning}}}")),
+            ],
+        );
+        assert!(
+            err.contains("kerning is also defined in fontinfo.plist"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn glyphs4_package_feature_code_and_file() {
+        let err = glyphs4_package_error(
+            "feature-code-and-file",
+            &[
+                (
+                    "fontinfo.plist",
+                    "{.formatVersion = 4; features = ({code = \"sub a by b;\"; file = liga.fea; tag = liga;});}",
+                ),
+                ("features/liga.fea", "sub a by b;"),
+            ],
+        );
+        assert!(err.contains("feature has both code and a file"), "{err}");
+    }
+
+    #[test]
+    fn glyphs4_package_feature_file_outside_features_dir() {
+        let err = glyphs4_package_error(
+            "feature-file-outside",
+            &[(
+                "fontinfo.plist",
+                "{.formatVersion = 4; features = ({file = \"../liga.fea\"; tag = liga;});}",
+            )],
+        );
+        assert!(err.contains("bad feature file name"), "{err}");
     }
 
     fn axis_map(points: &[(f64, f64)]) -> AxisUserToDesignMap {
@@ -5737,7 +5886,7 @@ mod tests {
     #[test]
     fn glyphs4_color_stop_trailing_comma() {
         let stop = RawColorStop::parse_plist("(\n(1,0,0,1),\n0.5,\n)").unwrap();
-        assert_eq!(stop.color, RawColor(vec![1.0, 0.0, 0.0, 1.0]));
+        assert_eq!(stop.color.components, vec![1.0, 0.0, 0.0, 1.0]);
         assert_eq!(stop.stop_offset, 0.5);
     }
 
