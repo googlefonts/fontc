@@ -1,0 +1,43 @@
+{
+glyphname = L;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(1,0,0,1),
+0,
+),
+(
+(0,0,1,1),
+1,
+),
+);
+angle = 0;
+end = (-0.2,0.5);
+endRadius = 1.28081;
+start = (-0.2,0.5);
+type = radial;
+};
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 76;
+}

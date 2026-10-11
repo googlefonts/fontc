@@ -7,7 +7,8 @@ saved by Glyphs 4 as format version 3, which fontc already reads.
 ## <name>/g4v3, <name>/g4v4
 
 The `glyphs3/<name>` test file, opened in Glyphs 4 and saved with
-`formatVersion=3` and `formatVersion=4`. Both should read and compile the same.
+`formatVersion=3` and `formatVersion=4` (as packages in `<name>-pkg/`). Both
+should read and compile the same.
 Glyphs 4 also changes some v3 content when saving (e.g. grey palette colors and
 pre-3170 `Axis Mappings`), so compare the two saves rather than the original.
 

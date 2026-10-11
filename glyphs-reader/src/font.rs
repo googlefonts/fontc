@@ -737,7 +737,13 @@ pub struct Gradient {
     pub start: Vec<OrderedFloat<f64>>,
     pub end: Vec<OrderedFloat<f64>>,
     pub colors: Vec<ColorStop>,
+    /// "" for linear, "circle" (v3) or "radial" (v4) for radial gradients
     pub style: String,
+    /// The radius of a v4 radial gradient, relative to the shape bounds.
+    ///
+    /// v3 radial gradients have none: the radius reaches the farthest corner
+    /// of the bounds.
+    pub end_radius: Option<OrderedFloat<f64>>,
 }
 
 impl Gradient {
@@ -853,6 +859,7 @@ impl RawGradient {
                 })
                 .collect::<Result<_, Error>>()?,
             style: self.style,
+            end_radius: self.end_radius.map(Into::into),
         })
     }
 }
@@ -3091,8 +3098,13 @@ impl RawFont {
                     if let Some(gradient) = &attrs.gradient {
                         match gradient.style.as_str() {
                             "conic" => add(format!("conic gradient in glyph '{name}'")),
-                            // temporary, until we map the radius
-                            "radial" => add(format!("radial gradient in glyph '{name}'")),
+                            // we only support the radial gradients v3 can express
+                            "radial" if gradient.end_radius.is_none() => {
+                                add(format!("radial gradient without radius in glyph '{name}'"))
+                            }
+                            "radial" if gradient.start != gradient.end => add(format!(
+                                "radial gradient with distinct centers in glyph '{name}'"
+                            )),
                             _ => (),
                         }
                         if let Some(extend) = &gradient.extend
@@ -5406,6 +5418,40 @@ mod tests {
         assert_fonts_equal(&g3, &g4, &format!("{v3:?} vs {v4:?}"));
     }
 
+    /// v4 radial gradients have an explicit radius; v3 ones only have a
+    /// center, and an unused end point.
+    #[rstest]
+    #[case::glyphs("COLRv1-gradient")]
+    #[case::package("COLRv1-gradient-pkg")]
+    fn read_glyphs4_radial_gradients(#[case] name: &str) {
+        let (v3, v4) = glyphs4_pair(name);
+        let g3 = Font::load(&v3).unwrap();
+        let mut g4 = Font::load(&v4).unwrap();
+        let mut radii = Vec::new();
+        for shape in g4
+            .glyphs
+            .values_mut()
+            .flat_map(|g| g.layers.iter_mut())
+            .flat_map(|l| l.shapes.iter_mut())
+        {
+            let attributes = match shape {
+                Shape::Path(path) => &mut path.attributes,
+                Shape::Component(component) => &mut component.attributes,
+            };
+            if let Some(gradient) = attributes.gradient.as_mut()
+                && gradient.style == "radial"
+            {
+                assert_eq!(gradient.start, gradient.end);
+                gradient.style = "circle".into();
+                gradient.end = vec![0.0.into(), 0.0.into()];
+                radii.push(gradient.end_radius.take().unwrap().0);
+            }
+        }
+        // in glyph name order, K to N
+        assert_eq!(radii, vec![0.70743, 1.28081, 1.41486, 1.41486]);
+        assert_fonts_equal(&g3, &g4, &format!("{v3:?} vs {v4:?}"));
+    }
+
     fn axis_map(points: &[(f64, f64)]) -> AxisUserToDesignMap {
         AxisUserToDesignMap(
             points
@@ -7133,6 +7179,7 @@ unitsPerEm = 1000;
                         },
                     ],
                     style: "circle".to_string(),
+                    end_radius: None,
                 },
             ),
         ]);

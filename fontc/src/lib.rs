@@ -7651,6 +7651,8 @@ mod tests {
     #[case::intermediate_layer("IntermediateLayer")]
     #[case::bracket_rules("bracket-rules-processed-in-glyph-order")]
     #[case::oswald_ae_comb("Oswald-AE-comb")]
+    #[case::colrv1_gradient("COLRv1-gradient")]
+    #[case::colrv1_gradient_pkg("COLRv1-gradient-pkg")]
     #[case::colrv0_1layer("COLRv0-1layer")]
     #[case::colrv0_2layers("COLRv0-2layers")]
     #[case::colrv0_2masters_brace("COLRv0-2masters-brace")]

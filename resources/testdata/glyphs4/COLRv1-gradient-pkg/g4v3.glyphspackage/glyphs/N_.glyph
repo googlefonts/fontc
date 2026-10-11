@@ -1,0 +1,41 @@
+{
+glyphname = N;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(255,0,0,255),
+0
+),
+(
+(0,0,255,255),
+1
+)
+);
+end = (0,0);
+start = (1,1);
+type = circle;
+};
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 78;
+}

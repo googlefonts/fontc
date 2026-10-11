@@ -651,6 +651,7 @@ enum Colrv1RunType {
     Radial(
         Vec<OrderedFloat<f64>>,
         Vec<OrderedFloat<f64>>,
+        Option<OrderedFloat<f64>>,
         Vec<glyphs_reader::ColorStop>,
     ),
     Unknown(ShapeAttributes),
@@ -677,10 +678,11 @@ impl Colrv1RunType {
         }
         let attr = shape.attributes();
         if let Some(gradient) = &attr.gradient {
-            if gradient.style == "circle" {
+            if matches!(gradient.style.as_str(), "circle" | "radial") {
                 return Colrv1RunType::Radial(
                     gradient.start.clone(),
                     gradient.end.clone(),
+                    gradient.end_radius,
                     gradient.colors.clone(),
                 );
             }
@@ -1203,6 +1205,19 @@ pub(crate) fn to_ir_paint(
                     .into(),
                 ))
             }
+            // v4 radial gradients have an explicit radius, relative to the
+            // bounds; we only accept those with a single center (what v3
+            // circles are converted to) and no start radius.
+            "radial" => Ok(Paint::RadialGradient(
+                PaintRadialGradient {
+                    p0: start,
+                    p1: start,
+                    r0: None,
+                    r1: gradient.end_radius.map(|r| (r.0 as f32).into()),
+                    color_line: to_ir_color_stops(&gradient.colors),
+                }
+                .into(),
+            )),
             "" => {
                 // p2 is calculated in backend after scaling to absolute coordinates
                 // (rotation works differently in percentage vs absolute space).

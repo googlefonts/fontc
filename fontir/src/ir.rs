@@ -2222,11 +2222,13 @@ pub struct PaintLinearGradient {
 pub struct PaintRadialGradient {
     pub color_line: Vec<ColorStop>,
     pub p0: Point,
-    /// Inner radius. None means 0 (gradient radiating from center, not a ring).
+    /// Inner radius, relative to the bounding box like the points (see `r1`).
+    /// None means 0 (gradient radiating from center, not a ring).
     pub r0: Option<OrderedFloat<f32>>,
     pub p1: Point,
-    /// Outer radius. None means calculate as max distance from center to
-    /// bounding box corners (like Glyphs.app does).
+    /// Outer radius, relative to the bounding box: it is scaled by the square
+    /// root of the box's area, like Glyphs 4 does. None means calculate as max
+    /// distance from center to bounding box corners (like Glyphs 3 does).
     pub r1: Option<OrderedFloat<f32>>,
 }
 

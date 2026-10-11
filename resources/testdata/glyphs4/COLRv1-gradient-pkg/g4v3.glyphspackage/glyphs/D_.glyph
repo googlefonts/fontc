@@ -1,0 +1,40 @@
+{
+glyphname = D;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = m01;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(255,0,0,255),
+0
+),
+(
+(0,0,255,255),
+1
+)
+);
+end = (0.75,0.75);
+start = (0.25,0.25);
+};
+};
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 68;
+}
