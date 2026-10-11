@@ -1,0 +1,415 @@
+{
+.appVersion = "3515";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+date = "2026-10-11 21:57:10 +0000";
+familyName = SmartProbe;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+iconName = Bold;
+id = m02;
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = use_a;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+piece = {
+A = 50;
+};
+ref = _a;
+}
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+piece = {
+A = 50;
+};
+ref = _a;
+}
+);
+width = 200;
+}
+);
+unicode = 65;
+},
+{
+glyphname = use_b;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+piece = {
+A = 50;
+B = -50;
+};
+ref = _b;
+}
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+piece = {
+A = 50;
+B = -50;
+};
+ref = _b;
+}
+);
+width = 200;
+}
+);
+unicode = 66;
+},
+{
+glyphname = use_e;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+piece = {
+E = 0;
+};
+ref = _e;
+}
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+piece = {
+E = 0;
+};
+ref = _e;
+}
+);
+width = 200;
+}
+);
+unicode = 67;
+},
+{
+export = 0;
+glyphname = _a;
+layers = (
+{
+layerId = m01;
+partSelection = {
+A = 2;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l)
+);
+}
+);
+width = 200;
+},
+{
+associatedMasterId = m01;
+layerId = "a-min";
+name = "a min";
+partSelection = {
+A = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,400,l),
+(0,400,l)
+);
+}
+);
+width = 200;
+},
+{
+layerId = m02;
+partSelection = {
+A = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,400,l),
+(0,400,l)
+);
+}
+);
+width = 200;
+},
+{
+associatedMasterId = m02;
+layerId = "a2-max";
+name = "a2 max";
+partSelection = {
+A = 2;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l)
+);
+}
+);
+width = 200;
+}
+);
+partsSettings = (
+{
+bottomValue = 0;
+name = A;
+topValue = 100;
+}
+);
+},
+{
+export = 0;
+glyphname = _b;
+layers = (
+{
+layerId = m01;
+partSelection = {
+A = 2;
+B = 2;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l)
+);
+}
+);
+width = 200;
+},
+{
+associatedMasterId = m01;
+layerId = "b-min";
+name = "b min";
+partSelection = {
+A = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,400,l),
+(0,400,l)
+);
+}
+);
+width = 200;
+},
+{
+associatedMasterId = m01;
+layerId = "b-low";
+name = "b low";
+partSelection = {
+A = 2;
+B = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,500,l),
+(0,500,l)
+);
+}
+);
+width = 200;
+},
+{
+layerId = m02;
+partSelection = {
+A = 2;
+B = 2;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,700,l),
+(0,700,l)
+);
+}
+);
+width = 200;
+},
+{
+associatedMasterId = m02;
+layerId = "b2-min";
+name = "b2 min";
+partSelection = {
+A = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,500,l),
+(0,500,l)
+);
+}
+);
+width = 200;
+},
+{
+associatedMasterId = m02;
+layerId = "b2-low";
+name = "b2 low";
+partSelection = {
+B = 1;
+};
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l)
+);
+}
+);
+width = 200;
+}
+);
+partsSettings = (
+{
+bottomValue = 0;
+name = A;
+topValue = 100;
+},
+{
+bottomValue = -100;
+name = B;
+topValue = 0;
+}
+);
+},
+{
+export = 0;
+glyphname = _e;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,400,l),
+(0,400,l)
+);
+}
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l)
+);
+}
+);
+width = 200;
+}
+);
+partsSettings = (
+{
+bottomValue = 0;
+name = E;
+topValue = 0;
+}
+);
+}
+);
+instances = (
+{
+axesValues = (
+400
+);
+instanceInterpolations = {
+m01 = 1;
+};
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+instanceInterpolations = {
+m02 = 1;
+};
+name = Bold;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

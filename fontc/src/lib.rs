@@ -7656,6 +7656,13 @@ mod tests {
     #[case::colrv1_manyshapes_per_glyph("COLRv1-manyshapes-per-glyph")]
     #[case::colrv1_reordered("COLRv1-reordered")]
     #[case::colrv1_var("COLRv1-var")]
+    #[case::smart_components("SmartComponents")]
+    #[case::smart_components_pkg("SmartComponents-pkg")]
+    #[case::smart_component_explicit_anchors("SmartComponentExplicitAnchors")]
+    #[case::smart_component_underscore_anchors("SmartComponentUnderscoreAnchors")]
+    #[case::smart_component_single_layer_anchors("SmartComponentSingleLayerAnchors")]
+    #[case::smart_glyph_axes("SmartGlyphAxes")]
+    #[case::dynapuff_smart("DynaPuff-smart")]
     fn compile_glyphs4_like_glyphs3(#[case] name: &str) {
         let dir = testdata_dir().join("glyphs4").join(name);
         let ext = if dir.join("g4v3.glyphspackage").exists() {
@@ -7666,6 +7673,17 @@ mod tests {
         let v3 = TestCompile::compile_source(&format!("glyphs4/{name}/g4v3.{ext}"));
         let v4 = TestCompile::compile_source(&format!("glyphs4/{name}/g4v4.{ext}"));
         assert_fonts_equal_ignoring_timestamps(&v3.raw_font, &v4.raw_font);
+    }
+
+    /// The v3 and v4 saves of a smart component cycle fail the same way
+    #[rstest]
+    #[case::g4v3("g4v3")]
+    #[case::g4v4("g4v4")]
+    fn glyphs4_smart_component_cycle(#[case] version: &str) {
+        assert_component_cycle_error(
+            &format!("glyphs4/SmartComponentCycle/{version}.glyphs"),
+            "Component cycle through glyphs [cyca, cycb, selfref]",
+        );
     }
 
     /// A Glyphs 4 radial gradient radius is relative to the bounds of its shape,

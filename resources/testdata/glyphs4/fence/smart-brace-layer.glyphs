@@ -1,0 +1,243 @@
+{
+.appVersion = "3515";
+.formatVersion = 4;
+axes = (
+{
+name = Weight;
+tag = wght;
+},
+);
+date = "2026-10-11 21:57:10 +0000";
+fontMaster = (
+{
+axesValues = (
+400,
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700,
+);
+id = m02;
+name = Bold;
+},
+);
+glyphs = (
+{
+glyphname = use_f;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+piece = {
+F = 50;
+};
+ref = _f;
+},
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+piece = {
+F = 50;
+};
+ref = _f;
+},
+);
+width = 200;
+},
+);
+unicode = 65;
+},
+{
+axes = (
+{
+default = 100;
+name = F;
+},
+);
+export = 0;
+glyphname = _f;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m01;
+attr = {
+coordinates = (
+"-",
+0,
+);
+};
+layerId = f0;
+name = f0;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,400,l),
+(0,400,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m01;
+attr = {
+coordinates = (550,"-");
+};
+layerId = "f-brace";
+name = "f brace";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,650,l),
+(0,650,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m01;
+attr = {
+coordinates = (550,0);
+};
+layerId = "f-brace0";
+name = "f brace0";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,450,l),
+(0,450,l),
+);
+},
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,700,l),
+(0,700,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m02;
+attr = {
+coordinates = (
+"-",
+0,
+);
+};
+layerId = "f2-0";
+name = "f2 0";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,500,l),
+(0,500,l),
+);
+},
+);
+width = 200;
+},
+);
+},
+);
+instances = (
+{
+axesValues = (
+400,
+);
+id = "D842AE7A-3B4E-47C9-97E4-977D2E146383";
+instanceInterpolations = {
+m01 = 1;
+};
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = Regular;
+},
+);
+},
+);
+},
+{
+axesValues = (
+700,
+);
+id = "B7BC4D7A-51D8-42BD-8DE0-691134606C63";
+instanceInterpolations = {
+m02 = 1;
+};
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = Bold;
+},
+);
+},
+);
+},
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = SmartProbe;
+},
+);
+},
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

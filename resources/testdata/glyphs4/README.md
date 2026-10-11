@@ -16,6 +16,16 @@ pre-3170 `Axis Mappings`), so compare the two saves rather than the original.
 and a second `ss01` feature added through the Python API, to cover the feature
 files of v4 packages (including the `ss01.2.fea` name clash).
 
+`SmartComponents`, `SmartComponentExplicitAnchors`,
+`SmartComponentUnderscoreAnchors`, `SmartComponentSingleLayerAnchors` and
+`SmartComponentCycle` are the `glyphs3/` files of the same name.
+`DynaPuff-smart` is the Google Fonts DynaPuff source (OFL), cut down to the
+`smart.dash` smart glyph, the `emdash` using it and `space`, without features
+or kerning, before saving.
+
+`SmartGlyphAxes` was written by hand as a v4 file, then loaded and saved by
+Glyphs 4.
+
 ## fence/
 
 Glyphs 4 constructs fontc does not support yet. Each file is a copy of a
@@ -49,6 +59,8 @@ saved with `formatVersion=4`:
   circle gradient, added to `K` (by hand to the v3 file, then loaded and saved
   by Glyphs 4). Glyphs 4 radial radii are relative to the bounds of each shape,
   so one gradient over the bounds of both does not match.
-* `smart-components`, `smart-component-axes`: `glyphs3/SmartComponents` and
-  `glyphs3/SmartComponentExplicitAnchors` saved as is: v4 writes smart glyph
-  axes on the glyph and layer coordinates for them, with `"-"` for the default
+* `smart-intermediate-layer`, `smart-default-between-layers`,
+  `smart-brace-layer`: hand-written v4 files, like `SmartGlyphAxes`, loaded
+  and saved by Glyphs 4. Glyphs 4 smart glyph layers can be anywhere on a glyph
+  axis, but v3 only has layers at either end of it. Glyphs 4 also saves the
+  font axis coordinates of a brace layer in a smart glyph wrongly as v3.

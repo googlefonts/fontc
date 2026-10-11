@@ -1,0 +1,453 @@
+{
+.appVersion = "3515";
+.formatVersion = 4;
+axes = (
+{
+name = Weight;
+tag = wght;
+},
+);
+date = "2026-10-11 21:57:10 +0000";
+fontMaster = (
+{
+axesValues = (
+400,
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700,
+);
+id = m02;
+name = Bold;
+},
+);
+glyphs = (
+{
+glyphname = use_a;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+piece = {
+A = 50;
+};
+ref = _a;
+},
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+piece = {
+A = 50;
+};
+ref = _a;
+},
+);
+width = 200;
+},
+);
+unicode = 65;
+},
+{
+glyphname = use_b;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+piece = {
+A = 50;
+B = -50;
+};
+ref = _b;
+},
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+piece = {
+A = 50;
+B = -50;
+};
+ref = _b;
+},
+);
+width = 200;
+},
+);
+unicode = 66;
+},
+{
+glyphname = use_e;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+piece = {
+E = 0;
+};
+ref = _e;
+},
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+piece = {
+E = 0;
+};
+ref = _e;
+},
+);
+width = 200;
+},
+);
+unicode = 67;
+},
+{
+axes = (
+{
+default = 100;
+name = A;
+},
+);
+export = 0;
+glyphname = _a;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m01;
+attr = {
+coordinates = (
+"-",
+0,
+);
+};
+layerId = "a-min";
+name = "a min";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,400,l),
+(0,400,l),
+);
+},
+);
+width = 200;
+},
+{
+attr = {
+coordinates = (
+"-",
+0,
+);
+};
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,400,l),
+(0,400,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m02;
+attr = {
+coordinates = (
+"-",
+100,
+);
+};
+layerId = "a2-max";
+name = "a2 max";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l),
+);
+},
+);
+width = 200;
+},
+);
+},
+{
+axes = (
+{
+default = 100;
+name = A;
+},
+{
+name = B;
+},
+);
+export = 0;
+glyphname = _b;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m01;
+attr = {
+coordinates = (
+"-",
+0,
+"-",
+);
+};
+layerId = "b-min";
+name = "b min";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,400,l),
+(0,400,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m01;
+attr = {
+coordinates = (
+"-",
+100,
+-100,
+);
+};
+layerId = "b-low";
+name = "b low";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,500,l),
+(0,500,l),
+);
+},
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,700,l),
+(0,700,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m02;
+attr = {
+coordinates = (
+"-",
+0,
+"-",
+);
+};
+layerId = "b2-min";
+name = "b2 min";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,500,l),
+(0,500,l),
+);
+},
+);
+width = 200;
+},
+{
+associatedMasterId = m02;
+attr = {
+coordinates = (
+"-",
+"-",
+-100,
+);
+};
+layerId = "b2-low";
+name = "b2 low";
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l),
+);
+},
+);
+width = 200;
+},
+);
+},
+{
+axes = (
+{
+name = E;
+},
+);
+export = 0;
+glyphname = _e;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,400,l),
+(0,400,l),
+);
+},
+);
+width = 200;
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(100,0,l),
+(100,600,l),
+(0,600,l),
+);
+},
+);
+width = 200;
+},
+);
+},
+);
+instances = (
+{
+axesValues = (
+400,
+);
+id = "738D5DBD-3ED5-4BA3-8349-3E82D7CB53B4";
+instanceInterpolations = {
+m01 = 1;
+};
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = Regular;
+},
+);
+},
+);
+},
+{
+axesValues = (
+700,
+);
+id = "22537CF7-1036-408C-AB1A-4FC3EBB796B1";
+instanceInterpolations = {
+m02 = 1;
+};
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = Bold;
+},
+);
+},
+);
+},
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = SmartProbe;
+},
+);
+},
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

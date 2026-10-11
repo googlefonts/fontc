@@ -1,0 +1,44 @@
+{
+.appVersion = "3434";
+.formatVersion = 4;
+date = "2026-10-11 20:05:21 +0000";
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = -200;
+},
+);
+name = Regular;
+},
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = descender;
+},
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = SmartComponentsFromGlyphsExample;
+},
+);
+},
+);
+settings = {
+colorSpace = "apple-rgb";
+};
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

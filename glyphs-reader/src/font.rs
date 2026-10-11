@@ -5477,11 +5477,15 @@ mod tests {
     #[case::palette_color_names("palette-color-names", "color names in Color Palettes")]
     #[case::palette_name("palette-name", "palette name in Color Palettes")]
     #[case::palette_background("palette-background", "palette background style in Color Palettes")]
-    #[case::smart_component_coordinates(
-        "smart-components",
-        "smart glyph layer coordinates in glyph '_part.shoulder'"
+    #[case::smart_intermediate_layer(
+        "smart-intermediate-layer",
+        "intermediate value 50 of smart glyph axis 'D' in glyph '_d'"
     )]
-    #[case::smart_component_axes("smart-component-axes", "smart glyph axes in glyph '_part.")]
+    #[case::smart_default_between_layers(
+        "smart-default-between-layers",
+        "intermediate value 50 of smart glyph axis 'C' in glyph '_c'"
+    )]
+    #[case::smart_brace_layer("smart-brace-layer", "intermediate layer in smart glyph '_f'")]
     fn reject_unsupported_glyphs4(#[case] name: &str, #[case] expected: &str) {
         let path = glyphs4_dir().join(format!("fence/{name}.glyphs"));
         let err = Font::load(&path).unwrap_err().to_string();
@@ -5536,6 +5540,14 @@ mod tests {
     #[case::colrv1_manyshapes_per_glyph("COLRv1-manyshapes-per-glyph")]
     #[case::colrv1_reordered("COLRv1-reordered")]
     #[case::colrv1_var("COLRv1-var")]
+    #[case::smart_components("SmartComponents")]
+    #[case::smart_components_pkg("SmartComponents-pkg")]
+    #[case::smart_component_explicit_anchors("SmartComponentExplicitAnchors")]
+    #[case::smart_component_underscore_anchors("SmartComponentUnderscoreAnchors")]
+    #[case::smart_component_single_layer_anchors("SmartComponentSingleLayerAnchors")]
+    #[case::smart_component_cycle("SmartComponentCycle")]
+    #[case::smart_glyph_axes("SmartGlyphAxes")]
+    #[case::dynapuff_smart("DynaPuff-smart")]
     fn read_glyphs4_like_glyphs3(#[case] name: &str) {
         let (v3, v4) = glyphs4_pair(name);
         let g3 = Font::load(&v3).unwrap();
@@ -5648,6 +5660,86 @@ mod tests {
             err.contains("radial gradient without radius in glyph 'A'"),
             "{err}"
         );
+    }
+
+    /// A v4 smart glyph with two font axes and two masters, with the given
+    /// glyph axes and, after the master layer of the first master, layers
+    fn glyphs4_smart_glyph(axes: &str, layers: &str) -> Result<Font, Error> {
+        Font::load_from_string(&format!(
+            "{{.formatVersion = 4; axes = ({{name = Weight; tag = wght;}}, {{name = Width; \
+             tag = wdth;}}); fontMaster = ({{axesValues = (400, 100); id = m01;}}, \
+             {{axesValues = (700, 100); id = m02;}}); glyphs = ({{glyphname = _part; \
+             axes = ({axes}); layers = ({{layerId = m01; width = 600;}}, {layers});}}); \
+             unitsPerEm = 1000;}}"
+        ))
+    }
+
+    /// '-' is the axis default; leaving the axis out of the v3 part selection
+    /// of a layer only means the same when its master layer is at the default
+    #[test]
+    fn glyphs4_unset_smart_glyph_coordinates() {
+        let font = glyphs4_smart_glyph(
+            "{name = A; default = 100;}",
+            r#"{layerId = m02; attr = {coordinates = ("-", "-", 0);}; width = 600;},
+            {associatedMasterId = m01; layerId = l1; attr = {coordinates = ("-", "-", "-");};
+            width = 600;}, {associatedMasterId = m01; layerId = l2; attr = {coordinates =
+            ("-", "-", 0);}; width = 600;}, {associatedMasterId = m02; layerId = l3; attr =
+            {coordinates = ("-", "-", "-");}; width = 600;}"#,
+        )
+        .unwrap();
+        let glyph = &font.glyphs["_part"];
+        assert_eq!(
+            glyph.smart_component_axes,
+            BTreeMap::from([("A".into(), 0..=100)])
+        );
+        let positions = glyph
+            .layers
+            .iter()
+            .map(|l| {
+                (
+                    l.layer_id.as_str(),
+                    l.attributes.coordinates.len(),
+                    l.smart_component_positions
+                        .iter()
+                        .map(|(k, v)| (k.as_str(), *v))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        // l1 is at its master's location, so it is a draft and dropped
+        assert_eq!(
+            positions,
+            vec![
+                ("m01", 0, vec![("A", AxisPole::Max)]),
+                ("m02", 0, vec![("A", AxisPole::Min)]),
+                ("l2", 0, vec![("A", AxisPole::Min)]),
+                ("l3", 0, vec![("A", AxisPole::Max)]),
+            ]
+        );
+    }
+
+    #[rstest]
+    #[case::partly_unset_font_coordinates(
+        r#"("-", 100, 0)"#,
+        "partly unset ('-') font axis coordinates in glyph '_part'"
+    )]
+    #[case::non_integer_value(
+        r#"("-", "-", 0.5)"#,
+        "non-integer value 0.5 of smart glyph axis 'A' in glyph '_part'"
+    )]
+    #[case::too_many_coordinates(
+        r#"("-", "-", 1, 2)"#,
+        "more layer coordinates than axes in glyph '_part'"
+    )]
+    fn reject_unsupported_glyphs4_smart_glyph(#[case] coordinates: &str, #[case] expected: &str) {
+        let layers = format!(
+            "{{layerId = m02; width = 600;}}, {{associatedMasterId = m01; layerId = l1; \
+             attr = {{coordinates = {coordinates};}}; width = 600;}}"
+        );
+        let err = glyphs4_smart_glyph("{name = A;}", &layers)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(expected), "expected '{expected}' in '{err}'");
     }
 
     /// Only v4 writes '-' coordinates, but they must not be read as a location

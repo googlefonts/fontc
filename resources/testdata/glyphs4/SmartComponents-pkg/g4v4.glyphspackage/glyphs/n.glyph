@@ -1,0 +1,35 @@
+{
+glyphname = n;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(187,1,l),
+(193,28,l),
+(153,41,l),
+(153,286,l),
+(127,365,l),
+(26,345,l),
+(26,321,l),
+(88,280,l),
+(88,39,l),
+(60,32,l),
+(57,1,l),
+);
+},
+{
+piece = {
+crotchDepth = -100;
+shoulderWidth = 0;
+};
+ref = _part.shoulder;
+},
+);
+width = 600;
+},
+);
+unicode = 110;
+}

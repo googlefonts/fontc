@@ -1,0 +1,31 @@
+{
+.appVersion = "3434";
+.formatVersion = 3;
+date = "2026-10-11 20:05:21 +0000";
+familyName = SmartComponentsFromGlyphsExample;
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = -200;
+}
+);
+name = Regular;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = descender;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
