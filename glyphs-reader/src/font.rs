@@ -802,6 +802,8 @@ struct RawShapeAttributes {
     opacity: Option<f64>,
     // v4
     compositing: Option<String>,
+    // v4: 1 subtracts the shape from the preceding ones, 2 intersects with them
+    mask: Option<i64>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, FromPlist)]
@@ -3090,6 +3092,36 @@ impl RawFont {
                 add(format!("inactive master '{}'", master.id));
             }
         }
+        // v3 has no names for palettes and colors, which would go in CPAL v1
+        let palette_params = std::iter::once(&self.custom_parameters)
+            .chain(self.font_master.iter().map(|m| &m.custom_parameters))
+            .flat_map(|params| params.0.iter())
+            .filter(|param| param.name == "Color Palettes");
+        for param in palette_params {
+            if param
+                .value
+                .get("names")
+                .is_some_and(|names| names.as_dict().is_none_or(|d| !d.is_empty()))
+            {
+                add("color names in Color Palettes".into());
+            }
+            for palette in param
+                .value
+                .get("palettes")
+                .and_then(Plist::as_array)
+                .unwrap_or_default()
+            {
+                if palette.get("name").is_some() {
+                    add("palette name in Color Palettes".into());
+                }
+                if palette
+                    .get("backgroundStyle")
+                    .is_some_and(|style| style.as_array().is_none_or(|a| !a.is_empty()))
+                {
+                    add("palette background style in Color Palettes".into());
+                }
+            }
+        }
         for instance in &self.instances {
             if let Some(type_) = instance.type_.as_deref()
                 && matches!(type_, "static" | "icon" | "particles")
@@ -3143,6 +3175,9 @@ impl RawFont {
                     }
                     if attrs.compositing.is_some() {
                         add(format!("shape compositing in glyph '{name}'"));
+                    }
+                    if attrs.mask.is_some_and(|m| m != 0) {
+                        add(format!("shape mask in glyph '{name}'"));
                     }
                     if let Some(gradient) = &attrs.gradient {
                         match gradient.style.as_str() {
@@ -5410,6 +5445,10 @@ mod tests {
     #[case::shape_opacity("shape-opacity", "shape opacity in glyph 'A'")]
     #[case::shape_compositing("shape-compositing", "shape compositing in glyph 'A'")]
     #[case::shape_hidden("shape-hidden", "hidden shape in glyph 'exclam'")]
+    #[case::shape_mask("shape-mask", "shape mask in glyph 'exclam'")]
+    #[case::palette_color_names("palette-color-names", "color names in Color Palettes")]
+    #[case::palette_name("palette-name", "palette name in Color Palettes")]
+    #[case::palette_background("palette-background", "palette background style in Color Palettes")]
     #[case::smart_component_coordinates("smart-components", "smart glyph layer coordinates ('-')")]
     #[case::smart_component_axes("smart-component-axes", "smart glyph axes in glyph '_part.")]
     fn reject_unsupported_glyphs4(#[case] name: &str, #[case] expected: &str) {

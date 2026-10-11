@@ -30,6 +30,10 @@ saved with `formatVersion=4`:
 * `image-shape`: `WghtVar`, `layer.addShape_(GSImage.alloc().initWithPath_(png))`
 * `shape-group`: `WghtVar`, `layer.createShapeGroupFromShapes_([path])`
 * `shape-hidden`: `WghtVar`, `path.setHidden_(True)`
+* `shape-mask`: `WghtVar`, `path.attributes["mask"] = 1`
+* `palette-color-names`, `palette-name`, `palette-background`: `COLRv0-1layer`,
+  `setName_forColor_("Ink", 0)`, `setName_forPalette_("Night", 0)` and
+  `addAttribute_toPalette_(2, 0)` on the `Color Palettes` parameter
 * `instance-static`, `instance-icon`, `instance-particles`: `WghtVar`, a new
   instance with `setType_(2)`, `setType_(3)` and `setType_(4)`
 * `palette-ref`: `COLRv1-gradient`, a `GSPaletteColor` fill color
