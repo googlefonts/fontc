@@ -119,9 +119,9 @@ pub(crate) fn resolve_glyphs_app_expr(
     let result = match val_stack.pop() {
         // convert back to i16
         Some(Value::Named(val)) => {
-            ResolvedValue::Variable(val.into_iter().map(|(k, v)| (k, v.round() as _)).collect())
+            ResolvedValue::Variable(val.into_iter().map(|(k, v)| (k, v.trunc() as _)).collect())
         }
-        Some(Value::Lit(val)) => ResolvedValue::Scalar(val.round() as _),
+        Some(Value::Lit(val)) => ResolvedValue::Scalar(val.trunc() as _),
         _ => ResolvedValue::Scalar(0),
     };
     assert!(val_stack.is_empty());
@@ -180,8 +180,7 @@ mod tests {
 
         let expr = parse_expr(text);
         let val = resolve_glyphs_app_expr(&expr, |_| Default::default());
-        let expected = (2f64 + 4. * 5. / 7. - 3.).round() as i16;
-        assert_eq!(val, ResolvedValue::Scalar(expected));
+        assert_eq!(val, ResolvedValue::Scalar(1));
     }
 
     #[test]
@@ -221,7 +220,15 @@ mod tests {
         let text = "${padding/2.4}";
         let expr = parse_expr(text);
         let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
-        assert!(ordered_eq(&val, [4i16, 10]));
+        assert!(ordered_eq(&val, [4i16, 9]));
+    }
+
+    #[test]
+    fn truncate_negative_toward_zero() {
+        let text = "${padding / -4}";
+        let expr = parse_expr(text);
+        let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
+        assert!(ordered_eq(&val, [-2i16, -5]));
     }
 
     #[test]

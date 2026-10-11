@@ -1293,7 +1293,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 .resolve_glyphs_number_value(ident.text())
                 .unwrap_or_default()
                 .into_iter()
-                .map(|(k, v)| (k, v.round() as i16))
+                .map(|(k, v)| (k, v.trunc() as i16))
                 .collect(),
             typed::GlyphsAppNumberValue::Expr(expr) => {
                 match super::glyphsapp_syntax_ext::resolve_glyphs_app_expr(&expr, |name| {
