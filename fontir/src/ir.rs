@@ -457,7 +457,7 @@ impl GlobalMetricsBuilder {
         self.set_if_absent(GlobalMetric::Descender, pos, descender);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd8/Lib/ufo2ft/fontInfoData.py#L229-L238
-        let computed_typo_line_gap = (units_per_em * 1.2 + descender - ascender).max(0.);
+        let computed_typo_line_gap = ((units_per_em * 1.2).trunc() - ascender + descender).max(0.);
 
         // Capture the actual stored value: if Os2TypoLineGap was already set (e.g. from a
         // custom parameter), set_if_absent returns it unchanged; otherwise it stores and
@@ -2677,6 +2677,23 @@ mod tests {
         assert_eq!(
             754.0,
             built.get(GlobalMetric::HheaAscender, &pos).into_inner()
+        );
+    }
+
+    // ufo2ft truncates upem * 1.2 to an int before subtracting the ascender and descender
+    #[test]
+    fn default_typo_line_gap_truncates_like_ufo2ft() {
+        let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let mut metrics = GlobalMetricsBuilder::new();
+        metrics.populate_defaults(&pos, 1024, None, Some(768.0), Some(-256.0), None);
+
+        let built = metrics.build(&Axes::default()).unwrap();
+        assert_eq!(
+            (204.0, 972.0),
+            (
+                built.get(GlobalMetric::Os2TypoLineGap, &pos).into_inner(),
+                built.get(GlobalMetric::HheaAscender, &pos).into_inner(),
+            )
         );
     }
 
