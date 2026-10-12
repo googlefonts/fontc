@@ -12,7 +12,7 @@ pub use error::Error;
 pub use fontir::orchestration::Flags; // Re-export for library users
 use fontra2fontir::source::FontraIrSource;
 use glyphs2fontir::source::GlyphsIrSource;
-use ufo2fontir::source::DesignSpaceIrSource;
+use ufo2fontir::source::{DesignSpaceIrSource, is_ufo_json};
 use workload::Workload;
 
 use std::{
@@ -51,6 +51,7 @@ impl Input {
         match ext {
             "designspace" => Ok(Input::DesignSpacePath(path.to_path_buf())),
             "ufo" | "ufoz" => Ok(Input::DesignSpacePath(path.to_path_buf())),
+            "json" if is_ufo_json(path) => Ok(Input::DesignSpacePath(path.to_path_buf())),
             "glyphs" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "glyphspackage" => Ok(Input::GlyphsPath(path.to_path_buf())),
             "fontra" => Ok(Input::FontraPath(path.to_path_buf())),
@@ -7106,5 +7107,13 @@ mod tests {
             "expected {bold_fea} in:\n{diagnostics}"
         );
         assert!(!diagnostics.contains(&regular_fea), "{diagnostics}");
+    }
+
+    #[test]
+    fn bare_ufo_json_compiles_identically_to_directory() {
+        let json = TestCompile::compile_source("WghtVar-Regular.ufo.json");
+        let dir = TestCompile::compile_source("WghtVar-Regular.ufo");
+
+        assert_eq!(json.raw_font, dir.raw_font);
     }
 }

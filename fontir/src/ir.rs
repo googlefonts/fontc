@@ -1101,8 +1101,8 @@ pub enum FeaturesSource {
         fea_content: String,
         /// The file the content came from, used to name it in diagnostics.
         ///
-        /// This need not be a file on disk: a zipped UFO's features are named
-        /// as if the archive were a directory, e.g. `Foo.ufoz/features.fea`.
+        /// This need not be a file on disk: the features of a zipped or JSON
+        /// UFO are named as if it were a directory, e.g. `Foo.ufoz/features.fea`.
         path: Option<PathBuf>,
         include_dir: Option<PathBuf>,
     },
