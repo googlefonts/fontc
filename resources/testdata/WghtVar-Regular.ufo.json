@@ -1,0 +1,185 @@
+{
+  "layers": [
+    {
+      "name": "public.default",
+      "glyphs": {
+        "bar": {
+          "width": 517,
+          "unicodes": [
+            124
+          ],
+          "contours": [
+            {
+              "points": [
+                {
+                  "x": 222,
+                  "y": -241,
+                  "type": "line"
+                },
+                {
+                  "x": 295,
+                  "y": -241,
+                  "type": "line"
+                },
+                {
+                  "x": 295,
+                  "y": 760,
+                  "type": "line"
+                },
+                {
+                  "x": 222,
+                  "y": 760,
+                  "type": "line"
+                }
+              ]
+            }
+          ]
+        },
+        "plus": {
+          "width": 557,
+          "unicodes": [
+            43
+          ],
+          "contours": [
+            {
+              "points": [
+                {
+                  "x": 242,
+                  "y": 111,
+                  "type": "line"
+                },
+                {
+                  "x": 314,
+                  "y": 111,
+                  "type": "line"
+                },
+                {
+                  "x": 314,
+                  "y": 317,
+                  "type": "line"
+                },
+                {
+                  "x": 513,
+                  "y": 317,
+                  "type": "line"
+                },
+                {
+                  "x": 513,
+                  "y": 388,
+                  "type": "line"
+                },
+                {
+                  "x": 314,
+                  "y": 388,
+                  "type": "line"
+                },
+                {
+                  "x": 314,
+                  "y": 595,
+                  "type": "line"
+                },
+                {
+                  "x": 242,
+                  "y": 595,
+                  "type": "line"
+                },
+                {
+                  "x": 242,
+                  "y": 388,
+                  "type": "line"
+                },
+                {
+                  "x": 43,
+                  "y": 388,
+                  "type": "line"
+                },
+                {
+                  "x": 43,
+                  "y": 317,
+                  "type": "line"
+                },
+                {
+                  "x": 242,
+                  "y": 317,
+                  "type": "line"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "{600}",
+      "glyphs": {
+        "bar": {
+          "width": 540,
+          "unicodes": [
+            124
+          ],
+          "contours": [
+            {
+              "points": [
+                {
+                  "x": 222,
+                  "y": -232,
+                  "type": "line"
+                },
+                {
+                  "x": 318,
+                  "y": -232,
+                  "type": "line"
+                },
+                {
+                  "x": 318,
+                  "y": 758,
+                  "type": "line"
+                },
+                {
+                  "x": 222,
+                  "y": 758,
+                  "type": "line"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "info": {
+    "familyName": "Wght Var",
+    "unitsPerEm": 1000,
+    "ascender": 799.0,
+    "openTypeHeadCreated": "2023/05/05 15:11:55",
+    "openTypeOS2Panose": [
+      2,
+      11,
+      5,
+      2,
+      4,
+      5,
+      4,
+      2,
+      2,
+      4
+    ]
+  },
+  "features": "# aalt lookups are supposed to go \"at the front\" but it goes after rvrn\nfeature aalt {\n    feature salt;\n    sub plus by bar;\n} aalt;\n\n\n# salt lookup should end up at the end\nfeature salt {\n    sub bar by plus;\n} salt;\n",
+  "groups": {
+    "public.kern1.correct_name": [
+      "bar",
+      "plus"
+    ]
+  },
+  "kerning": {
+    "bar": {
+      "bar": -300
+    }
+  },
+  "lib": {
+    "public.glyphOrder": [
+      "plus"
+    ]
+  }
+}

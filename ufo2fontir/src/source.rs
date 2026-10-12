@@ -73,9 +73,17 @@ pub struct DesignSpaceIrSource {
 /// The UFOs of the designspace, keyed by `source.filename`
 type Ufos = Arc<HashMap<String, Ufo>>;
 
+/// Whether `path` names a UFO in ufoLib2's JSON format, as written by
+/// `fontmake --ufo-structure=json`.
+pub fn is_ufo_json(path: &Path) -> bool {
+    path.file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(|name| name.to_ascii_lowercase().ends_with(".ufo.json"))
+}
+
 #[derive(Debug)]
 struct Ufo {
-    /// The path the designspace refers to, dir or zip; used for messages
+    /// The path the designspace refers to, dir, zip or JSON; used for messages
     path: PathBuf,
     reader: FontReader,
 }
@@ -84,6 +92,8 @@ impl Ufo {
     /// Open a UFO, indexing only the `layers` the designspace refers to
     /// (`None` being the default layer); others may be malformed, and are
     /// left alone as fontmake does.
+    ///
+    /// A JSON UFO is loaded whole, so all its layers must be valid.
     fn open(path: PathBuf, layers: &HashSet<Option<&str>>) -> Result<Self, BadSource> {
         let request = DataRequest::all()
             .data(false)
@@ -151,7 +161,7 @@ impl UfoLayer {
 /// A layer to read glifs from on demand
 pub(crate) struct Glif<'a> {
     pub(crate) layer: LayerReader<'a>,
-    /// Where the layer lives, for messages; a virtual path for a zipped UFO
+    /// Where the layer lives, for messages; a virtual path for a zipped or JSON UFO
     pub(crate) layer_dir: PathBuf,
 }
 
@@ -212,7 +222,7 @@ fn load_designspace(
                 other => BadSourceKind::Custom(other.to_string()),
             })?
         }
-        Some("ufo" | "ufoz") => {
+        Some(ext) if matches!(ext, "ufo" | "ufoz") || is_ufo_json(designspace_or_ufo) => {
             let filename = designspace_or_ufo
                 .file_name()
                 .and_then(OsStr::to_str)
@@ -904,8 +914,8 @@ fn units_per_em<'a>(font_infos: impl Iterator<Item = &'a norad::FontInfo>) -> Re
 /// The features.fea of a UFO, if it has one.
 ///
 /// A UFO on disk is referenced by path so includes resolve as they always have;
-/// the contents of a zipped UFO are read now. Either way, per the UFO spec,
-/// includes resolve against the directory the UFO lives in.
+/// the contents of a zipped or JSON UFO are read now. Either way, per the UFO
+/// spec, includes resolve against the directory the UFO lives in.
 fn features_source(ufo: &Ufo) -> Result<Option<FeaturesSource>, BadSource> {
     const FEATURES_FILE: &str = "features.fea";
     let include_dir = ufo
