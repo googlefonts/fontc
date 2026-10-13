@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     ffi::OsStr,
+    fmt::Write as _,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -103,15 +104,28 @@ impl Ufo {
                     || (dir == Path::new("glyphs") && layers.contains(&None))
             });
         let reader =
-            FontReader::open_requested(&path, &request).map_err(|e| BadSource::custom(&path, e))?;
+            FontReader::open_requested(&path, &request).map_err(|e| bad_source(&path, e))?;
         Ok(Ufo { path, reader })
     }
 
     fn load(&self, request: &DataRequest) -> Result<norad::Font, BadSource> {
         self.reader
             .load(request)
-            .map_err(|e| BadSource::custom(&self.path, e))
+            .map_err(|e| bad_source(&self.path, e))
     }
+}
+
+fn bad_source(path: impl Into<PathBuf>, err: impl std::error::Error) -> BadSource {
+    let mut msg = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        let cause_str = cause.to_string();
+        if !msg.contains(&cause_str) {
+            write!(msg, ": {cause_str}").unwrap();
+        }
+        source = cause.source();
+    }
+    BadSource::custom(path, msg)
 }
 
 /// A specific layer in a specific UFO.
@@ -177,7 +191,7 @@ impl Glif<'_> {
             .layer
             .load_glyph(glyph_name.as_str())
             .ok_or_else(|| BadSource::new(&path, BadSourceKind::ExpectedFile))?
-            .map_err(|e| BadSource::custom(&path, e))?;
+            .map_err(|e| bad_source(&path, e))?;
         Ok((glyph, path))
     }
 }
@@ -4589,6 +4603,45 @@ mod tests {
         assert!(
             err.contains("the Postscript field 'postscriptBlueValues' must contain pairs"),
             "expected inner cause in error message, got: {err}"
+        );
+    }
+
+    // https://github.com/googlefonts/fontc/issues/2242
+    #[test]
+    fn ufo_load_error_does_not_repeat_causes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ufo = tmp.path().join("WghtVar-Regular.ufo");
+        copy_dir(&testdata_dir().join("WghtVar-Regular.ufo"), &ufo);
+
+        // A broken glif fails in Glif::load; its cause is already interpolated
+        // into the outer error message and must not be repeated.
+        std::fs::write(
+            ufo.join("glyphs/bar.glif"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<glyph name="bar" format="2">
+  <outline>
+    <contour>
+  </outline>
+</glyph>
+"#,
+        )
+        .unwrap();
+        let source = DesignSpaceIrSource::new(&ufo).unwrap();
+        let ufo_layer = source.glyphs[&GlyphName::from("bar")]
+            .keys()
+            .next()
+            .unwrap();
+        let err = ufo_layer
+            .resolve(&source.ufos)
+            .unwrap()
+            .load(&"bar".into())
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err.matches("expected `</contour>`, but `</outline>` was found")
+                .count(),
+            1,
+            "expected cause once in error message, got: {err}"
         );
     }
 }
