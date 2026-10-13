@@ -37,7 +37,7 @@ fn main() {
             }
         }
         if !error_displayed {
-            error!("{e}{additional}");
+            error!("{}{additional}", e.display_with_causes());
         }
         std::process::exit(1);
     }

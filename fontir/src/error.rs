@@ -106,8 +106,7 @@ pub enum Error {
 }
 
 /// An error related to loading source input files
-#[derive(Debug, Error)]
-#[error("Reading source failed for '{path}': '{kind}'")]
+#[derive(Debug)]
 pub struct BadSource {
     /// The path to the file where the error occured
     path: PathBuf,
@@ -126,6 +125,13 @@ pub enum BadSourceKind {
     Io(io::Error),
     /// Payload is a message to print; this error can originate from various parsers
     Custom(String),
+    /// An error from the library that reads the source, such as norad
+    ///
+    /// Its message is part of the [`BadSource`] message, and its causes are
+    /// the [`BadSource`]'s [`source`].
+    ///
+    /// [`source`]: std::error::Error::source
+    Error(Box<dyn std::error::Error + Send + Sync>),
 }
 
 /// An error that occurs while trying to convert a glyph to IR.
@@ -223,6 +229,35 @@ impl BadSource {
     pub fn custom(path: impl Into<PathBuf>, msg: impl Display) -> Self {
         Self::new(path, BadSourceKind::Custom(msg.to_string()))
     }
+
+    /// Wrap an error from the library that reads the source, keeping its causes.
+    pub fn wrap(
+        path: impl Into<PathBuf>,
+        error: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::new(path, BadSourceKind::Error(Box::new(error)))
+    }
+}
+
+impl Display for BadSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "Reading source failed for '{}': {}",
+            self.path.display(),
+            self.kind
+        )
+    }
+}
+
+impl std::error::Error for BadSource {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match &self.kind {
+            BadSourceKind::Io(e) => e.source(),
+            BadSourceKind::Error(e) => e.source(),
+            _ => None,
+        }
+    }
 }
 
 impl BadGlyph {
@@ -277,6 +312,7 @@ impl std::fmt::Display for BadSourceKind {
             BadSourceKind::ExpectedParent => f.write_str("missing parent directory"),
             BadSourceKind::Io(e) => e.fmt(f),
             BadSourceKind::Custom(e) => f.write_str(e),
+            BadSourceKind::Error(e) => e.fmt(f),
         }
     }
 }
