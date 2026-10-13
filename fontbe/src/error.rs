@@ -15,10 +15,10 @@ use thiserror::Error;
 use write_fonts::{
     read::ReadError,
     tables::{
-        cmap::CmapConflict, glyf::MalformedPath, gvar::iup::IupError,
+        cmap::CmapConflict, glyf::MalformedPath, gvar::iup::IupError, name::NameRecord,
         variations::TupleVariationStoreInputError,
     },
-    types::{GlyphId, NameId, Tag},
+    types::{GlyphId, Tag},
 };
 
 #[derive(Debug, Error)]
@@ -124,15 +124,11 @@ pub enum Error {
     #[error("No palette entry for '{0:?}'")]
     MissingPaletteEntry(Color),
     #[error(
-        "name ID {} (platform {platform_id}, encoding {encoding_id}, language {language_id}) {problem}: {string:?}",
-        .name_id.to_u16()
+        "name ID {} (platform {}, encoding {}, language {}) {problem}: {:?}",
+        .record.name_id.to_u16(), .record.platform_id, .record.encoding_id, .record.language_id, .record.string.as_str()
     )]
-    NameRecordEncoding {
-        name_id: NameId,
-        platform_id: u16,
-        encoding_id: u16,
-        language_id: u16,
-        string: String,
+    BadNameEncoding {
+        record: NameRecord,
         problem: NameRecordProblem,
     },
 }

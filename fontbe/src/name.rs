@@ -85,27 +85,21 @@ impl Work<Context, AnyWorkId, Error> for NameWork {
 fn check_encodable(records: &[NameRecord]) -> Result<(), Error> {
     for record in records {
         let problem = match Encoding::new(record.platform_id, record.encoding_id) {
-            Encoding::Utf16Be => continue,
-            Encoding::MacRoman => {
-                match record
-                    .string
-                    .chars()
-                    .find(|c| MacRomanMapping.encode(*c).is_none())
-                {
-                    Some(c) => NameRecordProblem::NotMacRoman(c),
-                    None => continue,
-                }
-            }
-            Encoding::Unknown => NameRecordProblem::UnsupportedEncoding,
+            Encoding::Utf16Be => None,
+            Encoding::MacRoman => record.string.chars().find_map(|c| {
+                MacRomanMapping
+                    .encode(c)
+                    .is_none()
+                    .then_some(NameRecordProblem::NotMacRoman(c))
+            }),
+            Encoding::Unknown => Some(NameRecordProblem::UnsupportedEncoding),
         };
-        return Err(Error::NameRecordEncoding {
-            name_id: record.name_id,
-            platform_id: record.platform_id,
-            encoding_id: record.encoding_id,
-            language_id: record.language_id,
-            string: record.string.to_string(),
-            problem,
-        });
+        if let Some(problem) = problem {
+            return Err(Error::BadNameEncoding {
+                record: record.clone(),
+                problem,
+            });
+        }
     }
     Ok(())
 }
