@@ -4544,4 +4544,51 @@ mod tests {
             }])
         );
     }
+
+    // https://github.com/googlefonts/fontc/issues/2242
+    #[test]
+    fn ufo_load_error_includes_source_chain() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        // A directory UFO fails in Ufo::load when reading fontinfo.plist
+        let ufo = tmp.path().join("WghtVar-Regular.ufo");
+        copy_dir(&testdata_dir().join("WghtVar-Regular.ufo"), &ufo);
+        let items: String = (0..3)
+            .map(|i| format!("      <integer>{i}</integer>\n"))
+            .collect();
+        std::fs::write(
+            ufo.join("fontinfo.plist"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>postscriptBlueValues</key>
+    <array>
+{items}    </array>
+  </dict>
+</plist>
+"#
+            ),
+        )
+        .unwrap();
+        let err = DesignSpaceIrSource::new(&ufo).unwrap_err().to_string();
+        assert!(
+            err.contains("the Postscript field 'postscriptBlueValues' must contain pairs"),
+            "expected inner cause in error message, got: {err}"
+        );
+
+        // A JSON UFO is loaded whole in Ufo::open
+        let ufo_json = tmp.path().join("WghtVar-Regular.ufo.json");
+        std::fs::write(
+            &ufo_json,
+            r#"{"layers": [{"name": "public.default", "glyphs": {}}], "info": {"postscriptBlueValues": [0, 1, 2]}}"#,
+        )
+        .unwrap();
+        let err = DesignSpaceIrSource::new(&ufo_json).unwrap_err().to_string();
+        assert!(
+            err.contains("the Postscript field 'postscriptBlueValues' must contain pairs"),
+            "expected inner cause in error message, got: {err}"
+        );
+    }
 }
