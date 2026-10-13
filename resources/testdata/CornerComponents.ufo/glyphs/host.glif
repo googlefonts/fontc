@@ -1,0 +1,71 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="host" format="2">
+  <advance width="600"/>
+  <outline>
+    <contour>
+      <point x="40" y="0" type="line"/>
+      <point x="240" y="0" type="line"/>
+      <point x="240" y="300" type="line"/>
+      <point x="230" y="380"/>
+      <point x="190" y="450"/>
+      <point x="140" y="500" type="curve"/>
+      <point x="40" y="500" type="line"/>
+    </contour>
+  </outline>
+  <lib>
+    <dict>
+      <key>com.schriftgestaltung.hints</key>
+      <array>
+        <dict>
+          <key>name</key>
+          <string>_corner.serif</string>
+          <key>options</key>
+          <integer>0</integer>
+          <key>origin</key>
+          <array>
+            <integer>0</integer>
+            <integer>0</integer>
+          </array>
+          <key>scale</key>
+          <array>
+            <real>1.2</real>
+            <integer>1</integer>
+          </array>
+          <key>type</key>
+          <string>Corner</string>
+        </dict>
+        <dict>
+          <key>name</key>
+          <string>_corner.serif</string>
+          <key>options</key>
+          <integer>0</integer>
+          <key>origin</key>
+          <array>
+            <integer>0</integer>
+            <integer>5</integer>
+          </array>
+          <key>type</key>
+          <string>Corner</string>
+        </dict>
+        <dict>
+          <key>name</key>
+          <string>_corner.serif</string>
+          <key>options</key>
+          <integer>1</integer>
+          <key>origin</key>
+          <array>
+            <integer>0</integer>
+            <integer>4</integer>
+          </array>
+          <key>scale</key>
+          <array>
+            <real>0.5</real>
+            <real>0.5</real>
+          </array>
+          <key>type</key>
+          <string>Corner</string>
+        </dict>
+      </array>
+    </dict>
+  </lib>
+</glyph>

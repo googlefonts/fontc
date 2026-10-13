@@ -6755,6 +6755,27 @@ mod tests {
         assert_eq!(glyph.num_points(), 3); // instead of the 4 points in the source.
     }
 
+    // glyphsLib keeps Glyphs' corner components as hints in the glyph lib, and
+    // lists the cornerComponents filter in the lib so that ufo2ft applies them.
+    // The expected outlines are what that filter makes of them.
+    #[test]
+    fn ufo_with_corner_components() {
+        let result = TestCompile::compile_source("CornerComponents.ufo");
+        let svg = |name| result.read_ir_glyph(name).default_instance().contours[0].to_svg();
+        assert_eq!(
+            svg("host"),
+            "M40,0 L206,0 L266,0 L266,19 C258,19 240,22 240,30 L240,300 \
+             C231,375 195,441 150,490 L132,508 L126,501 C128,499 129,500 125,500 \
+             L68,500 L18,500 L18,481 C25,481 40,478 40,470 L40,0 Z"
+        );
+        // the corner hint on the glyph's component is ignored, and the one on
+        // its contour, which is the second shape, is applied
+        assert_eq!(
+            svg("mixed"),
+            "M40,0 L212,0 L262,0 L262,19 C255,19 240,22 240,30 L240,500 L40,500 L40,0 Z"
+        );
+    }
+
     // Bellota's n, Bold master, cut down to its stem. The corner leaves a spur
     // whose neighbouring segments cross, like an open corner. Glyphs erases
     // open corners before it applies corners but not after, so it keeps the
