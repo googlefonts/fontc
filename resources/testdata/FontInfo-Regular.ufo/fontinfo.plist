@@ -8,6 +8,69 @@
     <string>Duck Duck</string>
     <key>styleName</key>
     <string>Regular</string>
+    <key>openTypeNameRecords</key>
+    <array>
+      <dict>
+        <key>nameID</key>
+        <integer>1</integer>
+        <key>platformID</key>
+        <integer>3</integer>
+        <key>encodingID</key>
+        <integer>1</integer>
+        <key>languageID</key>
+        <integer>1042</integer>
+        <key>string</key>
+        <string>오리 오리</string>
+      </dict>
+      <dict>
+        <key>nameID</key>
+        <integer>1</integer>
+        <key>platformID</key>
+        <integer>3</integer>
+        <key>encodingID</key>
+        <integer>1</integer>
+        <key>languageID</key>
+        <integer>1033</integer>
+        <key>string</key>
+        <string>Duck Duck Record</string>
+      </dict>
+      <dict>
+        <key>nameID</key>
+        <integer>1</integer>
+        <key>platformID</key>
+        <integer>1</integer>
+        <key>encodingID</key>
+        <integer>0</integer>
+        <key>languageID</key>
+        <integer>0</integer>
+        <key>string</key>
+        <string>Duck Duck Mac</string>
+      </dict>
+      <dict>
+        <key>nameID</key>
+        <integer>9</integer>
+        <key>platformID</key>
+        <integer>3</integer>
+        <key>encodingID</key>
+        <integer>1</integer>
+        <key>languageID</key>
+        <integer>1042</integer>
+        <key>string</key>
+        <string>오리 디자이너</string>
+      </dict>
+      <dict>
+        <key>nameID</key>
+        <integer>9</integer>
+        <key>platformID</key>
+        <integer>3</integer>
+        <key>encodingID</key>
+        <integer>1</integer>
+        <key>languageID</key>
+        <integer>2052</integer>
+        <key>string</key>
+        <string>鸭子设计师</string>
+      </dict>
+    </array>
     <key>openTypeOS2VendorID</key>
     <string>RODS</string>
     <key>ascender</key>
