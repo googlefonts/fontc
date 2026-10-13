@@ -206,26 +206,37 @@ fn to_ir_glyph_instance(
     glyph: &norad::Glyph,
     path: &PathBuf,
     erase_open_corners: bool,
+    emit_to_binary: bool,
+    is_used_as_component: &impl Fn() -> Result<bool, Error>,
 ) -> Result<ir::GlyphInstance, Error> {
-    let mut contours = Vec::new();
-    for contour in glyph.contours.iter() {
-        contours.push(to_ir_contour(
-            glyph.name().as_str().into(),
-            contour,
-            erase_open_corners,
-        )?);
-    }
+    let contours = glyph
+        .contours
+        .iter()
+        .map(|contour| to_ir_contour(glyph.name().as_str().into(), contour, erase_open_corners))
+        .collect::<Result<Vec<_>, _>>();
 
     let vertical_origin = vertical_origin(glyph, path)?;
 
     // Look up explicit component anchors from glyphsLib's ComponentInfo
     let anchors = component_anchors(glyph);
-    let components = glyph
+    let mut components = glyph
         .components
         .iter()
         .enumerate()
         .map(|(i, comp)| to_ir_component(comp, anchors.get(&i).cloned()))
-        .collect();
+        .collect::<Vec<_>>();
+
+    // Like the Glyphs frontend, ignore bad shapes only in non-exported glyphs
+    // that no other glyph uses as a component.
+    let contours = match contours {
+        Ok(contours) => contours,
+        Err(e) if !emit_to_binary && !is_used_as_component()? => {
+            log::warn!("Ignoring shapes in {path:?} of non-exporting glyph: {e}");
+            components.clear();
+            Vec::new()
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     Ok(ir::GlyphInstance {
         width: glyph.width,
@@ -315,6 +326,7 @@ pub(crate) fn to_ir_glyph(
     erase_open_corners: bool,
     glifs: &[(Vec<NormalizedLocation>, Glif<'_>)],
     anchors: &mut AnchorBuilder,
+    is_used_as_component: &impl Fn() -> Result<bool, Error>,
 ) -> Result<ir::Glyph, Error> {
     let mut glyph = ir::GlyphBuilder::new(glyph_name.clone());
     glyph.emit_to_binary = emit_to_binary;
@@ -328,7 +340,13 @@ pub(crate) fn to_ir_glyph(
         for location in locations {
             glyph.try_add_source(
                 location,
-                to_ir_glyph_instance(&norad_glyph, &glif_file, erase_open_corners)?,
+                to_ir_glyph_instance(
+                    &norad_glyph,
+                    &glif_file,
+                    erase_open_corners,
+                    emit_to_binary,
+                    is_used_as_component,
+                )?,
             )?;
 
             // we only care about anchors from exportable glyphs
@@ -417,10 +435,24 @@ mod tests {
         assert_eq!("M32,32 C64,64 64,0 32,32 Z", bez.to_svg());
     }
 
-    #[test]
-    fn ignores_bad_outline_in_unused_non_export_glyph() {
+    #[rstest::rstest]
+    #[case(false, false)]
+    #[case(false, true)]
+    #[case(true, false)]
+    fn bad_outline_respects_export_and_component_use(
+        #[case] emit_to_binary: bool,
+        #[case] used_as_component: bool,
+    ) {
         let mut glyph = norad::Glyph::new("unused");
         glyph.width = 500.0;
+        glyph.contours.push(norad::Contour::new(
+            vec![
+                contour_point(0.0, 0.0, norad::PointType::Line),
+                contour_point(0.0, 50.0, norad::PointType::Line),
+                contour_point(50.0, 50.0, norad::PointType::Line),
+            ],
+            None,
+        ));
         glyph.contours.push(norad::Contour::new(
             vec![
                 norad::ContourPoint::new(0.0, 0.0, norad::PointType::Line, false, None, None),
@@ -428,10 +460,32 @@ mod tests {
             ],
             None,
         ));
-        let instance = to_ir_glyph_instance(&glyph, &PathBuf::from("unused.glif"), false).unwrap();
-        assert!(instance.contours.is_empty());
-        assert!(instance.components.is_empty());
-        assert_eq!(instance.width, 500.0);
+        glyph.components.push(Component::new(
+            Name::new("base").unwrap(),
+            AffineTransform::default(),
+            None,
+        ));
+        let result = to_ir_glyph_instance(
+            &glyph,
+            &PathBuf::from("unused.glif"),
+            false,
+            emit_to_binary,
+            &|| {
+                assert!(!emit_to_binary, "exported glyphs need no component scan");
+                Ok(used_as_component)
+            },
+        );
+        if !emit_to_binary && !used_as_component {
+            let instance = result.unwrap();
+            assert!(instance.contours.is_empty());
+            assert!(instance.components.is_empty());
+            assert_eq!(instance.width, 500.0);
+        } else {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "Invalid source glyph 'unused': 'invalid path: 'has 1 consecutive offcurve points [(50.0, 0.0)]''"
+            );
+        }
     }
 
     #[test]
@@ -451,6 +505,7 @@ mod tests {
             false,
             &[(vec![norm_loc], glif)],
             &mut anchors,
+            &|| panic!("valid outlines need no component scan"),
         )
         .unwrap();
         assert_eq!(HashSet::from([0x007C]), glyph.codepoints);

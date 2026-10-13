@@ -183,6 +183,29 @@ impl Glif<'_> {
 }
 
 impl DesignSpaceIrSource {
+    // Scan only the source layers, and only when an outline error needs this check.
+    fn is_used_as_component(&self, glyph_name: &GlyphName) -> Result<bool, Error> {
+        let mut seen_layers = HashSet::new();
+        for source in self.designspace.sources.iter() {
+            let ufo_layer = UfoLayer::new(&self.ufos[&source.filename], source)?;
+            if !seen_layers.insert(ufo_layer.clone()) {
+                continue;
+            }
+            let glif = ufo_layer.resolve(&self.ufos)?;
+            for name in glif.layer.glyph_names() {
+                let (glyph, _) = glif.load(&name.as_str().into())?;
+                if glyph
+                    .components
+                    .iter()
+                    .any(|c| c.base.as_str() == glyph_name.as_str())
+                {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
     fn create_work_for_one_glyph(
         &self,
         glyph_name: &GlyphName,
@@ -199,7 +222,7 @@ impl DesignSpaceIrSource {
             glyph_name: glyph_name.clone(),
             export,
             ufo_layers: ufo_layers.clone(),
-            ufos: self.ufos.clone(),
+            source: self.clone(),
         })
     }
 }
@@ -2112,7 +2135,7 @@ struct GlyphIrWork {
     glyph_name: GlyphName,
     export: bool,
     ufo_layers: HashMap<UfoLayer, Vec<DesignLocation>>,
-    ufos: Ufos,
+    source: DesignSpaceIrSource,
 }
 
 impl Work<Context, WorkId, Error> for GlyphIrWork {
@@ -2150,7 +2173,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                 .iter()
                 .map(|dl| dl.to_normalized(&static_metadata.all_source_axes).unwrap())
                 .collect();
-            let glif = ufo_layer.resolve(&self.ufos)?;
+            let glif = ufo_layer.resolve(&self.source.ufos)?;
             if normalized_locations.iter().any(|loc| loc.is_default()) {
                 glifs.insert(0, (normalized_locations, glif));
             } else {
@@ -2167,6 +2190,7 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
             erase_open_corners,
             &glifs,
             &mut ir_anchors,
+            &|| self.source.is_used_as_component(&self.glyph_name),
         )?;
 
         context.anchors.set(ir_anchors.build()?);
@@ -3621,6 +3645,33 @@ mod tests {
 
         let static_metadata = context.static_metadata.get();
         assert!(static_metadata.postscript_names.is_none());
+    }
+
+    #[rstest]
+    #[case("WghtVar-Regular.ufo/glyphs/bar.glif")]
+    #[case("WghtVar-Regular.ufo/glyphs.{600}/bar.glif")]
+    #[case("WghtVar-Bold.ufo/glyphs/bonus_bar.glif")]
+    fn component_use_includes_non_exported_glyphs_in_all_source_layers(#[case] path: &str) {
+        let tmp = tempfile::tempdir().unwrap();
+        for ufo in ["WghtVar-Regular.ufo", "WghtVar-Bold.ufo"] {
+            copy_dir(&testdata_dir().join(ufo), &tmp.path().join(ufo));
+        }
+        let designspace = std::fs::read_to_string(testdata_dir().join("wght_var.designspace")).unwrap().replace(
+            "</designspace>",
+            "<lib><dict><key>public.skipExportGlyphs</key><array><string>bar</string><string>bonus_bar</string></array></dict></lib></designspace>",
+        );
+        let source_path = tmp.path().join("font.designspace");
+        std::fs::write(&source_path, designspace).unwrap();
+        let source = DesignSpaceIrSource::new(&source_path).unwrap();
+        assert!(!source.is_used_as_component(&"plus".into()).unwrap());
+        let path = tmp.path().join(path);
+        let glif = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace("</outline>", "<component base=\"plus\"/></outline>");
+        std::fs::write(path, glif).unwrap();
+        let source = DesignSpaceIrSource::new(&source_path).unwrap();
+        assert!(source.is_used_as_component(&"plus".into()).unwrap());
+        assert!(!source.is_used_as_component(&"bar".into()).unwrap());
     }
 
     #[test]
