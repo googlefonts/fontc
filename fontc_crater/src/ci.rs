@@ -23,10 +23,12 @@ use crate::{
     ttx_diff_runner::{DiffError, DiffOutput},
 };
 
+mod accepted;
 mod html;
 mod progress;
 mod results_cache;
 
+pub(crate) use accepted::AcceptedFailures;
 pub(crate) use results_cache::{FontmakeOutput, ResultsCache};
 
 static SUMMARY_FILE: &str = "summary.json";
@@ -122,6 +124,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     log_if_auth_or_not();
     // do this now so we error if the input file doesn't exist
     let inputs = get_inputs_applying_denylist(&args.to_run)?;
+    let accepted = AcceptedFailures::load(&args.out_dir)?;
 
     let summary_file = args.out_dir.join(SUMMARY_FILE);
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
@@ -216,7 +219,11 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         "completed {n_targets} targets in {elapsed} ({reused_cached_results}/{n_targets} results reused from cache, {reused_fontmake_failures} fontmake failures reused)"
     );
 
-    let summary = super::ttx_diff_runner::Summary::new(&results);
+    let summary = super::ttx_diff_runner::Summary::new(&results, &accepted);
+    let n_surprises = accepted.surprises(&results).len();
+    if n_surprises > 0 {
+        log::warn!("{n_surprises} accepted failures have changed");
+    }
     // if nothing has changed we still want to report it, but we don't need to
     // write a new big results file; we can reuse the previous one
     let (results_file, reuse_last_result) = match prev_runs.last() {

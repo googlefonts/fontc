@@ -11,11 +11,14 @@ use std::{
 use crate::{
     BuildType, Target,
     error::Error,
-    ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput, DiffValue},
+    ttx_diff_runner::{CompileFailed, CompilerFailure, DiffError, DiffOutput, DiffValue},
 };
 use maud::{Markup, PreEscaped, html};
 
-use super::{DiffResults, RunSummary};
+use super::{
+    DiffResults, RunSummary,
+    accepted::{AcceptedFailure, AcceptedFailures, FailingCompiler, Surprise},
+};
 
 static HTML_FILE: &str = "index.html";
 static ANNOTATIONS_FILE: &str = "annotations.json";
@@ -58,6 +61,7 @@ pub(super) fn generate(target_dir: &Path, status_url: Option<&str>) -> Result<()
     let failures: BTreeMap<String, String> =
         super::load_json_if_exists_else_default(&failures_path)?;
     let annotations = load_annotations(&annotations_path)?;
+    let accepted = AcceptedFailures::load(target_dir)?;
 
     let (current, prev) = match summary.as_slice() {
         [.., prev, current] => {
@@ -82,12 +86,14 @@ pub(super) fn generate(target_dir: &Path, status_url: Option<&str>) -> Result<()
         prev.as_ref(),
         &failures,
         &annotations,
+        &accepted,
         status_url,
     )?;
     let outpath = target_dir.join(HTML_FILE);
     crate::try_write_str(&html_text, &outpath)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_html(
     summary: &[RunSummary],
     sources: &BTreeMap<PathBuf, String>,
@@ -95,6 +101,7 @@ fn make_html(
     prev: Option<&DiffResults>,
     repo_failures: &BTreeMap<String, String>,
     annotations: &BTreeMap<Target, Vec<Annotation>>,
+    accepted: &AcceptedFailures,
     status_url: Option<&str>,
 ) -> Result<String, Error> {
     let table_body = make_table_body(summary);
@@ -121,7 +128,9 @@ fn make_html(
                     th.rev scope="col" rowspan="2" { "rev" }
                     th.identical scope="col" rowspan="2" { "identical" }
                     th.total scope="col" rowspan="2" { "targets" }
-                    th.identical_perc scope="col" rowspan="2" { "identical %" }
+                    th.identical_perc scope="col" rowspan="2"
+                        title="identical targets and accepted failures, as a percentage of all targets"
+                        { "matching %" }
                     th.col_group scope="colgroup" colspan="4" { "crashes" }
                     th.col_group scope="colgroup" colspan="2" { "similarity %" }
                 }
@@ -138,12 +147,13 @@ fn make_html(
         }
     };
     let detailed_report = match prev {
-        Some(prev) => make_detailed_report(current, prev, sources, annotations),
+        Some(prev) => make_detailed_report(current, prev, sources, annotations, accepted),
 
         _ => html!(),
     };
 
     let weird_failures = format_repo_failures(repo_failures);
+    let surprises = format_surprises(&accepted.surprises(current));
     let added_and_removed = prev
         .map(|prev| format_added_and_removed(prev, current))
         .unwrap_or_default();
@@ -251,14 +261,17 @@ fn make_html(
                     {a href = "#summary-report" { "summary" } }
                     ", "
                     {a href = "#diff-report" { "per-target diffs" } }
-                    ", or compile failures for "
+                    ", compile failures for "
                     {a href = "#fontc-failures" { "fontc only" } }
                     ", "
                     {a href = "#fontmake-failures" { "fontmake only" } }
                     ", "
                     {a href = "#both-failures" { "both compilers" } }
+                    ", or "
+                    {a href = "#accepted-failures" { "accepted failures" } }
                 }
                 (weird_failures)
+                (surprises)
                 (added_and_removed)
                 (detailed_report)
             }
@@ -362,7 +375,8 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             .unwrap_or_default();
         let elapsed = crate::human_readable_duration(elapsed);
         let class = (!default_visible).then_some("hidden_row");
-        let pct = 100.0 * run.stats.identical as f32 / run.stats.total_targets as f32;
+        let matching = run.stats.identical + run.stats.accepted_failure;
+        let pct = 100.0 * matching as f32 / run.stats.total_targets as f32;
         let pct = format!("{pct:.1}%");
 
         html! {
@@ -439,11 +453,12 @@ fn make_detailed_report(
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
     annotations: &BTreeMap<Target, Vec<Annotation>>,
+    accepted: &AcceptedFailures,
 ) -> Markup {
     let reports = [
-        make_diff_report(current, prev, sources, annotations),
+        make_diff_report(current, prev, sources, annotations, accepted),
         make_summary_report(current),
-        make_error_report(current, prev, sources, annotations),
+        make_error_report(current, prev, sources, annotations, accepted),
     ];
     html! {
         @for report in reports {
@@ -456,9 +471,10 @@ fn make_matching_families_info(
     current: &DiffResults,
     prev: &DiffResults,
     _sources: &BTreeMap<PathBuf, String>,
+    accepted: &AcceptedFailures,
 ) -> Markup {
-    let (total_families, num_perfect) = n_families_and_n_identical(current);
-    let (prev_total, prev_perfect) = n_families_and_n_identical(prev);
+    let (total_families, num_perfect) = n_families_and_n_matching(current, accepted);
+    let (prev_total, prev_perfect) = n_families_and_n_matching(prev, accepted);
 
     let total_decoration = make_delta_decoration(
         total_families as i32,
@@ -472,20 +488,25 @@ fn make_matching_families_info(
     );
 
     html! {
-        (num_perfect) " " (perfect_decoration) " of " (total_families) " " (total_decoration) " total families are identical."
+        (num_perfect) " " (perfect_decoration) " of " (total_families) " " (total_decoration) " total families match."
 
     }
 }
 
-// return the total number of families and the number that are identical
-fn n_families_and_n_identical(run: &DiffResults) -> (usize, usize) {
+// return the total number of families and the number that are identical or
+// fail as accepted
+fn n_families_and_n_matching(run: &DiffResults, accepted: &AcceptedFailures) -> (usize, usize) {
     let mut family_stats = HashMap::new();
 
     for (target, is_perfect) in run
         .success
         .iter()
         .map(|(targ, result)| (targ, matches!(result, DiffOutput::Identical)))
-        .chain(run.failure.keys().map(|targ| (targ, false)))
+        .chain(
+            run.failure
+                .iter()
+                .map(|(targ, err)| (targ, accepted.is_accepted(targ, err))),
+        )
     {
         // all families share a config; if no config, consider all sources
         // in a given repo to be a family.
@@ -554,6 +575,7 @@ fn make_diff_report(
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
     annotations: &BTreeMap<Target, Vec<Annotation>>,
+    accepted: &AcceptedFailures,
 ) -> Markup {
     fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&Target, f32> {
         results
@@ -655,7 +677,7 @@ fn make_diff_report(
         });
     }
 
-    let matching_familes = make_matching_families_info(current, prev, sources);
+    let matching_familes = make_matching_families_info(current, prev, sources, accepted);
     html! {
         div.diff_report {
             h3 id="diff-report" { "Diffs" }
@@ -734,11 +756,14 @@ fn make_error_report(
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
     annotations: &BTreeMap<Target, Vec<Annotation>>,
+    accepted: &AcceptedFailures,
 ) -> Markup {
-    let current_fontc = get_compiler_failures(current, "fontc");
-    let prev_fontc = get_compiler_failures(prev, "fontc");
-    let current_fontmake = get_compiler_failures(current, "fontmake");
-    let prev_fontmake = get_compiler_failures(prev, "fontmake");
+    let current_fontc = get_compiler_failures(current, accepted, "fontc");
+    let prev_fontc = get_compiler_failures(prev, accepted, "fontc");
+    let current_fontmake = get_compiler_failures(current, accepted, "fontmake");
+    let prev_fontmake = get_compiler_failures(prev, accepted, "fontmake");
+    let current_accepted = get_accepted_failures(current, accepted);
+    let prev_accepted = get_accepted_failures(prev, accepted);
 
     let current_both = current_fontc
         .keys()
@@ -831,6 +856,36 @@ fn make_error_report(
         Default::default()
     };
 
+    let accepted_report = if !current_accepted.is_empty() {
+        make_error_report_group(
+            "accepted",
+            current_accepted
+                .keys()
+                .copied()
+                .map(|k| (k, !prev_accepted.contains_key(k))),
+            |path| {
+                let Some((failed, accepted)) = current_accepted.get(path) else {
+                    return Default::default();
+                };
+                html! {
+                    p { (format_accepted_reason(accepted)) }
+                    @if let Some(err) = &failed.fontc {
+                        .h5 { "fontc" }
+                        (format_compiler_error(err))
+                    }
+                    @if let Some(err) = &failed.fontmake {
+                        .h5 { "fontmake" }
+                        (format_compiler_error(err))
+                    }
+                }
+            },
+            sources,
+            annotations,
+        )
+    } else {
+        Default::default()
+    };
+
     let other = if !current_other.is_empty() {
         make_error_report_group(
             "other",
@@ -858,6 +913,7 @@ fn make_error_report(
         (fontmake)
         (both)
         (other)
+        (accepted_report)
     }
 }
 
@@ -1050,6 +1106,47 @@ fn get_other_failures(results: &DiffResults) -> BTreeMap<&Target, &str> {
         .collect()
 }
 
+fn format_accepted_reason(accepted: &AcceptedFailure) -> Markup {
+    html! {
+        (accepted.reason)
+        @if let Some(link) = &accepted.link {
+            " (" a href = (link) { (link) } ")"
+        }
+    }
+}
+
+// accepted failures that passed, failed differently, or weren't run
+fn format_surprises(surprises: &[(&Target, &AcceptedFailure, Surprise)]) -> Markup {
+    if surprises.is_empty() {
+        return Default::default();
+    }
+    let describe = |surprise: &Surprise| match surprise {
+        Surprise::Passed => "it compiled".to_string(),
+        Surprise::FailedDifferently(DiffError::CompileFailed(failed)) => {
+            match FailingCompiler::of(failed) {
+                Some(FailingCompiler::Both) => "both failed".to_string(),
+                Some(one) => format!("only {} failed", one.name()),
+                None => "it hit some other error".to_string(),
+            }
+        }
+        Surprise::FailedDifferently(DiffError::Other(_)) => "it hit some other error".to_string(),
+        Surprise::NotRun => "it was not in this run".to_string(),
+    };
+    html! {
+        div.surprises {
+            h4 { (surprises.len()) " accepted failures have changed" }
+            ul {
+                @for (target, accepted, surprise) in surprises {
+                    li {
+                        (target) ": accepted as failing in " (accepted.fails.name()) ", but "
+                        (describe(surprise)) ". " (format_accepted_reason(accepted))
+                    }
+                }
+            }
+        }
+    }
+}
+
 // failures that result from us not being able to access a repo in the target list
 fn format_repo_failures(failures: &BTreeMap<String, String>) -> Markup {
     if failures.is_empty() {
@@ -1119,6 +1216,7 @@ fn format_added_and_removed(prev: &DiffResults, current: &DiffResults) -> Markup
 
 fn get_compiler_failures<'a>(
     results: &'a DiffResults,
+    accepted: &AcceptedFailures,
     compiler: &str,
 ) -> BTreeMap<&'a Target, &'a CompilerFailure> {
     let get_err = |err: &'a DiffError| {
@@ -1135,6 +1233,23 @@ fn get_compiler_failures<'a>(
     results
         .failure
         .iter()
+        .filter(|(id, r)| !accepted.is_accepted(id, r))
         .flat_map(|(id, r)| get_err(r).map(|e| (id, e)))
+        .collect()
+}
+
+fn get_accepted_failures<'a>(
+    results: &'a DiffResults,
+    accepted: &'a AcceptedFailures,
+) -> BTreeMap<&'a Target, (&'a CompileFailed, &'a AcceptedFailure)> {
+    results
+        .failure
+        .iter()
+        .filter_map(|(id, r)| match r {
+            DiffError::CompileFailed(failed) if accepted.is_accepted(id, r) => {
+                Some((id, (failed, accepted.get(id)?)))
+            }
+            _ => None,
+        })
         .collect()
 }
