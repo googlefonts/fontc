@@ -965,6 +965,30 @@ mod tests {
         );
     }
 
+    fn assert_name_record_error(source: &str, expected: &str) {
+        let mut result = TestCompile::new(source, |options| options);
+        let error = result.run_expect_err();
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[test]
+    fn name_record_with_unsupported_encoding_is_an_error() {
+        // Mac platform, Korean encoding: write-fonts can only write UTF-16
+        // and Mac Roman
+        assert_name_record_error(
+            "glyphs3/NameTableEntryUnknownEncoding.glyphs",
+            "name ID 1 (platform 1, encoding 3, language 23) uses an unsupported platform/encoding: \"가석체\"",
+        );
+    }
+
+    #[test]
+    fn name_record_not_encodable_in_mac_roman_is_an_error() {
+        assert_name_record_error(
+            "glyphs3/NameTableEntryNotMacRoman.glyphs",
+            "name ID 1 (platform 1, encoding 0, language 0) has a character not in Mac Roman, '가' (U+AC00): \"가석체\"",
+        );
+    }
+
     #[test]
     fn compile_sets_xmin_eq_lsb_flag() {
         let result = TestCompile::compile_source("fontinfo.designspace");
