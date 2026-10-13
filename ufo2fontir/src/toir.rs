@@ -5,7 +5,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadGlyph, Error},
+    error::{BadGlyph, BadGlyphKind, Error},
     ir::{self, AnchorBuilder, GlyphPathBuilder},
 };
 use kurbo::{Affine, BezPath};
@@ -14,7 +14,10 @@ use norad::designspace::{self, Dimension};
 use smol_str::SmolStr;
 use write_fonts::types::Tag;
 
-use crate::source::{Glif, vertical_origin};
+use crate::{
+    corner_components,
+    source::{Glif, vertical_origin},
+};
 
 /// Key for glyphsLib's component info storage in UFO glyph lib.
 ///
@@ -313,6 +316,7 @@ pub(crate) fn to_ir_glyph(
     glyph_name: GlyphName,
     emit_to_binary: bool,
     erase_open_corners: bool,
+    corner_components: bool,
     glifs: &[(Vec<NormalizedLocation>, Glif<'_>)],
     anchors: &mut AnchorBuilder,
 ) -> Result<ir::Glyph, Error> {
@@ -324,6 +328,21 @@ pub(crate) fn to_ir_glyph(
     let mut default_loc_codepoints = None;
     for (locations, glif) in glifs.iter() {
         let (mut norad_glyph, glif_file) = glif.load(&glyph_name)?;
+
+        // Like ufo2ft, we apply corner components first. They erase the open
+        // corners of the glyphs they apply to, and do so only once.
+        let erase_open_corners = if corner_components {
+            let erased =
+                corner_components::apply(&mut norad_glyph, glif.default_layer).map_err(|e| {
+                    BadGlyph::new(
+                        glyph_name.clone(),
+                        BadGlyphKind::FrontendSpecific(e.to_string()),
+                    )
+                })?;
+            erase_open_corners && !erased
+        } else {
+            erase_open_corners
+        };
 
         for location in locations {
             glyph.try_add_source(
@@ -427,10 +446,12 @@ mod tests {
         let glif = Glif {
             layer: reader.default_layer().unwrap(),
             layer_dir: ufo_dir.join("glyphs"),
+            default_layer: None,
         };
         let glyph = to_ir_glyph(
             "bar".into(),
             true,
+            false,
             false,
             &[(vec![norm_loc], glif)],
             &mut anchors,

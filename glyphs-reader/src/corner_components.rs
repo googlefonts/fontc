@@ -69,7 +69,7 @@ pub(crate) fn insert_corner_components_for_layer(
     layer: &mut Layer,
     glyphs: &BTreeMap<SmolStr, Glyph>,
 ) -> Result<(), BadCornerComponent> {
-    let mut corner_hints: Vec<Hint> = layer
+    let corner_hints: Vec<Hint> = layer
         .hints
         .iter()
         .filter(|h| h.type_ == HintType::Corner)
@@ -84,6 +84,30 @@ pub(crate) fn insert_corner_components_for_layer(
         .collect();
     layer.hints.retain(|h| h.type_ != HintType::Corner);
 
+    let master_id = layer.master_id().to_owned();
+    apply_corner_components(layer, corner_hints, |name| {
+        glyphs[name]
+            .layers
+            .iter()
+            .find(|l| l.layer_id == master_id)
+            .ok_or_else(|| BadCornerComponentReason::MissingLayer(master_id.as_str().into()))
+    })
+}
+
+/// Apply the corner components in `hints` to the paths of `layer`.
+///
+/// The hints are expected to be corner hints; `corner_layer` finds the layer
+/// of the corner component glyph with a given name. Like Glyphs, we first
+/// erase the open corners in all of the layer's paths (and set
+/// [`Layer::open_corners_erased`]), but only if there are corners to apply.
+///
+/// Indices in the hints refer to `layer.shapes` and to the nodes of a path in
+/// the order Glyphs stores them, where the start of a closed path comes last.
+pub fn apply_corner_components<'a>(
+    layer: &mut Layer,
+    mut corner_hints: Vec<Hint>,
+    corner_layer: impl Fn(&str) -> Result<&'a Layer, BadCornerComponentReason>,
+) -> Result<(), BadCornerComponent> {
     // make sure we do earlier shapes first and earlier nodes first
     corner_hints.sort_by_key(|hint| (hint.shape_index, hint.node_index));
 
@@ -104,10 +128,6 @@ pub(crate) fn insert_corner_components_for_layer(
             inserted_pts = 0;
         }
 
-        let Some(corner_glyph) = glyphs.get(&hint.name) else {
-            continue;
-        };
-
         // a corner replaces its node, so like Glyphs we only apply the first
         let node = (hint.shape_index, hint.node_index);
         if last_node.replace(node) == Some(node) {
@@ -118,11 +138,7 @@ pub(crate) fn insert_corner_components_for_layer(
             continue;
         }
 
-        let component = corner_glyph
-            .layers
-            .iter()
-            .find(|l| l.layer_id == layer.master_id())
-            .ok_or_else(|| BadCornerComponentReason::MissingLayer(layer.master_id().into()))
+        let component = corner_layer(&hint.name)
             .and_then(CornerComponent::new)
             .map_err(|e| e.add_name(hint.name.clone()))?;
 

@@ -423,19 +423,7 @@ impl RawHint {
             .map(|RawHint2Tuple { x, y }| Scale::new(x, y))
             .unwrap_or_default();
 
-        let alignment = match self.options {
-            0 => Alignment::OutStroke,
-            1 => Alignment::InStroke,
-            2 => Alignment::Middle,
-            3 => Alignment::Unused,
-            4 => Alignment::Unaligned,
-            _other => {
-                // doesn't seem worth it to fail for this, easy to imagine
-                // new variants added in the future
-                log::info!("unexpected hint option '{_other}'");
-                Default::default()
-            }
-        };
+        let alignment = Alignment::from_option(self.options);
 
         Ok(Hint {
             type_,
@@ -506,6 +494,25 @@ pub enum Alignment {
     Middle,
     Unused,
     Unaligned,
+}
+
+impl Alignment {
+    /// The alignment for the `options` value of a corner component hint
+    pub fn from_option(options: i64) -> Self {
+        match options {
+            0 => Alignment::OutStroke,
+            1 => Alignment::InStroke,
+            2 => Alignment::Middle,
+            3 => Alignment::Unused,
+            4 => Alignment::Unaligned,
+            _other => {
+                // doesn't seem worth it to fail for this, easy to imagine
+                // new variants added in the future
+                log::info!("unexpected hint option '{_other}'");
+                Default::default()
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Hash)]

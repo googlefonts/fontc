@@ -154,6 +154,7 @@ impl UfoLayer {
         Ok(Glif {
             layer_dir: ufo.path.join(layer.path()),
             layer,
+            default_layer: ufo.reader.default_layer(),
         })
     }
 }
@@ -163,6 +164,9 @@ pub(crate) struct Glif<'a> {
     pub(crate) layer: LayerReader<'a>,
     /// Where the layer lives, for messages; a virtual path for a zipped or JSON UFO
     pub(crate) layer_dir: PathBuf,
+    /// The default layer of the same UFO, where ufo2ft looks for the glyphs of
+    /// corner components
+    pub(crate) default_layer: Option<LayerReader<'a>>,
 }
 
 impl Glif<'_> {
@@ -479,6 +483,7 @@ impl Source for DesignSpaceIrSource {
                 match name {
                     "flattenComponents" => flags.set(Flags::FLATTEN_COMPONENTS, true),
                     "eraseOpenCorners" => flags.set(Flags::ERASE_OPEN_CORNERS, true),
+                    "cornerComponents" => flags.set(Flags::CORNER_COMPONENTS, true),
                     "propagateAnchors" => flags.set(Flags::PROPAGATE_ANCHORS, true),
                     "decomposeTransformedComponents" => {
                         flags.set(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS, true)
@@ -2159,12 +2164,14 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         }
 
         let erase_open_corners = context.flags.contains(Flags::ERASE_OPEN_CORNERS);
+        let corner_components = context.flags.contains(Flags::CORNER_COMPONENTS);
 
         let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
         let glyph_ir = to_ir_glyph(
             self.glyph_name.clone(),
             self.export,
             erase_open_corners,
+            corner_components,
             &glifs,
             &mut ir_anchors,
         )?;
@@ -4182,6 +4189,20 @@ mod tests {
                 .compilation_flags()
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             "decomposeTransformedComponents in lib.plist should set DECOMPOSE_TRANSFORMED_COMPONENTS flag"
+        );
+    }
+
+    #[test]
+    fn corner_components_filter_sets_flag() {
+        let source = load_designspace("CornerComponents.ufo");
+        let flags = source.compilation_flags();
+        assert!(flags.contains(Flags::CORNER_COMPONENTS));
+        assert!(flags.contains(Flags::ERASE_OPEN_CORNERS));
+        let source = load_designspace("OpenCorners.ufo");
+        assert!(
+            !source
+                .compilation_flags()
+                .contains(Flags::CORNER_COMPONENTS)
         );
     }
 

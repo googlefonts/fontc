@@ -30,6 +30,8 @@ bitflags! {
         const ERASE_OPEN_CORNERS = 0b1000000000;
         // If set, anchors will be propagated from components to composites
         const PROPAGATE_ANCHORS = 0b10000000000;
+        // If set, the corner components listed in the glyph libs of a UFO will be applied
+        const CORNER_COMPONENTS = 0b100000000000;
     }
 }
 

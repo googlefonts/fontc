@@ -9,9 +9,12 @@ mod glyphslib_enums;
 mod plist;
 mod smart_components;
 
+pub use corner_components::{
+    BadCornerComponent, BadCornerComponentReason, apply_corner_components,
+};
 pub use font::{
-    Anchor, Axis, AxisRule, Color, ColorStop, Component, CustomParameters, FeatureSnippet, Font,
-    FontMaster, Glyph, InstanceType, Layer, LayerAttributes, Node, NodeType, Path, Shape,
-    ShapeAttributes, glyphs_to_opentype_lang_id,
+    Alignment, Anchor, Axis, AxisRule, Color, ColorStop, Component, CustomParameters,
+    FeatureSnippet, Font, FontMaster, Glyph, Hint, HintType, InstanceType, Layer, LayerAttributes,
+    Node, NodeType, Path, Scale, Shape, ShapeAttributes, glyphs_to_opentype_lang_id,
 };
 pub use plist::Plist;
