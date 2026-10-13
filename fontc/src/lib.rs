@@ -271,7 +271,7 @@ pub fn testdata_dir() -> std::path::PathBuf {
 mod tests {
 
     use std::{
-        collections::{HashMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         fs,
         path::Path,
         sync::Arc,
@@ -7049,6 +7049,33 @@ mod tests {
         designspace
     }
 
+    /// Assert two compiled fonts are identical, table by table, except for the
+    /// head fields that depend on when the compile ran: checkSumAdjustment,
+    /// created and modified.
+    fn assert_fonts_equal_ignoring_timestamps(a: &[u8], b: &[u8]) {
+        fn tables(raw: &[u8]) -> BTreeMap<Tag, Vec<u8>> {
+            let font = FontRef::new(raw).unwrap();
+            font.table_directory
+                .table_records()
+                .iter()
+                .map(|record| {
+                    let tag = record.tag();
+                    let mut data = font.table_data(tag).unwrap().as_bytes().to_vec();
+                    if tag == Tag::new(b"head") {
+                        data[8..12].fill(0); // checkSumAdjustment
+                        data[20..36].fill(0); // created, modified
+                    }
+                    (tag, data)
+                })
+                .collect()
+        }
+        let (a, b) = (tables(a), tables(b));
+        assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
+        for (tag, data) in a.iter() {
+            assert!(Some(data) == b.get(tag), "{tag} table differs");
+        }
+    }
+
     #[test]
     fn zipped_ufo_designspace_compiles_identically_to_directory() {
         let tmp = tempdir().unwrap();
@@ -7057,7 +7084,7 @@ mod tests {
         let zipped = TestCompile::compile_source(designspace.to_str().unwrap());
         let dir = TestCompile::compile_source("wght_var.designspace");
 
-        assert_eq!(zipped.raw_font, dir.raw_font);
+        assert_fonts_equal_ignoring_timestamps(&zipped.raw_font, &dir.raw_font);
     }
 
     #[test]
@@ -7068,7 +7095,7 @@ mod tests {
         let zipped = TestCompile::compile_source(ufoz.to_str().unwrap());
         let dir = TestCompile::compile_source("WghtVar-Regular.ufo");
 
-        assert_eq!(zipped.raw_font, dir.raw_font);
+        assert_fonts_equal_ignoring_timestamps(&zipped.raw_font, &dir.raw_font);
     }
 
     #[test]
@@ -7114,6 +7141,6 @@ mod tests {
         let json = TestCompile::compile_source("WghtVar-Regular.ufo.json");
         let dir = TestCompile::compile_source("WghtVar-Regular.ufo");
 
-        assert_eq!(json.raw_font, dir.raw_font);
+        assert_fonts_equal_ignoring_timestamps(&json.raw_font, &dir.raw_font);
     }
 }
