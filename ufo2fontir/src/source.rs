@@ -1111,15 +1111,26 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
         .as_deref()
         .unwrap_or(DEFAULT_VENDOR_ID);
 
-    // Name's that don't get individual fields
+    let mut names = builder.build(vendor);
+
+    // Name records are added as-is, under their own platform, encoding and
+    // language, after the names derived from the fontinfo fields; a record
+    // only replaces one of those when all four ids match, like ufo2ft does.
+    // <https://github.com/googlefonts/ufo2ft/blob/fca66fe3/Lib/ufo2ft/outlineCompiler.py#L438-L445>
     if let Some(name_records) = font_info.open_type_name_records.as_ref() {
         for nr in name_records.iter() {
             let name_id: u16 = nr.name_id.try_into().unwrap();
-            builder.add(name_id.into(), nr.string.clone());
+            let key = NameKey {
+                name_id: name_id.into(),
+                platform_id: nr.platform_id.try_into().unwrap(),
+                encoding_id: nr.encoding_id.try_into().unwrap(),
+                lang_id: nr.language_id.try_into().unwrap(),
+            };
+            names.insert(key, NameBuilder::normalize_line_endings(nr.string.clone()));
         }
     }
 
-    builder.build(vendor)
+    names
 }
 
 /// <https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-head-table-fields>
