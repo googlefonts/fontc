@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="open" format="2">
+  <advance width="600"/>
+  <outline>
+    <contour>
+      <point x="40" y="0" type="move"/>
+      <point x="240" y="0" type="line"/>
+      <point x="240" y="500" type="line"/>
+      <point x="40" y="500" type="line"/>
+    </contour>
+  </outline>
+  <lib>
+    <dict>
+      <key>com.schriftgestaltung.hints</key>
+      <array>
+        <dict>
+          <key>name</key>
+          <string>_corner.serif</string>
+          <key>options</key>
+          <integer>0</integer>
+          <key>origin</key>
+          <array>
+            <integer>0</integer>
+            <integer>1</integer>
+          </array>
+          <key>type</key>
+          <string>Corner</string>
+        </dict>
+      </array>
+    </dict>
+  </lib>
+</glyph>

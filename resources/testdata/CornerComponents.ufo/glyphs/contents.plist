@@ -10,5 +10,7 @@
     <string>host.glif</string>
     <key>mixed</key>
     <string>mixed.glif</string>
+    <key>open</key>
+    <string>open.glif</string>
   </dict>
 </plist>

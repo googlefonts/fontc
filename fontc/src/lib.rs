@@ -6776,6 +6776,18 @@ mod tests {
         );
     }
 
+    // glyphsLib's filter takes the node after the hint's one on an open contour
+    // too, which puts the corner one node late. We use the hint's node, like we
+    // do for a .glyphs file, so this is the outline of 'mixed' with an open end.
+    #[test]
+    fn ufo_corner_component_on_open_contour() {
+        let result = TestCompile::compile_source("CornerComponents.ufo");
+        assert_eq!(
+            result.read_ir_glyph("open").default_instance().contours[0].to_svg(),
+            "M40,0 L212,0 L262,0 L262,19 C255,19 240,22 240,30 L240,500 L40,500"
+        );
+    }
+
     // Bellota's n, Bold master, cut down to its stem. The corner leaves a spur
     // whose neighbouring segments cross, like an open corner. Glyphs erases
     // open corners before it applies corners but not after, so it keeps the

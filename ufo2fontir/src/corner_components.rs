@@ -69,14 +69,22 @@ pub(crate) fn apply(
             continue;
         };
         let contour = &glyph.contours[path_index];
-        // glyphsLib starts a UFO contour at the last node of the path in Glyphs
+        // glyphsLib starts a closed UFO contour at the last node of the path in
+        // Glyphs, but not an open one. Its filter takes the node after the
+        // hint's for both, which puts a corner on an open path one node late;
+        // we use the hint's node, as we do for a .glyphs file.
+        let target_index = if contour.is_closed() {
+            node_index + 1
+        } else {
+            node_index
+        };
         let target = contour
             .points
-            .get((node_index + 1) % contour.points.len().max(1));
-        if !contour.is_closed() || target.is_none_or(|pt| pt.typ == PointType::OffCurve) {
+            .get(target_index % contour.points.len().max(1));
+        if target.is_none_or(|pt| pt.typ == PointType::OffCurve) {
             log::warn!(
                 "ignoring corner component '{}' in '{}': node {node_index} of shape \
-                 {shape_index} is not on a closed path, or is an off-curve point",
+                 {shape_index} is an off-curve point",
                 hint.name,
                 glyph.name()
             );
