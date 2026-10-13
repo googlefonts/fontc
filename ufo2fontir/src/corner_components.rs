@@ -55,7 +55,12 @@ pub(crate) fn apply(
     {
         let (shape_index, node_index) = (hint.shape_index, hint.node_index);
         // Glyphs ignores a corner on a component, or on a shape that isn't there any more
-        let Some(path_index) = path_indices.get(shape_index).copied().flatten() else {
+        let Some(path_index) = path_indices
+            .get(shape_index)
+            .copied()
+            .flatten()
+            .filter(|index| *index < glyph.contours.len())
+        else {
             log::warn!(
                 "ignoring corner component '{}' in '{}': shape {shape_index} is not a path",
                 hint.name,
