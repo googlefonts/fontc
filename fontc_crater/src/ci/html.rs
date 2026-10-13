@@ -47,7 +47,7 @@ fn load_annotations(path: &Path) -> Result<BTreeMap<Target, Vec<Annotation>>, Er
     Ok(raw)
 }
 
-pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
+pub(super) fn generate(target_dir: &Path, status_url: Option<&str>) -> Result<(), Error> {
     let summary_path = target_dir.join(super::SUMMARY_FILE);
     let summary: Vec<RunSummary> = crate::try_read_json(&summary_path)?;
     let sources_path = target_dir.join(super::SOURCES_FILE);
@@ -82,6 +82,7 @@ pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
         prev.as_ref(),
         &failures,
         &annotations,
+        status_url,
     )?;
     let outpath = target_dir.join(HTML_FILE);
     crate::try_write_str(&html_text, &outpath)
@@ -94,9 +95,11 @@ fn make_html(
     prev: Option<&DiffResults>,
     repo_failures: &BTreeMap<String, String>,
     annotations: &BTreeMap<Target, Vec<Annotation>>,
+    status_url: Option<&str>,
 ) -> Result<String, Error> {
     let table_body = make_table_body(summary);
     let css = include_str!("../../resources/style.css");
+    let status_script = PreEscaped(include_str!("../../resources/status.js"));
     let table = html! {
         table #results {
             colgroup {
@@ -223,9 +226,18 @@ fn make_html(
                 style { (css) }
                 meta charset="utf-8";
                 (script)
+                @if status_url.is_some() {
+                    script { (status_script) }
+                }
             }
             body {
                 h1 { "fontc_crater" }
+                @if let Some(status_url) = status_url {
+                    div #live_status hidden data-src=(status_url) {
+                        span.text { "loading crater status" }
+                        progress hidden {}
+                    }
+                }
                 div #explain {
                     "Compiling all known Google Fonts that have sources with both "
                     {a href = "https://github.com/googlefonts/fontc" { "fontc" } }

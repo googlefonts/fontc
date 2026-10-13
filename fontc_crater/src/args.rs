@@ -55,6 +55,16 @@ pub(super) struct CiArgs {
     /// the last run recorded there.
     #[arg(long)]
     pub(super) no_results_cache: bool,
+    /// File for live progress, published by the CI script.
+    ///
+    /// Crater rewrites it as targets finish.
+    #[arg(long)]
+    pub(super) progress_file: Option<PathBuf>,
+    /// Where the report reads the live status, as published by the CI script.
+    ///
+    /// Without it, the report has no status line.
+    #[arg(long)]
+    pub(super) status_url: Option<String>,
 }
 
 impl CiArgs {

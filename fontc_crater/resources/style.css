@@ -3,6 +3,35 @@ body {
   font-family: sans-serif;
 }
 
+#live_status {
+  margin-bottom: 1em;
+}
+
+#live_status::before {
+  content: "●";
+  margin-right: 0.4em;
+  color: #888;
+}
+
+#live_status.running::before {
+  color: #e69d00;
+}
+
+#live_status.ok::before {
+  color: green;
+}
+
+#live_status.failed,
+#live_status.failed::before {
+  color: red;
+}
+
+#live_status progress {
+  width: 10em;
+  margin-left: 0.5em;
+  vertical-align: middle;
+}
+
 #results {
   table-layout: fixed;
   width: 100%;
