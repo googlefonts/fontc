@@ -382,6 +382,28 @@ mod tests {
         assert!(corner_hint(&dict).is_some());
     }
 
+    // glyphsLib logs a warning and ignores a corner on a shape that isn't there
+    #[test]
+    fn stale_shape_order_does_not_panic() {
+        let mut glyph = Glyph::new("a");
+        glyph.contours = vec![Contour::new(
+            vec![
+                point(0.0, 0.0, PointType::Line, false),
+                point(10.0, 0.0, PointType::Line, false),
+                point(10.0, 10.0, PointType::Line, false),
+            ],
+            None,
+        )];
+        glyph
+            .lib
+            .insert(SHAPE_ORDER_LIB_KEY.into(), Value::from("PP"));
+        glyph.lib.insert(
+            HINTS_LIB_KEY.into(),
+            Value::Array(vec![Value::Dictionary(hint("_corner.a", [1, 0]))]),
+        );
+        assert!(!apply(&mut glyph, None).unwrap());
+    }
+
     #[test]
     fn shape_order_maps_shapes_to_contours() {
         let mut glyph = Glyph::new("a");
