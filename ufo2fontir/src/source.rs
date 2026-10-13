@@ -1111,15 +1111,26 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
         .as_deref()
         .unwrap_or(DEFAULT_VENDOR_ID);
 
-    // Name's that don't get individual fields
+    let mut names = builder.build(vendor);
+
+    // Name records are added as-is, under their own platform, encoding and
+    // language, after the names derived from the fontinfo fields; a record
+    // only replaces one of those when all four ids match, like ufo2ft does.
+    // <https://github.com/googlefonts/ufo2ft/blob/fca66fe3/Lib/ufo2ft/outlineCompiler.py#L438-L445>
     if let Some(name_records) = font_info.open_type_name_records.as_ref() {
         for nr in name_records.iter() {
             let name_id: u16 = nr.name_id.try_into().unwrap();
-            builder.add(name_id.into(), nr.string.clone());
+            let key = NameKey {
+                name_id: name_id.into(),
+                platform_id: nr.platform_id.try_into().unwrap(),
+                encoding_id: nr.encoding_id.try_into().unwrap(),
+                lang_id: nr.language_id.try_into().unwrap(),
+            };
+            names.insert(key, NameBuilder::normalize_line_endings(nr.string.clone()));
         }
     }
 
-    builder.build(vendor)
+    names
 }
 
 /// <https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-head-table-fields>
@@ -2937,6 +2948,75 @@ mod tests {
                 (
                     NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
                     String::from("NewFont-Regular")
+                ),
+            ],
+            names
+        );
+    }
+
+    // <https://github.com/googlefonts/fontc/issues/188>
+    #[test]
+    fn name_records_keep_platform_encoding_and_language() {
+        let source = load_designspace("fontinfo.designspace");
+        let font_info = font_infos(&source.ufos, &source.designspace)
+            .unwrap()
+            .get(&String::from("FontInfo-Regular.ufo"))
+            .cloned()
+            .unwrap();
+        let mut names: Vec<_> = names(&font_info).into_iter().collect();
+        names.sort();
+
+        // The English names come from the fontinfo fields and their fallbacks,
+        // the openTypeNameRecords are added under their own platform, encoding
+        // and language. A record replaces a derived name only when all four ids
+        // match, and the names derived from the family name (full name, the
+        // dropped typographic family/subfamily) do not see the record.
+        assert_eq!(
+            vec![
+                (
+                    NameKey {
+                        name_id: NameId::FAMILY_NAME,
+                        platform_id: 1,
+                        encoding_id: 0,
+                        lang_id: 0,
+                    },
+                    String::from("Duck Duck Mac")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
+                    String::from("Duck Duck Record")
+                ),
+                (
+                    NameKey::new_with_lang(NameId::FAMILY_NAME, "오리 오리", 0x412),
+                    String::from("오리 오리")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
+                    String::from("Regular")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::UNIQUE_ID),
+                    String::from("0.000;RODS;DuckDuck-Regular")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::FULL_NAME),
+                    String::from("Duck Duck Regular")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::VERSION_STRING),
+                    String::from("Version 0.000")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
+                    String::from("DuckDuck-Regular")
+                ),
+                (
+                    NameKey::new_with_lang(NameId::DESIGNER, "오리 디자이너", 0x412),
+                    String::from("오리 디자이너")
+                ),
+                (
+                    NameKey::new_with_lang(NameId::DESIGNER, "鸭子设计师", 0x804),
+                    String::from("鸭子设计师")
                 ),
             ],
             names

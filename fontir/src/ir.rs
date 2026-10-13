@@ -870,14 +870,18 @@ impl NameBuilder {
         linked_style.join(" ")
     }
 
-    pub fn add(&mut self, name_id: NameId, value: String) {
-        // Work around plist crate not performing XML end-of-line normalization
-        // (XML 1.0 §2.11: \r\n → \n, bare \r → \n)
-        let value = if value.contains('\r') {
+    /// Work around plist crate not performing XML end-of-line normalization
+    /// (XML 1.0 §2.11: \r\n → \n, bare \r → \n)
+    pub fn normalize_line_endings(value: String) -> String {
+        if value.contains('\r') {
             value.replace("\r\n", "\n").replace('\r', "\n")
         } else {
             value
-        };
+        }
+    }
+
+    pub fn add(&mut self, name_id: NameId, value: String) {
+        let value = Self::normalize_line_endings(value);
         let key = NameKey::new(name_id, &value);
         self.names.insert(key, value);
         self.name_to_key.insert(name_id, key);
