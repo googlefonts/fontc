@@ -418,6 +418,23 @@ mod tests {
     }
 
     #[test]
+    fn ignores_bad_outline_in_unused_non_export_glyph() {
+        let mut glyph = norad::Glyph::new("unused");
+        glyph.width = 500.0;
+        glyph.contours.push(norad::Contour::new(
+            vec![
+                norad::ContourPoint::new(0.0, 0.0, norad::PointType::Line, false, None, None),
+                norad::ContourPoint::new(50.0, 0.0, norad::PointType::OffCurve, false, None, None),
+            ],
+            None,
+        ));
+        let instance = to_ir_glyph_instance(&glyph, &PathBuf::from("unused.glif"), false).unwrap();
+        assert!(instance.contours.is_empty());
+        assert!(instance.components.is_empty());
+        assert_eq!(instance.width, 500.0);
+    }
+
+    #[test]
     pub fn captures_codepoints() {
         let mut norm_loc = NormalizedLocation::new();
         norm_loc.insert(Tag::new(b"wght"), NormalizedCoord::new(0.0));
