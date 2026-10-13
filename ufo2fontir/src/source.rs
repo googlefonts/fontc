@@ -103,14 +103,14 @@ impl Ufo {
                     || (dir == Path::new("glyphs") && layers.contains(&None))
             });
         let reader =
-            FontReader::open_requested(&path, &request).map_err(|e| BadSource::custom(&path, e))?;
+            FontReader::open_requested(&path, &request).map_err(|e| BadSource::wrap(&path, e))?;
         Ok(Ufo { path, reader })
     }
 
     fn load(&self, request: &DataRequest) -> Result<norad::Font, BadSource> {
         self.reader
             .load(request)
-            .map_err(|e| BadSource::custom(&self.path, e))
+            .map_err(|e| BadSource::wrap(&self.path, e))
     }
 }
 
@@ -177,7 +177,7 @@ impl Glif<'_> {
             .layer
             .load_glyph(glyph_name.as_str())
             .ok_or_else(|| BadSource::new(&path, BadSourceKind::ExpectedFile))?
-            .map_err(|e| BadSource::custom(&path, e))?;
+            .map_err(|e| BadSource::wrap(&path, e))?;
         Ok((glyph, path))
     }
 }
@@ -219,7 +219,7 @@ fn load_designspace(
         Some("designspace") => {
             DesignSpaceDocument::load(designspace_or_ufo).map_err(|e| match e {
                 norad::error::DesignSpaceLoadError::Io(e) => BadSourceKind::Io(e),
-                other => BadSourceKind::Custom(other.to_string()),
+                other => BadSourceKind::Error(Box::new(other)),
             })?
         }
         Some(ext) if matches!(ext, "ufo" | "ufoz") || is_ufo_json(designspace_or_ufo) => {

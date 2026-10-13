@@ -7143,4 +7143,87 @@ mod tests {
 
         assert_fonts_equal_ignoring_timestamps(&json.raw_font, &dir.raw_font);
     }
+
+    fn source_error(path: &Path) -> String {
+        let Err(error) = Input::new(path).unwrap().create_source() else {
+            panic!("loading {} should have failed", path.display());
+        };
+        error.display_with_causes().to_string()
+    }
+
+    const TOO_MANY_BLUE_VALUES: &str = "the Postscript field 'postscriptBlueValues' \
+        must contain at most 14 items but found 16";
+
+    #[test]
+    fn ufo_load_error_includes_its_cause() {
+        let tmp = tempdir().unwrap();
+        let ufo = tmp.path().join("WghtVar-Regular.ufo");
+        copy_dir(&testdata_dir().join("WghtVar-Regular.ufo"), &ufo);
+        let fontinfo = ufo.join("fontinfo.plist");
+        let values: String = (0..16)
+            .map(|i| format!("<integer>{}</integer>", i * 10))
+            .collect();
+        fs::write(
+            &fontinfo,
+            fs::read_to_string(&fontinfo).unwrap().replace(
+                "<dict>",
+                &format!("<dict><key>postscriptBlueValues</key><array>{values}</array>"),
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            source_error(&ufo),
+            format!(
+                "Reading source failed for '{}': failed to load font info data: \
+                 fontinfo.plist contains invalid data: {TOO_MANY_BLUE_VALUES}",
+                ufo.display()
+            )
+        );
+    }
+
+    #[test]
+    fn ufo_json_load_error_includes_its_cause() {
+        let tmp = tempdir().unwrap();
+        let ufo = tmp.path().join("WghtVar-Regular.ufo.json");
+        let values = (0..16)
+            .map(|i| (i * 10).to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        fs::write(
+            &ufo,
+            fs::read_to_string(testdata_dir().join("WghtVar-Regular.ufo.json"))
+                .unwrap()
+                .replace(
+                    r#""info": {"#,
+                    &format!(r#""info": {{ "postscriptBlueValues": [{values}],"#),
+                ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            source_error(&ufo),
+            format!(
+                "Reading source failed for '{}': failed to load UFO from ufoLib2 JSON file: \
+                 font info contains invalid data: {TOO_MANY_BLUE_VALUES}",
+                ufo.display()
+            )
+        );
+    }
+
+    #[test]
+    fn load_error_cause_already_in_message_is_not_repeated() {
+        let tmp = tempdir().unwrap();
+        let ufo = tmp.path().join("Truncated.ufo.json");
+        fs::write(&ufo, "{").unwrap();
+
+        assert_eq!(
+            source_error(&ufo),
+            format!(
+                "Reading source failed for '{}': failed to load UFO from ufoLib2 JSON file: \
+                 failed to parse JSON: EOF while parsing an object at line 1 column 1",
+                ufo.display()
+            )
+        );
+    }
 }
