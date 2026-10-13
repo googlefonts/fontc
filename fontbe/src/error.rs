@@ -18,7 +18,7 @@ use write_fonts::{
         cmap::CmapConflict, glyf::MalformedPath, gvar::iup::IupError,
         variations::TupleVariationStoreInputError,
     },
-    types::{GlyphId, Tag},
+    types::{GlyphId, NameId, Tag},
 };
 
 #[derive(Debug, Error)]
@@ -123,6 +123,45 @@ pub enum Error {
     NoGlobalMetricsInstance(NormalizedLocation),
     #[error("No palette entry for '{0:?}'")]
     MissingPaletteEntry(Color),
+    #[error(
+        "name ID {} (platform {platform_id}, encoding {encoding_id}, language {language_id}) {problem}: {string:?}",
+        .name_id.to_u16()
+    )]
+    NameRecordEncoding {
+        name_id: NameId,
+        platform_id: u16,
+        encoding_id: u16,
+        language_id: u16,
+        string: String,
+        problem: NameRecordProblem,
+    },
+}
+
+/// Why a name record cannot be written
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NameRecordProblem {
+    /// Only Unicode (UTF-16) and Mac Roman encodings can be written
+    UnsupportedEncoding,
+    /// A Mac Roman record contains a character Mac Roman cannot encode
+    NotMacRoman(char),
+}
+
+impl Display for NameRecordProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameRecordProblem::UnsupportedEncoding => {
+                write!(f, "uses an unsupported platform/encoding")
+            }
+            NameRecordProblem::NotMacRoman(c) => {
+                write!(
+                    f,
+                    "has a character not in Mac Roman, {c:?} (U+{:04X})",
+                    *c as u32
+                )
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
