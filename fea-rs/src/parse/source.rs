@@ -182,7 +182,10 @@ impl FileId {
 }
 
 impl Source {
-    pub(crate) fn new(path: PathBuf, contents: Arc<str>) -> Self {
+    pub(crate) fn new(path: PathBuf, mut contents: Arc<str>) -> Self {
+        if let Some(stripped) = contents.strip_prefix('\u{FEFF}') {
+            contents = stripped.into();
+        }
         let line_offsets = line_offsets(&contents);
         Source {
             path,
