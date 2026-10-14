@@ -2382,7 +2382,10 @@ impl RawFont {
                             "Glyph dict must have a 'glyphname' key".to_string(),
                         ));
                     }
-                    glyphs.insert(glyph.glyphname.clone(), glyph);
+                    let name = glyph.glyphname.clone();
+                    if glyphs.insert(name.clone(), glyph).is_some() {
+                        return Err(Error::DuplicateGlyphName(name));
+                    }
                 }
             }
         }
@@ -2779,8 +2782,16 @@ fn parse_alignment_zone(zone: &str) -> Option<(OrderedFloat<f64>, OrderedFloat<f
     Some((OrderedFloat(one as f64), OrderedFloat(two as f64)))
 }
 
-fn make_glyph_order(glyphs: &[RawGlyph], custom_order: Option<Vec<SmolStr>>) -> Vec<SmolStr> {
-    let mut valid_names: HashSet<_> = glyphs.iter().map(|g| &g.glyphname).collect();
+fn make_glyph_order(
+    glyphs: &[RawGlyph],
+    custom_order: Option<Vec<SmolStr>>,
+) -> Result<Vec<SmolStr>, Error> {
+    let mut valid_names = HashSet::new();
+    for glyph in glyphs {
+        if !valid_names.insert(&glyph.glyphname) {
+            return Err(Error::DuplicateGlyphName(glyph.glyphname.clone()));
+        }
+    }
     let mut glyph_order = Vec::new();
 
     // Add all valid glyphOrder entries in order
@@ -2799,7 +2810,7 @@ fn make_glyph_order(glyphs: &[RawGlyph], custom_order: Option<Vec<SmolStr>>) -> 
             .map(|g| g.glyphname.clone()),
     );
 
-    glyph_order
+    Ok(glyph_order)
 }
 
 // glyphs2 uses hex, glyphs3 uses base10
@@ -4053,7 +4064,7 @@ impl TryFrom<RawFont> for Font {
 
         let mut custom_parameters = from.custom_parameters.to_custom_params()?;
 
-        let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
+        let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take())?;
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
@@ -5360,6 +5371,15 @@ slant = (10);
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let font = Font::load(&glyphs3_dir().join("WghtVar_GlyphOrder.glyphs")).unwrap();
         assert_eq!(vec!["hyphen", "space", "exclam"], font.glyph_order);
+    }
+
+    #[test]
+    fn duplicate_glyph_name_is_error() {
+        let result = Font::load(&glyphs3_dir().join("DuplicateGlyphName.glyphs"));
+        assert!(
+            matches!(&result, Err(Error::DuplicateGlyphName(name)) if name == "a"),
+            "{result:?}"
+        );
     }
 
     #[test]
