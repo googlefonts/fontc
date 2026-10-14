@@ -887,7 +887,7 @@ impl NameBuilder {
 
     pub fn add(&mut self, name_id: NameId, value: String) {
         let value = Self::normalize_line_endings(value);
-        let key = NameKey::new(name_id, &value);
+        let key = NameKey::new_bmp_only(name_id);
         self.names.insert(key, value);
         self.name_to_key.insert(name_id, key);
     }
@@ -2353,7 +2353,7 @@ mod tests {
         assert_eq!(
             Some(expected),
             names
-                .get(&NameKey::new(name_id, expected))
+                .get(&NameKey::new_bmp_only(name_id))
                 .map(String::as_str)
         );
     }

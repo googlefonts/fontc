@@ -316,7 +316,7 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
             continue;
         };
 
-        let name_key = NameKey::new_with_lang(name_id, value, lang_id);
+        let name_key = NameKey::new_with_lang(name_id, lang_id);
         builder.add_record(name_key, value.to_string());
     }
 
@@ -3217,21 +3217,13 @@ mod tests {
         assert_eq!(
             "Droit d'auteur",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::COPYRIGHT_NOTICE,
-                    "Droit d'auteur",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::COPYRIGHT_NOTICE, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "Urheberrecht",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::COPYRIGHT_NOTICE,
-                    "Urheberrecht",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::COPYRIGHT_NOTICE, 0x0407))
                 .unwrap()
         );
 
@@ -3242,11 +3234,7 @@ mod tests {
         assert_eq!(
             "デザイナー名",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::DESIGNER,
-                    "デザイナー名",
-                    0x0411
-                ))
+                .get(&NameKey::new_with_lang(NameId::DESIGNER, 0x0411))
                 .unwrap()
         );
 
@@ -3262,21 +3250,13 @@ mod tests {
         assert_eq!(
             "Fabricant",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::MANUFACTURER,
-                    "Fabricant",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::MANUFACTURER, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "Hersteller",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::MANUFACTURER,
-                    "Hersteller",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::MANUFACTURER, 0x0407))
                 .unwrap()
         );
 
@@ -3289,21 +3269,13 @@ mod tests {
         assert_eq!(
             "Une police de test avec des propriétés localisées",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::DESCRIPTION,
-                    "Une police de test avec des propriétés localisées",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::DESCRIPTION, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "ローカライズされたプロパティを持つテストフォント",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::DESCRIPTION,
-                    "ローカライズされたプロパティを持つテストフォント",
-                    0x0411
-                ))
+                .get(&NameKey::new_with_lang(NameId::DESCRIPTION, 0x0411))
                 .unwrap()
         );
 
@@ -3316,21 +3288,13 @@ mod tests {
         assert_eq!(
             "Sous licence SIL Open Font License",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::LICENSE_DESCRIPTION,
-                    "Sous licence SIL Open Font License",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::LICENSE_DESCRIPTION, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "Lizenziert unter der SIL Open Font License",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::LICENSE_DESCRIPTION,
-                    "Lizenziert unter der SIL Open Font License",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::LICENSE_DESCRIPTION, 0x0407))
                 .unwrap()
         );
 
@@ -3343,11 +3307,7 @@ mod tests {
         assert_eq!(
             "LocalizedFont est une marque déposée",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::TRADEMARK,
-                    "LocalizedFont est une marque déposée",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::TRADEMARK, 0x040C))
                 .unwrap()
         );
 
@@ -3360,31 +3320,19 @@ mod tests {
         assert_eq!(
             "Portez ce vieux whisky",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::SAMPLE_TEXT,
-                    "Portez ce vieux whisky",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::SAMPLE_TEXT, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "Zwölf Boxkämpfer",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::SAMPLE_TEXT,
-                    "Zwölf Boxkämpfer",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::SAMPLE_TEXT, 0x0407))
                 .unwrap()
         );
         assert_eq!(
             "いろはにほへと",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::SAMPLE_TEXT,
-                    "いろはにほへと",
-                    0x0411
-                ))
+                .get(&NameKey::new_with_lang(NameId::SAMPLE_TEXT, 0x0411))
                 .unwrap()
         );
 
@@ -3397,31 +3345,19 @@ mod tests {
         assert_eq!(
             "PoliceLocalisée",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::FAMILY_NAME,
-                    "PoliceLocalisée",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::FAMILY_NAME, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "LokalisierteSchrift",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::FAMILY_NAME,
-                    "LokalisierteSchrift",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::FAMILY_NAME, 0x0407))
                 .unwrap()
         );
         assert_eq!(
             "ローカライズフォント",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::FAMILY_NAME,
-                    "ローカライズフォント",
-                    0x0411
-                ))
+                .get(&NameKey::new_with_lang(NameId::FAMILY_NAME, 0x0411))
                 .unwrap()
         );
     }

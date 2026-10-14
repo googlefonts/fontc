@@ -2982,7 +2982,7 @@ mod tests {
                     String::from("Duck Duck Record")
                 ),
                 (
-                    NameKey::new_with_lang(NameId::FAMILY_NAME, "오리 오리", 0x412),
+                    NameKey::new_with_lang(NameId::FAMILY_NAME, 0x412),
                     String::from("오리 오리")
                 ),
                 (
@@ -3006,11 +3006,11 @@ mod tests {
                     String::from("DuckDuck-Regular")
                 ),
                 (
-                    NameKey::new_with_lang(NameId::DESIGNER, "오리 디자이너", 0x412),
+                    NameKey::new_with_lang(NameId::DESIGNER, 0x412),
                     String::from("오리 디자이너")
                 ),
                 (
-                    NameKey::new_with_lang(NameId::DESIGNER, "鸭子设计师", 0x804),
+                    NameKey::new_with_lang(NameId::DESIGNER, 0x804),
                     String::from("鸭子设计师")
                 ),
             ],

@@ -193,7 +193,7 @@ mod tests {
             .enumerate()
             .map(|(idx, name)| {
                 (
-                    NameKey::new(NameId::new(256 + idx as u16), name),
+                    NameKey::new_bmp_only(NameId::new(256 + idx as u16)),
                     name.to_string(),
                 )
             })
