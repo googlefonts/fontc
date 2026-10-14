@@ -828,7 +828,12 @@ pub mod test_helpers {
 pub struct NameBuilder {
     names: HashMap<NameKey, String>,
     /// Helps lookup entries in name when all we have is a NameId
+    ///
+    /// Only holds the English names added with [`NameBuilder::add`], so
+    /// lookups and fallbacks never see an entry from `records`.
     name_to_key: HashMap<NameId, NameKey>,
+    /// Records with their own platform, encoding and language ids
+    records: HashMap<NameKey, String>,
     version_major: i32,
     version_minor: u32,
 }
@@ -885,6 +890,21 @@ impl NameBuilder {
         let key = NameKey::new(name_id, &value);
         self.names.insert(key, value);
         self.name_to_key.insert(name_id, key);
+    }
+
+    /// Add a record under exactly the platform, encoding and language ids of `key`.
+    ///
+    /// Like ufo2ft's `openTypeNameRecords`, records are applied after the
+    /// names derived from the other fields, replacing one only when all four
+    /// ids match. They are never consulted for fallbacks or derived names, so
+    /// a localized family name (or an English one given as a record) does not
+    /// change the full name, the PostScript name and so on.
+    ///
+    /// The value is kept as it is, unlike with [`NameBuilder::add`].
+    ///
+    /// <https://github.com/googlefonts/ufo2ft/blob/fca66fe3/Lib/ufo2ft/outlineCompiler.py#L438-L445>
+    pub fn add_record(&mut self, key: NameKey, value: String) {
+        self.records.insert(key, value);
     }
 
     pub fn remove(&mut self, name_id: NameId) {
@@ -1053,6 +1073,10 @@ impl NameBuilder {
         // so that an explicit empty string prevents fallback: see
         // https://github.com/googlefonts/ufo2ft/issues/958
         self.names.retain(|_k, v| !v.is_empty());
+
+        // Records go in last, so nothing above sees them. This is after the
+        // empty string removal because ufo2ft adds records as they are.
+        self.names.extend(self.records);
         self.names
     }
 
@@ -2811,5 +2835,63 @@ mod tests {
         let mut builder = NameBuilder::default();
         builder.add(NameId::COPYRIGHT_NOTICE, "a\r\nb\rc\nd".to_string());
         assert_eq!(builder.get(NameId::COPYRIGHT_NOTICE), Some("a\nb\nc\nd"));
+    }
+
+    fn record_key(name_id: NameId, lang_id: u16) -> NameKey {
+        NameKey {
+            name_id,
+            platform_id: 3,
+            encoding_id: 1,
+            lang_id,
+        }
+    }
+
+    // Records are added as they are, an empty one included
+    #[test]
+    fn name_builder_keeps_empty_records() {
+        let mut builder = NameBuilder::default();
+        let empty = record_key(NameId::DESCRIPTION, 0x407);
+        builder.add_record(empty, String::new());
+        // an empty name is dropped, an empty record isn't
+        builder.add(NameId::COPYRIGHT_NOTICE, String::new());
+        let names = builder.build(DEFAULT_VENDOR_ID);
+        assert_eq!(names.get(&empty).map(String::as_str), Some(""));
+        assert!(!names.contains_key(&NameKey::new_bmp_only(NameId::COPYRIGHT_NOTICE)));
+    }
+
+    // A record for the English name wins in the end, but doesn't change the
+    // names derived from the field it replaces, as in ufo2ft
+    #[test]
+    fn name_builder_english_record_replaces_without_feeding() {
+        let mut builder = NameBuilder::default();
+        // the order of the calls doesn't matter
+        builder.add_record(record_key(NameId::FAMILY_NAME, 0x409), "Record".to_string());
+        builder.add_record(
+            record_key(NameId::TYPOGRAPHIC_FAMILY_NAME, 0x409),
+            "Typo Record".to_string(),
+        );
+        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Typo".to_string());
+        builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Light".to_string());
+        let names = builder.build(DEFAULT_VENDOR_ID);
+
+        let name = |id| names[&record_key(id, 0x409)].as_str();
+        // the record replaces the derived name ...
+        assert_eq!(name(NameId::FAMILY_NAME), "Record");
+        assert_eq!(name(NameId::TYPOGRAPHIC_FAMILY_NAME), "Typo Record");
+        // ... but the others derive from the fields, not the record
+        assert_eq!(name(NameId::SUBFAMILY_NAME), "Regular");
+        assert_eq!(name(NameId::FULL_NAME), "Typo Light");
+        assert_eq!(name(NameId::POSTSCRIPT_NAME), "Typo-Light");
+    }
+
+    // The last record for a key wins
+    #[test]
+    fn name_builder_records_last_wins() {
+        let mut builder = NameBuilder::default();
+        let key = record_key(NameId::DESCRIPTION, 0x407);
+        builder.add_record(key, "first".to_string());
+        builder.add_record(key, "second".to_string());
+        let names = builder.build(DEFAULT_VENDOR_ID);
+        assert_eq!(names[&key], "second");
     }
 }

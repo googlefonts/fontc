@@ -1105,18 +1105,7 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
         &font_info.open_type_name_wws_subfamily_name,
     );
 
-    // After our first pass at getting values, apply fallbacks
-    let vendor = font_info
-        .open_type_os2_vendor_id
-        .as_deref()
-        .unwrap_or(DEFAULT_VENDOR_ID);
-
-    let mut names = builder.build(vendor);
-
-    // Name records are added as-is, under their own platform, encoding and
-    // language, after the names derived from the fontinfo fields; a record
-    // only replaces one of those when all four ids match, like ufo2ft does.
-    // <https://github.com/googlefonts/ufo2ft/blob/fca66fe3/Lib/ufo2ft/outlineCompiler.py#L438-L445>
+    // Name records keep their own platform, encoding and language ids.
     if let Some(name_records) = font_info.open_type_name_records.as_ref() {
         for nr in name_records.iter() {
             let name_id: u16 = nr.name_id.try_into().unwrap();
@@ -1126,11 +1115,17 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
                 encoding_id: nr.encoding_id.try_into().unwrap(),
                 lang_id: nr.language_id.try_into().unwrap(),
             };
-            names.insert(key, NameBuilder::normalize_line_endings(nr.string.clone()));
+            // plist doesn't normalize line endings, see NameBuilder::add
+            builder.add_record(key, NameBuilder::normalize_line_endings(nr.string.clone()));
         }
     }
 
-    names
+    // After our first pass at getting values, apply fallbacks
+    let vendor = font_info
+        .open_type_os2_vendor_id
+        .as_deref()
+        .unwrap_or(DEFAULT_VENDOR_ID);
+    builder.build(vendor)
 }
 
 /// <https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-head-table-fields>
