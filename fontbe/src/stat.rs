@@ -193,7 +193,7 @@ mod tests {
             .enumerate()
             .map(|(idx, name)| {
                 (
-                    NameKey::new_bmp_only(NameId::new(256 + idx as u16)),
+                    NameKey::new(NameId::new(256 + idx as u16)),
                     name.to_string(),
                 )
             })
@@ -308,12 +308,9 @@ mod tests {
         let mut static_metadata = StaticMetadata::new(
             1000,
             HashMap::from([
+                (NameKey::new(NameId::SUBFAMILY_NAME), "Regular".to_string()),
                 (
-                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
-                    "Regular".to_string(),
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+                    NameKey::new(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
                     "Italic".to_string(),
                 ),
             ]),

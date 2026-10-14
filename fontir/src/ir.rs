@@ -887,7 +887,7 @@ impl NameBuilder {
 
     pub fn add(&mut self, name_id: NameId, value: String) {
         let value = Self::normalize_line_endings(value);
-        let key = NameKey::new_bmp_only(name_id);
+        let key = NameKey::new(name_id);
         self.names.insert(key, value);
         self.name_to_key.insert(name_id, key);
     }
@@ -2352,9 +2352,7 @@ mod tests {
     fn assert_name(names: &HashMap<NameKey, String>, expected: &str, name_id: NameId) {
         assert_eq!(
             Some(expected),
-            names
-                .get(&NameKey::new_bmp_only(name_id))
-                .map(String::as_str)
+            names.get(&NameKey::new(name_id)).map(String::as_str)
         );
     }
 
@@ -2621,10 +2619,8 @@ mod tests {
             (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Regular"),
         ]);
 
-        assert!(!identical.contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME)));
-        assert!(
-            !identical.contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
-        );
+        assert!(!identical.contains_key(&NameKey::new(NameId::TYPOGRAPHIC_FAMILY_NAME)));
+        assert!(!identical.contains_key(&NameKey::new(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)));
 
         let different_subfamily = make_builder(&[
             (NameId::FAMILY_NAME, "Derp"),
@@ -2633,13 +2629,9 @@ mod tests {
             (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Regular Italic"),
         ]);
 
+        assert!(different_subfamily.contains_key(&NameKey::new(NameId::TYPOGRAPHIC_FAMILY_NAME)));
         assert!(
-            different_subfamily
-                .contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME))
-        );
-        assert!(
-            different_subfamily
-                .contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
+            different_subfamily.contains_key(&NameKey::new(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
         );
     }
 
@@ -2649,7 +2641,7 @@ mod tests {
         let mut builder = NameBuilder::default();
         builder.add(NameId::UNIQUE_ID, "".into());
         let names = builder.build("derp");
-        assert!(!names.contains_key(&NameKey::new_bmp_only(NameId::UNIQUE_ID)));
+        assert!(!names.contains_key(&NameKey::new(NameId::UNIQUE_ID)));
     }
 
     // If x-height is undefined, ufo2ft derives the strikeout position from its
@@ -2872,7 +2864,7 @@ mod tests {
         builder.add(NameId::COPYRIGHT_NOTICE, String::new());
         let names = builder.build(DEFAULT_VENDOR_ID);
         assert_eq!(names.get(&empty).map(String::as_str), Some(""));
-        assert!(!names.contains_key(&NameKey::new_bmp_only(NameId::COPYRIGHT_NOTICE)));
+        assert!(!names.contains_key(&NameKey::new(NameId::COPYRIGHT_NOTICE)));
     }
 
     // A record for the English name wins in the end, but doesn't change the
