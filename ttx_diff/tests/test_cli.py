@@ -96,6 +96,11 @@ class TestSourceIsVariable:
         (ufo / "metainfo.plist").write_text("")
         assert not source_is_variable(ufo)
 
+    def test_ufoz_is_static(self, tmp_path):
+        ufoz = tmp_path / "test.ufoz"
+        ufoz.write_bytes(b"")
+        assert not source_is_variable(ufoz)
+
     def test_designspace_multiple_sources(self, tmp_path):
         path = _write_designspace(
             tmp_path,
