@@ -306,7 +306,6 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
     }
 
     let vendor = font.vendor_id().unwrap_or(DEFAULT_VENDOR_ID);
-    let mut names = builder.build(vendor);
 
     for (key, lang, value) in font.localized_names() {
         let Some(name_id) = try_name_id(key) else {
@@ -318,7 +317,7 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
         };
 
         let name_key = NameKey::new_with_lang(name_id, value, lang_id);
-        names.insert(name_key, value.to_string());
+        builder.add_record(name_key, value.to_string());
     }
 
     for entry in &font.custom_parameters.name_table_entries {
@@ -328,10 +327,10 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
             encoding_id: entry.encoding_id,
             lang_id: entry.lang_id,
         };
-        names.insert(key, entry.value.clone());
+        builder.add_record(key, entry.value.clone());
     }
 
-    names
+    builder.build(vendor)
 }
 
 /// Read the `com.github.googlei18n.ufo2ft.featureWriters` config from font userData.
