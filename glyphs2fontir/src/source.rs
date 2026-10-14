@@ -3426,6 +3426,26 @@ mod tests {
         );
     }
 
+    // glyphsLib writes localized names as Windows Unicode BMP records whatever
+    // their content, and so does Glyphs.app; a supplementary-plane character
+    // must not move the record to encoding 10.
+    // https://github.com/googlefonts/glyphsLib/blob/d4939d02/Lib/glyphsLib/builder/font.py#L113-L122
+    #[test]
+    fn localized_name_outside_bmp_keeps_windows_bmp_encoding() {
+        let font = Font::load(&glyphs3_dir().join("LocalizedNames.glyphs")).unwrap();
+        let names = names(&font, SelectionFlags::REGULAR);
+        let key = NameKey {
+            name_id: NameId::FAMILY_NAME,
+            platform_id: 3,
+            encoding_id: 1,
+            lang_id: 0x0412,
+        };
+        assert_eq!(
+            Some(&"로컬라이즈드\u{20000}폰트".to_string()),
+            names.get(&key)
+        );
+    }
+
     #[test]
     fn version_with_version_string() {
         let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();

@@ -2846,6 +2846,22 @@ mod tests {
         }
     }
 
+    // Derived names stay at Windows encoding 1 whatever they contain, like in
+    // Glyphs.app and ufo2ft (googlefonts/ufo2ft#1011)
+    #[test]
+    fn name_builder_name_outside_bmp_keeps_windows_bmp_encoding() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::FAMILY_NAME, "Local\u{20000}Font".to_string());
+        let names = builder.build(DEFAULT_VENDOR_ID);
+        assert_eq!(
+            names
+                .get(&record_key(NameId::FAMILY_NAME, 0x409))
+                .map(String::as_str),
+            Some("Local\u{20000}Font")
+        );
+        assert!(names.keys().all(|key| key.encoding_id == 1));
+    }
+
     // Records are added as they are, an empty one included
     #[test]
     fn name_builder_keeps_empty_records() {
