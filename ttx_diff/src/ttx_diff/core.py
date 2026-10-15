@@ -822,15 +822,11 @@ def normalize_gvar_contours(ttx: etree.ElementTree, point_orders: dict[str, list
             tup.extend(non_deltas + reordered)
 
 
-def normalize_null_tags(ttx: etree.ElementTree, xpath: str, attr):
+def normalize_null_tags(ttx: etree.ElementTree, xpath: str, attr: str):
     """replace the tag 'NONE' with the tag '    '"""
     for el in ttx.xpath(xpath):
-        if attr:
-            if el.attrib.get(attr, "") == "NONE":
-                el.attrib[attr] = "    "
-        else:
-            if el.text == "NONE":
-                el.text = "    "
+        if el.attrib.get(attr, "") == "NONE":
+            el.attrib[attr] = "    "
 
 
 def normalize_null_vendor_in_unique_id(ttx: etree.ElementTree):
@@ -926,7 +922,7 @@ def sort_indices(ttx, table_tag: str, container_xpath: str, el_name: str):
 # will resolve them to the actual glyphs and here we can just sort
 def sort_gdef_mark_filter_sets(ttx: etree.ElementTree):
     markglyphs = ttx.xpath("//GDEF//MarkGlyphSetsDef")
-    if markglyphs is None or len(markglyphs) == 0:
+    if len(markglyphs) == 0:
         return
 
     assert len(markglyphs) == 1
@@ -1089,7 +1085,7 @@ def reorder_contextual_class_based_rules(
         # use .//{name} instead of {name} so we also find subtables wrapped
         # inside ExtensionPos/ExtensionSubst elements.
         for ctx in lookup.findall(f".//{context_name}"):
-            if ctx is None or int(ctx.attrib["Format"]) != 2:
+            if int(ctx.attrib["Format"]) != 2:
                 continue
 
             input_class_order = remap_class_def_ids_like_fontc(
@@ -1101,7 +1097,7 @@ def reorder_contextual_class_based_rules(
                     remap_values(class_rule, input_class_order, "Class")
 
         for chain_ctx in lookup.findall(f".//{chain_name}"):
-            if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
+            if int(chain_ctx.attrib["Format"]) != 2:
                 continue
             input_class_order = remap_class_def_ids_like_fontc(
                 chain_ctx.find("InputClassDef"), glyph_map
