@@ -2650,6 +2650,33 @@ mod tests {
     }
 
     #[test]
+    fn default_master_overrides_stray_instance_mapping() {
+        // A stray last Regular instance at 200 redefines user 400 from 400 to
+        // 200; the default master at 400 interpolates to user 400 between Light
+        // (300:300) and ExtraBold (800:800), and takes it back like glyphsLib,
+        // so the axis is unmapped
+        let (_, context) =
+            build_static_metadata(glyphs2_dir().join("InstanceMappingStrayDefault.glyphs"));
+        let static_metadata = context.static_metadata.get();
+        let wght = static_metadata.axes.get(&Tag::new(b"wght")).unwrap();
+        assert_eq!(
+            (wght.min, wght.default, wght.max),
+            (
+                UserCoord::new(200.0),
+                UserCoord::new(400.0),
+                UserCoord::new(800.0)
+            )
+        );
+        assert_eq!(
+            wght.converter
+                .iter()
+                .map(|(user, design, _)| (user, design))
+                .collect::<Vec<_>>(),
+            [200.0, 400.0, 800.0].map(|v| (UserCoord::new(v), DesignCoord::new(v)))
+        );
+    }
+
+    #[test]
     fn loads_axis_mappings_from_glyphs2() {
         let (source, context) = context_for(&glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         let task_context = context.copy_for_work(
