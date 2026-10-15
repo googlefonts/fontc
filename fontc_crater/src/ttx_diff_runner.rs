@@ -31,7 +31,7 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
     let outdir = tempdir.path();
     let source_path = target.source_path(&ctx.source_cache);
-    let compare = target.build.name();
+    let compare = target.build().name();
     let build_dir = outdir.join(compare);
     let results_cache = ctx.results_cache.as_ref();
     let reused_fontmake =
@@ -63,7 +63,7 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
         cmd.arg("--expected_fontc_ttf_hash")
             .arg(&cached.fontc_ttf_hash);
     }
-    if target.build == BuildType::GfTools {
+    if target.build() == BuildType::GfTools {
         cmd.arg("--config")
             .arg(target.config_path(&ctx.source_cache));
     }

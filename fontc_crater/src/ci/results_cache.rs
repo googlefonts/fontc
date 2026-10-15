@@ -204,7 +204,7 @@ mod tests {
 
     fn test_target() -> Target {
         Target::new(
-            "org/repo_deadbeefc0",
+            "org/repo",
             "deadbeefc0ffee",
             "sources/config.yaml",
             false,
