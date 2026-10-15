@@ -8,14 +8,14 @@ fontmake should be installed in an active virtual environment.
 
 Usage:
     # rebuild with fontmake and fontc and compare
-    python resources/scripts/ttx_diff.py ../OswaldFont/sources/Oswald.glyphs
+    ttx-diff ../OswaldFont/sources/Oswald.glyphs
 
     # rebuild the fontc copy, reuse the prior fontmake copy (if present), and compare
     # useful if you are making changes to fontc meant to narrow the diff
-    python resources/scripts/ttx_diff.py --rebuild fontc ../OswaldFont/sources/Oswald.glyphs
+    ttx-diff --rebuild fontc ../OswaldFont/sources/Oswald.glyphs
 
     # compare two precompiled fonts directly (no compilation from source)
-    python resources/scripts/ttx_diff.py --fontc_font path/to/fontc.ttf --fontmake_font path/to/fontmake.ttf
+    ttx-diff --fontc_font path/to/fontc.ttf --fontmake_font path/to/fontmake.ttf
 
 JSON:
     If the `--json` flag is passed, this tool will output JSON.
