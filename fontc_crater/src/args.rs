@@ -62,7 +62,7 @@ pub(super) struct CiArgs {
     pub(super) progress_file: Option<PathBuf>,
     /// Where the report reads the live status, as published by the CI script.
     ///
-    /// Without it, the report has no status line.
+    /// Without it, the report says that status isn't configured.
     #[arg(long)]
     pub(super) status_url: Option<String>,
 }
