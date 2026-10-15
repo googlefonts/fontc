@@ -178,8 +178,9 @@ def run_ttx(font_file: Path):
     return ttx_file
 
 
-# generate a simple text repr for gpos for this font, with retry
+# generate a simple text repr of this table for this font
 def run_normalizer(normalizer_bin: Path, font_file: Path, table: str):
+    NORMALIZER_TIMEOUT = 60 * 10  # ten minutes
     if table == "gpos":
         out_path = font_file.with_suffix(".markkern.txt")
     elif table == "gdef":
@@ -187,24 +188,9 @@ def run_normalizer(normalizer_bin: Path, font_file: Path, table: str):
     else:
         raise ValueError(f"unknown table for normalizer: '{table}'")
 
-    if out_path.exists():
+    if out_path.is_file():
         eprint(f"reusing {rel_user(out_path)}")
-    NUM_RETRIES = 5
-    for i in range(NUM_RETRIES + 1):
-        try:
-            return try_normalizer(normalizer_bin, font_file, out_path, table)
-        except subprocess.CalledProcessError as e:
-            time.sleep(0.1)
-            if i >= NUM_RETRIES:
-                raise e
-            eprint(f"normalizer failed with code '{e.returncode}'', retrying")
-
-
-# we had a bug where this would sometimes hang in mysterious ways, so we may
-# call it multiple times if it fails
-def try_normalizer(normalizer_bin: Path, font_file: Path, out_path: Path, table: str):
-    NORMALIZER_TIMEOUT = 60 * 10  # ten minutes
-    if not out_path.is_file():
+    else:
         cmd = [
             normalizer_bin.absolute(),
             font_file.name,
