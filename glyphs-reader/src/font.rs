@@ -3216,7 +3216,7 @@ impl UserToDesignMapping {
                         axis.name
                     );
                 }
-                mapping.add_if_new(user, design);
+                mapping.add_or_replace(user, design);
             }
         }
     }

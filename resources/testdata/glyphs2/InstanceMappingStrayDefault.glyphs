@@ -1,0 +1,67 @@
+{
+familyName = Mapping;
+fontMaster = (
+{
+id = regular;
+weightValue = 400;
+},
+{
+id = light;
+weightValue = 200;
+},
+{
+id = bold;
+weightValue = 800;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = regular;
+width = 200;
+},
+{
+layerId = light;
+width = 100;
+},
+{
+layerId = bold;
+width = 300;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+interpolationWeight = 200;
+name = ExtraLight;
+weightClass = ExtraLight;
+},
+{
+interpolationWeight = 300;
+name = Light;
+weightClass = Light;
+},
+{
+interpolationWeight = 400;
+name = Regular;
+weightClass = Regular;
+},
+{
+interpolationWeight = 800;
+name = ExtraBold;
+weightClass = ExtraBold;
+},
+{
+interpolationWeight = 200;
+name = Regular;
+weightClass = Regular;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
