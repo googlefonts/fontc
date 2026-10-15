@@ -72,6 +72,7 @@ from fontTools.misc.fixedTools import otRound
 from fontTools.ttLib import TTFont
 from fontTools.varLib.iup import iup_delta
 from glyphsLib import GSFont
+from glyphsLib.classes import InstanceType
 from lxml import etree
 
 from ttx_diff import __version__
@@ -288,12 +289,25 @@ def load_fontmake_failure(fontmake_ttf: Path) -> Optional[dict]:
     return {"command": failure["command"], "stderr": failure["stderr"]}
 
 
+def builds_static_export(font: Optional[GSFont]) -> bool:
+    """A static Glyphs source with one active static instance builds that instance."""
+    return (
+        font is not None
+        and sum(
+            instance.active and instance.type == InstanceType.SINGLE
+            for instance in font.instances
+        )
+        == 1
+    )
+
+
 def build_fontmake(source: Path, build_dir: Path):
     out_file = build_dir / "fontmake.ttf"
     if out_file.exists():
         eprint(f"reusing {rel_user(out_file)}")
         return
-    variable = source_is_variable(source)
+    font = GSFont(source) if source.suffix in (".glyphs", ".glyphspackage") else None
+    variable = source_is_variable(source, font)
     buildtype = "variable"
     if not variable:
         buildtype = "ttf"
@@ -308,6 +322,10 @@ def build_fontmake(source: Path, build_dir: Path):
         "--debug-feature-file",
         "debug.fea",
     ]
+    # Static Glyphs compilation uses the one static export's metadata. Other sources
+    # still use the master/VF reference, including one-master variable sources.
+    if not variable and builds_static_export(font):
+        cmd.append("-i")
     if FLAGS.keep_direction:
         cmd.append("--keep-direction")
     if not FLAGS.production_names:
@@ -478,7 +496,7 @@ def looks_like_it_has_appended_sha(name: str) -> bool:
         return False
 
 
-def source_is_variable(path: Path) -> bool:
+def source_is_variable(path: Path, font: Optional[GSFont] = None) -> bool:
     if path.suffix == ".ufo" or path.suffix == ".ufoz":
         return False
     if path.suffix == ".designspace":
@@ -487,7 +505,8 @@ def source_is_variable(path: Path) -> bool:
             a.minimum != a.default or a.maximum != a.default for a in dspace.axes
         )
     if path.suffix == ".glyphs" or path.suffix == ".glyphspackage":
-        font = GSFont(path)
+        if font is None:
+            font = GSFont(path)
         # Virtual masters can extend axis min/max beyond what real masters define
         # https://github.com/googlefonts/glyphsLib/blob/75c07d42/Lib/glyphsLib/builder/axes.py#L168-L173
         virtual_masters = [

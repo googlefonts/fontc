@@ -93,6 +93,10 @@ pub struct Font {
 #[derive(Clone, Debug, PartialEq, Hash, Default)]
 pub struct CustomParameters {
     pub propagate_anchors: Option<bool>,
+    /// Instance vendor and version: Glyphs applies these parameters in Glyphs 3
+    /// files too (it has no instance vendor property).
+    pub vendor_id: Option<String>,
+    pub version_string: Option<String>,
     pub use_typo_metrics: Option<bool>,
     pub export_stat_table: Option<bool>,
     pub elidable_stat_axis_value_names: Vec<SmolStr>,
@@ -1177,6 +1181,12 @@ impl RawCustomParameters {
             }
             match name.as_str() {
                 "Propagate Anchors" => add_and_report_issues!(propagate_anchors, Plist::as_bool),
+                "vendorID" | "openTypeOS2VendorID" => {
+                    add_and_report_issues!(vendor_id, Plist::as_str, into)
+                }
+                "versionString" | "openTypeNameVersion" => {
+                    add_and_report_issues!(version_string, Plist::as_str, into)
+                }
                 "Use Typo Metrics" => add_and_report_issues!(use_typo_metrics, Plist::as_bool),
                 "Has WWS Names" => add_and_report_issues!(has_wws_names, Plist::as_bool),
                 "Export STAT Table" => {
@@ -1995,6 +2005,9 @@ pub struct Instance {
     pub active: bool,
     pub is_bold: bool,
     pub is_italic: bool,
+    pub link_style: Option<String>,
+    pub weight_class: Option<u16>,
+    pub width_class: Option<u16>,
     // So named to let FromPlist populate it from a field called "type"
     pub type_: InstanceType,
     pub axis_mappings: BTreeMap<String, AxisUserToDesignMap>,
@@ -2027,6 +2040,7 @@ struct RawInstance {
     active: Option<i64>,
     is_bold: Option<bool>,
     is_italic: Option<bool>,
+    link_style: Option<String>,
     type_: Option<String>,
     axes_values: Vec<OrderedFloat<f64>>,
 
@@ -2716,14 +2730,58 @@ impl RawFont {
             if let Some(custom_weight_class) = instance.custom_parameters.take("weightClass") {
                 instance.weight_class = custom_weight_class.to_string().into();
             }
+            if let Some(custom_width_class) = instance.custom_parameters.take("widthClass") {
+                instance.width_class = custom_width_class.to_string().into();
+            }
 
-            instance.properties.extend(v2_to_v3_name(
-                instance
-                    .custom_parameters
-                    .take_string("postscriptFontName")
-                    .as_deref(),
-                "postscriptFontName",
-            ));
+            // Glyphs 2 instances keep their names in custom parameters, which
+            // Glyphs 3 turns into properties when it opens the file; it ignores
+            // these parameters in a Glyphs 3 file. The vendor and version
+            // parameters stay live in both, so they stay custom parameters.
+            for (keys, property) in [
+                (&["familyName"][..], "familyNames"),
+                (&["postscriptFontName"][..], "postscriptFontName"),
+                (
+                    &["preferredFamilyName", "openTypeNamePreferredFamilyName"][..],
+                    "preferredFamilyNames",
+                ),
+                (
+                    &[
+                        "preferredSubfamilyName",
+                        "openTypeNamePreferredSubfamilyName",
+                    ][..],
+                    "preferredSubfamilyNames",
+                ),
+                (
+                    &["WWSFamilyName", "openTypeNameWWSFamilyName"][..],
+                    "WWSFamilyName",
+                ),
+                (
+                    &["WWSSubfamilyName", "openTypeNameWWSSubfamilyName"][..],
+                    "WWSSubfamilyName",
+                ),
+                (&["styleMapFamilyName"][..], "styleMapFamilyNames"),
+                (&["styleMapStyleName"][..], "styleMapStyleNames"),
+                (&["postscriptFullName"][..], "postscriptFullName"),
+                (&["license", "openTypeNameLicense"][..], "licenses"),
+                (&["licenseURL", "openTypeNameLicenseURL"][..], "licenseURL"),
+                (&["trademark"][..], "trademarks"),
+                (
+                    &["description", "openTypeNameDescription"][..],
+                    "descriptions",
+                ),
+                (&["sampleText", "openTypeNameSampleText"][..], "sampleTexts"),
+                (&["uniqueID", "openTypeNameUniqueID"][..], "uniqueID"),
+            ] {
+                if let Some(name) = keys
+                    .iter()
+                    .find_map(|key| instance.custom_parameters.take_string(key))
+                {
+                    instance
+                        .properties
+                        .extend(v2_to_v3_name(Some(&name), property));
+                }
+            }
         }
 
         Ok(())
@@ -3911,9 +3969,21 @@ impl Instance {
             );
         }
 
+        let weight_class = value
+            .weight_class
+            .as_ref()
+            .and_then(|value| value.parse().ok());
+        let width_class = value
+            .width_class
+            .as_ref()
+            .and_then(|value| value.parse().ok());
+
         Ok(Instance {
             name: value.name.clone(),
             active,
+            link_style: value.link_style.clone(),
+            weight_class,
+            width_class,
             is_bold: value.is_bold.unwrap_or_default(),
             is_italic: value.is_italic.unwrap_or_default(),
             type_: value
@@ -3928,15 +3998,22 @@ impl Instance {
         })
     }
 
-    fn family_name(&self) -> Option<&str> {
+    pub fn family_name(&self) -> Option<&str> {
         self.properties
             .iter()
             .find(|raw| raw.key == "familyNames")
             .and_then(RawName::get_value)
-        // glyphsLib here also checks for 'familyName' in customParams, but we
-        // don't have that key? Possible that we're ignoring it in the raw params
-        // conversion..
-        // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577/Lib/glyphsLib/classes.py#L3271
+    }
+
+    pub fn default_names(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.properties
+            .iter()
+            .filter_map(|name| name.get_value().map(|value| (name.key.as_str(), value)))
+    }
+
+    pub fn get_default_name(&self, key: &str) -> Option<&str> {
+        self.default_names()
+            .find_map(|(name, value)| (name == key).then_some(value))
     }
 
     /// Get the optional postscript name to use for the `fvar` named instance.
@@ -6835,6 +6912,89 @@ unitsPerEm = 1000;
                 .iter()
                 .all(|l| !l.attributes.axis_rules.is_empty())
         );
+    }
+
+    #[test]
+    fn reads_instance_export_metadata() {
+        let font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+fontMaster = ({ id = m01; });
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; },
+{ name = Bold; weightClass = 700; widthClass = 3; linkStyle = Book;
+customParameters = (
+{ name = vendorID; value = IGNR; disabled = 1; },
+{ name = vendorID; value = EXPO; }
+);
+properties = ({ key = preferredFamilyNames; values = ({ language = dflt; value = Preferred; }); });
+}
+);
+}"#,
+        )
+        .unwrap();
+        let absent = &font.instances[0];
+        assert_eq!(absent.weight_class, None);
+        assert_eq!(absent.width_class, None);
+        let export = &font.instances[1];
+        assert_eq!(export.weight_class, Some(700));
+        assert_eq!(export.width_class, Some(3));
+        assert_eq!(export.custom_parameters.vendor_id.as_deref(), Some("EXPO"));
+        assert_eq!(export.link_style.as_deref(), Some("Book"));
+        assert!(!export.is_bold);
+        assert_eq!(
+            export.get_default_name("preferredFamilyNames"),
+            Some("Preferred")
+        );
+    }
+
+    #[test]
+    fn glyphs2_instance_naming_parameters_become_properties() {
+        // Glyphs 3 turns these Glyphs 2 parameters into properties on opening
+        // the file; the vendor and version parameters stay live in both.
+        let font = Font::load_from_string(
+            r#"{
+familyName = Example;
+fontMaster = ({ id = m01; });
+unitsPerEm = 1000;
+instances = ({ name = Regular; customParameters = (
+{ name = familyName; value = Other; },
+{ name = description; value = Described; },
+{ name = vendorID; value = VNDR; },
+{ name = versionString; value = "Version 2.0"; }
+); });
+}"#,
+        )
+        .unwrap();
+        let instance = &font.instances[0];
+        assert_eq!(instance.family_name(), Some("Other"));
+        assert_eq!(instance.get_default_name("descriptions"), Some("Described"));
+        assert_eq!(
+            instance.custom_parameters.vendor_id.as_deref(),
+            Some("VNDR")
+        );
+        assert_eq!(
+            instance.custom_parameters.version_string.as_deref(),
+            Some("Version 2.0")
+        );
+    }
+
+    #[test]
+    fn glyphs2_width_class_custom_instance_parameter() {
+        // like weightClass, the parameter overrides the instance's width class
+        let font = Font::load_from_string(
+            r#"{
+familyName = Example;
+fontMaster = ({ id = m01; });
+unitsPerEm = 1000;
+instances = ({ name = Condensed; widthClass = Expanded; customParameters = (
+{ name = widthClass; value = 3; }
+); });
+}"#,
+        )
+        .unwrap();
+        assert_eq!(font.instances[0].width_class, Some(3));
     }
 
     #[test]
