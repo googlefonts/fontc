@@ -3662,6 +3662,7 @@ impl RawFeature {
         if name.is_empty() {
             None
         } else {
+            let name = escape_fea_string(name);
             Some(format!("name 3 1 0x409 \"{name}\";"))
         }
     }
@@ -3739,9 +3740,17 @@ impl RawNameValue {
             warn!("Unknown feature label language: {}", self.language);
             return None;
         };
-        let name = self.value.replace("\\", "\\005c").replace("\"", "\\0022");
+        let name = escape_fea_string(&self.value);
         Some(format!("  name 3 1 0x{language_id:04X} \"{name}\";"))
     }
+}
+
+/// Escape `\` and `"` for use in a FEA name string.
+///
+/// The backslash is escaped first, so the escapes we add aren't escaped again.
+/// This matches what glyphsLib does.
+fn escape_fea_string(s: &str) -> String {
+    s.replace('\\', "\\005c").replace('"', "\\0022")
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L220-L249>
@@ -5660,6 +5669,20 @@ etc;
             ..Default::default()
         };
         assert_eq!("aalt", raw.name().unwrap());
+    }
+
+    // Alegreya's ss05 note has a stray trailing quote
+    #[test]
+    fn legacy_feature_name_is_escaped() {
+        let raw = RawFeature {
+            tag: Some("ss05".into()),
+            notes: Some("Name: a\"b\\c\n".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            raw.feature_names(),
+            "featureNames {\nname 3 1 0x409 \"a\\0022b\\005cc\";\n};\n"
+        );
     }
 
     #[test]
