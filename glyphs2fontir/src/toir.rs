@@ -18,7 +18,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadGlyph, BadGlyphKind, BadSource, Error, PathConversionError},
+    error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{
         self, Color, ColorStop, GlyphPathBuilder, Paint, PaintLinearGradient, PaintRadialGradient,
         PaintSolid,
@@ -346,20 +346,20 @@ impl TryFrom<Font> for FontInfo {
                 })
                 .collect();
             if exports.len() > 1 {
-                return Err(BadSource::custom(
-                    "<Glyphs source>",
-                    format!(
-                        "Ambiguous static exports: {}. Disable all but one static instance.",
-                        exports
-                            .iter()
-                            .map(|(_, instance)| instance.name.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ),
-                )
-                .into());
+                // Without a way to pick one, build the master as before.
+                warn!(
+                    "Several active static instances ({}), building the master without \
+                     their metadata; disable all but one to build that instance",
+                    exports
+                        .iter()
+                        .map(|(_, instance)| instance.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                None
+            } else {
+                exports.first().map(|(index, _)| *index)
             }
-            exports.first().map(|(index, _)| *index)
         } else {
             None
         };

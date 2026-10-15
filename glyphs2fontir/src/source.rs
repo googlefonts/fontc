@@ -82,11 +82,7 @@ impl Source for GlyphsIrSource {
                 glyphs_file.to_path_buf(),
                 format!("Unable to read glyphs file: {e}"),
             )
-        })?)
-        .map_err(|error| match error {
-            Error::BadSource(error) => BadSource::custom(glyphs_file, error.kind).into(),
-            other => other,
-        })?;
+        })?)?;
 
         Ok(Self {
             font_info: Arc::new(font_info),
@@ -5082,34 +5078,18 @@ unitsPerEm = 1000;
     }
 
     #[test]
-    fn ambiguous_static_exports_fail_from_memory() {
-        let result = GlyphsIrSource::new_from_memory(
-            r#"{
-.formatVersion = 3;
-familyName = Example;
-fontMaster = ({ id = m01; });
-unitsPerEm = 1000;
-instances = ({ name = Regular; }, { name = Bold; });
-}"#,
-        );
-        assert!(
-            result.is_err(),
-            "multiple static exports must not silently select one"
-        );
-        let message = result.unwrap_err().to_string();
-        assert!(
-            message.contains("Regular") && message.contains("Bold"),
-            "{message}"
-        );
-    }
-
-    #[test]
     fn static_export_counts_active_single_instances_of_static_sources() {
-        // The counterpart of ambiguous_static_exports_fail_from_memory: shapes
-        // that must not be ambiguous, and the export each one picks.
+        // The export each shape of source picks, if any.
         for (case, parameters, instances, expected) in [
             // Nothing to pick: the master is built as before
             ("no_instances", "", "", None),
+            // Several to pick from: the master is built as before
+            (
+                "several_static_instances",
+                "",
+                "{ name = Regular; axesValues = (100); }, { name = Bold; axesValues = (100); }",
+                None,
+            ),
             // Disabled instances and Variable Font Settings don't count
             (
                 "inactive_and_variable_ignored",
