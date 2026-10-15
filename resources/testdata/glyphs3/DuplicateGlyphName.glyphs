@@ -1,0 +1,43 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+familyName = DuplicateGlyphName;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+layerId = m01;
+width = 500;
+}
+);
+unicode = 97;
+},
+{
+glyphname = b;
+layers = (
+{
+layerId = m01;
+width = 500;
+}
+);
+unicode = 98;
+},
+{
+glyphname = a;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+}
+);
+unitsPerEm = 1000;
+}
