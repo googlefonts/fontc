@@ -8,14 +8,14 @@ fontmake should be installed in an active virtual environment.
 
 Usage:
     # rebuild with fontmake and fontc and compare
-    python resources/scripts/ttx_diff.py ../OswaldFont/sources/Oswald.glyphs
+    ttx-diff ../OswaldFont/sources/Oswald.glyphs
 
     # rebuild the fontc copy, reuse the prior fontmake copy (if present), and compare
     # useful if you are making changes to fontc meant to narrow the diff
-    python resources/scripts/ttx_diff.py --rebuild fontc ../OswaldFont/sources/Oswald.glyphs
+    ttx-diff --rebuild fontc ../OswaldFont/sources/Oswald.glyphs
 
     # compare two precompiled fonts directly (no compilation from source)
-    python resources/scripts/ttx_diff.py --fontc_font path/to/fontc.ttf --fontmake_font path/to/fontmake.ttf
+    ttx-diff --fontc_font path/to/fontc.ttf --fontmake_font path/to/fontmake.ttf
 
 JSON:
     If the `--json` flag is passed, this tool will output JSON.
@@ -76,10 +76,6 @@ from glyphsLib.classes import InstanceType
 from lxml import etree
 
 from ttx_diff import __version__
-
-# environment variable used by GFTOOLS
-GFTOOLS_FONTC_PATH = "GFTOOLS_FONTC_PATH"
-
 
 FLAGS = flags.FLAGS
 # used instead of a tag for the normalized mark/kern output
@@ -182,8 +178,9 @@ def run_ttx(font_file: Path):
     return ttx_file
 
 
-# generate a simple text repr for gpos for this font, with retry
+# generate a simple text repr of this table for this font
 def run_normalizer(normalizer_bin: Path, font_file: Path, table: str):
+    NORMALIZER_TIMEOUT = 60 * 10  # ten minutes
     if table == "gpos":
         out_path = font_file.with_suffix(".markkern.txt")
     elif table == "gdef":
@@ -191,24 +188,9 @@ def run_normalizer(normalizer_bin: Path, font_file: Path, table: str):
     else:
         raise ValueError(f"unknown table for normalizer: '{table}'")
 
-    if out_path.exists():
+    if out_path.is_file():
         eprint(f"reusing {rel_user(out_path)}")
-    NUM_RETRIES = 5
-    for i in range(NUM_RETRIES + 1):
-        try:
-            return try_normalizer(normalizer_bin, font_file, out_path, table)
-        except subprocess.CalledProcessError as e:
-            time.sleep(0.1)
-            if i >= NUM_RETRIES:
-                raise e
-            eprint(f"normalizer failed with code '{e.returncode}'', retrying")
-
-
-# we had a bug where this would sometimes hang in mysterious ways, so we may
-# call it multiple times if it fails
-def try_normalizer(normalizer_bin: Path, font_file: Path, out_path: Path, table: str):
-    NORMALIZER_TIMEOUT = 60 * 10  # ten minutes
-    if not out_path.is_file():
+    else:
         cmd = [
             normalizer_bin.absolute(),
             font_file.name,
@@ -630,16 +612,6 @@ def select_one(container, xpath):
     return el[0]
 
 
-def drop_weird_names(ttx):
-    drops = list(
-        ttx.xpath(
-            "//name/namerecord[@platformID='1' and @platEncID='0' and @langID='0x0']"
-        )
-    )
-    for drop in drops:
-        drop.getparent().remove(drop)
-
-
 def strip_fontc_version_tag(ttx):
     # fontc appends ";fontc <version>" to the version string (nameID 5); fontmake
     # does not, so strip it before comparing. Mirror the Rust predicate in
@@ -836,15 +808,11 @@ def normalize_gvar_contours(ttx: etree.ElementTree, point_orders: dict[str, list
             tup.extend(non_deltas + reordered)
 
 
-def normalize_null_tags(ttx: etree.ElementTree, xpath: str, attr):
+def normalize_null_tags(ttx: etree.ElementTree, xpath: str, attr: str):
     """replace the tag 'NONE' with the tag '    '"""
     for el in ttx.xpath(xpath):
-        if attr:
-            if el.attrib.get(attr, "") == "NONE":
-                el.attrib[attr] = "    "
-        else:
-            if el.text == "NONE":
-                el.text = "    "
+        if el.attrib.get(attr, "") == "NONE":
+            el.attrib[attr] = "    "
 
 
 def normalize_null_vendor_in_unique_id(ttx: etree.ElementTree):
@@ -940,7 +908,7 @@ def sort_indices(ttx, table_tag: str, container_xpath: str, el_name: str):
 # will resolve them to the actual glyphs and here we can just sort
 def sort_gdef_mark_filter_sets(ttx: etree.ElementTree):
     markglyphs = ttx.xpath("//GDEF//MarkGlyphSetsDef")
-    if markglyphs is None or len(markglyphs) == 0:
+    if len(markglyphs) == 0:
         return
 
     assert len(markglyphs) == 1
@@ -1103,7 +1071,7 @@ def reorder_contextual_class_based_rules(
         # use .//{name} instead of {name} so we also find subtables wrapped
         # inside ExtensionPos/ExtensionSubst elements.
         for ctx in lookup.findall(f".//{context_name}"):
-            if ctx is None or int(ctx.attrib["Format"]) != 2:
+            if int(ctx.attrib["Format"]) != 2:
                 continue
 
             input_class_order = remap_class_def_ids_like_fontc(
@@ -1115,7 +1083,7 @@ def reorder_contextual_class_based_rules(
                     remap_values(class_rule, input_class_order, "Class")
 
         for chain_ctx in lookup.findall(f".//{chain_name}"):
-            if chain_ctx is None or int(chain_ctx.attrib["Format"]) != 2:
+            if int(chain_ctx.attrib["Format"]) != 2:
                 continue
             input_class_order = remap_class_def_ids_like_fontc(
                 chain_ctx.find("InputClassDef"), glyph_map
@@ -1313,9 +1281,6 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
             name_id_to_name(ttx, "STAT//ElidedFallbackNameID", "value")
         normalize_null_tags(ttx, "//OS_2/achVendID", "value")
         normalize_null_vendor_in_unique_id(ttx)
-
-        # deal with https://github.com/googlefonts/fontmake/issues/1003
-        drop_weird_names(ttx)
 
         strip_fontc_version_tag(ttx)
 
@@ -1614,29 +1579,6 @@ def delete_things_we_must_rebuild(
 def build_crate(manifest_path: Path):
     cmd = ["cargo", "build", "--release", "--manifest-path", str(manifest_path)]
     log_and_run(cmd, cwd=None, check=True)
-
-
-def get_fontc_and_normalizer_binary_paths(root_dir: Path) -> Tuple[Path, Path]:
-    fontc_path = FLAGS.fontc_path
-    norm_path = FLAGS.normalizer_path
-    if fontc_path is None:
-        fontc_manifest_path = root_dir / "fontc" / "Cargo.toml"
-        fontc_path = root_dir / "target" / "release" / "fontc"
-        build_crate(fontc_manifest_path)
-        assert fontc_path.is_file(), "failed to build fontc?"
-    else:
-        fontc_path = Path(fontc_path)
-        assert fontc_path.is_file(), f"fontc path '{fontc_path}' does not exist"
-    if norm_path is None:
-        otl_norm_manifest_path = root_dir / "otl-normalizer" / "Cargo.toml"
-        norm_path = root_dir / "target" / "release" / "otl-normalizer"
-        build_crate(otl_norm_manifest_path)
-        assert norm_path.is_file(), "failed to build otl-normalizer?"
-    else:
-        norm_path = Path(norm_path)
-        assert norm_path.is_file(), f"normalizer path '{norm_path}' does not exist"
-
-    return (fontc_path, norm_path)
 
 
 def get_crate_path(

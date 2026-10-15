@@ -30,13 +30,13 @@ flags.DEFINE_enum(
     "compare",
     "default",
     [_COMPARE_DEFAULTS, _COMPARE_GFTOOLS],
-    "Compare results using either a default build or a build managed by gftools. Note that as of 5/21/2023 defaults still sets flags for fontmake to match fontc behavior.",
+    "Compare results using either a default build or a build managed by gftools. Note that the default build sets flags for fontmake to match fontc behavior.",
 )
 flags.DEFINE_enum(
     "rebuild",
     "both",
     ["both", "fontc", "fontmake", "none"],
-    "Which compilers to rebuild with if the output appears to already exist. None is handy when playing with ttx_diff.py itself.",
+    "Which compilers to rebuild with if the output appears to already exist. None is handy when working on ttx_diff itself.",
 )
 flags.DEFINE_float(
     "off_by_one_budget",
