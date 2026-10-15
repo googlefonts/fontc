@@ -271,7 +271,6 @@ fn names(
     export: Option<&glyphs_reader::Instance>,
     flags: SelectionFlags,
 ) -> HashMap<NameKey, String> {
-    debug_assert!(export.is_none_or(|instance| instance.type_ == InstanceType::Single));
     let mut builder = NameBuilder::default();
     builder.set_version(font.version_major, font.version_minor);
 
