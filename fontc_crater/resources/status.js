@@ -13,12 +13,24 @@ const STATUS_POLL_MS = 60 * 1000;
 // run.sh republishes every minute and the CDN caches for five
 const STATUS_STALE_MS = 15 * 60 * 1000;
 
-async function fetchJson(url) {
+// returns { status } or, if there's no status to show, { error }
+async function fetchStatus(url) {
+    let response;
     try {
-        const response = await fetch(url, { cache: "no-store" });
-        return response.ok ? await response.json() : null;
+        response = await fetch(url, { cache: "no-store" });
     } catch {
-        return null;
+        return { error: "couldn't reach GitHub to load crater's status" };
+    }
+    if (response.status === 404) {
+        return { error: "crater hasn't published a status yet" };
+    }
+    if (!response.ok) {
+        return { error: `couldn't load crater's status (HTTP ${response.status})` };
+    }
+    try {
+        return { status: await response.json() };
+    } catch {
+        return { error: "crater's status couldn't be read" };
     }
 }
 
@@ -65,15 +77,13 @@ function describeStatus(status) {
 
 async function updateStatus() {
     const container = document.getElementById("live_status");
-    const status = await fetchJson(container.dataset.src);
-    if (!status) {
-        container.hidden = true;
-        return;
-    }
-    const described = describeStatus(status);
+    const { status, error } = await fetchStatus(container.dataset.src);
+    const described = error ? { state: "unknown", text: error } : describeStatus(status);
     container.hidden = false;
     container.className = described.state;
-    container.title = `started ${status.started}, last update ${status.updated}`;
+    container.title = error
+        ? container.dataset.src
+        : `started ${status.started}, last update ${status.updated}`;
     container.querySelector(".text").textContent = described.text;
     const bar = container.querySelector("progress");
     bar.hidden = !described.progress;

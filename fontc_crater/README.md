@@ -32,8 +32,8 @@ ended. If `FONTC_CRATER_PROGRESS_FILE` is set, `ci.sh` passes it to crater as
 force-pushes every minute to the `status` branch of the repo it publishes
 results to. It passes that file's url as `FONTC_CRATER_STATUS_URL`, which
 `ci.sh` passes on as `--status-url`, and the report polls it. Without a url,
-the report has no status line, so local runs don't show the status of some
-other instance.
+the report just says that status isn't configured, so local runs don't show
+the status of some other instance.
 
 To run in CI mode locally to play with the html output:
 

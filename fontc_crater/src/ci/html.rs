@@ -98,7 +98,7 @@ fn make_html(
     status_url: Option<&str>,
 ) -> Result<String, Error> {
     let table_body = make_table_body(summary);
-    let css = include_str!("../../resources/style.css");
+    let css = PreEscaped(include_str!("../../resources/style.css"));
     let status_script = PreEscaped(include_str!("../../resources/status.js"));
     let table = html! {
         table #results {
@@ -236,6 +236,10 @@ fn make_html(
                     div #live_status hidden data-src=(status_url) {
                         span.text { "loading crater status" }
                         progress hidden {}
+                    }
+                } @else {
+                    div #live_status title="this report was generated without --status-url" {
+                        "status not configured"
                     }
                 }
                 div #explain {
