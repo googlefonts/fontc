@@ -2730,6 +2730,9 @@ impl RawFont {
             if let Some(custom_weight_class) = instance.custom_parameters.take("weightClass") {
                 instance.weight_class = custom_weight_class.to_string().into();
             }
+            if let Some(custom_width_class) = instance.custom_parameters.take("widthClass") {
+                instance.width_class = custom_width_class.to_string().into();
+            }
 
             // Glyphs 2 instances keep their names in custom parameters, which
             // Glyphs 3 turns into properties when it opens the file; it ignores
@@ -6975,6 +6978,23 @@ instances = ({ name = Regular; customParameters = (
             instance.custom_parameters.version_string.as_deref(),
             Some("Version 2.0")
         );
+    }
+
+    #[test]
+    fn glyphs2_width_class_custom_instance_parameter() {
+        // like weightClass, the parameter overrides the instance's width class
+        let font = Font::load_from_string(
+            r#"{
+familyName = Example;
+fontMaster = ({ id = m01; });
+unitsPerEm = 1000;
+instances = ({ name = Condensed; widthClass = Expanded; customParameters = (
+{ name = widthClass; value = 3; }
+); });
+}"#,
+        )
+        .unwrap();
+        assert_eq!(font.instances[0].width_class, Some(3));
     }
 
     #[test]
