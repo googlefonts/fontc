@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     BuildType, Results, RunResult, Target,
-    ci::{FontmakeOutput, ResultsCache},
+    ci::{AcceptedFailures, FontmakeOutput, ResultsCache},
 };
 
 // Run ttx-diff via python -m to ensure we use the venv's installed version
@@ -170,12 +170,18 @@ pub(crate) struct Summary {
     pub(crate) fontmake_failed: u32,
     pub(crate) both_failed: u32,
     pub(crate) other_failure: u32,
+    /// Failures listed in `accepted.json`; not counted elsewhere.
+    #[serde(default)]
+    pub(crate) accepted_failure: u32,
     pub(crate) diff_perc_including_failures: f32,
     pub(crate) diff_perc_excluding_failures: f32,
 }
 
 impl Summary {
-    pub(crate) fn new(result: &Results<DiffOutput, DiffError>) -> Self {
+    pub(crate) fn new(
+        result: &Results<DiffOutput, DiffError>,
+        accepted: &AcceptedFailures,
+    ) -> Self {
         let Results {
             success, failure, ..
         } = &result;
@@ -186,6 +192,24 @@ impl Summary {
             .filter(|x| matches!(x, DiffOutput::Identical))
             .count() as _;
         let produced_diff = success.len() as u32 - identical;
+        let (mut fontc_failed, mut fontmake_failed, mut both_failed, mut other_failure) =
+            (0, 0, 0, 0);
+        let mut accepted_failure = 0;
+        for (target, fail) in failure {
+            if accepted.is_accepted(target, fail) {
+                accepted_failure += 1;
+                continue;
+            }
+            match fail {
+                DiffError::CompileFailed(err) if err.fontc.is_some() && err.fontmake.is_some() => {
+                    both_failed += 1
+                }
+                DiffError::CompileFailed(err) if err.fontc.is_some() => fontc_failed += 1,
+                DiffError::CompileFailed(err) if err.fontmake.is_some() => fontmake_failed += 1,
+                DiffError::CompileFailed(_) => unreachable!(),
+                DiffError::Other(_) => other_failure += 1,
+            }
+        }
         let total_diff = success
             .values()
             .filter_map(|v| match v {
@@ -198,21 +222,9 @@ impl Summary {
             .sum::<f32>();
         let total_diff = total_diff + (identical as f32);
         let diff_perc_including_failures =
-            non_nan(total_diff / (n_failed + success.len()) as f32) * 100.;
+            non_nan((total_diff + accepted_failure as f32) / (n_failed + success.len()) as f32)
+                * 100.;
         let diff_perc_excluding_failures = non_nan(total_diff / success.len() as f32) * 100.;
-        let (mut fontc_failed, mut fontmake_failed, mut both_failed, mut other_failure) =
-            (0, 0, 0, 0);
-        for fail in failure.values() {
-            match fail {
-                DiffError::CompileFailed(err) if err.fontc.is_some() && err.fontmake.is_some() => {
-                    both_failed += 1
-                }
-                DiffError::CompileFailed(err) if err.fontc.is_some() => fontc_failed += 1,
-                DiffError::CompileFailed(err) if err.fontmake.is_some() => fontmake_failed += 1,
-                DiffError::CompileFailed(_) => unreachable!(),
-                DiffError::Other(_) => other_failure += 1,
-            }
-        }
 
         Summary {
             total_targets,
@@ -222,6 +234,7 @@ impl Summary {
             fontmake_failed,
             both_failed,
             other_failure,
+            accepted_failure,
             diff_perc_including_failures,
             diff_perc_excluding_failures,
         }

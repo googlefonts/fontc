@@ -88,6 +88,37 @@ $ cargo run --release -p fontc_crater \
 -- ci ../fontc_crater/targets.json --out scratch-results/ --no-results-cache
 ```
 
+### Accepted failures
+
+Failures that have been reviewed and accepted can be listed in `accepted.json`
+in the results directory. They count as matching in the summary, and are listed
+separately from other failures.
+
+```json
+[
+  {
+    "targets": [
+      "org/repo/sources/config.yaml Font.glyphs?0123456789 (default)"
+    ],
+    "fails": "both",
+    "reason": "the source has no variable masters",
+    "link": "https://github.com/googlefonts/fontc/issues/1234",
+    "stderr_contains": "no masters"
+  }
+]
+```
+
+- `targets` are written as they appear in the report; the sha is ignored when
+  matching, so an entry keeps applying when a source repo is updated.
+- `fails` is the compiler whose failure is accepted: `fontc`, `fontmake` or
+  `both`.
+- `link` and `stderr_contains` are optional. If `stderr_contains` is set, the
+  output of a failing compiler must contain it; only the last 1000 characters
+  of output are kept.
+
+A listed target that compiles, fails some other way, or isn't in the run is
+shown at the top of the report, so that the list can be kept up to date.
+
 [google-fonts-sources]: https://github.com/googlefonts/google-fonts-sources
 [google/fonts]: https://github.com/google/fonts
 [rust-lang/crater]: https://github.com/rust-lang/crater

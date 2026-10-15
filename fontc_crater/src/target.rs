@@ -66,6 +66,24 @@ impl Target {
         }
     }
 
+    /// This target with its source revision removed.
+    ///
+    /// This lets us match a target across updates to its source repo.
+    pub(crate) fn without_sha(&self) -> Self {
+        let suffix = format!("_{}", self.sha);
+        let repo_dir = self
+            .repo_dir
+            .to_str()
+            .and_then(|dir| dir.strip_suffix(&suffix))
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.repo_dir.clone());
+        Self {
+            repo_dir,
+            sha: String::new(),
+            ..self.clone()
+        }
+    }
+
     /// Invariant: the source path is always in a directory
     ///
     /// If the config is virtual, then the source dir is '$REPO/sources'
@@ -333,6 +351,18 @@ mod tests {
 
         let der = Target::from_str(&asstr).unwrap();
         assert_eq!(target, der)
+    }
+
+    #[test]
+    fn without_sha() {
+        let old = "googlefonts/derp/sources/config.yaml derp.glyphs?deadbeef (default)";
+        let new = "googlefonts/derp/sources/config.yaml derp.glyphs?c0ffee (default)";
+        let gftools = "googlefonts/derp/sources/config.yaml derp.glyphs?c0ffee (gftools)";
+        let [old, new, gftools] = [old, new, gftools].map(|s| Target::from_str(s).unwrap());
+
+        assert_ne!(old, new);
+        assert_eq!(old.without_sha(), new.without_sha());
+        assert_ne!(new.without_sha(), gftools.without_sha());
     }
 
     #[test]
