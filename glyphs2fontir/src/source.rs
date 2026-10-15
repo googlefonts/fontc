@@ -316,7 +316,7 @@ fn names(font: &Font, flags: SelectionFlags) -> HashMap<NameKey, String> {
             continue;
         };
 
-        let name_key = NameKey::new_with_lang(name_id, value, lang_id);
+        let name_key = NameKey::new_with_lang(name_id, lang_id);
         builder.add_record(name_key, value.to_string());
     }
 
@@ -3020,71 +3020,68 @@ mod tests {
     fn the_best_names() -> Vec<(NameKey, String)> {
         vec![
             (
-                NameKey::new_bmp_only(NameId::COPYRIGHT_NOTICE),
+                NameKey::new(NameId::COPYRIGHT_NOTICE),
                 String::from("Copy!"),
             ),
             (
-                NameKey::new_bmp_only(NameId::FAMILY_NAME),
+                NameKey::new(NameId::FAMILY_NAME),
                 String::from("FamilyName"),
             ),
+            (NameKey::new(NameId::SUBFAMILY_NAME), String::from("Bold")),
             (
-                NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
-                String::from("Bold"),
-            ),
-            (
-                NameKey::new_bmp_only(NameId::UNIQUE_ID),
+                NameKey::new(NameId::UNIQUE_ID),
                 String::from("We are all unique"),
             ),
             (
-                NameKey::new_bmp_only(NameId::FULL_NAME),
+                NameKey::new(NameId::FULL_NAME),
                 String::from("FamilyName Bold"),
             ),
             (
-                NameKey::new_bmp_only(NameId::VERSION_STRING),
+                NameKey::new(NameId::VERSION_STRING),
                 String::from("New Value"),
             ),
             (
-                NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
+                NameKey::new(NameId::POSTSCRIPT_NAME),
                 String::from("Postscript Name"),
             ),
             (
-                NameKey::new_bmp_only(NameId::TRADEMARK),
+                NameKey::new(NameId::TRADEMARK),
                 String::from("A trade in marks"),
             ),
             (
-                NameKey::new_bmp_only(NameId::MANUFACTURER),
+                NameKey::new(NameId::MANUFACTURER),
                 String::from("Who made you?!"),
             ),
             (
-                NameKey::new_bmp_only(NameId::DESIGNER),
+                NameKey::new(NameId::DESIGNER),
                 String::from("Designed by me!"),
             ),
             (
-                NameKey::new_bmp_only(NameId::DESCRIPTION),
+                NameKey::new(NameId::DESCRIPTION),
                 String::from("The greatest weight var"),
             ),
             (
-                NameKey::new_bmp_only(NameId::VENDOR_URL),
+                NameKey::new(NameId::VENDOR_URL),
                 String::from("https://example.com/manufacturer"),
             ),
             (
-                NameKey::new_bmp_only(NameId::DESIGNER_URL),
+                NameKey::new(NameId::DESIGNER_URL),
                 String::from("https://example.com/designer"),
             ),
             (
-                NameKey::new_bmp_only(NameId::LICENSE_DESCRIPTION),
+                NameKey::new(NameId::LICENSE_DESCRIPTION),
                 String::from("Licensed to thrill"),
             ),
             (
-                NameKey::new_bmp_only(NameId::LICENSE_URL),
+                NameKey::new(NameId::LICENSE_URL),
                 String::from("https://example.com/my/font/license"),
             ),
             (
-                NameKey::new_bmp_only(NameId::SAMPLE_TEXT),
+                NameKey::new(NameId::SAMPLE_TEXT),
                 String::from("Sam pull text"),
             ),
             (
-                NameKey::new_bmp_only(NameId::WWS_FAMILY_NAME),
+                NameKey::new(NameId::WWS_FAMILY_NAME),
                 String::from("We Will Slant you"),
             ),
         ]
@@ -3115,35 +3112,35 @@ mod tests {
         assert_eq!(
             vec![
                 (
-                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
+                    NameKey::new(NameId::FAMILY_NAME),
                     String::from("FamilyName Light"),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
+                    NameKey::new(NameId::SUBFAMILY_NAME),
                     String::from("Regular"),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::UNIQUE_ID),
+                    NameKey::new(NameId::UNIQUE_ID),
                     String::from("42.042;    ;FamilyName-Light"),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::FULL_NAME),
+                    NameKey::new(NameId::FULL_NAME),
                     String::from("FamilyName Light"),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::VERSION_STRING),
+                    NameKey::new(NameId::VERSION_STRING),
                     String::from("Version 42.042"),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
+                    NameKey::new(NameId::POSTSCRIPT_NAME),
                     String::from("FamilyName-Light"),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
+                    NameKey::new(NameId::TYPOGRAPHIC_FAMILY_NAME),
                     String::from("FamilyName"),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+                    NameKey::new(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
                     String::from("Light"),
                 ),
             ],
@@ -3161,24 +3158,21 @@ mod tests {
         update_expected_names(
             &mut expected_names,
             vec![
+                (NameKey::new(NameId::FAMILY_NAME), "FamilyName".to_string()),
                 (
-                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
-                    "FamilyName".to_string(),
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::FULL_NAME),
+                    NameKey::new(NameId::FULL_NAME),
                     "Pref Family Name Pref Regular".to_string(),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
+                    NameKey::new(NameId::TYPOGRAPHIC_FAMILY_NAME),
                     "Pref Family Name".to_string(),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+                    NameKey::new(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
                     "Pref Regular".to_string(),
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::VARIATIONS_POSTSCRIPT_NAME_PREFIX),
+                    NameKey::new(NameId::VARIATIONS_POSTSCRIPT_NAME_PREFIX),
                     "Name 25?!".to_string(),
                 ),
             ],
@@ -3192,7 +3186,7 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("StaticBoldItalic.glyphs")).unwrap();
         let family_name = |flags| {
             names(&font, flags)
-                .remove(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
+                .remove(&NameKey::new(NameId::FAMILY_NAME))
                 .unwrap()
         };
         assert_eq!(
@@ -3210,219 +3204,163 @@ mod tests {
 
         assert_eq!(
             "Copyright Default",
-            names
-                .get(&NameKey::new_bmp_only(NameId::COPYRIGHT_NOTICE))
-                .unwrap()
+            names.get(&NameKey::new(NameId::COPYRIGHT_NOTICE)).unwrap()
         );
         assert_eq!(
             "Droit d'auteur",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::COPYRIGHT_NOTICE,
-                    "Droit d'auteur",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::COPYRIGHT_NOTICE, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "Urheberrecht",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::COPYRIGHT_NOTICE,
-                    "Urheberrecht",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::COPYRIGHT_NOTICE, 0x0407))
                 .unwrap()
         );
 
         assert_eq!(
             "Designer Name",
-            names.get(&NameKey::new_bmp_only(NameId::DESIGNER)).unwrap()
+            names.get(&NameKey::new(NameId::DESIGNER)).unwrap()
         );
         assert_eq!(
             "デザイナー名",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::DESIGNER,
-                    "デザイナー名",
-                    0x0411
-                ))
+                .get(&NameKey::new_with_lang(NameId::DESIGNER, 0x0411))
                 .unwrap()
         );
 
         // Test manufacturers with duplicate FRA entries - should pick the last occurrence
         assert_eq!(
             "Manufacturer Name",
-            names
-                .get(&NameKey::new_bmp_only(NameId::MANUFACTURER))
-                .unwrap()
+            names.get(&NameKey::new(NameId::MANUFACTURER)).unwrap()
         );
         // Verify that the SECOND FRA value wins (last occurrence after dedup)
         // Note: NameKey doesn't include the value, so we can only verify the correct value exists
         assert_eq!(
             "Fabricant",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::MANUFACTURER,
-                    "Fabricant",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::MANUFACTURER, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "Hersteller",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::MANUFACTURER,
-                    "Hersteller",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::MANUFACTURER, 0x0407))
                 .unwrap()
         );
 
         assert_eq!(
             "A test font with localized properties",
-            names
-                .get(&NameKey::new_bmp_only(NameId::DESCRIPTION))
-                .unwrap()
+            names.get(&NameKey::new(NameId::DESCRIPTION)).unwrap()
         );
         assert_eq!(
             "Une police de test avec des propriétés localisées",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::DESCRIPTION,
-                    "Une police de test avec des propriétés localisées",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::DESCRIPTION, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "ローカライズされたプロパティを持つテストフォント",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::DESCRIPTION,
-                    "ローカライズされたプロパティを持つテストフォント",
-                    0x0411
-                ))
+                .get(&NameKey::new_with_lang(NameId::DESCRIPTION, 0x0411))
                 .unwrap()
         );
 
         assert_eq!(
             "Licensed under the SIL Open Font License",
             names
-                .get(&NameKey::new_bmp_only(NameId::LICENSE_DESCRIPTION))
+                .get(&NameKey::new(NameId::LICENSE_DESCRIPTION))
                 .unwrap()
         );
         assert_eq!(
             "Sous licence SIL Open Font License",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::LICENSE_DESCRIPTION,
-                    "Sous licence SIL Open Font License",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::LICENSE_DESCRIPTION, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "Lizenziert unter der SIL Open Font License",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::LICENSE_DESCRIPTION,
-                    "Lizenziert unter der SIL Open Font License",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::LICENSE_DESCRIPTION, 0x0407))
                 .unwrap()
         );
 
         assert_eq!(
             "LocalizedFont is a trademark",
-            names
-                .get(&NameKey::new_bmp_only(NameId::TRADEMARK))
-                .unwrap()
+            names.get(&NameKey::new(NameId::TRADEMARK)).unwrap()
         );
         assert_eq!(
             "LocalizedFont est une marque déposée",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::TRADEMARK,
-                    "LocalizedFont est une marque déposée",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::TRADEMARK, 0x040C))
                 .unwrap()
         );
 
         assert_eq!(
             "The quick brown fox",
-            names
-                .get(&NameKey::new_bmp_only(NameId::SAMPLE_TEXT))
-                .unwrap()
+            names.get(&NameKey::new(NameId::SAMPLE_TEXT)).unwrap()
         );
         assert_eq!(
             "Portez ce vieux whisky",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::SAMPLE_TEXT,
-                    "Portez ce vieux whisky",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::SAMPLE_TEXT, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "Zwölf Boxkämpfer",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::SAMPLE_TEXT,
-                    "Zwölf Boxkämpfer",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::SAMPLE_TEXT, 0x0407))
                 .unwrap()
         );
         assert_eq!(
             "いろはにほへと",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::SAMPLE_TEXT,
-                    "いろはにほへと",
-                    0x0411
-                ))
+                .get(&NameKey::new_with_lang(NameId::SAMPLE_TEXT, 0x0411))
                 .unwrap()
         );
 
         assert_eq!(
             "LocalizedFont",
-            names
-                .get(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
-                .unwrap()
+            names.get(&NameKey::new(NameId::FAMILY_NAME)).unwrap()
         );
         assert_eq!(
             "PoliceLocalisée",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::FAMILY_NAME,
-                    "PoliceLocalisée",
-                    0x040C
-                ))
+                .get(&NameKey::new_with_lang(NameId::FAMILY_NAME, 0x040C))
                 .unwrap()
         );
         assert_eq!(
             "LokalisierteSchrift",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::FAMILY_NAME,
-                    "LokalisierteSchrift",
-                    0x0407
-                ))
+                .get(&NameKey::new_with_lang(NameId::FAMILY_NAME, 0x0407))
                 .unwrap()
         );
         assert_eq!(
             "ローカライズフォント",
             names
-                .get(&NameKey::new_with_lang(
-                    NameId::FAMILY_NAME,
-                    "ローカライズフォント",
-                    0x0411
-                ))
+                .get(&NameKey::new_with_lang(NameId::FAMILY_NAME, 0x0411))
                 .unwrap()
+        );
+    }
+
+    // glyphsLib writes localized names as Windows Unicode BMP records whatever
+    // their content, and so does Glyphs.app; a supplementary-plane character
+    // must not move the record to encoding 10.
+    // https://github.com/googlefonts/glyphsLib/blob/d4939d02/Lib/glyphsLib/builder/font.py#L113-L122
+    #[test]
+    fn localized_name_outside_bmp_keeps_windows_bmp_encoding() {
+        let font = Font::load(&glyphs3_dir().join("LocalizedNames.glyphs")).unwrap();
+        let names = names(&font, SelectionFlags::REGULAR);
+        let key = NameKey {
+            name_id: NameId::FAMILY_NAME,
+            platform_id: 3,
+            encoding_id: 1,
+            lang_id: 0x0412,
+        };
+        assert_eq!(
+            Some(&"로컬라이즈드\u{20000}폰트".to_string()),
+            names.get(&key)
         );
     }
 
@@ -3432,7 +3370,7 @@ mod tests {
         assert_eq!(
             "New Value",
             names(&font, SelectionFlags::empty())
-                .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
+                .get(&NameKey::new(NameId::VERSION_STRING))
                 .unwrap()
         );
     }
@@ -3443,7 +3381,7 @@ mod tests {
         assert_eq!(
             "Version 42.043",
             names(&font, SelectionFlags::empty())
-                .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
+                .get(&NameKey::new(NameId::VERSION_STRING))
                 .unwrap()
         );
     }
@@ -3454,7 +3392,7 @@ mod tests {
         assert_eq!(
             "Version 0.000",
             names(&font, SelectionFlags::empty())
-                .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
+                .get(&NameKey::new(NameId::VERSION_STRING))
                 .unwrap()
         );
     }
@@ -3464,7 +3402,7 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("EmptyName.glyphs")).unwrap();
 
         let names = names(&font, SelectionFlags::empty());
-        assert!(!names.contains_key(&NameKey::new_bmp_only(NameId::TRADEMARK)));
+        assert!(!names.contains_key(&NameKey::new(NameId::TRADEMARK)));
     }
 
     #[test]
@@ -4074,7 +4012,7 @@ mod tests {
         let name = |id: NameId| {
             static_metadata
                 .names
-                .get(&NameKey::new_bmp_only(id))
+                .get(&NameKey::new(id))
                 .map(|s| s.as_str())
                 .unwrap_or_default()
         };
@@ -4113,7 +4051,7 @@ mod tests {
         let name = |id: NameId| {
             static_metadata
                 .names
-                .get(&NameKey::new_bmp_only(id))
+                .get(&NameKey::new(id))
                 .map(|s| s.as_str())
                 .unwrap_or_default()
         };
@@ -4135,7 +4073,7 @@ mod tests {
         let name = |id: NameId| {
             static_metadata
                 .names
-                .get(&NameKey::new_bmp_only(id))
+                .get(&NameKey::new(id))
                 .map(|s| s.as_str())
                 .unwrap_or_default()
         };
@@ -4162,7 +4100,7 @@ mod tests {
         let name = |id: NameId| {
             static_metadata
                 .names
-                .get(&NameKey::new_bmp_only(id))
+                .get(&NameKey::new(id))
                 .map(|s| s.as_str())
                 .unwrap_or_default()
         };

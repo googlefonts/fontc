@@ -1174,7 +1174,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         )?;
 
         let family_prefix = names
-            .get(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
+            .get(&NameKey::new(NameId::FAMILY_NAME))
             .map(|name| name.clone() + " ")
             .unwrap_or_default();
         let mut named_instances = Vec::with_capacity(self.designspace.instances.len());
@@ -2920,28 +2920,25 @@ mod tests {
 
         assert_eq!(
             vec![
+                (NameKey::new(NameId::FAMILY_NAME), String::from("New Font")),
                 (
-                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
-                    String::from("New Font")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
+                    NameKey::new(NameId::SUBFAMILY_NAME),
                     String::from("Regular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::UNIQUE_ID),
+                    NameKey::new(NameId::UNIQUE_ID),
                     String::from("0.000;    ;NewFont-Regular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::FULL_NAME),
+                    NameKey::new(NameId::FULL_NAME),
                     String::from("New Font Regular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::VERSION_STRING),
+                    NameKey::new(NameId::VERSION_STRING),
                     String::from("Version 0.000")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
+                    NameKey::new(NameId::POSTSCRIPT_NAME),
                     String::from("NewFont-Regular")
                 ),
             ],
@@ -2978,39 +2975,39 @@ mod tests {
                     String::from("Duck Duck Mac")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
+                    NameKey::new(NameId::FAMILY_NAME),
                     String::from("Duck Duck Record")
                 ),
                 (
-                    NameKey::new_with_lang(NameId::FAMILY_NAME, "오리 오리", 0x412),
+                    NameKey::new_with_lang(NameId::FAMILY_NAME, 0x412),
                     String::from("오리 오리")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
+                    NameKey::new(NameId::SUBFAMILY_NAME),
                     String::from("Regular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::UNIQUE_ID),
+                    NameKey::new(NameId::UNIQUE_ID),
                     String::from("0.000;RODS;DuckDuck-Regular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::FULL_NAME),
+                    NameKey::new(NameId::FULL_NAME),
                     String::from("Duck Duck Regular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::VERSION_STRING),
+                    NameKey::new(NameId::VERSION_STRING),
                     String::from("Version 0.000")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
+                    NameKey::new(NameId::POSTSCRIPT_NAME),
                     String::from("DuckDuck-Regular")
                 ),
                 (
-                    NameKey::new_with_lang(NameId::DESIGNER, "오리 디자이너", 0x412),
+                    NameKey::new_with_lang(NameId::DESIGNER, 0x412),
                     String::from("오리 디자이너")
                 ),
                 (
-                    NameKey::new_with_lang(NameId::DESIGNER, "鸭子设计师", 0x804),
+                    NameKey::new_with_lang(NameId::DESIGNER, 0x804),
                     String::from("鸭子设计师")
                 ),
             ],

@@ -181,6 +181,10 @@ value = LokalisierteSchrift;
 {
 language = JPN;
 value = "ローカライズフォント";
+},
+{
+language = KOR;
+value = "로컬라이즈드𠀀폰트";
 }
 );
 }
