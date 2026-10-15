@@ -108,8 +108,8 @@ separately from other failures.
 ]
 ```
 
-- `targets` are written as they appear in the report; the sha is ignored when
-  matching, so an entry keeps applying when a source repo is updated.
+- `targets` are written as they appear in the report. The `?sha` is optional
+  and ignored, so an entry keeps applying when a source repo is updated.
 - `fails` is the compiler whose failure is accepted: `fontc`, `fontmake` or
   `both`.
 - `link` and `stderr_contains` are optional. If `stderr_contains` is set, the

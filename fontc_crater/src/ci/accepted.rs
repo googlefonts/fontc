@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    Target,
+    Target, TargetId,
     error::Error,
     ttx_diff_runner::{CompileFailed, DiffError},
 };
@@ -22,15 +22,15 @@ static ACCEPTED_FILE: &str = "accepted.json";
 #[derive(Debug, Default)]
 pub(crate) struct AcceptedFailures {
     entries: Vec<AcceptedFailure>,
-    // keys have no sha; values are indices into entries
-    by_target: BTreeMap<Target, usize>,
+    // values are indices into entries
+    by_target: BTreeMap<TargetId, usize>,
 }
 
 /// A group of targets that fail for the same known reason.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AcceptedFailure {
-    targets: Vec<Target>,
+    targets: Vec<TargetId>,
     pub(crate) fails: FailingCompiler,
     stderr_contains: Option<String>,
     pub(crate) reason: String,
@@ -64,7 +64,7 @@ impl AcceptedFailures {
         let mut by_target = BTreeMap::new();
         for (i, entry) in entries.iter().enumerate() {
             for target in &entry.targets {
-                if by_target.insert(target.without_sha(), i).is_some() {
+                if by_target.insert(target.clone(), i).is_some() {
                     log::warn!("'{target}' is listed in more than one accepted failure");
                 }
             }
@@ -72,11 +72,9 @@ impl AcceptedFailures {
         Self { entries, by_target }
     }
 
-    /// The accepted failure that lists this target, ignoring its sha.
+    /// The accepted failure that lists this target, at any revision.
     pub(crate) fn get(&self, target: &Target) -> Option<&AcceptedFailure> {
-        self.by_target
-            .get(&target.without_sha())
-            .map(|i| &self.entries[*i])
+        self.by_target.get(target.id()).map(|i| &self.entries[*i])
     }
 
     /// Whether this target failed the way we accepted.
@@ -89,25 +87,26 @@ impl AcceptedFailures {
     pub(crate) fn surprises<'a>(
         &'a self,
         results: &'a DiffResults,
-    ) -> Vec<(&'a Target, &'a AcceptedFailure, Surprise<'a>)> {
+    ) -> Vec<(&'a TargetId, &'a AcceptedFailure, Surprise<'a>)> {
         let mut seen = HashSet::new();
         let mut surprises = Vec::new();
         for target in results.targets() {
             let Some(accepted) = self.get(target) else {
                 continue;
             };
-            seen.insert(target.without_sha());
+            let id = target.id();
+            seen.insert(id);
             match results.failure.get(target) {
-                None => surprises.push((target, accepted, Surprise::Passed)),
+                None => surprises.push((id, accepted, Surprise::Passed)),
                 Some(error) if !accepted.matches(error) => {
-                    surprises.push((target, accepted, Surprise::FailedDifferently(error)))
+                    surprises.push((id, accepted, Surprise::FailedDifferently(error)))
                 }
                 Some(_) => (),
             }
         }
         for accepted in &self.entries {
             for target in &accepted.targets {
-                if !seen.contains(&target.without_sha()) {
+                if !seen.contains(target) {
                     surprises.push((target, accepted, Surprise::NotRun));
                 }
             }

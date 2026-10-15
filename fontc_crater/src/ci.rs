@@ -175,7 +175,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     } = make_targets(&cache_dir, &inputs.sources);
 
     if !args.gftools {
-        targets.retain(|t| t.build == BuildType::Default);
+        targets.retain(|t| t.build() == BuildType::Default);
     }
 
     let n_targets = targets.len();
@@ -315,7 +315,7 @@ impl ResolvedTargets {
         let mut seen = HashSet::new();
         let empty = Path::new("");
         self.targets.retain(|targ| {
-            targ.build != BuildType::Default || seen.insert(targ.source_path(empty))
+            targ.build() != BuildType::Default || seen.insert(targ.source_path(empty))
         });
     }
 }
@@ -377,7 +377,7 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
                 continue;
             }
             let default = Target::new(
-                &repo_dir,
+                Path::new(repo.repo_org()).join(repo.repo_name()),
                 repo.git_rev(),
                 config_path,
                 repo.config_is_external(),

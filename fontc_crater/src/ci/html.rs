@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    BuildType, Target,
+    BuildType, Target, TargetId,
     error::Error,
     ttx_diff_runner::{CompileFailed, CompilerFailure, DiffError, DiffOutput, DiffValue},
 };
@@ -24,30 +24,97 @@ static HTML_FILE: &str = "index.html";
 static ANNOTATIONS_FILE: &str = "annotations.json";
 
 /// An annotation describing a known issue for a target
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Annotation {
     text: String,
     link: Option<String>,
     // other targets that this note is relevant to
     #[serde(default)]
-    also: Vec<Target>,
+    also: Vec<TargetId>,
 }
 
-fn load_annotations(path: &Path) -> Result<BTreeMap<Target, Vec<Annotation>>, Error> {
-    let mut raw: BTreeMap<Target, Vec<Annotation>> = super::load_json_if_exists_else_default(path)?;
-    // if any annotations apply to multiple targets, split them out
-    let to_add = raw
-        .values_mut()
-        .flatten()
-        .flat_map(|note| {
-            let other_targets = std::mem::take(&mut note.also);
-            other_targets.into_iter().map(|targ| (targ, note.clone()))
-        })
-        .collect::<Vec<_>>();
-    for (target, note) in to_add {
-        raw.entry(target).or_default().push(note);
+/// Load annotations, keyed by the target they apply to at any revision.
+///
+/// Keys are read as strings first: a target annotated at two revisions has two
+/// keys but one id, and their notes are merged.
+fn load_annotations(path: &Path) -> Result<BTreeMap<TargetId, Vec<Annotation>>, Error> {
+    let raw: BTreeMap<String, Vec<Annotation>> = super::load_json_if_exists_else_default(path)?;
+    let mut result = BTreeMap::<TargetId, Vec<Annotation>>::new();
+    let mut add = |target, note: Annotation| {
+        let notes = result.entry(target).or_default();
+        if !notes.contains(&note) {
+            notes.push(note);
+        }
+    };
+    // a target's own notes come before ones it shares with other targets
+    let mut shared = Vec::new();
+    for (key, notes) in raw {
+        let target = key.parse::<TargetId>().map_err(|e| Error::ParseJson {
+            path: path.to_owned(),
+            error: serde::de::Error::custom(format!("bad target '{key}': {e}")),
+        })?;
+        for mut note in notes {
+            let also = std::mem::take(&mut note.also);
+            shared.extend(also.into_iter().map(|other| (other, note.clone())));
+            add(target.clone(), note);
+        }
     }
-    Ok(raw)
+    for (target, note) in shared {
+        add(target, note);
+    }
+    Ok(result)
+}
+
+/// The previous run, compared target by target with the current one.
+struct PreviousRun {
+    results: DiffResults,
+    /// Targets whose source repo was updated, as (previous, current)
+    updated: Vec<(Target, Target)>,
+}
+
+/// Give targets in the previous run their revision in the current run.
+///
+/// A target whose source repo was updated keeps its id but not its sha. This
+/// lets us compare it with its previous result, instead of reporting one
+/// target lost and another added. An id that more than one target has in
+/// either run (the same source pinned at two revisions) is left alone.
+fn match_revisions(prev: DiffResults, current: &DiffResults) -> PreviousRun {
+    fn unique_ids(results: &DiffResults) -> HashMap<&TargetId, Option<&Target>> {
+        let mut ids = HashMap::new();
+        for target in results.targets() {
+            ids.entry(target.id())
+                .and_modify(|seen| *seen = None)
+                .or_insert(Some(target));
+        }
+        ids
+    }
+    let in_current = unique_ids(current);
+    let unique_in_prev: HashSet<TargetId> = unique_ids(&prev)
+        .into_iter()
+        .filter_map(|(id, target)| target.map(|_| id.clone()))
+        .collect();
+    let mut updated = Vec::new();
+    let mut match_target = |target: Target| match in_current.get(target.id()) {
+        Some(Some(new)) if **new != target && unique_in_prev.contains(target.id()) => {
+            updated.push((target, (*new).clone()));
+            (*new).clone()
+        }
+        _ => target,
+    };
+    let success = prev
+        .success
+        .into_iter()
+        .map(|(target, result)| (match_target(target), result))
+        .collect();
+    let failure = prev
+        .failure
+        .into_iter()
+        .map(|(target, result)| (match_target(target), result))
+        .collect();
+    PreviousRun {
+        results: crate::Results { success, failure },
+        updated,
+    }
 }
 
 pub(super) fn generate(target_dir: &Path, status_url: Option<&str>) -> Result<(), Error> {
@@ -78,6 +145,7 @@ pub(super) fn generate(target_dir: &Path, status_url: Option<&str>) -> Result<()
         [one] => (one.try_load_results(target_dir)?, None),
         [] => panic!("can't make html with no data"),
     };
+    let prev = prev.map(|prev| match_revisions(prev, &current));
 
     let html_text = make_html(
         &summary,
@@ -98,9 +166,9 @@ fn make_html(
     summary: &[RunSummary],
     sources: &BTreeMap<PathBuf, String>,
     current: &DiffResults,
-    prev: Option<&DiffResults>,
+    prev: Option<&PreviousRun>,
     repo_failures: &BTreeMap<String, String>,
-    annotations: &BTreeMap<Target, Vec<Annotation>>,
+    annotations: &BTreeMap<TargetId, Vec<Annotation>>,
     accepted: &AcceptedFailures,
     status_url: Option<&str>,
 ) -> Result<String, Error> {
@@ -147,7 +215,7 @@ fn make_html(
         }
     };
     let detailed_report = match prev {
-        Some(prev) => make_detailed_report(current, prev, sources, annotations, accepted),
+        Some(prev) => make_detailed_report(current, &prev.results, sources, annotations, accepted),
 
         _ => html!(),
     };
@@ -452,7 +520,7 @@ fn make_detailed_report(
     current: &DiffResults,
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
-    annotations: &BTreeMap<Target, Vec<Annotation>>,
+    annotations: &BTreeMap<TargetId, Vec<Annotation>>,
     accepted: &AcceptedFailures,
 ) -> Markup {
     let reports = [
@@ -574,7 +642,7 @@ fn make_diff_report(
     current: &DiffResults,
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
-    annotations: &BTreeMap<Target, Vec<Annotation>>,
+    annotations: &BTreeMap<TargetId, Vec<Annotation>>,
     accepted: &AcceptedFailures,
 ) -> Markup {
     fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&Target, f32> {
@@ -600,7 +668,7 @@ fn make_diff_report(
 
     let get_repo_url = |id: &Target| {
         sources
-            .get(id.repo_path())
+            .get(&id.repo_dir())
             .map(String::as_str)
             .unwrap_or("#")
     };
@@ -656,7 +724,7 @@ fn make_diff_report(
 
         // avoid .9995 printing as 100%
         let ratio_fmt = format!("{:.3}%", (ratio * 1000.0).floor() / 1000.0);
-        let maybe_annotation_icon = if annotations.contains_key(target) {
+        let maybe_annotation_icon = if annotations.contains_key(target.id()) {
             " ✎"
         } else {
             ""
@@ -689,9 +757,12 @@ fn make_diff_report(
     }
 }
 
-fn format_annotations(target: &Target, annotations: &BTreeMap<Target, Vec<Annotation>>) -> Markup {
-    let Some(annotations) = annotations.get(target) else {
-        let target = target.to_string();
+fn format_annotations(
+    target: &Target,
+    annotations: &BTreeMap<TargetId, Vec<Annotation>>,
+) -> Markup {
+    let Some(annotations) = annotations.get(target.id()) else {
+        let target = target.id().to_string();
         let onclick = format!("event.preventDefault(); openModal(\"{target}\");",);
         return html! {
             a href = ("#") onclick = (onclick) { "new annotation" }
@@ -737,10 +808,10 @@ fn make_target_description(target: &Target, ambiguous_sources: &HashSet<String>)
     } else {
         short
     };
-    let annotation = match target.build {
+    let annotation = match target.build() {
         BuildType::Default => "default".to_string(),
-        BuildType::GfTools if target.config.file_stem() != Some(OsStr::new("config")) => {
-            format!("gftools, {}", target.config.display())
+        BuildType::GfTools if target.config().file_stem() != Some(OsStr::new("config")) => {
+            format!("gftools, {}", target.config().display())
         }
         _ => "gftools".to_string(),
     };
@@ -755,7 +826,7 @@ fn make_error_report(
     current: &DiffResults,
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
-    annotations: &BTreeMap<Target, Vec<Annotation>>,
+    annotations: &BTreeMap<TargetId, Vec<Annotation>>,
     accepted: &AcceptedFailures,
 ) -> Markup {
     let current_fontc = get_compiler_failures(current, accepted, "fontc");
@@ -1039,7 +1110,7 @@ fn make_error_report_group<'a>(
     paths_and_if_is_new_error: impl Iterator<Item = (&'a Target, bool)>,
     details: impl Fn(&Target) -> Markup,
     sources: &BTreeMap<PathBuf, String>,
-    annotations: &BTreeMap<Target, Vec<Annotation>>,
+    annotations: &BTreeMap<TargetId, Vec<Annotation>>,
 ) -> Markup {
     let items =
         make_error_report_group_items(paths_and_if_is_new_error, details, sources, annotations);
@@ -1059,11 +1130,11 @@ fn make_error_report_group_items<'a>(
     paths_and_if_is_new_error: impl Iterator<Item = (&'a Target, bool)>,
     details: impl Fn(&Target) -> Markup,
     sources: &BTreeMap<PathBuf, String>,
-    annotations: &BTreeMap<Target, Vec<Annotation>>,
+    annotations: &BTreeMap<TargetId, Vec<Annotation>>,
 ) -> Markup {
     let get_repo_url = |id: &Target| {
         sources
-            .get(id.repo_path())
+            .get(&id.repo_dir())
             .map(String::as_str)
             .unwrap_or("#")
     };
@@ -1074,7 +1145,7 @@ fn make_error_report_group_items<'a>(
     };
     html! {
         @for (path, is_new) in paths_and_if_is_new_error {
-            @let maybe_annotation_icon = if annotations.contains_key(path) { " ✎" } else { "" };
+            @let maybe_annotation_icon = if annotations.contains_key(path.id()) { " ✎" } else { "" };
             @let annotation_list = format_annotations(path, annotations);
             details.report_group_item {
                 summary {
@@ -1116,7 +1187,7 @@ fn format_accepted_reason(accepted: &AcceptedFailure) -> Markup {
 }
 
 // accepted failures that passed, failed differently, or weren't run
-fn format_surprises(surprises: &[(&Target, &AcceptedFailure, Surprise)]) -> Markup {
+fn format_surprises(surprises: &[(&TargetId, &AcceptedFailure, Surprise)]) -> Markup {
     if surprises.is_empty() {
         return Default::default();
     }
@@ -1167,8 +1238,8 @@ fn format_repo_failures(failures: &BTreeMap<String, String>) -> Markup {
     }
 }
 
-fn format_added_and_removed(prev: &DiffResults, current: &DiffResults) -> Markup {
-    let all_prev = prev.targets().collect::<BTreeSet<_>>();
+fn format_added_and_removed(prev: &PreviousRun, current: &DiffResults) -> Markup {
+    let all_prev = prev.results.targets().collect::<BTreeSet<_>>();
     let all_current = current.targets().collect::<BTreeSet<_>>();
 
     let added = all_current.difference(&all_prev).collect::<BTreeSet<_>>();
@@ -1208,9 +1279,31 @@ fn format_added_and_removed(prev: &DiffResults, current: &DiffResults) -> Markup
         Default::default()
     };
 
+    let mut updated_repos = BTreeMap::<_, usize>::new();
+    for (old, new) in &prev.updated {
+        *updated_repos
+            .entry((new.id().repo(), old.sha(), new.sha()))
+            .or_default() += 1;
+    }
+    let updated_list = if !prev.updated.is_empty() {
+        html! {
+            h4 {"Updated sources for "(prev.updated.len()) " targets"}
+            ul {
+                @for ((repo, old, new), n) in updated_repos {
+                    li {
+                        (repo.display()) ": " (old) " → " (new) " (" (n) " targets)"
+                    }
+                }
+            }
+        }
+    } else {
+        Default::default()
+    };
+
     html! {
         (added_list)
         (removed_list)
+        (updated_list)
     }
 }
 
@@ -1252,4 +1345,70 @@ fn get_accepted_failures<'a>(
             _ => None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    const ASAP_OLD: &str = "Omnibus-Type/Asap/sources/config.yaml Asap.glyphs?2de32f20d7 (default)";
+    const ASAP_NEW: &str = "Omnibus-Type/Asap/sources/config.yaml Asap.glyphs?927ab390d4 (default)";
+    const DERP_OLD: &str = "org/derp/sources/config.yaml Derp.glyphs?0123456789 (default)";
+    const DERP_NEW: &str = "org/derp/sources/config.yaml Derp.glyphs?abcdef0123 (default)";
+
+    // Target only deserializes from borrowed strings, so go through text
+    fn identical(targets: &[&str]) -> DiffResults {
+        let success: serde_json::Map<_, _> = targets
+            .iter()
+            .map(|t| (t.to_string(), json!("identical")))
+            .collect();
+        serde_json::from_str(&json!({ "success": success, "failure": {} }).to_string()).unwrap()
+    }
+
+    #[test]
+    fn updated_source_is_matched_with_previous_result() {
+        let prev = identical(&[DERP_OLD]);
+        let current = identical(&[DERP_NEW]);
+        let prev = match_revisions(prev, &current);
+
+        let new: Target = DERP_NEW.parse().unwrap();
+        assert!(prev.results.success.contains_key(&new));
+        assert_eq!(prev.updated.len(), 1);
+        assert_eq!(prev.updated[0].0.sha(), "0123456789");
+    }
+
+    #[test]
+    fn source_pinned_at_two_revisions_is_left_alone() {
+        let prev = identical(&[ASAP_OLD, DERP_OLD]);
+        let current = identical(&[ASAP_OLD, ASAP_NEW, DERP_OLD]);
+        let prev = match_revisions(prev, &current);
+
+        let old: Target = ASAP_OLD.parse().unwrap();
+        assert!(prev.results.success.contains_key(&old));
+        assert!(prev.updated.is_empty());
+    }
+
+    #[test]
+    fn annotations_merge_across_revisions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(ANNOTATIONS_FILE);
+        let annotations = json!({
+            DERP_OLD: [{ "text": "same", "link": null }, { "text": "old only", "link": null }],
+            DERP_NEW: [{ "text": "same", "link": null }],
+            "org/other/sources/config.yaml Other.glyphs (default)": [
+                { "text": "shared", "link": null, "also": [DERP_NEW] }
+            ],
+        });
+        std::fs::write(&path, annotations.to_string()).unwrap();
+
+        let loaded = load_annotations(&path).unwrap();
+        let derp: Target = DERP_NEW.parse().unwrap();
+        let texts = loaded[derp.id()]
+            .iter()
+            .map(|note| note.text.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(texts, ["same", "old only", "shared"]);
+    }
 }
