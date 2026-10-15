@@ -1603,29 +1603,6 @@ def build_crate(manifest_path: Path):
     log_and_run(cmd, cwd=None, check=True)
 
 
-def get_fontc_and_normalizer_binary_paths(root_dir: Path) -> Tuple[Path, Path]:
-    fontc_path = FLAGS.fontc_path
-    norm_path = FLAGS.normalizer_path
-    if fontc_path is None:
-        fontc_manifest_path = root_dir / "fontc" / "Cargo.toml"
-        fontc_path = root_dir / "target" / "release" / "fontc"
-        build_crate(fontc_manifest_path)
-        assert fontc_path.is_file(), "failed to build fontc?"
-    else:
-        fontc_path = Path(fontc_path)
-        assert fontc_path.is_file(), f"fontc path '{fontc_path}' does not exist"
-    if norm_path is None:
-        otl_norm_manifest_path = root_dir / "otl-normalizer" / "Cargo.toml"
-        norm_path = root_dir / "target" / "release" / "otl-normalizer"
-        build_crate(otl_norm_manifest_path)
-        assert norm_path.is_file(), "failed to build otl-normalizer?"
-    else:
-        norm_path = Path(norm_path)
-        assert norm_path.is_file(), f"normalizer path '{norm_path}' does not exist"
-
-    return (fontc_path, norm_path)
-
-
 def get_crate_path(
     bin_path: Optional[str], root_dir: Optional[Path], crate_name: str
 ) -> Path:
