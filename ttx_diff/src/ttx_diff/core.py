@@ -630,16 +630,6 @@ def select_one(container, xpath):
     return el[0]
 
 
-def drop_weird_names(ttx):
-    drops = list(
-        ttx.xpath(
-            "//name/namerecord[@platformID='1' and @platEncID='0' and @langID='0x0']"
-        )
-    )
-    for drop in drops:
-        drop.getparent().remove(drop)
-
-
 def strip_fontc_version_tag(ttx):
     # fontc appends ";fontc <version>" to the version string (nameID 5); fontmake
     # does not, so strip it before comparing. Mirror the Rust predicate in
@@ -1313,9 +1303,6 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
             name_id_to_name(ttx, "STAT//ElidedFallbackNameID", "value")
         normalize_null_tags(ttx, "//OS_2/achVendID", "value")
         normalize_null_vendor_in_unique_id(ttx)
-
-        # deal with https://github.com/googlefonts/fontmake/issues/1003
-        drop_weird_names(ttx)
 
         strip_fontc_version_tag(ttx)
 
