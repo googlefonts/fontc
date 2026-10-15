@@ -25,6 +25,16 @@ This tool is mainly used in CI. In that case, the execution is managed by a
 script in the [`fontc_crater` repo][crater-repo] and results are posted to
 [github pages][crater-results].
 
+The report also shows the progress of the current run, or how the last one
+ended. If `FONTC_CRATER_PROGRESS_FILE` is set, `ci.sh` passes it to crater as
+`--progress-file`, and crater rewrites that file as targets finish.
+`run.sh` combines it with its own state into `status.json`, which it
+force-pushes every minute to the `status` branch of the repo it publishes
+results to. It passes that file's url as `FONTC_CRATER_STATUS_URL`, which
+`ci.sh` passes on as `--status-url`, and the report polls it. Without a url,
+the report has no status line, so local runs don't show the status of some
+other instance.
+
 To run in CI mode locally to play with the html output:
 
 When run in CI, we want to ensure that we have complete control over the set of

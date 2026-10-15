@@ -24,6 +24,7 @@ use crate::{
 };
 
 mod html;
+mod progress;
 mod results_cache;
 
 pub(crate) use results_cache::{FontmakeOutput, ResultsCache};
@@ -74,7 +75,7 @@ pub(super) fn run_ci(args: &CiArgs) -> Result<(), Error> {
         super::ttx_diff_runner::assert_can_run_script();
         run_crater_and_save_results(args)?;
     }
-    html::generate(&args.out_dir)?;
+    html::generate(&args.out_dir, args.status_url.as_deref())?;
     // now we want to generate an html report, based on this info.
     Ok(())
 }
@@ -142,6 +143,9 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
             && pip_freeze_sha == last_run.pip_freeze_sha
         {
             log::info!("no changes since last run, skipping");
+            if let Some(path) = &args.progress_file {
+                progress::write_skipped(path);
+            }
             return Ok(());
         }
         if pip_freeze_sha != last_run.pip_freeze_sha || ttx_diff_has_changes(&last_run.fontc_rev) {
@@ -182,10 +186,20 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         reused_fontmake_failures: Default::default(),
     };
 
+    let progress = args
+        .progress_file
+        .as_deref()
+        .map(|path| progress::Progress::start(path, n_targets));
     let began = Utc::now();
-    let results = super::run_all(targets, &context, super::ttx_diff_runner::run_ttx_diff)?
-        .into_iter()
-        .collect();
+    let results = super::run_all(targets, &context, |cx, target| {
+        let result = super::ttx_diff_runner::run_ttx_diff(cx, target);
+        if let Some(progress) = &progress {
+            progress.target_finished();
+        }
+        result
+    })?
+    .into_iter()
+    .collect();
     let finished = Utc::now();
 
     let elapsed = finished.signed_duration_since(began);
