@@ -70,6 +70,7 @@ from cdifflib import CSequenceMatcher as SequenceMatcher
 from fontTools.designspaceLib import DesignSpaceDocument
 from fontTools.misc.fixedTools import otRound
 from fontTools.ttLib import TTFont
+from fontTools.ttLib.sfnt import SFNTReader
 from fontTools.varLib.iup import iup_delta
 from glyphsLib import GSFont
 from glyphsLib.classes import InstanceType
@@ -612,6 +613,9 @@ def select_one(container, xpath):
     return el[0]
 
 
+FONTC_VERSION_TAG = re.compile(r";fontc (?=\d)[^;\s]*")
+
+
 def strip_fontc_version_tag(ttx):
     # fontc appends ";fontc <version>" to the version string (nameID 5); fontmake
     # does not, so strip it before comparing. Mirror the Rust predicate in
@@ -620,7 +624,7 @@ def strip_fontc_version_tag(ttx):
     # through the end of that segment so any other content/whitespace survives.
     for record in ttx.xpath("//name/namerecord[@nameID='5']"):
         if record.text:
-            record.text = re.sub(r";fontc (?=\d)[^;\s]*", "", record.text)
+            record.text = FONTC_VERSION_TAG.sub("", record.text)
 
 
 def erase_checksum(ttx):
@@ -1321,37 +1325,36 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
 
 # given a font file, return a dictionary of tags -> size in bytes
 def get_table_sizes(fontfile: Path) -> dict[str, int]:
-    cmd = ["ttx", "-l", str(fontfile)]
-    stdout = log_and_run(cmd, check=True).stdout
-    result = dict()
-
-    for line in stdout.strip().splitlines()[3:]:
-        split = line.split()
-        result[split[0]] = int(split[2])
-
-    return result
+    with open(fontfile, "rb") as f:
+        return {str(tag): entry.length for tag, entry in SFNTReader(f).tables.items()}
 
 
-# return a dict of table tag  -> size difference
-# only when size difference exceeds some threshold
-def check_sizes(fontmake_ttf: Path, fontc_ttf: Path):
-    THRESHOLD = 1 / 10
+# the number of bytes fontc's version stamp adds to the name table
+def fontc_version_tag_size(fontfile: Path) -> int:
+    size = 0
+    with TTFont(fontfile, lazy=True) as font:
+        for record in font["name"].names:
+            if record.nameID == 5:
+                for tag in FONTC_VERSION_TAG.findall(record.toUnicode()):
+                    size += len(tag.encode(record.getEncoding()))
+    return size
+
+
+# return a dict of table tag -> how many bytes bigger fontc's table is, for
+# tables where that exceeds THRESHOLD of fontmake's size
+def check_sizes(fontmake_ttf: Path, fontc_ttf: Path) -> dict[str, int]:
+    THRESHOLD = 0.02
     fontmake = get_table_sizes(fontmake_ttf)
     fontc = get_table_sizes(fontc_ttf)
+    if "name" in fontc:
+        fontc["name"] -= fontc_version_tag_size(fontc_ttf)
 
     output = dict()
-    shared_keys = set(fontmake.keys() & fontc.keys())
-
-    for key in shared_keys:
-        fontmake_len = fontmake[key]
-        fontc_len = fontc[key]
-        if fontc_len < fontmake_len:
-            continue
-        len_ratio = min(fontc_len, fontmake_len) / max(fontc_len, fontmake_len)
-        if (1 - len_ratio) > THRESHOLD:
-            rel_len = fontc_len - fontmake_len
-            eprint(f"{key} {fontmake_len} {fontc_len} {len_ratio:.3} {rel_len}")
-            output[key] = rel_len
+    for tag in sorted(fontmake.keys() & fontc.keys()):
+        size_diff = fontc[tag] - fontmake[tag]
+        if size_diff > THRESHOLD * fontmake[tag]:
+            eprint(f"{tag} {fontmake[tag]} {fontc[tag]} {size_diff}")
+            output[tag] = size_diff
     return output
 
 
@@ -1765,7 +1768,7 @@ def main(argv):
     assert fontc_ttf.is_file(), fontc_ttf
 
     output = generate_output(build_dir, otl_bin_path, fontmake_ttf, fontc_ttf)
-    if output["fontc"] == output["fontmake"]:
+    if output["fontc"] == output["fontmake"] and not output.get("sizes"):
         eprint("output is identical")
     else:
         diffs = True

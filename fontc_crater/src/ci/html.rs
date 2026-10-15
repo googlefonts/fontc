@@ -1023,9 +1023,8 @@ fn format_diff_report_detail_table(current: &DiffOutput, prev: Option<&DiffOutpu
         };
 
         // size reporting is sort of hacked on, and doesn't really follow the same pattern
-        // as table diffs; the diff % we show in this case is the ratio between the two
-        // sizes. For instance a value of +60% means fontmake is 40% the size of fontc.
-        // negative numbers mean fontc is smaller than fontmake.
+        // as table diffs; the value is how many bytes bigger fontc's table is than
+        // fontmake's.
         if table.starts_with("sizeof") {
             if let (DiffValue::Ratio(r), Some(DiffValue::Ratio(prev))) =
                 (&value, prev_value.as_ref())
