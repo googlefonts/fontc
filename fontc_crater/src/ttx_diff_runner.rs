@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    ffi::OsString,
     path::{Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicUsize, Ordering},
@@ -7,7 +8,7 @@ use std::{
 
 use crate::{
     BuildType, Results, RunResult, Target,
-    ci::{AcceptedFailures, FontmakeOutput, ResultsCache},
+    ci::{AcceptedFailures, FontmakeOutput, ResultKey, ResultsCache, sha256_file},
 };
 
 // Run ttx-diff via python -m to ensure we use the venv's installed version
@@ -20,54 +21,97 @@ const UNCHANGED_EXIT_CODE: i32 = 3;
 
 pub(super) struct TtxContext {
     pub fontc_path: PathBuf,
+    pub fontc_hash: String,
     pub normalizer_path: PathBuf,
+    pub normalizer_hash: String,
     pub source_cache: PathBuf,
     pub results_cache: Option<ResultsCache>,
+    pub reused_unchanged_results: AtomicUsize,
     pub reused_cached_results: AtomicUsize,
     pub reused_fontmake_failures: AtomicUsize,
 }
 
+impl TtxContext {
+    fn result_key(&self, target: &Target, args: &[OsString]) -> ResultKey {
+        let config = (target.build() == BuildType::GfTools)
+            .then(|| target.config_path(&self.source_cache))
+            .and_then(|path| {
+                sha256_file(&path)
+                    .inspect_err(|e| log::warn!("failed to hash {}: '{e}'", path.display()))
+                    .ok()
+            });
+        ResultKey {
+            fontc: self.fontc_hash.clone(),
+            normalizer: self.normalizer_hash.clone(),
+            config,
+            ttx_diff_args: args
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect(),
+        }
+    }
+}
+
+/// The ttx_diff arguments that decide this target's result.
+///
+/// The output dir and the paths of the binaries change every run, so they are
+/// left out. The source comes last.
+fn result_args(target: &Target, source_cache: &Path) -> Vec<OsString> {
+    let mut args = Vec::from(
+        [
+            "--json",
+            "--compare",
+            target.build().name(),
+            "--rebuild",
+            "fontc",
+        ]
+        .map(OsString::from),
+    );
+    if target.build() == BuildType::GfTools {
+        args.push("--config".into());
+        args.push(target.config_path(source_cache).into());
+    }
+    args.push(target.source_path(source_cache).into());
+    args
+}
+
 pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffOutput, DiffError> {
+    let results_cache = ctx.results_cache.as_ref();
+    let args = result_args(target, &ctx.source_cache);
+    let key = ctx.result_key(target, &args);
+    // we can only trust a cached result if fontmake's half of the comparison is
+    // the same one that produced it, which is only true if it came from the cache
+    let mut cached = results_cache
+        .filter(|cache| cache.fontmake_output(target).is_some())
+        .and_then(|cache| cache.load_result(target));
+    if let Some(unchanged) = cached.take_if(|cached| cached.has_key(&key)) {
+        ctx.reused_unchanged_results.fetch_add(1, Ordering::Relaxed);
+        log::trace!("inputs unchanged, reused cached result for {target}");
+        return unchanged.into_result();
+    }
+
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
     let outdir = tempdir.path();
-    let source_path = target.source_path(&ctx.source_cache);
-    let compare = target.build().name();
-    let build_dir = outdir.join(compare);
-    let results_cache = ctx.results_cache.as_ref();
+    let build_dir = outdir.join(target.build().name());
     let reused_fontmake =
         results_cache.and_then(|cache| cache.copy_cached_files_to_build_dir(target, &build_dir));
     if reused_fontmake == Some(FontmakeOutput::Failure) {
         ctx.reused_fontmake_failures.fetch_add(1, Ordering::Relaxed);
     }
-    // we can only trust a cached result if fontmake's half of the comparison is
-    // the same one that produced it, which is only true if it came from the cache
-    let cached = reused_fontmake
-        .and(results_cache)
-        .and_then(|cache| cache.load_result(target));
     let mut cmd = Command::new("python3");
-    cmd.args([
-        "-m",
-        TTX_DIFF_MODULE,
-        "--json",
-        "--compare",
-        compare,
-        "--outdir",
-    ])
-    .arg(outdir)
-    .arg("--fontc_path")
-    .arg(&ctx.fontc_path)
-    .arg("--normalizer_path")
-    .arg(&ctx.normalizer_path)
-    .args(["--rebuild", "fontc"]);
-    if let Some(cached) = cached.as_ref() {
-        cmd.arg("--expected_fontc_ttf_hash")
-            .arg(&cached.fontc_ttf_hash);
+    cmd.args(["-m", TTX_DIFF_MODULE, "--outdir"])
+        .arg(outdir)
+        .arg("--fontc_path")
+        .arg(&ctx.fontc_path)
+        .arg("--normalizer_path")
+        .arg(&ctx.normalizer_path);
+    if let Some(hash) = cached
+        .as_ref()
+        .and_then(|cached| cached.fontc_ttf_hash.as_ref())
+    {
+        cmd.arg("--expected_fontc_ttf_hash").arg(hash);
     }
-    if target.build() == BuildType::GfTools {
-        cmd.arg("--config")
-            .arg(target.config_path(&ctx.source_cache));
-    }
-    cmd.arg(source_path)
+    cmd.args(&args)
         // set this flag so we have a stable 'modified date'
         .env("SOURCE_DATE_EPOCH", "1730302089");
     let output = match cmd.output() {
@@ -100,7 +144,7 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
             Some(cached) => {
                 ctx.reused_cached_results.fetch_add(1, Ordering::Relaxed);
                 log::trace!("reused cached result for {target}");
-                return cached.into_result();
+                cached.into_result()
             }
             // we only pass --expected_fontc_ttf_hash when we have a cached result
             None => RunResult::Fail(DiffError::Other(
@@ -136,9 +180,7 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
         && !matches!(result, RunResult::Fail(DiffError::Other(_)))
     {
         cache.save_built_files_to_cache(target, &build_dir);
-        if let Some(hash) = read_fontc_ttf_hash(&build_dir) {
-            cache.save_result(target, hash, &result);
-        }
+        cache.save_result(target, key, read_fontc_ttf_hash(&build_dir), &result);
     }
     result
 }

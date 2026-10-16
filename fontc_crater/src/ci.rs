@@ -29,7 +29,7 @@ mod progress;
 mod results_cache;
 
 pub(crate) use accepted::AcceptedFailures;
-pub(crate) use results_cache::{FontmakeOutput, ResultsCache};
+pub(crate) use results_cache::{FontmakeOutput, ResultKey, ResultsCache, sha256_file};
 
 static SUMMARY_FILE: &str = "summary.json";
 static SOURCES_FILE: &str = "sources.json";
@@ -51,6 +51,10 @@ struct RunSummary {
     #[serde(alias = "input_file")]
     input_file_sha: String,
     stats: super::ttx_diff_runner::Summary,
+    /// How many targets reused their result without running ttx_diff, because
+    /// the fontc binary and ttx_diff's inputs were unchanged.
+    #[serde(default)]
+    reused_unchanged_results: usize,
     /// How many targets skipped the comparison because fontc's output was unchanged.
     #[serde(default)]
     reused_cached_results: usize,
@@ -165,8 +169,14 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let temp_bin_dir = tempfile::tempdir().expect("couldn't create tempdir");
     let (fontc_path, normalizer_path) = precompile_rust_binaries(temp_bin_dir.path());
 
-    log::info!("compiled fontc to {}", fontc_path.display());
-    log::info!("compiled otl-normalizeer to {}", normalizer_path.display());
+    let fontc_hash = sha256_file(&fontc_path).expect("failed to hash fontc");
+    let normalizer_hash = sha256_file(&normalizer_path).expect("failed to hash otl-normalizer");
+
+    log::info!("compiled fontc to {} ({fontc_hash})", fontc_path.display());
+    log::info!(
+        "compiled otl-normalizer to {} ({normalizer_hash})",
+        normalizer_path.display()
+    );
 
     let ResolvedTargets {
         mut targets,
@@ -182,9 +192,12 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
 
     let context = super::ttx_diff_runner::TtxContext {
         fontc_path,
+        fontc_hash,
         normalizer_path,
+        normalizer_hash,
         source_cache: cache_dir,
         results_cache,
+        reused_unchanged_results: Default::default(),
         reused_cached_results: Default::default(),
         reused_fontmake_failures: Default::default(),
     };
@@ -209,6 +222,9 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let elapsed = elapsed.to_std().unwrap_or_default();
     let elapsed = super::human_readable_duration(elapsed);
 
+    let reused_unchanged_results = context
+        .reused_unchanged_results
+        .load(std::sync::atomic::Ordering::Relaxed);
     let reused_cached_results = context
         .reused_cached_results
         .load(std::sync::atomic::Ordering::Relaxed);
@@ -216,7 +232,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         .reused_fontmake_failures
         .load(std::sync::atomic::Ordering::Relaxed);
     log::info!(
-        "completed {n_targets} targets in {elapsed} ({reused_cached_results}/{n_targets} results reused from cache, {reused_fontmake_failures} fontmake failures reused)"
+        "completed {n_targets} targets in {elapsed} ({reused_unchanged_results}/{n_targets} reused without running ttx_diff, {reused_cached_results}/{n_targets} reused after building fontc, {reused_fontmake_failures} fontmake failures reused)"
     );
 
     let summary = super::ttx_diff_runner::Summary::new(&results, &accepted);
@@ -245,6 +261,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         results_file,
         input_file_sha,
         stats: summary,
+        reused_unchanged_results,
         reused_cached_results,
         reused_fontmake_failures,
     };
@@ -454,9 +471,10 @@ fn copy_file_into_dir(file_path: &Path, dir_path: &Path) -> PathBuf {
 fn compile_crate_or_die(name: &str) -> PathBuf {
     let status = Command::new("cargo")
         .args(["build", "-p", name, "--release"])
-        // prevent fontc from including a git sha in its version in the name table
-        // this lets us skip work when two fontc builds produce identical output
+        // keep the git sha out of fontc's name table and `--vv`, so that
+        // commits that don't change fontc build the same binary
         .env("VERGEN_GIT_DESCRIBE", "VERGEN_IDEMPOTENT_OUTPUT")
+        .env("VERGEN_GIT_SHA", "VERGEN_IDEMPOTENT_OUTPUT")
         .status()
         .expect("failed to run cargo build");
     if !status.success() {
