@@ -307,8 +307,10 @@ def build_fontmake(source: Path, build_dir: Path):
     ]
     # Static Glyphs compilation uses the one static export's metadata. Other sources
     # still use the master/VF reference, including one-master variable sources.
+    # fontc never autohints. --no-autohint keeps the instance's 'TTFAutohint options'
+    # from hinting fontmake's output.
     if not variable and builds_static_export(font):
-        cmd.append("-i")
+        cmd.extend(["-i", "--no-autohint"])
     if FLAGS.keep_direction:
         cmd.append("--keep-direction")
     if not FLAGS.production_names:
@@ -418,6 +420,10 @@ def run_gftools(
         extra_args.append("--keep-overlaps")
     if not FLAGS.production_names:
         extra_args.append("--no-production-names")
+    if fontc_bin is None:
+        # gftools still lets fontmake hint from the instance's TTFAutohint option
+        # in simple-output mode. Only this run gets the flag: fontc rejects it.
+        extra_args.append("--no-autohint")
 
     with modified_gftools_config(maybe_new_config_path, cmd, extra_args):
         build(cmd, None)
