@@ -130,6 +130,11 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
     // todo: fontc_repo should be checked out by us, and have a known path
     let fontc_rev = super::get_git_rev(None).unwrap();
+    let progress_file = args.progress_file.as_deref().map(|path| {
+        let prev_rev = prev_runs.last().map(|run| run.fontc_rev.as_str());
+        let compare_url = html::fontc_compare_url(prev_rev, &fontc_rev);
+        progress::ProgressFile::new(path, &fontc_rev, compare_url)
+    });
     let pip_freeze_sha = super::pip_freeze_sha();
     let input_file_sha = super::get_input_sha(&args.to_run);
 
@@ -146,8 +151,8 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
             && pip_freeze_sha == last_run.pip_freeze_sha
         {
             log::info!("no changes since last run, skipping");
-            if let Some(path) = &args.progress_file {
-                progress::write_skipped(path);
+            if let Some(progress_file) = &progress_file {
+                progress_file.write_skipped();
             }
             return Ok(());
         }
@@ -189,10 +194,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         reused_fontmake_failures: Default::default(),
     };
 
-    let progress = args
-        .progress_file
-        .as_deref()
-        .map(|path| progress::Progress::start(path, n_targets));
+    let progress = progress_file.map(|file| progress::Progress::start(file, n_targets));
     let began = Utc::now();
     let results = super::run_all(targets, &context, |cx, target| {
         let result = super::ttx_diff_runner::run_ttx_diff(cx, target);

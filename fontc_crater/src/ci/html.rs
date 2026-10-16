@@ -368,6 +368,14 @@ fn tidy_html(raw_html: &str) -> Result<String, Error> {
     tidier::format(raw_html, false, &opts).map_err(Into::into)
 }
 
+/// The link for a run of `rev`: the fontc commits since the previous run.
+pub(super) fn fontc_compare_url(prev_rev: Option<&str>, rev: &str) -> String {
+    format!(
+        "https://github.com/googlefonts/fontc/compare/{}...{rev}/",
+        prev_rev.unwrap_or(rev)
+    )
+}
+
 fn make_table_body(runs: &[RunSummary]) -> Markup {
     fn make_row(
         run: &RunSummary,
@@ -417,13 +425,7 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             More::IsBetter,
         );
         let diff_excl_fmt = format!("{:.3}", run.stats.diff_perc_excluding_failures);
-        let diff_url = format!(
-            "https://github.com/googlefonts/fontc/compare/{}...{}/",
-            prev.as_ref()
-                .map(|p| p.fontc_rev.as_str())
-                .unwrap_or(run.fontc_rev.as_str()),
-            run.fontc_rev,
-        );
+        let diff_url = fontc_compare_url(prev.map(|p| p.fontc_rev.as_str()), &run.fontc_rev);
         let short_rev = run.fontc_rev.get(..16).unwrap_or(run.fontc_rev.as_str());
         let err_cells = if is_most_recent {
             html! {
