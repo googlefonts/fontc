@@ -243,7 +243,8 @@ fn try_name_id(name: &str) -> Option<NameId> {
         "preferredSubfamilyNames" => Some(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
         "variationsPostScriptNamePrefix" => Some(NameId::VARIATIONS_POSTSCRIPT_NAME_PREFIX),
         "vendorID" => None, // handled separately
-        // instance style names, handled with the name IDs 1/2/17 they feed
+        // instance style names: styleMapFamilyNames is read by names() for
+        // ID 1 alone, the others have no name record of their own
         "styleNames" | "styleMapFamilyNames" | "styleMapStyleNames" => None,
         _ => {
             warn!("Unknown 'name' entry {name}");
@@ -302,12 +303,20 @@ fn names(
         .get(NameId::FAMILY_NAME)
         .map(|s| s.to_string())
         .unwrap_or_default();
-    let family = match export
+    // The export's styleMapFamilyName parameter (property in Glyphs 3) is the
+    // style-linked family as written, ahead of the one its linkStyle builds:
+    // glyphsLib applies the parameter after build_stylemap_names, and Glyphs
+    // 3.5 agrees. IDs 4, 6 and 16 keep the family name.
+    let style_map_family = export
+        .and_then(|instance| instance.get_default_name("styleMapFamilyNames"))
+        .filter(|name| !name.is_empty());
+    let link_style = export
         .and_then(|instance| instance.link_style.as_deref())
-        .filter(|name| !name.is_empty() && *name != "Regular")
-    {
-        Some(link) => format!("{original_family} {link}"),
-        None => NameBuilder::style_map_family_name(&original_family, style_name, flags),
+        .filter(|name| !name.is_empty() && *name != "Regular");
+    let family = match (style_map_family, link_style) {
+        (Some(style_map_family), _) => style_map_family.to_string(),
+        (None, Some(link)) => format!("{original_family} {link}"),
+        (None, None) => NameBuilder::style_map_family_name(&original_family, style_name, flags),
     };
     builder.add(NameId::FAMILY_NAME, family);
 

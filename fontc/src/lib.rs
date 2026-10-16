@@ -2124,6 +2124,35 @@ mod tests {
     }
 
     #[rstest]
+    // The Glyphs 2 styleMapFamilyName instance parameter
+    #[case("static_export_style_map_family.glyphs")]
+    // The Glyphs 3 styleMapFamilyNames instance property
+    #[case("static_export_style_map_family_glyphs3.glyphs")]
+    fn static_export_style_map_family_name_is_name_id_1(#[case] source: &str) {
+        // The instance's style map family name is name ID 1 as written, ahead
+        // of the family + linkStyle name it would otherwise get, while IDs 4,
+        // 6, 16 and 17 keep the family and instance names. Expected values
+        // match Glyphs 3.5 and fontmake -i -o ttf.
+        let result = TestCompile::compile_source(source);
+        let font = result.font();
+        let names = font.name().unwrap();
+        for (id, expected) in [
+            (1, "Style Map Family"),
+            (2, "Regular"),
+            (4, "Master Family Display"),
+            (6, "MasterFamily-Display"),
+            (16, "Master Family"),
+            (17, "Display"),
+        ] {
+            assert_eq!(
+                resolve_name(&names, NameId::new(id)).as_deref(),
+                Some(expected),
+                "name ID {id}"
+            );
+        }
+    }
+
+    #[rstest]
     // Instance at wght 100, wdth 100, the only master at 90, 120; the
     // instance's weight class 700 and width class 3 apply
     #[case("static_export_off_master.glyphs", 700, 3)]
