@@ -66,14 +66,17 @@ function describeStatus(status) {
                 ],
             };
         }
-        const started = [
-            ...(rev ? ["crater is testing fontc ", rev] : ["crater is running"]),
-            `, started ${since(status.started)}`,
-        ];
+        const testing = rev ? ["crater is testing fontc ", rev] : ["crater is running"];
+        // as of this snapshot, not now, so that it agrees with the count
+        const elapsed = `${formatDuration(Date.parse(status.updated) - Date.parse(status.started))} in`;
         if (progress?.phase === "running") {
-            return { state: "running", text: [...started, `: ${progress.done} of ${progress.total} targets`], progress };
+            return {
+                state: "running",
+                text: [...testing, `: ${elapsed}, ${progress.done} of ${progress.total} targets`],
+                progress,
+            };
         }
-        return { state: "running", text: [...started, ": preparing"] };
+        return { state: "running", text: [...testing, `: ${elapsed}, preparing`] };
     }
     const lastRun = rev ? ["last crater run of fontc ", rev] : ["last crater run"];
     const took = formatDuration(Date.parse(status.finished) - Date.parse(status.started));
