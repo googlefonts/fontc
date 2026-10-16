@@ -2152,6 +2152,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn static_export_localized_names_reach_name_table() {
+        // The full rules are tested in glyphs2fontir; this checks the
+        // records land in the binary as Windows Unicode BMP records.
+        let result = TestCompile::compile_source("glyphs3/StaticExportLocalizedNames.glyphs");
+        let font = result.font();
+        let names = font.name().unwrap();
+        let record = |id: u16, lang: u16| {
+            names.name_record().iter().find_map(|nr| {
+                (nr.name_id() == NameId::new(id)
+                    && nr.platform_id() == 3
+                    && nr.encoding_id() == 1
+                    && nr.language_id() == lang)
+                    .then(|| nr.string(names.string_data()).unwrap().to_string())
+            })
+        };
+        assert_eq!(record(1, 0x0407).as_deref(), Some("Export Familie Display"));
+        assert_eq!(record(16, 0x0411).as_deref(), Some("エクスポート"));
+        assert_eq!(record(17, 0x0407).as_deref(), Some("Anzeige"));
+        assert_eq!(record(9, 0x040C).as_deref(), Some("Export Designeur"));
+        assert_eq!(record(1, 0x0409).as_deref(), Some("Export Family Display"));
+    }
+
     #[rstest]
     // Instance at wght 100, wdth 100, the only master at 90, 120; the
     // instance's weight class 700 and width class 3 apply

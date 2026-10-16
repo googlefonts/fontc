@@ -1,0 +1,96 @@
+{
+.formatVersion = 3;
+familyName = "Master Family";
+properties = (
+{
+key = familyNames;
+values = (
+{ language = dflt; value = "Master Family"; },
+{ language = DEU; value = "Master Familie"; }
+);
+},
+{
+key = designers;
+values = (
+{ language = dflt; value = "Designer"; },
+{ language = FRA; value = "Designeur"; }
+);
+},
+{
+key = licenses;
+values = (
+{ language = dflt; value = "License"; },
+{ language = DEU; value = "Lizenz"; }
+);
+}
+);
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{ layerId = m01; width = 200; }
+);
+unicode = 32;
+}
+);
+instances = (
+{
+instanceInterpolations = { m01 = 1; };
+name = Display;
+properties = (
+{
+key = familyNames;
+values = (
+{ language = dflt; value = "Export Family"; },
+{ language = DEU; value = "Export Familie"; },
+{ language = JPN; value = "エクスポート"; }
+);
+},
+{
+key = styleNames;
+values = (
+{ language = dflt; value = "Display"; },
+{ language = DEU; value = "Anzeige"; }
+);
+},
+{
+key = designers;
+values = (
+{ language = dflt; value = "Export Designer"; },
+{ language = FRA; value = "Export Designeur"; }
+);
+},
+{
+key = copyrights;
+values = (
+{ language = dflt; value = "Export Copyright"; },
+{ language = ITA; value = "Copyright esportazione"; }
+);
+}
+);
+},
+{
+exports = 0;
+instanceInterpolations = { m01 = 1; };
+name = Regular;
+properties = (
+{
+key = styleNames;
+values = (
+{ language = dflt; value = "Regular"; },
+{ language = DEU; value = "Normal"; }
+);
+}
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

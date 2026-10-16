@@ -3535,6 +3535,102 @@ mod tests {
         );
     }
 
+    // A static export's localized names, checked against Glyphs 3.5: an
+    // export property replaces the font's property of the same key in every
+    // language, family and style names feed IDs 1, 16 and 17 per language
+    // (ID 1 keeps the default-language style suffix), the other keys feed
+    // their own name ID, and a language missing from a key gets no record.
+    #[test]
+    fn static_export_localized_names() {
+        let font = Font::load(&glyphs3_dir().join("StaticExportLocalizedNames.glyphs")).unwrap();
+        let export = font
+            .instances
+            .iter()
+            .find(|instance| instance.name == "Display")
+            .unwrap();
+        let names = names(&font, Some(export), SelectionFlags::REGULAR);
+        let name = |id: NameId, lang: u16| {
+            names
+                .get(&NameKey::new_with_lang(id, lang))
+                .map(|s| s.as_str())
+        };
+        let (en, de, fr, it, ja) = (0x0409, 0x0407, 0x040C, 0x0410, 0x0411);
+        assert_eq!(
+            [
+                name(NameId::FAMILY_NAME, en),
+                name(NameId::FAMILY_NAME, de),
+                name(NameId::FAMILY_NAME, ja),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, en),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, de),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, ja),
+                name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, en),
+                name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, de),
+                name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, ja),
+                name(NameId::DESIGNER, en),
+                name(NameId::DESIGNER, fr),
+                name(NameId::COPYRIGHT_NOTICE, en),
+                name(NameId::COPYRIGHT_NOTICE, it),
+                name(NameId::LICENSE_DESCRIPTION, en),
+                name(NameId::LICENSE_DESCRIPTION, de),
+                name(NameId::SUBFAMILY_NAME, de),
+                name(NameId::FULL_NAME, de),
+            ],
+            [
+                Some("Export Family Display"),
+                Some("Export Familie Display"),
+                Some("エクスポート Display"),
+                Some("Export Family"),
+                Some("Export Familie"),
+                Some("エクスポート"),
+                Some("Display"),
+                Some("Anzeige"),
+                None,
+                Some("Export Designer"),
+                Some("Export Designeur"),
+                Some("Export Copyright"),
+                Some("Copyright esportazione"),
+                Some("License"),
+                Some("Lizenz"),
+                None,
+                None,
+            ]
+        );
+
+        // The Regular instance inherits the font's localized names; its RIBBI
+        // name drops the typographic pair, so only ID 1 is localized
+        let regular = font
+            .instances
+            .iter()
+            .find(|instance| instance.name == "Regular")
+            .unwrap();
+        let regular_names = super::names(&font, Some(regular), SelectionFlags::REGULAR);
+        let name = |id: NameId, lang: u16| {
+            regular_names
+                .get(&NameKey::new_with_lang(id, lang))
+                .map(|s| s.as_str())
+        };
+        assert_eq!(
+            [
+                name(NameId::FAMILY_NAME, en),
+                name(NameId::FAMILY_NAME, de),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, en),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, de),
+                name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, de),
+                name(NameId::DESIGNER, fr),
+                name(NameId::LICENSE_DESCRIPTION, de),
+            ],
+            [
+                Some("Master Family"),
+                Some("Master Familie"),
+                None,
+                None,
+                None,
+                Some("Designeur"),
+                Some("Lizenz"),
+            ]
+        );
+    }
+
     // glyphsLib writes localized names as Windows Unicode BMP records whatever
     // their content, and so does Glyphs.app; a supplementary-plane character
     // must not move the record to encoding 10.
