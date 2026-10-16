@@ -7,7 +7,9 @@ pub struct Args {
     #[arg(short, long)]
     /// Optional destination path for writing output. Default is stdout.
     pub out: Option<PathBuf>,
-    /// Target table to print, one of gpos/gsub/all (case insensitive)
+    /// Target table to print, one of gpos/gsub/gdef/glyf/gvar/all (case insensitive).
+    ///
+    /// 'all' covers the layout tables only.
     #[arg(short, long, default_value_t)]
     pub table: Table,
     /// Index of font to examine, if target is a font collection
@@ -23,6 +25,8 @@ pub enum Table {
     Gpos,
     Gsub,
     Gdef,
+    Glyf,
+    Gvar,
 }
 
 impl std::fmt::Display for Table {
@@ -32,6 +36,8 @@ impl std::fmt::Display for Table {
             Table::Gpos => f.write_str("gpos"),
             Table::Gsub => f.write_str("gsub"),
             Table::Gdef => f.write_str("gdef"),
+            Table::Glyf => f.write_str("glyf"),
+            Table::Gvar => f.write_str("gvar"),
         }
     }
 }
@@ -40,11 +46,13 @@ impl FromStr for Table {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        static ERR_MSG: &str = "expected one of 'gsub', 'gpos', 'gdef', 'all'";
+        static ERR_MSG: &str = "expected one of 'gsub', 'gpos', 'gdef', 'glyf', 'gvar', 'all'";
         match s.to_ascii_lowercase().trim() {
             "gpos" => Ok(Self::Gpos),
             "gsub" => Ok(Self::Gsub),
             "gdef" => Ok(Self::Gdef),
+            "glyf" => Ok(Self::Glyf),
+            "gvar" => Ok(Self::Gvar),
             "all" => Ok(Self::All),
             _ => Err(ERR_MSG),
         }
