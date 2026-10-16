@@ -6,8 +6,12 @@
 //   {"state": "running"|"finished", "started": <iso8601>, "updated": <iso8601>,
 //    "finished": <iso8601>|null, "exit_code": <int>|null, "progress": <...>|null}
 //
-// where progress is the contents of crater's --progress-file: {"phase":
-// "running", "done": n, "total": n} or {"phase": "skipped"}.
+// where progress is the contents of crater's --progress-file:
+//
+//   {"phase": "preparing"|"skipped", "fontc_rev": <rev>, "compare_url": <url>}
+//   {"phase": "running", "done": n, "total": n, "fontc_rev": <rev>, "compare_url": <url>}
+//
+// compare_url is the link the run gets in the report's list of runs.
 
 const STATUS_POLL_MS = 60 * 1000;
 // run.sh republishes every minute and the CDN caches for five
@@ -46,45 +50,64 @@ function since(isoDate) {
     return `${formatDuration(Date.now() - Date.parse(isoDate))} ago`;
 }
 
+// the returned text is a list of strings and links ({ text, href })
 function describeStatus(status) {
     const progress = status.progress;
+    // the fontc rev being tested, once crater has said
+    const rev = progress?.fontc_rev ? { text: progress.fontc_rev, href: progress.compare_url } : null;
     if (status.state === "running") {
         const quietFor = Date.now() - Date.parse(status.updated);
         if (quietFor > STATUS_STALE_MS) {
             return {
                 state: "failed",
-                text: `crater looks stuck: started ${since(status.started)}, no update for ${formatDuration(quietFor)}`,
+                text: [
+                    ...(rev ? ["crater looks stuck testing fontc ", rev] : ["crater looks stuck"]),
+                    `: started ${since(status.started)}, no update for ${formatDuration(quietFor)}`,
+                ],
             };
         }
-        const started = `crater is running, started ${since(status.started)}`;
+        const started = [
+            ...(rev ? ["crater is testing fontc ", rev] : ["crater is running"]),
+            `, started ${since(status.started)}`,
+        ];
         if (progress?.phase === "running") {
-            return { state: "running", text: `${started}: ${progress.done} of ${progress.total} targets`, progress };
+            return { state: "running", text: [...started, `: ${progress.done} of ${progress.total} targets`], progress };
         }
-        return { state: "running", text: `${started}: preparing` };
+        return { state: "running", text: [...started, ": preparing"] };
     }
+    const lastRun = rev ? ["last crater run of fontc ", rev] : ["last crater run"];
     const took = formatDuration(Date.parse(status.finished) - Date.parse(status.started));
     if (status.exit_code !== 0) {
         return {
             state: "failed",
-            text: `last crater run failed ${since(status.finished)} (exit code ${status.exit_code}, after ${took})`,
+            text: [...lastRun, ` failed ${since(status.finished)} (exit code ${status.exit_code}, after ${took})`],
         };
     }
     if (progress?.phase === "skipped") {
-        return { state: "ok", text: `last crater run ${since(status.finished)} found nothing new to test` };
+        // the rev is the same as the last run's, already in the report
+        return { state: "ok", text: [`last crater run ${since(status.finished)} found nothing new to test`] };
     }
-    return { state: "ok", text: `last crater run finished ${since(status.finished)}, after ${took}` };
+    return { state: "ok", text: [...lastRun, ` finished ${since(status.finished)}, after ${took}`] };
+}
+
+function toNode(part) {
+    if (typeof part === "string") return part;
+    const link = document.createElement("a");
+    link.href = part.href;
+    link.textContent = part.text;
+    return link;
 }
 
 async function updateStatus() {
     const container = document.getElementById("live_status");
     const { status, error } = await fetchStatus(container.dataset.src);
-    const described = error ? { state: "unknown", text: error } : describeStatus(status);
+    const described = error ? { state: "unknown", text: [error] } : describeStatus(status);
     container.hidden = false;
     container.className = described.state;
     container.title = error
         ? container.dataset.src
         : `started ${status.started}, last update ${status.updated}`;
-    container.querySelector(".text").textContent = described.text;
+    container.querySelector(".text").replaceChildren(...described.text.map(toNode));
     const bar = container.querySelector("progress");
     bar.hidden = !described.progress;
     if (described.progress) {
