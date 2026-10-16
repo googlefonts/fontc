@@ -4016,6 +4016,22 @@ impl Instance {
             .find_map(|(name, value)| (name == key).then_some(value))
     }
 
+    /// Whether the instance has a property under this key, in any language.
+    pub fn has_property(&self, key: &str) -> bool {
+        self.properties.iter().any(|name| name.key == key)
+    }
+
+    /// Iterate over the instance's localized name entries, as
+    /// (property key, language code, value); the default languages
+    /// ("dflt", "default", "ENG") are excluded.
+    pub fn localized_names(&self) -> impl Iterator<Item = (&str, &str, &str)> {
+        self.properties.iter().flat_map(|name| {
+            name.localized_values()
+                .filter(|(lang, _)| !matches!(*lang, "dflt" | "default" | "ENG"))
+                .map(move |(lang, value)| (name.key.as_str(), lang, value))
+        })
+    }
+
     /// Get the optional postscript name to use for the `fvar` named instance.
     pub fn postscript_name(&self) -> Option<&str> {
         // https://handbook.glyphsapp.com/custom-parameter-descriptions/

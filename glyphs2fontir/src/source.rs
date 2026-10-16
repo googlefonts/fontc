@@ -295,7 +295,7 @@ impl<'a> ExportStyle<'a> {
 }
 
 /// The name table: the font's default-language names, with those of the
-/// static export (if any) on top.
+/// static export (if any) on top, then the localized names of both.
 // TODO(anthrotype): accept the Variable Font Settings being built too.
 fn names(
     font: &Font,
@@ -313,6 +313,25 @@ fn names(
             builder.add(name_id, value.to_string());
         }
     }
+
+    // An export's property replaces the font's property of the same key in
+    // every language, as in Glyphs 3.5.
+    let localized: Vec<_> = font
+        .localized_names()
+        .filter(|(key, _, _)| !export.is_some_and(|instance| instance.has_property(key)))
+        .chain(
+            export
+                .into_iter()
+                .flat_map(|instance| instance.localized_names()),
+        )
+        .filter(|(_, _, value)| !value.is_empty())
+        .collect();
+    let has_localized = |key: &str| localized.iter().any(|(k, _, _)| *k == key);
+    // Preferred names stand in for the family and style names in IDs 16/17
+    let has_preferred_family = builder.get(NameId::TYPOGRAPHIC_FAMILY_NAME).is_some()
+        || has_localized("preferredFamilyNames");
+    let has_preferred_subfamily = builder.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME).is_some()
+        || has_localized("preferredSubfamilyNames");
 
     // ID 2 from the flags, which the export's isBold/isItalic already set
     let subfamily = if flags.contains(SelectionFlags::BOLD | SelectionFlags::ITALIC) {
@@ -371,14 +390,44 @@ fn names(
         .or(font.vendor_id())
         .unwrap_or(DEFAULT_VENDOR_ID);
 
-    for (key, lang, value) in font.localized_names() {
-        let Some(name_id) = try_name_id(key) else {
-            continue;
-        };
+    // The builder drops the typographic pair when it matches IDs 1 and 2
+    let keep_typographic = builder.get(NameId::FAMILY_NAME)
+        != builder.get(NameId::TYPOGRAPHIC_FAMILY_NAME)
+        || builder.get(NameId::SUBFAMILY_NAME) != builder.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME);
+
+    // For an export, family and style names feed IDs 1, 16 and 17 per language
+    // as above: ID 1 takes the style map family, else the family with the
+    // default-language style suffix (Glyphs 3.5 does the same); 16 and 17
+    // take the family and style names unless preferred names stand in for
+    // them, or the typographic pair is dropped (Glyphs keeps the pair whatever
+    // its value). The other keys feed their own name ID. Glyphs also copies
+    // the default-language value of IDs 2 and 4 under each family language;
+    // that is left out.
+    for (key, lang, value) in localized {
         let Some(lang_id) = try_language_id(lang) else {
             continue;
         };
-        builder.add_record(NameKey::new_with_lang(name_id, lang_id), value.to_string());
+        let record = match (key, export.is_some()) {
+            ("familyNames", true) => {
+                // A style map family, in any language, stands in for the
+                // family in ID 1
+                if style_map_family.is_none() {
+                    builder.add_record(
+                        NameKey::new_with_lang(NameId::FAMILY_NAME, lang_id),
+                        export_style.style_linked_family(value, flags),
+                    );
+                }
+                (keep_typographic && !has_preferred_family)
+                    .then_some(NameId::TYPOGRAPHIC_FAMILY_NAME)
+            }
+            ("styleNames", true) => (keep_typographic && !has_preferred_subfamily)
+                .then_some(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+            ("styleMapFamilyNames", true) => Some(NameId::FAMILY_NAME),
+            (key, _) => try_name_id(key),
+        };
+        if let Some(name_id) = record {
+            builder.add_record(NameKey::new_with_lang(name_id, lang_id), value.to_string());
+        }
     }
 
     add_name_table_entries(&mut builder, font, export);
