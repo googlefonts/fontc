@@ -307,8 +307,10 @@ def build_fontmake(source: Path, build_dir: Path):
     ]
     # Static Glyphs compilation uses the one static export's metadata. Other sources
     # still use the master/VF reference, including one-master variable sources.
+    # fontc never autohints. --no-autohint keeps the instance's 'TTFAutohint options'
+    # from hinting fontmake's output.
     if not variable and builds_static_export(font):
-        cmd.append("-i")
+        cmd.extend(["-i", "--no-autohint"])
     if FLAGS.keep_direction:
         cmd.append("--keep-direction")
     if not FLAGS.production_names:
