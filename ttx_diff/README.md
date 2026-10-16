@@ -13,7 +13,11 @@ A tool for comparing font compiler outputs between fontc (Rust) and fontmake (Py
 - **fontmake**: The Python-based font compiler
 
 The tool converts each binary font to TTX (XML) format, normalizes expected
-differences, and provides a detailed comparison summary.
+differences, and provides a detailed comparison summary. The `glyf`, `gvar`,
+GPOS mark/kern and GDEF ligature caret tables are not compared as XML but via
+`otl-normalizer`'s text output (`fontc.glyf.txt`, `fontmake.gvar.txt`, ...);
+where glyf or gvar differ, the adjusted text that was actually compared is
+written to `<compiler>.glyf.diff.txt` / `<compiler>.gvar.diff.txt`.
 
 Note that `ttx_diff` is a pure Python package (located in `src/ttx_diff/`)
 rather than a typical Rust crate within this workspace.

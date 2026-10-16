@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Helper for comparing fontc (Rust) vs fontmake (Python) binaries.
 
-Turns each into ttx, eliminates expected sources of difference and prints
-a brief summary of the result.
+Turns each into ttx (glyf/gvar and the GPOS/GDEF parts otl-normalizer handles
+into its text form instead), eliminates expected sources of difference and
+prints a brief summary of the result.
 
 fontmake should be installed in an active virtual environment.
 
@@ -68,10 +69,8 @@ import yaml
 from absl import flags
 from cdifflib import CSequenceMatcher as SequenceMatcher
 from fontTools.designspaceLib import DesignSpaceDocument
-from fontTools.misc.fixedTools import otRound
 from fontTools.ttLib import TTFont
 from fontTools.ttLib.sfnt import SFNTReader
-from fontTools.varLib.iup import iup_delta
 from glyphsLib import GSFont
 from glyphsLib.classes import InstanceType
 from lxml import etree
@@ -82,6 +81,16 @@ FLAGS = flags.FLAGS
 # used instead of a tag for the normalized mark/kern output
 MARK_KERN_NAME = "(mark/kern)"
 LIG_CARET_NAME = "ligcaret"
+# tables compared via otl-normalizer's text output instead of ttx
+GLYF_NAME = "glyf"
+GVAR_NAME = "gvar"
+# tables left out of the ttx dump; glyf/gvar come from otl-normalizer, and loca
+# is implied by glyf
+TABLES_NOT_IN_TTX = ("glyf", "gvar", "loca")
+# in otl-normalizer's glyf/gvar output every glyph starts a block with this
+# line, and every point or delta line has this indent
+GLYPH_HEADER = "\nglyph "
+COORD_INDENT = "    "
 # maximum chars of stderr to include when reporting errors; prevents
 # too much bloat when run in CI
 MAX_ERR_LEN = 1000
@@ -169,12 +178,10 @@ def run_ttx(font_file: Path):
         eprint(f"reusing {rel_user(ttx_file)}")
         return ttx_file
 
-    cmd = [
-        "ttx",
-        "-o",
-        ttx_file.name,
-        font_file.name,
-    ]
+    cmd = ["ttx", "-o", ttx_file.name]
+    for table in TABLES_NOT_IN_TTX:
+        cmd += ["-x", table]
+    cmd.append(font_file.name)
     log_and_run(cmd, font_file.parent, check=True)
     return ttx_file
 
@@ -186,6 +193,8 @@ def run_normalizer(normalizer_bin: Path, font_file: Path, table: str):
         out_path = font_file.with_suffix(".markkern.txt")
     elif table == "gdef":
         out_path = font_file.with_suffix(f".{LIG_CARET_NAME}.txt")
+    elif table in (GLYF_NAME, GVAR_NAME):
+        out_path = font_file.with_suffix(f".{table}.txt")
     else:
         raise ValueError(f"unknown table for normalizer: '{table}'")
 
@@ -654,170 +663,6 @@ def stat_like_fontmake(ttx):
     ver.attrib["value"] = "0x00010001"
 
 
-def normalize_all_offcurve_starting_point(contour):
-    """Rotate an all-offcurve contour to start at point closest to origin.
-
-    When multiple points are equidistant from the origin, the first one encountered
-    (lowest index) is selected as the starting point.
-
-    This is to address differences in starting points of all-offcurve TrueType
-    quadratic contours between fontc and fontmake.
-
-    fontmake preserves the original off-curve starting point from the UFO source,
-    while fontc creates a synthetic on-curve point at the midpoint between first
-    and last off-curve points due to kurbo::BezPath needing some on-curve point
-    to move_to. When contours are reversed (default behavior without --keep-direction
-    flag), this results in different starting points in the final TrueType output.
-
-    See: <https://github.com/googlefonts/fontc/issues/1653>
-    """
-    pts = contour.xpath("./pt")
-    if not pts or not all(pt.get("on") == "0" for pt in pts):
-        return  # Not an all-offcurve contour
-
-    # Find point closest to origin
-    min_idx = min(
-        range(len(pts)),
-        key=lambda i: int(pts[i].get("x", 0)) ** 2 + int(pts[i].get("y", 0)) ** 2,
-    )
-
-    # Rotate if needed
-    if min_idx != 0:
-        contour[:] = pts[min_idx:] + pts[:min_idx]
-        # Fix indentation after rotation
-        etree.indent(contour, level=3)
-
-
-# https://github.com/googlefonts/fontc/issues/1107
-def normalize_glyf_contours(
-    fontc_ttx: etree.ElementTree, fontmake_ttx: etree.ElementTree
-) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
-    """Reorders contours when they are identical between fontc and fontmake.
-
-    If contours differ (e.g., different starting points), leaves
-    them in their original order to avoid misleading diffs.
-
-    For all-offcurve contours, normalizes the starting point to be the point
-    closest to the origin before comparison.
-
-    Returns a tuple of two dicts, one for fontc and one for fontmake, containing
-    the new order of prior point indices for each glyph, later used for sorting
-    gvar contours.
-    """
-    fontc_point_orders: dict[str, list[int]] = {}
-    fontmake_point_orders: dict[str, list[int]] = {}
-
-    # Get glyphs from both TTX trees
-    fontc_glyphs = {g.attrib["name"]: g for g in fontc_ttx.xpath("//glyf/TTGlyph")}
-    fontmake_glyphs = {
-        g.attrib["name"]: g for g in fontmake_ttx.xpath("//glyf/TTGlyph")
-    }
-
-    # Only process glyphs that exist in both outputs
-    for glyph_name in fontc_glyphs.keys() & fontmake_glyphs.keys():
-        fontc_glyph = fontc_glyphs[glyph_name]
-        fontmake_glyph = fontmake_glyphs[glyph_name]
-
-        fontc_contours = fontc_glyph.xpath("./contour")
-        fontmake_contours = fontmake_glyph.xpath("./contour")
-
-        # Skip glyphs with mismatched contour counts
-        if len(fontc_contours) != len(fontmake_contours):
-            continue
-
-        # Normalize all-offcurve contours to start at point closest to origin
-        for contour in fontc_contours + fontmake_contours:
-            normalize_all_offcurve_starting_point(contour)
-
-        # Compare contours as sets to see if they're identical (ignoring order)
-        fontc_strings = {to_xml_string(c) for c in fontc_contours}
-        fontmake_strings = {to_xml_string(c) for c in fontmake_contours}
-
-        if fontc_strings == fontmake_strings:
-            # Contours are identical, just in different order - normalize both
-            _normalize_single_glyph(fontc_glyph, fontc_contours, fontc_point_orders)
-            _normalize_single_glyph(
-                fontmake_glyph, fontmake_contours, fontmake_point_orders
-            )
-        # If sets don't match, skip normalization - leave original order
-
-    return fontc_point_orders, fontmake_point_orders
-
-
-def _normalize_single_glyph(
-    glyph: etree.Element,
-    contours: list[etree.Element],
-    point_orders: dict[str, list[int]],
-):
-    """Helper function to normalize contour order within a single glyph.
-
-    Contours are sorted alphabetically by xml string representation.
-
-    The `point_orders` dict is used to store the new order of prior point
-    indices for this glyph.
-    """
-    # annotate each contour with the range of point indices it covers
-    with_range: list[tuple[range, etree.Element]] = []
-    points_seen = 0
-    for contour in contours:
-        points_here = len(contour.xpath("./pt"))
-        with_range.append((range(points_seen, points_seen + points_here), contour))
-        points_seen += points_here
-    annotated = sorted(with_range, key=lambda a: to_xml_string(a[1]))
-
-    # sort by string representation, and skip if nothing has changed
-    normalized = [contour for _, contour in annotated]
-    if normalized == contours:
-        return
-
-    # normalized contours should be inserted before any other TTGlyph's
-    # subelements (e.g. instructions)
-    for contour in contours:
-        glyph.remove(contour)
-    non_contours = list(glyph)
-    for el in non_contours:
-        glyph.remove(el)
-    glyph.extend(normalized + non_contours)
-
-    # store new indices order
-    name = glyph.attrib["name"]
-    point_orders[name] = [idx for indices, _ in annotated for idx in indices]
-
-
-def normalize_gvar_contours(ttx: etree.ElementTree, point_orders: dict[str, list[int]]):
-    """Reorder gvar points to match normalised glyf order."""
-
-    for glyph in ttx.xpath("//gvar/glyphVariations"):
-        name = glyph.attrib["glyph"]
-        order = point_orders.get(name)
-
-        # skip glyph if glyf normalisation did not change its point order
-        if order is None:
-            continue
-
-        # apply the same order to every tuple
-        for tup in glyph.xpath("./tuple"):
-            deltas = tup.xpath("./delta")
-            assert len(order) + 4 == len(deltas), "gvar is not dense"
-
-            # reorder and change index to match new position
-            reordered = []
-            for new_idx, old_idx in enumerate(order):
-                delta = deltas[old_idx]  # always present as gvars are densified
-                delta.attrib["pt"] = str(new_idx)
-                reordered.append(delta)
-            reordered += deltas[-4:]  # phantom points
-
-            # normalized points should be inserted after any other tuple
-            # subelements (e.g. coordinates)
-            for delta in deltas:
-                tup.remove(delta)
-            non_deltas = list(tup)
-            for el in non_deltas:
-                tup.remove(el)
-            tup.extend(non_deltas + reordered)
-
-
 def normalize_null_tags(ttx: etree.ElementTree, xpath: str, attr: str):
     """replace the tag 'NONE' with the tag '    '"""
     for el in ttx.xpath(xpath):
@@ -832,12 +677,266 @@ def normalize_null_vendor_in_unique_id(ttx: etree.ElementTree):
             record.text = re.sub(r";(?:NONE| *);", ";    ;", record.text, count=1)
 
 
-# https://github.com/googlefonts/fontc/issues/1173
-def erase_type_from_stranded_points(ttx):
-    for contour in ttx.xpath("//glyf/TTGlyph/contour"):
-        points = contour.xpath("./pt")
-        if len(points) == 1:
-            points[0].attrib["on"] = "irrelevent"
+class GlyphBlocks:
+    """otl-normalizer's glyf or gvar output, split into a block per glyph.
+
+    A block is the glyph's name line followed by its indented lines; blocks
+    are kept in document order, which is glyph name order."""
+
+    def __init__(self, text: str):
+        self.parts = text.split(GLYPH_HEADER)
+        self.index: dict[str, int] = {}
+        for i, part in enumerate(self.parts):
+            if i > 0:
+                name, _, _ = part.partition("\n")
+                self.index[name] = i
+        self.num_coords = text.count("\n" + COORD_INDENT)
+
+    def names(self):
+        return self.index.keys()
+
+    def get(self, name: str) -> Optional[str]:
+        i = self.index.get(name)
+        return None if i is None else self.parts[i]
+
+    def lines(self, name: str) -> list[str]:
+        return self.parts[self.index[name]].split("\n")
+
+    def set_lines(self, name: str, lines: list[str]):
+        self.parts[self.index[name]] = "\n".join(lines)
+
+    def text(self) -> str:
+        return GLYPH_HEADER.join(self.parts)
+
+
+def normalize_glyf_and_gvar(
+    fontc_glyf: str, fontmake_glyf: str, fontc_gvar: str, fontmake_gvar: str
+) -> tuple[str, str, str, str]:
+    """The cross-font parts of glyf/gvar normalization, on otl-normalizer's text.
+
+    Returns the four texts, adjusted."""
+    if fontc_glyf == fontmake_glyf and fontc_gvar == fontmake_gvar:
+        return fontc_glyf, fontmake_glyf, fontc_gvar, fontmake_gvar
+
+    fontc_glyf = GlyphBlocks(fontc_glyf)
+    fontmake_glyf = GlyphBlocks(fontmake_glyf)
+    fontc_gvar = GlyphBlocks(fontc_gvar)
+    fontmake_gvar = GlyphBlocks(fontmake_gvar)
+
+    with timed("normalize glyf contours"):
+        fontc_point_orders, fontmake_point_orders = normalize_glyf_contours(
+            fontc_glyf, fontmake_glyf
+        )
+    with timed("normalize gvar contours"):
+        normalize_gvar_contours(fontc_gvar, fontc_point_orders)
+        normalize_gvar_contours(fontmake_gvar, fontmake_point_orders)
+    with timed("allow off-by-ones"):
+        allow_some_off_by_ones(fontc_glyf, fontmake_glyf, GLYF_NAME)
+        allow_some_off_by_ones(fontc_gvar, fontmake_gvar, GVAR_NAME)
+
+    return (
+        fontc_glyf.text(),
+        fontmake_glyf.text(),
+        fontc_gvar.text(),
+        fontmake_gvar.text(),
+    )
+
+
+def split_contours(lines: list[str]) -> tuple[list[str], list[str], list[str]]:
+    """Split a glyf block into the lines before its contours, each contour as
+    a single string, and the lines after."""
+    prefix: list[str] = []
+    contours: list[list[str]] = []
+    suffix: list[str] = []
+    for line in lines:
+        if line == "  contour":
+            contours.append([])
+        elif contours and line.startswith(COORD_INDENT):
+            contours[-1].append(line)
+        elif not contours:
+            prefix.append(line)
+        else:
+            suffix.append(line)
+    return prefix, ["\n".join(c) for c in contours], suffix
+
+
+# https://github.com/googlefonts/fontc/issues/1107
+def normalize_glyf_contours(
+    fontc: GlyphBlocks, fontmake: GlyphBlocks
+) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
+    """Reorders contours when they are identical between fontc and fontmake.
+
+    If contours differ (e.g., different starting points), leaves
+    them in their original order to avoid misleading diffs.
+
+    Returns a tuple of two dicts, one for fontc and one for fontmake, containing
+    the new order of prior point indices for each glyph, later used for sorting
+    gvar contours.
+    """
+    fontc_point_orders: dict[str, list[int]] = {}
+    fontmake_point_orders: dict[str, list[int]] = {}
+
+    # Only process glyphs that exist in both outputs
+    for glyph_name in fontc.names() & fontmake.names():
+        # identical glyphs would sort identically, so there's nothing to do
+        if fontc.get(glyph_name) == fontmake.get(glyph_name):
+            continue
+
+        fontc_split = split_contours(fontc.lines(glyph_name))
+        fontmake_split = split_contours(fontmake.lines(glyph_name))
+
+        # Skip glyphs with mismatched contour counts
+        if len(fontc_split[1]) != len(fontmake_split[1]):
+            continue
+
+        # Compare contours as sets to see if they're identical (ignoring order)
+        if set(fontc_split[1]) == set(fontmake_split[1]):
+            # Contours are identical, just in different order - normalize both
+            _normalize_single_glyph(fontc, glyph_name, fontc_split, fontc_point_orders)
+            _normalize_single_glyph(
+                fontmake, glyph_name, fontmake_split, fontmake_point_orders
+            )
+        # If sets don't match, skip normalization - leave original order
+
+    return fontc_point_orders, fontmake_point_orders
+
+
+def _normalize_single_glyph(
+    blocks: GlyphBlocks,
+    glyph_name: str,
+    split: tuple[list[str], list[str], list[str]],
+    point_orders: dict[str, list[int]],
+):
+    """Helper function to normalize contour order within a single glyph.
+
+    Contours are sorted by their text representation.
+
+    The `point_orders` dict is used to store the new order of prior point
+    indices for this glyph.
+    """
+    prefix, contours, suffix = split
+    # annotate each contour with the range of point indices it covers
+    with_range: list[tuple[range, str]] = []
+    points_seen = 0
+    for contour in contours:
+        points_here = contour.count("\n") + 1
+        with_range.append((range(points_seen, points_seen + points_here), contour))
+        points_seen += points_here
+    annotated = sorted(with_range, key=lambda a: a[1])
+
+    # sort by string representation, and skip if nothing has changed
+    normalized = [contour for _, contour in annotated]
+    if normalized == contours:
+        return
+
+    lines = list(prefix)
+    for contour in normalized:
+        lines += ["  contour", contour]
+    lines += suffix
+    blocks.set_lines(glyph_name, lines)
+
+    # store new indices order
+    point_orders[glyph_name] = [idx for indices, _ in annotated for idx in indices]
+
+
+def normalize_gvar_contours(blocks: GlyphBlocks, point_orders: dict[str, list[int]]):
+    """Reorder gvar points to match normalised glyf order."""
+
+    for name, order in point_orders.items():
+        # skip glyph if it has no variations
+        if name not in blocks.index:
+            continue
+
+        # apply the same order to every tuple
+        lines = []
+        deltas: list[str] = []
+
+        def flush_tuple():
+            if not deltas:
+                return
+            assert len(order) + 4 == len(deltas), "gvar is not dense"
+            lines.extend(deltas[old_idx] for old_idx in order)
+            lines.extend(deltas[-4:])  # phantom points
+            deltas.clear()
+
+        for line in blocks.lines(name):
+            if line.startswith(COORD_INDENT):
+                deltas.append(line)
+            else:
+                flush_tuple()
+                lines.append(line)
+        flush_tuple()
+        blocks.set_lines(name, lines)
+
+
+def allow_some_off_by_ones(fontc: GlyphBlocks, fontmake: GlyphBlocks, table: str):
+    """Snap coordinates that differ by at most one to fontmake's value.
+
+    The budget is a percentage of fontmake's coordinate count; the snapped
+    lines are marked 'adjusted' on both sides so they still compare equal."""
+    off_by_one_budget = int(FLAGS.off_by_one_budget / 100.0 * fontmake.num_coords)
+    spent = 0
+    if off_by_one_budget == 0:
+        return
+
+    for name in fontmake.names():
+        fontmake_block = fontmake.get(name)
+        fontc_block = fontc.get(name)
+        if fontc_block is None or fontc_block == fontmake_block:
+            continue
+
+        fontc_lines = fontc_block.split("\n")
+        fontmake_lines = fontmake_block.split("\n")
+        fontc_coords = [
+            i for i, line in enumerate(fontc_lines) if line.startswith(COORD_INDENT)
+        ]
+        fontmake_coords = [
+            i for i, line in enumerate(fontmake_lines) if line.startswith(COORD_INDENT)
+        ]
+
+        if len(fontc_coords) != len(fontmake_coords):
+            eprint(
+                f"length of {table} '{name}' differs ({len(fontc_coords)}/{len(fontmake_coords)}), skipping"
+            )
+            continue
+
+        out_of_budget = False
+        for fontc_idx, fontmake_idx in zip(fontc_coords, fontmake_coords):
+            if fontc_lines[fontc_idx] == fontmake_lines[fontmake_idx]:
+                continue
+            fontc_toks = fontc_lines[fontc_idx].split()
+            fontmake_toks = fontmake_lines[fontmake_idx].split()
+            adjusted = False
+            for i in (0, 1):
+                delta = abs(int(fontmake_toks[i]) - int(fontc_toks[i]))
+                if 0 < delta <= 1:
+                    fontc_toks[i] = fontmake_toks[i]
+                    adjusted = True
+                    spent += 1
+                if spent >= off_by_one_budget:
+                    out_of_budget = True
+                    break
+            if adjusted:
+                fontc_lines[fontc_idx] = COORD_INDENT + " ".join(
+                    fontc_toks + ["adjusted"]
+                )
+                fontmake_lines[fontmake_idx] = COORD_INDENT + " ".join(
+                    fontmake_toks + ["adjusted"]
+                )
+            if out_of_budget:
+                break
+        fontc.set_lines(name, fontc_lines)
+        fontmake.set_lines(name, fontmake_lines)
+        if out_of_budget:
+            eprint(
+                f"WARN: ran out of budget ({off_by_one_budget}) to fix off-by-ones in {table}"
+            )
+            return
+
+    if spent > 0:
+        eprint(
+            f"INFO fixed {spent} off-by-ones in {table} (budget {off_by_one_budget})"
+        )
 
 
 # only fontc emits name 25 currently, don't treat that as an error
@@ -848,56 +947,6 @@ def allow_fontc_only_variations_postscript_prefix(fontc, fontmake):
     if fontc_name25 and not fontmake_name25:
         for n in fontc_name25:
             n.getparent().remove(n)
-
-
-def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
-    fontmake_containers = fontmake.xpath(f"//{container}")
-    coord_tag = coord_holder.rpartition("/")[-1]
-    fontmake_num_coords = sum(
-        sum(1 for _ in c.iter(coord_tag)) for c in fontmake_containers
-    )
-    off_by_one_budget = int(FLAGS.off_by_one_budget / 100.0 * fontmake_num_coords)
-    spent = 0
-    if off_by_one_budget == 0:
-        return
-
-    # put all the containers into a dict to make querying more efficient:
-    fontc_items = {x.attrib[name_attr]: x for x in fontc.xpath(f"//{container}")}
-    for fontmake_container in fontmake_containers:
-        name = fontmake_container.attrib[name_attr]
-        fontc_container = fontc_items.get(name)
-        if fontc_container is None:
-            continue
-
-        fontc_els = [el for el in fontc_container.iter() if el.tag == coord_tag]
-        fontmake_els = [el for el in fontmake_container.iter() if el.tag == coord_tag]
-
-        if len(fontc_els) != len(fontmake_els):
-            eprint(
-                f"length of {container} '{name}' differs ({len(fontc_els)}/{len(fontmake_els)}), skipping"
-            )
-            continue
-
-        for fontmake_el, fontc_el in zip(fontc_els, fontmake_els):
-            for attr in ("x", "y"):
-                delta_x = abs(
-                    float(fontmake_el.attrib[attr]) - float(fontc_el.attrib[attr])
-                )
-                if 0.0 < delta_x <= 1.0:
-                    fontc_el.attrib["diff_adjusted"] = "1"
-                    fontmake_el.attrib["diff_adjusted"] = "1"
-                    fontc_el.attrib[attr] = fontmake_el.attrib[attr]
-                    spent += 1
-                if spent >= off_by_one_budget:
-                    eprint(
-                        f"WARN: ran out of budget ({off_by_one_budget}) to fix off-by-ones in {container}"
-                    )
-                    return
-
-    if spent > 0:
-        eprint(
-            f"INFO fixed {spent} off-by-ones in {container} (budget {off_by_one_budget})"
-        )
 
 
 # In various cases we have a list of indices where the order doesn't matter;
@@ -1112,70 +1161,6 @@ def reorder_contextual_class_based_rules(
                     remap_values(class_rule, lookahead_class_order, "LookAhead")
 
 
-def fill_in_gvar_deltas(
-    fontc: etree.ElementTree,
-    fontc_ttf: Path,
-    fontmake: etree.ElementTree,
-    fontmake_ttf: Path,
-):
-    fontc_font = TTFont(fontc_ttf)
-    fontmake_font = TTFont(fontmake_ttf)
-    dense_fontc_count = densify_gvar(fontc_font, fontc)
-    dense_fontmake_count = densify_gvar(fontmake_font, fontmake)
-
-    if dense_fontc_count + dense_fontmake_count > 0:
-        eprint(
-            f"densified {dense_fontc_count} glyphVariations in fontc, {dense_fontmake_count} in fontmake"
-        )
-
-
-def densify_gvar(font: TTFont, ttx: etree.ElementTree):
-    gvar = ttx.find("gvar")
-    if gvar is None:
-        return 0
-    glyf = font["glyf"]
-    hMetrics = font["hmtx"].metrics
-    vMetrics = getattr(font.get("vmtx"), "metrics", None)
-
-    total_deltas_filled = 0
-    for variations in gvar.xpath(".//glyphVariations"):
-        coords, g = glyf._getCoordinatesAndControls(
-            variations.attrib["glyph"], hMetrics, vMetrics
-        )
-        total_deltas_filled += int(densify_one_glyph(coords, g.endPts, variations))
-
-    return total_deltas_filled
-
-
-def densify_one_glyph(coords, ends, variations: etree.ElementTree):
-    did_work = False
-    for tuple_ in variations.findall("tuple"):
-        deltas = [None] * len(coords)
-        for delta in tuple_.findall("delta"):
-            idx = int(delta.attrib["pt"])
-            if idx >= len(deltas):
-                continue
-            deltas[idx] = (int(delta.attrib["x"]), int(delta.attrib["y"]))
-
-        if any(d is None for d in deltas):
-            did_work = True
-            filled_deltas = iup_delta(deltas, coords, ends)
-            for delta in tuple_.findall("delta"):
-                tuple_.remove(delta)
-
-            new_deltas = [
-                {"pt": str(i), "x": str(otRound(x)), "y": str(otRound(y))}
-                for (i, (x, y)) in enumerate(filled_deltas)
-            ]
-            for attrs in new_deltas:
-                new_delta = etree.Element("delta", attrs)
-                tuple_.append(new_delta)
-
-            etree.indent(tuple_, level=3)
-
-    return did_work
-
-
 def _dedent(el, space="  "):
     """Remove one level of indentation from an element subtree.
 
@@ -1301,7 +1286,6 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
 
         remove_mark_and_kern_and_curs_lookups(ttx)
 
-        erase_type_from_stranded_points(ttx)
         with timed("gdef work"):
             remove_gdef_lig_caret_and_var_store(ttx)
             sort_gdef_mark_filter_sets(ttx)
@@ -1310,23 +1294,7 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         # for earlier steps)
         normalize_name_ids(ttx)
 
-    # Normalize glyf contour order but only when contours are identical
-
-    with timed("normalize glyf contours"):
-        fontc_point_orders, fontmake_point_orders = normalize_glyf_contours(
-            fontc, fontmake
-        )
-    with timed("normalize gvar contours"):
-        normalize_gvar_contours(fontc, fontc_point_orders)
-        normalize_gvar_contours(fontmake, fontmake_point_orders)
-
     allow_fontc_only_variations_postscript_prefix(fontc, fontmake)
-
-    with timed("allow off-by-ones"):
-        allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
-        allow_some_off_by_ones(
-            fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
-        )
 
 
 # given a font file, return a dictionary of tags -> size in bytes
@@ -1380,11 +1348,17 @@ def generate_output(
         fontc_gdef = run_normalizer(otl_norm_bin, fontc_ttf, "gdef")
     with timed("normalize fontmake gdef"):
         fontmake_gdef = run_normalizer(otl_norm_bin, fontmake_ttf, "gdef")
+    with timed("normalize fontc glyf"):
+        fontc_glyf = run_normalizer(otl_norm_bin, fontc_ttf, GLYF_NAME)
+    with timed("normalize fontmake glyf"):
+        fontmake_glyf = run_normalizer(otl_norm_bin, fontmake_ttf, GLYF_NAME)
+    with timed("normalize fontc gvar"):
+        fontc_gvar = run_normalizer(otl_norm_bin, fontc_ttf, GVAR_NAME)
+    with timed("normalize fontmake gvar"):
+        fontmake_gvar = run_normalizer(otl_norm_bin, fontmake_ttf, GVAR_NAME)
 
     fontc = etree.parse(fontc_ttx)
     fontmake = etree.parse(fontmake_ttx)
-    with timed("fill_in_gvar_deltas"):
-        fill_in_gvar_deltas(fontc, fontc_ttf, fontmake, fontmake_ttf)
     with timed("reduce_diff_noise"):
         reduce_diff_noise(fontc, fontmake)
 
@@ -1392,6 +1366,10 @@ def generate_output(
         fontc = extract_comparables(fontc, build_dir, "fontc")
     with timed("extract_comparables fontmake"):
         fontmake = extract_comparables(fontmake, build_dir, "fontmake")
+    with timed("compare glyf and gvar"):
+        fontc_glyf, fontmake_glyf, fontc_gvar, fontmake_gvar = normalize_glyf_and_gvar(
+            fontc_glyf, fontmake_glyf, fontc_gvar, fontmake_gvar
+        )
     with timed("check_sizes"):
         size_diffs = check_sizes(fontmake_ttf, fontc_ttf)
     fontc[MARK_KERN_NAME] = fontc_gpos
@@ -1400,6 +1378,21 @@ def generate_output(
         fontc[LIG_CARET_NAME] = fontc_gdef
     if len(fontmake_gdef):
         fontmake[LIG_CARET_NAME] = fontmake_gdef
+    for name, fontc_text, fontmake_text in [
+        (GLYF_NAME, fontc_glyf, fontmake_glyf),
+        (GVAR_NAME, fontc_gvar, fontmake_gvar),
+    ]:
+        if len(fontc_text):
+            fontc[name] = fontc_text
+        if len(fontmake_text):
+            fontmake[name] = fontmake_text
+        # the normalizer's own output stays untouched on disk so later runs can
+        # reuse it; what we actually compared goes in a separate file
+        if len(fontc_text) and len(fontmake_text) and fontc_text != fontmake_text:
+            (build_dir / path_for_output_item(name, "fontc")).write_text(fontc_text)
+            (build_dir / path_for_output_item(name, "fontmake")).write_text(
+                fontmake_text
+            )
     result = {"fontc": fontc, "fontmake": fontmake}
     if len(size_diffs) > 0:
         result["sizes"] = size_diffs
@@ -1489,6 +1482,9 @@ def extract_comparables(font_xml, build_dir: Path, compiler: str) -> dict[str, s
     comparables = dict()
     tables = {e.tag: e for e in font_xml.getroot()}
     for tag in sorted(e.tag for e in font_xml.getroot()):
+        # a ttx dumped before we started excluding these still has them
+        if tag in TABLES_NOT_IN_TTX:
+            continue
         table_str = to_xml_string(tables[tag])
         path = build_dir / f"{compiler}.{tag}.ttx"
         path.write_bytes(table_str)
@@ -1512,6 +1508,8 @@ def diff_ratio(text1: str, text2: str) -> float:
 def path_for_output_item(tag_or_normalizer_name: str, compiler: str) -> str:
     if tag_or_normalizer_name == MARK_KERN_NAME:
         return f"{compiler}.markkern.txt"
+    elif tag_or_normalizer_name in (GLYF_NAME, GVAR_NAME):
+        return f"{compiler}.{tag_or_normalizer_name}.diff.txt"
     else:
         return f"{compiler}.{tag_or_normalizer_name}.ttx"
 
@@ -1576,10 +1574,19 @@ def delete_things_we_must_rebuild(
                 ttf_path.with_suffix(".markkern.txt"),
                 ttf_path.with_suffix(".ligcaret.txt"),
                 failure_file(ttf_path),
+                ttf_path.with_suffix(f".{GLYF_NAME}.txt"),
+                ttf_path.with_suffix(f".{GVAR_NAME}.txt"),
             ]
             if not skip_fonts:
                 paths.append(ttf_path)
             for path in paths:
+                if path.exists():
+                    os.remove(path)
+    # these depend on both fonts
+    if rebuild != "none":
+        for tool in ("fontmake", "fontc"):
+            for name in (GLYF_NAME, GVAR_NAME):
+                path = fontc_ttf.parent / path_for_output_item(name, tool)
                 if path.exists():
                     os.remove(path)
 
