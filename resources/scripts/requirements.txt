@@ -96,7 +96,7 @@ gfmetadata==0.2.5
     #   gftools
 gfsubsets==2025.11.4
     # via gftools
-gftools==0.10.3
+gftools==0.10.4
     # via
     #   -r resources/scripts/requirements.in
     #   ttx-diff
