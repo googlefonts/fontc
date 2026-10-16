@@ -420,6 +420,10 @@ def run_gftools(
         extra_args.append("--keep-overlaps")
     if not FLAGS.production_names:
         extra_args.append("--no-production-names")
+    if fontc_bin is None:
+        # gftools still lets fontmake hint from the instance's TTFAutohint option
+        # in simple-output mode. Only this run gets the flag: fontc rejects it.
+        extra_args.append("--no-autohint")
 
     with modified_gftools_config(maybe_new_config_path, cmd, extra_args):
         build(cmd, None)
