@@ -27,8 +27,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .add_instructions(&gitcl)?
         .add_instructions(&Rustc::all_rustc())? // VERGEN_RUSTC_* for `--vv`
         .emit()?;
-    // vergen honours VERGEN_GIT_DESCRIBE as an override but doesn't ask cargo to
-    // watch it; without this a warm target dir keeps the previous value.
+    // vergen honours these as overrides but doesn't ask cargo to watch them;
+    // without this a warm target dir keeps the previous values.
     println!("cargo:rerun-if-env-changed=VERGEN_GIT_DESCRIBE");
+    println!("cargo:rerun-if-env-changed=VERGEN_GIT_SHA");
     Ok(())
 }

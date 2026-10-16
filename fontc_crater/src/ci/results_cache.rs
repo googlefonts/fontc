@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use sha2::{Digest, Sha256};
+
 use crate::{
     RunResult, Target,
     ttx_diff_runner::{DiffError, DiffOutput},
@@ -16,7 +18,7 @@ static DERIVED_FILES: [&str; 2] = ["fontmake.ttx", "fontmake.markkern.txt"];
 // what ttx_diff leaves in place of the font when fontmake fails; keep in sync
 // with core.py
 static FAILURE_FILE: &str = "fontmake.failure.json";
-// the previous run's result, keyed by the font fontc produced for this target
+// the previous run's result, and what it was produced from
 static RESULT_FILE: &str = "result.json";
 
 /// What fontmake left in a build directory: a font, or a record of how it
@@ -46,15 +48,39 @@ impl FontmakeOutput {
     }
 }
 
-/// A previous run's result, and the sha256 of the fontc.ttf it describes.
+/// What a target's result depends on, besides what is fixed for a cache entry.
 ///
-/// The diff is a function of the two compiled fonts, so if fontc produces the
-/// same font again and fontmake's side still comes from this cache, this result
-/// stands. This is the hash of fontc's *output*, not of the fontc binary; the
-/// binary changes every run, which is the thing we are trying to look past.
+/// The source is fixed by the revision in the cache path, fontmake's output
+/// comes from the same entry, and the whole cache is cleared when python
+/// dependencies, ttx_diff or otl-normalizer change. Anything else that can
+/// change a result between two runs belongs here.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ResultKey {
+    /// sha256 of the fontc binary
+    pub(crate) fontc: String,
+    /// sha256 of the otl-normalizer binary
+    pub(crate) normalizer: String,
+    /// sha256 of the config, in gftools mode
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) config: Option<String>,
+    /// ttx_diff's arguments, minus per-run paths and `--expected_fontc_ttf_hash`
+    pub(crate) ttx_diff_args: Vec<String>,
+}
+
+/// A previous run's result, and what it was produced from.
+///
+/// If the key is unchanged, so is the result. Otherwise the diff is still a
+/// function of the two compiled fonts, so if fontc produces a font with the
+/// same hash and fontmake's side still comes from this cache, the result
+/// stands.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct CachedRun {
-    pub(crate) fontc_ttf_hash: String,
+    /// sha256 of the font fontc produced, if it produced one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) fontc_ttf_hash: Option<String>,
+    /// absent in entries written before keys were recorded
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key: Option<ResultKey>,
     result: CachedResult,
 }
 
@@ -66,6 +92,11 @@ enum CachedResult {
 }
 
 impl CachedRun {
+    /// Whether this result was produced from the same inputs.
+    pub(crate) fn has_key(&self, key: &ResultKey) -> bool {
+        self.key.as_ref() == Some(key)
+    }
+
     pub(crate) fn into_result(self) -> RunResult<DiffOutput, DiffError> {
         match self.result {
             CachedResult::Success(output) => RunResult::Success(output),
@@ -94,6 +125,11 @@ impl ResultsCache {
         if self.base_results_cache_dir.exists() {
             std::fs::remove_dir_all(&self.base_results_cache_dir).expect("failed to remove cache")
         }
+    }
+
+    /// What fontmake left in the cache for this target, if anything.
+    pub fn fontmake_output(&self, target: &Target) -> Option<FontmakeOutput> {
+        FontmakeOutput::in_dir(&target.cache_dir(&self.base_results_cache_dir))
     }
 
     /// if we have cached files for this target, copy them into the build directory.
@@ -135,12 +171,13 @@ impl ResultsCache {
         }
     }
 
-    /// Record this run's result so the next run can skip the comparison if the
-    /// font fontc produces is unchanged.
+    /// Record this run's result so the next run can reuse it if its inputs, or
+    /// the font fontc produces, are unchanged.
     pub fn save_result(
         &self,
         target: &Target,
-        fontc_ttf_hash: String,
+        key: ResultKey,
+        fontc_ttf_hash: Option<String>,
         result: &RunResult<DiffOutput, DiffError>,
     ) {
         let result = match result {
@@ -157,6 +194,7 @@ impl ResultsCache {
         }
         let run = CachedRun {
             fontc_ttf_hash,
+            key: Some(key),
             result,
         };
         if let Err(e) = crate::try_write_json(&run, &target_cache_dir.join(RESULT_FILE)) {
@@ -177,6 +215,13 @@ impl ResultsCache {
             log::trace!("saved cached files for {target}");
         }
     }
+}
+
+/// The sha256 of a file, as lowercase hex.
+pub(crate) fn sha256_file(path: &Path) -> std::io::Result<String> {
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut std::fs::File::open(path)?, &mut hasher)?;
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Copy whatever fontmake left in `from_dir`, skipping any files the
@@ -212,6 +257,17 @@ mod tests {
         )
     }
 
+    fn test_key() -> ResultKey {
+        ResultKey {
+            fontc: "f00d".into(),
+            normalizer: "beef".into(),
+            config: Some("c0ffee".into()),
+            ttx_diff_args: ["--compare", "gftools", "Font.glyphs"]
+                .map(Into::into)
+                .into(),
+        }
+    }
+
     #[test]
     fn result_round_trip() {
         let tempdir = tempfile::tempdir().unwrap();
@@ -224,12 +280,14 @@ mod tests {
             .collect();
         cache.save_result(
             &target,
-            "abc123".into(),
+            test_key(),
+            Some("abc123".into()),
             &RunResult::Success(DiffOutput::Diffs(diffs)),
         );
 
         let loaded = cache.load_result(&target).expect("just saved it");
-        assert_eq!(loaded.fontc_ttf_hash, "abc123");
+        assert_eq!(loaded.fontc_ttf_hash.as_deref(), Some("abc123"));
+        assert!(loaded.has_key(&test_key()));
         let RunResult::Success(DiffOutput::Diffs(diffs)) = loaded.into_result() else {
             panic!("expected diffs");
         };
@@ -243,7 +301,8 @@ mod tests {
         let target = test_target();
         cache.save_result(
             &target,
-            "abc123".into(),
+            test_key(),
+            Some("abc123".into()),
             &RunResult::Fail(DiffError::CompileFailed(CompileFailed {
                 fontc: None,
                 fontmake: Some(CompilerFailure {
@@ -262,13 +321,101 @@ mod tests {
     }
 
     #[test]
+    fn fontc_failures_are_cached_without_a_font_hash() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        cache.save_result(
+            &target,
+            test_key(),
+            None,
+            &RunResult::Fail(DiffError::CompileFailed(CompileFailed {
+                fontc: Some(CompilerFailure {
+                    command: "fontc".into(),
+                    stderr: "oh no".into(),
+                }),
+                fontmake: None,
+            })),
+        );
+
+        let loaded = cache.load_result(&target).expect("just saved it");
+        assert!(loaded.fontc_ttf_hash.is_none());
+        assert!(loaded.has_key(&test_key()));
+        let RunResult::Fail(DiffError::CompileFailed(failed)) = loaded.into_result() else {
+            panic!("expected a compile failure");
+        };
+        assert_eq!(failed.fontc.unwrap().stderr, "oh no");
+    }
+
+    #[test]
+    fn any_changed_input_is_a_miss() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        cache.save_result(
+            &target,
+            test_key(),
+            Some("abc123".into()),
+            &RunResult::Success(DiffOutput::Identical),
+        );
+        let loaded = cache.load_result(&target).expect("just saved it");
+
+        let changes: [fn(&mut ResultKey); 5] = [
+            |key| key.fontc = "f00f".into(),
+            |key| key.normalizer = "beer".into(),
+            |key| key.config = Some("c0c0a".into()),
+            |key| key.config = None,
+            |key| key.ttx_diff_args.insert(0, "--keep_direction".into()),
+        ];
+        for change in changes {
+            let mut key = test_key();
+            change(&mut key);
+            assert!(!loaded.has_key(&key), "{key:?}");
+        }
+    }
+
+    #[test]
+    fn entries_without_a_key_are_a_miss() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache = ResultsCache::in_dir(tempdir.path());
+        let target = test_target();
+        let dir = target.cache_dir(&cache.base_results_cache_dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(RESULT_FILE),
+            r#"{ "fontc_ttf_hash": "abc123", "result": { "success": "identical" } }"#,
+        )
+        .unwrap();
+
+        let loaded = cache.load_result(&target).expect("still readable");
+        assert_eq!(loaded.fontc_ttf_hash.as_deref(), Some("abc123"));
+        assert!(!loaded.has_key(&test_key()));
+        assert!(matches!(
+            loaded.into_result(),
+            RunResult::Success(DiffOutput::Identical)
+        ));
+    }
+
+    #[test]
+    fn sha256_file_is_hex() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join("hi.txt");
+        std::fs::write(&path, "hi\n").unwrap();
+        assert_eq!(
+            sha256_file(&path).unwrap(),
+            "98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4"
+        );
+    }
+
+    #[test]
     fn runtime_failures_are_not_cached() {
         let tempdir = tempfile::tempdir().unwrap();
         let cache = ResultsCache::in_dir(tempdir.path());
         let target = test_target();
         cache.save_result(
             &target,
-            "abc123".into(),
+            test_key(),
+            Some("abc123".into()),
             &RunResult::Fail(DiffError::Other("ttx_diff timed out".into())),
         );
         assert!(cache.load_result(&target).is_none());
@@ -388,7 +535,8 @@ mod tests {
         let target = test_target();
         cache.save_result(
             &target,
-            "abc123".into(),
+            test_key(),
+            Some("abc123".into()),
             &RunResult::Success(DiffOutput::Identical),
         );
         assert!(cache.load_result(&target).is_some());
