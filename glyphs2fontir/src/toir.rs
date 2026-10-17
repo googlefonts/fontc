@@ -1216,6 +1216,7 @@ pub(crate) fn to_ir_paint(
                         r0: None, // Defaults to 0
                         r1: None, // Calculated in backend
                         color_line: to_ir_color_stops(&gradient.colors),
+                        extend: gradient.extend,
                     }
                     .into(),
                 ))
@@ -1230,6 +1231,7 @@ pub(crate) fn to_ir_paint(
                     r0: None,
                     r1: gradient.end_radius.map(|r| (r.0 as f32).into()),
                     color_line: to_ir_color_stops(&gradient.colors),
+                    extend: gradient.extend,
                 }
                 .into(),
             )),
@@ -1242,6 +1244,7 @@ pub(crate) fn to_ir_paint(
                         p1: end,
                         p2: None,
                         color_line: to_ir_color_stops(&gradient.colors),
+                        extend: gradient.extend,
                     }
                     .into(),
                 ))

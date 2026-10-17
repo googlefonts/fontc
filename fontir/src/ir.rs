@@ -2211,6 +2211,8 @@ pub struct PaintSolid {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintLinearGradient {
     pub color_line: Vec<ColorStop>,
+    #[serde(default)]
+    pub extend: write_fonts::tables::colr::Extend,
     pub p0: Point,
     pub p1: Point,
     /// Third point defining gradient rotation. None means calculate perpendicular
@@ -2221,6 +2223,8 @@ pub struct PaintLinearGradient {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintRadialGradient {
     pub color_line: Vec<ColorStop>,
+    #[serde(default)]
+    pub extend: write_fonts::tables::colr::Extend,
     pub p0: Point,
     /// Inner radius, relative to the bounding box like the points (see `r1`).
     /// None means 0 (gradient radiating from center, not a ring).

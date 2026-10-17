@@ -38,6 +38,7 @@ fn to_colr_line(
     palette: &ColorPalettes,
     glyph_name: &GlyphName,
     stops: &[ir::ColorStop],
+    extend: Extend,
 ) -> Result<ColorLine, Error> {
     let mut color_stops = Vec::with_capacity(stops.len());
     for stop in stops {
@@ -53,7 +54,7 @@ fn to_colr_line(
         ));
     }
 
-    Ok(ColorLine::new(Extend::Pad, stops.len() as u16, color_stops))
+    Ok(ColorLine::new(extend, stops.len() as u16, color_stops))
 }
 
 /// Calculate the radius for a radial gradient, matching glyphsLib's behavior.
@@ -203,7 +204,7 @@ fn to_colr_paint(
             };
 
             Ok(Paint::LinearGradient(PaintLinearGradient::new(
-                to_colr_line(palette, glyph_name, &linear.color_line)?,
+                to_colr_line(palette, glyph_name, &linear.color_line, linear.extend)?,
                 round_fword(x0),
                 round_fword(y0),
                 round_fword(x1),
@@ -229,7 +230,7 @@ fn to_colr_paint(
             };
 
             Ok(Paint::RadialGradient(PaintRadialGradient::new(
-                to_colr_line(palette, glyph_name, &radial.color_line)?,
+                to_colr_line(palette, glyph_name, &radial.color_line, radial.extend)?,
                 round_fword(x0),
                 round_fword(y0),
                 r0.into(),

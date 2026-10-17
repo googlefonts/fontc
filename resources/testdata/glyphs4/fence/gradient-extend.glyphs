@@ -56,7 +56,7 @@ colors = (
 ),
 );
 end = (0.9,0.9);
-extend = repeat;
+extend = unknown;
 start = (0.1,0.1);
 };
 };

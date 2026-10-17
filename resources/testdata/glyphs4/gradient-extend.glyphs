@@ -1,0 +1,309 @@
+{
+.appVersion = "4108";
+.formatVersion = 4;
+date = "2026-10-17 21:48:57 +0000";
+fontMaster = (
+{
+id = M;
+name = Regular;
+},
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = M;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(1,0,0,1),
+0,
+),
+(
+(0,0,1,1),
+1,
+),
+);
+end = (0.75,0.75);
+start = (0.25,0.25);
+};
+};
+closed = 1;
+nodes = (
+(50,0,l),
+(550,0,l),
+(550,500,l),
+(50,500,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 65;
+},
+{
+glyphname = B;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = M;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(1,0,0,1),
+0,
+),
+(
+(0,0,1,1),
+1,
+),
+);
+end = (0.75,0.75);
+extend = repeat;
+start = (0.25,0.25);
+};
+};
+closed = 1;
+nodes = (
+(50,0,l),
+(550,0,l),
+(550,500,l),
+(50,500,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 66;
+},
+{
+glyphname = C;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = M;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(1,0,0,1),
+0,
+),
+(
+(0,0,1,1),
+1,
+),
+);
+end = (0.75,0.75);
+extend = reflect;
+start = (0.25,0.25);
+};
+};
+closed = 1;
+nodes = (
+(50,0,l),
+(550,0,l),
+(550,500,l),
+(50,500,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 67;
+},
+{
+glyphname = D;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = M;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(1,0,0,1),
+0,
+),
+(
+(0,0,1,1),
+1,
+),
+);
+angle = 0;
+end = (0.5,0.5);
+endRadius = 0.25;
+start = (0.5,0.5);
+type = radial;
+};
+};
+closed = 1;
+nodes = (
+(50,0,l),
+(550,0,l),
+(550,500,l),
+(50,500,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 68;
+},
+{
+glyphname = E;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = M;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(1,0,0,1),
+0,
+),
+(
+(0,0,1,1),
+1,
+),
+);
+angle = 0;
+end = (0.5,0.5);
+endRadius = 0.25;
+extend = repeat;
+start = (0.5,0.5);
+type = radial;
+};
+};
+closed = 1;
+nodes = (
+(50,0,l),
+(550,0,l),
+(550,500,l),
+(50,500,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 69;
+},
+{
+glyphname = F;
+layers = (
+{
+attr = {
+color = 1;
+};
+layerId = M;
+shapes = (
+{
+attr = {
+gradient = {
+colors = (
+(
+(1,0,0,1),
+0,
+),
+(
+(0,0,1,1),
+1,
+),
+);
+angle = 0;
+end = (0.5,0.5);
+endRadius = 0.25;
+extend = reflect;
+start = (0.5,0.5);
+type = radial;
+};
+};
+closed = 1;
+nodes = (
+(50,0,l),
+(550,0,l),
+(550,500,l),
+(50,500,l),
+);
+},
+);
+width = 600;
+},
+);
+unicode = 70;
+},
+);
+instances = (
+{
+customParameters = (
+{
+name = "COLR Table Version";
+value = 1;
+},
+{
+name = "Export COLR Table";
+value = 1;
+},
+);
+id = "86CC88F6-8115-4308-90A7-C003DD04042D";
+instanceInterpolations = {
+M = 1;
+};
+properties = (
+{
+key = styleNames;
+values = (
+{
+language = dflt;
+value = Regular;
+},
+);
+},
+);
+},
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = GradientExtend;
+},
+);
+},
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

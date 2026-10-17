@@ -21,6 +21,7 @@ use kurbo::{Affine, CubicBez, Line, PathSeg, Point, QuadBez};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
+use write_fonts::tables::colr::Extend;
 
 use crate::error::Error;
 use crate::plist::{FromPlist, Plist, Token, Tokenizer, VecDelimiters};
@@ -750,6 +751,7 @@ pub struct Gradient {
     pub colors: Vec<ColorStop>,
     /// "" for linear, "circle" (v3) or "radial" (v4) for radial gradients
     pub style: String,
+    pub extend: Extend,
     /// The radius of a v4 radial gradient, relative to the shape bounds.
     ///
     /// v3 radial gradients have none: the radius reaches the farthest corner
@@ -863,6 +865,16 @@ impl RawShapeAttributes {
 
 impl RawGradient {
     fn build(self, format_version: FormatVersion) -> Result<Gradient, Error> {
+        let extend = match self.extend.as_deref().filter(|_| format_version.is_v4()) {
+            None | Some("pad") => Extend::Pad,
+            Some("repeat") => Extend::Repeat,
+            Some("reflect") => Extend::Reflect,
+            Some(other) => {
+                return Err(Error::BadValue(format!(
+                    "unknown gradient extend '{other}'"
+                )));
+            }
+        };
         Ok(Gradient {
             start: self.start,
             end: self.end,
@@ -877,6 +889,7 @@ impl RawGradient {
                 })
                 .collect::<Result<_, Error>>()?,
             style: self.style,
+            extend,
             end_radius: self.end_radius.map(Into::into),
         })
     }
@@ -3241,7 +3254,7 @@ impl RawFont {
                             _ => (),
                         }
                         if let Some(extend) = &gradient.extend
-                            && extend != "pad"
+                            && !matches!(extend.as_str(), "pad" | "repeat" | "reflect")
                         {
                             add(format!("gradient extend '{extend}' in glyph '{name}'"));
                         }
@@ -5670,7 +5683,7 @@ mod tests {
     #[case::instance_icon("instance-icon", "instance type 'icon'")]
     #[case::instance_particles("instance-particles", "instance type 'particles'")]
     #[case::gradient_conic("gradient-conic", "conic gradient in glyph 'A'")]
-    #[case::gradient_extend("gradient-extend", "gradient extend 'repeat' in glyph 'A'")]
+    #[case::gradient_extend("gradient-extend", "gradient extend 'unknown' in glyph 'A'")]
     #[case::gradient_angle("gradient-radial-angle", "gradient angle in glyph")]
     #[case::gradient_start_radius("gradient-start-radius", "gradient start radius in glyph")]
     #[case::palette_ref("palette-ref", "palette color reference in glyph 'A'")]
@@ -7757,6 +7770,7 @@ unitsPerEm = 1000;
                         },
                     ],
                     style: "circle".to_string(),
+                    extend: Extend::Pad,
                     end_radius: None,
                 },
             ),

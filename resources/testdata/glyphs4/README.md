@@ -26,6 +26,14 @@ or kerning, before saving.
 `SmartGlyphAxes` was written by hand as a v4 file, then loaded and saved by
 Glyphs 4.
 
+## gradient-extend.glyphs
+
+This synthetic source contains linear and radial gradients with pad, repeat,
+and reflect modes. Glyphs 4.1.1 (4108) loaded and saved the source as format 4.
+Its native TrueType export uses the instance parameter `COLR Table Version=1`.
+The compile test compares the modes, coordinates, and color stops against that
+export.
+
 ## fence/
 
 Glyphs 4 constructs fontc does not support yet. Each file is a copy of a
@@ -49,7 +57,8 @@ saved with `formatVersion=4`:
 * `palette-ref`: `COLRv1-gradient`, a `GSPaletteColor` fill color
 * `gradient-conic`: `COLRv1-gradient`, a `GSConicGradient` with the color line
   of the first gradient
-* `gradient-extend`: `COLRv1-gradient`, `gradient.setExtendMode_(1)`
+* `gradient-extend`: `COLRv1-gradient`, `gradient.setExtendMode_(1)`, then a
+  manual change from `extend = repeat` to `extend = unknown` to test rejection
 * `gradient-radial-angle`: `COLRv1-gradient`, `setAngle_(30)` on a radial gradient
 * `gradient-start-radius`: `COLRv1-gradient`, `setStartRadius_(0.2)` on a radial
   gradient

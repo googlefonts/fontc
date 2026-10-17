@@ -5966,6 +5966,58 @@ mod tests {
     }
 
     #[test]
+    fn glyphs4_gradient_extend() {
+        use write_fonts::read::tables::colr::Extend;
+
+        let result = TestCompile::compile_source("glyphs4/gradient-extend.glyphs");
+        let colr = result.font().colr().unwrap();
+        // Glyphs 4.1.1 (4108), exporting this fixture with COLR Table Version=1,
+        // emits these modes and coordinates, with the same red/blue color line.
+        for (name, expected) in [
+            ("A", Extend::Pad),
+            ("B", Extend::Repeat),
+            ("C", Extend::Reflect),
+            ("D", Extend::Pad),
+            ("E", Extend::Repeat),
+            ("F", Extend::Reflect),
+        ] {
+            let paint = root_paint_glyph(&result, &colr, name).paint().unwrap();
+            let line = match paint {
+                Paint::LinearGradient(p) => {
+                    assert!(name <= "C");
+                    assert_eq!(
+                        [p.x0(), p.y0(), p.x1(), p.y1(), p.x2(), p.y2()].map(|v| v.to_i16()),
+                        [175, 125, 425, 375, 425, -125]
+                    );
+                    p.color_line().unwrap()
+                }
+                Paint::RadialGradient(p) => {
+                    assert!(name >= "D");
+                    assert_eq!(
+                        [p.x0(), p.y0(), p.x1(), p.y1()].map(|v| v.to_i16()),
+                        [300, 250, 300, 250]
+                    );
+                    assert_eq!((p.radius0().to_u16(), p.radius1().to_u16()), (0, 125));
+                    p.color_line().unwrap()
+                }
+                _ => panic!("Expected gradient for {name}"),
+            };
+            assert_eq!(line.extend(), expected, "{name}");
+            assert_eq!(
+                line.color_stops()
+                    .iter()
+                    .map(|s| (
+                        s.stop_offset().to_f32(),
+                        s.palette_index(),
+                        s.alpha().to_f32()
+                    ))
+                    .collect::<Vec<_>>(),
+                [(0.0, 0, 1.0), (1.0, 1, 1.0)]
+            );
+        }
+    }
+
+    #[test]
     fn colrv1_sorted_structures() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-reordered.glyphs");
         let colr = result.font().colr().unwrap();
