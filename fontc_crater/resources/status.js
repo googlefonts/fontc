@@ -12,6 +12,9 @@
 //   {"phase": "running", "done": n, "total": n, "fontc_rev": <rev>, "compare_url": <url>}
 //
 // compare_url is the link the run gets in the report's list of runs.
+//
+// #live_status's data-run-finished is when the run this report shows finished.
+// Once a later run has published its results, the report reloads to show them.
 
 const STATUS_POLL_MS = 60 * 1000;
 // run.sh republishes every minute and the CDN caches for five
@@ -93,6 +96,32 @@ function describeStatus(status) {
     return { state: "ok", text: [...lastRun, ` finished ${since(status.finished)}, after ${took}`] };
 }
 
+// whether status is of a run that published a report newer than the one shown.
+// run.sh sets started before crater runs, so it's after the shown run finished
+function hasNewerResults(status, shownFinished) {
+    return (
+        status.state === "finished" &&
+        status.exit_code === 0 &&
+        status.progress?.phase !== "skipped" &&
+        Date.parse(status.started) > shownFinished
+    );
+}
+
+// whether the report being served is newer than the one shown. The status can
+// say the run finished before GitHub Pages serves its report, and reloading
+// then would show this report again, and reload again on every poll
+async function servedReportIsNewer(shownFinished) {
+    try {
+        const response = await fetch(location.href, { cache: "no-store" });
+        if (!response.ok) return false;
+        const page = new DOMParser().parseFromString(await response.text(), "text/html");
+        const served = page.getElementById("live_status")?.dataset.runFinished;
+        return Date.parse(served) > shownFinished;
+    } catch {
+        return false;
+    }
+}
+
 function toNode(part) {
     if (typeof part === "string") return part;
     const link = document.createElement("a");
@@ -116,6 +145,10 @@ async function updateStatus() {
     if (described.progress) {
         bar.max = described.progress.total;
         bar.value = described.progress.done;
+    }
+    const shownFinished = Date.parse(container.dataset.runFinished);
+    if (status && hasNewerResults(status, shownFinished) && (await servedReportIsNewer(shownFinished))) {
+        location.reload();
     }
 }
 
