@@ -164,7 +164,12 @@ impl MetaTableValues {
         for item in as_array {
             let tag = item.get("tag").and_then(Plist::as_str)?;
             let data = item.get("data").and_then(Plist::as_str)?;
-            let data = data.split(',').map(SmolStr::new).collect();
+            let data = data
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(SmolStr::new)
+                .collect();
 
             match tag {
                 "dlng" => ret.dlng = data,
