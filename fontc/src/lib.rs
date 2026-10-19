@@ -5370,6 +5370,30 @@ mod tests {
     }
 
     #[test]
+    fn generate_meta_table_trims_scriptlangtags() {
+        // glyphsLib splits on ',' and strips whitespace; fontc must match, or a
+        // source like Agbalumo's "Latn, Am, Tig, Tir, sgw" compiles differently
+        // from fontmake.
+        let result = TestCompile::compile_source("glyphs3/MetaTableSpacedTags.glyphs");
+        let meta = result.be_context.meta.get();
+        let expected =
+            ["Latn", "Am", "Tig", "Tir", "sgw"].map(|tag| ScriptLangTag::new(tag.into()).unwrap());
+        assert_eq!(
+            meta.data_maps,
+            [
+                DataMapRecord::new(
+                    Tag::new(b"dlng"),
+                    Metadata::ScriptLangTags(expected.to_vec())
+                ),
+                DataMapRecord::new(
+                    Tag::new(b"slng"),
+                    Metadata::ScriptLangTags(expected.to_vec())
+                )
+            ]
+        );
+    }
+
+    #[test]
     fn dont_generate_meta_table_if_no_glyphs_param() {
         let result = TestCompile::compile_source("glyphs3/NoMetaTable.glyphs");
         assert!(result.be_context.meta.try_get().is_none())

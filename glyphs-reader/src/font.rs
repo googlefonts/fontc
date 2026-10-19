@@ -4750,6 +4750,35 @@ mod tests {
     }
 
     #[test]
+    fn meta_table_splits_and_trims_scriptlangtags() {
+        let font = Font::load(&glyphs3_dir().join("MetaTableSpacedTags.glyphs")).unwrap();
+        let meta = font
+            .custom_parameters
+            .meta_table
+            .as_ref()
+            .expect("meta table");
+        // glyphsLib (custom_params.py:to_ufo_meta_table) splits on commas, strips
+        // each item and drops empty ones; fontc must agree or the compiled
+        // 'meta' table differs between fontmake and fontc.
+        assert_eq!(meta.dlng, ["Latn", "Am", "Tig", "Tir", "sgw"]);
+        assert_eq!(meta.slng, ["Latn", "Am", "Tig", "Tir", "sgw"]);
+    }
+
+    #[test]
+    fn meta_table_ignores_empty_segments() {
+        let plist = Plist::parse(
+            r#"(
+                { data = "Latn,, Am ,"; tag = dlng; },
+                { data = ""; tag = slng; }
+            )"#,
+        )
+        .unwrap();
+        let meta = MetaTableValues::from_plist(&plist).unwrap();
+        assert_eq!(meta.dlng, ["Latn", "Am"]);
+        assert!(meta.slng.is_empty());
+    }
+
+    #[test]
     fn glyphs3_named_and_numeric_instance_classes() {
         let font = Font::load(&glyphs3_dir().join("InstanceClasses.glyphs")).unwrap();
 
