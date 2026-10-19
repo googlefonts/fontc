@@ -4,5 +4,6 @@
 //! [font IR]: https://docs.rs/fontir
 
 mod color;
+mod instance;
 pub mod source;
 pub mod toir;

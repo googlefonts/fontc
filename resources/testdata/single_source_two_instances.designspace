@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <!-- one source and two instances: --export selects one by its name attribute, the other by family and style name -->
+  <axes>
+    <axis tag="wght" name="Weight" minimum="100" default="400" maximum="900">
+      <map input="100" output="10"/>
+      <map input="400" output="40"/>
+      <map input="900" output="90"/>
+    </axis>
+    <axis tag="wdth" name="Width" minimum="75" default="100" maximum="100"/>
+  </axes>
+  <sources>
+    <source filename="WghtVar-Regular.ufo" name="Regular">
+      <location>
+        <dimension name="Weight" xvalue="40"/>
+        <dimension name="Width" xvalue="100"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <instance familyname="Single Source" stylename="Regular">
+      <location>
+        <dimension name="Weight" uservalue="400"/>
+      </location>
+    </instance>
+    <instance name="bold-instance" familyname="Single Source" stylename="Bold">
+      <location>
+        <dimension name="Weight" uservalue="700"/>
+      </location>
+    </instance>
+  </instances>
+</designspace>

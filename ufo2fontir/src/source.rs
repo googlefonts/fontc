@@ -49,6 +49,7 @@ use crate::color::{
     UFO2FT_COLOR_LAYERS, UFO2FT_COLOR_PALETTES, UFO2FT_COLR_CLIP_BOXES, parse_color_layers,
     parse_color_palettes,
 };
+use crate::instance::{SelectedInstance, apply_instance_info, select_instance};
 use crate::toir::{
     master_locations, to_design_location, to_instance_design_location, to_ir_axes, to_ir_glyph,
     within_axis_ranges,
@@ -70,6 +71,8 @@ pub struct DesignSpaceIrSource {
     glyphs: Arc<HashMap<GlyphName, HashMap<UfoLayer, Vec<DesignLocation>>>>,
     /// The features.fea of each master that has one, default master first
     fea_files: Arc<Vec<(DesignLocation, FeaturesSource)>>,
+    /// The instance to build as a static font, if one was selected
+    instance: Option<Arc<SelectedInstance>>,
 }
 
 /// The UFOs of the designspace, keyed by `source.filename`
@@ -245,10 +248,21 @@ fn load_designspace(
 }
 
 impl DesignSpaceIrSource {
-    /// Load a .designspace, or a single .ufo, .ufoz or .ufo.json.
-    pub fn new(designspace_or_ufo_file: &Path) -> Result<Self, Error> {
+    /// Load a .designspace, or a single .ufo, .ufoz or .ufo.json, building the
+    /// static instance named `export`, if any.
+    ///
+    /// The name matches an instance's `name` attribute, else its
+    /// `"{family} {style}"`, as gftools resolves the instances it builds. The
+    /// instance must sit on the default source, or anywhere when the source is
+    /// the only one, and gets that source's glyphs, metrics and features with
+    /// its own metadata, like `fontmake -i`; see the `instance` module.
+    pub fn new(designspace_or_ufo_file: &Path, export: Option<&str>) -> Result<Self, Error> {
         let (designspace_dir, mut designspace) = load_designspace(designspace_or_ufo_file)
             .map_err(|kind| Error::BadSource(BadSource::new(designspace_or_ufo_file, kind)))?;
+
+        let instance = export
+            .map(|name| select_instance(designspace_or_ufo_file, &mut designspace, name))
+            .transpose()?;
 
         for (i, source) in designspace.sources.iter_mut().enumerate() {
             if source.name.is_none() {
@@ -371,6 +385,7 @@ impl DesignSpaceIrSource {
             ufos: Arc::new(ufos),
             glyphs: Arc::new(glyphs),
             fea_files: Arc::new(fea_files),
+            instance,
         })
     }
 }
@@ -382,6 +397,7 @@ impl Source for DesignSpaceIrSource {
             ufos: self.ufos.clone(),
             designspace: self.designspace.clone(),
             glyph_names: Arc::new(self.glyphs.keys().cloned().collect()),
+            instance: self.instance.clone(),
         }))
     }
 
@@ -390,6 +406,7 @@ impl Source for DesignSpaceIrSource {
             designspace_or_ufo: self.designspace_or_ufo.clone(),
             ufos: self.ufos.clone(),
             designspace: self.designspace.clone(),
+            instance: self.instance.clone(),
         }))
     }
 
@@ -538,6 +555,7 @@ struct StaticMetadataWork {
     ufos: Ufos,
     designspace: Arc<DesignSpaceDocument>,
     glyph_names: Arc<HashSet<GlyphName>>,
+    instance: Option<Arc<SelectedInstance>>,
 }
 
 #[derive(Debug)]
@@ -545,6 +563,7 @@ struct GlobalMetricsWork {
     designspace_or_ufo: Arc<PathBuf>,
     ufos: Ufos,
     designspace: Arc<DesignSpaceDocument>,
+    instance: Option<Arc<SelectedInstance>>,
 }
 
 #[derive(Debug)]
@@ -1027,14 +1046,22 @@ fn significant_fea_tokens<'a>(
 /// Creates a map from UFO directory name => fontinfo.
 ///
 /// That is, source.filename => fontinfo.
+///
+/// With an instance selected, its source (the only one left) carries the
+/// instance's metadata.
 fn font_infos<'a>(
+    path: &Path,
     ufos: &HashMap<String, Ufo>,
     designspace: &'a DesignSpaceDocument,
-) -> Result<HashMap<&'a String, norad::FontInfo>, BadSource> {
+    instance: Option<&SelectedInstance>,
+) -> Result<HashMap<&'a String, norad::FontInfo>, Error> {
     let mut results = HashMap::new();
     for source in designspace.sources.iter() {
-        let font = ufos[&source.filename].load(&DataRequest::none())?;
-        results.insert(&source.filename, font.font_info);
+        let mut font_info = ufos[&source.filename].load(&DataRequest::none())?.font_info;
+        if let Some(instance) = instance {
+            apply_instance_info(path, &mut font_info, designspace, instance)?;
+        }
+        results.insert(&source.filename, font_info);
     }
     Ok(results)
 }
@@ -1161,7 +1188,12 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         debug!("Static metadata for {:#?}", self.designspace_or_ufo);
         let (_, default_master) = default_master(&self.designspace)?;
         let default_ufo = &self.ufos[&default_master.filename];
-        let font_infos = font_infos(&self.ufos, &self.designspace)?;
+        let font_infos = font_infos(
+            &self.designspace_or_ufo,
+            &self.ufos,
+            &self.designspace,
+            self.instance.as_deref(),
+        )?;
         let font_info_at_default = font_infos
             .get(&default_master.filename)
             .ok_or_else(|| BadSource::new(&default_ufo.path, BadSourceKind::ExpectedFile))?;
@@ -1671,7 +1703,12 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         debug!("Global metrics for {:#?}", self.designspace_or_ufo);
         let static_metadata = context.static_metadata.get();
 
-        let font_infos = font_infos(&self.ufos, &self.designspace)?;
+        let font_infos = font_infos(
+            &self.designspace_or_ufo,
+            &self.ufos,
+            &self.designspace,
+            self.instance.as_deref(),
+        )?;
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources)?;
 
@@ -2351,7 +2388,7 @@ mod tests {
     }
 
     fn fea_sources(designspace: &str) -> FeatureSources {
-        let source = DesignSpaceIrSource::new(&testdata_dir().join(designspace)).unwrap();
+        let source = DesignSpaceIrSource::new(&testdata_dir().join(designspace), None).unwrap();
         group_fea_files(&source.fea_files).unwrap()
     }
 
@@ -2473,7 +2510,7 @@ mod tests {
     }
 
     fn load_designspace(name: &str) -> DesignSpaceIrSource {
-        DesignSpaceIrSource::new(&testdata_dir().join(name)).unwrap()
+        DesignSpaceIrSource::new(&testdata_dir().join(name), None).unwrap()
     }
 
     fn build_static_metadata(name: &str, flags: Flags) -> (impl Source + use<>, Context) {
@@ -2722,14 +2759,26 @@ mod tests {
     #[test]
     pub fn fetches_upem() {
         let source = load_wght_var();
-        let font_infos = font_infos(&source.ufos, &source.designspace).unwrap();
+        let font_infos = font_infos(
+            &source.designspace_or_ufo,
+            &source.ufos,
+            &source.designspace,
+            None,
+        )
+        .unwrap();
         assert_eq!(1000, units_per_em(font_infos.values()).unwrap());
     }
 
     #[test]
     pub fn ot_rounds_upem() {
         let source = load_designspace("float.designspace");
-        let font_infos = font_infos(&source.ufos, &source.designspace).unwrap();
+        let font_infos = font_infos(
+            &source.designspace_or_ufo,
+            &source.ufos,
+            &source.designspace,
+            None,
+        )
+        .unwrap();
         assert_eq!(
             256, // 255.5 rounded toward +infinity
             units_per_em(font_infos.values()).unwrap()
@@ -2739,11 +2788,16 @@ mod tests {
     #[test]
     pub fn default_names_for_minimal() {
         let source = load_designspace("float.designspace");
-        let font_info = font_infos(&source.ufos, &source.designspace)
-            .unwrap()
-            .get(&String::from("Float-Regular.ufo"))
-            .cloned()
-            .unwrap();
+        let font_info = font_infos(
+            &source.designspace_or_ufo,
+            &source.ufos,
+            &source.designspace,
+            None,
+        )
+        .unwrap()
+        .get(&String::from("Float-Regular.ufo"))
+        .cloned()
+        .unwrap();
         let mut names: Vec<_> = names(&font_info).into_iter().collect();
         names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
 
@@ -2779,11 +2833,16 @@ mod tests {
     #[test]
     fn name_records_keep_platform_encoding_and_language() {
         let source = load_designspace("fontinfo.designspace");
-        let font_info = font_infos(&source.ufos, &source.designspace)
-            .unwrap()
-            .get(&String::from("FontInfo-Regular.ufo"))
-            .cloned()
-            .unwrap();
+        let font_info = font_infos(
+            &source.designspace_or_ufo,
+            &source.ufos,
+            &source.designspace,
+            None,
+        )
+        .unwrap()
+        .get(&String::from("FontInfo-Regular.ufo"))
+        .cloned()
+        .unwrap();
         let mut names: Vec<_> = names(&font_info).into_iter().collect();
         names.sort();
 
@@ -3251,7 +3310,7 @@ mod tests {
         )
         .unwrap();
 
-        let source = DesignSpaceIrSource::new(&designspace).unwrap();
+        let source = DesignSpaceIrSource::new(&designspace, None).unwrap();
         let sources = group_fea_files(&source.fea_files).unwrap();
         assert_eq!(sources.n_sources(), 1);
         assert_eq!(sources.get(0).unwrap().locations.len(), 2);
@@ -3642,7 +3701,7 @@ mod tests {
             font.font_info.open_type_os2_vendor_id = Some(vendor_id.to_string());
             font.save(&tmp_ufo).unwrap();
 
-            let source = DesignSpaceIrSource::new(&tmp_ufo).unwrap();
+            let source = DesignSpaceIrSource::new(&tmp_ufo, None).unwrap();
             let context = Context::new_root(Flags::default());
             let task_context = context.copy_for_work(
                 Access::None,
@@ -4383,5 +4442,252 @@ mod tests {
                 features: None,
             }])
         );
+    }
+
+    // --export: fontinfo layering and instance selection, checked against
+    // `fontmake -i -o ufo` (ufo2ft's instantiator plus glyphsLib's
+    // apply_instance_data_to_ufo) on the same inputs
+    mod instance {
+        use super::*;
+        use norad::fontinfo::StyleMapStyle;
+        use pretty_assertions::assert_eq;
+
+        const AXES: &str = r#"
+  <axes>
+    <axis tag="wght" name="Weight" minimum="100" default="400" maximum="900">
+      <map input="100" output="10"/><map input="400" output="40"/><map input="900" output="90"/>
+    </axis>
+    <axis tag="wdth" name="Width" minimum="75" default="100" maximum="100"/>
+    <axis tag="slnt" name="Slant" minimum="-10" default="0" maximum="0"/>
+  </axes>"#;
+
+        /// A designspace in a temp dir with one source, `Src.ufo`, whose
+        /// fontinfo sets instance-specific attributes
+        fn write(dir: &Path, sources: &str, instances: &str, lib: &str) -> PathBuf {
+            let mut font = norad::Font::default();
+            let info = &mut font.font_info;
+            info.family_name = Some("Src Family".into());
+            info.style_name = Some("Src Style".into());
+            info.postscript_font_name = Some("SrcPS-Name".into());
+            info.style_map_family_name = Some("Src Map Family".into());
+            info.style_map_style_name = Some(StyleMapStyle::Italic);
+            info.open_type_name_unique_id = Some("SRC-UNIQUE".into());
+            info.open_type_name_designer = Some("Src Designer".into());
+            info.open_type_os2_weight_class = Some(500);
+            info.open_type_os2_width_class = Some(norad::fontinfo::Os2WidthClass::Condensed);
+            info.open_type_os2_type = Some(vec![0]);
+            info.postscript_underline_position = Some(norad::fontinfo::IntegerOrFloat::from(-75.0));
+            info.italic_angle = Some(norad::fontinfo::IntegerOrFloat::from(-5.0));
+            info.units_per_em =
+                Some(norad::fontinfo::NonNegativeIntegerOrFloat::try_from(1000.0).unwrap());
+            font.save(dir.join("Src.ufo")).unwrap();
+            let path = dir.join("test.designspace");
+            std::fs::write(
+                &path,
+                format!(
+                    "<?xml version='1.0' encoding='UTF-8'?>\n<designspace format=\"5.0\">{AXES}\n  <sources>{sources}</sources>\n  <instances>{instances}</instances>\n{lib}</designspace>\n"
+                ),
+            )
+            .unwrap();
+            path
+        }
+
+        const SOURCE: &str = r#"<source filename="Src.ufo" name="Regular"><location><dimension name="Weight" xvalue="40"/><dimension name="Width" xvalue="100"/><dimension name="Slant" xvalue="0"/></location></source>"#;
+        const INSTANCES: &str = r#"
+    <instance name="AtDefault" familyname="Inst Family" stylename="Regular"><location><dimension name="Weight" uservalue="400"/></location></instance>
+    <instance name="OffDefault" familyname="Inst Family" stylename="Bold" postscriptfontname="InstPS-Bold" stylemapfamilyname="Inst Map" stylemapstylename="Bold">
+      <location><dimension name="Weight" uservalue="700.7"/><dimension name="Width" uservalue="80"/><dimension name="Slant" uservalue="-10"/></location>
+      <stylename xml:lang="de">Fett</stylename><familyname xml:lang="de">Inst Familie</familyname>
+    </instance>
+    <instance name="WithLib" familyname="Inst Family" stylename="Medium"><location><dimension name="Weight" uservalue="500"/></location>
+      <lib><dict><key>public.fontInfo</key><dict><key>openTypeOS2WeightClass</key><integer>650</integer><key>openTypeNameDesigner</key><string>Lib Designer</string></dict></dict></lib>
+    </instance>"#;
+        const ROOT_LIB: &str = r#"<lib><dict><key>public.fontInfo</key><dict><key>openTypeNameDescription</key><string>Root Description</string><key>openTypeNameDesigner</key><string>Root Designer</string></dict></dict></lib>"#;
+
+        fn instance_info(path: &Path, instance: &str) -> norad::FontInfo {
+            let source = DesignSpaceIrSource::new(path, Some(instance)).unwrap();
+            let infos = font_infos(
+                path,
+                &source.ufos,
+                &source.designspace,
+                source.instance.as_deref(),
+            )
+            .unwrap();
+            assert_eq!(infos.len(), 1, "only the instance's source remains");
+            infos.into_values().next().unwrap()
+        }
+
+        #[test]
+        fn at_default_inherits_everything() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = write(dir.path(), SOURCE, INSTANCES, ROOT_LIB);
+            let info = instance_info(&path, "AtDefault");
+            assert_eq!(info.family_name.as_deref(), Some("Inst Family"));
+            assert_eq!(info.style_name.as_deref(), Some("Regular"));
+            // instance-specific attributes of the one master at the default stay
+            assert_eq!(info.postscript_font_name.as_deref(), Some("SrcPS-Name"));
+            assert_eq!(
+                info.style_map_family_name.as_deref(),
+                Some("Src Map Family")
+            );
+            assert_eq!(info.style_map_style_name, Some(StyleMapStyle::Italic));
+            assert_eq!(info.open_type_name_unique_id.as_deref(), Some("SRC-UNIQUE"));
+            // the root lib's public.fontInfo
+            assert_eq!(
+                info.open_type_name_description.as_deref(),
+                Some("Root Description")
+            );
+            assert_eq!(
+                info.open_type_name_designer.as_deref(),
+                Some("Root Designer")
+            );
+            // classes from the location, over the source's
+            assert_eq!(info.open_type_os2_weight_class, Some(400));
+            assert_eq!(
+                info.open_type_os2_width_class,
+                Some(norad::fontinfo::Os2WidthClass::Normal)
+            );
+            // the source's values stand
+            assert_eq!(info.open_type_os2_type, Some(vec![0]));
+            assert_eq!(info.postscript_underline_position, Some(-75.0));
+            assert_eq!(info.italic_angle, Some(-5.0));
+        }
+
+        #[test]
+        fn off_default_drops_instance_specific_attributes() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = write(dir.path(), SOURCE, INSTANCES, ROOT_LIB);
+            let info = instance_info(&path, "OffDefault");
+            assert_eq!(info.open_type_name_unique_id, None);
+            // the instance's own, where it has them
+            assert_eq!(info.style_name.as_deref(), Some("Bold"));
+            assert_eq!(info.postscript_font_name.as_deref(), Some("InstPS-Bold"));
+            assert_eq!(info.style_map_family_name.as_deref(), Some("Inst Map"));
+            assert_eq!(info.style_map_style_name, Some(StyleMapStyle::Bold));
+            // weight is the user location (700.7) rounded, width the nearest class
+            // to 80
+            assert_eq!(info.open_type_os2_weight_class, Some(701));
+            assert_eq!(
+                info.open_type_os2_width_class,
+                Some(norad::fontinfo::Os2WidthClass::Condensed)
+            );
+            // the source's italic angle stands; slnt only fills a missing one
+            assert_eq!(info.italic_angle, Some(-5.0));
+            let records: Vec<_> = info
+                .open_type_name_records
+                .unwrap()
+                .iter()
+                .map(|r| {
+                    (
+                        r.name_id,
+                        r.platform_id,
+                        r.encoding_id,
+                        r.language_id,
+                        r.string.clone(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                records,
+                vec![
+                    (16, 3, 1, 0x0407, "Inst Familie".to_string()),
+                    (17, 3, 1, 0x0407, "Fett".to_string()),
+                    (1, 3, 1, 0x0407, "Inst Familie Fett".to_string()),
+                ]
+            );
+        }
+
+        #[test]
+        fn instance_lib_font_info_wins() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = write(dir.path(), SOURCE, INSTANCES, ROOT_LIB);
+            let info = instance_info(&path, "WithLib");
+            assert_eq!(info.open_type_os2_weight_class, Some(650));
+            assert_eq!(
+                info.open_type_name_designer.as_deref(),
+                Some("Lib Designer")
+            );
+            assert_eq!(
+                info.open_type_name_description.as_deref(),
+                Some("Root Description")
+            );
+            assert_eq!(info.postscript_font_name, None);
+        }
+
+        #[test]
+        fn no_glyphs_defaults_for_missing_values() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = write(dir.path(), SOURCE, INSTANCES, "");
+            // strip the values glyphsLib would fill with Glyphs.app's defaults
+            let mut font = norad::Font::load(dir.path().join("Src.ufo")).unwrap();
+            font.font_info.open_type_os2_type = None;
+            font.font_info.postscript_underline_position = None;
+            font.font_info.italic_angle = None;
+            font.save(dir.path().join("Src.ufo")).unwrap();
+            let info = instance_info(&path, "OffDefault");
+            // left to ufo2ft's defaults
+            assert_eq!(info.open_type_os2_type, None);
+            assert_eq!(info.postscript_underline_position, None);
+            assert_eq!(info.postscript_underline_thickness, None);
+            // slnt -10 fills the missing italic angle
+            assert_eq!(info.italic_angle, Some(-10.0));
+        }
+
+        #[test]
+        fn selection_errors() {
+            let dir = tempfile::tempdir().unwrap();
+            let two_sources = format!(
+                "{SOURCE}<source filename=\"Src.ufo\" name=\"Bold\"><location><dimension name=\"Weight\" xvalue=\"70\"/><dimension name=\"Width\" xvalue=\"100\"/><dimension name=\"Slant\" xvalue=\"0\"/></location></source>"
+            );
+            let instances = r#"
+    <instance name="Regular" familyname="F" stylename="Regular"><location><dimension name="Weight" uservalue="400"/></location></instance>
+    <instance name="Bold" familyname="F" stylename="Bold"><location><dimension name="Weight" uservalue="700"/></location></instance>
+    <instance name="Medium" familyname="F" stylename="Medium"><location><dimension name="Weight" uservalue="500"/></location></instance>
+    <instance name="Dup" familyname="F" stylename="Regular"/>"#;
+            let path = write(dir.path(), &two_sources, instances, "");
+            let error = |name: &str| {
+                DesignSpaceIrSource::new(&path, Some(name))
+                    .err()
+                    .unwrap_or_else(|| panic!("{name} must not build"))
+                    .to_string()
+            };
+            // on the default source: fine, and cut down to it
+            let source = DesignSpaceIrSource::new(&path, Some("Regular")).unwrap();
+            assert_eq!(source.designspace.sources.len(), 1);
+            assert!(
+                source
+                    .designspace
+                    .axes
+                    .iter()
+                    .all(|a| a.minimum == Some(a.default) && a.maximum == Some(a.default))
+            );
+            assert!(
+                error("Bold").contains("isn't the default"),
+                "{}",
+                error("Bold")
+            );
+            assert!(
+                error("Medium").contains("doesn't interpolate"),
+                "{}",
+                error("Medium")
+            );
+            assert!(error("Nope").contains("\"Medium\""), "{}", error("Nope"));
+            // a name attribute wins over "{family} {style}"; the two Regulars
+            // both answer to "F Regular"
+            assert!(
+                error("F Regular").contains("2 instances"),
+                "{}",
+                error("F Regular")
+            );
+            assert_eq!(
+                DesignSpaceIrSource::new(&path, Some("Dup"))
+                    .unwrap()
+                    .designspace
+                    .instances[0]
+                    .name
+                    .as_deref(),
+                Some("Dup")
+            );
+        }
     }
 }

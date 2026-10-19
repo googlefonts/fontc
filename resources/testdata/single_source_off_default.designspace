@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <!-- a lone source off the declared default is an error (no default master), with --export too -->
+  <axes>
+    <axis tag="wght" name="Weight" minimum="100" default="400" maximum="900">
+      <map input="100" output="10"/>
+      <map input="400" output="40"/>
+      <map input="900" output="90"/>
+    </axis>
+    <axis tag="wdth" name="Width" minimum="75" default="100" maximum="100"/>
+  </axes>
+  <sources>
+    <source filename="WghtVar-Regular.ufo" name="Regular">
+      <location>
+        <dimension name="Weight" xvalue="70"/>
+        <dimension name="Width" xvalue="100"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <instance familyname="Single Source" stylename="Bold">
+      <location>
+        <dimension name="Weight" uservalue="700"/>
+      </location>
+    </instance>
+  </instances>
+</designspace>
