@@ -168,7 +168,12 @@ impl MetaTableValues {
         for item in as_array {
             let tag = item.get("tag").and_then(Plist::as_str)?;
             let data = item.get("data").and_then(Plist::as_str)?;
-            let data = data.split(',').map(SmolStr::new).collect();
+            let data = data
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(SmolStr::new)
+                .collect();
 
             match tag {
                 "dlng" => ret.dlng = data,
@@ -4835,6 +4840,35 @@ mod tests {
             axis_map(mapping).extended_to_masters("wght", OrderedFloat(min), OrderedFloat(max)),
             expected.map(axis_map)
         );
+    }
+
+    #[test]
+    fn meta_table_splits_and_trims_scriptlangtags() {
+        let font = Font::load(&glyphs3_dir().join("MetaTableSpacedTags.glyphs")).unwrap();
+        let meta = font
+            .custom_parameters
+            .meta_table
+            .as_ref()
+            .expect("meta table");
+        // glyphsLib (custom_params.py:to_ufo_meta_table) splits on commas, strips
+        // each item and drops empty ones; fontc must agree or the compiled
+        // 'meta' table differs between fontmake and fontc.
+        assert_eq!(meta.dlng, ["Latn", "Am", "Tig", "Tir", "sgw"]);
+        assert_eq!(meta.slng, ["Latn", "Am", "Tig", "Tir", "sgw"]);
+    }
+
+    #[test]
+    fn meta_table_ignores_empty_segments() {
+        let plist = Plist::parse(
+            r#"(
+                { data = "Latn,, Am ,"; tag = dlng; },
+                { data = ""; tag = slng; }
+            )"#,
+        )
+        .unwrap();
+        let meta = MetaTableValues::from_plist(&plist).unwrap();
+        assert_eq!(meta.dlng, ["Latn", "Am"]);
+        assert!(meta.slng.is_empty());
     }
 
     #[test]
