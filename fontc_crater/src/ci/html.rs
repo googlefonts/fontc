@@ -13,6 +13,7 @@ use crate::{
     error::Error,
     ttx_diff_runner::{CompileFailed, CompilerFailure, DiffError, DiffOutput, DiffValue},
 };
+use chrono::SecondsFormat;
 use maud::{Markup, PreEscaped, html};
 
 use super::{
@@ -173,6 +174,9 @@ fn make_html(
     status_url: Option<&str>,
 ) -> Result<String, Error> {
     let table_body = make_table_body(summary);
+    let run_finished = summary
+        .last()
+        .map(|run| run.finished.to_rfc3339_opts(SecondsFormat::Millis, true));
     let css = PreEscaped(include_str!("../../resources/style.css"));
     let status_script = PreEscaped(include_str!("../../resources/status.js"));
     let table = html! {
@@ -311,7 +315,7 @@ fn make_html(
             body {
                 h1 { "fontc_crater" }
                 @if let Some(status_url) = status_url {
-                    div #live_status hidden data-src=(status_url) {
+                    div #live_status hidden data-src=(status_url) data-run-finished=[&run_finished] {
                         span.text { "loading crater status" }
                         progress hidden {}
                     }

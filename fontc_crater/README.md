@@ -35,6 +35,13 @@ results to. It passes that file's url as `FONTC_CRATER_STATUS_URL`, which
 the report just says that status isn't configured, so local runs don't show
 the status of some other instance.
 
+The report also reloads itself when a later run has published new results.
+It embeds when the run it shows finished, and a status that is finished,
+succeeded, wasn't skipped and started after that time means a newer report
+was pushed. Before reloading, it fetches the page again and checks that
+the copy GitHub Pages serves is newer, so a report that isn't deployed yet
+doesn't make it reload every minute.
+
 To run in CI mode locally to play with the html output:
 
 When run in CI, we want to ensure that we have complete control over the set of
