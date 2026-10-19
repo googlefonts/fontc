@@ -4213,10 +4213,6 @@ impl TryFrom<RawFont> for Font {
             .or_insert_with(Vec::new);
         family_names.retain(|(lang, _)| lang != "dflt");
         family_names.insert(0, ("dflt".to_string(), from.family_name.clone()));
-        // Rename versionString to version
-        if let Some(version_values) = all_names.remove("versionString") {
-            all_names.insert("version".into(), version_values);
-        }
 
         let metric_names: BTreeMap<usize, String> = from
             .metrics
@@ -5877,7 +5873,7 @@ etc;
             v2.get_default_name("licenseURL"),
             Some("www.example.com/legacy")
         );
-        assert_eq!(v2.get_default_name("version"), Some("legacy version"));
+        assert_eq!(v2.get_default_name("versionString"), Some("legacy version"));
         assert_eq!(v2.get_default_name("licenses"), Some("legacy license"));
         assert_eq!(v2.get_default_name("uniqueID"), Some("legacy unique id"));
         assert_eq!(

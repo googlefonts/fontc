@@ -223,8 +223,7 @@ fn try_name_id(name: &str) -> Option<NameId> {
         "uniqueID" => Some(NameId::UNIQUE_ID),
         // Python appears to *only* use this for CFF topDict construction, not name
         // "postscriptFullName" => Some(NameId::FULL_NAME),
-        // the font's versionString is renamed on load, an instance's isn't
-        "version" | "versionString" => Some(NameId::VERSION_STRING),
+        "versionString" => Some(NameId::VERSION_STRING),
         "postscriptFontName" => Some(NameId::POSTSCRIPT_NAME),
         "trademarks" => Some(NameId::TRADEMARK),
         "manufacturers" => Some(NameId::MANUFACTURER),
