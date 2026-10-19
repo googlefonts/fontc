@@ -261,11 +261,41 @@ fn try_language_id(lang: &str) -> Option<u16> {
     lang_id
 }
 
-/// The name table: the font's default-language names, with those of the
-/// static export (if any) on top.
+/// The static export's style, and how it links to a family in ID 1.
 ///
 /// Without an export, the default master's name stands in for the instance
 /// name in IDs 1 and 17, as in glyphsLib.
+struct ExportStyle<'a> {
+    /// The instance name: ID 17's fallback and the source of ID 1's suffix
+    style_name: &'a str,
+    /// The export's linkStyle, ID 1's suffix
+    link_style: Option<&'a str>,
+}
+
+impl<'a> ExportStyle<'a> {
+    fn new(font: &'a Font, export: Option<&'a glyphs_reader::Instance>) -> Self {
+        Self {
+            style_name: export.map_or(font.default_master().name.as_str(), |instance| {
+                instance.name.as_str()
+            }),
+            link_style: export
+                .and_then(|instance| instance.link_style.as_deref())
+                .filter(|name| !name.is_empty() && *name != "Regular"),
+        }
+    }
+
+    /// ID 1 for a family name: the family with the link style, else with
+    /// what the flags leave of the style name.
+    fn style_linked_family(&self, family: &str, flags: SelectionFlags) -> String {
+        match self.link_style {
+            Some(link) => format!("{family} {link}"),
+            None => NameBuilder::style_map_family_name(family, self.style_name, flags),
+        }
+    }
+}
+
+/// The name table: the font's default-language names, with those of the
+/// static export (if any) on top, then the localized names of both.
 // TODO(anthrotype): accept the Variable Font Settings being built too.
 fn names(
     font: &Font,
@@ -284,7 +314,26 @@ fn names(
         }
     }
 
-    // ID 2 follows the flags, which the export's isBold/isItalic already set
+    // An export's property replaces the font's property of the same key in
+    // every language, as in Glyphs 3.5.
+    let localized: Vec<_> = font
+        .localized_names()
+        .filter(|(key, _, _)| !export.is_some_and(|instance| instance.has_property(key)))
+        .chain(
+            export
+                .into_iter()
+                .flat_map(|instance| instance.localized_names()),
+        )
+        .filter(|(_, _, value)| !value.is_empty())
+        .collect();
+    let has_localized = |key: &str| localized.iter().any(|(k, _, _)| *k == key);
+    // Preferred names stand in for the family and style names in IDs 16/17
+    let has_preferred_family = builder.get(NameId::TYPOGRAPHIC_FAMILY_NAME).is_some()
+        || has_localized("preferredFamilyNames");
+    let has_preferred_subfamily = builder.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME).is_some()
+        || has_localized("preferredSubfamilyNames");
+
+    // ID 2 from the flags, which the export's isBold/isItalic already set
     let subfamily = if flags.contains(SelectionFlags::BOLD | SelectionFlags::ITALIC) {
         "Bold Italic"
     } else if flags.contains(SelectionFlags::BOLD) {
@@ -295,41 +344,35 @@ fn names(
         "Regular"
     };
     builder.add(NameId::SUBFAMILY_NAME, subfamily.to_string());
-
-    let style_name = export.map_or(font.default_master().name.as_str(), |instance| {
-        instance.name.as_str()
-    });
+    let export_style = ExportStyle::new(font, export);
+    // The export's styleMapFamilyName parameter (property in Glyphs 3) is the
+    // style-linked family as written, ahead of the one its linkStyle builds:
+    // glyphsLib applies the parameter after build_stylemap_names, and Glyphs
+    // 3.5 agrees.
+    let style_map_family = export
+        .and_then(|instance| instance.get_default_name("styleMapFamilyNames"))
+        .filter(|name| !name.is_empty());
     let original_family = builder
         .get(NameId::FAMILY_NAME)
         .map(|s| s.to_string())
         .unwrap_or_default();
-    // The export's styleMapFamilyName parameter (property in Glyphs 3) is the
-    // style-linked family as written, ahead of the one its linkStyle builds:
-    // glyphsLib applies the parameter after build_stylemap_names, and Glyphs
-    // 3.5 agrees. IDs 4, 6 and 16 keep the family name.
-    let style_map_family = export
-        .and_then(|instance| instance.get_default_name("styleMapFamilyNames"))
-        .filter(|name| !name.is_empty());
-    let link_style = export
-        .and_then(|instance| instance.link_style.as_deref())
-        .filter(|name| !name.is_empty() && *name != "Regular");
-    let family = match (style_map_family, link_style) {
-        (Some(style_map_family), _) => style_map_family.to_string(),
-        (None, Some(link)) => format!("{original_family} {link}"),
-        (None, None) => NameBuilder::style_map_family_name(&original_family, style_name, flags),
-    };
-    builder.add(NameId::FAMILY_NAME, family);
-
-    let typographic_family = builder
-        .get(NameId::TYPOGRAPHIC_FAMILY_NAME)
-        .unwrap_or(&original_family)
-        .to_string();
-    builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, typographic_family);
-    let typographic_subfamily = builder
-        .get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
-        .unwrap_or(style_name)
-        .to_string();
-    builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, typographic_subfamily);
+    builder.add(
+        NameId::FAMILY_NAME,
+        style_map_family.map_or_else(
+            || export_style.style_linked_family(&original_family, flags),
+            str::to_string,
+        ),
+    );
+    // IDs 4, 6, 16 and 17 keep the family and style names
+    if builder.get(NameId::TYPOGRAPHIC_FAMILY_NAME).is_none() {
+        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, original_family);
+    }
+    if builder.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME).is_none() {
+        builder.add(
+            NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
+            export_style.style_name.to_string(),
+        );
+    }
 
     if let Some(instance) = export {
         if let Some(ps) = instance.postscript_name() {
@@ -347,19 +390,58 @@ fn names(
         .or(font.vendor_id())
         .unwrap_or(DEFAULT_VENDOR_ID);
 
-    for (key, lang, value) in font.localized_names() {
-        let Some(name_id) = try_name_id(key) else {
-            continue;
-        };
+    // The builder drops the typographic pair when it matches IDs 1 and 2
+    let keep_typographic = builder.get(NameId::FAMILY_NAME)
+        != builder.get(NameId::TYPOGRAPHIC_FAMILY_NAME)
+        || builder.get(NameId::SUBFAMILY_NAME) != builder.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME);
 
+    // For an export, family and style names feed IDs 1, 16 and 17 per language
+    // as above: ID 1 takes the style map family, else the family with the
+    // default-language style suffix (Glyphs 3.5 does the same); 16 and 17
+    // take the family and style names unless preferred names stand in for
+    // them, or the typographic pair is dropped (Glyphs keeps the pair whatever
+    // its value). The other keys feed their own name ID. Glyphs also copies
+    // the default-language value of IDs 2 and 4 under each family language;
+    // that is left out.
+    for (key, lang, value) in localized {
         let Some(lang_id) = try_language_id(lang) else {
             continue;
         };
-
-        let name_key = NameKey::new_with_lang(name_id, lang_id);
-        builder.add_record(name_key, value.to_string());
+        let record = match (key, export.is_some()) {
+            ("familyNames", true) => {
+                // A style map family, in any language, stands in for the
+                // family in ID 1
+                if style_map_family.is_none() {
+                    builder.add_record(
+                        NameKey::new_with_lang(NameId::FAMILY_NAME, lang_id),
+                        export_style.style_linked_family(value, flags),
+                    );
+                }
+                (keep_typographic && !has_preferred_family)
+                    .then_some(NameId::TYPOGRAPHIC_FAMILY_NAME)
+            }
+            ("styleNames", true) => (keep_typographic && !has_preferred_subfamily)
+                .then_some(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
+            ("styleMapFamilyNames", true) => Some(NameId::FAMILY_NAME),
+            (key, _) => try_name_id(key),
+        };
+        if let Some(name_id) = record {
+            builder.add_record(NameKey::new_with_lang(name_id, lang_id), value.to_string());
+        }
     }
 
+    add_name_table_entries(&mut builder, font, export);
+
+    builder.build(vendor)
+}
+
+/// The font's `Name Table Entry` parameters, then the export's, last so
+/// they win over the derived records.
+fn add_name_table_entries(
+    builder: &mut NameBuilder,
+    font: &Font,
+    export: Option<&glyphs_reader::Instance>,
+) {
     let export_entries = export
         .into_iter()
         .flat_map(|instance| &instance.custom_parameters.name_table_entries);
@@ -377,8 +459,6 @@ fn names(
         };
         builder.add_record(key, entry.value.clone());
     }
-
-    builder.build(vendor)
 }
 
 /// Read the `com.github.googlei18n.ufo2ft.featureWriters` config from font userData.
@@ -3501,6 +3581,102 @@ mod tests {
             names
                 .get(&NameKey::new_with_lang(NameId::FAMILY_NAME, 0x0411))
                 .unwrap()
+        );
+    }
+
+    // A static export's localized names, checked against Glyphs 3.5: an
+    // export property replaces the font's property of the same key in every
+    // language, family and style names feed IDs 1, 16 and 17 per language
+    // (ID 1 keeps the default-language style suffix), the other keys feed
+    // their own name ID, and a language missing from a key gets no record.
+    #[test]
+    fn static_export_localized_names() {
+        let font = Font::load(&glyphs3_dir().join("StaticExportLocalizedNames.glyphs")).unwrap();
+        let export = font
+            .instances
+            .iter()
+            .find(|instance| instance.name == "Display")
+            .unwrap();
+        let names = names(&font, Some(export), SelectionFlags::REGULAR);
+        let name = |id: NameId, lang: u16| {
+            names
+                .get(&NameKey::new_with_lang(id, lang))
+                .map(|s| s.as_str())
+        };
+        let (en, de, fr, it, ja) = (0x0409, 0x0407, 0x040C, 0x0410, 0x0411);
+        assert_eq!(
+            [
+                name(NameId::FAMILY_NAME, en),
+                name(NameId::FAMILY_NAME, de),
+                name(NameId::FAMILY_NAME, ja),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, en),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, de),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, ja),
+                name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, en),
+                name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, de),
+                name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, ja),
+                name(NameId::DESIGNER, en),
+                name(NameId::DESIGNER, fr),
+                name(NameId::COPYRIGHT_NOTICE, en),
+                name(NameId::COPYRIGHT_NOTICE, it),
+                name(NameId::LICENSE_DESCRIPTION, en),
+                name(NameId::LICENSE_DESCRIPTION, de),
+                name(NameId::SUBFAMILY_NAME, de),
+                name(NameId::FULL_NAME, de),
+            ],
+            [
+                Some("Export Family Display"),
+                Some("Export Familie Display"),
+                Some("エクスポート Display"),
+                Some("Export Family"),
+                Some("Export Familie"),
+                Some("エクスポート"),
+                Some("Display"),
+                Some("Anzeige"),
+                None,
+                Some("Export Designer"),
+                Some("Export Designeur"),
+                Some("Export Copyright"),
+                Some("Copyright esportazione"),
+                Some("License"),
+                Some("Lizenz"),
+                None,
+                None,
+            ]
+        );
+
+        // The Regular instance inherits the font's localized names; its RIBBI
+        // name drops the typographic pair, so only ID 1 is localized
+        let regular = font
+            .instances
+            .iter()
+            .find(|instance| instance.name == "Regular")
+            .unwrap();
+        let regular_names = super::names(&font, Some(regular), SelectionFlags::REGULAR);
+        let name = |id: NameId, lang: u16| {
+            regular_names
+                .get(&NameKey::new_with_lang(id, lang))
+                .map(|s| s.as_str())
+        };
+        assert_eq!(
+            [
+                name(NameId::FAMILY_NAME, en),
+                name(NameId::FAMILY_NAME, de),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, en),
+                name(NameId::TYPOGRAPHIC_FAMILY_NAME, de),
+                name(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, de),
+                name(NameId::DESIGNER, fr),
+                name(NameId::LICENSE_DESCRIPTION, de),
+            ],
+            [
+                Some("Master Family"),
+                Some("Master Familie"),
+                None,
+                None,
+                None,
+                Some("Designeur"),
+                Some("Lizenz"),
+            ]
         );
     }
 
