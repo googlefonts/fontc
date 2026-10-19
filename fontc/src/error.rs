@@ -33,8 +33,8 @@ pub enum Error {
     NoOutputFile,
     #[error("A task panicked: '{0}'")]
     Panic(String),
-    #[error("Selecting an export is only supported for .glyphs or .glyphspackage files")]
-    ExportRequiresGlyphsSource,
+    #[error("Selecting an export is only supported for Glyphs and designspace sources")]
+    ExportUnsupported,
     #[error("Custom glyph data is only supported for .glyphs or .glyphspackage files")]
     GlyphDataRequiresGlyphsSource,
 }
