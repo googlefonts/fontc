@@ -409,7 +409,7 @@ pub(crate) struct FontInfo {
     /// Index into `font.instances` of the export whose metadata the build
     /// applies: for now, the active static instance when the font is static.
     // TODO(anthrotype): the Variable Font Settings being built, for variable fonts.
-    pub export: Option<usize>,
+    pub export_index: Option<usize>,
     /// Index by master id
     pub master_indices: HashMap<String, usize>,
     // Master id => location
@@ -427,8 +427,8 @@ pub(crate) struct FontInfo {
 
 impl FontInfo {
     /// Prepare `font` for IR, building the static export whose full name is
-    /// `requested`, if given.
-    pub(crate) fn new(font: Font, requested: Option<&str>) -> Result<Self, Error> {
+    /// `export`, if given.
+    pub(crate) fn new(font: Font, export: Option<&str>) -> Result<Self, Error> {
         let master_indices: HashMap<_, _> = font
             .masters
             .iter()
@@ -438,7 +438,7 @@ impl FontInfo {
 
         let axes = ir_axes(&font)?;
         // Like StaticMetadata, a font whose axes are all points is static.
-        let export = static_export(&font, axes.iter().all(|axis| axis.is_point()), requested)?;
+        let export_index = static_export(&font, axes.iter().all(|axis| axis.is_point()), export)?;
 
         let locations: HashMap<_, _> = font
             .masters
@@ -481,7 +481,7 @@ impl FontInfo {
 
         Ok(FontInfo {
             font,
-            export,
+            export_index,
             master_indices,
             master_positions,
             locations,

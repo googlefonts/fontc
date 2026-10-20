@@ -1538,7 +1538,7 @@ impl FontInfo {
     // PANOSE, meta and the names merged at load time use them so far, and they
     // pick one in two different ways.
     fn export(&self) -> Option<&glyphs_reader::Instance> {
-        self.export.map(|index| &self.font.instances[index])
+        self.export_index.map(|index| &self.font.instances[index])
     }
 
     /// The kern-group partition, from the font's per-glyph kern attributes.
@@ -5347,7 +5347,7 @@ unitsPerEm = 1000;
             );
             let source = GlyphsIrSource::new_from_memory(&data, None)
                 .unwrap_or_else(|error| panic!("{case}: {error}"));
-            assert_eq!(source.font_info.export, expected, "{case}");
+            assert_eq!(source.font_info.export_index, expected, "{case}");
         }
     }
 
@@ -5373,7 +5373,7 @@ instances = (
         select_export(data, export)
             .unwrap_or_else(|error| panic!("{export}: {error}"))
             .font_info
-            .export
+            .export_index
     }
 
     #[test]
@@ -5495,7 +5495,7 @@ instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues 
             GlyphsIrSource::new_from_memory(data, None)
                 .unwrap()
                 .font_info
-                .export,
+                .export_index,
             None
         );
     }
