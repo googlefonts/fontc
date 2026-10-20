@@ -74,8 +74,9 @@ impl GlyphsIrSource {
     }
 }
 
-impl Source for GlyphsIrSource {
-    fn new(glyphs_file: &Path) -> Result<Self, Error> {
+impl GlyphsIrSource {
+    /// Load a .glyphs file or .glyphspackage.
+    pub fn new(glyphs_file: &Path) -> Result<Self, Error> {
         // We have to read the glyphs file then shred it to figure out if anything changed
         let font_info = FontInfo::try_from(Font::load(glyphs_file).map_err(|e| {
             BadSource::custom(
@@ -89,7 +90,9 @@ impl Source for GlyphsIrSource {
             source_path: Some(glyphs_file.into()),
         })
     }
+}
 
+impl Source for GlyphsIrSource {
     fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork(self.clone())))
     }

@@ -242,8 +242,9 @@ fn load_designspace(
     Ok((designspace_dir.into(), designspace))
 }
 
-impl Source for DesignSpaceIrSource {
-    fn new(designspace_or_ufo_file: &Path) -> Result<Self, Error> {
+impl DesignSpaceIrSource {
+    /// Load a .designspace, or a single .ufo or .ufo.json.
+    pub fn new(designspace_or_ufo_file: &Path) -> Result<Self, Error> {
         let (designspace_dir, mut designspace) = load_designspace(designspace_or_ufo_file)
             .map_err(|kind| Error::BadSource(BadSource::new(designspace_or_ufo_file, kind)))?;
 
@@ -370,7 +371,9 @@ impl Source for DesignSpaceIrSource {
             fea_files: Arc::new(fea_files),
         })
     }
+}
 
+impl Source for DesignSpaceIrSource {
     fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork {
             designspace_or_ufo: self.designspace_or_ufo.clone(),
