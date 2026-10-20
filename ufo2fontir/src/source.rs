@@ -243,7 +243,7 @@ fn load_designspace(
 }
 
 impl DesignSpaceIrSource {
-    /// Load a .designspace, or a single .ufo or .ufo.json.
+    /// Load a .designspace, or a single .ufo, .ufoz or .ufo.json.
     pub fn new(designspace_or_ufo_file: &Path) -> Result<Self, Error> {
         let (designspace_dir, mut designspace) = load_designspace(designspace_or_ufo_file)
             .map_err(|kind| Error::BadSource(BadSource::new(designspace_or_ufo_file, kind)))?;
