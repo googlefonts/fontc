@@ -49,7 +49,7 @@ use crate::color::{
     UFO2FT_COLOR_LAYERS, UFO2FT_COLOR_PALETTES, UFO2FT_COLR_CLIP_BOXES, parse_color_layers,
     parse_color_palettes,
 };
-use crate::instance::{SelectedInstance, apply_instance_info, select_instance};
+use crate::instance::{SelectedInstance, apply_instance_info, layer_font_info, select_instance};
 use crate::toir::{
     master_locations, to_design_location, to_instance_design_location, to_ir_axes, to_ir_glyph,
     within_axis_ranges,
@@ -253,9 +253,10 @@ impl DesignSpaceIrSource {
     ///
     /// The name matches an instance's `name` attribute, else its
     /// `"{family} {style}"`, as gftools resolves the instances it builds. The
-    /// instance must sit on the default source, or anywhere when the source is
-    /// the only one, and gets that source's glyphs, metrics and features with
-    /// its own metadata, like `fontmake -i`; see the `instance` module.
+    /// instance must sit on a source, or anywhere when the source is the only
+    /// one, and gets that source's outlines, metrics and kerning, and the
+    /// default source's glyph set, features and groups, with its own metadata,
+    /// like `fontmake -i`; see the `instance` module.
     pub fn new(designspace_or_ufo_file: &Path, export: Option<&str>) -> Result<Self, Error> {
         let (designspace_dir, mut designspace) = load_designspace(designspace_or_ufo_file)
             .map_err(|kind| Error::BadSource(BadSource::new(designspace_or_ufo_file, kind)))?;
@@ -289,8 +290,11 @@ impl DesignSpaceIrSource {
             })
             .collect::<Result<HashMap<&str, Tag>, _>>()?;
 
+        // The default source, when the instance sits on another one
+        let base = instance.as_ref().and_then(|i| i.base.as_ref());
+
         let mut layers_by_ufo: HashMap<&String, HashSet<Option<&str>>> = HashMap::new();
-        for source in designspace.sources.iter() {
+        for source in designspace.sources.iter().chain(base) {
             layers_by_ufo
                 .entry(&source.filename)
                 .or_default()
@@ -314,7 +318,7 @@ impl DesignSpaceIrSource {
         // particularly when a glyphs.app file is converted to ufo/designspace.
         // In this case the individual source libs should be consistent, so
         // we will just look at the lib for the default master.
-        let default_master_lib = ufos[&default_master.filename]
+        let default_master_lib = ufos[&base.unwrap_or(default_master).filename]
             .load(&DataRequest::none().lib(true))?
             .lib;
 
@@ -348,6 +352,51 @@ impl DesignSpaceIrSource {
             }
         }
 
+        if let Some(base) = base {
+            // The glyph set is the default source's. fontc doesn't
+            // interpolate, so the instance's source must have all of it.
+            let ufo = &ufos[&base.filename];
+            let base_layer = UfoLayer::new(ufo, base)?;
+            let base_names: HashSet<GlyphName> = ufo
+                .reader
+                .layer(&base_layer.layer)
+                .unwrap()
+                .glyph_names()
+                .map(|name| GlyphName::from(name.as_str()))
+                .collect();
+            let mut missing: Vec<_> = base_names
+                .iter()
+                .filter(|name| !glyphs.contains_key(*name))
+                .map(|name| name.as_str())
+                .collect();
+            if !missing.is_empty() {
+                missing.sort_unstable();
+                let source = &designspace.sources[0];
+                return Err(BadSource::custom(
+                    designspace_or_ufo_file,
+                    format!(
+                        "Cannot build an instance on source \"{}\": it lacks {} of the \
+                         default source's glyphs ({}) and fontc doesn't interpolate",
+                        source.name.as_deref().unwrap_or_default(),
+                        missing.len(),
+                        missing.join(", ")
+                    ),
+                )
+                .into());
+            }
+            glyphs.retain(|name, _| {
+                let in_default = base_names.contains(name);
+                if !in_default {
+                    warn!(
+                        "The glyph name '{name:?}' exists in {} but not in the default \
+                         master and will be ignored",
+                        designspace.sources[0].filename
+                    );
+                }
+                in_default
+            });
+        }
+
         if glyphs.is_empty() {
             warn!("No glyphs identified");
         } else {
@@ -362,7 +411,7 @@ impl DesignSpaceIrSource {
         let mut fea_files: Vec<(DesignLocation, FeaturesSource)> = Vec::new();
         for idx in fea_source_indices {
             let source = &designspace.sources[idx];
-            if let Some(features) = features_source(&ufos[&source.filename])? {
+            if let Some(features) = features_source(&ufos[&base.unwrap_or(source).filename])? {
                 let location = to_design_location(&axis_tags_by_name, &source.location)?;
                 fea_files.push((location, features));
             }
@@ -434,6 +483,7 @@ impl Source for DesignSpaceIrSource {
             ufos: self.ufos.clone(),
             designspace: self.designspace.clone(),
             location: at,
+            instance: self.instance.clone(),
         }))
     }
 
@@ -585,6 +635,7 @@ struct KerningInstanceWork {
     ufos: Ufos,
     designspace: Arc<DesignSpaceDocument>,
     location: NormalizedLocation,
+    instance: Option<Arc<SelectedInstance>>,
 }
 
 #[derive(Debug)]
@@ -1059,6 +1110,12 @@ fn font_infos<'a>(
     for source in designspace.sources.iter() {
         let mut font_info = ufos[&source.filename].load(&DataRequest::none())?.font_info;
         if let Some(instance) = instance {
+            if let Some(base) = &instance.base {
+                // the default source's info, with what is interpolated from
+                // the source the instance sits on
+                let base_info = ufos[&base.filename].load(&DataRequest::none())?.font_info;
+                font_info = layer_font_info(path, &base_info, &font_info)?;
+            }
             apply_instance_info(path, &mut font_info, designspace, instance)?;
         }
         results.insert(&source.filename, font_info);
@@ -1188,6 +1245,11 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         debug!("Static metadata for {:#?}", self.designspace_or_ufo);
         let (_, default_master) = default_master(&self.designspace)?;
         let default_ufo = &self.ufos[&default_master.filename];
+        // An instance on another source has the lib of the default source
+        let lib_ufo = match self.instance.as_ref().and_then(|i| i.base.as_ref()) {
+            Some(base) => &self.ufos[&base.filename],
+            None => default_ufo,
+        };
         let font_infos = font_infos(
             &self.designspace_or_ufo,
             &self.ufos,
@@ -1251,7 +1313,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         .into_values()
         .collect();
 
-        let lib_plist = default_ufo.load(&DataRequest::none().lib(true))?.lib;
+        let lib_plist = lib_ufo.load(&DataRequest::none().lib(true))?.lib;
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
 
         // Check the designspace lib first (canonical location), fall back to the default
@@ -2094,8 +2156,13 @@ impl Work<Context, WorkId, Error> for KerningInstanceWork {
         // Load groups alongside kerning: norad's UFO2 @MMK_L_/@MMK_R_ ->
         // public.kern1./kern2. upconversion only fires when both are present,
         // and we need this source's own groups to resolve its kerning cascade.
-        let font =
-            self.ufos[&source.filename].load(&DataRequest::none().kerning(true).groups(true))?;
+        let request = DataRequest::none().kerning(true).groups(true);
+        let mut font = self.ufos[&source.filename].load(&request)?;
+        // An instance on a source other than the default has the default
+        // source's groups, like everything that isn't interpolated
+        if let Some(base) = self.instance.as_ref().and_then(|i| i.base.as_ref()) {
+            font.groups = self.ufos[&base.filename].load(&request)?.groups;
+        }
 
         // This source's own kern-group partition. Kerning references are
         // validated against it (and resolved against it in the BE), so a group
@@ -4633,6 +4700,99 @@ mod tests {
             assert_eq!(info.italic_angle, Some(-10.0));
         }
 
+        /// Two sources, Default.ufo and Bold.ufo, that differ in what ufo2ft's
+        /// instantiator takes from the default (glyph set, features, copyright)
+        /// and in what it interpolates (ascender), and in their panose
+        fn write_two_sources(dir: &Path, bold_glyphs: &[&str]) -> PathBuf {
+            let ufo = |name: &str,
+                       glyphs: &[&str],
+                       copyright: &str,
+                       ascender: f64,
+                       panose_weight: u32,
+                       fea: &str| {
+                let mut font = norad::Font::default();
+                font.font_info.family_name = Some("F".into());
+                font.font_info.copyright = Some(copyright.into());
+                font.font_info.ascender = Some(norad::fontinfo::IntegerOrFloat::from(ascender));
+                font.font_info.open_type_os2_panose = Some(norad::fontinfo::Os2Panose {
+                    family_type: 2,
+                    weight: panose_weight,
+                    ..Default::default()
+                });
+                font.features = fea.into();
+                for glyph in glyphs {
+                    font.layers
+                        .default_layer_mut()
+                        .insert_glyph(norad::Glyph::new(glyph));
+                }
+                font.save(dir.join(name)).unwrap();
+            };
+            ufo("Default.ufo", &["a", "b"], "Default", 800.0, 5, "# default");
+            ufo("Bold.ufo", bold_glyphs, "Bold", 900.0, 8, "# bold");
+            let path = dir.join("two.designspace");
+            std::fs::write(
+                &path,
+                format!(
+                    "<?xml version='1.0' encoding='UTF-8'?>\n<designspace format=\"5.0\">{AXES}\n<sources>\
+                     <source filename=\"Default.ufo\" name=\"Regular\"><location><dimension name=\"Weight\" xvalue=\"40\"/><dimension name=\"Width\" xvalue=\"100\"/><dimension name=\"Slant\" xvalue=\"0\"/></location></source>\
+                     <source filename=\"Bold.ufo\" name=\"Bold\"><location><dimension name=\"Weight\" xvalue=\"90\"/><dimension name=\"Width\" xvalue=\"100\"/><dimension name=\"Slant\" xvalue=\"0\"/></location></source>\
+                     </sources>\n<instances>\
+                     <instance name=\"Bold\" familyname=\"F\" stylename=\"Bold\"><location><dimension name=\"Weight\" uservalue=\"900\"/></location></instance>\
+                     </instances>\n</designspace>\n"
+                ),
+            )
+            .unwrap();
+            path
+        }
+
+        #[test]
+        fn another_source_layers_on_the_default() {
+            let dir = tempfile::tempdir().unwrap();
+            // Bold also has a glyph the default doesn't, which the font won't
+            let path = write_two_sources(dir.path(), &["a", "b", "extra"]);
+            let source = DesignSpaceIrSource::new(&path, Some("Bold")).unwrap();
+            assert_eq!(source.designspace.sources.len(), 1);
+            // the glyph set, from the default source
+            let mut glyphs: Vec<_> = source.glyphs.keys().map(|g| g.as_str()).collect();
+            glyphs.sort_unstable();
+            assert_eq!(glyphs, ["a", "b"]);
+            // the features, from the default source
+            let [(_, FeaturesSource::File { fea_file, .. })] = source.fea_files.as_slice() else {
+                panic!("one features file expected: {:?}", source.fea_files);
+            };
+            assert!(
+                fea_file.ends_with("Default.ufo/features.fea"),
+                "{fea_file:?}"
+            );
+            // the info that isn't interpolated from the default source, the
+            // interpolated one from the source the instance sits on
+            let infos = font_infos(
+                &path,
+                &source.ufos,
+                &source.designspace,
+                source.instance.as_deref(),
+            )
+            .unwrap();
+            let info = infos.values().next().unwrap();
+            assert_eq!(info.copyright.as_deref(), Some("Default"));
+            assert_eq!(info.ascender, Some(900.0));
+            // the panose of the source the instance sits on
+            assert_eq!(info.open_type_os2_panose.map(|p| p.weight), Some(8));
+        }
+
+        #[test]
+        fn another_source_must_have_the_default_glyphs() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = write_two_sources(dir.path(), &["a"]);
+            let error = DesignSpaceIrSource::new(&path, Some("Bold"))
+                .expect_err("the glyph set isn't complete")
+                .to_string();
+            assert!(
+                error.contains("lacks 1 of the default source's glyphs (b)"),
+                "{error}"
+            );
+        }
+
         #[test]
         fn selection_errors() {
             let dir = tempfile::tempdir().unwrap();
@@ -4663,11 +4823,10 @@ mod tests {
                     .iter()
                     .all(|a| a.minimum == Some(a.default) && a.maximum == Some(a.default))
             );
-            assert!(
-                error("Bold").contains("isn't the default"),
-                "{}",
-                error("Bold")
-            );
+            // on another source: fine too, and cut down to that one
+            let source = DesignSpaceIrSource::new(&path, Some("Bold")).unwrap();
+            assert_eq!(source.designspace.sources.len(), 1);
+            assert_eq!(source.designspace.sources[0].name.as_deref(), Some("Bold"));
             assert!(
                 error("Medium").contains("doesn't interpolate"),
                 "{}",

@@ -2418,6 +2418,8 @@ mod tests {
         400,
         false
     )]
+    // The instance on another source builds that source alone
+    #[case("wght_var.designspace", "Wght Var Bold", "Bold", 700, true)]
     // A rule whose range doesn't cover the instance is dropped
     #[case(
         "single_source_rules.designspace",
@@ -2464,7 +2466,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case("wght_var.designspace", "Wght Var Bold", "isn't the default")]
     // The lone source isn't at the declared default: no default master, as
     // without --export
     #[case(
@@ -2493,6 +2494,27 @@ mod tests {
             .expect("must not build")
             .to_string();
         assert!(error.contains(message), "{error}");
+    }
+
+    #[test]
+    fn designspace_instance_on_another_source_has_the_default_glyph_set() {
+        // WghtVar-Bold.ufo has a glyph, bonus_bar, that the default source
+        // doesn't: like fontmake -i, the font has the default source's glyphs
+        let mut result = TestCompile::new_with_source_options(
+            "wght_var.designspace",
+            &SourceOptions {
+                export: Some("Wght Var Bold".to_string()),
+                ..Default::default()
+            },
+            |options| options,
+        );
+        result.run();
+        let glyph_order = result.fe_context.glyph_order.get();
+        // in the default source's order: its public.glyphOrder lists only plus,
+        // so bar comes after it. WghtVar-Bold.ufo has no lib, so taking the
+        // order from the instance's source would give .notdef, bar, plus
+        let order: Vec<_> = glyph_order.iter().map(|(_, name)| name.as_str()).collect();
+        assert_eq!(order, [".notdef", "plus", "bar"]);
     }
 
     #[rstest]
