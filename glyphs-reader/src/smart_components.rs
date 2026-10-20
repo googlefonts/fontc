@@ -94,7 +94,8 @@ pub(crate) fn instantiate_for_layer(
         .layers
         .iter()
         .filter(|layer| {
-            !layer.smart_component_positions.is_empty() && layer.master_id() == layer_master_id
+            (!layer.smart_component_positions.is_empty() || layer.layer_id == layer_master_id)
+                && layer.master_id() == layer_master_id
         })
         .collect::<Vec<_>>();
 
@@ -108,7 +109,10 @@ pub(crate) fn instantiate_for_layer(
         relevant_layers.swap(0, idx);
     }
 
-    if relevant_layers.is_empty() {
+    if relevant_layers
+        .iter()
+        .all(|layer| layer.smart_component_positions.is_empty())
+    {
         return Err(BadSmartComponent::NoLayer(layer_master_id.to_string()));
     }
     if relevant_layers.len() == 1 {
@@ -123,15 +127,6 @@ pub(crate) fn instantiate_for_layer(
     }
 
     validate_relevant_layers(&relevant_layers)?;
-    for axis in ref_glyph.smart_component_axes.keys() {
-        if !relevant_layers[0]
-            .smart_component_positions
-            .contains_key(axis)
-        {
-            return Err(BadSmartComponent::UnknownAxis(axis.clone()));
-        }
-    }
-
     let locations = relevant_layers
         .iter()
         .map(|layer| normalized_location(layer, relevant_layers[0], &name_to_tag_map))
@@ -143,10 +138,12 @@ pub(crate) fn instantiate_for_layer(
         .smart_component_axes
         .iter()
         .map(|(name, range)| {
-            let default_value = if *relevant_layers[0]
+            // Glyphs defaults missing poles on the default layer to the top.
+            let default_value = if relevant_layers[0]
                 .smart_component_positions
                 .get(name)
-                .unwrap()
+                .copied()
+                .unwrap_or(AxisPole::Max)
                 == AxisPole::Min
             {
                 *range.start()
@@ -400,15 +397,21 @@ fn normalized_location(
             let tag = *name_to_tag_map
                 .get(axis)
                 .ok_or_else(|| BadSmartComponent::UnknownAxis(axis.clone()))?;
-            let base_value = base_layer.smart_component_positions.get(axis).copied();
+            // Omitted alternate-layer poles inherit the default (coordinate 0);
+            // an omitted default-layer pole means the top endpoint.
+            let base_value = base_layer
+                .smart_component_positions
+                .get(axis)
+                .copied()
+                .unwrap_or(AxisPole::Max);
             let pos = match (base_value, *pos) {
-                (Some(base), this) if base == this => NormalizedCoord::new(0.0),
-                (None | Some(AxisPole::Min), AxisPole::Max) => NormalizedCoord::MAX,
-                (None | Some(AxisPole::Max), AxisPole::Min) => NormalizedCoord::MIN,
+                (base, this) if base == this => NormalizedCoord::new(0.0),
+                (AxisPole::Min, AxisPole::Max) => NormalizedCoord::MAX,
+                (AxisPole::Max, AxisPole::Min) => NormalizedCoord::MIN,
                 (base, this) => {
                     return Err(BadSmartComponent::StrangeAxisMapping {
                         axis: axis.clone(),
-                        base,
+                        base: Some(base),
                         child: this,
                     });
                 }

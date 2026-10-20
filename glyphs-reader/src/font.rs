@@ -7277,6 +7277,124 @@ instances = ({ name = Condensed; widthClass = Expanded; customParameters = (
         assert_eq!(instance.shapes[0], shape_with_explicit_defaults);
     }
 
+    fn missing_poles_font() -> Font {
+        // Expected outlines below come from native Glyphs 3.5 (3532) exports.
+        Font::load_raw(glyphs2_dir().join("SmartComponentMissingPoles.glyphs")).unwrap()
+    }
+
+    fn missing_poles_font_with_upper() -> Font {
+        // Add a third layer with its square at x=700, mapped to U's top pole.
+        // Its X pole is omitted, so it inherits the default layer's X pole.
+        let mut font = missing_poles_font();
+        let part = font.glyphs.get_mut("_part").unwrap();
+        let mut upper = part.layers[1].clone();
+        upper.layer_id = "upper".into();
+        let Shape::Path(path) = &mut upper.shapes[0] else {
+            panic!("expected path")
+        };
+        for node in &mut path.nodes {
+            node.pt.x += 400.0;
+        }
+        upper.smart_component_positions = [("U".into(), AxisPole::Max)].into_iter().collect();
+        part.layers.push(upper);
+        font
+    }
+
+    fn assert_smart_component_bounds(
+        mut font: Font,
+        values: &[(&str, f64)],
+        expected_bounds: Rect,
+    ) {
+        let Shape::Component(component) =
+            &mut font.glyphs.get_mut("a").unwrap().layers[0].shapes[0]
+        else {
+            panic!("expected component")
+        };
+        component.smart_component_values = values
+            .iter()
+            .map(|(name, value)| ((*name).into(), *value))
+            .collect();
+        font.preprocess().unwrap();
+        let layer = &font.glyphs.get("a").unwrap().layers[0];
+        assert_eq!(layer.shapes.len(), 1);
+        let path = layer.shapes[0]
+            .as_path()
+            .expect("decomposed smart component");
+        assert_eq!(path.bbox(), Some(expected_bounds));
+    }
+
+    #[test]
+    fn missing_default_pole_uses_top() {
+        // The default square at x=100 omits X, so it belongs to the top endpoint,
+        // X=80. The alternate at x=300 is at X=-20, so X=30 must put the square
+        // halfway between them, at x=200.
+        assert_smart_component_bounds(
+            missing_poles_font(),
+            &[("X", 30.0)],
+            Rect::new(200.0, 0.0, 220.0, 20.0),
+        );
+    }
+
+    #[test]
+    fn missing_default_pole_with_only_top_layers() {
+        // Both layers are at X's top pole, implicitly on the default layer.
+        // X=30 must not move the outline; U=50 puts it halfway from x=100 to x=300.
+        let mut font = missing_poles_font();
+        font.glyphs.get_mut("_part").unwrap().layers[1].smart_component_positions =
+            [("X".into(), AxisPole::Max), ("U".into(), AxisPole::Max)]
+                .into_iter()
+                .collect();
+        assert_smart_component_bounds(
+            font,
+            &[("X", 30.0), ("U", 50.0)],
+            Rect::new(200.0, 0.0, 220.0, 20.0),
+        );
+    }
+
+    #[rstest]
+    #[case::bottom(AxisPole::Min, AxisPole::Max)]
+    #[case::top(AxisPole::Max, AxisPole::Min)]
+    fn missing_alternate_pole_inherits_default(
+        #[case] base_pole: AxisPole,
+        #[case] alternate_pole: AxisPole,
+    ) {
+        // The upper square at x=700 omits X and must inherit either default pole.
+        // At X=30, U=50, the X and U deltas add 100 and 300 to the default x=100,
+        // placing the interpolated square at x=500 for both pole directions.
+        let mut font = missing_poles_font_with_upper();
+        let part = font.glyphs.get_mut("_part").unwrap();
+        part.layers[0]
+            .smart_component_positions
+            .insert("X".into(), base_pole);
+        part.layers[1]
+            .smart_component_positions
+            .insert("X".into(), alternate_pole);
+        assert_smart_component_bounds(
+            font,
+            &[("X", 30.0), ("U", 50.0)],
+            Rect::new(500.0, 0.0, 520.0, 20.0),
+        );
+    }
+
+    #[test]
+    fn empty_default_mapping_participates() {
+        // An empty mapping still puts the default layer at both top poles.
+        // X=80 selects the default X pole; U=50 adds half the upper layer's delta:
+        // 100 + (700 - 100) / 2 = 400. Dropping the default layer would give 500.
+        let mut font = missing_poles_font_with_upper();
+        let part = font.glyphs.get_mut("_part").unwrap();
+        part.layers[0].smart_component_positions.clear();
+        part.layers[1].smart_component_positions =
+            [("X".into(), AxisPole::Min)].into_iter().collect();
+        part.layers[2].smart_component_positions =
+            [("U".into(), AxisPole::Min)].into_iter().collect();
+        assert_smart_component_bounds(
+            font,
+            &[("X", 80.0), ("U", 50.0)],
+            Rect::new(400.0, 0.0, 420.0, 20.0),
+        );
+    }
+
     #[test]
     fn instantiate_smart_component_at_not_default() {
         let Shape::Path(path) =
