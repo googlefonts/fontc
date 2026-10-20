@@ -1,12 +1,19 @@
 //! Building one designspace instance as a static font, like `fontmake -i`.
 //!
-//! The instance must sit on the default source (or anywhere, when there is only
-//! one source: a single master is the same everywhere), so nothing is
+//! The instance must sit on a source (or anywhere, when there is only one
+//! source: a single master is the same everywhere), so nothing is
 //! interpolated. The designspace is then cut down to that source, with every
 //! axis a point at it, and the instance's metadata is applied to the source's
 //! fontinfo the way fontmake does: ufo2ft's instantiator
 //! (`_generate_instance_info`) followed by glyphsLib's
 //! `apply_instance_data_to_ufo`, which gftools' `instantiateUfo` runs too.
+//!
+//! As in ufo2ft's instantiator, the glyph set, features, lib, groups and the
+//! fontinfo that isn't interpolated come from the default source, and the
+//! instance's source only gives what is interpolated: outlines, metrics,
+//! kerning and some fontinfo (`INTERPOLATED_ATTRIBUTES`). The two are the same
+//! source unless the instance sits on another one, which must then have every
+//! glyph of the default source.
 
 use std::{path::Path, str::FromStr, sync::Arc};
 
@@ -28,6 +35,12 @@ pub(crate) struct SelectedInstance {
     /// master and the instance at the default), or only the interpolating
     /// and generic attributes, as in ufo2ft's instantiator
     pub copy_all_info: bool,
+    /// The default source, when the instance sits on another one: like
+    /// ufo2ft's instantiator, the glyph set, features, lib, groups and the
+    /// fontinfo that isn't interpolated come from it, and the instance's source
+    /// only gives what is interpolated (outlines, metrics, kerning, some
+    /// fontinfo).
+    pub base: Option<designspace::Source>,
 }
 
 /// An axis as declared, with its map alone: the map needn't cover the
@@ -131,9 +144,9 @@ fn family_style(instance: &designspace::Instance) -> String {
 /// `-i` matches, as a regex), else its `"{family} {style}"`, as gftools
 /// resolves instance names, though it matches the name attribute across all
 /// instances first. The designspace needs a source at the default location,
-/// as for fontmake. The instance must sit on that source, or anywhere when it
-/// is the only one; fontc doesn't interpolate, and building a static from
-/// another source isn't supported yet.
+/// as for fontmake. The instance must sit on a source, or anywhere when the
+/// source is the only one; fontc doesn't interpolate. Off the default source,
+/// the default one gives what the instance doesn't interpolate.
 pub(crate) fn select_instance(
     path: &Path,
     designspace: &mut DesignSpaceDocument,
@@ -219,18 +232,7 @@ pub(crate) fn select_instance(
     let source = match (source_at(&instance_location), designspace.sources.len()) {
         // A single master is the same everywhere
         (_, 1) => 0,
-        (Some(source), _) if source == default_source => source,
-        (Some(source), _) => {
-            return bad_source(format!(
-                "Cannot build instance \"{requested}\": it sits on source \"{}\", which \
-                 isn't the default; building a static font from another source isn't \
-                 supported yet",
-                designspace.sources[source]
-                    .name
-                    .as_deref()
-                    .unwrap_or_default()
-            ));
-        }
+        (Some(source), _) => source,
         (None, _) => {
             return bad_source(format!(
                 "Cannot build instance \"{requested}\": its location ({}) is on no \
@@ -239,6 +241,10 @@ pub(crate) fn select_instance(
             ));
         }
     };
+
+    // The instance gets its source's interpolated data on top of the default
+    // source's
+    let base = (source != default_source).then(|| designspace.sources[default_source].clone());
 
     // A static font has no feature variations: rules not covering the instance
     // are dropped, as fontmake -i does; the glyph swap a covering rule asks for
@@ -302,6 +308,7 @@ pub(crate) fn select_instance(
         index: 0,
         user_location,
         copy_all_info,
+        base,
     }))
 }
 
@@ -329,6 +336,98 @@ const INSTANCE_SPECIFIC_ATTRIBUTES: &[&str] = &[
     "woffMetadataUniqueID",
     "year",
 ];
+
+/// fontinfo attributes ufo2ft's instantiator interpolates (fontMath's
+/// `MathInfo`): an instance sitting on a source other than the default takes
+/// them from that source, and the rest of the info from the default source.
+const INTERPOLATED_ATTRIBUTES: &[&str] = &[
+    "unitsPerEm",
+    "descender",
+    "xHeight",
+    "capHeight",
+    "ascender",
+    "italicAngle",
+    "openTypeHeadLowestRecPPEM",
+    "openTypeHheaAscender",
+    "openTypeHheaDescender",
+    "openTypeHheaLineGap",
+    "openTypeHheaCaretSlopeRise",
+    "openTypeHheaCaretSlopeRun",
+    "openTypeHheaCaretOffset",
+    "openTypeOS2WidthClass",
+    "openTypeOS2WeightClass",
+    "openTypeOS2TypoAscender",
+    "openTypeOS2TypoDescender",
+    "openTypeOS2TypoLineGap",
+    "openTypeOS2WinAscent",
+    "openTypeOS2WinDescent",
+    "openTypeOS2SubscriptXSize",
+    "openTypeOS2SubscriptYSize",
+    "openTypeOS2SubscriptXOffset",
+    "openTypeOS2SubscriptYOffset",
+    "openTypeOS2SuperscriptXSize",
+    "openTypeOS2SuperscriptYSize",
+    "openTypeOS2SuperscriptXOffset",
+    "openTypeOS2SuperscriptYOffset",
+    "openTypeOS2StrikeoutSize",
+    "openTypeOS2StrikeoutPosition",
+    "openTypeVheaVertTypoAscender",
+    "openTypeVheaVertTypoDescender",
+    "openTypeVheaVertTypoLineGap",
+    "openTypeVheaCaretSlopeRise",
+    "openTypeVheaCaretSlopeRun",
+    "openTypeVheaCaretOffset",
+    "postscriptSlantAngle",
+    "postscriptUnderlineThickness",
+    "postscriptUnderlinePosition",
+    "postscriptBlueValues",
+    "postscriptOtherBlues",
+    "postscriptFamilyBlues",
+    "postscriptFamilyOtherBlues",
+    "postscriptStemSnapH",
+    "postscriptStemSnapV",
+    "postscriptBlueFuzz",
+    "postscriptBlueShift",
+    "postscriptBlueScale",
+    "postscriptDefaultWidthX",
+    "postscriptNominalWidthX",
+];
+
+/// The fontinfo of an instance on a source other than the default: the default
+/// source's, with the attributes ufo2ft interpolates taken from the instance's
+/// source, which the instance sits exactly on. The panose is the source's too
+/// when it has one, as it describes that source (its weight, say) better than
+/// the default's does.
+pub(crate) fn layer_font_info(
+    path: &Path,
+    base: &norad::FontInfo,
+    source: &norad::FontInfo,
+) -> Result<norad::FontInfo, Error> {
+    let bad_value =
+        |e: plist::Error| Error::BadSource(BadSource::custom(path, format!("fontinfo: {e}")));
+    let to_dict = |info: &norad::FontInfo| -> Result<Dictionary, Error> {
+        Ok(plist::to_value(info)
+            .map_err(bad_value)?
+            .into_dictionary()
+            .unwrap_or_default())
+    };
+    let mut info = to_dict(base)?;
+    let source = to_dict(source)?;
+    for key in INTERPOLATED_ATTRIBUTES {
+        match source.get(key) {
+            Some(value) => {
+                info.insert((*key).into(), value.clone());
+            }
+            None => {
+                info.remove(key);
+            }
+        }
+    }
+    if let Some(panose) = source.get("openTypeOS2Panose") {
+        info.insert("openTypeOS2Panose".into(), panose.clone());
+    }
+    plist::from_value(&Value::Dictionary(info)).map_err(bad_value)
+}
 
 /// ufo2ft's `WDTH_VALUE_TO_OS2_WIDTH_CLASS`, also glyphsLib's `WIDTH_CLASS_TO_VALUE`
 const WIDTH_CLASS_VALUES: [(u8, f64); 9] = [

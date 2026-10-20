@@ -2422,6 +2422,8 @@ mod tests {
     )]
     // Several sources, the instance on the default one; the others are unused
     #[case("wght_var.designspace", "Wght Var Regular", "Regular", 400, false)]
+    // The instance on another source builds that source alone
+    #[case("wght_var.designspace", "Wght Var Bold", "Bold", 700, true)]
     // A rule whose range doesn't cover the instance is dropped
     #[case(
         "single_source_rules.designspace",
@@ -2468,7 +2470,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case("wght_var.designspace", "Wght Var Bold", "isn't the default")]
     #[case(
         "single_source_two_instances.designspace",
         "Nope",
@@ -2503,6 +2504,27 @@ mod tests {
             .expect("must not build")
             .to_string();
         assert!(error.contains(message), "{error}");
+    }
+
+    #[test]
+    fn designspace_instance_on_another_source_has_the_default_glyph_set() {
+        // WghtVar-Bold.ufo has a glyph, bonus_bar, that the default source
+        // doesn't: like fontmake -i, the font has the default source's glyphs
+        let mut result = TestCompile::new_with_source_options(
+            "wght_var.designspace",
+            &SourceOptions {
+                export: Some("Wght Var Bold".to_string()),
+                ..Default::default()
+            },
+            |options| options,
+        );
+        result.run();
+        let glyph_order = result.fe_context.glyph_order.get();
+        assert!(glyph_order.contains(&GlyphName::new("bar")));
+        assert!(!glyph_order.contains(&GlyphName::new("bonus_bar")));
+        // and the default source's glyph order (plus, bar being left out of it)
+        let order: Vec<_> = glyph_order.iter().map(|(_, name)| name.as_str()).collect();
+        assert_eq!(order, [".notdef", "plus", "bar"]);
     }
 
     #[rstest]
