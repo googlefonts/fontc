@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser};
-use fontc::{DisableFlags, Input, Options};
+use fontc::{DisableFlags, Input, Options, SourceOptions};
 use fontir::orchestration::Flags;
 
 use regex::Regex;
@@ -99,6 +99,12 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub keep_direction: bool,
 
+    /// Build the export with this full name ("{family} {style}"): for now a
+    /// static instance, like fontmake's -i but matched exactly, not as a regex
+    /// (only single-master Glyphs sources, for now).
+    #[arg(long, value_name = "NAME")]
+    pub export: Option<String>,
+
     /// Don't rename glyphs with production names
     // Named to match fontmake's homonymous flag:
     // https://github.com/googlefonts/fontmake/blob/6a8b2907/Lib/fontmake/__main__.py#L602
@@ -183,6 +189,12 @@ impl Args {
             .as_ref()
             .unwrap_or_else(|| self.input_source.as_ref().unwrap());
         Input::try_from(path.as_path())
+    }
+
+    pub fn source_options(&self) -> SourceOptions {
+        SourceOptions {
+            export: self.export.clone(),
+        }
     }
 
     /// Returns the trace path if timing output is enabled.
