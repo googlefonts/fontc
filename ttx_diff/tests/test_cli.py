@@ -189,3 +189,49 @@ def test_builds_static_export(instances, expected):
     font = GSFont()
     font.instances = instances
     assert builds_static_export(font) == expected
+
+
+def test_cli_export_requires_default_compare(tmp_path):
+    path = _write_glyphs(tmp_path, masters=[400])
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ttx_diff",
+            "--compare",
+            "gftools",
+            "--export",
+            "Test Regular",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "--export is only supported with --compare default" in result.stderr
+
+
+def test_export_passed_to_both_compilers(tmp_path, monkeypatch):
+    """fontc gets the name verbatim, fontmake as an escaped regex, both static."""
+    from absl.testing import flagsaver
+
+    from ttx_diff import (
+        __main__,  # noqa: F401 -- defines the CLI flags
+        core,
+    )
+
+    # a variable source, so the explicit export also makes fontmake build static
+    path = _write_glyphs(tmp_path, masters=[400, 700])
+    commands = []
+    monkeypatch.setattr(core, "build", lambda cmd, build_dir: commands.append(cmd))
+    name = "Test B1 Heavy (Alt)"
+    with flagsaver.flagsaver(export=name, keep_overlaps=True):
+        core.FLAGS.mark_as_parsed()
+        core.build_fontc(path, tmp_path / "fontc", tmp_path)
+        core.build_fontmake(path, tmp_path)
+    fontc_cmd, fontmake_cmd = commands
+    assert fontc_cmd[fontc_cmd.index("--export") + 1] == name
+    assert fontmake_cmd.count("-i") == 1
+    assert fontmake_cmd[fontmake_cmd.index("-i") + 1] == r"Test\ B1\ Heavy\ \(Alt\)"
+    assert fontmake_cmd[fontmake_cmd.index("-o") + 1] == "ttf"
+    assert "--keep-overlaps" in fontmake_cmd

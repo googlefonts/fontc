@@ -18,14 +18,15 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
+    error::{BadGlyph, BadGlyphKind, BadSource, Error, PathConversionError},
     ir::{
         self, Color, ColorStop, GlyphPathBuilder, Paint, PaintLinearGradient, PaintRadialGradient,
         PaintSolid,
     },
 };
 use glyphs_reader::{
-    Component, FeatureSnippet, Font, Glyph, Layer, NodeType, Path, Shape, ShapeAttributes,
+    Component, FeatureSnippet, Font, Glyph, Instance, InstanceType, Layer, NodeType, Path, Shape,
+    ShapeAttributes,
 };
 
 pub(crate) fn to_ir_contours_and_components(
@@ -300,6 +301,107 @@ fn ir_axes(font: &Font) -> Result<fontdrasil::types::Axes, Error> {
         .collect()
 }
 
+/// The family name of an instance: its own, else the font's, like glyphsLib's
+/// `GSInstance.familyName`.
+fn instance_family_name<'a>(font: &'a Font, instance: &'a Instance) -> &'a str {
+    instance
+        .family_name()
+        .or_else(|| font.get_default_name("familyNames"))
+        .unwrap_or_default()
+}
+
+/// The full name of an instance, `"{family} {name}"`.
+///
+/// glyphsLib gives the designspace instance this name, so it is also what
+/// fontmake's `-i` matches.
+fn instance_full_name(font: &Font, instance: &Instance) -> String {
+    format!("{} {}", instance_family_name(font, instance), instance.name)
+}
+
+/// Choose the export whose metadata a static build uses: the one active
+/// static export, or the one with the requested full name.
+///
+/// `is_static` says whether the font's axes are all points.
+fn static_export(
+    font: &Font,
+    is_static: bool,
+    requested: Option<&str>,
+) -> Result<Option<usize>, Error> {
+    let bad_source = |message: String| Err(BadSource::custom("<Glyphs source>", message).into());
+    if !is_static {
+        return match requested {
+            Some(name) => bad_source(format!(
+                "Cannot build export \"{name}\": selecting an export is only \
+                 supported for single-master sources for now"
+            )),
+            None => Ok(None),
+        };
+    }
+    let exports: Vec<_> = font
+        .instances
+        .iter()
+        .enumerate()
+        .filter(|(_, instance)| instance.active && instance.type_ == InstanceType::Single)
+        .map(|(index, instance)| (index, instance_full_name(font, instance)))
+        .collect();
+    let list = |exports: &[(usize, String)]| {
+        exports
+            .iter()
+            .map(|(_, name)| format!("\"{name}\""))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let Some(requested) = requested else {
+        if exports.len() > 1 {
+            // Without a selection, build the master as before.
+            warn!(
+                "Several active static exports ({}), building the master without \
+                 their metadata; select one by its full name with --export, or \
+                 disable all but one",
+                list(&exports)
+            );
+            return Ok(None);
+        }
+        return Ok(exports.first().map(|(index, _)| *index));
+    };
+    let matches: Vec<_> = exports
+        .iter()
+        .filter(|(_, name)| name == requested)
+        .cloned()
+        .collect();
+    match matches.as_slice() {
+        [(index, _)] => Ok(Some(*index)),
+        [] => {
+            // Say why an instance with that name doesn't count.
+            let reason = font
+                .instances
+                .iter()
+                .find(|instance| instance_full_name(font, instance) == requested)
+                .map(|instance| {
+                    if instance.type_ == InstanceType::Variable {
+                        " (that is a variable font setting)"
+                    } else {
+                        " (that export is inactive)"
+                    }
+                })
+                .unwrap_or_default();
+            let available = if exports.is_empty() {
+                "there are none".to_string()
+            } else {
+                format!("available: {}", list(&exports))
+            };
+            bad_source(format!(
+                "No active static export named \"{requested}\"{reason}; {available}"
+            ))
+        }
+        _ => bad_source(format!(
+            "{} active static exports are named \"{requested}\"; rename or \
+             disable all but one",
+            matches.len()
+        )),
+    }
+}
+
 /// A [Font] with some prework to convert to IR predone.
 #[derive(Debug)]
 pub(crate) struct FontInfo {
@@ -307,7 +409,7 @@ pub(crate) struct FontInfo {
     /// Index into `font.instances` of the export whose metadata the build
     /// applies: for now, the active static instance when the font is static.
     // TODO(anthrotype): the Variable Font Settings being built, for variable fonts.
-    pub export: Option<usize>,
+    pub export_index: Option<usize>,
     /// Index by master id
     pub master_indices: HashMap<String, usize>,
     // Master id => location
@@ -323,10 +425,10 @@ pub(crate) struct FontInfo {
     pub kern_groups: OnceLock<BTreeMap<ir::KernGroup, BTreeSet<GlyphName>>>,
 }
 
-impl TryFrom<Font> for FontInfo {
-    type Error = Error;
-
-    fn try_from(font: Font) -> Result<Self, Self::Error> {
+impl FontInfo {
+    /// Prepare `font` for IR, building the static export whose full name is
+    /// `export`, if given.
+    pub(crate) fn new(font: Font, export: Option<&str>) -> Result<Self, Error> {
         let master_indices: HashMap<_, _> = font
             .masters
             .iter()
@@ -336,33 +438,7 @@ impl TryFrom<Font> for FontInfo {
 
         let axes = ir_axes(&font)?;
         // Like StaticMetadata, a font whose axes are all points is static.
-        let export = if axes.iter().all(|axis| axis.is_point()) {
-            let exports: Vec<_> = font
-                .instances
-                .iter()
-                .enumerate()
-                .filter(|(_, instance)| {
-                    instance.active && instance.type_ == glyphs_reader::InstanceType::Single
-                })
-                .collect();
-            if exports.len() > 1 {
-                // Without a way to pick one, build the master as before.
-                warn!(
-                    "Several active static instances ({}), building the master without \
-                     their metadata; disable all but one to build that instance",
-                    exports
-                        .iter()
-                        .map(|(_, instance)| instance.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                None
-            } else {
-                exports.first().map(|(index, _)| *index)
-            }
-        } else {
-            None
-        };
+        let export_index = static_export(&font, axes.iter().all(|axis| axis.is_point()), export)?;
 
         let locations: HashMap<_, _> = font
             .masters
@@ -405,7 +481,7 @@ impl TryFrom<Font> for FontInfo {
 
         Ok(FontInfo {
             font,
-            export,
+            export_index,
             master_indices,
             master_positions,
             locations,
@@ -1624,7 +1700,7 @@ mod tests {
     #[test]
     fn many_to_one_axis_map_preserves_max() {
         let font = Font::load(&testdata_dir().join("glyphs3/ManyToOneAxisMap.glyphs")).unwrap();
-        let font_info = FontInfo::try_from(font).unwrap();
+        let font_info = FontInfo::new(font, None).unwrap();
         let wght_tag = write_fonts::types::Tag::from_str("wght").unwrap();
         let wght = font_info.axes.get(&wght_tag).unwrap();
         // user=900 and user=1000 both map to design=1000;

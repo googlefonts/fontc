@@ -74,22 +74,40 @@ impl GlyphsIrSource {
     }
 }
 
-impl Source for GlyphsIrSource {
-    fn new(glyphs_file: &Path) -> Result<Self, Error> {
+impl GlyphsIrSource {
+    /// Load a .glyphs file or .glyphspackage, building the static export with
+    /// the given full name, if any.
+    ///
+    /// The full name is the instance's family name (else the font's) and its
+    /// name, joined by a space, as glyphsLib names the instances fontmake `-i`
+    /// matches. It must equal exactly one active static export, and the source
+    /// must build a static font.
+    pub fn new(glyphs_file: &Path, export: Option<&str>) -> Result<Self, Error> {
         // We have to read the glyphs file then shred it to figure out if anything changed
-        let font_info = FontInfo::try_from(Font::load(glyphs_file).map_err(|e| {
-            BadSource::custom(
-                glyphs_file.to_path_buf(),
-                format!("Unable to read glyphs file: {e}"),
-            )
-        })?)?;
+        let font_info = FontInfo::new(
+            Font::load(glyphs_file).map_err(|e| {
+                BadSource::custom(
+                    glyphs_file.to_path_buf(),
+                    format!("Unable to read glyphs file: {e}"),
+                )
+            })?,
+            export,
+        )
+        // FontInfo doesn't know the path; put it on the --export errors,
+        // keeping their kind (and so the error chain)
+        .map_err(|error| match error {
+            Error::BadSource(error) => BadSource::new(glyphs_file, error.kind).into(),
+            other => other,
+        })?;
 
         Ok(Self {
             font_info: Arc::new(font_info),
             source_path: Some(glyphs_file.into()),
         })
     }
+}
 
+impl Source for GlyphsIrSource {
     fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork(self.clone())))
     }
@@ -202,7 +220,11 @@ impl Source for GlyphsIrSource {
 }
 
 impl GlyphsIrSource {
-    pub fn new_from_memory(data: &str) -> Result<Self, Error> {
+    /// Load a Glyphs source from memory, building the static export with the
+    /// given full name, if any.
+    ///
+    /// See [`Self::new`] for how the export is chosen.
+    pub fn new_from_memory(data: &str, export: Option<&str>) -> Result<Self, Error> {
         let font = Font::load_from_string(data).map_err(|e| {
             BadSource::custom(
                 "<memory>".to_string(),
@@ -210,7 +232,7 @@ impl GlyphsIrSource {
             )
         })?;
         Ok(Self {
-            font_info: Arc::new(FontInfo::try_from(font)?),
+            font_info: Arc::new(FontInfo::new(font, export)?),
             source_path: None,
         })
     }
@@ -1516,7 +1538,7 @@ impl FontInfo {
     // PANOSE, meta and the names merged at load time use them so far, and they
     // pick one in two different ways.
     fn export(&self) -> Option<&glyphs_reader::Instance> {
-        self.export.map(|index| &self.font.instances[index])
+        self.export_index.map(|index| &self.font.instances[index])
     }
 
     /// The kern-group partition, from the font's per-glyph kern attributes.
@@ -2510,7 +2532,7 @@ mod tests {
     }
 
     fn context_for(glyphs_file: &Path) -> (impl Source + use<>, Context) {
-        let source = GlyphsIrSource::new(glyphs_file).unwrap();
+        let source = GlyphsIrSource::new(glyphs_file, None).unwrap();
         (source, Context::new_root(Flags::default()))
     }
 
@@ -5177,6 +5199,7 @@ name = decomposeTransformedComponents;
 );
 unitsPerEm = 1000;
 }"#,
+            None,
         )
         .unwrap();
         assert!(
@@ -5190,7 +5213,7 @@ unitsPerEm = 1000;
     #[test]
     fn propagate_anchors_governed_by_custom_param_not_filters() {
         let flags = |file: &str| {
-            GlyphsIrSource::new(&glyphs3_dir().join(file))
+            GlyphsIrSource::new(&glyphs3_dir().join(file), None)
                 .unwrap()
                 .compilation_flags()
         };
@@ -5201,8 +5224,9 @@ unitsPerEm = 1000;
     }
 
     fn decompose_components_scope(filter: &str) -> Option<FilterScope> {
-        let source = GlyphsIrSource::new_from_memory(&format!(
-            r#"{{
+        let source = GlyphsIrSource::new_from_memory(
+            &format!(
+                r#"{{
 .appVersion = "3227";
 .formatVersion = 3;
 fontMaster = (
@@ -5222,7 +5246,9 @@ name = flattenComponents;
 );
 unitsPerEm = 1000;
 }}"#
-        ))
+            ),
+            None,
+        )
         .unwrap();
         decompose_components_from_user_data(&source.font_info.font.default_master().user_data)
     }
@@ -5319,10 +5345,159 @@ unitsPerEm = 1000;
             let data = format!(
                 "{{ .formatVersion = 3; familyName = Example; axes = ({{ name = Weight; tag = wght; }}); fontMaster = ({{ id = m01; axesValues = (100); }}); unitsPerEm = 1000; {parameters} instances = ({instances}); }}"
             );
-            let source = GlyphsIrSource::new_from_memory(&data)
+            let source = GlyphsIrSource::new_from_memory(&data, None)
                 .unwrap_or_else(|error| panic!("{case}: {error}"));
-            assert_eq!(source.font_info.export, expected, "{case}");
+            assert_eq!(source.font_info.export_index, expected, "{case}");
         }
+    }
+
+    const MULTIPLE_STATIC_EXPORTS: &str = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; },
+{ name = Bold; },
+{ name = Regular; properties = ({ key = familyNames; values = ({ language = dflt; value = "Example B1"; }); }); },
+{ name = Black; active = 0; },
+{ name = Light; type = variable; }
+);
+}"#;
+
+    fn select_export(data: &str, export: &str) -> Result<GlyphsIrSource, Error> {
+        GlyphsIrSource::new_from_memory(data, Some(export))
+    }
+
+    fn selected_index(data: &str, export: &str) -> Option<usize> {
+        select_export(data, export)
+            .unwrap_or_else(|error| panic!("{export}: {error}"))
+            .font_info
+            .export_index
+    }
+
+    #[test]
+    fn export_selected_by_full_name() {
+        // The family is the instance's familyNames property (a Glyphs 2
+        // familyName parameter becomes one), else the font's.
+        for (name, index) in [
+            ("Example Regular", 0),
+            ("Example Bold", 1),
+            ("Example B1 Regular", 2),
+        ] {
+            assert_eq!(
+                selected_index(MULTIPLE_STATIC_EXPORTS, name),
+                Some(index),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn export_selection_is_exact() {
+        for name in [
+            "Regular",
+            "Bold",
+            "example bold",
+            "Example Bold ",
+            "Example.*",
+        ] {
+            let message = select_export(MULTIPLE_STATIC_EXPORTS, name)
+                .err()
+                .unwrap_or_else(|| panic!("{name:?} must not match"))
+                .to_string();
+            // the error lists what could have been selected
+            for candidate in ["Example Regular", "Example Bold", "Example B1 Regular"] {
+                assert!(message.contains(candidate), "{message}");
+            }
+        }
+    }
+
+    #[test]
+    fn export_selection_skips_inactive_and_variable_instances() {
+        for (name, reason) in [("Example Black", "inactive"), ("Example Light", "variable")] {
+            let message = select_export(MULTIPLE_STATIC_EXPORTS, name)
+                .err()
+                .unwrap_or_else(|| panic!("{name:?} must not match"))
+                .to_string();
+            assert!(
+                message.contains(name) && message.contains(reason),
+                "{message}"
+            );
+        }
+        // an inactive duplicate does not make the active one ambiguous
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+unitsPerEm = 1000;
+instances = ({ name = Regular; active = 0; }, { name = Regular; });
+}"#;
+        assert_eq!(selected_index(data, "Example Regular"), Some(1));
+    }
+
+    #[test]
+    fn export_selection_rejects_duplicate_full_names() {
+        // Two instances can share a full name when one names its family
+        // explicitly; there would be no way to pick either.
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; },
+{ name = Regular; properties = ({ key = familyNames; values = ({ language = dflt; value = Example; }); }); },
+{ name = Bold; }
+);
+}"#;
+        let message = select_export(data, "Example Regular")
+            .expect_err("duplicate full names must not silently select one")
+            .to_string();
+        assert!(message.contains("Example Regular"), "{message}");
+        // the other instance can still be selected
+        assert_eq!(selected_index(data, "Example Bold"), Some(2));
+    }
+
+    #[test]
+    fn export_selection_with_one_static_export() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+unitsPerEm = 1000;
+instances = ({ name = Bold; });
+}"#;
+        assert_eq!(selected_index(data, "Example Bold"), Some(0));
+        assert!(select_export(data, "Example Regular").is_err());
+        // no static exports at all
+        let data = data.replace("instances = ({ name = Bold; });", "");
+        assert!(select_export(&data, "Example Bold").is_err());
+    }
+
+    #[test]
+    fn export_selection_requires_static_source() {
+        // Instances of a variable source would need interpolation.
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = ({ id = m01; axesValues = (400); }, { id = m02; axesValues = (700); });
+unitsPerEm = 1000;
+instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues = (700); });
+}"#;
+        let message = select_export(data, "Example Bold")
+            .expect_err("a variable source has no static export to select")
+            .to_string();
+        assert!(message.contains("single-master"), "{message}");
+        // without --export it still builds a variable font
+        assert_eq!(
+            GlyphsIrSource::new_from_memory(data, None)
+                .unwrap()
+                .font_info
+                .export_index,
+            None
+        );
     }
 
     #[test]
@@ -5361,6 +5536,7 @@ mode = skip;
 );
 };
 }"#,
+            None,
         )
         .unwrap();
         let context = Context::new_root(Flags::default());
@@ -5388,7 +5564,7 @@ mode = skip;
     }
 
     fn stat_labels_from_glyphs_source(glyphs_file: &Path) -> Vec<fontir::ir::StatAxis> {
-        let source = GlyphsIrSource::new(glyphs_file).unwrap();
+        let source = GlyphsIrSource::new(glyphs_file, None).unwrap();
         let context = Context::new_root(Flags::default());
         let task_context = context.copy_for_work(
             Access::None,
@@ -5438,7 +5614,7 @@ mode = skip;
 
     fn feature_writers_error_from_glyphs_source(source: &str) -> Error {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        let source = GlyphsIrSource::new_from_memory(source).unwrap();
+        let source = GlyphsIrSource::new_from_memory(source, None).unwrap();
         let context = Context::new_root(Flags::default());
         context.try_create_static_metadata(&source).unwrap_err()
     }
@@ -5469,7 +5645,7 @@ ignoreMarks = 0;
 
     fn feature_writers_from_glyphs_source(source: &str) -> Option<Vec<FeatureWriterSpec>> {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        let source = GlyphsIrSource::new_from_memory(source).unwrap();
+        let source = GlyphsIrSource::new_from_memory(source, None).unwrap();
         let context = Context::new_root(Flags::default());
         context
             .create_static_metadata(&source)
@@ -5633,6 +5809,7 @@ width = 200;
 );
 unitsPerEm = 1000;
 }"#,
+            None,
         )
         .unwrap();
 

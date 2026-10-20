@@ -250,6 +250,8 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         cmd.append("--keep-direction")
     if not FLAGS.production_names:
         cmd.append("--no-production-names")
+    if FLAGS.export is not None:
+        cmd += ["--export", FLAGS.export]
     build(cmd, build_dir)
 
 
@@ -299,7 +301,8 @@ def build_fontmake(source: Path, build_dir: Path):
         eprint(f"reusing {rel_user(out_file)}")
         return
     font = GSFont(source) if source.suffix in (".glyphs", ".glyphspackage") else None
-    variable = source_is_variable(source, font)
+    # An explicit export is always a static build, for now.
+    variable = FLAGS.export is None and source_is_variable(source, font)
     buildtype = "variable"
     if not variable:
         buildtype = "ttf"
@@ -314,11 +317,15 @@ def build_fontmake(source: Path, build_dir: Path):
         "--debug-feature-file",
         "debug.fea",
     ]
-    # Static Glyphs compilation uses the one static export's metadata. Other sources
-    # still use the master/VF reference, including one-master variable sources.
+    # fontmake -i matches the instance name as a regex, fontc --export exactly.
+    # Without one, static Glyphs compilation uses the one static export's metadata.
+    # Other sources still use the master/VF reference, including one-master
+    # variable sources.
     # fontc never autohints. --no-autohint keeps the instance's 'TTFAutohint options'
     # from hinting fontmake's output.
-    if not variable and builds_static_export(font):
+    if FLAGS.export is not None:
+        cmd += ["-i", re.escape(FLAGS.export), "--no-autohint"]
+    elif not variable and builds_static_export(font):
         cmd.extend(["-i", "--no-autohint"])
     if FLAGS.keep_direction:
         cmd.append("--keep-direction")
@@ -1655,6 +1662,10 @@ def main(argv):
         )
 
     has_precompiled_fonts = FLAGS.fontc_font is not None
+
+    if FLAGS.export is not None and FLAGS.compare != "default":
+        # gftools decides which instances to build from its config
+        sys.exit("--export is only supported with --compare default")
 
     if has_precompiled_fonts and has_source:
         sys.exit("Cannot specify both a source file and precompiled fonts")

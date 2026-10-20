@@ -65,13 +65,23 @@ impl Input {
     }
 
     /// Creates the implementation of [`Source`] to feed to fontir.
+    ///
+    /// Selecting an export is only supported for Glyphs sources; for any
+    /// other input it is an error. Designspace instances have names too, but
+    /// fontc doesn't apply instance metadata from them yet.
     #[tracing::instrument(skip_all)]
-    pub fn create_source(&self) -> Result<Box<dyn Source>, Error> {
+    pub fn create_source(&self, options: &SourceOptions) -> Result<Box<dyn Source>, Error> {
+        let export = options.export.as_deref();
+        if export.is_some() && !matches!(self, Input::GlyphsPath(_) | Input::GlyphsMemory(_)) {
+            return Err(Error::ExportRequiresGlyphsSource);
+        }
         match self {
             Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path)?)),
-            Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(path)?)),
+            Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(path, export)?)),
             Input::FontraPath(path) => Ok(Box::new(FontraIrSource::new(path)?)),
-            Input::GlyphsMemory(source) => Ok(Box::new(GlyphsIrSource::new_from_memory(source)?)),
+            Input::GlyphsMemory(source) => {
+                Ok(Box::new(GlyphsIrSource::new_from_memory(source, export)?))
+            }
         }
     }
 }
@@ -130,6 +140,16 @@ pub fn version() -> String {
     crate::version::version_string(env!("VERGEN_GIT_DESCRIBE"), env!("CARGO_PKG_VERSION"))
 }
 
+/// Options for reading the source, used when it's created, as opposed to
+/// compiling it, which is [`Options`].
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SourceOptions {
+    /// Build the export with this name, for now a static instance, like
+    /// fontmake's `-i` but matched exactly, not as a regex: for a single-master
+    /// Glyphs source, the export's full name, `"{family} {name}"`.
+    pub export: Option<String>,
+}
+
 /// Options for font compilation.
 ///
 /// Configures how the font is compiled (flags, output paths, etc.)
@@ -145,7 +165,7 @@ pub struct Options {
     pub debug_dir: Option<PathBuf>,
 }
 
-/// Run the compiler with the provided input and options.
+/// Run the compiler with the provided input, source options and options.
 ///
 /// This is the main entry point for the fontc command line utility.
 ///
@@ -154,12 +174,12 @@ pub struct Options {
 /// Returns [`Error::NoOutputFile`] if `options.output_file` is `None`.
 #[cfg(feature = "cli")]
 #[tracing::instrument(skip_all)]
-pub fn run(input: Input, options: Options) -> Result<(), Error> {
+pub fn run(input: Input, source_options: &SourceOptions, options: Options) -> Result<(), Error> {
     if options.output_file.is_none() {
         return Err(Error::NoOutputFile);
     }
 
-    let source = input.create_source()?;
+    let source = input.create_source(source_options)?;
 
     let (_fe_root, be_root) = generate_font_internal(source, &options)?;
 
@@ -354,6 +374,14 @@ mod tests {
 
     impl TestCompile {
         fn new(source_file: &str, adjust_options: impl Fn(Options) -> Options) -> TestCompile {
+            Self::new_with_source_options(source_file, &SourceOptions::default(), adjust_options)
+        }
+
+        fn new_with_source_options(
+            source_file: &str,
+            source_options: &SourceOptions,
+            adjust_options: impl Fn(Options) -> Options,
+        ) -> TestCompile {
             let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
             let temp_dir = tempdir().unwrap();
@@ -362,7 +390,7 @@ mod tests {
             info!("Compile {options:?}");
 
             let input = Input::new(&testdata_dir().join(source_file)).unwrap();
-            let source = input.create_source().unwrap();
+            let source = input.create_source(source_options).unwrap();
             let flags = merge_compilation_flags(&options, &*source);
 
             init_paths(&options).unwrap();
@@ -2173,6 +2201,55 @@ mod tests {
         assert_eq!(record(17, 0x0407).as_deref(), Some("Anzeige"));
         assert_eq!(record(9, 0x040C).as_deref(), Some("Export Designeur"));
         assert_eq!(record(1, 0x0409).as_deref(), Some("Export Family Display"));
+    }
+
+    #[rstest]
+    #[case("Example Regular", "Example", "Regular", 400)]
+    #[case("Example Bold", "Example", "Bold", 700)]
+    #[case("Example B1 Regular", "Example B1", "Regular", 400)]
+    fn static_export_selected_by_full_name(
+        #[case] export: &str,
+        #[case] family: &str,
+        #[case] subfamily: &str,
+        #[case] weight: u16,
+    ) {
+        // Several active static exports: --export picks one by
+        // "{family} {name}", as fontmake -i matches glyphsLib's instance names.
+        let mut result = TestCompile::new_with_source_options(
+            "static_export_instances.glyphs",
+            &SourceOptions {
+                export: Some(export.to_string()),
+            },
+            |options| options,
+        );
+        result.run();
+        let font = result.font();
+        let names = font.name().unwrap();
+        assert_eq!(
+            resolve_name(&names, NameId::FAMILY_NAME).as_deref(),
+            Some(family)
+        );
+        assert_eq!(
+            resolve_name(&names, NameId::SUBFAMILY_NAME).as_deref(),
+            Some(subfamily)
+        );
+        assert_eq!(font.os2().unwrap().us_weight_class(), weight);
+    }
+
+    #[test]
+    fn export_requires_glyphs_source() {
+        let input = Input::new(
+            &testdata_dir().join("designspace_from_glyphs/IntermediateLayer.designspace"),
+        )
+        .unwrap();
+        let result = input.create_source(&SourceOptions {
+            export: Some("Intermediate Layer Regular".to_string()),
+        });
+        assert!(
+            matches!(result, Err(Error::ExportRequiresGlyphsSource)),
+            "{:?}",
+            result.err()
+        );
     }
 
     #[rstest]
@@ -7329,7 +7406,10 @@ mod tests {
     }
 
     fn source_error(path: &Path) -> String {
-        let Err(error) = Input::new(path).unwrap().create_source() else {
+        let Err(error) = Input::new(path)
+            .unwrap()
+            .create_source(&SourceOptions::default())
+        else {
             panic!("loading {} should have failed", path.display());
         };
         error.display_with_causes().to_string()
