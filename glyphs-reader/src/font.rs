@@ -4339,10 +4339,6 @@ impl Font {
     }
 
     fn preprocess(&mut self) -> Result<(), Error> {
-        // ensure that glyphs with components that have bracket layers
-        // also have bracket layers.
-        self.align_bracket_layers();
-
         // Anchor propagation now happens in fontir as a compilation flag.
         // Preprocessing disabled - anchor propagation now happens in IR.
         // The PROPAGATE_ANCHORS flag controls this behavior.
@@ -4366,12 +4362,15 @@ impl Font {
         fontdrasil::util::depth_sorted_composite_glyphs(&self.glyphs)
     }
 
-    /// if a glyph has components that have alternate layers, copy the layer
-    /// locations into the glyph.
+    /// If a glyph has components that have alternate layers, copy the layer
+    /// locations into the glyph, so that a variable font swaps in their
+    /// alternates in the composite as well.
     ///
-    /// This is required to correctly handle bracket glyphs.
+    /// This isn't done when loading the font: a static font applies its
+    /// alternate layers instead (see [`Self::apply_alternate_layers`]), and the
+    /// copies would only get in the way there.
     // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d/Lib/glyphsLib/builder/bracket_layers.py#L176
-    fn align_bracket_layers(&mut self) {
+    pub fn align_bracket_layers(&mut self) {
         // python does this recursively but we'll presort instead
         let todo = self.depth_sorted_composite_glyphs();
 
@@ -4605,6 +4604,48 @@ impl Font {
 
     pub fn default_master(&self) -> &FontMaster {
         &self.masters[self.default_master_idx]
+    }
+
+    /// Apply the alternate (bracket) layers for a static font built at
+    /// `location`, in design coordinates in the order of the axes.
+    ///
+    /// At a single location each alternate layer either applies or doesn't, so
+    /// there is nothing to switch at runtime. As in Glyphs 3.5 static exports,
+    /// an alternate layer whose axis rules all contain the location (both ends
+    /// inclusive) replaces its master's layer, the last one in the file winning
+    /// if several do; then all alternate layers are dropped.
+    pub fn apply_alternate_layers(&mut self, location: &[OrderedFloat<f64>]) {
+        for glyph in self.glyphs.values_mut() {
+            for bracket in std::mem::take(&mut glyph.bracket_layers) {
+                let applies =
+                    bracket
+                        .attributes
+                        .axis_rules
+                        .iter()
+                        .zip(location)
+                        .all(|(rule, pos)| {
+                            rule.min.is_none_or(|min| min <= *pos)
+                                && rule.max.is_none_or(|max| *pos <= max)
+                        });
+                if !applies {
+                    continue;
+                }
+                let Some(layer) = glyph
+                    .layers
+                    .iter_mut()
+                    .find(|layer| layer.layer_id == bracket.master_id())
+                else {
+                    continue;
+                };
+                *layer = Layer {
+                    layer_id: std::mem::take(&mut layer.layer_id),
+                    associated_master_id: None,
+                    attributes: std::mem::take(&mut layer.attributes),
+                    smart_component_positions: std::mem::take(&mut layer.smart_component_positions),
+                    ..bracket
+                };
+            }
+        }
     }
 
     /// Whether any glyph in the font uses `glyph_name` as a component.
@@ -6810,6 +6851,53 @@ unitsPerEm = 1000;
                 )
             })
             .collect()
+    }
+
+    // Widths as Glyphs 3.5 exports them: both ends of a rule are inclusive, and
+    // of several alternate layers that apply, the last one wins.
+    #[rstest]
+    #[case(300.0, [601, 500, 500, 607])]
+    #[case(400.0, [602, 604, 605, 607])]
+    #[case(500.0, [602, 604, 605, 500])]
+    fn apply_alternate_layers(#[case] wght: f64, #[case] expected: [i32; 4]) {
+        let mut font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = ({ id = m01; axesValues = (400); });
+glyphs = (
+{ glyphname = a; layers = (
+{ layerId = m01; width = 500; },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 300; max = 400; }); }; layerId = a1; width = 601; },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 400; }); }; layerId = a2; width = 602; }
+); },
+{ glyphname = b; layers = (
+{ layerId = m01; width = 500; },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 350; }); }; layerId = b1; width = 603; },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 380; }); }; layerId = b2; width = 604; }
+); },
+{ glyphname = c; layers = (
+{ layerId = m01; width = 500; },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 380; }); }; layerId = c2; width = 606; },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 350; }); }; layerId = c1; width = 605; }
+); },
+{ glyphname = d; layers = (
+{ layerId = m01; width = 500; },
+{ associatedMasterId = m01; attr = { axisRules = ({ max = 400; }); }; layerId = d1; width = 607; }
+); }
+);
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+        font.apply_alternate_layers(&[wght.into()]);
+        for (name, width) in ["a", "b", "c", "d"].into_iter().zip(expected) {
+            let glyph = &font.glyphs[name];
+            assert!(glyph.bracket_layers.is_empty(), "{name}");
+            assert_eq!(glyph.layers.len(), 1, "{name}");
+            assert_eq!(glyph.layers[0].layer_id, "m01", "{name}");
+            assert_eq!(glyph.layers[0].width, width as f64, "{name} at {wght}");
+        }
     }
 
     #[test]

@@ -428,7 +428,7 @@ pub(crate) struct FontInfo {
 impl FontInfo {
     /// Prepare `font` for IR, building the static export whose full name is
     /// `export`, if given.
-    pub(crate) fn new(font: Font, export: Option<&str>) -> Result<Self, Error> {
+    pub(crate) fn new(mut font: Font, export: Option<&str>) -> Result<Self, Error> {
         let master_indices: HashMap<_, _> = font
             .masters
             .iter()
@@ -438,7 +438,19 @@ impl FontInfo {
 
         let axes = ir_axes(&font)?;
         // Like StaticMetadata, a font whose axes are all points is static.
-        let export_index = static_export(&font, axes.iter().all(|axis| axis.is_point()), export)?;
+        let is_static = axes.iter().all(|axis| axis.is_point());
+        let export_index = static_export(&font, is_static, export)?;
+        if is_static {
+            // built at the export's location, else at the master's
+            let location = match export_index {
+                Some(index) => font.instances[index].axes_values.clone(),
+                None => font.default_master().axes_values.clone(),
+            };
+            font.apply_alternate_layers(&location);
+        } else {
+            // so that the alternate layers of components are swapped in composites
+            font.align_bracket_layers();
+        }
 
         let locations: HashMap<_, _> = font
             .masters
