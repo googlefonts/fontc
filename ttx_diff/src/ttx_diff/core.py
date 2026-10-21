@@ -252,7 +252,16 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         cmd.append("--no-production-names")
     if FLAGS.export is not None:
         cmd += ["--export", FLAGS.export]
+    cmd += glyph_data_args()
     build(cmd, build_dir)
+
+
+def glyph_data_args() -> List[str]:
+    # absolute, because the compilers run in the build directory
+    args = []
+    for path in FLAGS.glyph_data:
+        args += ["--glyph-data", str(Path(path).resolve())]
+    return args
 
 
 # Where we record how fontmake failed, in place of the font it did not produce.
@@ -333,6 +342,7 @@ def build_fontmake(source: Path, build_dir: Path):
         cmd.append("--no-production-names")
     if FLAGS.keep_overlaps and not variable:
         cmd.append("--keep-overlaps")
+    cmd += glyph_data_args()
     cmd.append(str(source))
 
     build(cmd, build_dir)
@@ -1713,6 +1723,9 @@ def main(argv):
     diffs = False
 
     compare = FLAGS.compare
+    if FLAGS.glyph_data and compare != "default":
+        # gftools takes the glyph data from the config's glyphData
+        sys.exit("--glyph_data is only supported with --compare default")
     build_dir = out_dir / compare
     build_dir.mkdir(parents=True, exist_ok=True)
     eprint(f"Compare {compare} in {rel_user(build_dir)}")

@@ -4123,7 +4123,15 @@ fn update_names(all_names: &mut BTreeMap<String, Vec<(String, String)>>, raw_nam
 impl TryFrom<RawFont> for Font {
     type Error = Error;
 
-    fn try_from(mut from: RawFont) -> Result<Self, Self::Error> {
+    fn try_from(from: RawFont) -> Result<Self, Self::Error> {
+        Font::from_raw(from, &GlyphData::default())
+    }
+}
+
+impl Font {
+    /// Build a font from its raw form, using `glyph_data` to fill in glyph
+    /// categories and production names the source doesn't set.
+    fn from_raw(mut from: RawFont, glyph_data: &GlyphData) -> Result<Self, Error> {
         if from.format_version.is_v2() {
             from.v2_to_v3()?;
         } else {
@@ -4132,9 +4140,6 @@ impl TryFrom<RawFont> for Font {
         }
         from.default_master_names();
         from.normalize_instance_classes()?;
-
-        // TODO: this should be provided in a manner that allows for overrides
-        let glyph_data = GlyphData::default();
 
         // originally glyphsLib would infer wght/wdth mappings from the instance weight/width classes;
         // then, a new "Axis Location" custom parameter was defined for both masters and instances;
@@ -4166,7 +4171,7 @@ impl TryFrom<RawFont> for Font {
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
-            let mut glyph = raw_glyph.build(from.format_version, &glyph_data)?;
+            let mut glyph = raw_glyph.build(from.format_version, glyph_data)?;
             // v2 bracket layers can only reference a single axis position (on the
             // first axis in the font) so we add empty axis rules for any other
             // axes.
@@ -4305,6 +4310,18 @@ impl Font {
 
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
         let mut font = Self::load_raw(glyphs_file)?;
+        font.preprocess()?;
+        Ok(font)
+    }
+
+    /// Load a font, using `glyph_data` (e.g. with user-provided GlyphData.xml
+    /// overrides) in place of the bundled glyph data.
+    pub fn load_with_glyph_data(
+        glyphs_file: &path::Path,
+        glyph_data: &GlyphData,
+    ) -> Result<Font, Error> {
+        let raw_font = RawFont::load(glyphs_file)?;
+        let mut font = Font::from_raw(raw_font, glyph_data)?;
         font.preprocess()?;
         Ok(font)
     }

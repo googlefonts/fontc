@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -30,7 +30,7 @@ use fontir::{
 };
 use glyphs_reader::{
     Font, InstanceType, Layer, Plist,
-    glyphdata::{Category, Subcategory},
+    glyphdata::{Category, GlyphData, Subcategory},
 };
 use indexmap::IndexMap;
 use kurbo::Affine;
@@ -76,16 +76,32 @@ impl GlyphsIrSource {
 
 impl GlyphsIrSource {
     /// Load a .glyphs file or .glyphspackage, building the static export with
-    /// the given full name, if any.
+    /// the given full name, if any, and applying the user-provided GlyphData
+    /// files in `glyph_data` on top of the bundled data, later ones taking
+    /// precedence.
     ///
     /// The full name is the instance's family name (else the font's) and its
     /// name, joined by a space, as glyphsLib names the instances fontmake `-i`
     /// matches. It must equal exactly one active static export, and the source
     /// must build a static font.
-    pub fn new(glyphs_file: &Path, export: Option<&str>) -> Result<Self, Error> {
+    pub fn new(
+        glyphs_file: &Path,
+        export: Option<&str>,
+        glyph_data: &[PathBuf],
+    ) -> Result<Self, Error> {
+        let glyph_data = if glyph_data.is_empty() {
+            GlyphData::default()
+        } else {
+            GlyphData::with_override_files(glyph_data).map_err(|e| {
+                BadSource::custom(
+                    glyphs_file.to_path_buf(),
+                    format!("Unable to load glyph data from {glyph_data:?}: {e}"),
+                )
+            })?
+        };
         // We have to read the glyphs file then shred it to figure out if anything changed
         let font_info = FontInfo::new(
-            Font::load(glyphs_file).map_err(|e| {
+            Font::load_with_glyph_data(glyphs_file, &glyph_data).map_err(|e| {
                 BadSource::custom(
                     glyphs_file.to_path_buf(),
                     format!("Unable to read glyphs file: {e}"),
@@ -2532,7 +2548,7 @@ mod tests {
     }
 
     fn context_for(glyphs_file: &Path) -> (impl Source + use<>, Context) {
-        let source = GlyphsIrSource::new(glyphs_file, None).unwrap();
+        let source = GlyphsIrSource::new(glyphs_file, None, &[]).unwrap();
         (source, Context::new_root(Flags::default()))
     }
 
@@ -5213,7 +5229,7 @@ unitsPerEm = 1000;
     #[test]
     fn propagate_anchors_governed_by_custom_param_not_filters() {
         let flags = |file: &str| {
-            GlyphsIrSource::new(&glyphs3_dir().join(file), None)
+            GlyphsIrSource::new(&glyphs3_dir().join(file), None, &[])
                 .unwrap()
                 .compilation_flags()
         };
@@ -5564,7 +5580,7 @@ mode = skip;
     }
 
     fn stat_labels_from_glyphs_source(glyphs_file: &Path) -> Vec<fontir::ir::StatAxis> {
-        let source = GlyphsIrSource::new(glyphs_file, None).unwrap();
+        let source = GlyphsIrSource::new(glyphs_file, None, &[]).unwrap();
         let context = Context::new_root(Flags::default());
         let task_context = context.copy_for_work(
             Access::None,

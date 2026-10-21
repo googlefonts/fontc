@@ -9,9 +9,8 @@ use quick_xml::{
 };
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Display,
-    num::ParseIntError,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -246,36 +245,131 @@ impl From<ProductionName> for SmolStr {
 /// Always queries static data from glyphsLib. Optionally includes a set of override values as well.
 ///
 /// Default/no overrides instances are cheap. Instances created with overrides are more expensive.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct GlyphData {
-    // override-names are preferred to names in data
-    overrides: Option<HashMap<SmolStr, QueryResult>>,
-    overrrides_by_codepoint: Option<HashMap<u32, SmolStr>>,
+    overrides: Option<Overrides>,
+}
+
+/// Glyph info from user-provided GlyphData files, indexed the way glyphsLib indexes it.
+///
+/// Every mapping is keyed independently and later entries replace earlier ones, so when
+/// several files are loaded the last one to mention a given key wins.
+/// <https://github.com/googlefonts/glyphsLib/blob/f40abf38fb5d/Lib/glyphsLib/glyphdata.py#L62-L89>
+#[derive(Clone, Debug, Default)]
+struct Overrides {
+    names: HashMap<SmolStr, Entry>,
+    alt_names: HashMap<SmolStr, Entry>,
+    production_names: HashMap<SmolStr, Entry>,
+    codepoints: HashMap<u32, Entry>,
+}
+
+/// The attributes of one glyph entry.
+///
+/// Unlike [`QueryResult`] every field is optional: user GlyphData files often only
+/// set some attributes, and the ones they leave out fall back to other sources.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Entry {
+    category: Option<Category>,
+    subcategory: Option<Subcategory>,
+    codepoint: Option<u32>,
+    script: Option<Script>,
+    production_name: Option<ProductionName>,
+}
+
+impl From<QueryResult> for Entry {
+    fn from(value: QueryResult) -> Self {
+        Entry {
+            category: Some(value.category),
+            subcategory: value.subcategory,
+            codepoint: value.codepoint,
+            script: value.script,
+            production_name: value.production_name,
+        }
+    }
+}
+
+impl Overrides {
+    fn add_xml(&mut self, xml: &[u8]) -> Result<(), GlyphDataError> {
+        for info in parse_entries(xml)? {
+            self.add(
+                info.name,
+                &info.alt_names,
+                Entry {
+                    category: info.category,
+                    subcategory: info.subcategory,
+                    codepoint: info.codepoint,
+                    script: info.script,
+                    production_name: info.production_name,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    fn add(&mut self, name: SmolStr, alt_names: &[SmolStr], entry: Entry) {
+        for alt in alt_names {
+            self.alt_names.insert(alt.clone(), entry.clone());
+        }
+        if let Some(production_name) = entry.production_name.as_ref() {
+            self.production_names
+                .insert(production_name.clone().into(), entry.clone());
+        }
+        if let Some(codepoint) = entry.codepoint {
+            self.codepoints.insert(codepoint, entry.clone());
+        }
+        self.names.insert(name, entry);
+    }
+
+    /// Look up by name, then alternative name, then production name.
+    ///
+    /// <https://github.com/googlefonts/glyphsLib/blob/f40abf38fb5d/Lib/glyphsLib/glyphdata.py#L154-L170>
+    fn get(&self, name: &str) -> Option<&Entry> {
+        self.names
+            .get(name)
+            .or_else(|| self.alt_names.get(name))
+            .or_else(|| self.production_names.get(name))
+    }
 }
 
 impl GlyphData {
-    /// Overrides, if provided, explicitly assign the result for a given query
+    /// Overrides, if provided, take precedence over the bundled data for the fields
+    /// they set; fields left as `None` fall back to the bundled data, as they do in
+    /// GlyphData files.
     pub fn new(overrides: Option<HashMap<SmolStr, QueryResult>>) -> Self {
-        let overrrides_by_codepoint = overrides.as_ref().map(|overrides| {
-            overrides
-                .iter()
-                .filter_map(|(k, v)| v.codepoint.map(|cp| (cp, k.clone())))
-                .collect()
+        let overrides = overrides.map(|overrides| {
+            let mut result = Overrides::default();
+            for (name, value) in overrides {
+                result.add(name, &[], value.into());
+            }
+            result
         });
-        Self {
-            overrides,
-            overrrides_by_codepoint,
-        }
+        Self { overrides }
     }
 
     /// Create a new data set with user provided overrides
     pub fn with_override_file(override_file: &Path) -> Result<Self, GlyphDataError> {
-        let bytes = std::fs::read(override_file).map_err(|err| GlyphDataError::UserFile {
-            path: override_file.to_owned(),
-            reason: err.kind(),
-        })?;
-        let overrides = parse_entries(&bytes)?;
-        Ok(GlyphData::new(Some(overrides)))
+        Self::with_override_files(&[override_file])
+    }
+
+    /// Create a new data set with overrides from several user provided files.
+    ///
+    /// Files are applied in order, so where two files describe the same glyph,
+    /// the later one wins. This matches glyphsLib and fontmake's `--glyph-data`.
+    pub fn with_override_files<P: AsRef<Path>>(
+        override_files: &[P],
+    ) -> Result<Self, GlyphDataError> {
+        let mut overrides = Overrides::default();
+        for path in override_files {
+            let path = path.as_ref();
+            let bytes = std::fs::read(path).map_err(|err| GlyphDataError::UserFile {
+                path: path.to_owned(),
+                reason: err.kind(),
+            })?;
+            overrides.add_xml(&bytes)?;
+        }
+        Ok(Self {
+            overrides: Some(overrides),
+        })
     }
 }
 
@@ -303,23 +397,15 @@ pub enum GlyphDataError {
     ReaderError(#[from] quick_xml::Error),
     #[error("Error parsing XML attribute: '{0}'")]
     XmlAttributeError(#[from] quick_xml::events::attributes::AttrError),
-    #[error("Unknown category '{0}'")]
-    InvalidCategory(SmolStr),
-    #[error("Unknown subcategory '{0}'")]
-    InvalidSubcategory(SmolStr),
-    #[error("Unknown script '{0}'")]
-    InvalidScript(SmolStr),
     #[error("the XML input did not start with a <glyphdata> tag")]
     WrongFirstElement,
+    #[error("Invalid GlyphData XML: {0}")]
+    InvalidDocument(&'static str),
     #[error("Missing required attribute '{missing}' in '{attributes}'")]
     MissingRequiredAttribute {
         attributes: String,
         missing: &'static str,
     },
-    #[error("Invalid unicode value '{raw}': '{inner}'")]
-    InvalidUnicode { raw: String, inner: ParseIntError },
-    #[error("Unexpected attribute '{0}'")]
-    UnknownAttribute(String),
 }
 
 impl GlyphDataError {
@@ -332,13 +418,13 @@ impl GlyphDataError {
     }
 }
 
-/// Parse glyph info entries out of a GlyphData xml file.
-pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>, GlyphDataError> {
+/// Parse glyph info entries out of a GlyphData xml file, in file order.
+fn parse_entries(xml: &[u8]) -> Result<Vec<GlyphInfoFromXml>, GlyphDataError> {
     fn check_and_advance_past_preamble(reader: &mut Reader<&[u8]>) -> Result<(), GlyphDataError> {
         loop {
             let event = reader.read_event()?;
             match event {
-                Event::Comment(_) => (),
+                Event::Comment(_) | Event::PI(_) => (),
                 Event::Decl(_) => (),
                 Event::DocType(_) => (),
                 Event::Start(start) if start.name().as_ref() == "glyphData" => return Ok(()),
@@ -351,68 +437,63 @@ pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>,
 
     let mut reader = Reader::from_reader(xml);
     reader.config_mut().trim_text(true);
+    reader.config_mut().expand_empty_elements = true;
 
     check_and_advance_past_preamble(&mut reader)?;
 
-    let mut by_name = HashMap::new();
-    let mut alt_names = Vec::new();
-    for result in
-        iter_rows(&mut reader).map(|row| row.map_err(Into::into).and_then(parse_glyph_xml))
-    {
-        let info = result?;
-        by_name.insert(
-            info.name.clone(),
-            QueryResult {
-                category: info.category,
-                subcategory: info.subcategory,
-                codepoint: info.codepoint,
-                script: info.script,
-                production_name: info.production_name.clone(),
-            },
-        );
-        for alt in info.alt_names {
-            alt_names.push((
-                alt,
-                QueryResult {
-                    category: info.category,
-                    subcategory: info.subcategory,
-                    codepoint: None,
-                    script: info.script,
-                    production_name: info.production_name.clone(),
-                },
-            ));
+    // unknown values are reported once each, rather than once per glyph
+    let mut unknown_values = HashSet::new();
+    let mut entries = Vec::new();
+    loop {
+        match reader.read_event()? {
+            Event::Comment(_) | Event::PI(_) => (),
+            Event::Start(row) if row.name().as_ref() == "glyph" => {
+                let entry = parse_glyph_xml(row.clone(), &mut unknown_values)?;
+                reader.read_to_end(row.name())?;
+                entries.push(entry);
+            }
+            Event::End(end) if end.name().as_ref() == "glyphData" => break,
+            _ => {
+                return Err(GlyphDataError::InvalidDocument(
+                    "expected a <glyph> element or </glyphData>",
+                ));
+            }
         }
     }
-
-    // apply alts after to ensure they can't steal "real" names
-    for (name, value) in alt_names {
-        by_name.entry(name).or_insert(value);
+    // Read through EOF so trailing malformed XML or another root is not ignored.
+    loop {
+        match reader.read_event()? {
+            Event::Comment(_) | Event::PI(_) => (),
+            Event::Eof => break,
+            _ => {
+                return Err(GlyphDataError::InvalidDocument(
+                    "expected end of document after </glyphData>",
+                ));
+            }
+        }
     }
-
-    Ok(by_name)
-}
-
-fn iter_rows<'a, 'b: 'a>(
-    reader: &'b mut Reader<&'a [u8]>,
-) -> impl Iterator<Item = Result<BytesStart<'a>, quick_xml::Error>> + 'a {
-    std::iter::from_fn(|| match reader.read_event() {
-        Err(e) => Some(Err(e)),
-        Ok(Event::Empty(start)) => Some(Ok(start)),
-        _ => None,
-    })
+    let mut unknown_values: Vec<_> = unknown_values.into_iter().collect();
+    unknown_values.sort();
+    for (attr, value) in unknown_values {
+        log::warn!("Ignoring unknown {attr} '{value}' in GlyphData");
+    }
+    Ok(entries)
 }
 
 struct GlyphInfoFromXml {
     name: SmolStr,
     alt_names: Vec<SmolStr>,
-    category: Category,
+    category: Option<Category>,
     subcategory: Option<Subcategory>,
     codepoint: Option<u32>,
     script: Option<Script>,
     production_name: Option<ProductionName>,
 }
 
-fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError> {
+fn parse_glyph_xml(
+    item: BytesStart,
+    unknown_values: &mut HashSet<(&'static str, String)>,
+) -> Result<GlyphInfoFromXml, GlyphDataError> {
     let mut name = None;
     let mut category = None;
     let mut subcategory = None;
@@ -433,9 +514,10 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
             "unicode" => unicode = Some(value),
             "altNames" => alt_names = Some(value),
             "script" => script = Some(value),
-            "production" => production_name = Some(value.as_ref().into()),
-            "unicodeLegacy" | "case" | "direction" | "description" => (),
-            other => return Err(GlyphDataError::UnknownAttribute(other.to_owned())),
+            "production" if !value.is_empty() => production_name = Some(value.as_ref().into()),
+            // glyphsLib reads these files without a schema, and Glyphs.app writes many
+            // attributes (sortName, unicode2, decompose, anchors, ...) we have no use for.
+            _ => (),
         }
     }
 
@@ -443,31 +525,53 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
     let name = name
         .map(SmolStr::new)
         .ok_or_else(|| GlyphDataError::missing_attr("name", item.attributes_raw()))?;
-    let category = category
-        .ok_or_else(|| GlyphDataError::missing_attr("category", item.attributes_raw()))
-        .and_then(|cat| {
-            Category::from_str(cat.as_ref()).map_err(GlyphDataError::InvalidCategory)
-        })?;
-    let subcategory = subcategory
-        .map(|cat| Subcategory::from_str(cat.as_ref()).map_err(GlyphDataError::InvalidSubcategory))
-        .transpose()?;
+
+    // glyphsLib keeps attribute values as plain strings; values we can't represent
+    // are dropped (and reported), so the field falls back as though it were unset.
+    // Empty values are treated as unset, as they are falsy in glyphsLib.
+    fn parse_value<T>(
+        value: Option<Cow<str>>,
+        attr: &'static str,
+        parse: impl FnOnce(&str) -> Option<T>,
+        unknown_values: &mut HashSet<(&'static str, String)>,
+    ) -> Option<T> {
+        let value = value.filter(|value| !value.is_empty())?;
+        let parsed = parse(&value);
+        if parsed.is_none() {
+            unknown_values.insert((attr, value.into_owned()));
+        }
+        parsed
+    }
+    let category = parse_value(
+        category,
+        "category",
+        |v| Category::from_str(v).ok(),
+        unknown_values,
+    );
+    let subcategory = parse_value(
+        subcategory,
+        "subCategory",
+        |v| Subcategory::from_str(v).ok(),
+        unknown_values,
+    );
+    let codepoint = parse_value(
+        unicode,
+        "unicode",
+        |v| u32::from_str_radix(v, 16).ok(),
+        unknown_values,
+    );
+    // fontc doesn't use the script, and custom data often uses names we don't know
+    // ('Sans', 'Arabic Math Isolated', ...), so these aren't worth a warning.
     let script = script
-        .map(|cat| Script::from_str(cat.as_ref()).map_err(GlyphDataError::InvalidScript))
-        .transpose()?;
-    let codepoint = unicode
-        .map(|s| {
-            u32::from_str_radix(&s, 16).map_err(|inner| GlyphDataError::InvalidUnicode {
-                raw: s.into_owned(),
-                inner,
-            })
-        })
-        .transpose()?;
+        .filter(|value| !value.is_empty())
+        .and_then(|value| Script::from_str(&value).ok());
     let alt_names = alt_names
         .map(|names| {
             names
                 .as_ref()
                 .split(',')
                 .map(|name| SmolStr::from(name.trim()))
+                .filter(|name| !name.is_empty())
                 .collect()
         })
         .unwrap_or_default();
@@ -486,50 +590,110 @@ fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError>
 impl GlyphData {
     /// Get the info for the given name/codepoints, attempting to synthesize it if necessary
     ///
-    /// Returns, from most to least preferred:
+    /// Without overrides, the first of these that matches wins:
     ///
-    /// 1. The matching override value
-    /// 1. The matching value from bundled data
-    /// 1. A computed value based on name heuristics
+    /// 1. the bundled data, by name;
+    /// 2. the bundled data, by production name;
+    /// 3. the bundled data, by codepoint;
+    /// 4. a value computed from the name (suffixes, ligatures, `uniXXXX` names).
     ///
+    /// With overrides, the glyph is looked up twice, as glyphsLib does, and each
+    /// field comes from the second lookup when it has one, else from the first:
+    ///
+    /// 1. the lookup above, ignoring the overrides;
+    /// 2. a lookup that tries, in order:
+    ///    1. the overrides, by name, alternative name or production name;
+    ///    2. the bundled data, by name or production name;
+    ///    3. each codepoint in turn, in the overrides and then in the bundled data.
+    ///
+    ///    Fields it still lacks are then filled from the glyph name: a category,
+    ///    and with it a subcategory, guessed from the name, and a production
+    ///    name built from it, or else the glyph name itself.
     // See https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L94
     pub fn query(&self, name: &str, codepoints: Option<&[u32]>) -> Option<QueryResult> {
-        self.query_no_synthesis(name, codepoints)
-            // we don't have info for this glyph: can we synthesize it?
-            .or_else(|| self.construct_result(name))
+        let Some(overrides) = self.overrides.as_ref() else {
+            return Self::query_bundled(name, codepoints)
+                // we don't have info for this glyph: can we synthesize it?
+                .or_else(|| self.construct_result(name));
+        };
+
+        // glyphsLib looks the glyph up twice, once in the bundled data and once in the
+        // custom data, and then takes each field from the custom result when it is set
+        // (and differs), else from the bundled one:
+        // https://github.com/googlefonts/glyphsLib/blob/f40abf38fb5d/Lib/glyphsLib/builder/glyph.py#L111-L166
+        let bundled = GlyphData::default().query(name, codepoints);
+        let custom = self.query_custom(overrides, name, codepoints);
+        let bundled = bundled.map(Entry::from).unwrap_or_default();
+
+        let production_name = custom.production_name.or(bundled.production_name);
+        let category = match custom.category.or(bundled.category) {
+            Some(category) => category,
+            // if we have a production name but no category, 'Other' is good enough;
+            // but not if it is only the glyph name itself, which tells us nothing
+            None if production_name.as_ref().is_some_and(|prod| {
+                agl_compliant_name(name).as_deref() != Some(prod.to_string().as_str())
+            }) =>
+            {
+                Category::Other
+            }
+            None => return None,
+        };
+        Some(QueryResult {
+            category,
+            subcategory: custom.subcategory.or(bundled.subcategory),
+            codepoint: custom.codepoint.or(bundled.codepoint),
+            script: custom.script.or(bundled.script),
+            production_name,
+        })
     }
 
-    /// As [`Self::query`] but without a fallback to computed values.
+    /// The equivalent of glyphsLib's `get_glyph` with custom data.
     ///
-    /// Exists to enable result synthesis to query.
-    fn query_no_synthesis(&self, name: &str, codepoints: Option<&[u32]>) -> Option<QueryResult> {
-        // Override?
-        if let (Some(overrides), Some(overrides_by_codepoint)) = (
-            self.overrides.as_ref(),
-            self.overrrides_by_codepoint.as_ref(),
-        ) {
-            let override_result = overrides.get(name).or_else(|| {
+    /// <https://github.com/googlefonts/glyphsLib/blob/f40abf38fb5d/Lib/glyphsLib/glyphdata.py#L92-L151>
+    fn query_custom(&self, overrides: &Overrides, name: &str, codepoints: Option<&[u32]>) -> Entry {
+        // by name (custom, then bundled), and only then by each codepoint in turn
+        // (custom, then bundled), so custom data doesn't change the production name of
+        // a glyph the bundled data only knows by codepoint (e.g. 'uni0965' for
+        // 'dandaDouble').
+        // https://github.com/googlefonts/glyphsLib/blob/edf5ce51fdcd/Lib/glyphsLib/glyphdata.py#L173-L181
+        let attrs = self
+            .lookup_attributes(name)
+            .or_else(|| {
                 codepoints
                     .into_iter()
                     .flat_map(|cps| cps.iter())
-                    .find_map(|cp: &u32| {
-                        overrides_by_codepoint
-                            .get(cp)
-                            .and_then(|n| overrides.get(n))
+                    .find_map(|cp| {
+                        overrides.codepoints.get(cp).cloned().or_else(|| {
+                            bundled::find_pos_by_codepoint(*cp)
+                                .and_then(bundled::get)
+                                .map(Into::into)
+                        })
                     })
-            });
-            if let Some(override_result) = override_result {
-                return Some(QueryResult {
-                    category: override_result.category,
-                    subcategory: override_result.subcategory,
-                    codepoint: override_result.codepoint,
-                    script: override_result.script,
-                    production_name: override_result.production_name.clone(),
-                });
-            }
+            })
+            .unwrap_or_default();
+        // Where we give up on constructing a production name, glyphsLib falls back to
+        // the sanitized glyph name.
+        // https://github.com/googlefonts/glyphsLib/blob/f40abf38fb5d/Lib/glyphsLib/glyphdata.py#L380-L384
+        let production_name = attrs
+            .production_name
+            .or_else(|| self.construct_production_name(name))
+            .or_else(|| agl_compliant_name(name).map(|name| name.as_str().into()));
+        // a missing category means both are computed, even if subCategory was set
+        let (category, subcategory) = match attrs.category {
+            Some(category) => (Some(category), attrs.subcategory),
+            None => self.construct_category(name),
+        };
+        Entry {
+            category,
+            subcategory,
+            codepoint: attrs.codepoint,
+            script: attrs.script,
+            production_name,
         }
+    }
 
-        // No override, perhaps we have a direct answer?
+    /// Look up the bundled data by name, production name or codepoint, without synthesis.
+    fn query_bundled(name: &str, codepoints: Option<&[u32]>) -> Option<QueryResult> {
         bundled::find_pos_by_name(name)
             .or_else(|| find_pos_by_prod_name(name))
             .or_else(|| {
@@ -543,26 +707,32 @@ impl GlyphData {
             })
     }
 
+    /// Look up the attributes for a name, preferring the overrides, without synthesis.
+    ///
+    /// <https://github.com/googlefonts/glyphsLib/blob/f40abf38fb5d/Lib/glyphsLib/glyphdata.py#L154-L170>
+    fn lookup_attributes(&self, name: &str) -> Option<Entry> {
+        self.overrides
+            .as_ref()
+            .and_then(|overrides| overrides.get(name).cloned())
+            .or_else(|| Self::query_bundled(name, None).map(Into::into))
+    }
+
     fn contains_name(&self, name: &str) -> bool {
-        if let Some(overrides) = self.overrides.as_ref() {
-            let name: SmolStr = name.into();
-            if overrides.contains_key(&name) {
-                return true;
-            }
-        }
-        bundled::find_pos_by_name(name).is_some()
+        self.overrides
+            .as_ref()
+            .is_some_and(|overrides| overrides.get(name).is_some())
+            || bundled::find_pos_by_name(name).is_some()
     }
 
     fn construct_result(&self, name: &str) -> Option<QueryResult> {
-        let category_subcategory = self.construct_category(name);
+        let (category, subcategory) = self.construct_category(name);
         let production_name = self.construct_production_name(name);
-        if category_subcategory.is_none() && production_name.is_none() {
+        if category.is_none() && production_name.is_none() {
             return None;
         }
-        // if we have a production name but no category, 'Other' is good enough
-        let (category, subcategory) = category_subcategory.unwrap_or((Category::Other, None));
         Some(QueryResult {
-            category,
+            // if we have a production name but no category, 'Other' is good enough
+            category: category.unwrap_or(Category::Other),
             subcategory,
             codepoint: None,
             script: None,
@@ -571,39 +741,44 @@ impl GlyphData {
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L199
-    fn construct_category(&self, name: &str) -> Option<(Category, Option<Subcategory>)> {
+    //
+    // An entry without a category (only possible in custom data) still answers, and
+    // keeps its subcategory, as in glyphsLib.
+    fn construct_category(&self, name: &str) -> (Option<Category>, Option<Subcategory>) {
         // in glyphs.app '_' prefix means "no export"
         if name.starts_with('_') {
-            return None;
+            return (None, None);
         }
         let (base_name, _) = self.split_glyph_suffix(name);
-        if let Some(result) = self.query_no_synthesis(base_name, None) {
-            return Some((result.category, result.subcategory));
+        if let Some(attrs) = self.lookup_attributes(base_name) {
+            return (attrs.category, attrs.subcategory);
         }
 
         if let Some(base_names) = self.split_ligature_glyph_name(base_name) {
             let base_names_attributes: Vec<_> = base_names
                 .iter()
-                .map(|name| self.query_no_synthesis(name, None))
+                .map(|name| self.lookup_attributes(name))
                 .collect();
             if let Some(first_attr) = base_names_attributes
                 .first()
                 .expect("if we have base_names it is non-empty")
+                .as_ref()
+                .filter(|attr| attr.category.is_some())
             {
                 // if first is mark, we're a mark
-                if first_attr.category == Category::Mark {
-                    return Some((Category::Mark, first_attr.subcategory));
-                } else if first_attr.category == Category::Letter {
+                if first_attr.category == Some(Category::Mark) {
+                    return (Some(Category::Mark), first_attr.subcategory);
+                } else if first_attr.category == Some(Category::Letter) {
                     // if first is letter and rest are marks/separators, we use info from first
                     if base_names_attributes
                         .iter()
                         .skip(1)
-                        .map(|result| result.as_ref().map(|r| r.category))
+                        .map(|result| result.as_ref().and_then(|r| r.category))
                         .all(|cat| matches!(cat, None | Some(Category::Mark | Category::Separator)))
                     {
-                        return Some((first_attr.category, first_attr.subcategory));
+                        return (Some(Category::Letter), first_attr.subcategory);
                     } else {
-                        return Some((Category::Letter, Some(Subcategory::Ligature)));
+                        return (Some(Category::Letter), Some(Subcategory::Ligature));
                     }
                 }
             }
@@ -611,6 +786,9 @@ impl GlyphData {
 
         // finally fall back to checking the AGLFN for the base name:
         Self::construct_category_via_agl(base_name)
+            .map_or((None, None), |(category, subcategory)| {
+                (Some(category), subcategory)
+            })
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d5/Lib/glyphsLib/glyphdata.py#L351
@@ -630,7 +808,7 @@ impl GlyphData {
 
         // if we have a production name for the base name, append the suffix and go home
         let prod_name_with_suffix = suffix.and_then(|_| {
-            self.query_no_synthesis(base_name, None)
+            self.lookup_attributes(base_name)
                 .and_then(|result| result.production_name)
                 .map(|base_prod_name| {
                     let mut prod_name = base_prod_name.to_string();
@@ -651,7 +829,7 @@ impl GlyphData {
         let prod_names: Vec<SmolStr> = base_names
             .into_iter()
             .map(|name| {
-                self.query_no_synthesis(&name, None).and_then(|result| {
+                self.lookup_attributes(&name).and_then(|result| {
                     result.production_name.map(Into::into).or_else(|| {
                         // if no production name, return the name itself if already in AGLFN
                         fontdrasil::agl::char_for_agl_name(name.as_ref()).map(|_| name)
@@ -675,10 +853,9 @@ impl GlyphData {
                     uni_names.push(Cow::Borrowed(stripped));
                 } else if part.len() == 5 && is_u_name(part.as_ref()) {
                     uni_names.push(Cow::Borrowed(&part.as_str()[1..]));
-                } else if let Some(ch) = fontdrasil::agl::char_for_agl_name(part.as_ref()) {
-                    uni_names.push(Cow::Owned(format!("{:04X}", ch as u32)));
                 } else {
-                    panic!("Unexpected part while constructing production name: {part}");
+                    let ch = fontdrasil::agl::char_for_agl_name(part.as_ref())?;
+                    uni_names.push(Cow::Owned(format!("{:04X}", ch as u32)));
                 }
             }
             let mut result = String::from("uni");
@@ -780,6 +957,18 @@ impl GlyphData {
         }
         Some(parts)
     }
+}
+
+/// The glyph name without characters that aren't allowed in AGL names, if not too long.
+///
+/// <https://github.com/googlefonts/glyphsLib/blob/f40abf38fb5d/Lib/glyphsLib/glyphdata.py#L181-L187>
+fn agl_compliant_name(name: &str) -> Option<String> {
+    const MAX_GLYPH_NAME_LENGTH: usize = 63;
+    let clean: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '.')
+        .collect();
+    (clean.len() <= MAX_GLYPH_NAME_LENGTH).then_some(clean)
 }
 
 // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L261
@@ -1080,6 +1269,311 @@ mod tests {
         );
     }
 
+    /// Build a data set from XML strings, as if each were a separate file.
+    fn from_xml(xmls: &[&str]) -> GlyphData {
+        let mut overrides = Overrides::default();
+        for xml in xmls {
+            overrides.add_xml(xml.as_bytes()).unwrap();
+        }
+        GlyphData {
+            overrides: Some(overrides),
+        }
+    }
+
+    fn glyph_data_xml(rows: &str) -> String {
+        format!("<?xml version=\"1.0\"?>\n<glyphData>\n{rows}\n</glyphData>")
+    }
+
+    fn categories(data: &GlyphData, name: &str) -> Option<(Category, Option<Subcategory>)> {
+        data.query(name, None)
+            .map(|result| (result.category, result.subcategory))
+    }
+
+    fn production_name(data: &GlyphData, name: &str) -> Option<String> {
+        data.query(name, None)
+            .and_then(|result| result.production_name)
+            .map(|name| name.to_string())
+    }
+
+    // Modelled on the custom GlyphData files of real Noto projects (e.g. notofonts/math,
+    // notofonts/nag-mundari), which Glyphs.app writes with many attributes we don't use.
+    const GLYPHS_APP_STYLE_XML: &str = r#"<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE glyphData [
+<!ELEMENT glyphData (glyph)+>
+<!ATTLIST glyphData
+	format			CDATA		#IMPLIED>
+<!ELEMENT glyph EMPTY>
+<!ATTLIST glyph
+	unicode			CDATA		#IMPLIED
+	unicodeLegacy	CDATA		#IMPLIED
+	name			CDATA		#REQUIRED
+	sortName		CDATA		#IMPLIED
+	sortNameKeep	CDATA		#IMPLIED
+	category		CDATA		#REQUIRED
+	subCategory		CDATA		#IMPLIED
+	case			CDATA		#IMPLIED
+	direction		CDATA		#IMPLIED
+	script			CDATA		#IMPLIED
+	description		CDATA		#IMPLIED
+	production		CDATA		#IMPLIED
+	altNames		CDATA		#IMPLIED
+	decompose		CDATA		#IMPLIED
+	anchors			CDATA		#IMPLIED
+	marks			CDATA		#IMPLIED>
+]>
+<glyphData format="2">
+	<glyph unicode="1E4D0" name="o-example" sortName="ex00" category="Letter" script="example" production="u1E4D0" description="EXAMPLE LETTER O" />
+	<glyph unicode="1E4EC" name="toneabove-example" sortName="ex40" category="Mark" subCategory="Nonspacing" script="example" production="u1E4EC" anchors="_top, top" description="EXAMPLE SIGN TONE ABOVE" />
+	<glyph name="Asans" unicode="0041" unicode2="1D5A0" script="Sans" category="Letter" case="upper" />
+	<glyph name="parenleft.fence" category="Punctuation" subCategory="Fence" script="" decompose="parenleft" />
+	<glyph name="nocategory" production="uniE000" />
+</glyphData>
+"#;
+
+    #[test]
+    fn parse_glyphs_app_style_file() {
+        let data = from_xml(&[GLYPHS_APP_STYLE_XML]);
+        assert_eq!(
+            data.query("o-example", None).unwrap(),
+            QueryResult {
+                category: Category::Letter,
+                subcategory: None,
+                codepoint: Some(0x1E4D0),
+                script: None,
+                production_name: Some("u1E4D0".into()),
+            }
+        );
+        assert_eq!(
+            categories(&data, "toneabove-example"),
+            Some((Category::Mark, Some(Subcategory::Nonspacing)))
+        );
+        assert_eq!(categories(&data, "Asans"), Some((Category::Letter, None)));
+        // 'Fence' isn't a subcategory we know, so it is dropped and we fall back
+        // to what the bundled data says about 'parenleft'
+        assert_eq!(
+            categories(&data, "parenleft.fence"),
+            Some((Category::Punctuation, Some(Subcategory::Parenthesis)))
+        );
+        // no category, but a production name other than its own name
+        assert_eq!(
+            categories(&data, "nocategory"),
+            Some((Category::Other, None))
+        );
+        assert_eq!(production_name(&data, "nocategory"), Some("uniE000".into()));
+    }
+
+    #[test]
+    fn parse_entry_without_name_is_an_error() {
+        let xml = glyph_data_xml(r#"<glyph category="Letter" />"#);
+        assert!(matches!(
+            parse_entries(xml.as_bytes()),
+            Err(GlyphDataError::MissingRequiredAttribute {
+                missing: "name",
+                ..
+            })
+        ));
+    }
+
+    #[rstest]
+    #[case("<!-- custom marks -->", true)]
+    #[case("<?custom marks?>", true)]
+    #[case("", false)]
+    fn override_xml_preserves_all_entries(#[case] separator: &str, #[case] self_closing: bool) {
+        let ending = if self_closing { "/>" } else { "></glyph>" };
+        let xml = format!(
+            r#"{separator}<glyphData>
+            {separator}<glyph name="customMarkOne" category="Mark" subCategory="Nonspacing"{ending}
+            {separator}<glyph name="customMarkTwo" category="Mark" subCategory="Spacing"{ending}
+            {separator}</glyphData>{separator}"#
+        );
+        let data = from_xml(&[&xml]);
+        assert_eq!(
+            categories(&data, "customMarkOne"),
+            Some((Category::Mark, Some(Subcategory::Nonspacing)))
+        );
+        assert_eq!(
+            categories(&data, "customMarkTwo"),
+            Some((Category::Mark, Some(Subcategory::Spacing)))
+        );
+    }
+
+    #[rstest]
+    #[case(r#"<glyphData><glyph name="foo" category="Mark"/>"#)]
+    #[case(r#"<glyphData><glyph name="foo" category="Mark"/></wrong>"#)]
+    #[case(r#"<glyphData><glyph name="foo" category="Mark"/></glyphData><glyphData/>"#)]
+    #[case(r#"<glyphData><glyph name="foo" category="Mark"/></glyphData><!--"#)]
+    fn override_xml_rejects_incomplete_documents(#[case] xml: &str) {
+        assert!(Overrides::default().add_xml(xml.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn partial_override_keeps_bundled_fields() {
+        // only the category is set: subcategory and production name come from bundled data
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="gravecomb" category="Mark" />"#,
+        )]);
+        assert_eq!(
+            categories(&data, "gravecomb"),
+            Some((Category::Mark, Some(Subcategory::Nonspacing)))
+        );
+        assert_eq!(
+            production_name(&data, "gravecomb"),
+            Some("gravecomb".into())
+        );
+
+        // only the production name is set: categories come from bundled data
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="Aacute" production="AacuteProd" />"#,
+        )]);
+        assert_eq!(
+            categories(&data, "Aacute"),
+            categories(&GlyphData::default(), "Aacute")
+        );
+        assert_eq!(production_name(&data, "Aacute"), Some("AacuteProd".into()));
+    }
+
+    #[test]
+    fn override_lookup_order() {
+        // name, then alternative name, then production name
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="foo" category="Letter" production="bar" altNames="baz" />
+<glyph name="baz" category="Number" production="qux" altNames="bar" />
+<glyph name="quux" category="Symbol" production="qux" />"#,
+        )]);
+        assert_eq!(categories(&data, "foo"), Some((Category::Letter, None)));
+        // 'baz' is both a name and an alternative name: the name wins
+        assert_eq!(categories(&data, "baz"), Some((Category::Number, None)));
+        // 'bar' is both an alternative name and a production name: the alt name wins
+        assert_eq!(categories(&data, "bar"), Some((Category::Number, None)));
+        // 'qux' is only a production name, and the later entry wins
+        assert_eq!(categories(&data, "qux"), Some((Category::Symbol, None)));
+    }
+
+    #[test]
+    fn later_files_win() {
+        let first = glyph_data_xml(
+            r#"<glyph name="foo" category="Letter" production="first" />
+<glyph name="bar" category="Letter" />"#,
+        );
+        let second =
+            glyph_data_xml(r#"<glyph name="foo" category="Mark" subCategory="Nonspacing" />"#);
+        let data = from_xml(&[&first, &second]);
+        // the later file replaces the whole entry, not just the fields it sets
+        assert_eq!(
+            categories(&data, "foo"),
+            Some((Category::Mark, Some(Subcategory::Nonspacing)))
+        );
+        // (glyphsLib's fallback production name is the glyph name itself)
+        assert_eq!(production_name(&data, "foo"), Some("foo".into()));
+        // entries only in the earlier file are kept
+        assert_eq!(categories(&data, "bar"), Some((Category::Letter, None)));
+
+        let data = from_xml(&[&second, &first]);
+        assert_eq!(categories(&data, "foo"), Some((Category::Letter, None)));
+        assert_eq!(production_name(&data, "foo"), Some("first".into()));
+    }
+
+    #[test]
+    fn override_by_codepoint_only_for_unknown_names() {
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="custom" unicode="0301" category="Letter" />"#,
+        )]);
+        let codepoints = [0x0301];
+        // a name the bundled data knows is not overridden by codepoint...
+        assert_eq!(
+            data.query("acutecomb", Some(&codepoints))
+                .map(|r| (r.category, r.subcategory)),
+            Some((Category::Mark, Some(Subcategory::Nonspacing)))
+        );
+        // ...but a name nobody knows is
+        assert_eq!(
+            data.query("myacute", Some(&codepoints))
+                .map(|r| (r.category, r.subcategory)),
+            Some((Category::Letter, Some(Subcategory::Nonspacing)))
+        );
+    }
+
+    // Seen in Noto Sans Nag Mundari: custom data that doesn't mention a glyph the
+    // bundled data only knows by codepoint doesn't change its production name, as in
+    // Glyphs.app and glyphsLib >= 6.16.2 (before that, glyphsLib used the glyph name).
+    #[test]
+    fn unrelated_overrides_keep_production_name_found_by_codepoint() {
+        let codepoints = [0x0965];
+        assert_eq!(
+            GlyphData::default()
+                .query("dandaDouble", Some(&codepoints))
+                .unwrap()
+                .production_name,
+            Some("uni0965".into())
+        );
+        let data = from_xml(&[&glyph_data_xml(r#"<glyph name="foo" category="Letter" />"#)]);
+        let result = data.query("dandaDouble", Some(&codepoints)).unwrap();
+        assert_eq!(result.production_name, Some("uni0965".into()));
+        // the categories still come from the bundled data
+        assert_eq!(
+            (result.category, result.subcategory),
+            (Category::Punctuation, None)
+        );
+    }
+
+    #[test]
+    fn overrides_and_bundled_data_are_tried_for_each_codepoint_in_turn() {
+        // the first codepoint is only in the bundled data, the second only in the
+        // overrides: as in glyphsLib, the first codepoint wins
+        let codepoints = [0x0965, 0xE000];
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="foo" unicode="E000" category="Letter" production="foo" />"#,
+        )]);
+        let result = data.query("xyzzy", Some(&codepoints)).unwrap();
+        assert_eq!(result.production_name, Some("uni0965".into()));
+    }
+
+    #[test]
+    fn override_subcategory_without_category_is_kept() {
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="acutecomb" subCategory="Spacing" />"#,
+        )]);
+        assert_eq!(
+            categories(&data, "acutecomb"),
+            Some((Category::Mark, Some(Subcategory::Spacing)))
+        );
+    }
+
+    #[test]
+    fn unknown_glyph_has_no_info_with_overrides() {
+        let data = from_xml(&[&glyph_data_xml(r#"<glyph name="foo" category="Letter" />"#)]);
+        assert_eq!(GlyphData::default().query("xyzzy", None), None);
+        assert_eq!(data.query("xyzzy", None), None);
+    }
+
+    #[test]
+    fn synthesis_uses_overrides() {
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="foo" category="Mark" subCategory="Nonspacing" production="uniE000" />"#,
+        )]);
+        assert_eq!(
+            categories(&data, "foo.case"),
+            Some((Category::Mark, Some(Subcategory::Nonspacing)))
+        );
+        assert_eq!(
+            production_name(&data, "foo.case"),
+            Some("uniE000.case".into())
+        );
+    }
+
+    #[test]
+    fn synthesis_with_non_unicode_production_name() {
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="customOne" category="Letter" production="customProd"/>
+            <glyph name="customTwo" category="Letter" production="uniE001"/>"#,
+        )]);
+        let result = data.query("customOne_customTwo", None).unwrap();
+        assert_eq!(result.category, Category::Letter);
+        assert_eq!(result.subcategory, Some(Subcategory::Ligature));
+        // The custom names cannot form a Unicode name; keep the glyph's own name.
+        assert_eq!(result.production_name, Some("customOne_customTwo".into()));
+    }
+
     // The `Other` and `Conjunct` subcategories are the values used to tell Glyphs (and
     // fontc) that an underscore-named glyph is not a component-based ligature; if they
     // fail to parse, the explicit source override is silently dropped and the name-based
@@ -1287,18 +1781,12 @@ mod tests {
     #[test]
     fn unicode_legacy_not_found_by_codepoint() {
         // glyphsLib only indexes the unicode attribute, not unicodeLegacy
-        assert!(
-            GlyphData::new(None)
-                .query_no_synthesis("allahlong", Some(&[0xFDFA]))
-                .is_none()
-        );
+        assert!(GlyphData::query_bundled("allahlong", Some(&[0xFDFA])).is_none());
     }
 
     #[test]
     fn unicode_legacy_only_prod_name_result() {
-        let result = GlyphData::new(None)
-            .query_no_synthesis("uniFDFA", None)
-            .unwrap();
+        let result = GlyphData::query_bundled("uniFDFA", None).unwrap();
         assert_eq!(
             (
                 Category::Letter,
@@ -1342,8 +1830,7 @@ mod tests {
         case("lam_alef-ar.fina", Some("uni06440627.fina")),
     )]
     fn query_production_names(name: &str, expected: Option<&str>) {
-        let production_name = GlyphData::new(None)
-            .query_no_synthesis(name, None)
+        let production_name = GlyphData::query_bundled(name, None)
             .unwrap()
             .production_name
             .map(|p| p.to_string());
