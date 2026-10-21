@@ -153,8 +153,8 @@ pub fn version() -> String {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SourceOptions {
     /// Build the export with this name, for now a static instance, like
-    /// fontmake's `-i` but matched exactly, not as a regex: for a single-master
-    /// Glyphs source, the export's full name, `"{family} {name}"`.
+    /// fontmake's `-i` but matched exactly, not as a regex: for a Glyphs source
+    /// the export's full name, `"{family} {name}"`.
     pub export: Option<String>,
     /// User-provided GlyphData XML files, applied in order, later ones taking
     /// precedence (Glyphs sources only).

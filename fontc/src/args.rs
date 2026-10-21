@@ -101,7 +101,9 @@ pub struct Args {
 
     /// Build the export with this full name ("{family} {style}"): for now a
     /// static instance, like fontmake's -i but matched exactly, not as a regex
-    /// (only single-master Glyphs sources, for now).
+    /// (Glyphs sources only). In a multi-master source the instance must be on
+    /// a master, which is built alone; instances between masters aren't
+    /// interpolated.
     #[arg(long, value_name = "NAME")]
     pub export: Option<String>,
 

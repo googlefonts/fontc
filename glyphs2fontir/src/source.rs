@@ -82,8 +82,13 @@ impl GlyphsIrSource {
     ///
     /// The full name is the instance's family name (else the font's) and its
     /// name, joined by a space, as glyphsLib names the instances fontmake `-i`
-    /// matches. It must equal exactly one active static export, and the source
-    /// must build a static font.
+    /// matches. It must equal exactly one active static export.
+    ///
+    /// If the source would build a variable font, the export must be at the
+    /// location of one of its masters, and only that master is built: fontc
+    /// doesn't interpolate static instances. That also builds the static
+    /// fonts of sources whose masters aren't compatible ("bag of statics",
+    /// <https://github.com/googlefonts/fontc/issues/1288>).
     pub fn new(
         glyphs_file: &Path,
         export: Option<&str>,
