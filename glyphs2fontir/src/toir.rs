@@ -318,59 +318,37 @@ fn instance_full_name(font: &Font, instance: &Instance) -> String {
     format!("{} {}", instance_family_name(font, instance), instance.name)
 }
 
-/// Choose the export whose metadata a static build uses: the one active
-/// static export, or the one with the requested full name.
-///
-/// `is_static` says whether the font's axes are all points.
-fn static_export(
-    font: &Font,
-    is_static: bool,
-    requested: Option<&str>,
-) -> Result<Option<usize>, Error> {
-    let bad_source = |message: String| Err(BadSource::custom("<Glyphs source>", message).into());
-    if !is_static {
-        return match requested {
-            Some(name) => bad_source(format!(
-                "Cannot build export \"{name}\": selecting an export is only \
-                 supported for single-master sources for now"
-            )),
-            None => Ok(None),
-        };
-    }
-    let exports: Vec<_> = font
-        .instances
+fn bad_source<T>(message: String) -> Result<T, Error> {
+    Err(BadSource::custom("<Glyphs source>", message).into())
+}
+
+/// The active static instances, with their full names.
+fn static_exports(font: &Font) -> Vec<(usize, String)> {
+    font.instances
         .iter()
         .enumerate()
         .filter(|(_, instance)| instance.active && instance.type_ == InstanceType::Single)
         .map(|(index, instance)| (index, instance_full_name(font, instance)))
-        .collect();
-    let list = |exports: &[(usize, String)]| {
-        exports
-            .iter()
-            .map(|(_, name)| format!("\"{name}\""))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let Some(requested) = requested else {
-        if exports.len() > 1 {
-            // Without a selection, build the master as before.
-            warn!(
-                "Several active static exports ({}), building the master without \
-                 their metadata; select one by its full name with --export, or \
-                 disable all but one",
-                list(&exports)
-            );
-            return Ok(None);
-        }
-        return Ok(exports.first().map(|(index, _)| *index));
-    };
+        .collect()
+}
+
+fn list_exports(exports: &[(usize, String)]) -> String {
+    exports
+        .iter()
+        .map(|(_, name)| format!("\"{name}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The index of the one active static export with the requested full name.
+fn find_static_export(font: &Font, requested: &str) -> Result<usize, Error> {
+    let exports = static_exports(font);
     let matches: Vec<_> = exports
         .iter()
         .filter(|(_, name)| name == requested)
-        .cloned()
         .collect();
     match matches.as_slice() {
-        [(index, _)] => Ok(Some(*index)),
+        [(index, _)] => Ok(*index),
         [] => {
             // Say why an instance with that name doesn't count.
             let reason = font
@@ -388,7 +366,7 @@ fn static_export(
             let available = if exports.is_empty() {
                 "there are none".to_string()
             } else {
-                format!("available: {}", list(&exports))
+                format!("available: {}", list_exports(&exports))
             };
             bad_source(format!(
                 "No active static export named \"{requested}\"{reason}; {available}"
@@ -400,6 +378,148 @@ fn static_export(
             matches.len()
         )),
     }
+}
+
+/// Choose the export whose metadata a static build uses: the one active
+/// static export, or the one with the requested full name.
+///
+/// `font` must build a static font, i.e. its axes are all points.
+fn static_export(font: &Font, requested: Option<&str>) -> Result<Option<usize>, Error> {
+    if let Some(requested) = requested {
+        return find_static_export(font, requested).map(Some);
+    }
+    let exports = static_exports(font);
+    if exports.len() > 1 {
+        // Without a selection, build the master as before.
+        warn!(
+            "Several active static exports ({}), building the master without \
+             their metadata; select one by its full name with --export, or \
+             disable all but one",
+            list_exports(&exports)
+        );
+        return Ok(None);
+    }
+    Ok(exports.first().map(|(index, _)| *index))
+}
+
+/// Instantiate `font` at the location of its active static export named
+/// `full_name`, in the one case that needs no interpolation: the instance is
+/// on a master, so that master is kept alone (see [`Font::retain_master`]).
+///
+/// Locations are compared exactly, in design coordinates. Masters that aren't
+/// meant to interpolate ("bag of statics" sources, see
+/// <https://github.com/googlefonts/fontc/issues/1288>) can't make an instance
+/// anywhere else. Along an axis where all masters, virtual ones included, sit
+/// at the same location there is nothing to interpolate, so the instance is
+/// built from the master whatever its own location there. The instance keeps
+/// its location, at which its alternate layers then apply, as Glyphs 3.5
+/// exports it, and its classes. This is fontc's choice:
+/// glyphsLib only moves such an instance onto the masters when the axis has
+/// no mapping (<https://github.com/googlefonts/glyphsLib/pull/1197>), and
+/// otherwise fontmake silently builds nothing for it (e.g. Fuzzy Bubbles
+/// Regular, which Google Fonts ships).
+///
+/// Every glyph must have a layer for the kept master. Where fontmake would
+/// take a missing one from the other masters, this is an error.
+///
+/// The kept master's own data replaces the default master's, e.g. glyph
+/// categories are inferred from its anchors. fontmake instead gives every
+/// instance the default master's (ufo2ft's instantiator copies the default
+/// source's lib), so the GDEF classes of an instance on another master can
+/// differ.
+fn instantiate_on_master(font: &mut Font, full_name: &str) -> Result<(), Error> {
+    let instance_index = find_static_export(font, full_name)?;
+    let instance = &font.instances[instance_index];
+    let fmt_location = |values: &[OrderedFloat<f64>]| {
+        values
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if instance.axes_values.len() != font.axes.len() {
+        return bad_source(format!(
+            "Instance \"{full_name}\" has location ({}) but the font has {} axes",
+            fmt_location(&instance.axes_values),
+            font.axes.len()
+        ));
+    }
+    let varies: Vec<bool> = font
+        .axes
+        .iter()
+        .enumerate()
+        .map(|(idx, axis)| {
+            let first = font.masters[0].axes_values[idx];
+            font.masters.iter().any(|m| m.axes_values[idx] != first)
+                || font
+                    .virtual_masters
+                    .iter()
+                    .filter_map(|vm| vm.get(&axis.name))
+                    .any(|value| *value != first)
+        })
+        .collect();
+    let matches: Vec<_> = font
+        .masters
+        .iter()
+        .filter(|master| {
+            master
+                .axes_values
+                .iter()
+                .zip(&instance.axes_values)
+                .zip(&varies)
+                .all(|((master, instance), varies)| !varies || master == instance)
+        })
+        .collect();
+    let master_id = match matches.as_slice() {
+        [master] => master.id.clone(),
+        [] => {
+            return bad_source(format!(
+                "Cannot build export \"{full_name}\" at ({}): it is not at the location \
+                 of a master ({}), and fontc can't interpolate static instances",
+                fmt_location(&instance.axes_values),
+                font.masters
+                    .iter()
+                    .map(|m| format!("\"{}\" at ({})", m.name, fmt_location(&m.axes_values)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        _ => {
+            return bad_source(format!(
+                "Cannot build export \"{full_name}\": masters {} are all at its location",
+                matches
+                    .iter()
+                    .map(|m| format!("\"{}\"", m.name))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+    };
+    let missing: Vec<_> = font
+        .glyphs
+        .values()
+        .filter(|glyph| {
+            !glyph.layers.is_empty()
+                && !glyph.layers.iter().any(|layer| layer.layer_id == master_id)
+        })
+        .map(|glyph| format!("'{}'", glyph.name))
+        .collect();
+    if !missing.is_empty() {
+        let master_name = &font
+            .masters
+            .iter()
+            .find(|m| m.id == master_id)
+            .unwrap()
+            .name;
+        return bad_source(format!(
+            "Cannot build export \"{full_name}\" from master \"{master_name}\": \
+             glyphs {} have no layer for it",
+            missing.join(", ")
+        ));
+    }
+    let retained = font.retain_master(&master_id);
+    debug_assert!(retained, "{master_id} is one of the font's masters");
+    Ok(())
 }
 
 /// A [Font] with some prework to convert to IR predone.
@@ -428,29 +548,43 @@ pub(crate) struct FontInfo {
 impl FontInfo {
     /// Prepare `font` for IR, building the static export whose full name is
     /// `export`, if given.
+    ///
+    /// When the font would otherwise build a variable font, the export must
+    /// be at the location of a master, and the font is reduced to that master
+    /// (see [`Font::retain_master`]), so the rest of the pipeline sees a
+    /// single-master static source.
     pub(crate) fn new(mut font: Font, export: Option<&str>) -> Result<Self, Error> {
-        let master_indices: HashMap<_, _> = font
-            .masters
-            .iter()
-            .enumerate()
-            .map(|(idx, m)| (m.id.clone(), idx))
-            .collect();
-
-        let axes = ir_axes(&font)?;
+        let mut axes = ir_axes(&font)?;
+        if let Some(name) = export
+            && !axes.iter().all(|axis| axis.is_point())
+        {
+            instantiate_on_master(&mut font, name)?;
+            // one master, no virtual masters: every axis is a point
+            axes = ir_axes(&font)?;
+            debug_assert!(axes.iter().all(|axis| axis.is_point()), "{axes:?}");
+        }
         // Like StaticMetadata, a font whose axes are all points is static.
-        let is_static = axes.iter().all(|axis| axis.is_point());
-        let export_index = static_export(&font, is_static, export)?;
-        if is_static {
+        let export_index = if axes.iter().all(|axis| axis.is_point()) {
+            let export_index = static_export(&font, export)?;
             // built at the export's location, else at the master's
             let location = match export_index {
                 Some(index) => font.instances[index].axes_values.clone(),
                 None => font.default_master().axes_values.clone(),
             };
             font.apply_alternate_layers(&location);
+            export_index
         } else {
             // so that the alternate layers of components are swapped in composites
             font.align_bracket_layers();
-        }
+            None
+        };
+
+        let master_indices: HashMap<_, _> = font
+            .masters
+            .iter()
+            .enumerate()
+            .map(|(idx, m)| (m.id.clone(), idx))
+            .collect();
 
         let locations: HashMap<_, _> = font
             .masters

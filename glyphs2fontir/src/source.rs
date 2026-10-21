@@ -82,8 +82,13 @@ impl GlyphsIrSource {
     ///
     /// The full name is the instance's family name (else the font's) and its
     /// name, joined by a space, as glyphsLib names the instances fontmake `-i`
-    /// matches. It must equal exactly one active static export, and the source
-    /// must build a static font.
+    /// matches. It must equal exactly one active static export.
+    ///
+    /// If the source would build a variable font, the export must be at the
+    /// location of one of its masters, and only that master is built: fontc
+    /// doesn't interpolate static instances. That also builds the static
+    /// fonts of sources whose masters aren't compatible ("bag of statics",
+    /// <https://github.com/googlefonts/fontc/issues/1288>).
     pub fn new(
         glyphs_file: &Path,
         export: Option<&str>,
@@ -3028,8 +3033,12 @@ mod tests {
     }
 
     fn build_static_metadata(glyphs_file: PathBuf) -> (impl Source, Context) {
-        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let (source, context) = context_for(&glyphs_file);
+        build_static_metadata_from(source, context)
+    }
+
+    fn build_static_metadata_from<S: Source>(source: S, context: Context) -> (S, Context) {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let task_context = context.copy_for_work(
             Access::None,
             AccessBuilder::new()
@@ -3048,6 +3057,10 @@ mod tests {
 
     fn build_global_metrics(glyphs_file: PathBuf) -> (impl Source, Context) {
         let (source, context) = build_static_metadata(glyphs_file);
+        build_global_metrics_from(source, context)
+    }
+
+    fn build_global_metrics_from<S: Source>(source: S, context: Context) -> (S, Context) {
         let task_context = context.copy_for_work(
             Access::Variant(WorkId::StaticMetadata),
             Access::Variant(WorkId::GlobalMetrics),
@@ -3099,6 +3112,15 @@ mod tests {
         }
 
         (source, context)
+    }
+
+    /// Build the glyph IR of `source`, with what it needs.
+    fn build_glyphs_from(source: GlyphsIrSource) -> Context {
+        let (source, context) =
+            build_static_metadata_from(source, Context::new_root(Flags::default()));
+        let (source, context) = build_global_metrics_from(source, context);
+        build_glyphs(&source, &context).unwrap();
+        context
     }
 
     fn build_glyphs(source: &impl Source, context: &Context) -> Result<(), Error> {
@@ -5551,28 +5573,278 @@ instances = ({ name = Bold; });
     }
 
     #[test]
-    fn export_selection_requires_static_source() {
-        // Instances of a variable source would need interpolation.
+    fn export_selection_on_a_variable_source_builds_its_master() {
+        // fontc can't tell a variable source from a "bag of statics" (#1288):
+        // gftools' buildVariable isn't in the source. An instance on a master
+        // builds that master as a static font; one between masters would need
+        // interpolation.
         let data = r#"{
 .formatVersion = 3;
 familyName = Example;
 axes = ({ name = Weight; tag = wght; });
 fontMaster = ({ id = m01; axesValues = (400); }, { id = m02; axesValues = (700); });
 unitsPerEm = 1000;
-instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues = (700); });
+instances = (
+{ name = Regular; axesValues = (400); },
+{ name = Medium; axesValues = (550); },
+{ name = Bold; axesValues = (700); }
+);
 }"#;
-        let message = select_export(data, "Example Bold")
-            .expect_err("a variable source has no static export to select")
-            .to_string();
-        assert!(message.contains("single-master"), "{message}");
-        // without --export it still builds a variable font
+        let source = select_export(data, "Example Bold").unwrap();
+        let font_info = &source.font_info;
+        assert_eq!(font_info.export_index, Some(2));
         assert_eq!(
-            GlyphsIrSource::new_from_memory(data, None)
+            font_info
+                .font
+                .masters
+                .iter()
+                .map(|m| m.id.as_str())
+                .collect::<Vec<_>>(),
+            ["m02"]
+        );
+        assert!(font_info.axes.iter().all(|axis| axis.is_point()));
+
+        let message = select_export(data, "Example Medium")
+            .expect_err("an instance between masters can't be built from one")
+            .to_string();
+        assert!(message.contains("Example Medium"), "{message}");
+        // without --export it still builds a variable font
+        let source = GlyphsIrSource::new_from_memory(data, None).unwrap();
+        assert_eq!(source.font_info.export_index, None);
+        assert_eq!(source.font_info.font.masters.len(), 2);
+    }
+
+    fn bag_of_statics(export: &str) -> Result<GlyphsIrSource, Error> {
+        GlyphsIrSource::new(
+            &glyphs3_dir().join("BagOfStatics.glyphs"),
+            Some(export),
+            &[],
+        )
+    }
+
+    #[test]
+    fn bag_of_statics_keeps_only_the_instance_master() {
+        // what the reduction keeps is tested with Font::retain_master; here,
+        // that the instance's master is the one kept and the font is static
+        for (instance, index, kept, x_height) in [
+            ("Bag Of Statics Regular", 0, "m01", 500.0),
+            ("Bag Of Statics Bold", 1, "m02", 540.0),
+        ] {
+            let font_info = bag_of_statics(instance)
+                .unwrap_or_else(|error| panic!("{instance}: {error}"))
+                .font_info;
+            let font = &font_info.font;
+            assert_eq!(font_info.export_index, Some(index), "{instance}");
+            assert!(
+                font_info.axes.iter().all(|axis| axis.is_point()),
+                "{instance}"
+            );
+            assert_eq!(
+                font.masters
+                    .iter()
+                    .map(|m| m.id.as_str())
+                    .collect::<Vec<_>>(),
+                [kept],
+                "{instance}"
+            );
+            assert_eq!(font.masters[0].x_height(), Some(x_height), "{instance}");
+        }
+    }
+
+    #[test]
+    fn bag_of_statics_instance_between_masters_is_an_error() {
+        let message = bag_of_statics("Bag Of Statics Medium")
+            .expect_err("incompatible masters can't be interpolated")
+            .to_string();
+        for expected in ["Bag Of Statics Medium", "550", "Regular", "Bold"] {
+            assert!(message.contains(expected), "{expected}: {message}");
+        }
+    }
+
+    #[test]
+    fn bag_of_statics_axis_without_variation_matches_any_instance_location() {
+        // Fuzzy Bubbles: both masters are at width 5, the Regular instance at
+        // 100. Along an axis where the masters don't vary there is nothing to
+        // interpolate, so the instance is built from the master at its weight.
+        // (fontmake builds nothing for such an instance, glyphsLib #1197
+        // notwithstanding.)
+        let font_info = bag_of_statics("Bag Of Statics Regular").unwrap().font_info;
+        assert_eq!(font_info.font.masters[0].id, "m01");
+        // the instance keeps its own location
+        assert_eq!(
+            font_info.font.instances[0].axes_values,
+            [OrderedFloat(400.0), OrderedFloat(100.0)]
+        );
+        // but an axis along which the masters do vary must match exactly
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; }, { name = Width; tag = wdth; });
+fontMaster = ({ id = m01; axesValues = (400, 5); }, { id = m02; axesValues = (700, 10); });
+unitsPerEm = 1000;
+instances = ({ name = Regular; axesValues = (400, 100); }, { name = Bold; axesValues = (700, 10); });
+}"#;
+        assert!(select_export(data, "Example Regular").is_err());
+        assert_eq!(
+            select_export(data, "Example Bold")
                 .unwrap()
                 .font_info
-                .export_index,
-            None
+                .font
+                .masters[0]
+                .id,
+            "m02"
         );
+    }
+
+    #[test]
+    fn bag_of_statics_applies_the_master_alternate_layers() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = ({ id = m01; axesValues = (400); }, { id = m02; axesValues = (700); });
+glyphs = ({ glyphname = a; layers = (
+{ layerId = m01; width = 500; },
+{ layerId = m02; width = 600; },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 300; }); }; layerId = alt01; width = 510; },
+{ associatedMasterId = m02; attr = { axisRules = ({ min = 300; }); }; layerId = alt02; width = 610; }
+); });
+unitsPerEm = 1000;
+instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues = (700); });
+}"#;
+        // each instance gets the alternate layer of its own master
+        for (instance, width) in [("Example Regular", 510.0), ("Example Bold", 610.0)] {
+            let glyph = &select_export(data, instance).unwrap().font_info.font.glyphs["a"];
+            assert!(glyph.bracket_layers.is_empty(), "{instance}");
+            assert_eq!(glyph.layers.len(), 1, "{instance}");
+            assert_eq!(glyph.layers[0].width, width, "{instance}");
+        }
+    }
+
+    // An alternate layer sits at its master's location: at Bold, where the rule
+    // applies, Glyphs 3.5 exports Bold's master layer, not Regular's alternate.
+    #[test]
+    fn bag_of_statics_ignores_the_alternate_layers_of_other_masters() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = ({ id = m01; axesValues = (400); }, { id = m02; axesValues = (700); });
+glyphs = ({ glyphname = a; layers = (
+{ layerId = m01; width = 500; },
+{ layerId = m02; width = 600; },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 600; }); }; layerId = alt01; width = 511; }
+); });
+unitsPerEm = 1000;
+instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues = (700); });
+}"#;
+        let glyph = &select_export(data, "Example Bold")
+            .unwrap()
+            .font_info
+            .font
+            .glyphs["a"];
+        assert!(glyph.bracket_layers.is_empty());
+        assert_eq!(glyph.layers.len(), 1);
+        assert_eq!(glyph.layers[0].width, 600.0);
+    }
+
+    // Alternate layers apply at the instance's own location, also on an axis
+    // the masters don't vary along: Glyphs 3.5 exports Regular (width 100,
+    // masters at 5) with the alternate for width 50 and up.
+    #[test]
+    fn bag_of_statics_alternate_layers_apply_at_the_instance_location() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; }, { name = Width; tag = wdth; });
+fontMaster = ({ id = m01; axesValues = (400, 5); }, { id = m02; axesValues = (700, 5); });
+glyphs = ({ glyphname = a; layers = (
+{ layerId = m01; width = 500; },
+{ layerId = m02; width = 600; },
+{ associatedMasterId = m01; attr = { axisRules = ({}, { min = 50; }); }; layerId = alt01; width = 777; }
+); });
+unitsPerEm = 1000;
+instances = ({ name = Regular; axesValues = (400, 100); }, { name = Bold; axesValues = (700, 5); });
+}"#;
+        let glyph = &select_export(data, "Example Regular")
+            .unwrap()
+            .font_info
+            .font
+            .glyphs["a"];
+        assert_eq!(glyph.layers[0].width, 777.0);
+    }
+
+    #[test]
+    fn bag_of_statics_drops_virtual_masters() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; }, { name = Optical; tag = opsz; });
+customParameters = ({ name = "Virtual Master"; value = ({ Axis = Weight; Location = 400; }, { Axis = Optical; Location = 72; }); });
+fontMaster = ({ id = m01; axesValues = (400, 12); }, { id = m02; axesValues = (700, 12); });
+unitsPerEm = 1000;
+instances = ({ name = Regular; axesValues = (400, 12); }, { name = Display; axesValues = (400, 72); });
+}"#;
+        let font_info = select_export(data, "Example Regular").unwrap().font_info;
+        assert!(font_info.font.virtual_masters.is_empty());
+        assert!(font_info.axes.iter().all(|axis| axis.is_point()));
+        // the virtual master makes Optical vary, so it must match exactly
+        assert!(select_export(data, "Example Display").is_err());
+    }
+
+    #[test]
+    fn bag_of_statics_keeps_linked_metrics() {
+        // "Link Metrics With Master" takes the widths and kerning from another
+        // master, which must survive even though that master is dropped.
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = (
+{ id = m01; name = Regular; axesValues = (400); },
+{ id = m02; name = Bold; axesValues = (700); customParameters = ({ name = "Link Metrics With Master"; value = m01; }); }
+);
+glyphs = ({ glyphname = a; layers = ({ layerId = m01; width = 500; }, { layerId = m02; width = 600; }); });
+kerningLTR = { m01 = { a = { a = -10; }; }; };
+unitsPerEm = 1000;
+instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues = (700); });
+}"#;
+        let source = select_export(data, "Example Bold").unwrap();
+        let font = &source.font_info.font;
+        assert_eq!(
+            font.kerning_ltr
+                .get(font.kerning_source_id("m02"))
+                .and_then(|kerns| kerns.get(&("a".into(), "a".into()))),
+            Some(&OrderedFloat(-10.0))
+        );
+        let context = build_glyphs_from(source);
+        let glyph = context.get_glyph("a");
+        let widths: Vec<_> = glyph.sources().values().map(|i| i.width).collect();
+        assert_eq!(widths, [500.0]);
+    }
+
+    #[test]
+    fn bag_of_statics_glyph_without_a_layer_for_the_master_is_an_error() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = ({ id = m01; name = Regular; axesValues = (400); }, { id = m02; name = Bold; axesValues = (700); });
+glyphs = (
+{ glyphname = a; layers = ({ layerId = m01; width = 500; }, { layerId = m02; width = 600; }); },
+{ glyphname = b; layers = ({ layerId = m01; width = 520; }); }
+);
+unitsPerEm = 1000;
+instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues = (700); });
+}"#;
+        assert!(select_export(data, "Example Regular").is_ok());
+        let message = select_export(data, "Example Bold")
+            .expect_err("'b' has nothing to build Bold from")
+            .to_string();
+        for expected in ["Example Bold", "\"Bold\"", "'b'"] {
+            assert!(message.contains(expected), "{expected}: {message}");
+        }
+        assert!(!message.contains("'a'"), "{message}");
     }
 
     #[test]
