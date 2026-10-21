@@ -318,59 +318,37 @@ fn instance_full_name(font: &Font, instance: &Instance) -> String {
     format!("{} {}", instance_family_name(font, instance), instance.name)
 }
 
-/// Choose the export whose metadata a static build uses: the one active
-/// static export, or the one with the requested full name.
-///
-/// `is_static` says whether the font's axes are all points.
-fn static_export(
-    font: &Font,
-    is_static: bool,
-    requested: Option<&str>,
-) -> Result<Option<usize>, Error> {
-    let bad_source = |message: String| Err(BadSource::custom("<Glyphs source>", message).into());
-    if !is_static {
-        return match requested {
-            Some(name) => bad_source(format!(
-                "Cannot build export \"{name}\": selecting an export is only \
-                 supported for single-master sources for now"
-            )),
-            None => Ok(None),
-        };
-    }
-    let exports: Vec<_> = font
-        .instances
+fn bad_source<T>(message: String) -> Result<T, Error> {
+    Err(BadSource::custom("<Glyphs source>", message).into())
+}
+
+/// The active static instances, with their full names.
+fn static_exports(font: &Font) -> Vec<(usize, String)> {
+    font.instances
         .iter()
         .enumerate()
         .filter(|(_, instance)| instance.active && instance.type_ == InstanceType::Single)
         .map(|(index, instance)| (index, instance_full_name(font, instance)))
-        .collect();
-    let list = |exports: &[(usize, String)]| {
-        exports
-            .iter()
-            .map(|(_, name)| format!("\"{name}\""))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let Some(requested) = requested else {
-        if exports.len() > 1 {
-            // Without a selection, build the master as before.
-            warn!(
-                "Several active static exports ({}), building the master without \
-                 their metadata; select one by its full name with --export, or \
-                 disable all but one",
-                list(&exports)
-            );
-            return Ok(None);
-        }
-        return Ok(exports.first().map(|(index, _)| *index));
-    };
+        .collect()
+}
+
+fn list_exports(exports: &[(usize, String)]) -> String {
+    exports
+        .iter()
+        .map(|(_, name)| format!("\"{name}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The index of the one active static export with the requested full name.
+fn find_static_export(font: &Font, requested: &str) -> Result<usize, Error> {
+    let exports = static_exports(font);
     let matches: Vec<_> = exports
         .iter()
         .filter(|(_, name)| name == requested)
-        .cloned()
         .collect();
     match matches.as_slice() {
-        [(index, _)] => Ok(Some(*index)),
+        [(index, _)] => Ok(*index),
         [] => {
             // Say why an instance with that name doesn't count.
             let reason = font
@@ -388,7 +366,7 @@ fn static_export(
             let available = if exports.is_empty() {
                 "there are none".to_string()
             } else {
-                format!("available: {}", list(&exports))
+                format!("available: {}", list_exports(&exports))
             };
             bad_source(format!(
                 "No active static export named \"{requested}\"{reason}; {available}"
@@ -400,6 +378,41 @@ fn static_export(
             matches.len()
         )),
     }
+}
+
+/// Choose the export whose metadata a static build uses: the one active
+/// static export, or the one with the requested full name.
+///
+/// `is_static` says whether the font's axes are all points.
+fn static_export(
+    font: &Font,
+    is_static: bool,
+    requested: Option<&str>,
+) -> Result<Option<usize>, Error> {
+    if !is_static {
+        return match requested {
+            Some(name) => bad_source(format!(
+                "Cannot build export \"{name}\": selecting an export is only \
+                 supported for single-master sources for now"
+            )),
+            None => Ok(None),
+        };
+    }
+    if let Some(requested) = requested {
+        return find_static_export(font, requested).map(Some);
+    }
+    let exports = static_exports(font);
+    if exports.len() > 1 {
+        // Without a selection, build the master as before.
+        warn!(
+            "Several active static exports ({}), building the master without \
+             their metadata; select one by its full name with --export, or \
+             disable all but one",
+            list_exports(&exports)
+        );
+        return Ok(None);
+    }
+    Ok(exports.first().map(|(index, _)| *index))
 }
 
 /// A [Font] with some prework to convert to IR predone.
