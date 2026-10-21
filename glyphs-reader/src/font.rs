@@ -209,6 +209,10 @@ impl Kerning {
         self.0.iter()
     }
 
+    fn retain_masters(&mut self, keep: impl Fn(&str) -> bool) {
+        self.0.retain(|master_id, _| keep(master_id));
+    }
+
     fn insert(
         &mut self,
         master_id: String,
@@ -4648,6 +4652,63 @@ impl Font {
         }
     }
 
+    /// Reduce the font to the master with the given id, as if it were the only
+    /// one, e.g. to build a static instance at that master's location from a
+    /// source whose masters are not compatible.
+    ///
+    /// The other masters go, with everything keyed by their ids: their layers,
+    /// alternate (bracket) layers and kerning. So do the virtual masters and
+    /// all intermediate (brace) layers, the kept master's too: they are
+    /// elsewhere in the variation space. The kept master's own layers,
+    /// alternate layers and kerning remain. If it links its metrics to another
+    /// master ("Link Metrics With Master"), the kerning of that master remains
+    /// too, and the widths of its layers are copied onto the kept master's.
+    /// Axes, axis mappings and instances are unchanged, so instances keep their
+    /// locations and classes.
+    ///
+    /// The kept master becomes the default master, so whatever is taken from
+    /// the default master (e.g. glyph categories inferred from its anchors) now
+    /// comes from it.
+    ///
+    /// Returns false, leaving the font unchanged, if no master has that id.
+    pub fn retain_master(&mut self, master_id: &str) -> bool {
+        let Some(index) = self.masters.iter().position(|m| m.id == master_id) else {
+            return false;
+        };
+        let master = self.masters.swap_remove(index);
+        let metrics_source_id = master.metrics_source_id.clone();
+        self.masters = vec![master];
+        self.default_master_idx = 0;
+        self.virtual_masters.clear();
+        for glyph in self.glyphs.values_mut() {
+            // Resolve the linked widths before the layers they come from go,
+            // like glyphsLib's effective_width: master layers only.
+            if let Some(source_id) = metrics_source_id.as_deref()
+                && let Some(linked) = glyph.layers.iter().find(|l| l.layer_id == source_id)
+            {
+                let (width, vert_width, vert_origin) =
+                    (linked.width, linked.vert_width, linked.vert_origin);
+                for layer in glyph.layers.iter_mut() {
+                    if layer.layer_id == master_id {
+                        layer.width = width;
+                        layer.vert_width = vert_width.or(layer.vert_width);
+                        layer.vert_origin = vert_origin.or(layer.vert_origin);
+                    }
+                }
+            }
+            glyph
+                .layers
+                .retain(|layer| layer.master_id() == master_id && !layer.is_intermediate());
+            glyph
+                .bracket_layers
+                .retain(|layer| layer.master_id() == master_id);
+        }
+        let keep_kerning = |id: &str| id == master_id || metrics_source_id.as_deref() == Some(id);
+        self.kerning_ltr.retain_masters(keep_kerning);
+        self.kerning_rtl.retain_masters(keep_kerning);
+        true
+    }
+
     /// Whether any glyph in the font uses `glyph_name` as a component.
     pub fn is_used_as_component(&self, glyph_name: &str) -> bool {
         self.glyphs.values().any(|g| {
@@ -7786,6 +7847,38 @@ name = _corner.hi;
         assert_eq!(link_target, Some("m02"));
         assert_eq!(font.masters[1].id, "m02");
         assert_eq!(font.masters[1].name, "Bold");
+    }
+
+    #[test]
+    fn retain_master() {
+        let font = Font::load(&glyphs3_dir().join("BagOfStatics.glyphs")).unwrap();
+        let mut unknown = font.clone();
+        assert!(!unknown.retain_master("nope"));
+        assert_eq!(unknown, font);
+
+        for kept in ["m01", "m02"] {
+            let mut reduced = font.clone();
+            assert!(reduced.retain_master(kept));
+            assert_eq!(
+                reduced
+                    .masters
+                    .iter()
+                    .map(|m| m.id.as_str())
+                    .collect::<Vec<_>>(),
+                [kept]
+            );
+            assert_eq!(reduced.default_master_idx, 0);
+            // m01's brace layer goes too: it's elsewhere in the variation space
+            let layers: Vec<_> = reduced.glyphs["a"]
+                .layers
+                .iter()
+                .map(|l| l.layer_id.as_str())
+                .collect();
+            assert_eq!(layers, [kept]);
+            assert_eq!(reduced.kerning_ltr.keys().collect::<Vec<_>>(), [kept]);
+            assert_eq!(reduced.axes, font.axes);
+            assert_eq!(reduced.instances, font.instances);
+        }
     }
 
     #[test]
