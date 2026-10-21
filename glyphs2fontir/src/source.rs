@@ -4905,6 +4905,65 @@ mod tests {
         )
     }
 
+    // A static font is built at one location, where each alternate layer either
+    // applies or doesn't: the one that applies replaces the master layer, and no
+    // bracket glyphs or feature variations are built.
+    #[test]
+    fn static_source_applies_alternate_layers() {
+        // with one master the outlines are the same wherever the instance sits, but
+        // the alternate layer rules are checked at its location: the alternate
+        // applies at the instance (300), not at the master (400)
+        for (instance, width) in [("", 610.0), ("exports = 0;", 500.0)] {
+            let data = format!(
+                r#"{{
+.formatVersion = 3;
+familyName = Example;
+axes = ({{ name = Weight; tag = wght; }});
+fontMaster = ({{ id = m01; axesValues = (400); }});
+glyphs = ({{ glyphname = a; layers = (
+{{ layerId = m01; width = 500; }},
+{{ associatedMasterId = m01; attr = {{ axisRules = ({{ max = 350; }}); }}; layerId = alt; width = 610; }}
+); }});
+instances = ({{ name = Light; axesValues = (300); {instance} }});
+unitsPerEm = 1000;
+}}"#
+            );
+            let source = GlyphsIrSource::new_from_memory(&data, None).unwrap();
+            let glyph = &source.font_info.font.glyphs["a"];
+            assert!(glyph.bracket_layers.is_empty(), "{instance}");
+            assert_eq!(glyph.layers[0].width, width, "{instance}");
+        }
+    }
+
+    // 'b' has 'a' as a component and an alternate of its own. At wght 400 both
+    // a's alternate (min 350) and b's (min 380) apply: Glyphs 3.5 exports 'b'
+    // from its own alternate.
+    #[test]
+    fn static_source_composite_uses_its_own_alternate_layer() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = ({ id = m01; axesValues = (400); });
+glyphs = (
+{ glyphname = a; layers = (
+{ layerId = m01; width = 500; },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 350; }); }; layerId = a1; width = 600; }
+); },
+{ glyphname = b; layers = (
+{ layerId = m01; width = 500; shapes = ({ ref = a; }); },
+{ associatedMasterId = m01; attr = { axisRules = ({ min = 380; }); }; layerId = b1; width = 700; }
+); }
+);
+instances = ({ name = Regular; axesValues = (400); });
+unitsPerEm = 1000;
+}"#;
+        let source = GlyphsIrSource::new_from_memory(data, None).unwrap();
+        let glyphs = &source.font_info.font.glyphs;
+        assert_eq!(glyphs["a"].layers[0].width, 600.0);
+        assert_eq!(glyphs["b"].layers[0].width, 700.0);
+    }
+
     #[test]
     fn glyphs2_delete_default_point_axes() {
         // in old glyphs sources, if the Axes custom parameter is not used, we
