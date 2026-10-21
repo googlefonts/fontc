@@ -604,8 +604,7 @@ impl GlyphData {
     /// 2. a lookup that tries, in order:
     ///    1. the overrides, by name, alternative name or production name;
     ///    2. the bundled data, by name or production name;
-    ///    3. the overrides, by codepoint;
-    ///    4. the bundled data, by codepoint.
+    ///    3. each codepoint in turn, in the overrides and then in the bundled data.
     ///
     ///    Fields it still lacks are then filled from the glyph name: a category,
     ///    and with it a subcategory, guessed from the name, and a production
@@ -652,9 +651,10 @@ impl GlyphData {
     ///
     /// <https://github.com/googlefonts/glyphsLib/blob/f40abf38fb5d/Lib/glyphsLib/glyphdata.py#L92-L151>
     fn query_custom(&self, overrides: &Overrides, name: &str, codepoints: Option<&[u32]>) -> Entry {
-        // by name (custom, then bundled), and only then by codepoint (custom, then
-        // bundled), so custom data doesn't change the production name of a glyph the
-        // bundled data only knows by codepoint (e.g. 'uni0965' for 'dandaDouble').
+        // by name (custom, then bundled), and only then by each codepoint in turn
+        // (custom, then bundled), so custom data doesn't change the production name of
+        // a glyph the bundled data only knows by codepoint (e.g. 'uni0965' for
+        // 'dandaDouble').
         // https://github.com/googlefonts/glyphsLib/blob/edf5ce51fdcd/Lib/glyphsLib/glyphdata.py#L173-L181
         let attrs = self
             .lookup_attributes(name)
@@ -662,9 +662,14 @@ impl GlyphData {
                 codepoints
                     .into_iter()
                     .flat_map(|cps| cps.iter())
-                    .find_map(|cp| overrides.codepoints.get(cp).cloned())
+                    .find_map(|cp| {
+                        overrides.codepoints.get(cp).cloned().or_else(|| {
+                            bundled::find_pos_by_codepoint(*cp)
+                                .and_then(bundled::get)
+                                .map(Into::into)
+                        })
+                    })
             })
-            .or_else(|| Self::query_bundled(name, codepoints).map(Into::into))
             .unwrap_or_default();
         // Where we give up on constructing a production name, glyphsLib falls back to
         // the sanitized glyph name.
@@ -676,10 +681,7 @@ impl GlyphData {
         // a missing category means both are computed, even if subCategory was set
         let (category, subcategory) = match attrs.category {
             Some(category) => (Some(category), attrs.subcategory),
-            None => match self.construct_category(name) {
-                Some((category, subcategory)) => (Some(category), subcategory),
-                None => (None, None),
-            },
+            None => self.construct_category(name),
         };
         Entry {
             category,
@@ -723,15 +725,14 @@ impl GlyphData {
     }
 
     fn construct_result(&self, name: &str) -> Option<QueryResult> {
-        let category_subcategory = self.construct_category(name);
+        let (category, subcategory) = self.construct_category(name);
         let production_name = self.construct_production_name(name);
-        if category_subcategory.is_none() && production_name.is_none() {
+        if category.is_none() && production_name.is_none() {
             return None;
         }
-        // if we have a production name but no category, 'Other' is good enough
-        let (category, subcategory) = category_subcategory.unwrap_or((Category::Other, None));
         Some(QueryResult {
-            category,
+            // if we have a production name but no category, 'Other' is good enough
+            category: category.unwrap_or(Category::Other),
             subcategory,
             codepoint: None,
             script: None,
@@ -740,14 +741,17 @@ impl GlyphData {
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L199
-    fn construct_category(&self, name: &str) -> Option<(Category, Option<Subcategory>)> {
+    //
+    // An entry without a category (only possible in custom data) still answers, and
+    // keeps its subcategory, as in glyphsLib.
+    fn construct_category(&self, name: &str) -> (Option<Category>, Option<Subcategory>) {
         // in glyphs.app '_' prefix means "no export"
         if name.starts_with('_') {
-            return None;
+            return (None, None);
         }
         let (base_name, _) = self.split_glyph_suffix(name);
         if let Some(attrs) = self.lookup_attributes(base_name) {
-            return attrs.category.map(|category| (category, attrs.subcategory));
+            return (attrs.category, attrs.subcategory);
         }
 
         if let Some(base_names) = self.split_ligature_glyph_name(base_name) {
@@ -763,7 +767,7 @@ impl GlyphData {
             {
                 // if first is mark, we're a mark
                 if first_attr.category == Some(Category::Mark) {
-                    return Some((Category::Mark, first_attr.subcategory));
+                    return (Some(Category::Mark), first_attr.subcategory);
                 } else if first_attr.category == Some(Category::Letter) {
                     // if first is letter and rest are marks/separators, we use info from first
                     if base_names_attributes
@@ -772,9 +776,9 @@ impl GlyphData {
                         .map(|result| result.as_ref().and_then(|r| r.category))
                         .all(|cat| matches!(cat, None | Some(Category::Mark | Category::Separator)))
                     {
-                        return Some((Category::Letter, first_attr.subcategory));
+                        return (Some(Category::Letter), first_attr.subcategory);
                     } else {
-                        return Some((Category::Letter, Some(Subcategory::Ligature)));
+                        return (Some(Category::Letter), Some(Subcategory::Ligature));
                     }
                 }
             }
@@ -782,6 +786,9 @@ impl GlyphData {
 
         // finally fall back to checking the AGLFN for the base name:
         Self::construct_category_via_agl(base_name)
+            .map_or((None, None), |(category, subcategory)| {
+                (Some(category), subcategory)
+            })
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/c4db6b981d5/Lib/glyphsLib/glyphdata.py#L351
@@ -1506,6 +1513,29 @@ mod tests {
         assert_eq!(
             (result.category, result.subcategory),
             (Category::Punctuation, None)
+        );
+    }
+
+    #[test]
+    fn overrides_and_bundled_data_are_tried_for_each_codepoint_in_turn() {
+        // the first codepoint is only in the bundled data, the second only in the
+        // overrides: as in glyphsLib, the first codepoint wins
+        let codepoints = [0x0965, 0xE000];
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="foo" unicode="E000" category="Letter" production="foo" />"#,
+        )]);
+        let result = data.query("xyzzy", Some(&codepoints)).unwrap();
+        assert_eq!(result.production_name, Some("uni0965".into()));
+    }
+
+    #[test]
+    fn override_subcategory_without_category_is_kept() {
+        let data = from_xml(&[&glyph_data_xml(
+            r#"<glyph name="acutecomb" subCategory="Spacing" />"#,
+        )]);
+        assert_eq!(
+            categories(&data, "acutecomb"),
+            Some((Category::Mark, Some(Subcategory::Spacing)))
         );
     }
 
