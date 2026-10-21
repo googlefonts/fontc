@@ -2319,6 +2319,63 @@ mod tests {
         assert!(matches!(result, Err(Error::GlyphDataRequiresGlyphsSource)));
     }
 
+    // "Bag of statics" (#1288): the masters are incompatible ('a' is a square
+    // in Regular and a triangle in Bold), and each instance is on a master
+    // ("Regular" only on Weight; nothing varies along Width). Only Bold's 'a'
+    // has an anchor, which makes it a base glyph there; fontmake would class
+    // glyphs by the default master's anchors in every instance.
+    #[rstest]
+    #[case("Bag Of Statics Regular", (4, 1), 500, 500, 400, 0)]
+    #[case("Bag Of Statics Bold", (3, 1), 600, 540, 700, 1)]
+    fn bag_of_statics_instance_builds_its_master(
+        #[case] instance: &str,
+        #[case] a_points_and_contours: (usize, i16),
+        #[case] a_advance: u16,
+        #[case] x_height: i16,
+        #[case] weight_class: u16,
+        #[case] a_glyph_class: u16,
+    ) {
+        let mut result = TestCompile::new_with_source_options(
+            "glyphs3/BagOfStatics.glyphs",
+            &SourceOptions {
+                export: Some(instance.to_string()),
+                ..Default::default()
+            },
+            |options| options,
+        );
+        result.run();
+        let font = result.font();
+        assert!(font.fvar().is_err(), "{instance} must be static");
+        let gid = result.get_gid("a");
+        let glyphs = result.glyphs();
+        let Some(glyf::Glyph::Simple(a)) = &glyphs.read()[gid.to_u32() as usize] else {
+            panic!("'a' should be a simple glyph");
+        };
+        assert_eq!(
+            (a.num_points(), a.number_of_contours()),
+            a_points_and_contours
+        );
+        assert_eq!(font.hmtx().unwrap().advance(gid.into()), Some(a_advance));
+        let os2 = font.os2().unwrap();
+        assert_eq!(os2.sx_height(), Some(x_height));
+        assert_eq!(os2.us_weight_class(), weight_class);
+        let glyph_class = font
+            .gdef()
+            .ok()
+            .and_then(|gdef| gdef.glyph_class_def())
+            .map(|class_def| class_def.unwrap().get(gid))
+            .unwrap_or_default();
+        assert_eq!(glyph_class, a_glyph_class);
+    }
+
+    #[test]
+    fn bag_of_statics_without_instance_is_unchanged() {
+        // Without --export the incompatible masters still fail as before.
+        let mut result = TestCompile::new("glyphs3/BagOfStatics.glyphs", |options| options);
+        let error = result.run_expect_err().to_string();
+        assert!(error.contains("'a'"), "{error}");
+    }
+
     #[rstest]
     // Instance at wght 100, wdth 100, the only master at 90, 120; the
     // instance's weight class 700 and width class 3 apply
