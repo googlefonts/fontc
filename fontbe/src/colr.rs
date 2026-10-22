@@ -1,5 +1,8 @@
 //! Generates a [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr) table.
 
+use kurbo::Point;
+use ordered_float::OrderedFloat;
+
 use crate::{
     error::{Error, GlyphProblem},
     orchestration::{AnyWorkId, BeWork, Context, Glyph, WorkId},
@@ -25,8 +28,6 @@ use write_fonts::{
     types::{F2Dot14, FWord, GlyphId16},
 };
 
-static OPAQUE: F2Dot14 = F2Dot14::ONE;
-
 #[derive(Debug)]
 struct ColrWork {}
 
@@ -38,22 +39,33 @@ fn to_colr_line(
     palette: &ColorPalettes,
     glyph_name: &GlyphName,
     stops: &[ir::ColorStop],
+    extend: Extend,
 ) -> Result<ColorLine, Error> {
     let mut color_stops = Vec::with_capacity(stops.len());
     for stop in stops {
         color_stops.push(ColorStop::new(
             F2Dot14::from_f32(stop.offset.0),
-            palette.index_of(stop.color).ok_or_else(|| {
-                Error::GlyphError(
-                    glyph_name.clone(),
-                    GlyphProblem::NotInColorPalette(stop.color),
-                )
-            })? as u16,
-            OPAQUE,
+            palette_index(palette, glyph_name, stop.color)?,
+            F2Dot14::from_f32(stop.alpha.0),
         ));
     }
 
-    Ok(ColorLine::new(Extend::Pad, stops.len() as u16, color_stops))
+    Ok(ColorLine::new(extend, stops.len() as u16, color_stops))
+}
+
+fn palette_index(
+    palette: &ColorPalettes,
+    glyph_name: &GlyphName,
+    color: ir::ColorReference,
+) -> Result<u16, Error> {
+    match color {
+        ir::ColorReference::PaletteIndex(index) => Ok(index),
+        ir::ColorReference::Color(color) => {
+            palette.index_of(color).map(|i| i as u16).ok_or_else(|| {
+                Error::GlyphError(glyph_name.clone(), GlyphProblem::NotInColorPalette(color))
+            })
+        }
+    }
 }
 
 /// Calculate the radius for a radial gradient, matching glyphsLib's behavior.
@@ -64,8 +76,8 @@ fn to_colr_line(
 ///
 /// See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/color_layers.py#L57-L69>
 fn scale_gradient_radius(bbox: &Bbox, center_pct_x: f64, center_pct_y: f64) -> u16 {
-    let width = (bbox.x_max - bbox.x_min) as f64;
-    let height = (bbox.y_max - bbox.y_min) as f64;
+    let width = bbox.x_max as f64 - bbox.x_min as f64;
+    let height = bbox.y_max as f64 - bbox.y_min as f64;
 
     // Convert center from percentage to absolute within the bbox dimensions (not yet offset)
     let center_x = width * center_pct_x;
@@ -89,13 +101,32 @@ fn scale_gradient_radius(bbox: &Bbox, center_pct_x: f64, center_pct_y: f64) -> u
 /// Scale a gradient coordinate from percentage (0.0-1.0) to absolute coordinates
 /// within the given bounding box.
 ///
+/// Scale an explicit radius, relative to the bounding box, to font units.
+///
+/// Glyphs 4 radial gradient radii are relative to the shape bounds: when it
+/// converts a Glyphs 3 radial gradient, whose radius is implicit (see
+/// [`scale_gradient_radius`]), the radius it writes is that implicit radius
+/// divided by the square root of the bounding box area.
+fn scale_relative_radius(bbox: &Bbox, radius: f32) -> u16 {
+    let width = bbox.x_max as f64 - bbox.x_min as f64;
+    let height = bbox.y_max as f64 - bbox.y_min as f64;
+    (radius as f64 * (width * height).sqrt()).ot_round()
+}
+
 /// Glyphs gradient coordinates are percentages of the layer's bounding box.
 /// Returns floats - use OtRound when converting to i16.
 /// See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/color_layers.py#L72-L81>
 fn scale_gradient_point(bbox: &Bbox, x_pct: f64, y_pct: f64) -> (f64, f64) {
-    let x_abs = bbox.x_min as f64 + ((bbox.x_max - bbox.x_min) as f64 * x_pct);
-    let y_abs = bbox.y_min as f64 + ((bbox.y_max - bbox.y_min) as f64 * y_pct);
+    let x_abs = bbox.x_min as f64 + ((bbox.x_max as f64 - bbox.x_min as f64) * x_pct);
+    let y_abs = bbox.y_min as f64 + ((bbox.y_max as f64 - bbox.y_min as f64) * y_pct);
     (x_abs, y_abs)
+}
+
+fn gradient_point(bbox: &Bbox, coordinates: ir::GradientCoordinates, point: Point) -> (f64, f64) {
+    match coordinates {
+        ir::GradientCoordinates::Relative => scale_gradient_point(bbox, point.x, point.y),
+        ir::GradientCoordinates::Absolute => (point.x, point.y),
+    }
 }
 
 /// Round a float to FWord using OtRound (round half up).
@@ -148,6 +179,9 @@ fn to_colr_paint(
 ) -> Result<Paint, Error> {
     match ir_paint {
         ir::Paint::Glyph(paint) => {
+            let glyph_id = glyph_order
+                .glyph_id(&paint.name)
+                .ok_or_else(|| Error::MissingGlyphId(paint.name.clone()))?;
             // Fetch the bbox of the referenced glyph for proper gradient scaling
             let ref_glyph = context
                 .glyphs
@@ -165,33 +199,26 @@ fn to_colr_paint(
                     &paint.paint,
                 )?
                 .into(),
-                glyph_id: glyph_order
-                    .glyph_id(&paint.name)
-                    .expect("Validated earlier"),
+                glyph_id,
             }))
         }
         ir::Paint::Solid(paint) => Ok(Paint::Solid(PaintSolid {
-            palette_index: match paint.color {
-                None => 0xFFFF,
-                Some(color) => palette.index_of(color).ok_or_else(|| {
-                    Error::GlyphError(glyph_name.clone(), GlyphProblem::NotInColorPalette(color))
-                })? as u16,
-            },
-            alpha: OPAQUE,
+            palette_index: palette_index(palette, glyph_name, paint.color)?,
+            alpha: F2Dot14::from_f32(paint.alpha.0),
         })),
         ir::Paint::LinearGradient(linear) => {
             // Scale gradient points from relative 0-1 to absolute coordinates
-            let (x0, y0) = scale_gradient_point(bbox, linear.p0.x, linear.p0.y);
-            let (x1, y1) = scale_gradient_point(bbox, linear.p1.x, linear.p1.y);
+            let (x0, y0) = gradient_point(bbox, linear.coordinates, linear.p0);
+            let (x1, y1) = gradient_point(bbox, linear.coordinates, linear.p1);
             let (x2, y2) = if let Some(p2) = linear.p2 {
-                scale_gradient_point(bbox, p2.x, p2.y)
+                gradient_point(bbox, linear.coordinates, p2)
             } else {
                 // Calculate perpendicular point: rotate p0-p1 vector by -90° around p0
                 (x0 + (y1 - y0), y0 - (x1 - x0))
             };
 
             Ok(Paint::LinearGradient(PaintLinearGradient::new(
-                to_colr_line(palette, glyph_name, &linear.color_line)?,
+                to_colr_line(palette, glyph_name, &linear.color_line, linear.extend)?,
                 round_fword(x0),
                 round_fword(y0),
                 round_fword(x1),
@@ -202,22 +229,23 @@ fn to_colr_paint(
         }
         ir::Paint::RadialGradient(radial) => {
             // Scale gradient points from relative 0-1 to absolute coordinates
-            let (x0, y0) = scale_gradient_point(bbox, radial.p0.x, radial.p0.y);
-            let (x1, y1) = scale_gradient_point(bbox, radial.p1.x, radial.p1.y);
-            // Handle optional radii
-            let r0 = radial.r0.map(|r| r.0 as u16).unwrap_or(0); // default to 0
+            let (x0, y0) = gradient_point(bbox, radial.coordinates, radial.p0);
+            let (x1, y1) = gradient_point(bbox, radial.coordinates, radial.p1);
+            // Explicit radii follow the paint's coordinate system
+            let radius = |r: OrderedFloat<f32>| match radial.coordinates {
+                ir::GradientCoordinates::Relative => scale_relative_radius(bbox, r.0),
+                ir::GradientCoordinates::Absolute => r.0.ot_round(),
+            };
+            let r0 = radial.r0.map(radius).unwrap_or(0);
             let r1 = if let Some(r) = radial.r1 {
-                // TODO: Semantics of explicit radius values are unclear. Are they absolute font units,
-                // or percentages of bbox dimensions? For now treat as absolute, revisit when we have
-                // a source format that actually provides explicit radii.
-                r.0 as u16
+                radius(r)
             } else {
                 // Calculate radius from bbox dimensions, matching glyphsLib behavior
                 scale_gradient_radius(bbox, radial.p1.x, radial.p1.y)
             };
 
             Ok(Paint::RadialGradient(PaintRadialGradient::new(
-                to_colr_line(palette, glyph_name, &radial.color_line)?,
+                to_colr_line(palette, glyph_name, &radial.color_line, radial.extend)?,
                 round_fword(x0),
                 round_fword(y0),
                 r0.into(),
@@ -273,9 +301,9 @@ fn add_or_extend_clip(clips: &mut Vec<Clip>, quantization: i16, gid: GlyphId16, 
 
 fn is_paint_glyph_solid(paint: &ir::Paint) -> bool {
     if let ir::Paint::Glyph(paint_glyph) = paint
-        && let ir::Paint::Solid(_) = &paint_glyph.paint
+        && let ir::Paint::Solid(solid) = &paint_glyph.paint
     {
-        true
+        solid.alpha.0 == 1.0
     } else {
         false
     }
@@ -304,23 +332,24 @@ fn new_colr0(
     paints: &[&ir::PaintGlyph],
     layers: &mut Vec<Layer>,
 ) -> Result<BaseGlyph, Error> {
-    let gid = glyph_order.glyph_id(glyph_name).expect("Prevalidated");
+    let gid = glyph_order
+        .glyph_id(glyph_name)
+        .ok_or_else(|| Error::MissingGlyphId(glyph_name.clone()))?;
     let candidate_layers = paints
         .iter()
         .map(|p| {
             let ir::Paint::Solid(solid) = &p.paint else {
                 unreachable!("We prevalidated, what is {p:?}?!");
             };
-            let palette_idx = match solid.color {
-                None => 0xFFFF,
-                Some(color) => palette.index_of(color).expect("Prevalidated") as u16,
-            };
-            Layer::new(
-                glyph_order.glyph_id(&p.name).expect("Prevalidated"),
+            let palette_idx = palette_index(palette, glyph_name, solid.color)?;
+            Ok(Layer::new(
+                glyph_order
+                    .glyph_id(&p.name)
+                    .ok_or_else(|| Error::MissingGlyphId(p.name.clone()))?,
                 palette_idx,
-            )
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, Error>>()?;
     let first_idx = if let Some(pos) = layers
         .windows(candidate_layers.len())
         .position(|window| candidate_layers.as_slice() == window)
@@ -475,7 +504,13 @@ mod tests {
 
         let paints = [ir::PaintGlyph {
             name: glyph_name.clone(),
-            paint: ir::Paint::Solid(ir::PaintSolid { color: None }.into()),
+            paint: ir::Paint::Solid(
+                ir::PaintSolid {
+                    color: ir::ColorReference::PaletteIndex(0xFFFF),
+                    alpha: 1.0.into(),
+                }
+                .into(),
+            ),
         }];
 
         let refs: Vec<&ir::PaintGlyph> = paints.iter().collect();
@@ -508,7 +543,13 @@ mod tests {
         };
         let mut layer_list = LayerList::default();
 
-        let ir_paint = ir::Paint::Solid(ir::PaintSolid { color: None }.into());
+        let ir_paint = ir::Paint::Solid(
+            ir::PaintSolid {
+                color: ir::ColorReference::PaletteIndex(0xFFFF),
+                alpha: 1.0.into(),
+            }
+            .into(),
+        );
 
         let paint = to_colr_paint(
             &context,

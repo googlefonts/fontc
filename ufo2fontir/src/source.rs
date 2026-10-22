@@ -20,7 +20,7 @@ use fontdrasil::{
 use fontir::{
     error::{BadSource, BadSourceKind, Error},
     ir::{
-        AnchorBuilder, Color, ColorGlyphs, ColorPalettes, Condition, ConditionSet,
+        AnchorBuilder, Color, ColorGlyphs, ColorPalettes, ColorReference, Condition, ConditionSet,
         DEFAULT_VENDOR_ID, FEATURE_WRITERS_LIB_KEY, FeatureSources, FeatureWriterOptionValue,
         FeatureWriterSpec, FeaturesSource, FilterScope, GlobalMetric, GlobalMetricsBuilder,
         GlyphOrder, KernGroup, KernSide, KerningInstance, KerningLocations, MasterFeaSource,
@@ -2355,7 +2355,12 @@ fn parse_color_layers(
 
             paints.push(Paint::Glyph(Box::new(PaintGlyph {
                 name: layer_glyph_name.into(),
-                paint: Paint::Solid(Box::new(PaintSolid { color })),
+                paint: Paint::Solid(Box::new(PaintSolid {
+                    color: color
+                        .map(ColorReference::Color)
+                        .unwrap_or(ColorReference::PaletteIndex(0xFFFF)),
+                    alpha: 1.0.into(),
+                })),
             })));
         }
 
@@ -4025,7 +4030,7 @@ mod tests {
                             Paint::Solid(s) => {
                                 assert_eq!(
                                     s.color,
-                                    Some(Color {
+                                    ColorReference::Color(Color {
                                         r: 255,
                                         g: 0,
                                         b: 0,
@@ -4045,7 +4050,7 @@ mod tests {
                             Paint::Solid(s) => {
                                 assert_eq!(
                                     s.color,
-                                    Some(Color {
+                                    ColorReference::Color(Color {
                                         r: 0,
                                         g: 0,
                                         b: 255,
@@ -4151,7 +4156,7 @@ mod tests {
                         // Color resolved from palette 0, index 0 = red
                         assert_eq!(
                             s.color,
-                            Some(Color {
+                            ColorReference::Color(Color {
                                 r: 255,
                                 g: 0,
                                 b: 0,
