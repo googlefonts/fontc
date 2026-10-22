@@ -4,13 +4,13 @@ use write_fonts::read::{ReadError, tables::gpos::CursivePosFormat1};
 
 use crate::{
     common::PrintNames,
-    gpos::{GlyphId16, ResolvedAnchor},
+    gpos::{GlyphId, ResolvedAnchor},
     variations::DeltaComputer,
 };
 
 #[derive(Clone, Debug)]
 pub(crate) struct CursivePosRule {
-    pub glyph: GlyphId16,
+    pub glyph: GlyphId,
     entry: Option<ResolvedAnchor>,
     exit: Option<ResolvedAnchor>,
 }

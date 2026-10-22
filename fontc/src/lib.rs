@@ -337,7 +337,9 @@ mod tests {
                 cpal::ColorRecord,
                 gasp::GaspRangeBehavior,
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
-                gpos::{AnchorTable, Gpos, MarkBasePosFormat1, PositionLookup, SinglePos},
+                gpos::{
+                    AnchorTable, Gpos, MarkBasePos, MarkBasePosFormat1, PositionLookup, SinglePos,
+                },
                 gsub::{SingleSubst, SubstitutionLookup},
                 hmtx::Hmtx,
                 layout::FeatureParams,
@@ -1186,7 +1188,7 @@ mod tests {
             panic!("Expected a composite");
         };
         let component = glyph.components().next().unwrap();
-        assert_eq!(period_idx, component.glyph.to_u16() as u32);
+        assert_eq!(period_idx, component.glyph.to_u32());
 
         // If we all work together we're a real transform!
         assert_component_transform(
@@ -2265,7 +2267,7 @@ mod tests {
         );
     }
 
-    fn gdef_class_and_advance(compile: &TestCompile, name: &str) -> (Option<u16>, u16) {
+    fn gdef_class_and_advance(compile: &TestCompile, name: &str) -> (Option<u32>, u16) {
         let font = compile.font();
         let gid = compile.get_gid(name);
         let class = font
@@ -2333,7 +2335,7 @@ mod tests {
         #[case] a_advance: u16,
         #[case] x_height: i16,
         #[case] weight_class: u16,
-        #[case] a_glyph_class: u16,
+        #[case] a_glyph_class: u32,
     ) {
         let mut result = TestCompile::new_with_source_options(
             "glyphs3/BagOfStatics.glyphs",
@@ -4626,6 +4628,10 @@ mod tests {
                 _ => None,
             })
             .flat_map(|mb| mb.subtables().iter().map(|s| s.unwrap()))
+            .filter_map(|s| match s {
+                MarkBasePos::Format1(s) => Some(s),
+                _ => None,
+            })
             .collect()
     }
 
@@ -4635,9 +4641,9 @@ mod tests {
         let font = result.font();
         let gpos = font.gpos().unwrap();
 
-        let base_gid = result.get_gid("A");
-        let macroncomb_gid = result.get_gid("macroncomb");
-        let brevecomb_gid = result.get_gid("brevecomb");
+        let base_gid = GlyphId::from(result.get_gid("A"));
+        let macroncomb_gid = GlyphId::from(result.get_gid("macroncomb"));
+        let brevecomb_gid = GlyphId::from(result.get_gid("brevecomb"));
 
         // If only we had more indirections
         let mark_base_lookups = mark_base_lookups(&gpos);
@@ -6375,7 +6381,7 @@ mod tests {
                 ),
             ],
         );
-        let components = |name: &str| -> Vec<GlyphId16> {
+        let components = |name: &str| -> Vec<GlyphId> {
             let RawGlyph::Composite(glyph) = result.read_be_glyph(name) else {
                 panic!("{name} should be a composite");
             };
@@ -6506,11 +6512,12 @@ mod tests {
         let one = lookups.lookups().get(0).unwrap();
         let two = lookups.lookups().get(1).unwrap();
 
-        fn get_first_gid_or_die_trying(lookup: SubstitutionLookup) -> GlyphId16 {
+        fn get_first_gid_or_die_trying(lookup: SubstitutionLookup) -> GlyphId {
             match lookup {
                 SubstitutionLookup::Single(sub) => match sub.subtables().get(0).unwrap() {
                     SingleSubst::Format1(sub) => sub.coverage().unwrap().iter().next().unwrap(),
                     SingleSubst::Format2(sub) => sub.coverage().unwrap().iter().next().unwrap(),
+                    _ => panic!("oops"),
                 },
                 _ => panic!("oops"),
             }
@@ -6903,7 +6910,7 @@ mod tests {
                 .all(|gid| *gid > GlyphId16::NOTDEF)
         );
 
-        fn get_component_gids(glyph: &glyf::Glyph) -> Vec<GlyphId16> {
+        fn get_component_gids(glyph: &glyf::Glyph) -> Vec<GlyphId> {
             match glyph {
                 glyf::Glyph::Simple(_) => panic!("not a composite"),
                 glyf::Glyph::Composite(g) => g.components().map(|comp| comp.glyph).collect(),
@@ -7301,7 +7308,7 @@ mod tests {
         let gravecomb = compile.get_gid("gravecomb");
         assert_eq!(
             classdef.get(gravecomb),
-            GlyphClassDef::Mark as u16,
+            GlyphClassDef::Mark as u32,
             "the combining mark should get GDEF class Mark"
         );
         assert!(

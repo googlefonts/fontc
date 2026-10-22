@@ -277,7 +277,12 @@ impl PendingCompilation {
                     self.conditionset_defs.sort_order(condset)
                 });
             }
-            for record in gsub.feature_list.feature_records.iter_mut() {
+            for record in gsub
+                .feature_list
+                .as_mut()
+                .into_iter()
+                .flat_map(|list| list.feature_records.iter_mut())
+            {
                 if let Some(params) = feature_params.get(&record.feature_tag) {
                     record.feature.feature_params = params.clone().into();
                 }
@@ -296,7 +301,12 @@ impl PendingCompilation {
                 });
             }
 
-            for record in gpos.feature_list.feature_records.iter_mut() {
+            for record in gpos
+                .feature_list
+                .as_mut()
+                .into_iter()
+                .flat_map(|list| list.feature_records.iter_mut())
+            {
                 if let Some(params) = feature_params.get(&record.feature_tag) {
                     record.feature.feature_params = params.clone().into();
                 }
@@ -391,12 +401,14 @@ impl Compilation {
         self.gsub
             .as_mut()
             .into_iter()
-            .flat_map(|t| t.feature_list.feature_records.iter_mut())
+            .flat_map(|t| t.feature_list.as_mut())
+            .flat_map(|list| list.feature_records.iter_mut())
             .chain(
                 self.gpos
                     .as_mut()
                     .into_iter()
-                    .flat_map(|t| t.feature_list.feature_records.iter_mut()),
+                    .flat_map(|t| t.feature_list.as_mut())
+                    .flat_map(|list| list.feature_records.iter_mut()),
             )
             .for_each(|rec| match rec.feature.as_mut().feature_params.as_mut() {
                 Some(FeatureParams::StylisticSet(params)) => {

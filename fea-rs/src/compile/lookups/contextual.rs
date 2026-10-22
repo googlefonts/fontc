@@ -16,7 +16,7 @@ use write_fonts::{
         },
         variations::ivs_builder::VariationStoreBuilder,
     },
-    types::GlyphId16,
+    types::{GlyphId, GlyphId16},
     validate::Validate,
 };
 
@@ -378,7 +378,7 @@ impl ContextBuilder {
 
     fn build_format_1(&self, in_gpos: bool) -> Option<write_layout::SequenceContext> {
         let coverage = self.format_1_coverage()?.build();
-        let mut rule_sets = HashMap::<_, Vec<_>>::new();
+        let mut rule_sets = HashMap::<GlyphId, Vec<_>>::new();
         for rule in &self.rules {
             let key = rule.first_input_sequence_item().single_glyph().unwrap();
             let seq_lookups = rule.lookup_records(in_gpos);
@@ -391,7 +391,7 @@ impl ContextBuilder {
                 seq_lookups,
             );
 
-            rule_sets.entry(key).or_default().push(rule);
+            rule_sets.entry(key.into()).or_default().push(rule);
         }
         let rule_sets = coverage
             .iter()
@@ -653,7 +653,7 @@ impl ChainContextBuilder {
     fn build_format_1(&self, in_gpos: bool) -> Option<write_layout::ChainedSequenceContext> {
         let coverage = self.0.format_1_coverage()?.build();
 
-        let mut rule_sets = HashMap::<_, Vec<_>>::new();
+        let mut rule_sets = HashMap::<GlyphId, Vec<_>>::new();
         for rule in &self.0.rules {
             let key = rule.first_input_sequence_item().single_glyph().unwrap();
             let seq_lookups = rule.lookup_records(in_gpos);
@@ -668,7 +668,7 @@ impl ChainContextBuilder {
                 seq_lookups,
             );
 
-            rule_sets.entry(key).or_default().push(rule);
+            rule_sets.entry(key.into()).or_default().push(rule);
         }
         let rule_sets = coverage
             .iter()

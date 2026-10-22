@@ -11,7 +11,7 @@ use write_fonts::read::{
         },
         loca::{Loca, LocaGlyph},
     },
-    types::{F2Dot14, GlyphId, GlyphId16, Tag},
+    types::{F2Dot14, GlyphId, Tag},
 };
 
 use crate::{Error, NameMap};
@@ -96,7 +96,7 @@ pub fn print_gvar(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Res
         .collect();
     writeln!(f, "# gvar #")?;
     for (gid, name) in sorted_glyphs(names) {
-        let Some(variations) = gvar.glyph_variation_data(gid.into())? else {
+        let Some(variations) = gvar.glyph_variation_data(gid)? else {
             continue;
         };
         let mut tuples = variations.tuples().peekable();
@@ -153,7 +153,7 @@ pub fn print_gvar(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Res
     Ok(())
 }
 
-fn sorted_glyphs(names: &NameMap) -> Vec<(GlyphId16, &GlyphName)> {
+fn sorted_glyphs(names: &NameMap) -> Vec<(GlyphId, &GlyphName)> {
     let mut glyphs: Vec<_> = names.0.iter().map(|(gid, name)| (*gid, name)).collect();
     glyphs.sort_by(|a, b| a.1.as_str().cmp(b.1.as_str()));
     glyphs
@@ -169,12 +169,12 @@ struct Outline<'a> {
 
 impl<'a> Outline<'a> {
     fn read(
-        gid: GlyphId16,
+        gid: GlyphId,
         glyf: &Glyf<'a>,
         loca: &Loca<'a>,
         names: &NameMap,
     ) -> Result<Option<Self>, ReadError> {
-        let glyph = match loca.get(GlyphId::from(gid), glyf) {
+        let glyph = match loca.get(gid, glyf) {
             Some(LocaGlyph::Glyph(glyph)) => glyph,
             Some(LocaGlyph::Empty) | None => return Ok(None),
         };

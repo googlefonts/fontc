@@ -16,7 +16,7 @@ use write_fonts::{
         },
     },
     tables::layout::LookupFlag,
-    types::{GlyphId16, Tag},
+    types::{GlyphId, Tag},
 };
 
 use crate::{glyph_names::NameMap, variations::DeltaComputer};
@@ -43,8 +43,8 @@ pub(crate) struct Feature {
 /// A type to represent either one or multiple glyphs
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum GlyphSet {
-    Single(GlyphId16),
-    Multiple(BTreeSet<GlyphId16>),
+    Single(GlyphId),
+    Multiple(BTreeSet<GlyphId>),
 }
 
 /// A decomposed lookup.
@@ -266,7 +266,7 @@ impl GlyphSet {
     /// This can result in an empty glyph set, which is not meaningful to us.
     /// It is the responsibility of the caller to check for an empty set and
     /// handle it appropriately.
-    pub(crate) fn remove_glyphs(&mut self, glyphs: &[GlyphId16]) {
+    pub(crate) fn remove_glyphs(&mut self, glyphs: &[GlyphId]) {
         match self {
             GlyphSet::Multiple(set) => set.retain(|gid| !glyphs.contains(gid)),
             // I initially imagined this type always had one or more glyphs,
@@ -278,7 +278,7 @@ impl GlyphSet {
         }
     }
 
-    pub(crate) fn add(&mut self, gid: GlyphId16) {
+    pub(crate) fn add(&mut self, gid: GlyphId) {
         // if we're a single glyph, don't turn into a set if we're adding ourselves
         if matches!(self, GlyphSet::Single(x) if *x == gid) {
             return;
@@ -289,7 +289,7 @@ impl GlyphSet {
         }
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
         let (left, right) = match self {
             GlyphSet::Single(gid) => (Some(*gid), None),
             GlyphSet::Multiple(gids) => (None, Some(gids.iter().copied())),
@@ -414,14 +414,14 @@ impl PartialOrd for GlyphSet {
     }
 }
 
-impl From<GlyphId16> for GlyphSet {
-    fn from(src: GlyphId16) -> GlyphSet {
+impl From<GlyphId> for GlyphSet {
+    fn from(src: GlyphId) -> GlyphSet {
         GlyphSet::Single(src)
     }
 }
 
-impl FromIterator<GlyphId16> for GlyphSet {
-    fn from_iter<T: IntoIterator<Item = GlyphId16>>(iter: T) -> Self {
+impl FromIterator<GlyphId> for GlyphSet {
+    fn from_iter<T: IntoIterator<Item = GlyphId>>(iter: T) -> Self {
         GlyphSet::Multiple(iter.into_iter().collect())
     }
 }
