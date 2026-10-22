@@ -6021,6 +6021,63 @@ mod tests {
         paint
     }
 
+    /// The paints under `paint` in drawing order, expanding PaintColrLayers slices.
+    fn layer_leaves<'a>(colr: &Colr<'a>, paint: Paint<'a>) -> Vec<Paint<'a>> {
+        let Paint::ColrLayers(paint) = paint else {
+            return vec![paint];
+        };
+        let layer_list = colr.layer_list().unwrap().unwrap();
+        (paint.first_layer_index()..paint.first_layer_index() + u32::from(paint.num_layers()))
+            .flat_map(|i| layer_leaves(colr, layer_list.paints().get(i as usize).unwrap()))
+            .collect()
+    }
+
+    fn color_glyph_id(paint: Paint) -> GlyphId16 {
+        match paint {
+            Paint::ColrGlyph(reference) => reference.glyph_id(),
+            _ => panic!("Expected a color glyph reference"),
+        }
+    }
+
+    /// (offset, palette index, alpha) of each stop.
+    fn color_stops(line: &write_fonts::read::tables::colr::ColorLine) -> Vec<(f32, u16, f32)> {
+        line.color_stops()
+            .iter()
+            .map(|s| {
+                (
+                    s.stop_offset().to_f32(),
+                    s.palette_index(),
+                    s.alpha().to_f32(),
+                )
+            })
+            .collect()
+    }
+
+    /// Static clip boxes by glyph id, one entry per glyph in each record's range.
+    fn clip_boxes(colr: &Colr) -> BTreeMap<GlyphId16, (i16, i16, i16, i16)> {
+        use write_fonts::read::tables::colr::ClipBox;
+
+        let mut result = BTreeMap::new();
+        let Some(clips) = colr.clip_list().map(|c| c.unwrap()) else {
+            return result;
+        };
+        for record in clips.clips() {
+            let ClipBox::Format1(clip) = record.clip_box(clips.offset_data()).unwrap() else {
+                panic!("Expected a static clip box");
+            };
+            let bounds = (
+                clip.x_min().to_i16(),
+                clip.y_min().to_i16(),
+                clip.x_max().to_i16(),
+                clip.y_max().to_i16(),
+            );
+            for gid in record.start_glyph_id().to_u16()..=record.end_glyph_id().to_u16() {
+                result.insert(GlyphId16::new(gid), bounds);
+            }
+        }
+        result
+    }
+
     #[test]
     fn colr_gradient_linear() {
         let result = TestCompile::compile_source("glyphs3/COLRv1-grayscale.glyphs");
@@ -6470,6 +6527,287 @@ mod tests {
         // Verify CPAL has 2 palettes
         let cpal = result.font().cpal().expect("CPAL table");
         assert_eq!(cpal.num_palettes(), 2);
+    }
+
+    // Expected values in the COLRv1-static.ufo tests were checked against
+    // fontmake 3.12.2 / fontTools 4.67.0, except the radial clip: fontc keeps
+    // the zero-width contour that fontmake removes (see the clip-box test).
+    #[test]
+    fn colrv1_ufo_palette_indices_and_alpha() {
+        let result = TestCompile::compile_source("COLRv1-static.ufo");
+        let font = result.font();
+        let colr = font.colr().unwrap();
+        assert_eq!(colr.version(), 1);
+        let cpal = font.cpal().unwrap();
+        assert_eq!((cpal.num_palettes(), cpal.num_palette_entries()), (2, 2));
+        let colors = cpal.color_records_array().unwrap().unwrap();
+        let palettes = cpal
+            .color_record_indices()
+            .iter()
+            .map(|start| {
+                colors[start.get() as usize..start.get() as usize + 2]
+                    .iter()
+                    .map(|c| (c.red(), c.green(), c.blue(), c.alpha()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            palettes,
+            [
+                vec![(255, 0, 0, 255), (255, 0, 0, 255)],
+                vec![(0, 0, 255, 255), (0, 255, 0, 128)],
+            ]
+        );
+
+        // The duplicate colors in palette 0 differ in palette 1: resolving a
+        // palette index back from its color would change the second palette.
+        let solid_glyph = root_paint_glyph(&result, &colr, "solid");
+        assert_eq!(solid_glyph.glyph_id(), result.get_gid("shape"));
+        let Paint::Solid(solid) = solid_glyph.paint().unwrap() else {
+            panic!("Expected solid paint");
+        };
+        assert_eq!((solid.palette_index(), solid.alpha().to_f32()), (1, 0.5));
+
+        // Legacy [glyph, index] pairs still become COLRv0 records.
+        let v0_records = colr.base_glyph_records().unwrap().unwrap();
+        assert_eq!(v0_records.len(), 1);
+        assert_eq!(v0_records[0].glyph_id(), result.get_gid("legacy"));
+        let v0_layers = colr.layer_records().unwrap().unwrap();
+        assert_eq!(
+            (v0_layers[0].glyph_id(), v0_layers[0].palette_index()),
+            (result.get_gid("shape"), 1)
+        );
+    }
+
+    // Unlike Glyphs gradients, UFO paint coordinates are already absolute.
+    #[test]
+    fn colrv1_ufo_gradients_use_absolute_coordinates() {
+        use write_fonts::read::tables::colr::Extend;
+
+        let result = TestCompile::compile_source("COLRv1-static.ufo");
+        let font = result.font();
+        let colr = font.colr().unwrap();
+
+        let Paint::LinearGradient(linear) =
+            root_paint_glyph(&result, &colr, "linear").paint().unwrap()
+        else {
+            panic!("Expected linear gradient");
+        };
+        assert_eq!(
+            [
+                linear.x0(),
+                linear.y0(),
+                linear.x1(),
+                linear.y1(),
+                linear.x2(),
+                linear.y2()
+            ]
+            .map(|v| v.to_i16()),
+            [-20, 40, 600, 80, 75, 900]
+        );
+
+        let radial_glyph = root_paint_glyph(&result, &colr, "radial");
+        assert_eq!(radial_glyph.glyph_id(), result.get_gid("zeroWidth"));
+        let Paint::RadialGradient(radial) = radial_glyph.paint().unwrap() else {
+            panic!("Expected radial gradient");
+        };
+        assert_eq!(
+            [radial.x0(), radial.y0(), radial.x1(), radial.y1()].map(|v| v.to_i16()),
+            [-100, 20, 400, 500]
+        );
+        assert_eq!(
+            (radial.radius0().to_u16(), radial.radius1().to_u16()),
+            (30, 700)
+        );
+
+        for (line, extend) in [
+            (linear.color_line().unwrap(), Extend::Repeat),
+            (radial.color_line().unwrap(), Extend::Reflect),
+        ] {
+            assert_eq!(line.extend(), extend);
+            assert_eq!(color_stops(&line), [(-0.25, 1, 0.25), (0.75, 0, 0.75)]);
+        }
+    }
+
+    // Expected circles match fontTools.colorLib's containment-preserving rounding.
+    #[rstest]
+    #[case([1.5, 1.5, 0.5, 0.499, 0.499, 2.499], [0, 0, 1, 0, 0, 2])]
+    #[case([0.5, 0.0, 0.0, 9.4, 0.0, 8.8], [-1, 0, 0, 9, 0, 9])]
+    #[case([0.0, 0.0, 1.49, 0.0, 0.0, 1.0], [0, 0, 2, 0, 0, 1])]
+    #[case([0.5000001, 0.0, 0.5000001, 0.499999, 0.0, 0.4999999], [0, 0, 0, 0, 0, 0])]
+    fn colrv1_ufo_radial_rounding_preserves_containment(
+        #[case] circles: [f64; 6],
+        #[case] expected: [i32; 6],
+    ) {
+        let temp = tempdir().unwrap();
+        let ufo = temp.path().join("Radial.ufo");
+        copy_dir(&testdata_dir().join("COLRv1-static.ufo"), &ufo);
+        let coordinates = ["x0", "y0", "r0", "x1", "y1", "r1"]
+            .into_iter()
+            .zip(circles)
+            .map(|(key, value)| format!("<key>{key}</key><real>{value}</real>"))
+            .collect::<String>();
+        fs::write(ufo.join("lib.plist"), format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>com.github.googlei18n.ufo2ft.colorPalettes</key>
+<array><array><array><integer>1</integer><integer>0</integer><integer>0</integer><integer>1</integer></array></array></array>
+<key>com.github.googlei18n.ufo2ft.colorLayers</key><dict><key>radial</key><dict>
+<key>Format</key><integer>10</integer><key>Glyph</key><string>shape</string>
+<key>Paint</key><dict><key>Format</key><integer>6</integer>
+<key>ColorLine</key><dict><key>ColorStop</key><array>
+<dict><key>StopOffset</key><integer>0</integer><key>PaletteIndex</key><integer>0</integer></dict>
+</array></dict>{coordinates}
+</dict></dict></dict></dict></plist>"#)).unwrap();
+        let result = TestCompile::compile_source(ufo.to_str().unwrap());
+        let font = result.font();
+        let colr = font.colr().unwrap();
+        let Paint::RadialGradient(radial) =
+            root_paint_glyph(&result, &colr, "radial").paint().unwrap()
+        else {
+            panic!("Expected radial gradient");
+        };
+        assert_eq!(
+            [
+                i32::from(radial.x0().to_i16()),
+                i32::from(radial.y0().to_i16()),
+                i32::from(radial.radius0().to_u16()),
+                i32::from(radial.x1().to_i16()),
+                i32::from(radial.y1().to_i16()),
+                i32::from(radial.radius1().to_u16()),
+            ],
+            expected,
+        );
+    }
+
+    #[test]
+    fn colrv1_ufo_transformed_color_glyph_references() {
+        let result = TestCompile::compile_source("COLRv1-static.ufo");
+        let font = result.font();
+        let colr = font.colr().unwrap();
+
+        let transformed = layer_leaves(&colr, root_paint(&result, &colr, "transformed"));
+        let [Paint::Translate(translate), Paint::Transform(transform)] = transformed.as_slice()
+        else {
+            panic!("Expected translated and transformed color references");
+        };
+        assert_eq!(
+            (translate.dx().to_i16(), translate.dy().to_i16()),
+            (300, -50)
+        );
+        // A color glyph reference, not an outline reference.
+        assert_eq!(
+            color_glyph_id(translate.paint().unwrap()),
+            result.get_gid("solid")
+        );
+        assert_eq!(
+            color_glyph_id(transform.paint().unwrap()),
+            result.get_gid("linear")
+        );
+        let matrix = transform.transform().unwrap();
+        // The negative half-step in dy rounds toward positive infinity, per OT.
+        assert_eq!(
+            [
+                matrix.xx(),
+                matrix.yx(),
+                matrix.xy(),
+                matrix.yy(),
+                matrix.dx(),
+                matrix.dy()
+            ]
+            .map(|v| v.to_f64()),
+            [1.0, -0.5, 0.25, 1.5, 30.0, -20.0]
+        );
+    }
+
+    // Expanding nested layer slices must preserve source drawing order,
+    // whether or not the compiler combines the groups into one slice.
+    #[test]
+    fn colrv1_ufo_nested_layers_preserve_drawing_order() {
+        let result = TestCompile::compile_source("COLRv1-static.ufo");
+        let font = result.font();
+        let colr = font.colr().unwrap();
+
+        let nested = layer_leaves(&colr, root_paint(&result, &colr, "nested"));
+        let [
+            Paint::Glyph(foreground),
+            Paint::ColrGlyph(reference),
+            Paint::Translate(translate),
+        ] = nested.as_slice()
+        else {
+            panic!("Expected foreground, radial reference, then translated solid reference");
+        };
+        let Paint::Solid(foreground) = foreground.paint().unwrap() else {
+            panic!("Expected foreground paint");
+        };
+        assert_eq!(
+            (foreground.palette_index(), foreground.alpha().to_f32()),
+            (65535, 0.75)
+        );
+        assert_eq!(reference.glyph_id(), result.get_gid("radial"));
+        assert_eq!(
+            (translate.dx().to_i16(), translate.dy().to_i16()),
+            (-30, 50)
+        );
+        assert_eq!(
+            color_glyph_id(translate.paint().unwrap()),
+            result.get_gid("solid")
+        );
+    }
+
+    // Empty fallback outlines on the base glyphs do not describe the color
+    // bounds: clip boxes follow the referenced outlines and transforms.
+    #[test]
+    fn colrv1_ufo_automatic_clip_boxes() {
+        let result = TestCompile::compile_source("COLRv1-static.ufo");
+        let font = result.font();
+        let colr = font.colr().unwrap();
+
+        let expected = BTreeMap::from([
+            (result.get_gid("solid"), (0, 0, 300, 400)),
+            (result.get_gid("linear"), (0, 0, 300, 400)),
+            // The zero-width outline still has points to bound. fontmake
+            // drops that degenerate contour at the glyf level instead.
+            (result.get_gid("radial"), (0, 0, 100, 400)),
+            (result.get_gid("transformed"), (0, -100, 600, 500)),
+            (result.get_gid("nested"), (-100, 0, 300, 400)),
+            // The transformed outline's control points, not its transformed
+            // bounding box: a diamond rotated by 45 degrees is much narrower.
+            (result.get_gid("rotated"), (-300, 100, 200, 600)),
+            // An unbounded sibling layer contributes nothing, as in fontTools.
+            // 'fill' draws no outline at all, so it has no clip box and the
+            // build does not fail; 'legacy' is a COLRv0 record.
+            (result.get_gid("unbounded"), (0, 0, 300, 400)),
+        ]);
+        assert_eq!(clip_boxes(&colr), expected);
+    }
+
+    // Explicit clips disable automatic clips for every glyph, including the
+    // unbounded 'fill' graph that would otherwise need its bounds computed.
+    #[test]
+    fn colrv1_ufo_explicit_clips_replace_automatic_clips() {
+        let temp = tempdir().unwrap();
+        let ufo = temp.path().join("ExplicitClips.ufo");
+        copy_dir(&testdata_dir().join("COLRv1-static.ufo"), &ufo);
+        let lib_path = ufo.join("lib.plist");
+        let mut lib = fs::read_to_string(&lib_path).unwrap();
+        lib.insert_str(lib.rfind("</dict>").unwrap(), r#"
+          <key>com.github.googlei18n.ufo2ft.colrClipBoxes</key>
+          <array><array>
+            <array><string>linear</string><string>solid</string></array>
+            <array><integer>-25</integer><integer>10</integer><integer>225</integer><integer>340</integer></array>
+          </array></array>
+        "#);
+        fs::write(lib_path, lib).unwrap();
+        let result = TestCompile::compile_source(ufo.to_str().unwrap());
+        let font = result.font();
+        let colr = font.colr().unwrap();
+        assert_eq!(
+            clip_boxes(&colr),
+            BTreeMap::from([
+                (result.get_gid("solid"), (-25, 10, 225, 340)),
+                (result.get_gid("linear"), (-25, 10, 225, 340)),
+            ])
+        );
     }
 
     #[rstest]

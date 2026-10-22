@@ -729,7 +729,7 @@ impl CheckedGlyph {
     }
 }
 
-fn affine_for(component: &Component) -> Affine {
+pub(crate) fn affine_for(component: &Component) -> Affine {
     let glyf::Anchor::Offset { x: dx, y: dy } = component.anchor else {
         panic!("Only offset anchor is supported");
     };

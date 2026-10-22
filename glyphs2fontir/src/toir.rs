@@ -1134,8 +1134,8 @@ pub(crate) fn to_ir_color_stops(stops: &[glyphs_reader::ColorStop]) -> Vec<Color
         .iter()
         .map(|cs| ColorStop {
             offset: (cs.stop_offset.0 as f32).into(),
-            color: to_ir_color(cs.color),
-            alpha: 255.0.into(),
+            color: ir::ColorReference::Color(to_ir_color(cs.color)),
+            alpha: 1.0.into(),
         })
         .collect()
 }
@@ -1149,7 +1149,13 @@ pub(crate) fn to_ir_paint(
     if let Some(palette_idx) = layer.attributes.color_palette {
         // 0xFFFF is a special COLR palette index meaning "use the text foreground color"
         if palette_idx == 0xFFFF {
-            return Ok(Paint::Solid(PaintSolid { color: None }.into()));
+            return Ok(Paint::Solid(
+                PaintSolid {
+                    color: ir::ColorReference::PaletteIndex(0xFFFF),
+                    alpha: 1.0.into(),
+                }
+                .into(),
+            ));
         }
         let Some(palette) = palette else {
             return Err(Error::BadGlyph(BadGlyph::new(
@@ -1167,7 +1173,8 @@ pub(crate) fn to_ir_paint(
         };
         return Ok(Paint::Solid(
             PaintSolid {
-                color: Some(to_ir_color(*color)),
+                color: ir::ColorReference::Color(to_ir_color(*color)),
+                alpha: 1.0.into(),
             }
             .into(),
         ));
@@ -1175,7 +1182,8 @@ pub(crate) fn to_ir_paint(
     if let Some(color) = attr.fill_color {
         return Ok(Paint::Solid(
             PaintSolid {
-                color: Some(to_ir_color(color)),
+                color: ir::ColorReference::Color(to_ir_color(color)),
+                alpha: 1.0.into(),
             }
             .into(),
         ));
@@ -1194,6 +1202,8 @@ pub(crate) fn to_ir_paint(
                 // with the radius calculated as % of the max distance to bbox corners.
                 Ok(Paint::RadialGradient(
                     PaintRadialGradient {
+                        coordinates: ir::GradientCoordinates::Relative,
+                        extend: write_fonts::tables::colr::Extend::Pad,
                         p0: start,
                         p1: start,
                         r0: None, // Defaults to 0
@@ -1208,6 +1218,8 @@ pub(crate) fn to_ir_paint(
                 // (rotation works differently in percentage vs absolute space).
                 Ok(Paint::LinearGradient(
                     PaintLinearGradient {
+                        coordinates: ir::GradientCoordinates::Relative,
+                        extend: write_fonts::tables::colr::Extend::Pad,
                         p0: start,
                         p1: end,
                         p2: None,
@@ -1854,7 +1866,7 @@ mod tests {
         assert_eq!(wght.max, fontdrasil::coords::UserCoord::new(1000.0));
     }
 
-    /// Test that a layer with palette index 0xFFFF produces a PaintSolid with color `None`.
+    /// Palette index 0xFFFF uses the text foreground color.
     #[test]
     fn palette_index_0xffff() {
         use super::to_ir_paint;
@@ -1872,7 +1884,10 @@ mod tests {
         let paint = to_ir_paint(None, "test", &layer, &attr).unwrap();
         match paint {
             Paint::Solid(solid) => {
-                assert_eq!(solid.color, None, "expected foreground paint (color: None)");
+                assert_eq!(
+                    solid.color,
+                    fontir::ir::ColorReference::PaletteIndex(0xFFFF)
+                );
             }
             other => panic!("expected Paint::Solid, got {other:?}"),
         }

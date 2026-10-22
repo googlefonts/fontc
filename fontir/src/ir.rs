@@ -6,7 +6,7 @@ use std::{
 };
 
 use indexmap::{IndexMap, IndexSet};
-use kurbo::{Affine, BezPath, PathEl, Point};
+use kurbo::{Affine, BezPath, PathEl, Point, Rect};
 use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
@@ -2120,7 +2120,21 @@ pub struct ColorPalettes {
 }
 
 impl ColorPalettes {
-    pub fn new(mut palettes: Vec<Vec<Color>>) -> Result<Option<Self>, Error> {
+    pub fn new(palettes: Vec<Vec<Color>>) -> Result<Option<Self>, Error> {
+        let Some(mut result) = Self::new_preserving_indices(palettes)? else {
+            return Ok(None);
+        };
+
+        // Glyphs paints refer to colors rather than source palette indices.
+        if let [one_palette] = result.palettes.as_mut_slice() {
+            let mut seen = HashSet::new();
+            one_palette.retain(|color| seen.insert(*color));
+        }
+        Ok(Some(result))
+    }
+
+    /// Construct palettes whose entry positions are referenced by source paints.
+    pub fn new_preserving_indices(palettes: Vec<Vec<Color>>) -> Result<Option<Self>, Error> {
         // Fail if boring
         if !palettes.iter().any(|p| !p.is_empty()) {
             return Ok(None);
@@ -2133,22 +2147,6 @@ impl ColorPalettes {
                 n: bad_idx,
                 size_n: palettes[bad_idx].len(),
             });
-        }
-
-        // Trivial optimization: if there is only one palette we can deduplicate it
-        if let [one_palette] = palettes.as_mut_slice() {
-            // Keep the first occurance in original order to match fontmake
-            let mut seen = HashSet::new();
-            let mut delme = Vec::new();
-            for (i, c) in one_palette.iter().enumerate() {
-                if !seen.insert(c) {
-                    delme.push(i);
-                }
-            }
-
-            for i in delme.into_iter().rev() {
-                one_palette.remove(i);
-            }
         }
 
         Ok(Some(Self { palettes }))
@@ -2175,14 +2173,25 @@ pub struct Color {
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ColorStop {
     pub offset: OrderedFloat<f32>,
-    pub color: Color,
+    pub color: ColorReference,
+    /// Opacity multiplier, independent of the palette entry's alpha (0..1).
     pub alpha: OrderedFloat<f32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ColorReference {
+    /// A Glyphs color, resolved against the generated palette.
+    Color(Color),
+    /// An existing palette entry; 0xFFFF means the text foreground color.
+    PaletteIndex(u16),
 }
 
 /// Data to inform construction of [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr)
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ColorGlyphs {
     pub base_glyphs: IndexMap<GlyphName, Paint>,
+    /// Explicit static clipping rectangles in font units.
+    pub clip_boxes: BTreeMap<GlyphName, Rect>,
 }
 
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/colr#paint-tables>
@@ -2193,6 +2202,9 @@ pub enum Paint {
     LinearGradient(Box<PaintLinearGradient>),
     RadialGradient(Box<PaintRadialGradient>),
     Layers(Box<Vec<Paint>>),
+    ColrGlyph(GlyphName),
+    Transform(Box<PaintTransform>),
+    Translate(Box<PaintTranslate>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -2203,14 +2215,25 @@ pub struct PaintGlyph {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintSolid {
-    /// The color to use. `None` means the text foreground color
-    /// (COLR palette index 0xFFFF).
-    pub color: Option<Color>,
+    pub color: ColorReference,
+    /// Opacity multiplier, independent of the palette entry's alpha (0..1).
+    pub alpha: OrderedFloat<f32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+pub enum GradientCoordinates {
+    /// Percentages of the enclosing PaintGlyph's outline bounds, as in Glyphs.
+    Relative,
+    /// Font units, as in UFO COLRv1 paint dictionaries.
+    Absolute,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintLinearGradient {
     pub color_line: Vec<ColorStop>,
+    #[serde(default)]
+    pub extend: write_fonts::tables::colr::Extend,
+    pub coordinates: GradientCoordinates,
     pub p0: Point,
     pub p1: Point,
     /// Third point defining gradient rotation. None means calculate perpendicular
@@ -2221,13 +2244,30 @@ pub struct PaintLinearGradient {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintRadialGradient {
     pub color_line: Vec<ColorStop>,
+    #[serde(default)]
+    pub extend: write_fonts::tables::colr::Extend,
+    pub coordinates: GradientCoordinates,
     pub p0: Point,
-    /// Inner radius. None means 0 (gradient radiating from center, not a ring).
+    /// Explicit inner radius in font units.
+    /// None means 0 (gradient radiating from center, not a ring).
     pub r0: Option<OrderedFloat<f32>>,
     pub p1: Point,
-    /// Outer radius. None means calculate as max distance from center to
-    /// bounding box corners (like Glyphs.app does).
+    /// Explicit outer radius in font units. None means calculate as max
+    /// distance from center to bounding box corners (like Glyphs 3 does).
     pub r1: Option<OrderedFloat<f32>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintTransform {
+    pub paint: Paint,
+    pub transform: Affine,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintTranslate {
+    pub paint: Paint,
+    pub dx: f64,
+    pub dy: f64,
 }
 
 #[cfg(test)]

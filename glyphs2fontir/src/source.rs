@@ -2402,6 +2402,7 @@ impl Work<Context, WorkId, Error> for ColorGlyphsWork {
         }
         let mut graph = ColorGlyphs {
             base_glyphs: IndexMap::with_capacity(self.font_info.color_glyphs.len()),
+            clip_boxes: BTreeMap::new(),
         };
         let palette = self.font_info.font.default_palette();
         for (glyph_name, split_glyph_names) in self.font_info.color_glyphs.iter() {

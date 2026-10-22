@@ -123,6 +123,8 @@ pub enum Error {
     NoGlobalMetricsInstance(NormalizedLocation),
     #[error("No palette entry for '{0:?}'")]
     MissingPaletteEntry(Color),
+    #[error("Invalid COLR glyph '{0}': {1}")]
+    InvalidColorGlyph(GlyphName, String),
     #[error(
         "name ID {} (platform {}, encoding {}, language {}) {problem}: {:?}",
         .record.name_id.to_u16(), .record.platform_id, .record.encoding_id, .record.language_id, .record.string.as_str()
