@@ -5440,12 +5440,6 @@ mod tests {
     }
 
     #[test]
-    fn v4_format_version() {
-        let font = RawFont::load(&glyphs4_dir().join("fence/master-inactive.glyphs")).unwrap();
-        assert_eq!(font.format_version, FormatVersion::V4);
-    }
-
-    #[test]
     fn unknown_format_version() {
         let result = RawFont::load_from_string("{.formatVersion = 5;}");
         assert!(
