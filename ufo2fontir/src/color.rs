@@ -195,6 +195,15 @@ impl PaintParser<'_> {
     }
 
     fn coordinate(&self, dict: &Dictionary, field: &str, unsigned: bool) -> Result<f64, Error> {
+        Ok(self.unrounded_coordinate(dict, field, unsigned)?.ot_round())
+    }
+
+    fn unrounded_coordinate(
+        &self,
+        dict: &Dictionary,
+        field: &str,
+        unsigned: bool,
+    ) -> Result<f64, Error> {
         let value = number(self.required(dict, field)?)
             .ok_or_else(|| self.error(format!("{field} must be a finite number")))?;
         let rounded: f64 = value.ot_round();
@@ -205,6 +214,67 @@ impl PaintParser<'_> {
         };
         if !(min..=max).contains(&rounded) {
             return Err(self.error(format!("{field} out of range {min}..={max}")));
+        }
+        Ok(value)
+    }
+
+    /// Match fontTools.colorLib.geometry.round_start_circle_stable_containment.
+    /// Keep the original f64 circles until containment is compared with rounded values.
+    fn radial_circles(&self, dict: &Dictionary) -> Result<[f64; 6], Error> {
+        let mut original = [0.0; 6];
+        for (i, key) in ["x0", "y0", "r0", "x1", "y1", "r1"].iter().enumerate() {
+            original[i] = self.unrounded_coordinate(dict, key, i % 3 == 2)?;
+        }
+        let inside = |c: [f64; 6]| {
+            let distance = c[2] + (c[0] - c[3]).hypot(c[1] - c[4]);
+            // fontTools uses math.isclose with rel_tol=1e-4, including tangency.
+            c[5] > distance || (c[5] - distance).abs() <= 1e-4 * c[5].abs().max(distance.abs())
+        };
+        let was_inside = inside(original);
+        let mut rounded = original.map(OtRound::<f64>::ot_round);
+        if was_inside != inside(rounded) {
+            let sign = if was_inside { -1.0 } else { 1.0 };
+            let dx = sign * (rounded[0] - rounded[3]);
+            let dy = sign * (rounded[1] - rounded[4]);
+            let length = dx.hypot(dy);
+            let threshold = (3.0 * std::f64::consts::PI / 8.0).cos();
+            let offset = |v: f64| {
+                if length == 0.0 || (-threshold..threshold).contains(&(v / length)) {
+                    0.0
+                } else {
+                    v.signum()
+                }
+            };
+            let (dx, dy) = (offset(dx), offset(dy));
+            // Independent rounding moves each coordinate by at most half a unit.
+            // Two unit steps suffice, including when both circles move apart.
+            for _ in 0..2 {
+                if rounded[0] == rounded[3] && rounded[1] == rounded[4] {
+                    rounded[2] += sign;
+                } else {
+                    rounded[0] += dx;
+                    rounded[1] += dy;
+                }
+                if was_inside == inside(rounded) {
+                    break;
+                }
+            }
+            if was_inside != inside(rounded) {
+                return Err(
+                    self.error("cannot preserve radial gradient containment after rounding")
+                );
+            }
+        }
+        // A containment adjustment can cross the encoded coordinate/radius limits.
+        for (i, value) in rounded.iter().enumerate() {
+            let range = if i % 3 == 2 {
+                0.0..=65535.0
+            } else {
+                -32768.0..=32767.0
+            };
+            if !range.contains(value) {
+                return Err(self.error("radial gradient out of range after containment rounding"));
+            }
         }
         Ok(rounded)
     }
@@ -351,14 +421,15 @@ impl PaintParser<'_> {
             }
             6 => {
                 let (color_line, extend) = self.color_line(self.required(dict, "ColorLine")?)?;
+                let [x0, y0, r0, x1, y1, r1] = self.radial_circles(dict)?;
                 Paint::RadialGradient(Box::new(PaintRadialGradient {
                     color_line,
                     extend,
                     coordinates: GradientCoordinates::Absolute,
-                    p0: point("x0", "y0")?,
-                    p1: point("x1", "y1")?,
-                    r0: Some((self.coordinate(dict, "r0", true)? as f32).into()),
-                    r1: Some((self.coordinate(dict, "r1", true)? as f32).into()),
+                    p0: Point::new(x0, y0),
+                    p1: Point::new(x1, y1),
+                    r0: Some((r0 as f32).into()),
+                    r1: Some((r1 as f32).into()),
                 }))
             }
             10 => Paint::Glyph(Box::new(PaintGlyph {
