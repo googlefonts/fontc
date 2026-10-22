@@ -344,6 +344,8 @@ feature cv02 {
     let get_cv_name_ids = |gsub: &Gsub| -> [NameId; 4] {
         let cv_rec = gsub
             .feature_list
+            .as_ref()
+            .expect("should have a feature list")
             .feature_records
             .iter()
             .find(|r| r.feature_tag == cv02)

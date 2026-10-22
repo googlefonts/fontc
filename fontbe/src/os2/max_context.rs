@@ -10,16 +10,20 @@ use write_fonts::{
             PositionSequenceContext,
         },
         gsub::{
-            ExtensionSubtable as GsubExt, Gsub, LigatureSubstFormat1,
-            ReverseChainSingleSubstFormat1, SubstitutionChainContext, SubstitutionLookup,
+            ExtensionSubtable as GsubExt, Gsub, LigatureSubst, LigatureSubstFormat1,
+            LigatureSubstFormat2, ReverseChainSingleSubst, ReverseChainSingleSubstFormat1,
+            ReverseChainSingleSubstFormat2, SubstitutionChainContext, SubstitutionLookup,
             SubstitutionSequenceContext,
         },
         layout::{
-            ChainedClassSequenceRule, ChainedClassSequenceRuleSet, ChainedSequenceContext,
-            ChainedSequenceContextFormat1, ChainedSequenceContextFormat2, ChainedSequenceRule,
-            ChainedSequenceRuleSet, ClassSequenceRule, ClassSequenceRuleSet, Lookup,
-            SequenceContext, SequenceContextFormat1, SequenceContextFormat2, SequenceRule,
-            SequenceRuleSet,
+            ChainedClassSequenceRule, ChainedClassSequenceRuleSet, ChainedClassSequenceRuleSet2,
+            ChainedSequenceContext, ChainedSequenceContextFormat1, ChainedSequenceContextFormat2,
+            ChainedSequenceContextFormat4, ChainedSequenceContextFormat5, ChainedSequenceRule,
+            ChainedSequenceRule2, ChainedSequenceRuleSet, ChainedSequenceRuleSet2,
+            ClassSequenceRule, ClassSequenceRuleSet, ClassSequenceRuleSet2, Lookup,
+            SequenceContext, SequenceContextFormat1, SequenceContextFormat2,
+            SequenceContextFormat4, SequenceContextFormat5, SequenceRule, SequenceRule2,
+            SequenceRuleSet, SequenceRuleSet2,
         },
     },
 };
@@ -31,14 +35,16 @@ use write_fonts::{
 pub(super) fn compute_max_context_value(gpos: Option<&Gpos>, gsub: Option<&Gsub>) -> u16 {
     let max_gpos = gpos.map(|gpos| {
         gpos.lookup_list
-            .lookups
-            .iter()
+            .as_ref()
+            .into_iter()
+            .flat_map(|list| list.lookups.iter())
             .fold(0, |max_ctx, lookup| max_ctx.max(lookup.max_context()))
     });
     let max_gsub = gsub.map(|gsub| {
         gsub.lookup_list
-            .lookups
-            .iter()
+            .as_ref()
+            .into_iter()
+            .flat_map(|list| list.lookups.iter())
             .fold(0, |max_ctx, lookup| max_ctx.max(lookup.max_context()))
     });
 
@@ -84,28 +90,38 @@ trait Rule {
 
 trait RuleSet {
     type Rule;
-    fn rules(&self) -> &[OffsetMarker<Self::Rule>];
+    fn rules(&self) -> impl Iterator<Item = &Self::Rule>;
 }
 
 /// A subtable with a set of nullable rules that contribute to max context
 trait ContextualSubtable {
     type Rule: Rule;
     type RuleSet: RuleSet;
-    fn rule_sets(&self) -> &[NullableOffsetMarker<Self::RuleSet>];
+    fn rule_sets(&self) -> impl Iterator<Item = Option<&Self::RuleSet>>;
+}
+
+fn rules<T, const N: usize>(rules: &[OffsetMarker<T, N>]) -> impl Iterator<Item = &T> {
+    rules.iter().map(|rule| rule.as_ref())
+}
+
+fn rule_sets<T, const N: usize>(
+    rule_sets: &[NullableOffsetMarker<T, N>],
+) -> impl Iterator<Item = Option<&T>> {
+    rule_sets.iter().map(|rule_set| rule_set.as_ref())
 }
 
 impl ContextualSubtable for &SequenceContextFormat1 {
     type Rule = SequenceRule;
     type RuleSet = SequenceRuleSet;
-    fn rule_sets(&self) -> &[NullableOffsetMarker<Self::RuleSet>] {
-        &self.seq_rule_sets
+    fn rule_sets(&self) -> impl Iterator<Item = Option<&Self::RuleSet>> {
+        rule_sets(&self.seq_rule_sets)
     }
 }
 
 impl RuleSet for SequenceRuleSet {
     type Rule = SequenceRule;
-    fn rules(&self) -> &[OffsetMarker<Self::Rule>] {
-        &self.seq_rules
+    fn rules(&self) -> impl Iterator<Item = &Self::Rule> {
+        rules(&self.seq_rules)
     }
 }
 
@@ -124,15 +140,15 @@ impl Rule for SequenceRule {
 impl ContextualSubtable for &SequenceContextFormat2 {
     type Rule = ClassSequenceRule;
     type RuleSet = ClassSequenceRuleSet;
-    fn rule_sets(&self) -> &[NullableOffsetMarker<Self::RuleSet>] {
-        &self.class_seq_rule_sets
+    fn rule_sets(&self) -> impl Iterator<Item = Option<&Self::RuleSet>> {
+        rule_sets(&self.class_seq_rule_sets)
     }
 }
 
 impl RuleSet for ClassSequenceRuleSet {
     type Rule = ClassSequenceRule;
-    fn rules(&self) -> &[OffsetMarker<Self::Rule>] {
-        &self.class_seq_rules
+    fn rules(&self) -> impl Iterator<Item = &Self::Rule> {
+        rules(&self.class_seq_rules)
     }
 }
 
@@ -151,15 +167,15 @@ impl Rule for ClassSequenceRule {
 impl ContextualSubtable for &ChainedSequenceContextFormat1 {
     type Rule = ChainedSequenceRule;
     type RuleSet = ChainedSequenceRuleSet;
-    fn rule_sets(&self) -> &[NullableOffsetMarker<Self::RuleSet>] {
-        &self.chained_seq_rule_sets
+    fn rule_sets(&self) -> impl Iterator<Item = Option<&Self::RuleSet>> {
+        rule_sets(&self.chained_seq_rule_sets)
     }
 }
 
 impl RuleSet for ChainedSequenceRuleSet {
     type Rule = ChainedSequenceRule;
-    fn rules(&self) -> &[OffsetMarker<Self::Rule>] {
-        &self.chained_seq_rules
+    fn rules(&self) -> impl Iterator<Item = &Self::Rule> {
+        rules(&self.chained_seq_rules)
     }
 }
 
@@ -178,15 +194,15 @@ impl Rule for ChainedSequenceRule {
 impl ContextualSubtable for &ChainedSequenceContextFormat2 {
     type Rule = ChainedClassSequenceRule;
     type RuleSet = ChainedClassSequenceRuleSet;
-    fn rule_sets(&self) -> &[NullableOffsetMarker<Self::RuleSet>] {
-        &self.chained_class_seq_rule_sets
+    fn rule_sets(&self) -> impl Iterator<Item = Option<&Self::RuleSet>> {
+        rule_sets(&self.chained_class_seq_rule_sets)
     }
 }
 
 impl RuleSet for ChainedClassSequenceRuleSet {
     type Rule = ChainedClassSequenceRule;
-    fn rules(&self) -> &[OffsetMarker<Self::Rule>] {
-        &self.chained_class_seq_rules
+    fn rules(&self) -> impl Iterator<Item = &Self::Rule> {
+        rules(&self.chained_class_seq_rules)
     }
 }
 
@@ -202,6 +218,86 @@ impl Rule for ChainedClassSequenceRule {
     }
 }
 
+impl ContextualSubtable for &SequenceContextFormat4 {
+    type Rule = SequenceRule2;
+    type RuleSet = SequenceRuleSet2;
+    fn rule_sets(&self) -> impl Iterator<Item = Option<&Self::RuleSet>> {
+        rule_sets(&self.seq_rule_sets)
+    }
+}
+
+impl RuleSet for SequenceRuleSet2 {
+    type Rule = SequenceRule2;
+    fn rules(&self) -> impl Iterator<Item = &Self::Rule> {
+        rules(&self.seq_rules)
+    }
+}
+
+impl Rule for SequenceRule2 {
+    fn sequence_len(&self) -> usize {
+        self.input_sequence.len() + 1
+    }
+
+    fn lookahead_len(&self) -> usize {
+        0
+    }
+}
+
+impl ContextualSubtable for &SequenceContextFormat5 {
+    type Rule = ClassSequenceRule;
+    type RuleSet = ClassSequenceRuleSet2;
+    fn rule_sets(&self) -> impl Iterator<Item = Option<&Self::RuleSet>> {
+        rule_sets(&self.class_seq_rule_sets)
+    }
+}
+
+impl RuleSet for ClassSequenceRuleSet2 {
+    type Rule = ClassSequenceRule;
+    fn rules(&self) -> impl Iterator<Item = &Self::Rule> {
+        rules(&self.class_seq_rules)
+    }
+}
+
+impl ContextualSubtable for &ChainedSequenceContextFormat4 {
+    type Rule = ChainedSequenceRule2;
+    type RuleSet = ChainedSequenceRuleSet2;
+    fn rule_sets(&self) -> impl Iterator<Item = Option<&Self::RuleSet>> {
+        rule_sets(&self.chained_seq_rule_sets)
+    }
+}
+
+impl RuleSet for ChainedSequenceRuleSet2 {
+    type Rule = ChainedSequenceRule2;
+    fn rules(&self) -> impl Iterator<Item = &Self::Rule> {
+        rules(&self.chained_seq_rules)
+    }
+}
+
+impl Rule for ChainedSequenceRule2 {
+    fn sequence_len(&self) -> usize {
+        self.input_sequence.len() + 1
+    }
+
+    fn lookahead_len(&self) -> usize {
+        self.lookahead_sequence.len()
+    }
+}
+
+impl ContextualSubtable for &ChainedSequenceContextFormat5 {
+    type Rule = ChainedClassSequenceRule;
+    type RuleSet = ChainedClassSequenceRuleSet2;
+    fn rule_sets(&self) -> impl Iterator<Item = Option<&Self::RuleSet>> {
+        rule_sets(&self.chained_class_seq_rule_sets)
+    }
+}
+
+impl RuleSet for ChainedClassSequenceRuleSet2 {
+    type Rule = ChainedClassSequenceRule;
+    fn rules(&self) -> impl Iterator<Item = &Self::Rule> {
+        rules(&self.chained_class_seq_rules)
+    }
+}
+
 fn max_context_of_contextual_subtable<C, RS, R>(subtable: &C, rule_type: ContextualRuleType) -> u16
 where
     C: ContextualSubtable<Rule = R, RuleSet = RS>,
@@ -210,9 +306,8 @@ where
 {
     subtable
         .rule_sets()
-        .iter()
-        .filter_map(|nullable| nullable.as_ref())
-        .flat_map(|ruleset| ruleset.rules().iter())
+        .flatten()
+        .flat_map(|ruleset| ruleset.rules())
         .map(|rule| rule.context(rule_type))
         .max()
         .unwrap_or_default()
@@ -231,6 +326,26 @@ impl MaxContext for LigatureSubstFormat1 {
     }
 }
 
+impl MaxContext for LigatureSubstFormat2 {
+    fn max_context(&self) -> u16 {
+        self.ligature_sets
+            .iter()
+            .flat_map(|l| l.ligatures.iter())
+            .fold(0, |max_ctx, ligature| {
+                max_ctx.max((ligature.component_glyph_ids.len() + 1) as u16)
+            })
+    }
+}
+
+impl MaxContext for LigatureSubst {
+    fn max_context(&self) -> u16 {
+        match self {
+            LigatureSubst::Format1(format1) => format1.max_context(),
+            LigatureSubst::Format2(format2) => format2.max_context(),
+        }
+    }
+}
+
 /// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L41-L43>
 impl MaxContext for SequenceContext {
     fn max_context(&self) -> u16 {
@@ -243,6 +358,15 @@ impl MaxContext for SequenceContext {
             }
             SequenceContext::Format3(format3) => {
                 max_context_of_rule(format3.coverages.len(), 0, ContextualRuleType::Contextual)
+            }
+            SequenceContext::Format4(format4) => {
+                max_context_of_contextual_subtable(&format4, ContextualRuleType::Contextual)
+            }
+            SequenceContext::Format5(format5) => {
+                max_context_of_contextual_subtable(&format5, ContextualRuleType::Contextual)
+            }
+            SequenceContext::Format6(format6) => {
+                max_context_of_rule(format6.coverages.len(), 0, ContextualRuleType::Contextual)
             }
         }
     }
@@ -275,6 +399,12 @@ impl MaxContext for ChainedSequenceContext {
                 format3.lookahead_coverages.len(),
                 ContextualRuleType::Chained,
             ),
+            ChainedSequenceContext::Format4(format4) => {
+                max_context_of_contextual_subtable(&format4, ContextualRuleType::Chained)
+            }
+            ChainedSequenceContext::Format5(format5) => {
+                max_context_of_contextual_subtable(&format5, ContextualRuleType::Chained)
+            }
         }
     }
 }
@@ -312,6 +442,25 @@ impl MaxContext for ReverseChainSingleSubstFormat1 {
             self.lookahead_coverages.len(),
             ContextualRuleType::ReverseChained,
         )
+    }
+}
+
+impl MaxContext for ReverseChainSingleSubstFormat2 {
+    fn max_context(&self) -> u16 {
+        max_context_of_rule(
+            self.backtrack_coverages.len(),
+            self.lookahead_coverages.len(),
+            ContextualRuleType::ReverseChained,
+        )
+    }
+}
+
+impl MaxContext for ReverseChainSingleSubst {
+    fn max_context(&self) -> u16 {
+        match self {
+            ReverseChainSingleSubst::Format1(format1) => format1.max_context(),
+            ReverseChainSingleSubst::Format2(format2) => format2.max_context(),
+        }
     }
 }
 

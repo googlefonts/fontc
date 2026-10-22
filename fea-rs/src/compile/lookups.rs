@@ -483,18 +483,10 @@ impl Builder for PositionLookup {
             PositionLookup::Pair(lookup) => {
                 write_gpos::PositionLookup::Pair(lookup.build(var_store))
             }
-            PositionLookup::Cursive(lookup) => {
-                write_gpos::PositionLookup::Cursive(lookup.build(var_store))
-            }
-            PositionLookup::MarkToBase(lookup) => {
-                write_gpos::PositionLookup::MarkToBase(lookup.build(var_store))
-            }
-            PositionLookup::MarkToLig(lookup) => {
-                write_gpos::PositionLookup::MarkToLig(lookup.build(var_store))
-            }
-            PositionLookup::MarkToMark(lookup) => {
-                write_gpos::PositionLookup::MarkToMark(lookup.build(var_store))
-            }
+            PositionLookup::Cursive(lookup) => lookup.build(var_store).into(),
+            PositionLookup::MarkToBase(lookup) => lookup.build(var_store).into(),
+            PositionLookup::MarkToLig(lookup) => lookup.build(var_store).into(),
+            PositionLookup::MarkToMark(lookup) => lookup.build(var_store).into(),
             PositionLookup::Contextual(lookup) => {
                 write_gpos::PositionLookup::Contextual(lookup.build(var_store).into_concrete())
             }
@@ -514,15 +506,9 @@ impl Builder for SubstitutionLookup {
             SubstitutionLookup::Single(lookup) => {
                 write_gsub::SubstitutionLookup::Single(lookup.build(var_store))
             }
-            SubstitutionLookup::Multiple(lookup) => {
-                write_gsub::SubstitutionLookup::Multiple(lookup.build(var_store))
-            }
-            SubstitutionLookup::Alternate(lookup) => {
-                write_gsub::SubstitutionLookup::Alternate(lookup.build(var_store))
-            }
-            SubstitutionLookup::Ligature(lookup) => {
-                write_gsub::SubstitutionLookup::Ligature(lookup.build(var_store))
-            }
+            SubstitutionLookup::Multiple(lookup) => lookup.build(var_store).into(),
+            SubstitutionLookup::Alternate(lookup) => lookup.build(var_store).into(),
+            SubstitutionLookup::Ligature(lookup) => lookup.build(var_store).into(),
             SubstitutionLookup::Contextual(lookup) => {
                 write_gsub::SubstitutionLookup::Contextual(lookup.build(var_store).into_concrete())
             }
@@ -531,9 +517,7 @@ impl Builder for SubstitutionLookup {
                     lookup.build(var_store).into_concrete(),
                 )
             }
-            SubstitutionLookup::Reverse(lookup) => {
-                write_gsub::SubstitutionLookup::Reverse(lookup.build(var_store))
-            }
+            SubstitutionLookup::Reverse(lookup) => lookup.build(var_store).into(),
             SubstitutionLookup::Extension(inner) => wrap_gsub_in_extension(inner.build(var_store)),
         }
     }

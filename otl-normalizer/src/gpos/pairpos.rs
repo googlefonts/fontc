@@ -6,7 +6,7 @@ use std::{
 use write_fonts::read::{
     ReadError,
     tables::gpos::{PairPos, PairPosFormat1, PairPosFormat2, ValueRecord},
-    types::GlyphId16,
+    types::GlyphId,
 };
 
 use crate::{common::GlyphSet, glyph_names::NameMap, variations::DeltaComputer};
@@ -15,7 +15,7 @@ use super::{PrintNames, ResolvedValueRecord};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct PairPosRule {
-    pub first: GlyphId16,
+    pub first: GlyphId,
     pub second: GlyphSet,
     pub record1: ResolvedValueRecord,
     pub record2: ResolvedValueRecord,
@@ -68,6 +68,7 @@ pub(super) fn get_pairpos_rules(
             PairPos::Format2(sub) => {
                 append_pairpos_f2_rules(sub, delta_computer, &mut seen, &mut result);
             }
+            PairPos::Format3(_) | PairPos::Format4(_) => (),
         }
     }
     Ok(result)
@@ -77,7 +78,7 @@ pub(super) fn get_pairpos_rules(
 fn append_pairpos_f1_rules(
     subtable: &PairPosFormat1,
     delta_computer: Option<&DeltaComputer>,
-    seen: &mut HashSet<(GlyphId16, GlyphId16)>,
+    seen: &mut HashSet<(GlyphId, GlyphId)>,
     result: &mut Vec<PairPosRule>,
 ) {
     let coverage = subtable.coverage().unwrap();
@@ -86,7 +87,7 @@ fn append_pairpos_f1_rules(
         let pairset = pairset.unwrap();
         for pairrec in pairset.pair_value_records().iter() {
             let pairrec = pairrec.unwrap();
-            let gid2 = pairrec.second_glyph();
+            let gid2 = GlyphId::from(pairrec.second_glyph());
             // if a previous subtable had a kern for this pair, skip it here
             if !seen.insert((gid1, gid2)) {
                 continue;
@@ -117,7 +118,7 @@ fn is_noop(value_record: &ValueRecord) -> bool {
 fn append_pairpos_f2_rules(
     subtable: &PairPosFormat2,
     delta_computer: Option<&DeltaComputer>,
-    seen: &mut HashSet<(GlyphId16, GlyphId16)>,
+    seen: &mut HashSet<(GlyphId, GlyphId)>,
     result: &mut Vec<PairPosRule>,
 ) {
     let coverage = subtable.coverage().unwrap();
@@ -140,7 +141,7 @@ fn append_pairpos_f2_rules(
                 continue;
             }
             for gid2 in reverse_class2
-                .get(&(c2 as u16))
+                .get(&(c2 as u32))
                 .into_iter()
                 .flat_map(|c2glyphs| c2glyphs.iter())
                 .copied()
@@ -178,16 +179,16 @@ mod tests {
         // (left gid, [right gids], x advance)
         fn eq(&self, other: &(u16, &[u16], i16)) -> bool {
             // bail early because the next comparison allocates -_-
-            if self.first.to_u16() != other.0 {
+            if self.first != GlyphId::from(other.0) {
                 return false;
             }
             let second_matches = match (other.1, &self.second) {
-                ([just_one], GlyphSet::Single(glyph)) => *just_one == glyph.to_u16(),
+                ([just_one], GlyphSet::Single(glyph)) => GlyphId::from(*just_one) == *glyph,
                 (left, GlyphSet::Multiple(right)) => {
                     &left
                         .iter()
                         .copied()
-                        .map(GlyphId16::new)
+                        .map(GlyphId::from)
                         .collect::<BTreeSet<_>>()
                         == right
                 }
