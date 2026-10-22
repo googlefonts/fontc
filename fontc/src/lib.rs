@@ -6530,7 +6530,8 @@ mod tests {
     }
 
     // Expected values in the COLRv1-static.ufo tests were checked against
-    // fontmake 3.12.2 / fontTools 4.67.0.
+    // fontmake 3.12.2 / fontTools 4.67.0, except the radial clip: fontc keeps
+    // the zero-width contour that fontmake removes (see the clip-box test).
     #[test]
     fn colrv1_ufo_palette_indices_and_alpha() {
         let result = TestCompile::compile_source("COLRv1-static.ufo");

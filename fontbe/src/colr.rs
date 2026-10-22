@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 
 use kurbo::{Affine, Point, Rect};
-use ordered_float::OrderedFloat;
 
 use crate::{
     error::{Error, GlyphProblem},
@@ -100,18 +99,6 @@ fn scale_gradient_radius(bbox: &Bbox, center_pct_x: f64, center_pct_y: f64) -> u
         .fold(0.0f64, f64::max);
 
     max_dist_squared.sqrt().ot_round()
-}
-
-/// Scale an explicit radius, relative to the bounding box, to font units.
-///
-/// Glyphs 4 radial gradient radii are relative to the shape bounds: when it
-/// converts a Glyphs 3 radial gradient, whose radius is implicit (see
-/// [`scale_gradient_radius`]), the radius it writes is that implicit radius
-/// divided by the square root of the bounding box area.
-fn scale_relative_radius(bbox: &Bbox, radius: f32) -> u16 {
-    let width = bbox.x_max as f64 - bbox.x_min as f64;
-    let height = bbox.y_max as f64 - bbox.y_min as f64;
-    (radius as f64 * (width * height).sqrt()).ot_round()
 }
 
 /// Scale a gradient coordinate from percentage (0.0-1.0) to absolute coordinates
@@ -242,14 +229,10 @@ fn to_colr_paint(
             // Scale gradient points from relative 0-1 to absolute coordinates
             let (x0, y0) = gradient_point(bbox, radial.coordinates, radial.p0);
             let (x1, y1) = gradient_point(bbox, radial.coordinates, radial.p1);
-            // Explicit radii follow the paint's coordinate system
-            let radius = |r: OrderedFloat<f32>| match radial.coordinates {
-                ir::GradientCoordinates::Relative => scale_relative_radius(bbox, r.0),
-                ir::GradientCoordinates::Absolute => r.0.ot_round(),
-            };
-            let r0 = radial.r0.map(radius).unwrap_or(0);
+            // UFO radii are explicit font units; Glyphs uses implicit radii.
+            let r0 = radial.r0.map(|r| r.0.ot_round()).unwrap_or(0);
             let r1 = if let Some(r) = radial.r1 {
-                radius(r)
+                r.0.ot_round()
             } else {
                 // Calculate radius from bbox dimensions, matching glyphsLib behavior
                 scale_gradient_radius(bbox, radial.p1.x, radial.p1.y)

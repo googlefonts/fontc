@@ -1,6 +1,6 @@
 //! The ufo2ft color lib interchange format: indexed palettes and static paint graphs.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use fontdrasil::types::GlyphName;
 use fontir::{
@@ -515,8 +515,8 @@ fn validate_references(base_glyphs: &IndexMap<GlyphName, Paint>) -> Result<(), E
 fn parse_clip_boxes(
     value: Option<&Value>,
     base_glyphs: &IndexMap<GlyphName, Paint>,
-) -> Result<HashMap<GlyphName, Rect>, Error> {
-    let mut result = HashMap::new();
+) -> Result<BTreeMap<GlyphName, Rect>, Error> {
+    let mut result = BTreeMap::new();
     let Some(value) = value else {
         return Ok(result);
     };

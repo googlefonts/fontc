@@ -2191,7 +2191,7 @@ pub enum ColorReference {
 pub struct ColorGlyphs {
     pub base_glyphs: IndexMap<GlyphName, Paint>,
     /// Explicit static clipping rectangles in font units.
-    pub clip_boxes: HashMap<GlyphName, Rect>,
+    pub clip_boxes: BTreeMap<GlyphName, Rect>,
 }
 
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/colr#paint-tables>
@@ -2248,13 +2248,11 @@ pub struct PaintRadialGradient {
     pub extend: write_fonts::tables::colr::Extend,
     pub coordinates: GradientCoordinates,
     pub p0: Point,
-    /// Inner radius, in the same coordinate system as the points (see `r1`).
+    /// Explicit inner radius in font units.
     /// None means 0 (gradient radiating from center, not a ring).
     pub r0: Option<OrderedFloat<f32>>,
     pub p1: Point,
-    /// Outer radius: font units for absolute coordinates; for relative ones,
-    /// relative to the bounding box of the painted glyph, scaled by the square
-    /// root of the box's area as Glyphs 4 does. None means calculate as max
+    /// Explicit outer radius in font units. None means calculate as max
     /// distance from center to bounding box corners (like Glyphs 3 does).
     pub r1: Option<OrderedFloat<f32>>,
 }
