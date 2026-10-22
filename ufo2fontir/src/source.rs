@@ -2372,7 +2372,10 @@ fn parse_color_layers(
         base_glyphs.insert(GlyphName::from(base_glyph_name.as_str()), paint);
     }
 
-    Ok(ColorGlyphs { base_glyphs })
+    Ok(ColorGlyphs {
+        base_glyphs,
+        clip_boxes: HashMap::new(),
+    })
 }
 
 impl Work<Context, WorkId, Error> for ColorPaletteWork {

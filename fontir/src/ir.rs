@@ -6,7 +6,7 @@ use std::{
 };
 
 use indexmap::{IndexMap, IndexSet};
-use kurbo::{Affine, BezPath, PathEl, Point};
+use kurbo::{Affine, BezPath, PathEl, Point, Rect};
 use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
@@ -2190,6 +2190,8 @@ pub enum ColorReference {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ColorGlyphs {
     pub base_glyphs: IndexMap<GlyphName, Paint>,
+    /// Explicit static clipping rectangles in font units.
+    pub clip_boxes: HashMap<GlyphName, Rect>,
 }
 
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/colr#paint-tables>
@@ -2200,6 +2202,9 @@ pub enum Paint {
     LinearGradient(Box<PaintLinearGradient>),
     RadialGradient(Box<PaintRadialGradient>),
     Layers(Box<Vec<Paint>>),
+    ColrGlyph(GlyphName),
+    Transform(Box<PaintTransform>),
+    Translate(Box<PaintTranslate>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -2252,6 +2257,19 @@ pub struct PaintRadialGradient {
     /// root of the box's area as Glyphs 4 does. None means calculate as max
     /// distance from center to bounding box corners (like Glyphs 3 does).
     pub r1: Option<OrderedFloat<f32>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintTransform {
+    pub paint: Paint,
+    pub transform: Affine,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintTranslate {
+    pub paint: Paint,
+    pub dx: f64,
+    pub dy: f64,
 }
 
 #[cfg(test)]
