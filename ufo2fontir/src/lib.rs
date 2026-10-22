@@ -3,5 +3,6 @@
 //! [UFO]: http://unifiedfontobject.org
 //! [font IR]: https://docs.rs/fontir
 
+mod color;
 pub mod source;
 pub mod toir;
