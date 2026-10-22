@@ -6628,6 +6628,56 @@ mod tests {
         }
     }
 
+    // Expected circles match fontTools.colorLib's containment-preserving rounding.
+    #[rstest]
+    #[case([1.5, 1.5, 0.5, 0.499, 0.499, 2.499], [0, 0, 1, 0, 0, 2])]
+    #[case([0.5, 0.0, 0.0, 9.4, 0.0, 8.8], [-1, 0, 0, 9, 0, 9])]
+    #[case([0.0, 0.0, 1.49, 0.0, 0.0, 1.0], [0, 0, 2, 0, 0, 1])]
+    #[case([0.5000001, 0.0, 0.5000001, 0.499999, 0.0, 0.4999999], [0, 0, 0, 0, 0, 0])]
+    fn colrv1_ufo_radial_rounding_preserves_containment(
+        #[case] circles: [f64; 6],
+        #[case] expected: [i32; 6],
+    ) {
+        let temp = tempdir().unwrap();
+        let ufo = temp.path().join("Radial.ufo");
+        copy_dir(&testdata_dir().join("COLRv1-static.ufo"), &ufo);
+        let coordinates = ["x0", "y0", "r0", "x1", "y1", "r1"]
+            .into_iter()
+            .zip(circles)
+            .map(|(key, value)| format!("<key>{key}</key><real>{value}</real>"))
+            .collect::<String>();
+        fs::write(ufo.join("lib.plist"), format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>com.github.googlei18n.ufo2ft.colorPalettes</key>
+<array><array><array><integer>1</integer><integer>0</integer><integer>0</integer><integer>1</integer></array></array></array>
+<key>com.github.googlei18n.ufo2ft.colorLayers</key><dict><key>radial</key><dict>
+<key>Format</key><integer>10</integer><key>Glyph</key><string>shape</string>
+<key>Paint</key><dict><key>Format</key><integer>6</integer>
+<key>ColorLine</key><dict><key>ColorStop</key><array>
+<dict><key>StopOffset</key><integer>0</integer><key>PaletteIndex</key><integer>0</integer></dict>
+</array></dict>{coordinates}
+</dict></dict></dict></dict></plist>"#)).unwrap();
+        let result = TestCompile::compile_source(ufo.to_str().unwrap());
+        let font = result.font();
+        let colr = font.colr().unwrap();
+        let Paint::RadialGradient(radial) =
+            root_paint_glyph(&result, &colr, "radial").paint().unwrap()
+        else {
+            panic!("Expected radial gradient");
+        };
+        assert_eq!(
+            [
+                i32::from(radial.x0().to_i16()),
+                i32::from(radial.y0().to_i16()),
+                i32::from(radial.radius0().to_u16()),
+                i32::from(radial.x1().to_i16()),
+                i32::from(radial.y1().to_i16()),
+                i32::from(radial.radius1().to_u16()),
+            ],
+            expected,
+        );
+    }
+
     #[test]
     fn colrv1_ufo_transformed_color_glyph_references() {
         let result = TestCompile::compile_source("COLRv1-static.ufo");
