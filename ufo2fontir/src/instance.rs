@@ -748,11 +748,12 @@ fn has(info: &Dictionary, key: &str) -> bool {
 /// Apply the instance's metadata to its source's fontinfo, as `fontmake -i`
 /// does: ufo2ft's `_generate_instance_info` (the source's info, the root lib
 /// `public.fontInfo`, the instance's attributes and localized names, then the
-/// instance lib `public.fontInfo`), then the OS/2 classes from the location, as
-/// glyphsLib's `apply_instance_data_to_ufo` sets them. Glyphs.app's defaults
-/// for fsType and the underline, which glyphsLib also fills in, are left out:
-/// they belong to Glyphs sources, which the Glyphs frontend builds, as do the
-/// `com.schriftgestaltung.*` lib keys glyphsLib reads.
+/// instance lib `public.fontInfo`), with the OS/2 classes from the location, as
+/// ufo2ft sets them since <https://github.com/googlefonts/ufo2ft/pull/1014>
+/// (and glyphsLib's `apply_instance_data_to_ufo` before it). Glyphs.app's
+/// defaults for fsType and the underline, which glyphsLib also fills in, are
+/// left out: they belong to Glyphs sources, which the Glyphs frontend builds,
+/// as do the `com.schriftgestaltung.*` lib keys glyphsLib reads.
 pub(crate) fn apply_instance_info(
     path: &Path,
     font_info: &mut norad::FontInfo,
@@ -876,10 +877,7 @@ pub(crate) fn apply_instance_info(
         add_name_records(&mut info, records);
     }
 
-    // The italic angle from the location, when the masters set none. ufo2ft
-    // also fills unset classes from the location here, but glyphsLib then sets
-    // them whenever the axis exists (below), overriding both the source's and
-    // ufo2ft's, so only glyphsLib's rule shows in fontmake's output
+    // The italic angle from the location, when the masters set none
     let user = |tag: &[u8; 4]| {
         selected
             .user_location
@@ -902,10 +900,10 @@ pub(crate) fn apply_instance_info(
         merge_font_info(&mut info, lib);
     }
 
-    // glyphsLib then sets the classes whenever the axis exists: the instance
-    // lib's class, else the user location, rounded and clamped to 1-1000 for
-    // weight as ufo2ft does (glyphsLib truncates), and the nearest class for
-    // width
+    // The classes whenever the axis exists, overriding the source's, as ufo2ft
+    // does since googlefonts/ufo2ft#1014: the instance lib's class, else the
+    // user location, rounded and clamped to 1-1000 for weight and the nearest
+    // class for width
     let lib_class = |key: &str| {
         instance_font_info
             .and_then(|lib| lib.get(key))
