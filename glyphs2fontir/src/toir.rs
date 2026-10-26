@@ -318,6 +318,13 @@ fn instance_full_name(font: &Font, instance: &Instance) -> String {
     format!("{} {}", instance_family_name(font, instance), instance.name)
 }
 
+fn invalid_export<T>(name: &str, reason: String) -> Result<T, Error> {
+    Err(Error::InvalidExport {
+        name: name.to_string(),
+        reason,
+    })
+}
+
 fn bad_source<T>(message: String) -> Result<T, Error> {
     Err(BadSource::custom("<Glyphs source>", message).into())
 }
@@ -368,15 +375,18 @@ fn find_static_export(font: &Font, requested: &str) -> Result<usize, Error> {
             } else {
                 format!("available: {}", list_exports(&exports))
             };
-            bad_source(format!(
-                "No active static export named \"{requested}\"{reason}; {available}"
-            ))
+            invalid_export(
+                requested,
+                format!("no active static export has that name{reason}; {available}"),
+            )
         }
-        _ => bad_source(format!(
-            "{} active static exports are named \"{requested}\"; rename or \
-             disable all but one",
-            matches.len()
-        )),
+        _ => invalid_export(
+            requested,
+            format!(
+                "{} active static exports have that name; rename or disable all but one",
+                matches.len()
+            ),
+        ),
     }
 }
 
@@ -473,26 +483,32 @@ fn instantiate_on_master(font: &mut Font, full_name: &str) -> Result<(), Error> 
     let master_id = match matches.as_slice() {
         [master] => master.id.clone(),
         [] => {
-            return bad_source(format!(
-                "Cannot build export \"{full_name}\" at ({}): it is not at the location \
-                 of a master ({}), and fontc can't interpolate static instances",
-                fmt_location(&instance.axes_values),
-                font.masters
-                    .iter()
-                    .map(|m| format!("\"{}\" at ({})", m.name, fmt_location(&m.axes_values)))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
+            return invalid_export(
+                full_name,
+                format!(
+                    "its location ({}) is not at the location of a master ({}), and fontc \
+                 can't interpolate static instances",
+                    fmt_location(&instance.axes_values),
+                    font.masters
+                        .iter()
+                        .map(|m| format!("\"{}\" at ({})", m.name, fmt_location(&m.axes_values)))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
         }
         _ => {
-            return bad_source(format!(
-                "Cannot build export \"{full_name}\": masters {} are all at its location",
-                matches
-                    .iter()
-                    .map(|m| format!("\"{}\"", m.name))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
+            return invalid_export(
+                full_name,
+                format!(
+                    "masters {} are all at its location",
+                    matches
+                        .iter()
+                        .map(|m| format!("\"{}\"", m.name))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
         }
     };
     let missing: Vec<_> = font
@@ -511,11 +527,13 @@ fn instantiate_on_master(font: &mut Font, full_name: &str) -> Result<(), Error> 
             .find(|m| m.id == master_id)
             .unwrap()
             .name;
-        return bad_source(format!(
-            "Cannot build export \"{full_name}\" from master \"{master_name}\": \
-             glyphs {} have no layer for it",
-            missing.join(", ")
-        ));
+        return invalid_export(
+            full_name,
+            format!(
+                "glyphs {} have no layer for its master \"{master_name}\"",
+                missing.join(", ")
+            ),
+        );
     }
     let retained = font.retain_master(&master_id);
     debug_assert!(retained, "{master_id} is one of the font's masters");

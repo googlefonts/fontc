@@ -162,54 +162,16 @@ fn family_style(instance: &designspace::Instance) -> String {
 /// instance sits on a source other than the default, the default one gives what
 /// the instance doesn't interpolate.
 pub(crate) fn select_instance(
-    path: &Path,
     designspace: &mut DesignSpaceDocument,
     requested: &str,
 ) -> Result<Arc<SelectedInstance>, Error> {
-    let bad_source = |message: String| Err(BadSource::custom(path, message).into());
-    let by_name: Vec<_> = designspace
-        .instances
-        .iter()
-        .enumerate()
-        .filter(|(_, instance)| instance.name.as_deref() == Some(requested))
-        .map(|(i, _)| i)
-        .collect();
-    let matches = if by_name.is_empty() {
-        designspace
-            .instances
-            .iter()
-            .enumerate()
-            .filter(|(_, instance)| family_style(instance) == requested)
-            .map(|(i, _)| i)
-            .collect()
-    } else {
-        by_name
+    let invalid = |reason: String| {
+        Err(Error::InvalidExport {
+            name: requested.to_string(),
+            reason,
+        })
     };
-    let index = match matches.as_slice() {
-        [index] => *index,
-        [] => {
-            let available = if designspace.instances.is_empty() {
-                "there are none".to_string()
-            } else {
-                format!(
-                    "available: {}",
-                    designspace
-                        .instances
-                        .iter()
-                        .map(|instance| format!("\"{}\"", display_name(instance)))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            };
-            return bad_source(format!("No instance named \"{requested}\"; {available}"));
-        }
-        _ => {
-            return bad_source(format!(
-                "{} instances are named \"{requested}\"; rename all but one",
-                matches.len()
-            ));
-        }
-    };
+    let index = find_instance(designspace, requested)?;
 
     let axes = raw_axes(designspace)?;
     let instance_location = design_location(&axes, &designspace.instances[index].location);
@@ -237,9 +199,8 @@ pub(crate) fn select_instance(
     // Like fontmake -i, and fontc without --export, require a source at the
     // default location, even when it's the only one
     let Some(default_source) = source_at(&default_location) else {
-        return bad_source(format!(
-            "Cannot build instance \"{requested}\": there is no source at the default \
-             location ({})",
+        return invalid(format!(
+            "there is no source at the default location ({})",
             describe(&default_location)
         ));
     };
@@ -248,9 +209,8 @@ pub(crate) fn select_instance(
         (_, 1) => 0,
         (Some(source), _) => source,
         (None, _) => {
-            return bad_source(format!(
-                "Cannot build instance \"{requested}\": its location ({}) is on no \
-                 source and fontc doesn't interpolate",
+            return invalid(format!(
+                "its location ({}) is on no source and fontc doesn't interpolate",
                 describe(&instance_location)
             ));
         }
@@ -279,9 +239,9 @@ pub(crate) fn select_instance(
         })
     };
     if let Some(rule) = designspace.rules.rules.iter().find(|rule| covers(rule)) {
-        return bad_source(format!(
-            "Cannot build instance \"{requested}\": rule \"{}\" swaps glyphs at its \
-             location ({}), and fontc doesn't apply rules to a static font yet",
+        return invalid(format!(
+            "rule \"{}\" swaps glyphs at its location ({}), and fontc doesn't apply \
+             rules to a static font yet",
             rule.name.as_deref().unwrap_or_default(),
             describe(&instance_location)
         ));
@@ -329,6 +289,54 @@ pub(crate) fn select_instance(
         copy_all_info,
         base,
     }))
+}
+
+/// The index of the instance named `requested`: by its name attribute, else
+/// by its `"{family} {style}"`, which must match exactly one instance.
+fn find_instance(designspace: &DesignSpaceDocument, requested: &str) -> Result<usize, Error> {
+    let invalid = |reason: String| {
+        Err(Error::InvalidExport {
+            name: requested.to_string(),
+            reason,
+        })
+    };
+    let by_name: Vec<_> = designspace
+        .instances
+        .iter()
+        .enumerate()
+        .filter(|(_, instance)| instance.name.as_deref() == Some(requested))
+        .map(|(i, _)| i)
+        .collect();
+    let matches = if by_name.is_empty() {
+        designspace
+            .instances
+            .iter()
+            .enumerate()
+            .filter(|(_, instance)| family_style(instance) == requested)
+            .map(|(i, _)| i)
+            .collect()
+    } else {
+        by_name
+    };
+    match matches.as_slice() {
+        [index] => Ok(*index),
+        [] if designspace.instances.is_empty() => {
+            invalid("the designspace has no instances".to_string())
+        }
+        [] => invalid(format!(
+            "no instance has that name; available: {}",
+            designspace
+                .instances
+                .iter()
+                .map(|instance| format!("\"{}\"", display_name(instance)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+        _ => invalid(format!(
+            "{} instances have that name; rename all but one",
+            matches.len()
+        )),
+    }
 }
 
 /// fontinfo attributes an instance doesn't inherit unless it is the one

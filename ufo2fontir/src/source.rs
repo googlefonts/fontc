@@ -262,7 +262,7 @@ impl DesignSpaceIrSource {
             .map_err(|kind| Error::BadSource(BadSource::new(designspace_or_ufo_file, kind)))?;
 
         let instance = export
-            .map(|name| select_instance(designspace_or_ufo_file, &mut designspace, name))
+            .map(|name| select_instance(&mut designspace, name))
             .transpose()?;
 
         for (i, source) in designspace.sources.iter_mut().enumerate() {
@@ -372,17 +372,16 @@ impl DesignSpaceIrSource {
             if !missing.is_empty() {
                 missing.sort_unstable();
                 let source = &designspace.sources[0];
-                return Err(BadSource::custom(
-                    designspace_or_ufo_file,
-                    format!(
-                        "Cannot build an instance on source \"{}\": it lacks {} of the \
-                         default source's glyphs ({}) and fontc doesn't interpolate",
+                return Err(Error::InvalidExport {
+                    name: export.unwrap_or_default().to_string(),
+                    reason: format!(
+                        "its source \"{}\" lacks {} of the default source's glyphs \
+                         ({}) and fontc doesn't interpolate",
                         source.name.as_deref().unwrap_or_default(),
                         missing.len(),
                         missing.join(", ")
                     ),
-                )
-                .into());
+                });
             }
             glyphs.retain(|name, _| {
                 let in_default = base_names.contains(name);
