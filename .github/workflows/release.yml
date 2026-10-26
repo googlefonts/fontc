@@ -43,6 +43,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # CI builds start from nothing and are thrown away, so incremental state is
+  # only overhead.
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
 jobs:
   detect:
     name: Detect which tool to release
@@ -113,10 +119,12 @@ jobs:
           python-version: "3.14"
           architecture: ${{ matrix.platform.python-architecture }}
 
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
-          targets: ${{ matrix.platform.target }}
+      - shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.platform.target }}
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update --target "$RUST_TARGET"
+          rustup default stable
 
       # Install gnu-tar because BSD tar is buggy
       # https://github.com/actions/cache/issues/403

@@ -22,6 +22,12 @@ name: Continuous integration
 permissions:
   contents: read
 
+env:
+  # CI builds start from nothing and are thrown away, so incremental state is
+  # only overhead.
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
 # The check, clippy-lint, and test-stable-* jobs should typically be direct copies from
 # https://github.com/googlefonts/fontations/blob/main/.github/workflows/rust.yml.
 # other than the list of crates for cargo check no std
@@ -34,10 +40,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
-          components: rustfmt
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update --component rustfmt
+          rustup default stable
 
       - name: rustfmt check
         run: cargo fmt --all -- --check
@@ -57,10 +62,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
-          components: clippy
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update --component clippy
+          rustup default stable
 
       - name: cargo clippy --all-features
         run: cargo clippy --locked --all-features --all-targets -- -D warnings
@@ -81,9 +85,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
 
       - name: cargo test fontbe
         run: cargo test --locked -p fontbe --all-targets --all-features
@@ -101,9 +105,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
 
       - name: cargo test fontc
         run: cargo test --locked -p fontc --all-targets --all-features
@@ -115,9 +119,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
 
       - name: cargo test fontdrasil
         run: cargo test --locked -p fontdrasil --all-targets --all-features
@@ -141,9 +145,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
 
       - name: cargo check fontdrasil
         run: cargo check --locked --manifest-path=fontdrasil/Cargo.toml --no-default-features
@@ -169,9 +173,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
 
       - name: Run resources/scripts/ots_test.sh
         run:  resources/scripts/ots_test.sh
@@ -181,9 +185,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
         id: venv
@@ -201,9 +205,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
         id: venv
@@ -225,9 +229,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install the latest stable Rust toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
 
       - name: Build and install fontc (release mode)
         run: cd fontc && pwd && cargo install --locked --path .
@@ -287,10 +291,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: install stable toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update --target wasm32-unknown-unknown
+          rustup default stable
 
       # Not all libraries need to build here, only the ones needed for the core compiler
       # Which is conveniently checked by simply building fontc
