@@ -20,7 +20,10 @@
 
 use std::{path::Path, str::FromStr, sync::Arc};
 
-use fontdrasil::coords::{CoordConverter, DesignCoord, UserCoord};
+use fontdrasil::{
+    coords::{CoordConverter, DesignCoord, UserCoord},
+    types::WidthClass,
+};
 use fontir::error::{BadSource, Error};
 use log::warn;
 use norad::designspace::{self, DesignSpaceDocument};
@@ -444,19 +447,6 @@ pub(crate) fn layer_font_info(
     }
     plist::from_value(&Value::Dictionary(info)).map_err(bad_value)
 }
-
-/// ufo2ft's `WDTH_VALUE_TO_OS2_WIDTH_CLASS`, also glyphsLib's `WIDTH_CLASS_TO_VALUE`
-const WIDTH_CLASS_VALUES: [(u8, f64); 9] = [
-    (1, 50.0),
-    (2, 62.5),
-    (3, 75.0),
-    (4, 87.5),
-    (5, 100.0),
-    (6, 112.5),
-    (7, 125.0),
-    (8, 150.0),
-    (9, 200.0),
-];
 
 /// Windows language IDs by lowercase BCP 47 tag, fontTools'
 /// `_WINDOWS_LANGUAGE_CODES` (fontTools 4.67.0), which ufo2ft looks the
@@ -916,25 +906,11 @@ pub(crate) fn apply_instance_info(
     }
     if has_axis(b"wdth") {
         let class = lib_class("openTypeOS2WidthClass")
-            .unwrap_or_else(|| width_class_nearest(user(b"wdth").unwrap()) as i64);
+            .unwrap_or_else(|| WidthClass::nearest(user(b"wdth").unwrap()) as i64);
         info.insert("openTypeOS2WidthClass".into(), class.into());
     }
 
     *font_info = plist::from_value(&Value::Dictionary(info))
         .map_err(|e| bad_value("instance fontinfo", e))?;
     Ok(())
-}
-
-/// nearest, the lower one on a tie
-fn width_class_nearest(wdth: f64) -> u8 {
-    WIDTH_CLASS_VALUES
-        .iter()
-        .min_by(|(_, a), (_, b)| {
-            (a - wdth)
-                .abs()
-                .partial_cmp(&(b - wdth).abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|(class, _)| *class)
-        .unwrap_or(5)
 }
