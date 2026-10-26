@@ -188,7 +188,7 @@ jobs:
       - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
         id: venv
         with:
-          python-version: 3.10.7
+          python-version: "3.14"
           cache-dependency-path: resources/scripts/fea_ci_requirements.txt
           install-cmd: pip install -r resources/scripts/fea_ci_requirements.txt
 
@@ -208,7 +208,7 @@ jobs:
       - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
         id: venv
         with:
-          python-version: 3.13
+          python-version: "3.14"
           cache-dependency-path: resources/scripts/requirements.txt
           install-cmd: pip install -r resources/scripts/requirements.txt
       - name: run check_unicode_props

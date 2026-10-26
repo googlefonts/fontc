@@ -40,7 +40,7 @@ pip install -e .
 
 ## Requirements
 
-- Python 3.10 or higher
+- Python 3.11 or higher
 - `fontc` and `otl-normalizer` binaries (see below)
 
 All Python dependencies (fontmake, fonttools, etc.) are installed automatically.
