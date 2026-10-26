@@ -84,6 +84,9 @@ pub enum Error {
     InvalidTag { raw_tag: String, cause: InvalidTag },
     #[error("Source file contained a construct we don't yet support: {0}")]
     UnsupportedConstruct(String),
+    /// The export requested with `--export` can't be built from the source
+    #[error("Cannot build export \"{name}\": {reason}")]
+    InvalidExport { name: String, reason: String },
     #[error("Inconsistent palette size, [0] has {size_0}, [{n}] has {size_n}")]
     InconsistentPaletteLength {
         size_0: usize,

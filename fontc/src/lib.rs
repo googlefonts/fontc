@@ -66,21 +66,27 @@ impl Input {
 
     /// Creates the implementation of [`Source`] to feed to fontir.
     ///
-    /// Selecting an export is only supported for Glyphs sources, and custom
-    /// glyph data for Glyphs sources on disk, like fontmake's `--glyph-data`;
-    /// for any other input they are an error. Designspace instances have names
-    /// too, but fontc doesn't apply instance metadata from them yet.
+    /// For a designspace the export name is the instance's `name` attribute,
+    /// else its `"{family} {style}"`; the instance must sit on a source.
+    /// Selecting an export of any other source is an error, and so is custom
+    /// glyph data (like fontmake's `--glyph-data`) for anything but a Glyphs
+    /// source on disk.
     #[tracing::instrument(skip_all)]
     pub fn create_source(&self, options: &SourceOptions) -> Result<Box<dyn Source>, Error> {
         let export = options.export.as_deref();
-        if export.is_some() && !matches!(self, Input::GlyphsPath(_) | Input::GlyphsMemory(_)) {
-            return Err(Error::ExportRequiresGlyphsSource);
+        if export.is_some()
+            && !matches!(
+                self,
+                Input::DesignSpacePath(_) | Input::GlyphsPath(_) | Input::GlyphsMemory(_)
+            )
+        {
+            return Err(Error::ExportUnsupported);
         }
         if !options.glyph_data.is_empty() && !matches!(self, Input::GlyphsPath(_)) {
             return Err(Error::GlyphDataRequiresGlyphsSource);
         }
         match self {
-            Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path)?)),
+            Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path, export)?)),
             Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(
                 path,
                 export,
@@ -154,7 +160,8 @@ pub fn version() -> String {
 pub struct SourceOptions {
     /// Build the export with this name, for now a static instance, like
     /// fontmake's `-i` but matched exactly, not as a regex: for a Glyphs source
-    /// the export's full name, `"{family} {name}"`.
+    /// the export's full name, `"{family} {name}"`; for a designspace the
+    /// instance's `name` attribute, else its `"{family} {style}"`.
     pub export: Option<String>,
     /// User-provided GlyphData XML files, applied in order, later ones taking
     /// precedence (Glyphs sources only).
@@ -2251,17 +2258,14 @@ mod tests {
     }
 
     #[test]
-    fn export_requires_glyphs_source() {
-        let input = Input::new(
-            &testdata_dir().join("designspace_from_glyphs/IntermediateLayer.designspace"),
-        )
-        .unwrap();
+    fn export_unsupported_for_other_sources() {
+        let input = Input::new(&testdata_dir().join("fontra/2glyphs.fontra")).unwrap();
         let result = input.create_source(&SourceOptions {
-            export: Some("Intermediate Layer Regular".to_string()),
+            export: Some("2glyphs Regular".to_string()),
             ..Default::default()
         });
         assert!(
-            matches!(result, Err(Error::ExportRequiresGlyphsSource)),
+            matches!(result, Err(Error::ExportUnsupported)),
             "{:?}",
             result.err()
         );
@@ -2376,6 +2380,141 @@ mod tests {
         let mut result = TestCompile::new("glyphs3/BagOfStatics.glyphs", |options| options);
         let error = result.run_expect_err().to_string();
         assert!(error.contains("'a'"), "{error}");
+    }
+
+    #[rstest]
+    // One source, and the instance doesn't sit on it: a single master is the
+    // same everywhere, and the classes come from the instance's location
+    #[case(
+        "single_source_ranged.designspace",
+        "Single Source Bold",
+        "Bold",
+        700,
+        true
+    )]
+    // Selected by the name attribute
+    #[case(
+        "single_source_two_instances.designspace",
+        "bold-instance",
+        "Bold",
+        700,
+        true
+    )]
+    // The axis map covers only the source's location, as in SIL Alkalami and
+    // Ramsina
+    #[case(
+        "single_source_partial_map.designspace",
+        "Single Source Regular",
+        "Regular",
+        400,
+        false
+    )]
+    // A sparse layer source is a master at another location; the instance on
+    // the default one builds that master alone
+    #[case(
+        "single_source_sparse_layer.designspace",
+        "Single Source Regular",
+        "Regular",
+        400,
+        false
+    )]
+    // The instance on another source builds that source alone
+    #[case("wght_var.designspace", "Wght Var Bold", "Bold", 700, true)]
+    // A rule whose range doesn't cover the instance is dropped
+    #[case(
+        "single_source_rules.designspace",
+        "Single Source Regular",
+        "Regular",
+        400,
+        false
+    )]
+    fn designspace_instance_builds_static(
+        #[case] source: &str,
+        #[case] instance: &str,
+        #[case] subfamily: &str,
+        #[case] weight_class: u16,
+        #[case] bold: bool,
+    ) {
+        let mut result = TestCompile::new_with_source_options(
+            source,
+            &SourceOptions {
+                export: Some(instance.to_string()),
+                ..Default::default()
+            },
+            |options| options,
+        );
+        result.run();
+        let font = result.font();
+        assert!(font.fvar().is_err(), "static font expected");
+        assert!(font.glyf().is_ok());
+        assert!(
+            font.gsub()
+                .ok()
+                .and_then(|gsub| gsub.feature_variations())
+                .is_none(),
+            "a static font has no feature variations"
+        );
+        let names = font.name().unwrap();
+        assert_eq!(
+            resolve_name(&names, NameId::SUBFAMILY_NAME).as_deref(),
+            Some(subfamily)
+        );
+        let os2 = font.os2().unwrap();
+        assert_eq!(os2.us_weight_class(), weight_class);
+        assert_eq!(os2.us_width_class(), 5);
+        assert_eq!(os2.fs_selection().contains(SelectionFlags::BOLD), bold);
+    }
+
+    #[rstest]
+    // The lone source isn't at the declared default: no default master, as
+    // without --export
+    #[case(
+        "single_source_off_default.designspace",
+        "Single Source Bold",
+        "no source at the default location"
+    )]
+    // A rule covering the instance would swap glyphs, which fontc doesn't do yet
+    #[case(
+        "single_source_rules.designspace",
+        "Single Source Bold",
+        "doesn't apply rules"
+    )]
+    fn designspace_instance_errors(
+        #[case] source: &str,
+        #[case] instance: &str,
+        #[case] message: &str,
+    ) {
+        let input = Input::new(&testdata_dir().join(source)).unwrap();
+        let error = input
+            .create_source(&SourceOptions {
+                export: Some(instance.to_string()),
+                ..Default::default()
+            })
+            .err()
+            .expect("must not build")
+            .to_string();
+        assert!(error.contains(message), "{error}");
+    }
+
+    #[test]
+    fn designspace_instance_on_another_source_has_the_default_glyph_set() {
+        // WghtVar-Bold.ufo has a glyph, bonus_bar, that the default source
+        // doesn't: like fontmake -i, the font has the default source's glyphs
+        let mut result = TestCompile::new_with_source_options(
+            "wght_var.designspace",
+            &SourceOptions {
+                export: Some("Wght Var Bold".to_string()),
+                ..Default::default()
+            },
+            |options| options,
+        );
+        result.run();
+        let glyph_order = result.fe_context.glyph_order.get();
+        // in the default source's order: its public.glyphOrder lists only plus,
+        // so bar comes after it. WghtVar-Bold.ufo has no lib, so taking the
+        // order from the instance's source would give .notdef, bar, plus
+        let order: Vec<_> = glyph_order.iter().map(|(_, name)| name.as_str()).collect();
+        assert_eq!(order, [".notdef", "plus", "bar"]);
     }
 
     #[rstest]

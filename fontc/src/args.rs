@@ -99,11 +99,13 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub keep_direction: bool,
 
-    /// Build the export with this full name ("{family} {style}"): for now a
-    /// static instance, like fontmake's -i but matched exactly, not as a regex
-    /// (Glyphs sources only). In a multi-master source the instance must be on
-    /// a master, which is built alone; instances between masters aren't
-    /// interpolated.
+    /// Build the export with this name, for now a static instance
+    ///
+    /// Like fontmake's -i, but matched exactly, not as a regex. For a Glyphs
+    /// source it is the full name ("{family} {style}"); in a multi-master source
+    /// the instance must be on a master, which is built alone, as instances
+    /// between masters aren't interpolated. For a designspace it is the
+    /// instance's name attribute, else its "{family} {style}".
     #[arg(long, value_name = "NAME")]
     pub export: Option<String>,
 

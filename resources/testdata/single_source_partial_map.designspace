@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <!-- like single_source_ranged, but the map lacks the axis min and max, as in SIL Alkalami -->
+  <axes>
+    <axis tag="wght" name="Weight" minimum="100" default="400" maximum="900">
+      <map input="400" output="40"/>
+    </axis>
+  </axes>
+  <sources>
+    <source filename="WghtVar-Regular.ufo" name="Regular">
+      <location>
+        <dimension name="Weight" xvalue="40"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <instance familyname="Single Source" stylename="Regular">
+      <location>
+        <dimension name="Weight" uservalue="400"/>
+      </location>
+    </instance>
+  </instances>
+</designspace>
