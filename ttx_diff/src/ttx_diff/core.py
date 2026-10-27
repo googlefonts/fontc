@@ -439,6 +439,13 @@ def run_gftools(
     ]
     if fontc_bin is not None:
         cmd += ["--experimental-fontc", fontc_bin]
+    if FLAGS.export is not None:
+        # gftools builds just this static instance. Strict makes fontc build it
+        # with --export even between masters, where fontc fails as it doesn't
+        # interpolate, rather than compiling the UFO fontmake cut for it.
+        cmd += ["--experimental-single-instance", FLAGS.export]
+        if fontc_bin is not None:
+            cmd.append("--experimental-fontc-strict")
 
     extra_args = []
     if FLAGS.keep_overlaps:
@@ -1672,10 +1679,6 @@ def main(argv):
         )
 
     has_precompiled_fonts = FLAGS.fontc_font is not None
-
-    if FLAGS.export is not None and FLAGS.compare != "default":
-        # gftools decides which instances to build from its config
-        sys.exit("--export is only supported with --compare default")
 
     if has_precompiled_fonts and has_source:
         sys.exit("Cannot specify both a source file and precompiled fonts")
