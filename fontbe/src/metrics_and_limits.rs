@@ -20,7 +20,7 @@ use write_fonts::{
         maxp::Maxp,
         vmtx::LongMetric,
     },
-    types::{FWord, GlyphId16, UfWord},
+    types::{FWord, GlyphId, GlyphId16, UfWord},
 };
 
 use crate::{
@@ -68,7 +68,7 @@ struct MaxBuilder {
     max_points: u16,
     max_contours: u16,
     max_component_elements: u16,
-    glyph_info: HashMap<GlyphId16, GlyphInfo>,
+    glyph_info: HashMap<GlyphId, GlyphInfo>,
     bbox: Option<Bbox>,
 }
 
@@ -76,7 +76,7 @@ struct MaxBuilder {
 struct GlyphInfo {
     /// For simple glyphs always present. For composites, set by [`MaxBuilder::update_composite_limits`]
     limits: Option<GlyphLimits>,
-    components: Option<Vec<GlyphId16>>,
+    components: Option<Vec<GlyphId>>,
 }
 
 impl GlyphInfo {
@@ -222,7 +222,7 @@ impl MaxBuilder {
                 components: None,
             },
         };
-        self.glyph_info.insert(id, glyph_info);
+        self.glyph_info.insert(id.into(), glyph_info);
     }
 
     // FontTools maxp <https://github.com/fonttools/fonttools/blob/e8146a6d0725d398cfa110cba683946ee762f8e2/Lib/fontTools/ttLib/tables/_m_a_x_p.py#L53>

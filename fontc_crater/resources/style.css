@@ -3,6 +3,58 @@ body {
   font-family: sans-serif;
 }
 
+#live_status {
+  width: fit-content;
+  margin-bottom: 1em;
+  padding: 0.4em 0.8em;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #f4f4f4;
+  font-size: 0.9em;
+  font-style: italic;
+}
+
+#live_status::before {
+  content: "●";
+  font-style: normal;
+  margin-right: 0.4em;
+  color: #888;
+}
+
+#live_status.running {
+  background: #fff5dc;
+  border-color: #efd28a;
+}
+
+#live_status.running::before {
+  color: #e69d00;
+}
+
+#live_status.ok {
+  background: #e9f5e9;
+  border-color: #b3d9b3;
+}
+
+#live_status.ok::before {
+  color: green;
+}
+
+#live_status.failed {
+  background: #fdeaea;
+  border-color: #efb3b3;
+  color: #a30000;
+}
+
+#live_status.failed::before {
+  color: red;
+}
+
+#live_status progress {
+  width: 10em;
+  margin-left: 0.5em;
+  vertical-align: middle;
+}
+
 #results {
   table-layout: fixed;
   width: 100%;

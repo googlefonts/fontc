@@ -43,8 +43,15 @@ impl FeatureVariationsProvider {
                     let axis = static_metadata
                         .axis(&condition.axis)
                         .expect("checked already");
-                    let min = condition.min.map(|min| min.to_normalized(&axis.converter));
-                    let max = condition.max.map(|max| max.to_normalized(&axis.converter));
+                    let mut min = condition.min.map(|min| min.to_normalized(&axis.converter));
+                    let mut max = condition.max.map(|max| max.to_normalized(&axis.converter));
+                    // Conditions use design bounds; normalized bounds follow the user axis.
+                    // Swap open bounds too, filling them from the user-axis endpoints.
+                    if axis.min.to_design(&axis.converter) > axis.max.to_design(&axis.converter) {
+                        std::mem::swap(&mut min, &mut max);
+                        min.get_or_insert_with(|| axis.min.to_normalized(&axis.converter));
+                        max.get_or_insert_with(|| axis.max.to_normalized(&axis.converter));
+                    }
                     space.insert(condition.axis, min, max);
                 }
                 region.push(std::mem::take(&mut space));

@@ -9,12 +9,15 @@ use write_fonts::{
         ReadError,
         tables::{
             gdef::{Gdef, MarkGlyphSets},
-            gpos::{AnchorTable, Gpos, PositionLookupList, PositionSubtables, ValueRecord},
+            gpos::{
+                AnchorTable, CursivePos, Gpos, MarkBasePos, MarkLigPos, MarkMarkPos,
+                PositionLookupList, PositionSubtables, ValueRecord,
+            },
             layout::DeviceOrVariationIndex,
         },
     },
     tables::layout::LookupFlag,
-    types::GlyphId16,
+    types::GlyphId,
 };
 
 use crate::{
@@ -364,7 +367,7 @@ fn normalize_mark_lookups<'a>(
     // a little helper used below
     fn prune_shadowed_marks<'a>(
         mut rule: SingleRule<'a, MarkAttachmentRule>,
-        last_seen: &HashMap<(GlyphId16, GlyphId16), usize>,
+        last_seen: &HashMap<(GlyphId, GlyphId), usize>,
         lookup_id: usize,
     ) -> Option<SingleRule<'a, MarkAttachmentRule>> {
         let to_remove = rule
@@ -427,28 +430,56 @@ fn get_lookup_rules(
                 result.pairpos.push(Lookup::new(id, rules, flag, None));
             }
             PositionSubtables::MarkToBase(subs) => {
-                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
+                let subs = subs
+                    .iter()
+                    .flat_map(|sub| sub.ok())
+                    .filter_map(|sub| match sub {
+                        MarkBasePos::Format1(sub) => Some(sub),
+                        MarkBasePos::Format2(_) => None,
+                    })
+                    .collect::<Vec<_>>();
                 let rules = marks::get_mark_base_rules(&subs, delta_computer).unwrap();
                 result
                     .markbase
                     .push(Lookup::new(id, rules, flag, mark_filter_id));
             }
             PositionSubtables::MarkToMark(subs) => {
-                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
+                let subs = subs
+                    .iter()
+                    .flat_map(|sub| sub.ok())
+                    .filter_map(|sub| match sub {
+                        MarkMarkPos::Format1(sub) => Some(sub),
+                        MarkMarkPos::Format2(_) => None,
+                    })
+                    .collect::<Vec<_>>();
                 let rules = marks::get_mark_mark_rules(&subs, delta_computer).unwrap();
                 result
                     .markmark
                     .push(Lookup::new(id, rules, flag, mark_filter_id));
             }
             PositionSubtables::MarkToLig(subs) => {
-                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
+                let subs = subs
+                    .iter()
+                    .flat_map(|sub| sub.ok())
+                    .filter_map(|sub| match sub {
+                        MarkLigPos::Format1(sub) => Some(sub),
+                        MarkLigPos::Format2(_) => None,
+                    })
+                    .collect::<Vec<_>>();
                 let rules = marks::get_mark_liga_rules(&subs, delta_computer).unwrap();
                 result
                     .markliga
                     .push(Lookup::new(id, rules, flag, mark_filter_id));
             }
             PositionSubtables::Cursive(subs) => {
-                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
+                let subs = subs
+                    .iter()
+                    .flat_map(|sub| sub.ok())
+                    .filter_map(|sub| match sub {
+                        CursivePos::Format1(sub) => Some(sub),
+                        CursivePos::Format2(_) => None,
+                    })
+                    .collect::<Vec<_>>();
                 let rules = cursive::get_cursive_rules(&subs, delta_computer).unwrap();
                 result
                     .cursive
@@ -535,12 +566,12 @@ mod tests {
             wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![sub2]));
         let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);
         let lookup_list = write_fonts::dump_table(&lookup_list).unwrap();
-        let lookup_list = write_fonts::read::tables::gpos::PositionLookupList::read(
+        let lookup_list = write_fonts::read::tables::gpos::OriginalPositionLookupList::read(
             lookup_list.as_slice().into(),
         )
         .unwrap();
 
-        let rules = get_lookup_rules(&lookup_list, None);
+        let rules = get_lookup_rules(&lookup_list.into(), None);
 
         let our_rules = rules
             .pairpos_rules(&[0, 1])
@@ -578,12 +609,12 @@ mod tests {
             wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::IGNORE_MARKS, vec![sub2]));
         let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);
         let lookup_list = write_fonts::dump_table(&lookup_list).unwrap();
-        let lookup_list = write_fonts::read::tables::gpos::PositionLookupList::read(
+        let lookup_list = write_fonts::read::tables::gpos::OriginalPositionLookupList::read(
             lookup_list.as_slice().into(),
         )
         .unwrap();
 
-        let rules = get_lookup_rules(&lookup_list, None);
+        let rules = get_lookup_rules(&lookup_list.into(), None);
 
         let our_rules = rules
             .pairpos_rules(&[0, 1])
@@ -625,21 +656,21 @@ mod tests {
 
         let lookup1 = wgpos::PositionLookup::MarkToBase(wlayout::Lookup::new(
             LookupFlag::empty(),
-            vec![sub1],
+            vec![sub1.into()],
         ));
         let lookup2 = wgpos::PositionLookup::MarkToBase(wlayout::Lookup::new(
             LookupFlag::empty(),
-            vec![sub2],
+            vec![sub2.into()],
         ));
 
         let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);
         let lookup_list = write_fonts::dump_table(&lookup_list).unwrap();
-        let lookup_list = write_fonts::read::tables::gpos::PositionLookupList::read(
+        let lookup_list = write_fonts::read::tables::gpos::OriginalPositionLookupList::read(
             lookup_list.as_slice().into(),
         )
         .unwrap();
 
-        let rules = get_lookup_rules(&lookup_list, None);
+        let rules = get_lookup_rules(&lookup_list.into(), None);
 
         let mark_base_rules = rules
             .markbase_rules(&[0, 1])

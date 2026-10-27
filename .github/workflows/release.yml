@@ -43,6 +43,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # CI builds start from nothing and are thrown away, so incremental state is
+  # only overhead.
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
 jobs:
   detect:
     name: Detect which tool to release
@@ -110,13 +116,15 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           architecture: ${{ matrix.platform.python-architecture }}
 
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        with:
-          toolchain: stable
-          targets: ${{ matrix.platform.target }}
+      - shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.platform.target }}
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update --target "$RUST_TARGET"
+          rustup default stable
 
       # Install gnu-tar because BSD tar is buggy
       # https://github.com/actions/cache/issues/403
@@ -382,7 +390,7 @@ jobs:
           fi
 
       - name: Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           name: ${{ steps.before_release.outputs.release_title }}
           files: |

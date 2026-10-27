@@ -1,0 +1,469 @@
+{
+.appVersion = "3343";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Color Palettes";
+value = (
+(
+(255, 0, 0, 255),
+(0, 255, 0, 255),
+(0, 0, 255, 255)
+)
+);
+}
+);
+familyName = "New Font";
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+id = m02;
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(43,0,l),
+(562,0,l),
+(562,500,l),
+(43,500,l)
+);
+}
+);
+width = 620;
+},
+{
+attr = {
+colorPalette = 1;
+};
+layerId = c01;
+associatedMasterId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,0,l),
+(542,0,l),
+(542,250,l),
+(63,250,l)
+);
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 0;
+};
+layerId = c02;
+associatedMasterId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,250,l),
+(542,250,l),
+(542,500,l),
+(63,500,l)
+);
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 1;
+};
+layerId = c03;
+associatedMasterId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(43,0,l),
+(562,0,l),
+(562,250,l),
+(43,250,l)
+);
+}
+);
+width = 620;
+},
+{
+attr = {
+colorPalette = 0;
+};
+layerId = c04;
+associatedMasterId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(43,250,l),
+(562,250,l),
+(562,500,l),
+(43,500,l)
+);
+}
+);
+width = 620;
+}
+);
+unicode = 65;
+},
+{
+glyphname = acute;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(250,550,l),
+(350,550,l),
+(350,650,l),
+(250,650,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(240,550,l),
+(360,550,l),
+(360,660,l),
+(240,660,l)
+);
+}
+);
+width = 620;
+},
+{
+attr = {
+colorPalette = 1;
+};
+layerId = c05;
+associatedMasterId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(250,550,l),
+(350,550,l),
+(350,650,l),
+(250,650,l)
+);
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 1;
+};
+layerId = c06;
+associatedMasterId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(240,550,l),
+(360,550,l),
+(360,660,l),
+(240,660,l)
+);
+}
+);
+width = 620;
+}
+);
+unicode = 180;
+},
+{
+glyphname = dot;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(275,-150,l),
+(325,-150,l),
+(325,-100,l),
+(275,-100,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(265,-150,l),
+(335,-150,l),
+(335,-90,l),
+(265,-90,l)
+);
+}
+);
+width = 620;
+}
+);
+unicode = 183;
+},
+{
+glyphname = cedilla;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(275,-250,l),
+(325,-250,l),
+(325,-200,l),
+(275,-200,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(265,-250,l),
+(335,-250,l),
+(335,-190,l),
+(265,-190,l)
+);
+}
+);
+width = 620;
+},
+{
+attr = {
+colorPalette = 0;
+};
+layerId = c07;
+associatedMasterId = m01;
+width = 600;
+},
+{
+attr = {
+colorPalette = 0;
+};
+layerId = c08;
+associatedMasterId = m02;
+width = 620;
+}
+);
+unicode = 184;
+},
+{
+glyphname = Aacute;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+}
+);
+width = 600;
+},
+{
+layerId = m02;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+}
+);
+width = 620;
+},
+{
+attr = {
+colorPalette = 0;
+};
+layerId = c09;
+associatedMasterId = m01;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+},
+{
+ref = dot;
+},
+{
+ref = cedilla;
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 1;
+};
+layerId = c10;
+associatedMasterId = m01;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 2;
+};
+layerId = c11;
+associatedMasterId = m01;
+shapes = (
+{
+ref = A;
+}
+);
+width = 600;
+},
+{
+attr = {
+colorPalette = 0;
+};
+layerId = c12;
+associatedMasterId = m02;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+},
+{
+ref = dot;
+},
+{
+ref = cedilla;
+}
+);
+width = 620;
+},
+{
+attr = {
+colorPalette = 1;
+};
+layerId = c13;
+associatedMasterId = m02;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+}
+);
+width = 620;
+},
+{
+attr = {
+colorPalette = 2;
+};
+layerId = c14;
+associatedMasterId = m02;
+shapes = (
+{
+ref = A;
+}
+);
+width = 620;
+},
+{
+attr = {
+colorPalette = 1;
+coordinates = (
+550
+);
+};
+layerId = cbrace;
+associatedMasterId = m01;
+shapes = (
+{
+ref = A;
+},
+{
+ref = acute;
+}
+);
+width = 610;
+}
+);
+unicode = 193;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

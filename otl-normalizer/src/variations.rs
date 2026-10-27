@@ -66,6 +66,7 @@ impl<'a> DeltaComputer<'a> {
                 self.ivs
                     .compute_delta(delta_ix, loc)
                     .map(|d| d.to_i32() + coord)
+                    .ok_or(ReadError::MalformedData("unreadable ItemVariationStore"))
             })
             .collect()
     }

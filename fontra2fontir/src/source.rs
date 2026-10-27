@@ -14,15 +14,18 @@ pub struct FontraIrSource {
     font_data: Arc<Font>,
 }
 
-impl Source for FontraIrSource {
-    fn new(fontra_dir: &Path) -> Result<Self, Error> {
+impl FontraIrSource {
+    /// Load a .fontra directory.
+    pub fn new(fontra_dir: &Path) -> Result<Self, Error> {
         let font_data = Font::load(fontra_dir)?;
 
         Ok(FontraIrSource {
             font_data: Arc::new(font_data),
         })
     }
+}
 
+impl Source for FontraIrSource {
     fn create_static_metadata_work(
         &self,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {

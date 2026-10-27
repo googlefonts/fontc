@@ -1,0 +1,166 @@
+{
+.appVersion = "3532";
+.formatVersion = 3;
+axes = (
+{
+name = "Optical Size";
+tag = opsz;
+}
+);
+familyName = DecreasingAxis;
+fontMaster = (
+{
+axesValues = (
+23
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = "Optical Size";
+Location = 144;
+}
+);
+}
+);
+id = m23;
+name = Regular;
+},
+{
+axesValues = (
+28
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = "Optical Size";
+Location = 72;
+}
+);
+}
+);
+id = m28;
+name = Medium;
+},
+{
+axesValues = (
+38
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = "Optical Size";
+Location = 9;
+}
+);
+}
+);
+id = m38;
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = bar;
+layers = (
+{
+layerId = m23;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(530,0,l),
+(530,700,l),
+(0,700,l)
+);
+}
+);
+width = 630;
+},
+{
+layerId = m28;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(580,0,l),
+(580,700,l),
+(0,700,l)
+);
+}
+);
+width = 680;
+},
+{
+layerId = m38;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(680,0,l),
+(680,700,l),
+(0,700,l)
+);
+}
+);
+width = 780;
+},
+{
+associatedMasterId = m23;
+attr = {
+axisRules = (
+{
+max = 33;
+min = 28;
+}
+);
+};
+layerId = bracket;
+shapes = (
+{
+closed = 1;
+nodes = (
+(0,0,l),
+(730,0,l),
+(730,700,l),
+(0,700,l)
+);
+}
+);
+width = 830;
+}
+);
+unicode = 124;
+}
+);
+instances = (
+{
+axesValues = (
+33
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = "Optical Size";
+Location = 42;
+}
+);
+}
+);
+name = "Size 42";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 1;
+}

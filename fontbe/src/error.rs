@@ -15,7 +15,7 @@ use thiserror::Error;
 use write_fonts::{
     read::ReadError,
     tables::{
-        cmap::CmapConflict, glyf::MalformedPath, gvar::iup::IupError,
+        cmap::CmapConflict, glyf::MalformedPath, gvar::iup::IupError, name::NameRecord,
         variations::TupleVariationStoreInputError,
     },
     types::{GlyphId, Tag},
@@ -129,6 +129,43 @@ pub enum Error {
     VariableComponentUnknownAxis { glyph: GlyphName, tag: Tag },
     #[error("'{glyph}' references non-export glyph '{base}' as a variable component")]
     VariableComponentBaseNotInGlyphOrder { glyph: GlyphName, base: GlyphName },
+    #[error("Invalid COLR glyph '{0}': {1}")]
+    InvalidColorGlyph(GlyphName, String),
+    #[error(
+        "name ID {} (platform {}, encoding {}, language {}) {problem}: {:?}",
+        .record.name_id.to_u16(), .record.platform_id, .record.encoding_id, .record.language_id, .record.string.as_str()
+    )]
+    BadNameEncoding {
+        record: NameRecord,
+        problem: NameRecordProblem,
+    },
+}
+
+/// Why a name record cannot be written
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NameRecordProblem {
+    /// Only Unicode (UTF-16) and Mac Roman encodings can be written
+    UnsupportedEncoding,
+    /// A Mac Roman record contains a character Mac Roman cannot encode
+    NotMacRoman(char),
+}
+
+impl Display for NameRecordProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameRecordProblem::UnsupportedEncoding => {
+                write!(f, "uses an unsupported platform/encoding")
+            }
+            NameRecordProblem::NotMacRoman(c) => {
+                write!(
+                    f,
+                    "has a character not in Mac Roman, {c:?} (U+{:04X})",
+                    *c as u32
+                )
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

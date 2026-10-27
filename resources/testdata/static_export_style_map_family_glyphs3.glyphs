@@ -1,0 +1,32 @@
+{
+.formatVersion = 3;
+familyName = "Master Family";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{ layerId = m01; width = 200; }
+);
+unicode = 32;
+}
+);
+instances = (
+{
+instanceInterpolations = { m01 = 1; };
+linkStyle = Display;
+name = Display;
+properties = (
+{ key = styleMapFamilyNames; values = ( { language = dflt; value = "Style Map Family"; } ); }
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

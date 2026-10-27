@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser};
-use fontc::{DisableFlags, Input, Options};
+use fontc::{DisableFlags, Input, Options, SourceOptions};
 use fontir::orchestration::Flags;
 
 use regex::Regex;
@@ -103,6 +103,24 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub keep_direction: bool,
 
+    /// Build the export with this name, for now a static instance
+    ///
+    /// Like fontmake's -i, but matched exactly, not as a regex. For a Glyphs
+    /// source it is the full name ("{family} {style}"); in a multi-master source
+    /// the instance must be on a master, which is built alone, as instances
+    /// between masters aren't interpolated. For a designspace it is the
+    /// instance's name attribute, else its "{family} {style}".
+    #[arg(long, value_name = "NAME")]
+    pub export: Option<String>,
+
+    /// Custom GlyphData XML file with glyph info (production name, category,
+    /// subCategory, etc.). Can be used more than once, later files taking
+    /// precedence (for Glyphs sources only).
+    // Named to match fontmake's homonymous flag
+    #[arg(long, value_name = "GLYPHDATA")]
+    #[serde(default)]
+    pub glyph_data: Vec<PathBuf>,
+
     /// Don't rename glyphs with production names
     // Named to match fontmake's homonymous flag:
     // https://github.com/googlefonts/fontmake/blob/6a8b2907/Lib/fontmake/__main__.py#L602
@@ -190,6 +208,13 @@ impl Args {
         Input::try_from(path.as_path())
     }
 
+    pub fn source_options(&self) -> SourceOptions {
+        SourceOptions {
+            export: self.export.clone(),
+            glyph_data: self.glyph_data.clone(),
+        }
+    }
+
     /// Returns the trace path if timing output is enabled.
     pub fn trace_path(&self) -> Option<PathBuf> {
         self.emit_timing.then(|| self.build_dir.join("trace.json"))
@@ -255,6 +280,8 @@ impl TryInto<Options> for Args {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use clap::Parser;
     use fontir::orchestration::Flags;
 
@@ -271,6 +298,22 @@ mod tests {
             "mismatch in defaults. flags_default: {:#032b}. args_default: {:#032b}",
             flags_default.bits(),
             arg_default.bits(),
+        );
+    }
+
+    #[test]
+    fn glyph_data_is_repeatable_and_ordered() {
+        let args = Args::parse_from(vec![
+            "program",
+            "font.glyphs",
+            "--glyph-data",
+            "a.xml",
+            "--glyph-data",
+            "b.xml",
+        ]);
+        assert_eq!(
+            args.glyph_data,
+            vec![PathBuf::from("a.xml"), PathBuf::from("b.xml")]
         );
     }
 }

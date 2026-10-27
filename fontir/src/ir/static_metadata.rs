@@ -102,44 +102,32 @@ pub struct NameKey {
 }
 
 impl NameKey {
-    /// Create's a [NameKey] suitable for use with the provided value.
+    /// A Windows-platform key for a name localized to `lang_id`.
     ///
-    /// The value matters because if it uses values from outside the Unicode BMP
-    /// the key changes.
-    pub fn new(name_id: NameId, value: &str) -> NameKey {
-        // The spec offers a Unicode platform but fontmake uses Windows because that's more widely supported.
-        // Match that. <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/outlineCompiler.py#L430-L432>.
+    /// Always Unicode BMP (encoding 1), whatever the value contains. Windows name
+    /// strings are UTF-16BE, so supplementary-plane characters fit as surrogate
+    /// pairs, and the spec ties name encoding IDs to the cmap's, which is (3, 1)
+    /// for the format 4 subtable fontc always writes. Lookups that hardcode a key
+    /// only find (3, 1). glyphsLib, Glyphs.app and ufo2ft (since
+    /// googlefonts/ufo2ft#1012) all write names this way.
+    /// <https://learn.microsoft.com/en-us/typography/opentype/spec/name#windows-encoding-ids>
+    pub fn new_with_lang(name_id: NameId, lang_id: u16) -> NameKey {
         NameKey {
             platform_id: 3, // Windows
-            encoding_id: Self::encoding_for(value),
-            // https://learn.microsoft.com/en-us/typography/opentype/spec/name#windows-language-ids
-            lang_id: 0x409, // English, United States.
-            name_id,
-        }
-    }
-
-    pub fn new_with_lang(name_id: NameId, value: &str, lang_id: u16) -> NameKey {
-        NameKey {
-            platform_id: 3,
-            encoding_id: Self::encoding_for(value),
+            encoding_id: 1, // Unicode BMP
             lang_id,
             name_id,
         }
     }
 
-    /// The encoding for a Windows-platform (which works everywhere) name.
+    /// The key of an English name, the one every name fontc derives uses:
+    /// Windows platform, Unicode BMP encoding, US English.
     ///
-    /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name#platform-specific-encoding-and-language-ids-windows-platform-platform-id-3>
-    fn encoding_for(value: &str) -> u16 {
-        if value.chars().all(|c| (c as u32) < 0xFFFF) {
-            1 // Unicode BMP
-        } else {
-            10 // Unicode full repetoire
-        }
-    }
-
-    pub fn new_bmp_only(name_id: NameId) -> NameKey {
-        Self::new(name_id, "")
+    /// The spec offers a Unicode platform but fontmake uses Windows because that's more widely supported.
+    /// Match that. <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/outlineCompiler.py#L430-L432>.
+    pub fn new(name_id: NameId) -> NameKey {
+        // https://learn.microsoft.com/en-us/typography/opentype/spec/name#windows-language-ids
+        Self::new_with_lang(name_id, 0x409) // English, United States.
     }
 }
 
@@ -493,7 +481,7 @@ impl std::ops::Deref for ConditionSet {
 }
 
 impl StaticMetadata {
-    const DEFAULT_VENDOR_ID_TAG: Tag = Tag::new(b"NONE");
+    const DEFAULT_VENDOR_ID_TAG: Tag = Tag::new(b"    ");
     // TODO: we could consider a builder or something for this?
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -539,7 +527,7 @@ impl StaticMetadata {
         let mut register_if_new = |name: &str| {
             reusable_names.entry(name.to_owned()).or_insert_with(|| {
                 name_id_gen += 1;
-                NameKey::new(name_id_gen.into(), name)
+                NameKey::new(name_id_gen.into())
             });
         };
 
@@ -670,7 +658,7 @@ impl StaticMetadata {
                 .entry(name.to_owned())
                 .or_default()
                 .insert(name_id);
-            new_names.push((NameKey::new(name_id, name), name.to_owned()));
+            new_names.push((NameKey::new(name_id), name.to_owned()));
         };
         let any_name_id = NameId::new(0);
         let font_specific_name_id = NameId::new(256);
@@ -783,22 +771,13 @@ mod tests {
             ),
             default_location: vec![(WGHT, NormalizedCoord::new(0.0))].into(),
             names: HashMap::from([
+                (NameKey::new(NameId::FAMILY_NAME), "Fam".to_string()),
                 (
-                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
+                    NameKey::new(NameId::TYPOGRAPHIC_FAMILY_NAME),
                     "Fam".to_string(),
                 ),
-                (
-                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
-                    "Fam".to_string(),
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::new(256)),
-                    "Weight".to_string(),
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::new(257)),
-                    "Nobody".to_string(),
-                ),
+                (NameKey::new(NameId::new(256)), "Weight".to_string()),
+                (NameKey::new(NameId::new(257)), "Nobody".to_string()),
             ]),
             postscript_names: Some(HashMap::from([("lhs".into(), "rhs".into())])),
             italic_angle: 0.0.into(),
@@ -898,10 +877,9 @@ mod tests {
     #[test]
     fn label_names_reuse_the_subfamily_name() {
         let mut static_metadata = test_static_metadata();
-        static_metadata.names.insert(
-            NameKey::new(NameId::SUBFAMILY_NAME, "Regular"),
-            "Regular".to_string(),
-        );
+        static_metadata
+            .names
+            .insert(NameKey::new(NameId::SUBFAMILY_NAME), "Regular".to_string());
         let before = static_metadata.names.len();
         let stat_axes = vec![StatAxis {
             labels: vec![AxisValueLabel {
@@ -960,10 +938,9 @@ mod tests {
     #[test]
     fn stat_axes_register_names_in_fonttools_order() {
         let mut static_metadata = test_static_metadata();
-        static_metadata.names.insert(
-            NameKey::new(NameId::SUBFAMILY_NAME, "Italic"),
-            "Italic".to_string(),
-        );
+        static_metadata
+            .names
+            .insert(NameKey::new(NameId::SUBFAMILY_NAME), "Italic".to_string());
         let stat_axes = vec![
             StatAxis {
                 tag: WGHT,

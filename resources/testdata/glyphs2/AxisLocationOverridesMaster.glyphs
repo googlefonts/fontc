@@ -1,0 +1,82 @@
+{
+familyName = Mapping;
+fontMaster = (
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 400;
+}
+);
+}
+);
+id = regular;
+weightValue = 80;
+},
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 700;
+}
+);
+}
+);
+id = bold;
+weight = Bold;
+weightValue = 200;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = regular;
+width = 200;
+},
+{
+layerId = bold;
+width = 300;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+interpolationWeight = 80;
+name = Regular;
+},
+{
+interpolationWeight = 200;
+name = Bold;
+weightClass = Bold;
+},
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 700;
+}
+);
+}
+);
+interpolationWeight = 250;
+name = Black;
+weightClass = Black;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

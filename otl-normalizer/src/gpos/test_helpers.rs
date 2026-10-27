@@ -12,7 +12,7 @@ use write_fonts::{
         layout::builders::Builder,
         variations::ivs_builder::VariationStoreBuilder,
     },
-    types::GlyphId16,
+    types::{GlyphId, GlyphId16},
 };
 
 use crate::gpos::MarkAttachmentRule;
@@ -78,8 +78,8 @@ impl SimpleMarkBaseBuilder for MarkToBaseBuilder {
 // further decomposed for testing, so we just see one mark per entry
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SimpleAnchorRule {
-    pub base_gid: GlyphId16,
-    pub mark_gid: GlyphId16,
+    pub base_gid: GlyphId,
+    pub mark_gid: GlyphId,
     pub base_anchor: (i16, i16),
     pub mark_anchor: (i16, i16),
 }
@@ -89,17 +89,17 @@ pub type RawAnchor = (i16, i16);
 impl PartialEq<(u16, RawAnchor, u16, RawAnchor)> for SimpleAnchorRule {
     fn eq(&self, other: &(u16, RawAnchor, u16, RawAnchor)) -> bool {
         let (base_id, base_anchor, mark_id, mark_anchor) = *other;
-        self.base_gid.to_u16() == base_id
+        self.base_gid == GlyphId::from(base_id)
             && self.base_anchor == base_anchor
-            && self.mark_gid.to_u16() == mark_id
+            && self.mark_gid == GlyphId::from(mark_id)
             && self.mark_anchor == mark_anchor
     }
 }
 
 impl Debug for SimpleAnchorRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let base = self.base_gid.to_u16();
-        let mark = self.mark_gid.to_u16();
+        let base = self.base_gid.to_u32();
+        let mark = self.mark_gid.to_u32();
         let (base_x, base_y) = self.base_anchor;
         let (mark_x, mark_y) = self.mark_anchor;
         write!(

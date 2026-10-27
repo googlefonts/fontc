@@ -1,0 +1,15 @@
+# tests beginning with 'provider' get compiled with an external Feature Provider
+
+# when a feature has more than one marker, the external lookups go at the
+# first one (as in ufo2ft); later markers are ignored, so they don't split
+# the lookup they're in.
+
+feature kern {
+    # Automatic Code
+} kern;
+
+feature kern {
+    pos a 5;
+    # Automatic Code
+    pos b 6;
+} kern;

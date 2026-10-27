@@ -1,0 +1,10 @@
+{
+.formatVersion = 3;
+familyName = ExportClasses;
+axes = ({ name = Weight; tag = wght; }, { name = Width; tag = wdth; });
+fontMaster = ({ id = m01; name = Regular; axesValues = (90, 120); });
+glyphs = ({ glyphname = space; unicode = 32; layers = ({ layerId = m01; width = 200; }); });
+instances = ({ name = "Bold Condensed"; axesValues = (100, 100); weightClass = 700; widthClass = 3; });
+unitsPerEm = 1000;
+versionMajor = 1;
+}

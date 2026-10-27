@@ -6,7 +6,7 @@ use std::{
 };
 
 use indexmap::{IndexMap, IndexSet};
-use kurbo::{Affine, BezPath, PathEl, Point};
+use kurbo::{Affine, BezPath, PathEl, Point, Rect};
 use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
@@ -48,7 +48,8 @@ pub use static_metadata::{
     PreliminaryGdefCategories, Rule, StatAxis, StaticMetadata, Substitution, VariableFeature,
 };
 
-pub const DEFAULT_VENDOR_ID: &str = "NONE";
+/// A blank vendor ID, which the OS/2 spec allows when there is no vendor.
+pub const DEFAULT_VENDOR_ID: &str = "    ";
 
 /// The name of every glyph, in the order it will be emitted
 ///
@@ -456,7 +457,7 @@ impl GlobalMetricsBuilder {
         self.set_if_absent(GlobalMetric::Descender, pos, descender);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd8/Lib/ufo2ft/fontInfoData.py#L229-L238
-        let computed_typo_line_gap = (units_per_em * 1.2 + descender - ascender).max(0.);
+        let computed_typo_line_gap = ((units_per_em * 1.2).trunc() - ascender + descender).max(0.);
 
         // Capture the actual stored value: if Os2TypoLineGap was already set (e.g. from a
         // custom parameter), set_if_absent returns it unchanged; otherwise it stores and
@@ -827,7 +828,12 @@ pub mod test_helpers {
 pub struct NameBuilder {
     names: HashMap<NameKey, String>,
     /// Helps lookup entries in name when all we have is a NameId
+    ///
+    /// Only holds the English names added with [`NameBuilder::add`], so
+    /// lookups and fallbacks never see an entry from `records`.
     name_to_key: HashMap<NameId, NameKey>,
+    /// Records with their own platform, encoding and language ids
+    records: HashMap<NameKey, String>,
     version_major: i32,
     version_minor: u32,
 }
@@ -869,17 +875,36 @@ impl NameBuilder {
         linked_style.join(" ")
     }
 
-    pub fn add(&mut self, name_id: NameId, value: String) {
-        // Work around plist crate not performing XML end-of-line normalization
-        // (XML 1.0 §2.11: \r\n → \n, bare \r → \n)
-        let value = if value.contains('\r') {
+    /// Work around plist crate not performing XML end-of-line normalization
+    /// (XML 1.0 §2.11: \r\n → \n, bare \r → \n)
+    pub fn normalize_line_endings(value: String) -> String {
+        if value.contains('\r') {
             value.replace("\r\n", "\n").replace('\r', "\n")
         } else {
             value
-        };
-        let key = NameKey::new(name_id, &value);
+        }
+    }
+
+    pub fn add(&mut self, name_id: NameId, value: String) {
+        let value = Self::normalize_line_endings(value);
+        let key = NameKey::new(name_id);
         self.names.insert(key, value);
         self.name_to_key.insert(name_id, key);
+    }
+
+    /// Add a record under exactly the platform, encoding and language ids of `key`.
+    ///
+    /// Like ufo2ft's `openTypeNameRecords`, records are applied after the
+    /// names derived from the other fields, replacing one only when all four
+    /// ids match. They are never consulted for fallbacks or derived names, so
+    /// a localized family name (or an English one given as a record) does not
+    /// change the full name, the PostScript name and so on.
+    ///
+    /// The value is kept as it is, unlike with [`NameBuilder::add`].
+    ///
+    /// <https://github.com/googlefonts/ufo2ft/blob/fca66fe3/Lib/ufo2ft/outlineCompiler.py#L438-L445>
+    pub fn add_record(&mut self, key: NameKey, value: String) {
+        self.records.insert(key, value);
     }
 
     pub fn remove(&mut self, name_id: NameId) {
@@ -1025,7 +1050,6 @@ impl NameBuilder {
                 .get(NameId::VERSION_STRING)
                 .unwrap()
                 .replace("Version ", "");
-            // fontmake pulls the openTypeOS2VendorID but we don't have that so just use their default
             let postscript_name = self.get(NameId::POSTSCRIPT_NAME).unwrap();
             self.add(
                 NameId::UNIQUE_ID,
@@ -1049,6 +1073,10 @@ impl NameBuilder {
         // so that an explicit empty string prevents fallback: see
         // https://github.com/googlefonts/ufo2ft/issues/958
         self.names.retain(|_k, v| !v.is_empty());
+
+        // Records go in last, so nothing above sees them. This is after the
+        // empty string removal because ufo2ft adds records as they are.
+        self.names.extend(self.records);
         self.names
     }
 
@@ -1099,6 +1127,11 @@ pub enum FeaturesSource {
     },
     Memory {
         fea_content: String,
+        /// The file the content came from, used to name it in diagnostics.
+        ///
+        /// This need not be a file on disk: the features of a zipped or JSON
+        /// UFO are named as if it were a directory, e.g. `Foo.ufoz/features.fea`.
+        path: Option<PathBuf>,
         include_dir: Option<PathBuf>,
     },
 }
@@ -1118,6 +1151,7 @@ impl FeaturesSource {
     pub fn from_string(fea_content: String) -> FeaturesSource {
         FeaturesSource::Memory {
             fea_content,
+            path: None,
             include_dir: None,
         }
     }
@@ -1128,7 +1162,10 @@ impl Display for FeaturesSource {
         match self {
             FeaturesSource::Empty => f.write_str("<no features>"),
             FeaturesSource::File { fea_file, .. } => write!(f, "{}", fea_file.display()),
-            FeaturesSource::Memory { .. } => f.write_str("<memory>"),
+            FeaturesSource::Memory {
+                path: Some(path), ..
+            } => write!(f, "{}", path.display()),
+            FeaturesSource::Memory { path: None, .. } => f.write_str("<memory>"),
         }
     }
 }
@@ -1513,6 +1550,9 @@ pub struct Glyph {
     pub name: GlyphName,
     /// Whether to "export" in source terms
     pub emit_to_binary: bool,
+    /// Keep explicitly supplied anchors, without propagating anchors from components.
+    #[serde(default)]
+    pub skip_anchor_propagation: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     #[serde(default, skip_serializing_if = "Axes::is_empty")]
     axes: Axes, // Glyph-local axes for variable components.
@@ -1623,6 +1663,7 @@ impl Glyph {
         Ok(Glyph {
             name,
             emit_to_binary,
+            skip_anchor_propagation: false,
             codepoints,
             axes: Axes::default(),
             default_location,
@@ -1767,6 +1808,8 @@ impl IdAware<WorkId> for GlyphAnchors {
 pub struct GlyphBuilder {
     pub name: GlyphName,
     pub emit_to_binary: bool,
+    #[serde(default)]
+    pub skip_anchor_propagation: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     pub sources: HashMap<NormalizedLocation, GlyphInstance>,
     #[serde(default, skip_serializing_if = "Axes::is_empty")]
@@ -1778,6 +1821,7 @@ impl GlyphBuilder {
         Self {
             name,
             emit_to_binary: true,
+            skip_anchor_propagation: false,
             codepoints: HashSet::new(),
             sources: HashMap::new(),
             axes: Axes::default(),
@@ -1813,6 +1857,7 @@ impl GlyphBuilder {
             self.sources,
         )?;
         glyph.axes = self.axes;
+        glyph.skip_anchor_propagation = self.skip_anchor_propagation;
         Ok(glyph)
     }
 }
@@ -1822,6 +1867,7 @@ impl From<Glyph> for GlyphBuilder {
         Self {
             name: value.name,
             emit_to_binary: value.emit_to_binary,
+            skip_anchor_propagation: value.skip_anchor_propagation,
             codepoints: value.codepoints,
             sources: value.sources,
             axes: value.axes,
@@ -2381,7 +2427,21 @@ pub struct ColorPalettes {
 }
 
 impl ColorPalettes {
-    pub fn new(mut palettes: Vec<Vec<Color>>) -> Result<Option<Self>, Error> {
+    pub fn new(palettes: Vec<Vec<Color>>) -> Result<Option<Self>, Error> {
+        let Some(mut result) = Self::new_preserving_indices(palettes)? else {
+            return Ok(None);
+        };
+
+        // Glyphs paints refer to colors rather than source palette indices.
+        if let [one_palette] = result.palettes.as_mut_slice() {
+            let mut seen = HashSet::new();
+            one_palette.retain(|color| seen.insert(*color));
+        }
+        Ok(Some(result))
+    }
+
+    /// Construct palettes whose entry positions are referenced by source paints.
+    pub fn new_preserving_indices(palettes: Vec<Vec<Color>>) -> Result<Option<Self>, Error> {
         // Fail if boring
         if !palettes.iter().any(|p| !p.is_empty()) {
             return Ok(None);
@@ -2394,22 +2454,6 @@ impl ColorPalettes {
                 n: bad_idx,
                 size_n: palettes[bad_idx].len(),
             });
-        }
-
-        // Trivial optimization: if there is only one palette we can deduplicate it
-        if let [one_palette] = palettes.as_mut_slice() {
-            // Keep the first occurance in original order to match fontmake
-            let mut seen = HashSet::new();
-            let mut delme = Vec::new();
-            for (i, c) in one_palette.iter().enumerate() {
-                if !seen.insert(c) {
-                    delme.push(i);
-                }
-            }
-
-            for i in delme.into_iter().rev() {
-                one_palette.remove(i);
-            }
         }
 
         Ok(Some(Self { palettes }))
@@ -2436,14 +2480,25 @@ pub struct Color {
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ColorStop {
     pub offset: OrderedFloat<f32>,
-    pub color: Color,
+    pub color: ColorReference,
+    /// Opacity multiplier, independent of the palette entry's alpha (0..1).
     pub alpha: OrderedFloat<f32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ColorReference {
+    /// A Glyphs color, resolved against the generated palette.
+    Color(Color),
+    /// An existing palette entry; 0xFFFF means the text foreground color.
+    PaletteIndex(u16),
 }
 
 /// Data to inform construction of [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr)
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ColorGlyphs {
     pub base_glyphs: IndexMap<GlyphName, Paint>,
+    /// Explicit static clipping rectangles in font units.
+    pub clip_boxes: BTreeMap<GlyphName, Rect>,
 }
 
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/colr#paint-tables>
@@ -2454,6 +2509,9 @@ pub enum Paint {
     LinearGradient(Box<PaintLinearGradient>),
     RadialGradient(Box<PaintRadialGradient>),
     Layers(Box<Vec<Paint>>),
+    ColrGlyph(GlyphName),
+    Transform(Box<PaintTransform>),
+    Translate(Box<PaintTranslate>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -2464,14 +2522,25 @@ pub struct PaintGlyph {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintSolid {
-    /// The color to use. `None` means the text foreground color
-    /// (COLR palette index 0xFFFF).
-    pub color: Option<Color>,
+    pub color: ColorReference,
+    /// Opacity multiplier, independent of the palette entry's alpha (0..1).
+    pub alpha: OrderedFloat<f32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+pub enum GradientCoordinates {
+    /// Percentages of the enclosing PaintGlyph's outline bounds, as in Glyphs.
+    Relative,
+    /// Font units, as in UFO COLRv1 paint dictionaries.
+    Absolute,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintLinearGradient {
     pub color_line: Vec<ColorStop>,
+    #[serde(default)]
+    pub extend: write_fonts::tables::colr::Extend,
+    pub coordinates: GradientCoordinates,
     pub p0: Point,
     pub p1: Point,
     /// Third point defining gradient rotation. None means calculate perpendicular
@@ -2482,13 +2551,30 @@ pub struct PaintLinearGradient {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PaintRadialGradient {
     pub color_line: Vec<ColorStop>,
+    #[serde(default)]
+    pub extend: write_fonts::tables::colr::Extend,
+    pub coordinates: GradientCoordinates,
     pub p0: Point,
-    /// Inner radius. None means 0 (gradient radiating from center, not a ring).
+    /// Explicit inner radius in font units.
+    /// None means 0 (gradient radiating from center, not a ring).
     pub r0: Option<OrderedFloat<f32>>,
     pub p1: Point,
-    /// Outer radius. None means calculate as max distance from center to
-    /// bounding box corners (like Glyphs.app does).
+    /// Explicit outer radius in font units. None means calculate as max
+    /// distance from center to bounding box corners (like Glyphs 3 does).
     pub r1: Option<OrderedFloat<f32>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintTransform {
+    pub paint: Paint,
+    pub transform: Affine,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PaintTranslate {
+    pub paint: Paint,
+    pub dx: f64,
+    pub dy: f64,
 }
 
 #[cfg(test)]
@@ -2646,9 +2732,7 @@ mod tests {
     fn assert_name(names: &HashMap<NameKey, String>, expected: &str, name_id: NameId) {
         assert_eq!(
             Some(expected),
-            names
-                .get(&NameKey::new(name_id, expected))
-                .map(String::as_str)
+            names.get(&NameKey::new(name_id)).map(String::as_str)
         );
     }
 
@@ -2661,7 +2745,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "New Font"),
                 (NameId::SUBFAMILY_NAME, "Regular"),
-                (NameId::UNIQUE_ID, "0.000;NONE;NewFont-Regular"),
+                (NameId::UNIQUE_ID, "0.000;    ;NewFont-Regular"),
                 (NameId::FULL_NAME, "New Font Regular"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "NewFont-Regular"),
@@ -2677,7 +2761,7 @@ mod tests {
         let names = builder.build(DEFAULT_VENDOR_ID);
 
         assert_name(&names, "Version 1.002", NameId::VERSION_STRING);
-        assert_name(&names, "1.002;NONE;NewFont-Regular", NameId::UNIQUE_ID);
+        assert_name(&names, "1.002;    ;NewFont-Regular", NameId::UNIQUE_ID);
     }
 
     #[test]
@@ -2691,7 +2775,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Family"),
                 (NameId::SUBFAMILY_NAME, "Bold Italic"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-BoldItalic"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-BoldItalic"),
                 (NameId::FULL_NAME, "Family Bold Italic"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-BoldItalic"),
@@ -2711,7 +2795,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Family Subfamily"),
                 (NameId::SUBFAMILY_NAME, "Regular"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-Subfamily"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-Subfamily"),
                 (NameId::FULL_NAME, "Family Subfamily"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-Subfamily"),
@@ -2772,7 +2856,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Legacy Family"),
                 (NameId::SUBFAMILY_NAME, "Regular"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-Subfamily"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-Subfamily"),
                 (NameId::FULL_NAME, "Family Subfamily"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-Subfamily"),
@@ -2796,7 +2880,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Family"),
                 (NameId::SUBFAMILY_NAME, "Subfamily"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-Subfamily"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-Subfamily"),
                 (NameId::FULL_NAME, "Family Subfamily"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-Subfamily"),
@@ -2817,7 +2901,7 @@ mod tests {
             &[
                 (NameId::FAMILY_NAME, "Family"),
                 (NameId::SUBFAMILY_NAME, "Italic"),
-                (NameId::UNIQUE_ID, "0.000;NONE;Family-Italic"),
+                (NameId::UNIQUE_ID, "0.000;    ;Family-Italic"),
                 (NameId::FULL_NAME, "Family Italic"),
                 (NameId::VERSION_STRING, "Version 0.000"),
                 (NameId::POSTSCRIPT_NAME, "Family-Italic"),
@@ -2915,10 +2999,8 @@ mod tests {
             (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Regular"),
         ]);
 
-        assert!(!identical.contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME)));
-        assert!(
-            !identical.contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
-        );
+        assert!(!identical.contains_key(&NameKey::new(NameId::TYPOGRAPHIC_FAMILY_NAME)));
+        assert!(!identical.contains_key(&NameKey::new(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)));
 
         let different_subfamily = make_builder(&[
             (NameId::FAMILY_NAME, "Derp"),
@@ -2927,13 +3009,9 @@ mod tests {
             (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Regular Italic"),
         ]);
 
+        assert!(different_subfamily.contains_key(&NameKey::new(NameId::TYPOGRAPHIC_FAMILY_NAME)));
         assert!(
-            different_subfamily
-                .contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME))
-        );
-        assert!(
-            different_subfamily
-                .contains_key(&NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
+            different_subfamily.contains_key(&NameKey::new(NameId::TYPOGRAPHIC_SUBFAMILY_NAME))
         );
     }
 
@@ -2943,7 +3021,7 @@ mod tests {
         let mut builder = NameBuilder::default();
         builder.add(NameId::UNIQUE_ID, "".into());
         let names = builder.build("derp");
-        assert!(!names.contains_key(&NameKey::new_bmp_only(NameId::UNIQUE_ID)));
+        assert!(!names.contains_key(&NameKey::new(NameId::UNIQUE_ID)));
     }
 
     // If x-height is undefined, ufo2ft derives the strikeout position from its
@@ -2999,6 +3077,23 @@ mod tests {
         assert_eq!(
             754.0,
             built.get(GlobalMetric::HheaAscender, &pos).into_inner()
+        );
+    }
+
+    // ufo2ft truncates upem * 1.2 to an int before subtracting the ascender and descender
+    #[test]
+    fn default_typo_line_gap_truncates_like_ufo2ft() {
+        let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let mut metrics = GlobalMetricsBuilder::new();
+        metrics.populate_defaults(&pos, 1024, None, Some(768.0), Some(-256.0), None);
+
+        let built = metrics.build(&Axes::default()).unwrap();
+        assert_eq!(
+            (204.0, 972.0),
+            (
+                built.get(GlobalMetric::Os2TypoLineGap, &pos).into_inner(),
+                built.get(GlobalMetric::HheaAscender, &pos).into_inner(),
+            )
         );
     }
 
@@ -3179,5 +3274,79 @@ mod tests {
         let mut builder = NameBuilder::default();
         builder.add(NameId::COPYRIGHT_NOTICE, "a\r\nb\rc\nd".to_string());
         assert_eq!(builder.get(NameId::COPYRIGHT_NOTICE), Some("a\nb\nc\nd"));
+    }
+
+    fn record_key(name_id: NameId, lang_id: u16) -> NameKey {
+        NameKey {
+            name_id,
+            platform_id: 3,
+            encoding_id: 1,
+            lang_id,
+        }
+    }
+
+    // Derived names stay at Windows encoding 1 whatever they contain, like in
+    // Glyphs.app and ufo2ft (googlefonts/ufo2ft#1011)
+    #[test]
+    fn name_builder_name_outside_bmp_keeps_windows_bmp_encoding() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::FAMILY_NAME, "Local\u{20000}Font".to_string());
+        let names = builder.build(DEFAULT_VENDOR_ID);
+        assert_eq!(
+            names
+                .get(&record_key(NameId::FAMILY_NAME, 0x409))
+                .map(String::as_str),
+            Some("Local\u{20000}Font")
+        );
+        assert!(names.keys().all(|key| key.encoding_id == 1));
+    }
+
+    // Records are added as they are, an empty one included
+    #[test]
+    fn name_builder_keeps_empty_records() {
+        let mut builder = NameBuilder::default();
+        let empty = record_key(NameId::DESCRIPTION, 0x407);
+        builder.add_record(empty, String::new());
+        // an empty name is dropped, an empty record isn't
+        builder.add(NameId::COPYRIGHT_NOTICE, String::new());
+        let names = builder.build(DEFAULT_VENDOR_ID);
+        assert_eq!(names.get(&empty).map(String::as_str), Some(""));
+        assert!(!names.contains_key(&NameKey::new(NameId::COPYRIGHT_NOTICE)));
+    }
+
+    // A record for the English name wins in the end, but doesn't change the
+    // names derived from the field it replaces, as in ufo2ft
+    #[test]
+    fn name_builder_english_record_replaces_without_feeding() {
+        let mut builder = NameBuilder::default();
+        // the order of the calls doesn't matter
+        builder.add_record(record_key(NameId::FAMILY_NAME, 0x409), "Record".to_string());
+        builder.add_record(
+            record_key(NameId::TYPOGRAPHIC_FAMILY_NAME, 0x409),
+            "Typo Record".to_string(),
+        );
+        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Typo".to_string());
+        builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Light".to_string());
+        let names = builder.build(DEFAULT_VENDOR_ID);
+
+        let name = |id| names[&record_key(id, 0x409)].as_str();
+        // the record replaces the derived name ...
+        assert_eq!(name(NameId::FAMILY_NAME), "Record");
+        assert_eq!(name(NameId::TYPOGRAPHIC_FAMILY_NAME), "Typo Record");
+        // ... but the others derive from the fields, not the record
+        assert_eq!(name(NameId::SUBFAMILY_NAME), "Regular");
+        assert_eq!(name(NameId::FULL_NAME), "Typo Light");
+        assert_eq!(name(NameId::POSTSCRIPT_NAME), "Typo-Light");
+    }
+
+    // The last record for a key wins
+    #[test]
+    fn name_builder_records_last_wins() {
+        let mut builder = NameBuilder::default();
+        let key = record_key(NameId::DESCRIPTION, 0x407);
+        builder.add_record(key, "first".to_string());
+        builder.add_record(key, "second".to_string());
+        let names = builder.build(DEFAULT_VENDOR_ID);
+        assert_eq!(names[&key], "second");
     }
 }

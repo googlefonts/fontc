@@ -1,0 +1,18 @@
+{
+.formatVersion = 3;
+
+customParameters = (
+{
+name = "Name Table Entry";
+value = "1 1 0 0; 가석체";
+},
+);
+familyName = NameTableEntryNotMacRoman;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+unitsPerEm = 1000;
+}

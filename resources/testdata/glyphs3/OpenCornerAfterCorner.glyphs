@@ -1,0 +1,103 @@
+{
+.appVersion = "3532";
+.formatVersion = 3;
+familyName = "Open Corner After Corner";
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+export = 0;
+glyphname = _corner.test;
+layers = (
+{
+anchors = (
+{
+name = origin;
+pos = (77,86);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 0;
+nodes = (
+(-5,57,l),
+(-5,52,l),
+(-4,-7,o),
+(34,-58,o),
+(64,-75,c),
+(119,-24,l),
+(93,-2,o),
+(77,34,o),
+(77,90,c)
+);
+}
+);
+width = 200;
+}
+);
+},
+{
+glyphname = host;
+layers = (
+{
+hints = (
+{
+name = _corner.test;
+origin = (0,1);
+type = Corner;
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(152,436,l),
+(83,354,l),
+(83,-1,l),
+(165,-1,l)
+);
+}
+);
+width = 250;
+}
+);
+},
+{
+glyphname = plain;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(152,436,l),
+(165,431,l),
+(165,388,l),
+(164,447,o),
+(126,498,o),
+(96,515,c),
+(41,464,l),
+(67,442,o),
+(83,406,o),
+(83,350,c),
+(83,-1,l),
+(165,-1,l)
+);
+}
+);
+width = 250;
+}
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

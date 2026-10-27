@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>.notdef</key>
+    <string>_notdef.glif</string>
+    <key>legacy</key>
+    <string>legacy.glif</string>
+    <key>linear</key>
+    <string>linear.glif</string>
+    <key>nested</key>
+    <string>nested.glif</string>
+    <key>radial</key>
+    <string>radial.glif</string>
+    <key>shape</key>
+    <string>shape.glif</string>
+    <key>solid</key>
+    <string>solid.glif</string>
+    <key>transformed</key>
+    <string>transformed.glif</string>
+    <key>zeroWidth</key>
+    <string>zeroW_idth.glif</string>
+    <key>diamond</key>
+    <string>diamond.glif</string>
+    <key>fill</key>
+    <string>fill.glif</string>
+    <key>rotated</key>
+    <string>rotated.glif</string>
+    <key>unbounded</key>
+    <string>unbounded.glif</string>
+  </dict>
+</plist>

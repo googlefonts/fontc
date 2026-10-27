@@ -1,7 +1,5 @@
 //! Generic model of font sources.
 
-use std::path::Path;
-
 use fontdrasil::coords::NormalizedLocation;
 
 use crate::{
@@ -13,11 +11,6 @@ use crate::{
 ///
 /// Expected to be implemented once per font format, e.g. one for .glyphs, one for ufo+ds, etc.
 pub trait Source {
-    /// path is to the root entry, e.g. .glyphs file, .designspace, etc
-    fn new(root: &Path) -> Result<Self, Error>
-    where
-        Self: Sized;
-
     /// Create a function that could be called to generate [crate::ir::StaticMetadata].
     ///
     /// When run work should update [crate::orchestration::Context] with new [crate::ir::StaticMetadata].

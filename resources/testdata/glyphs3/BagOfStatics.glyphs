@@ -1,0 +1,212 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+},
+{
+name = Width;
+tag = wdth;
+}
+);
+familyName = "Bag Of Statics";
+fontMaster = (
+{
+axesValues = (
+400,
+5
+);
+id = m01;
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = 700;
+},
+{
+pos = 500;
+},
+{
+},
+{
+pos = -200;
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+700,
+5
+);
+id = m02;
+metricValues = (
+{
+pos = 820;
+},
+{
+pos = 720;
+},
+{
+pos = 540;
+},
+{
+},
+{
+pos = -210;
+}
+);
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(100,0,l),
+(400,0,l),
+(400,500,l),
+(100,500,l)
+);
+}
+);
+width = 500;
+},
+{
+anchors = (
+{
+name = top;
+pos = (300,540);
+}
+);
+layerId = m02;
+shapes = (
+{
+closed = 1;
+nodes = (
+(50,0,l),
+(550,0,l),
+(300,540,l)
+);
+}
+);
+width = 600;
+},
+{
+associatedMasterId = m01;
+attr = {
+coordinates = (
+550,
+5
+);
+};
+layerId = brace01;
+name = "{550, 5}";
+shapes = (
+{
+closed = 1;
+nodes = (
+(80,0,l),
+(420,0,l),
+(420,520,l),
+(80,520,l)
+);
+}
+);
+width = 550;
+}
+);
+unicode = 97;
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = m02;
+width = 220;
+}
+);
+unicode = 32;
+}
+);
+instances = (
+{
+axesValues = (
+400,
+100
+);
+instanceInterpolations = {
+m01 = 1;
+};
+name = Regular;
+},
+{
+axesValues = (
+700,
+5
+);
+instanceInterpolations = {
+m02 = 1;
+};
+isBold = 1;
+name = Bold;
+weightClass = 700;
+},
+{
+axesValues = (
+550,
+5
+);
+instanceInterpolations = {
+m01 = 0.5;
+m02 = 0.5;
+};
+name = Medium;
+weightClass = 500;
+}
+);
+kerningLTR = {
+m01 = {
+a = {
+a = -10;
+};
+};
+m02 = {
+a = {
+a = -30;
+};
+};
+};
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+}

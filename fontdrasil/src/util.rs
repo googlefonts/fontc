@@ -1,6 +1,6 @@
 use smol_str::SmolStr;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Abstracts over something that can have components
 ///
@@ -15,9 +15,60 @@ pub trait CompositeLike {
 ///
 /// That is: a glyph in the list will always occur before any other glyph that
 /// references it as a component.
+///
+/// Glyphs whose depth can't be determined (because they are part of a component
+/// cycle, reference a missing glyph, or depend on a glyph that does) are dropped
+/// with a warning. Use [`component_cycles`] to detect cycles up front.
 pub fn depth_sorted_composite_glyphs<T: CompositeLike>(
     glyphs: &BTreeMap<SmolStr, T>,
 ) -> Vec<SmolStr> {
+    let (sorted, mut unresolved) = depth_sort(glyphs);
+
+    if !unresolved.is_empty() && log::log_enabled!(log::Level::Warn) {
+        unresolved.sort();
+        log::warn!(
+            "Invalid component graph (cycles or bad refs) for {} glyphs: {:?}",
+            unresolved.len(),
+            unresolved
+        );
+    }
+    sorted
+}
+
+/// Returns the sorted names of all glyphs that are part of a component cycle.
+///
+/// A glyph is part of a cycle if following its components leads back to it,
+/// including a glyph that uses itself as a component. Glyphs that merely use
+/// a glyph in a cycle are not included.
+pub fn component_cycles<T: CompositeLike>(glyphs: &BTreeMap<SmolStr, T>) -> Vec<SmolStr> {
+    let (_, unresolved) = depth_sort(glyphs);
+    // Only unresolved glyphs can be in a cycle, and a cycle can only pass
+    // through unresolved glyphs, so we only need to search among those.
+    let unresolved: HashSet<_> = unresolved.into_iter().collect();
+    let mut cycles = unresolved
+        .iter()
+        .filter(|name| {
+            let mut seen = HashSet::new();
+            let mut todo: Vec<SmolStr> = glyphs[*name].component_names().collect();
+            while let Some(component) = todo.pop() {
+                if component == **name {
+                    return true;
+                }
+                if unresolved.contains(&component) && seen.insert(component.clone()) {
+                    todo.extend(glyphs[&component].component_names());
+                }
+            }
+            false
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    cycles.sort();
+    cycles
+}
+
+/// Returns the glyphs sorted by component depth, and those whose depth is
+/// indeterminate (cycles or bad refs), in no particular order.
+fn depth_sort<T: CompositeLike>(glyphs: &BTreeMap<SmolStr, T>) -> (Vec<SmolStr>, Vec<SmolStr>) {
     // map of the maximum component depth of a glyph.
     // - a glyph with no components has depth 0,
     // - a glyph with a component has depth 1,
@@ -59,26 +110,7 @@ pub fn depth_sorted_composite_glyphs<T: CompositeLike>(
         progress -= indeterminate_depth.len();
     }
 
-    // We may have failed some of you
-    if !indeterminate_depth.is_empty() {
-        // Shouldn't we return an error instead of just dropping results?
-        for g in indeterminate_depth.iter() {
-            depths.remove(&g.name());
-        }
-
-        if log::log_enabled!(log::Level::Warn) {
-            let mut names = indeterminate_depth
-                .into_iter()
-                .map(|g| g.name())
-                .collect::<Vec<_>>();
-            names.sort();
-            log::warn!(
-                "Invalid component graph (cycles or bad refs) for {} glyphs: {:?}",
-                names.len(),
-                names
-            );
-        }
-    }
+    let unresolved = indeterminate_depth.into_iter().map(|g| g.name()).collect();
 
     let mut by_depth = depths
         .into_iter()
@@ -86,7 +118,8 @@ pub fn depth_sorted_composite_glyphs<T: CompositeLike>(
         .collect::<Vec<_>>();
 
     by_depth.sort();
-    by_depth.into_iter().map(|(_, name)| name.clone()).collect()
+    let sorted = by_depth.into_iter().map(|(_, name)| name).collect();
+    (sorted, unresolved)
 }
 
 #[cfg(test)]
@@ -143,7 +176,33 @@ mod tests {
         // all we actually care about is that this doesn't run forever
         let sorted = depth_sorted_composite_glyphs(&glyphs);
         // cycles should be dropped
-        assert!(sorted.is_empty())
+        assert!(sorted.is_empty());
+        assert_eq!(component_cycles(&glyphs), ["A", "B"]);
+    }
+
+    #[test]
+    fn component_cycles_excludes_users_and_missing() {
+        let glyphs = GlyphSetBuilder::default()
+            .add("A", &["B"])
+            .add("B", &["A"])
+            .add("C", &[])
+            .add("D", &["A", "C"])
+            .add("E", &["missing"])
+            .add("self", &["C", "self"])
+            .build();
+        // D only uses a glyph in a cycle, and E has a missing component; neither
+        // is part of a cycle
+        assert_eq!(component_cycles(&glyphs), ["A", "B", "self"]);
+    }
+
+    #[test]
+    fn no_component_cycles() {
+        let glyphs = GlyphSetBuilder::default()
+            .add("A", &[])
+            .add("B", &["A", "A"])
+            .add("C", &["B", "A"])
+            .build();
+        assert!(component_cycles(&glyphs).is_empty());
     }
 
     #[test]

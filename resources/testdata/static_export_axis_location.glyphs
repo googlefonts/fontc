@@ -1,0 +1,11 @@
+{
+.formatVersion = 3;
+familyName = ExportClasses;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = ({ id = m01; name = Regular; axesValues = (90);
+customParameters = ({ name = "Axis Location"; value = ({ Axis = Weight; Location = 300; }); }); });
+glyphs = ({ glyphname = space; unicode = 32; layers = ({ layerId = m01; width = 200; }); });
+instances = ({ name = Light; axesValues = (90); weightClass = 800; });
+unitsPerEm = 1000;
+versionMajor = 1;
+}

@@ -8,14 +8,14 @@ use fontdrasil::types::GlyphName;
 use write_fonts::read::{
     FontRef, TableProvider,
     tables::cmap::{CmapSubtable, EncodingRecord, PlatformId},
-    types::{GlyphId16, Tag},
+    types::{GlyphId, GlyphId16, Tag},
 };
 
 use crate::error::Error;
 
 /// A map for gids to human-readable names
 #[derive(Clone, Debug, Default)]
-pub struct NameMap(pub(crate) BTreeMap<GlyphId16, GlyphName>);
+pub struct NameMap(pub(crate) BTreeMap<GlyphId, GlyphName>);
 
 impl NameMap {
     /// Create a new name mapping for the glyphs in the provided font
@@ -28,11 +28,12 @@ impl NameMap {
         let post = font.post().ok();
         let mut name_map = (1..num_glyphs)
             .map(|gid| {
-                let gid = GlyphId16::new(gid);
+                let gid16 = GlyphId16::new(gid);
+                let gid = GlyphId::from(gid);
                 // first check post, then do fallback
                 if let Some(name) = post
                     .as_ref()
-                    .and_then(|post| post.glyph_name(gid).map(GlyphName::from))
+                    .and_then(|post| post.glyph_name(gid16).map(GlyphName::from))
                 {
                     return (gid, name);
                 }
@@ -52,12 +53,12 @@ impl NameMap {
                         }
                     },
                     // we have no codepoint, just use glyph ID
-                    None => smol_str::format_smolstr!("glyph.{:05}", gid.to_u16()).into(),
+                    None => smol_str::format_smolstr!("glyph.{:05}", gid.to_u32()).into(),
                 };
                 (gid, name)
             })
             .collect::<BTreeMap<_, _>>();
-        name_map.insert(GlyphId16::NOTDEF, ".notdef".into());
+        name_map.insert(GlyphId::NOTDEF, ".notdef".into());
 
         Ok(NameMap(name_map))
     }
@@ -65,7 +66,7 @@ impl NameMap {
     /// Returns a human readable name for this gid.
     ///
     /// This will panic if the gid is not in the font used to create this map.
-    pub fn get(&self, gid: GlyphId16) -> &GlyphName {
+    pub fn get(&self, gid: GlyphId) -> &GlyphName {
         // map contains a name for every gid in the font
         self.0.get(&gid).unwrap()
     }
@@ -76,7 +77,7 @@ impl NameMap {
     }
 }
 
-fn reverse_cmap(font: &FontRef) -> Result<HashMap<GlyphId16, u32>, Error> {
+fn reverse_cmap(font: &FontRef) -> Result<HashMap<GlyphId, u32>, Error> {
     // <https://github.com/fonttools/fonttools/blob/6fa1a76e061c2e84243d8cac/Lib/fontTools/ttLib/tables/_c_m_a_p.py#L334>
     fn is_unicode(record: &&EncodingRecord) -> bool {
         record.platform_id() == PlatformId::Unicode
@@ -91,7 +92,7 @@ fn reverse_cmap(font: &FontRef) -> Result<HashMap<GlyphId16, u32>, Error> {
 
     let mut reverse_cmap = HashMap::new();
 
-    let mut add_to_map = |args: (u32, GlyphId16)| {
+    let mut add_to_map = |args: (u32, GlyphId)| {
         // because multiple glyphs may map to the same codepoint,
         // we always use the lowest codepoint to determine the name.
         let val = reverse_cmap.entry(args.1).or_insert(args.0);
@@ -105,14 +106,8 @@ fn reverse_cmap(font: &FontRef) -> Result<HashMap<GlyphId16, u32>, Error> {
         .map(|rec| rec.subtable(offset_data).unwrap())
     {
         match subtable {
-            CmapSubtable::Format4(subtable) => subtable
-                .iter()
-                .map(|(unicode, gid)| (unicode, GlyphId16::try_from(gid).unwrap()))
-                .for_each(&mut add_to_map),
-            CmapSubtable::Format12(subtable) => subtable
-                .iter()
-                .map(|(unicode, gid)| (unicode, GlyphId16::try_from(gid).unwrap()))
-                .for_each(&mut add_to_map),
+            CmapSubtable::Format4(subtable) => subtable.iter().for_each(&mut add_to_map),
+            CmapSubtable::Format12(subtable) => subtable.iter().for_each(&mut add_to_map),
             _ => (),
         }
     }
@@ -125,7 +120,7 @@ impl FromIterator<GlyphName> for NameMap {
         Self(
             iter.into_iter()
                 .enumerate()
-                .map(|(i, name)| (GlyphId16::new(i as _), name))
+                .map(|(i, name)| (GlyphId::new(i as _), name))
                 .collect(),
         )
     }

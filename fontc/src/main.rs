@@ -37,7 +37,7 @@ fn main() {
             }
         }
         if !error_displayed {
-            error!("{e}{additional}");
+            error!("{}{additional}", e.display_with_causes());
         }
         std::process::exit(1);
     }
@@ -52,8 +52,9 @@ fn run(args: Args) -> Result<(), Error> {
     let _logging_guard = init_logging(&args);
 
     let input = args.source()?;
+    let source_options = args.source_options();
     let options = args.try_into()?;
-    fontc::run(input, options)
+    fontc::run(input, &source_options, options)
 }
 
 fn print_verbose_version() -> Result<(), std::io::Error> {

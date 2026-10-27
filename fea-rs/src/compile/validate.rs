@@ -31,8 +31,11 @@ pub struct ValidationCtx<'a, V: VariationInfo> {
     glyph_map: &'a GlyphMap,
     source_map: &'a SourceMap,
     variation_info: Option<&'a V>,
-    default_lang_systems: HashSet<(SmolStr, SmolStr)>,
+    default_lang_systems: HashSet<(Tag, Tag)>,
     seen_non_default_script: bool,
+    // the current script, and the language systems set so far, in a feature block
+    feature_script: Tag,
+    feature_languages: HashSet<(Tag, Tag)>,
     lookup_defs: HashMap<SmolStr, Token>,
     // class and position
     glyph_class_defs: HashMap<SmolStr, Token>,
@@ -61,6 +64,8 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             variation_info,
             default_lang_systems: Default::default(),
             seen_non_default_script: false,
+            feature_script: tags::SCRIPT_DFLT,
+            feature_languages: Default::default(),
             glyph_class_defs: Default::default(),
             lookup_defs: Default::default(),
             mark_class_defs: Default::default(),
@@ -157,7 +162,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
 
         if !self
             .default_lang_systems
-            .insert((script.text().clone(), lang.text().clone()))
+            .insert((script.to_raw(), lang.to_raw()))
         {
             self.warning(node.range(), "Duplicate languagesystem definition");
         }
@@ -654,6 +659,26 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 "'dflt' can only be used alone in a language statement",
             );
         }
+        self.validate_repeated_language(node);
+    }
+
+    fn validate_repeated_language(&mut self, node: &typed::Language) {
+        let mut in_statement = HashSet::new();
+        for tag in node.tags() {
+            let language = tag.to_raw();
+            if language == tags::LANG_DFLT || !in_statement.insert(language) {
+                continue;
+            }
+            if !self
+                .feature_languages
+                .insert((self.feature_script, language))
+            {
+                self.warning(
+                    node.range(),
+                    "duplicate language statement: this is handled differently by different tools, and is probably a mistake",
+                );
+            }
+        }
     }
 
     // shared between features and feature variations
@@ -663,13 +688,21 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         iter: impl Iterator<Item = &'b NodeOrToken>,
     ) {
         let mut has_seen_rule = false;
+        self.feature_script = self
+            .default_lang_systems
+            .iter()
+            .min()
+            .map(|(script, _)| *script)
+            .unwrap_or(tags::SCRIPT_DFLT);
+        self.feature_languages.clear();
         for item in iter {
-            if item.kind() == Kind::ScriptNode
-                || item.kind() == Kind::SubtableNode
+            if item.kind() == Kind::SubtableNode
                 || item.kind() == Kind::Semi
                 || item.kind() == Kind::Comment
             {
                 // lgtm
+            } else if let Some(node) = typed::Script::cast(item) {
+                self.feature_script = node.tag().to_raw();
             } else if let Some(node) = typed::Language::cast(item) {
                 self.validate_language(&node);
             } else if let Some(node) = typed::CvParameters::cast(item) {
@@ -882,6 +915,10 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                         item.range(),
                         "script and language statements not allowed in standalone lookup blocks",
                     );
+                } else if let Some(node) = typed::Script::cast(item) {
+                    self.feature_script = node.tag().to_raw();
+                } else if let Some(node) = typed::Language::cast(item) {
+                    self.validate_repeated_language(&node);
                 }
             } else if item.kind() == Kind::SubtableNode {
                 // lgtm

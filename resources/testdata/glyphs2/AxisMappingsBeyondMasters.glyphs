@@ -1,0 +1,67 @@
+{
+customParameters = (
+{
+name = "Axis Mappings";
+value = {
+wght = {
+"300" = 30;
+"400" = 80;
+"700" = 200;
+"900" = 250;
+};
+};
+}
+);
+familyName = Mapping;
+fontMaster = (
+{
+id = regular;
+weightValue = 80;
+},
+{
+id = bold;
+weight = Bold;
+weightValue = 200;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = regular;
+width = 200;
+},
+{
+layerId = bold;
+width = 300;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+interpolationWeight = 30;
+name = Light;
+weightClass = Light;
+},
+{
+interpolationWeight = 80;
+name = Regular;
+},
+{
+interpolationWeight = 200;
+name = Bold;
+weightClass = Bold;
+},
+{
+interpolationWeight = 250;
+name = Black;
+weightClass = Black;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
