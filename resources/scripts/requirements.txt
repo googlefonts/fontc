@@ -62,7 +62,7 @@ fontmath==0.10.0
     # via
     #   fontmake
     #   ufo2ft
-fonttools[lxml,repacker,ufo,unicode]==4.67.0
+fonttools[lxml,repacker,ufo,unicode]==4.68.0
     # via
     #   axisregistry
     #   booleanoperations
@@ -96,7 +96,7 @@ gfmetadata==0.2.5
     #   gftools
 gfsubsets==2025.11.4
     # via gftools
-gftools==0.10.5
+gftools==0.10.6
     # via
     #   -r resources/scripts/requirements.in
     #   ttx-diff
