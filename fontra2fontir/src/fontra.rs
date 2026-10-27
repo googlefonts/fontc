@@ -223,7 +223,9 @@ impl Font {
             .keys()
             .map(|name| {
                 let file = glyphs_dir.join(string_to_filename(name.as_str(), ".json"));
-                Ok((name.clone(), VariableGlyph::from_file(&file)?))
+                let mut glyph = VariableGlyph::from_file(&file)?;
+                glyph.name = name.clone();
+                Ok((name.clone(), glyph))
             })
             .collect::<Result<_, BadSource>>()?;
 
@@ -970,6 +972,15 @@ mod tests {
             vec![[200.0, 0.0], [300.018, 0.095], [900.0, 1.0]],
             *wght.mapping()
         );
+    }
+
+    #[test]
+    fn glyph_names_come_from_glyph_info() {
+        // The glyph files of codepoints.fontra all have the name ".notdef".
+        let font_data = Font::load(&testdata_dir().join("codepoints.fontra")).unwrap();
+        for (name, glyph) in &font_data.glyphs {
+            assert_eq!(name, &glyph.name);
+        }
     }
 
     #[test]
