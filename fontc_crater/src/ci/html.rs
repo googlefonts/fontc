@@ -713,8 +713,7 @@ fn make_diff_report(
         }
 
         let repo_url = get_repo_url(target);
-        let ttx_command = target.repro_command(repo_url);
-        let onclick = format!("event.preventDefault(); copyText(\"{ttx_command}\");",);
+        let onclick = copy_text_onclick(&target.repro_command(repo_url));
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
         let changed_tag_list = list_different_tables(diff_details).unwrap_or_default();
         let diff_table = format_diff_report_detail_table(diff_details, prev_details);
@@ -803,6 +802,13 @@ fn format_annotations(
     }
 }
 
+/// An onclick handler that copies `text` to the clipboard.
+fn copy_text_onclick(text: &str) -> String {
+    // a JSON string is a JS string literal, whatever quotes `text` contains
+    let text = serde_json::to_string(text).expect("a string always serializes");
+    format!("event.preventDefault(); copyText({text});")
+}
+
 /// Compute the short source name for a target (just the filename).
 fn short_source_name(target: &Target) -> String {
     let bare_path = target.source_path(Path::new(""));
@@ -818,13 +824,17 @@ fn make_target_description(target: &Target, ambiguous_sources: &HashSet<String>)
     } else {
         short
     };
-    let annotation = match target.build() {
+    let mut annotation = match target.build() {
         BuildType::Default => "default".to_string(),
         BuildType::GfTools if target.config().file_stem() != Some(OsStr::new("config")) => {
             format!("gftools, {}", target.config().display())
         }
         _ => "gftools".to_string(),
     };
+    if let Some(export) = target.export() {
+        annotation.push_str(", ");
+        annotation.push_str(export);
+    }
     html! {
         (source)
             " "
@@ -1149,8 +1159,7 @@ fn make_error_report_group_items<'a>(
     };
     let make_repro_command = |target: &Target| {
         let url = get_repo_url(target);
-        let ttx_command = target.repro_command(url);
-        format!("event.preventDefault(); copyText(\"{ttx_command}\");",)
+        copy_text_onclick(&target.repro_command(url))
     };
     html! {
         @for (path, is_new) in paths_and_if_is_new_error {

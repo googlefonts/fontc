@@ -1,6 +1,7 @@
 //! targets of a compilation
 
 use std::{
+    borrow::Cow,
     ffi::{OsStr, OsString},
     fmt::{Display, Write},
     path::{Path, PathBuf},
@@ -33,6 +34,8 @@ pub(crate) struct TargetId {
     /// Path to source file, relative to the source_dir
     source: PathBuf,
     build: BuildType,
+    /// The one static export to build, if the source has several.
+    export: Option<String>,
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -63,6 +66,13 @@ impl Target {
         target
     }
 
+    /// This target, building only the static export with this name.
+    pub(crate) fn with_export(&self, export: impl Into<String>) -> Self {
+        let mut target = self.clone();
+        target.id.export = Some(export.into());
+        target
+    }
+
     pub(crate) fn id(&self) -> &TargetId {
         &self.id
     }
@@ -77,6 +87,10 @@ impl Target {
 
     pub(crate) fn config(&self) -> &Path {
         &self.id.config
+    }
+
+    pub(crate) fn export(&self) -> Option<&str> {
+        self.id.export.as_deref()
     }
 
     /// The repo's checkout directory, relative to the cache dir root.
@@ -139,7 +153,8 @@ impl Target {
     /// {BASE}{source_dir}/{config_stem}/{file_stem}/{build}
     ///
     /// where {source_dir} is the path to the sources/Sources directory of this
-    /// target, relative to the root git cache.
+    /// target, relative to the root git cache. A target for one export ends
+    /// in `{build}-{export}` instead.
     pub(crate) fn cache_dir(&self, in_dir: &Path) -> PathBuf {
         let config = self.id.config.file_stem().unwrap_or(OsStr::new("config"));
         let mut result = in_dir.join(self.source_dir());
@@ -156,7 +171,14 @@ impl Target {
             .to_string()
             .replace('/', "_");
         result.push(source_no_ext);
-        result.push(self.id.build.name());
+        match &self.id.export {
+            Some(export) => result.push(format!(
+                "{}-{}",
+                self.id.build.name(),
+                export.replace('/', "_")
+            )),
+            None => result.push(self.id.build.name()),
+        }
         result
     }
 
@@ -171,18 +193,25 @@ impl Target {
         } else {
             Default::default()
         };
-        let mut cmd = format!(
-            "python3 -m ttx_diff '{repo_url}{sha_part}#{}'",
-            rel_source_path.display()
-        );
+        let source = format!("{repo_url}{sha_part}#{}", rel_source_path.display());
+        let mut cmd = format!("python3 -m ttx_diff {}", shell_quote(&source));
         if self.id.build == BuildType::GfTools {
             cmd.push_str(" --compare gftools");
             // we hard code this; repro will only work if they're using default
-            // cache location
+            // cache location. Not quoted, so that the shell expands the `~`.
             write!(&mut cmd, " --config {}", self.repro_config_path().display()).unwrap();
+        }
+        if let Some(export) = &self.id.export {
+            write!(&mut cmd, " --export {}", shell_quote(export)).unwrap();
         }
         cmd
     }
+}
+
+/// Quote `arg` for the shell, if it needs it.
+fn shell_quote(arg: &str) -> Cow<'_, str> {
+    // this only fails on a nul byte, which no path or font name has
+    shlex::try_quote(arg).unwrap_or_else(|_| format!("'{arg}'").into())
 }
 
 impl TargetId {
@@ -207,6 +236,7 @@ impl TargetId {
             is_virtual,
             source,
             build,
+            export: None,
         }
     }
 
@@ -233,7 +263,10 @@ impl TargetId {
         if let Some(sha) = sha {
             write!(f, "?{sha}")?;
         }
-        write!(f, " ({})", self.build)
+        match &self.export {
+            Some(export) => write!(f, " ({}: {export})", self.build),
+            None => write!(f, " ({})", self.build),
+        }
     }
 
     /// Parse a target, and its sha if there is one.
@@ -241,9 +274,22 @@ impl TargetId {
     /// See the `FromStr` impl for [`Target`] for the format.
     fn parse(s: &str) -> Result<(Self, Option<&str>), String> {
         let s = s.trim();
-        let (head, type_) = s
-            .rsplit_once('(')
-            .ok_or_else(|| "missing opening paren".to_string())?;
+        let inner = s
+            .strip_suffix(')')
+            .ok_or_else(|| "missing closing paren".to_string())?;
+        // an export's name can contain parens, so look for the build type by name
+        let (head, build, export) = [BuildType::Default, BuildType::GfTools]
+            .into_iter()
+            .find_map(|build| {
+                let (head, rest) = inner.rsplit_once(&format!("({}", build.name()))?;
+                match rest {
+                    "" => Some((head, build, None)),
+                    _ => rest
+                        .strip_prefix(": ")
+                        .map(|name| (head, build, Some(name))),
+                }
+            })
+            .ok_or_else(|| format!("unknown build type in '{s}'"))?;
 
         let head = head.trim();
         let (config_part, source_part) = head
@@ -267,12 +313,8 @@ impl TargetId {
             (false, config_part)
         };
 
-        let build = match type_.trim_end_matches(')') {
-            "default" => BuildType::Default,
-            "gftools" => BuildType::GfTools,
-            other => return Err(format!("unknown build type '{other}'")),
-        };
-        let id = Self::new(org_repo, config_path, is_virtual, source, build);
+        let mut id = Self::new(org_repo, config_path, is_virtual, source, build);
+        id.export = export.map(str::to_owned);
         Ok((id, sha))
     }
 }
@@ -309,7 +351,7 @@ impl Display for TargetId {
 /// $ORG/$REPO/$CONFIG_PATH $SRC_PATH?$SHA ($BUILD_TYPE)
 ///
 /// where a virtual config's $CONFIG_PATH starts with the literal path element
-/// '$VIRTUAL'.
+/// '$VIRTUAL'. A target for one static export ends in `($BUILD_TYPE: $EXPORT)`.
 impl FromStr for Target {
     type Err = String;
 
@@ -461,5 +503,74 @@ mod tests {
             hmm,
             "python3 -m ttx_diff 'example.com?123456789a#sources/hi.glyphs'"
         );
+    }
+
+    #[test]
+    fn string_repr_export() {
+        let gftools = Target::new(
+            "org/repo",
+            "deadbeef",
+            "sources/config.yaml",
+            false,
+            "sources/Glyphs Files/Hi.glyphs",
+        )
+        .to_gftools_target();
+        let export = gftools.with_export("Hi Sans (Old) Bold");
+
+        let asstr = export.to_string();
+        assert_eq!(
+            asstr,
+            "org/repo/sources/config.yaml Glyphs Files/Hi.glyphs?deadbeef (gftools: Hi Sans (Old) Bold)"
+        );
+        let der = Target::from_str(&asstr).unwrap();
+        assert_eq!(der, export);
+        assert_eq!(der.export(), Some("Hi Sans (Old) Bold"));
+        assert_ne!(der.id(), gftools.id());
+        assert_eq!(
+            Target::from_str(&gftools.to_string()).unwrap().export(),
+            None
+        );
+    }
+
+    #[test]
+    fn export_has_its_own_cache_dir_and_repro() {
+        let target = Target::new(
+            "org/repo",
+            "123456789a",
+            "sources/config.yaml",
+            false,
+            "sources/hi.glyphs",
+        )
+        .to_gftools_target()
+        .with_export("Hi Bold");
+        assert_eq!(
+            target.cache_dir(Path::new("cache")),
+            Path::new("cache/org/repo_123456789a/sources/config/hi/gftools-Hi Bold")
+        );
+        assert_eq!(
+            target.repro_command("example.com"),
+            "python3 -m ttx_diff 'example.com?123456789a#sources/hi.glyphs' --compare gftools \
+             --config ~/.fontc_crater_cache/org/repo/sources/config.yaml --export 'Hi Bold'"
+        );
+    }
+
+    #[test]
+    fn repro_command_quotes_awkward_names() {
+        let target = Target::new(
+            "org/repo",
+            "123456789a",
+            "sources/config.yaml",
+            false,
+            "sources/Glyphs Files/Hi's.glyphs",
+        )
+        .to_gftools_target()
+        .with_export("Hi's \"Bold\"");
+        let cmd = target.repro_command("example.com");
+        let args = shlex::split(&cmd).unwrap();
+        assert_eq!(
+            args[3],
+            "example.com?123456789a#sources/Glyphs Files/Hi's.glyphs"
+        );
+        assert_eq!(args.last().unwrap(), "Hi's \"Bold\"");
     }
 }
