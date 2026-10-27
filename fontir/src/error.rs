@@ -164,6 +164,7 @@ pub enum BadGlyphKind {
     PathConversion(PathConversionError),
     Anchor(BadAnchor),
     BadDeltas(DeltaError),
+    InconsistentVariableComponents(String),
     // each distinct sequence of component glyph names -> locations that use it
     InconsistentComponents(BTreeMap<Vec<GlyphName>, BTreeSet<NormalizedLocation>>),
     FrontendSpecific(String),
@@ -339,6 +340,9 @@ impl std::fmt::Display for BadGlyphKind {
             BadGlyphKind::NoAxisPosition(axis) => write!(f, "no position on '{axis}' axis"),
             BadGlyphKind::Anchor(e) => write!(f, "bad anchor: '{e}'"),
             BadGlyphKind::BadDeltas(e) => write!(f, "delta error: '{e}'"),
+            BadGlyphKind::InconsistentVariableComponents(detail) => {
+                write!(f, "inconsistent variable components: {detail}")
+            }
             BadGlyphKind::InconsistentComponents(seqs) => {
                 f.write_str("components differ between sources: ")?;
                 for (i, (names, locs)) in seqs.iter().enumerate() {

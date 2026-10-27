@@ -34,6 +34,7 @@ use fontbe::{
     os2::create_os2_work,
     post::create_post_work,
     stat::create_stat_work,
+    varc::create_varc_work,
     vertical_metrics::create_vertical_metrics_work,
     vvar::create_vvar_work,
 };
@@ -177,6 +178,7 @@ impl Workload {
         workload.add(create_cpal_work());
         workload.add(create_fvar_work());
         workload.add(create_gvar_work());
+        workload.add(create_varc_work());
         workload.add(create_head_work());
         workload.add_skippable_feature_work(create_gather_ir_kerning_work());
         workload.add_skippable_feature_work(create_kerns_work());
@@ -345,8 +347,9 @@ impl Workload {
             }
         }
 
-        // We don't *have* to wait on glyph order, but if we don't it delays the critical path
-        if has_components {
+        // We don't *have* to wait on glyph order, but if we don't it delays the critical path.
+        // A glyph with local axes must wait, the glyph order work drops the axes.
+        if has_components || !glyph.axes().is_empty() {
             deps = deps.variant(FeWorkIdentifier::GlyphOrder);
         }
 
