@@ -4298,7 +4298,7 @@ impl Font {
             features,
             all_names,
             instances,
-            version_major: from.versionMajor.unwrap_or_default() as i32,
+            version_major: from.versionMajor.unwrap_or(1) as i32,
             version_minor: from.versionMinor.unwrap_or_default() as u32,
             date: from.date,
             kerning_ltr: from.kerning_LTR,
