@@ -57,6 +57,30 @@
 }
 ]
 }
+],
+"mappings": [
+{
+"description": "bold condensed is wider",
+"inputLocation": {
+"weight": 850,
+"width": 0,
+"italic": 0
+},
+"outputLocation": {
+"width": 200
+}
+},
+{
+"description": "off",
+"inputLocation": {
+"weight": 850,
+"width": 1000
+},
+"outputLocation": {
+"width": 500
+},
+"inactive": true
+}
 ]
 },
 "sources": {

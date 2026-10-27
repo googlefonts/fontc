@@ -1,0 +1,11 @@
+TYPE
+kern
+
+GROUPS1
+pair1;vbase
+
+GROUPS2
+
+VALUES
+side1;side2;bold
+@pair1;vcomp;-30

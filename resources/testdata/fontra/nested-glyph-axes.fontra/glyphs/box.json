@@ -1,0 +1,87 @@
+{
+  "name": "box",
+  "axes": [
+    {
+      "name": "width",
+      "minValue": 0,
+      "defaultValue": 0,
+      "maxValue": 100
+    }
+  ],
+  "sources": [
+    {
+      "name": "<default>",
+      "layerName": "width=0"
+    },
+    {
+      "name": "width=100",
+      "layerName": "width=100",
+      "location": {
+        "width": 100
+      }
+    },
+    {
+      "name": "bold",
+      "layerName": "bold",
+      "location": {
+        "Weight": 700
+      }
+    }
+  ],
+  "layers": {
+    "width=0": {
+      "glyph": {
+        "xAdvance": 600,
+        "path": {
+          "contours": [
+            {
+              "points": [
+                {"x": 0, "y": 0},
+                {"x": 100, "y": 0},
+                {"x": 100, "y": 100},
+                {"x": 0, "y": 100}
+              ],
+              "isClosed": true
+            }
+          ]
+        }
+      }
+    },
+    "width=100": {
+      "glyph": {
+        "xAdvance": 600,
+        "path": {
+          "contours": [
+            {
+              "points": [
+                {"x": 0, "y": 0},
+                {"x": 400, "y": 0},
+                {"x": 400, "y": 100},
+                {"x": 0, "y": 100}
+              ],
+              "isClosed": true
+            }
+          ]
+        }
+      }
+    },
+    "bold": {
+      "glyph": {
+        "xAdvance": 600,
+        "path": {
+          "contours": [
+            {
+              "points": [
+                {"x": 0, "y": 0},
+                {"x": 100, "y": 0},
+                {"x": 100, "y": 150},
+                {"x": 0, "y": 150}
+              ],
+              "isClosed": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}

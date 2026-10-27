@@ -1,0 +1,24 @@
+{
+  "name": "g",
+  "sources": [
+    {
+      "name": "<default>",
+      "layerName": "foreground"
+    }
+  ],
+  "layers": {
+    "foreground": {
+      "glyph": {
+        "xAdvance": 600,
+        "components": [
+          {
+            "name": "part",
+            "location": {
+              "height": 100
+            }
+          }
+        ]
+      }
+    }
+  }
+}

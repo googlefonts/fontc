@@ -1,0 +1,72 @@
+{
+  "name": "part",
+  "axes": [
+    {
+      "name": "height",
+      "minValue": 0,
+      "defaultValue": 0,
+      "maxValue": 100
+    }
+  ],
+  "sources": [
+    {
+      "name": "<default>",
+      "layerName": "height=0"
+    },
+    {
+      "name": "height=100",
+      "layerName": "height=100",
+      "location": {
+        "height": 100
+      }
+    }
+  ],
+  "layers": {
+    "height=0": {
+      "glyph": {
+        "xAdvance": 600,
+        "path": {
+          "contours": [
+            {
+              "points": [
+                {"x": 0, "y": 200},
+                {"x": 50, "y": 200},
+                {"x": 50, "y": 250},
+                {"x": 0, "y": 250}
+              ],
+              "isClosed": true
+            }
+          ]
+        },
+        "components": [
+          {
+            "name": "box"
+          }
+        ]
+      }
+    },
+    "height=100": {
+      "glyph": {
+        "xAdvance": 600,
+        "path": {
+          "contours": [
+            {
+              "points": [
+                {"x": 0, "y": 200},
+                {"x": 50, "y": 200},
+                {"x": 50, "y": 450},
+                {"x": 0, "y": 450}
+              ],
+              "isClosed": true
+            }
+          ]
+        },
+        "components": [
+          {
+            "name": "box"
+          }
+        ]
+      }
+    }
+  }
+}
