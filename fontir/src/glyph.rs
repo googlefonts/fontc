@@ -786,57 +786,59 @@ fn original_glyph(
 }
 
 /// Locations where a composite must have sources so that decomposing it keeps
-/// the referenced glyphs' own masters in its variation model.
+/// the base glyphs' own masters in its variation model.
 ///
 /// The variable-component counterpart of
-/// [`collect_component_locations_nested`]. A referenced master location maps
-/// back onto the composite through the axes the component inherits. An axis
-/// set in a component location does not vary with the composite and cannot
-/// map back, so it stays at the composite's default.
+/// [`collect_component_locations_nested`]. Returns every combination of the
+/// master coordinates of the composite and its base glyphs, on all axes except
+/// the glyph axes of the composite.
 fn collect_variable_component_locations(
     context: &Context,
     originals: &HashMap<GlyphName, Arc<Glyph>>,
     glyph: &Glyph,
 ) -> HashSet<NormalizedLocation> {
-    let template = glyph.default_location();
-    let mut out = HashSet::new();
+    let mut sources: Vec<NormalizedLocation> = glyph.sources().keys().cloned().collect();
     let mut seen = HashSet::new();
-    let mut todo: Vec<(GlyphName, BTreeSet<Tag>)> = glyph
+    let mut todo: Vec<GlyphName> = glyph
         .default_instance()
         .components
         .iter()
         .filter(|c| c.is_variable())
-        .map(|c| (c.base.clone(), c.location.axis_tags().copied().collect()))
+        .map(|c| c.base.clone())
         .collect();
-    while let Some((name, pinned)) = todo.pop() {
-        if !seen.insert((name.clone(), pinned.clone())) {
+    while let Some(name) = todo.pop() {
+        if !seen.insert(name.clone()) {
             continue;
         }
         let Some(referenced) = original_glyph(&name, originals, context) else {
             continue;
         };
-        for loc in referenced.sources().keys() {
-            let mut mapped = template.clone();
-            for (tag, coord) in loc.iter() {
-                if template.contains(*tag) && !pinned.contains(tag) {
-                    mapped.insert(*tag, *coord);
-                }
-            }
-            out.insert(mapped);
-        }
-        for component in referenced.default_instance().components.iter() {
-            // A reset component samples its base from the font location, so
-            // pins accumulated above it do not apply to its subtree.
-            let mut pinned = if component.reset_unspecified_axes {
-                BTreeSet::new()
-            } else {
-                pinned.clone()
-            };
-            pinned.extend(component.location.axis_tags().copied());
-            todo.push((component.base.clone(), pinned));
-        }
+        sources.extend(referenced.sources().keys().cloned());
+        todo.extend(
+            referenced
+                .default_instance()
+                .components
+                .iter()
+                .map(|c| c.base.clone()),
+        );
     }
-    out
+    let local: HashSet<Tag> = glyph.axes().iter().map(|axis| axis.tag).collect();
+    let default = glyph.default_location();
+    let mut grid = vec![default.clone()];
+    for tag in default.axis_tags().filter(|tag| !local.contains(*tag)) {
+        let coords: BTreeSet<_> = sources.iter().filter_map(|loc| loc.get(*tag)).collect();
+        grid = grid
+            .into_iter()
+            .flat_map(|loc| {
+                coords.iter().map(move |coord| {
+                    let mut loc = loc.clone();
+                    loc.insert(*tag, *coord);
+                    loc
+                })
+            })
+            .collect();
+    }
+    grid.into_iter().collect()
 }
 
 fn decompose_variable_components_for_glyph(
@@ -2454,6 +2456,74 @@ mod tests {
             .sources()
             .get(&loc_mid)
             .expect("intermediate master kept");
+        assert_eq!(
+            vec!["M500,0 L501,0 L501,1 Z"],
+            inst.contours.iter().map(|b| b.to_svg()).collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn decompose_keeps_referenced_glyph_corner_masters() {
+        // composite has masters at wght=0 and wght=1. base also has a master at
+        // wght=1 wdth=1. The decomposed composite needs a source at wght=1 wdth=1.
+        let loc =
+            |wght: f64, wdth: f64| NormalizedLocation::for_pos(&[("wght", wght), ("wdth", wdth)]);
+        let context = test_context_with_locations(vec![
+            loc(0.0, 0.0),
+            loc(1.0, 0.0),
+            loc(0.0, 1.0),
+            loc(1.0, 1.0),
+        ]);
+
+        let square_at = |x: f64| {
+            let mut path = BezPath::new();
+            path.move_to((x, 0.0));
+            path.line_to((x + 1.0, 0.0));
+            path.line_to((x + 1.0, 1.0));
+            path.close_path();
+            GlyphInstance {
+                contours: vec![path],
+                ..Default::default()
+            }
+        };
+        let mut base = GlyphBuilder::new("base".into());
+        for (wght, wdth, x) in [
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 100.0),
+            (0.0, 1.0, 10.0),
+            (1.0, 1.0, 500.0),
+        ] {
+            base.try_add_source(&loc(wght, wdth), square_at(x)).unwrap();
+        }
+        context.glyphs.set(base.build().unwrap());
+
+        let mut composite = GlyphBuilder::new("composite".into());
+        for wght in [0.0, 1.0] {
+            composite
+                .try_add_source(
+                    &loc(wght, 0.0),
+                    GlyphInstance {
+                        components: vec![Component::new_variable(
+                            "base",
+                            DecomposedTransform::default(),
+                            NormalizedLocation::for_pos(&[("wght", wght)]),
+                            false,
+                        )],
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+        let composite = composite.build().unwrap();
+
+        decompose_variable_components_for_glyph(&context, &composite, &Default::default()).unwrap();
+
+        let simple = context.get_glyph("composite");
+        assert_simple(&simple);
+        let inst = simple
+            .sources()
+            .get(&loc(1.0, 1.0))
+            .expect("corner master kept");
         assert_eq!(
             vec!["M500,0 L501,0 L501,1 Z"],
             inst.contours.iter().map(|b| b.to_svg()).collect::<Vec<_>>(),
