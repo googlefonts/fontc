@@ -533,7 +533,12 @@ fn to_ir_named_instances(font_data: &Font) -> Vec<NamedInstance> {
         instances = instances
             .iter()
             .flat_map(|(name_parts, location)| {
-                axis.value_labels.iter().map(move |label| {
+                // Drop instances outside the axis ranges.
+                let labels = axis
+                    .value_labels
+                    .iter()
+                    .filter(|label| (axis.min_value..=axis.max_value).contains(&label.value));
+                labels.map(move |label| {
                     let mut name_parts = name_parts.clone();
                     if !label.elidable {
                         name_parts.push(label.name.as_str());
@@ -1602,6 +1607,14 @@ mod tests {
             wght.labels
                 .iter()
                 .map(|label| label.name.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec!["Regular", "Bold"],
+            static_metadata
+                .named_instances
+                .iter()
+                .map(|instance| instance.name.as_str())
                 .collect::<Vec<_>>()
         );
     }
