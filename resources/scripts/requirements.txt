@@ -22,13 +22,13 @@ beautifulsoup4==4.15.0
     # via gftools
 booleanoperations==0.10.0
     # via ufo2ft
-brotli==1.2.0
+brotli==1.2.1
     # via gftools
 cattrs==26.2.1
     # via ufolib2
 cdifflib==1.2.9
     # via ttx-diff
-certifi==2026.10.19
+certifi==2026.10.23
     # via requests
 cffi==2.1.1
     # via
@@ -96,7 +96,7 @@ gfmetadata==0.2.5
     #   gftools
 gfsubsets==2025.11.4
     # via gftools
-gftools==0.10.4
+gftools==0.10.5
     # via
     #   -r resources/scripts/requirements.in
     #   ttx-diff
@@ -155,7 +155,7 @@ pillow==13.0.0
     # via
     #   gftools
     #   nanoemoji
-platformdirs==4.13.5
+platformdirs==4.13.6
     # via youseedee
 pngquant-cli==3.0.3
     # via nanoemoji
@@ -165,7 +165,7 @@ protobuf==7.36.2
     #   gftools
 pyclipper==1.4.0
     # via booleanoperations
-pycparser==3.11
+pycparser==3.12
     # via cffi
 pygit2==1.20.1
     # via gftools
@@ -179,7 +179,7 @@ pynacl==1.6.2
     # via pygithub
 pyparsing==3.3.3
     # via vttlib
-python-dateutil==2.9.0.post0
+python-dateutil==3.0.0
     # via strictyaml
 pyyaml==6.0.3
     # via
@@ -206,7 +206,7 @@ skia-pathops==0.9.2
     # via picosvg
 smmap==5.0.3
     # via gitdb
-soupsieve==3.0.3
+soupsieve==3.0.4
     # via beautifulsoup4
 strictyaml==1.7.3
     # via gftools
@@ -223,6 +223,8 @@ typing-extensions==4.16.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
+tzdata==2026.5
+    # via python-dateutil
 ufo2ft[cffsubr,compreffor]==3.9.1
     # via
     #   fontmake
@@ -236,7 +238,7 @@ ufolib2[json]==0.19.1
     #   vttlib
 ufomerge==1.9.8
     # via gftools
-uharfbuzz==0.56.3
+uharfbuzz==0.57.0
     # via
     #   fonttools
     #   vharfbuzz
