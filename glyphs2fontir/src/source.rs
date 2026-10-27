@@ -48,8 +48,8 @@ use write_fonts::{
 
 use crate::stat::to_stat_axes;
 use crate::toir::{
-    FontInfo, design_location, to_ir_color, to_ir_contours_and_components, to_ir_features,
-    to_ir_paint,
+    FontInfo, design_location, static_exports, to_ir_color, to_ir_contours_and_components,
+    to_ir_features, to_ir_paint,
 };
 
 const UFO2FT_FILTERS: &str = "com.github.googlei18n.ufo2ft.filters";
@@ -237,6 +237,14 @@ impl Source for GlyphsIrSource {
             flags.set(Flags::PROPAGATE_ANCHORS, true);
         }
         flags
+    }
+
+    /// The full names (`"{family} {name}"`) of the active static instances.
+    fn exports(&self) -> Vec<String> {
+        static_exports(&self.font_info.font)
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect()
     }
 }
 
@@ -5492,6 +5500,20 @@ instances = (
     }
 
     #[test]
+    fn exports_are_the_active_static_instances() {
+        let expected = ["Example Regular", "Example Bold", "Example B1 Regular"];
+        let source = GlyphsIrSource::new_from_memory(MULTIPLE_STATIC_EXPORTS, None).unwrap();
+        assert_eq!(source.exports(), expected);
+        // selecting one doesn't change what's available
+        assert_eq!(
+            select_export(MULTIPLE_STATIC_EXPORTS, "Example Bold")
+                .unwrap()
+                .exports(),
+            expected
+        );
+    }
+
+    #[test]
     fn export_selection_is_exact() {
         for name in [
             "Regular",
@@ -5519,7 +5541,9 @@ instances = (
                 .unwrap_or_else(|| panic!("{name:?} must not match"))
                 .to_string();
             assert!(
-                message.contains(name) && message.contains(reason),
+                message.contains(name)
+                    && message.contains(reason)
+                    && message.contains("available: \"Example Regular\""),
                 "{message}"
             );
         }

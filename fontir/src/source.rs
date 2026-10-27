@@ -64,4 +64,93 @@ pub trait Source {
     fn compilation_flags(&self) -> Flags {
         Flags::empty() // default: no flags from source
     }
+
+    /// The names of the static exports, in source order.
+    ///
+    /// These are the names one can request, e.g. with fontc's `--export`.
+    /// Building one can still fail: fontc doesn't interpolate, so an export
+    /// between masters can't be built.
+    fn exports(&self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// Find the export named `requested` among `exports`.
+///
+/// Returns its index in `exports`, as [`Source::exports`] lists them; the
+/// name must match exactly. The error says why there is no such export: none
+/// has that name, listing the ones there are, or several do.
+pub fn find_export(requested: &str, exports: &[String]) -> Result<usize, Error> {
+    let invalid = |reason: String| {
+        Err(Error::InvalidExport {
+            name: requested.to_string(),
+            reason,
+        })
+    };
+    let matches: Vec<_> = exports
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| *name == requested)
+        .map(|(i, _)| i)
+        .collect();
+    match matches.as_slice() {
+        [index] => Ok(*index),
+        [] if exports.is_empty() => invalid("the source has no static exports".to_string()),
+        [] => invalid(format!(
+            "no export has that name; available: {}",
+            exports
+                .iter()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+        _ => invalid(format!(
+            "{} exports have that name; rename or disable all but one",
+            matches.len()
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn exports(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn finds_export_by_exact_name() {
+        let exports = exports(&["Example Regular", "Example Bold"]);
+        assert_eq!(find_export("Example Bold", &exports).unwrap(), 1);
+        for (requested, reason) in [
+            (
+                "example bold",
+                "no export has that name; available: \"Example Regular\", \"Example Bold\"",
+            ),
+            (
+                "Example",
+                "no export has that name; available: \"Example Regular\", \"Example Bold\"",
+            ),
+        ] {
+            let error = find_export(requested, &exports).unwrap_err().to_string();
+            assert!(error.ends_with(reason), "{error}");
+        }
+    }
+
+    #[test]
+    fn no_or_several_exports_by_that_name() {
+        let error = find_export("A", &[]).unwrap_err().to_string();
+        assert!(
+            error.ends_with("the source has no static exports"),
+            "{error}"
+        );
+        let error = find_export("A", &exports(&["A", "B", "A"]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.ends_with("2 exports have that name; rename or disable all but one"),
+            "{error}"
+        );
+    }
 }

@@ -67,7 +67,8 @@ impl Input {
     /// Creates the implementation of [`Source`] to feed to fontir.
     ///
     /// For a designspace the export name is the instance's `name` attribute,
-    /// else its `"{family} {style}"`; the instance must sit on a source.
+    /// else its `"{family} {style}"`, the family defaulting to the default
+    /// source's; the instance must sit on a source.
     /// Selecting an export of any other source is an error, and so is custom
     /// glyph data (like fontmake's `--glyph-data`) for anything but a Glyphs
     /// source on disk.
@@ -97,6 +98,14 @@ impl Input {
                 Ok(Box::new(GlyphsIrSource::new_from_memory(source, export)?))
             }
         }
+    }
+
+    /// The names of the static exports the source offers.
+    ///
+    /// They are what [`SourceOptions::export`] can request, see
+    /// [`Source::exports`].
+    pub fn exports(&self) -> Result<Vec<String>, Error> {
+        Ok(self.create_source(&SourceOptions::default())?.exports())
     }
 }
 
@@ -2495,6 +2504,15 @@ mod tests {
             .expect("must not build")
             .to_string();
         assert!(error.contains(message), "{error}");
+    }
+
+    #[test]
+    fn input_lists_exports() {
+        let input = Input::new(&testdata_dir().join("wght_var.designspace")).unwrap();
+        assert_eq!(
+            input.exports().unwrap(),
+            ["Wght Var Regular", "Wght Var Bold"]
+        );
     }
 
     #[test]

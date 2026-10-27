@@ -23,6 +23,7 @@ use fontir::{
         self, Color, ColorStop, GlyphPathBuilder, Paint, PaintLinearGradient, PaintRadialGradient,
         PaintSolid,
     },
+    source::find_export,
 };
 use glyphs_reader::{
     Component, FeatureSnippet, Font, Glyph, Instance, InstanceType, Layer, NodeType, Path, Shape,
@@ -329,7 +330,7 @@ fn bad_source<T>(message: String) -> Result<T, Error> {
 }
 
 /// The active static instances, with their full names.
-fn static_exports(font: &Font) -> Vec<(usize, String)> {
+pub(crate) fn static_exports(font: &Font) -> Vec<(usize, String)> {
     font.instances
         .iter()
         .enumerate()
@@ -349,44 +350,30 @@ fn list_exports(exports: &[(usize, String)]) -> String {
 /// The index of the one active static export with the requested full name.
 fn find_static_export(font: &Font, requested: &str) -> Result<usize, Error> {
     let exports = static_exports(font);
-    let matches: Vec<_> = exports
-        .iter()
-        .filter(|(_, name)| name == requested)
-        .collect();
-    match matches.as_slice() {
-        [(index, _)] => Ok(*index),
-        [] => {
-            // Say why an instance with that name doesn't count.
-            let reason = font
-                .instances
-                .iter()
-                .find(|instance| instance_full_name(font, instance) == requested)
-                .map(|instance| {
-                    if instance.type_ == InstanceType::Variable {
-                        " (that is a variable font setting)"
-                    } else {
-                        " (that export is inactive)"
-                    }
-                })
-                .unwrap_or_default();
+    let (indices, names): (Vec<_>, Vec<_>) = exports.iter().cloned().unzip();
+    if !names.iter().any(|name| name == requested) {
+        // Say why an instance with that name doesn't count.
+        let reason = font
+            .instances
+            .iter()
+            .find(|instance| instance_full_name(font, instance) == requested)
+            .map(|instance| {
+                if instance.type_ == InstanceType::Variable {
+                    "that is a variable font setting"
+                } else {
+                    "that export is inactive"
+                }
+            });
+        if let Some(reason) = reason {
             let available = if exports.is_empty() {
                 "there are none".to_string()
             } else {
                 format!("available: {}", list_exports(&exports))
             };
-            invalid_export(
-                requested,
-                format!("no active static export has that name{reason}; {available}"),
-            )
+            return invalid_export(requested, format!("{reason}; {available}"));
         }
-        _ => invalid_export(
-            requested,
-            format!(
-                "{} active static exports have that name; rename or disable all but one",
-                matches.len()
-            ),
-        ),
     }
+    find_export(requested, &names).map(|i| indices[i])
 }
 
 /// Choose the export whose metadata a static build uses: the one active
