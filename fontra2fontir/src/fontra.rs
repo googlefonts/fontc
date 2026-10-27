@@ -747,11 +747,12 @@ pub(crate) struct Point {
 }
 
 impl Point {
-    /// The type wins over the smooth flag, and a type other than cubic is
-    /// quad, like Fontra's
-    /// [`packPointType`](https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/core/path.py#L583-L590).
+    /// A non-empty type wins over the smooth flag, and a type that is not cubic
+    /// is quad, like Fontra's
+    /// [`packPointType`](https://github.com/fontra/fontra/blob/2a19b8bd1/src/fontra/core/path.py#L583-L592).
     pub(crate) fn point_type(&self) -> Result<PointType, PathConversionError> {
-        Ok(match (self.raw_type.as_deref(), self.smooth) {
+        let raw_type = self.raw_type.as_deref().filter(|t| !t.is_empty());
+        Ok(match (raw_type, self.smooth) {
             (Some("cubic"), _) => PointType::OffCurveCubic,
             (Some(_), _) => PointType::OffCurveQuad,
             (None, true) => PointType::OnCurveSmooth,
@@ -1060,6 +1061,21 @@ mod tests {
                     .iter()
                     .map(|c| (n.to_string(), c.name.clone())))
                 .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn empty_point_type_is_on_curve() {
+        let point = |json: &str| -> PointType {
+            serde_json::from_str::<Point>(json)
+                .unwrap()
+                .point_type()
+                .unwrap()
+        };
+        assert_eq!(PointType::OnCurve, point(r#"{"x":0,"y":0,"type":""}"#));
+        assert_eq!(
+            PointType::OnCurveSmooth,
+            point(r#"{"x":0,"y":0,"type":"","smooth":true}"#)
         );
     }
 
