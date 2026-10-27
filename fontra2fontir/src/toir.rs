@@ -740,6 +740,7 @@ pub(crate) fn to_ir_glyph(
     let axes = &static_metadata.all_source_axes;
     let local_axes = static_metadata.glyph_axes.get(&fontra_glyph.name);
     let mut responds_to_global_axes_cache: HashMap<GlyphName, bool> = HashMap::new();
+    let mut has_glyph_axes_below_cache: HashMap<GlyphName, bool> = HashMap::new();
 
     let mut instances = HashMap::new();
     // Layers not referenced by any active source, e.g. backgrounds, do not
@@ -870,6 +871,28 @@ pub(crate) fn to_ir_glyph(
                     }
                 }
             }
+
+            // A component is ordinary when it has the same base and 2x2
+            // transform in all sources, no location in any source, and no
+            // base glyphs with glyph axes at any depth.
+            let first = &instances
+                .values()
+                .next()
+                .expect("instances is not empty")
+                .components[idx];
+            let (base, first_2x2) = (first.base.clone(), first.affine().as_coeffs());
+            let ordinary = tags.is_empty()
+                && instances.values().all(|instance| {
+                    let component = &instance.components[idx];
+                    component.base == base && component.affine().as_coeffs()[..4] == first_2x2[..4]
+                })
+                && !has_glyph_axes_below(&base, font_data, &mut has_glyph_axes_below_cache);
+            if ordinary {
+                for instance in instances.values_mut() {
+                    let component = &mut instance.components[idx];
+                    *component = Component::new(component.base.clone(), component.affine());
+                }
+            }
         }
     }
 
@@ -926,6 +949,33 @@ fn responds_to_global_axes(
     }
     cache.insert(name.clone(), responds);
     responds
+}
+
+/// Whether the glyph or one of its base glyphs, at any depth, has glyph axes.
+/// Only active sources count.
+fn has_glyph_axes_below(
+    name: &GlyphName,
+    font_data: &Font,
+    cache: &mut HashMap<GlyphName, bool>,
+) -> bool {
+    if let Some(&cached) = cache.get(name) {
+        return cached;
+    }
+    // Break component cycles: assume "no" while recursing through this glyph.
+    cache.insert(name.clone(), false);
+    let Some(glyph) = font_data.glyphs.get(name) else {
+        return false;
+    };
+    let has_axes = !glyph.axes.is_empty()
+        || glyph
+            .sources
+            .iter()
+            .filter(|source| !source.inactive)
+            .filter_map(|source| glyph.layers.get(&source.layer_name))
+            .flat_map(|layer| layer.glyph.components.iter())
+            .any(|component| has_glyph_axes_below(&component.name, font_data, cache));
+    cache.insert(name.clone(), has_axes);
+    has_axes
 }
 
 /// Port of fontra-compile's
@@ -1261,7 +1311,7 @@ mod tests {
     };
 
     use crate::{
-        fontra::{self, Font, GlyphAxis, Kerning, Location, VariableGlyph},
+        fontra::{self, Font, GlyphAxis, GlyphSource, Kerning, Location, VariableGlyph},
         source::HORIZONTAL_KERNING_TYPE,
         test::testdata_dir,
         toir::to_ir_static_metadata,
@@ -2188,6 +2238,75 @@ mod tests {
             &font_data,
             &mut responds_to_global_axes_cache
         ));
+    }
+
+    fn glyph_to_ir(font_data: &Font, name: &str) -> Glyph {
+        let static_metadata = to_ir_static_metadata(font_data, false).unwrap();
+        let fontra_glyph = font_data.glyphs.get(&GlyphName::new(name)).unwrap();
+        to_ir_glyph(
+            &static_metadata,
+            font_data,
+            Default::default(),
+            fontra_glyph,
+            &mut AnchorBuilder::new(fontra_glyph.name.clone()),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn components_of_static_bases_are_ordinary() {
+        // ayah.005 has two components without a location, and no base varies.
+        let font_data = Font::load(&testdata_dir().join("Raqq.fontra")).unwrap();
+        let glyph = glyph_to_ir(&font_data, "ayah.005");
+        let components = &glyph.default_instance().components;
+        assert_eq!(2, components.len());
+        assert!(components.iter().all(|c| !c.is_variable()));
+    }
+
+    #[test]
+    fn a_component_with_a_varying_2x2_stays_variable() {
+        // A second source of ayah.005 rotates the first component.
+        let mut font_data = Font::load(&testdata_dir().join("Raqq.fontra")).unwrap();
+        let fontra_glyph = font_data
+            .glyphs
+            .get_mut(&GlyphName::new("ayah.005"))
+            .unwrap();
+        let mut layer = fontra_glyph.layers["m01"].clone();
+        layer.glyph.components[0].transformation.rotation = Some(90.0);
+        fontra_glyph.layers.insert("rotated".into(), layer);
+        fontra_glyph.sources.push(GlyphSource {
+            name: "rotated".into(),
+            layer_name: "rotated".into(),
+            location: [("Mashq".into(), 100.0)].into(),
+            location_base: None,
+            inactive: false,
+        });
+        let glyph = glyph_to_ir(&font_data, "ayah.005");
+        assert_eq!(2, glyph.sources().len());
+        for instance in glyph.sources().values() {
+            assert!(instance.components[0].is_variable());
+            assert!(!instance.components[1].is_variable());
+        }
+    }
+
+    #[test]
+    fn a_component_of_a_base_with_glyph_axes_stays_variable() {
+        // The base of the uni4E00 components has glyph axes.
+        let mut font_data = Font::load(&testdata_dir().join("component.fontra")).unwrap();
+        let name = GlyphName::new("uni4E00");
+        for layer in font_data.glyphs.get_mut(&name).unwrap().layers.values_mut() {
+            for component in layer.glyph.components.iter_mut() {
+                component.location.clear();
+            }
+        }
+        let glyph = glyph_to_ir(&font_data, "uni4E00");
+        assert!(
+            glyph
+                .default_instance()
+                .components
+                .iter()
+                .all(|c| c.is_variable())
+        );
     }
 
     #[test]
