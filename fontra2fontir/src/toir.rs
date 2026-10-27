@@ -823,7 +823,21 @@ pub(crate) fn to_ir_glyph(
                     font_data,
                     &mut responds_to_global_axes_cache,
                 );
-                to_ir_component(c, static_metadata, base_glyph_axes, reset)
+                let mut component = to_ir_component(c, static_metadata, base_glyph_axes, reset);
+                // Base glyphs inherit only font axis values.
+                if !reset
+                    && let Some(local_axes) = local_axes
+                    && has_glyph_axes_below(&c.name, font_data, &mut has_glyph_axes_below_cache)
+                {
+                    for axis in local_axes.iter() {
+                        if component.location.get(axis.tag).is_none() {
+                            component
+                                .location
+                                .insert(axis.tag, NormalizedCoord::new(0.0));
+                        }
+                    }
+                }
+                component
             })
             .collect();
 

@@ -1081,6 +1081,20 @@ mod tests {
     }
 
     #[test]
+    fn compile_fontra_unset_glyph_axis_stays_at_default() {
+        // g uses part at height=100, and part uses box with no location.
+        // box must stay at width=0, so g is 100 units wide.
+        let expected = Rect::new(0.0, 0.0, 100.0, 450.0);
+        let result = TestCompile::compile_source("fontra/nested-glyph-axes.fontra");
+        assert_eq!(expected, cbox_of_char(0x67, &result.font(), vec![0.0]));
+        let result = TestCompile::compile("fontra/nested-glyph-axes.fontra", |mut options| {
+            options.flags.set(Flags::EMIT_VARC_TABLE, true);
+            options
+        });
+        assert_eq!(expected, cbox_of_char(0x67, &result.font(), vec![0.0, 0.0]));
+    }
+
+    #[test]
     fn compile_fontra_drops_the_anchors_off_the_local_default() {
         // _part.shoulder has the glyph-local axes crotchDepth and
         // shoulderWidth, and its connect anchor moves along shoulderWidth.

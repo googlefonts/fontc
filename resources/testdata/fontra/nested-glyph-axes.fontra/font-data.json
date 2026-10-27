@@ -1,0 +1,29 @@
+{
+  "unitsPerEm": 1000,
+  "axes": {
+    "axes": [
+      {
+        "name": "Weight",
+        "label": "Weight",
+        "tag": "wght",
+        "minValue": 400,
+        "defaultValue": 400,
+        "maxValue": 700
+      }
+    ]
+  },
+  "sources": {
+    "regular": {
+      "name": "Regular",
+      "location": {
+        "Weight": 400
+      }
+    },
+    "bold": {
+      "name": "Bold",
+      "location": {
+        "Weight": 700
+      }
+    }
+  }
+}
