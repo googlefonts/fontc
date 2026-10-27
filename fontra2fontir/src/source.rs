@@ -54,12 +54,8 @@ impl FontraIrSource {
                     "fea" => font_data.features.text.as_str(),
                     _ => "",
                 };
-                let (ltr_glyphs, rtl_glyphs) = classify_glyphs_by_direction(
-                    &font_data.glyph_map,
-                    feature_text,
-                    &axes,
-                    fontra_dir,
-                );
+                let (ltr_glyphs, rtl_glyphs) =
+                    classify_glyphs_by_direction(&font_data.glyph_map, feature_text, &axes);
                 flip_rtl_kerning(kerning, &ltr_glyphs, &rtl_glyphs)
             })
         {

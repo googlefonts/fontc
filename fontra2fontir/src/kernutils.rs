@@ -126,13 +126,10 @@ pub(crate) fn merge_kerning(kerning_a: &Kerning, kerning_b: &Kerning) -> Kerning
 }
 
 /// The left-to-right glyphs and the right-to-left glyphs.
-///
-/// Includes in `feature_text` resolve against `include_dir`.
 pub(crate) fn classify_glyphs_by_direction(
     glyph_map: &GlyphMap,
     feature_text: &str,
     fontra_axes: &[FontAxis],
-    include_dir: &Path,
 ) -> (HashSet<GlyphName>, HashSet<GlyphName>) {
     let glyph_order: Vec<GlyphName> = glyph_map
         .keys()
@@ -183,7 +180,7 @@ pub(crate) fn classify_glyphs_by_direction(
     if classifications
         .get(&BidiClass::RightToLeft)
         .is_some_and(|glyphs| !glyphs.is_empty())
-        && let Some(bytes) = compile_gsub(feature_text, &glyph_ids, fontra_axes, include_dir)
+        && let Some(bytes) = compile_gsub(feature_text, &glyph_ids, fontra_axes)
     {
         match Gsub::read(FontData::new(&bytes)).and_then(|gsub| classify(Some(&gsub))) {
             Ok(with_gsub) => classifications = with_gsub,
@@ -438,10 +435,9 @@ impl VariationInfo for GsubVariationInfo {
     }
 }
 
-/// The feature text as the root source, with the includes under `include_dir`.
+/// The feature text as the root source, with no include directory.
 struct FeatureTextResolver {
     text: Arc<str>,
-    include_dir: PathBuf,
 }
 
 impl SourceResolver for FeatureTextResolver {
@@ -449,9 +445,10 @@ impl SourceResolver for FeatureTextResolver {
         if rel_path == Path::new("") {
             return Ok(self.text.clone());
         }
-        std::fs::read_to_string(self.include_dir.join(rel_path))
-            .map(Arc::from)
-            .map_err(|e| SourceLoadError::new(rel_path.to_path_buf(), e))
+        Err(SourceLoadError::new(
+            rel_path.to_path_buf(),
+            "no include directory",
+        ))
     }
 }
 
@@ -460,7 +457,6 @@ fn compile_gsub(
     feature_text: &str,
     glyph_order: &FeaGlyphMap,
     fontra_axes: &[FontAxis],
-    include_dir: &Path,
 ) -> Option<Vec<u8>> {
     let axes = fontra_axes
         .iter()
@@ -484,7 +480,6 @@ fn compile_gsub(
 
     let resolver = FeatureTextResolver {
         text: feature_text.into(),
-        include_dir: include_dir.to_path_buf(),
     };
     let (tree, diagnostics) =
         match fea_rs::parse::parse_root(PathBuf::new(), Some(glyph_order), Box::new(resolver)) {
@@ -574,7 +569,6 @@ fn filter_groups_by_value_usage(
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
-    use std::path::Path;
 
     use fontdrasil::types::GlyphName;
     use smol_str::SmolStr;
@@ -650,7 +644,6 @@ feature init {
                 value_labels: Vec::new(),
                 hidden: false,
             }],
-            Path::new(""),
         );
         assert_eq!(ltr_glyphs, expected_ltr_glyphs());
         assert_eq!(rtl_glyphs, expected_rtl_glyphs());
@@ -768,7 +761,7 @@ feature init {
     #[test]
     fn split_kerning_by_direction_test() {
         let (ltr_glyphs, rtl_glyphs) =
-            classify_glyphs_by_direction(&glyph_map(), FEATURE_TEXT, &[], Path::new(""));
+            classify_glyphs_by_direction(&glyph_map(), FEATURE_TEXT, &[]);
         let (ltr_kerning, rtl_kerning) =
             split_kerning_by_direction(&kerning_data(), &ltr_glyphs, &rtl_glyphs);
 
