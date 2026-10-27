@@ -1,6 +1,7 @@
 //! targets of a compilation
 
 use std::{
+    borrow::Cow,
     ffi::{OsStr, OsString},
     fmt::{Display, Write},
     path::{Path, PathBuf},
@@ -192,21 +193,25 @@ impl Target {
         } else {
             Default::default()
         };
-        let mut cmd = format!(
-            "python3 -m ttx_diff '{repo_url}{sha_part}#{}'",
-            rel_source_path.display()
-        );
+        let source = format!("{repo_url}{sha_part}#{}", rel_source_path.display());
+        let mut cmd = format!("python3 -m ttx_diff {}", shell_quote(&source));
         if self.id.build == BuildType::GfTools {
             cmd.push_str(" --compare gftools");
             // we hard code this; repro will only work if they're using default
-            // cache location
+            // cache location. Not quoted, so that the shell expands the `~`.
             write!(&mut cmd, " --config {}", self.repro_config_path().display()).unwrap();
         }
         if let Some(export) = &self.id.export {
-            write!(&mut cmd, " --export '{export}'").unwrap();
+            write!(&mut cmd, " --export {}", shell_quote(export)).unwrap();
         }
         cmd
     }
+}
+
+/// Quote `arg` for the shell, if it needs it.
+fn shell_quote(arg: &str) -> Cow<'_, str> {
+    // this only fails on a nul byte, which no path or font name has
+    shlex::try_quote(arg).unwrap_or_else(|_| format!("'{arg}'").into())
 }
 
 impl TargetId {
@@ -547,5 +552,25 @@ mod tests {
             "python3 -m ttx_diff 'example.com?123456789a#sources/hi.glyphs' --compare gftools \
              --config ~/.fontc_crater_cache/org/repo/sources/config.yaml --export 'Hi Bold'"
         );
+    }
+
+    #[test]
+    fn repro_command_quotes_awkward_names() {
+        let target = Target::new(
+            "org/repo",
+            "123456789a",
+            "sources/config.yaml",
+            false,
+            "sources/Glyphs Files/Hi's.glyphs",
+        )
+        .to_gftools_target()
+        .with_export("Hi's \"Bold\"");
+        let cmd = target.repro_command("example.com");
+        let args = shlex::split(&cmd).unwrap();
+        assert_eq!(
+            args[3],
+            "example.com?123456789a#sources/Glyphs Files/Hi's.glyphs"
+        );
+        assert_eq!(args.last().unwrap(), "Hi's \"Bold\"");
     }
 }

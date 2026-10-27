@@ -713,8 +713,7 @@ fn make_diff_report(
         }
 
         let repo_url = get_repo_url(target);
-        let ttx_command = target.repro_command(repo_url);
-        let onclick = format!("event.preventDefault(); copyText(\"{ttx_command}\");",);
+        let onclick = copy_text_onclick(&target.repro_command(repo_url));
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
         let changed_tag_list = list_different_tables(diff_details).unwrap_or_default();
         let diff_table = format_diff_report_detail_table(diff_details, prev_details);
@@ -801,6 +800,13 @@ fn format_annotations(
             }
         }
     }
+}
+
+/// An onclick handler that copies `text` to the clipboard.
+fn copy_text_onclick(text: &str) -> String {
+    // a JSON string is a JS string literal, whatever quotes `text` contains
+    let text = serde_json::to_string(text).expect("a string always serializes");
+    format!("event.preventDefault(); copyText({text});")
 }
 
 /// Compute the short source name for a target (just the filename).
@@ -1153,8 +1159,7 @@ fn make_error_report_group_items<'a>(
     };
     let make_repro_command = |target: &Target| {
         let url = get_repo_url(target);
-        let ttx_command = target.repro_command(url);
-        format!("event.preventDefault(); copyText(\"{ttx_command}\");",)
+        copy_text_onclick(&target.repro_command(url))
     };
     html! {
         @for (path, is_new) in paths_and_if_is_new_error {

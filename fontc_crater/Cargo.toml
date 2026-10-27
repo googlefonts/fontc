@@ -14,6 +14,7 @@ glyphs-reader = { version = "1.0.0", path = "../glyphs-reader" }
 google-fonts-sources = "0.11.1"
 maud = "0.27.0"
 sha2 = "0.10"
+shlex = "2.0.1"
 tidier = "0.5.3"
 
 chrono.workspace = true
