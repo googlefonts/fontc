@@ -76,8 +76,8 @@ flags.DEFINE_bool(
 flags.DEFINE_string(
     "export",
     default=None,
-    help="Full name of the static export to build, passed to fontc --export "
-    "and, escaped as a regex, to fontmake -i. Only with --compare default.",
+    help="Full name of the static export to build. fontc doesn't interpolate, so "
+    "an instance between masters fails on the fontc side.",
 )
 flags.DEFINE_multi_string(
     "glyph_data",

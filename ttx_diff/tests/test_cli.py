@@ -2,12 +2,19 @@
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from glyphsLib import GSFont
 from glyphsLib.classes import GSInstance, InstanceType
 
-from ttx_diff.core import builds_static_export, source_is_variable
+from ttx_diff.core import (
+    build_fontc,
+    build_fontmake,
+    builds_static_export,
+    run_gftools,
+    source_is_variable,
+)
 
 
 def _write_designspace(tmp_path, axes, sources):
@@ -191,44 +198,45 @@ def test_builds_static_export(instances, expected):
     assert builds_static_export(font) == expected
 
 
-def test_cli_export_requires_default_compare(tmp_path):
-    path = _write_glyphs(tmp_path, masters=[400])
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "ttx_diff",
-            "--compare",
-            "gftools",
-            "--export",
-            "Test Regular",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode != 0
-    assert "--export is only supported with --compare default" in result.stderr
+@pytest.mark.parametrize("fontc", [True, False])
+def test_export_selects_gftools_instance(tmp_path, monkeypatch, cli_flags, fontc):
+    """gftools builds just the export; strict only for the fontc build."""
+    (tmp_path / ".git").mkdir()
+    path = _write_glyphs(tmp_path, masters=[400, 700])
+    config = tmp_path / "config.yaml"
+    config.write_text("sources:\n  - test.glyphs\n")
+    commands = []
+
+    def fake_build(cmd, build_dir):
+        commands.append(cmd)
+        out_dir = Path(cmd[cmd.index("--experimental-simple-output") + 1])
+        out_dir.mkdir()
+        (out_dir / "Test-Bold.ttf").touch()
+
+    monkeypatch.setattr("ttx_diff.core.build", fake_build)
+    name = "Test B1 Heavy (Alt)"
+    fontc_bin = tmp_path / "fontc" if fontc else None
+    cli_flags.export = name
+    cli_flags.production_names = True
+    run_gftools(path, str(config), tmp_path, fontc_bin=fontc_bin)
+    (cmd,) = commands
+    assert cmd[cmd.index("--experimental-single-instance") + 1] == name
+    assert ("--experimental-fontc-strict" in cmd) == fontc
 
 
-def test_export_passed_to_both_compilers(tmp_path, monkeypatch):
+def test_export_passed_to_both_compilers(tmp_path, monkeypatch, cli_flags):
     """fontc gets the name verbatim, fontmake as an escaped regex, both static."""
-    from absl.testing import flagsaver
-
-    from ttx_diff import (
-        __main__,  # noqa: F401 -- defines the CLI flags
-        core,
-    )
-
     # a variable source, so the explicit export also makes fontmake build static
     path = _write_glyphs(tmp_path, masters=[400, 700])
     commands = []
-    monkeypatch.setattr(core, "build", lambda cmd, build_dir: commands.append(cmd))
+    monkeypatch.setattr(
+        "ttx_diff.core.build", lambda cmd, build_dir: commands.append(cmd)
+    )
     name = "Test B1 Heavy (Alt)"
-    with flagsaver.flagsaver(export=name, keep_overlaps=True):
-        core.FLAGS.mark_as_parsed()
-        core.build_fontc(path, tmp_path / "fontc", tmp_path)
-        core.build_fontmake(path, tmp_path)
+    cli_flags.export = name
+    cli_flags.keep_overlaps = True
+    build_fontc(path, tmp_path / "fontc", tmp_path)
+    build_fontmake(path, tmp_path)
     fontc_cmd, fontmake_cmd = commands
     assert fontc_cmd[fontc_cmd.index("--export") + 1] == name
     assert fontmake_cmd.count("-i") == 1
