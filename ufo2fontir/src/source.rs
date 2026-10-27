@@ -49,7 +49,9 @@ use crate::color::{
     UFO2FT_COLOR_LAYERS, UFO2FT_COLOR_PALETTES, UFO2FT_COLR_CLIP_BOXES, parse_color_layers,
     parse_color_palettes,
 };
-use crate::instance::{SelectedInstance, apply_instance_info, layer_font_info, select_instance};
+use crate::instance::{
+    SelectedInstance, apply_instance_info, export_names, layer_font_info, select_instance,
+};
 use crate::toir::{
     master_locations, to_design_location, to_instance_design_location, to_ir_axes, to_ir_glyph,
     within_axis_ranges,
@@ -73,6 +75,8 @@ pub struct DesignSpaceIrSource {
     fea_files: Arc<Vec<(DesignLocation, FeaturesSource)>>,
     /// The instance to build as a static font, if one was selected
     instance: Option<Arc<SelectedInstance>>,
+    /// The names of all the instances, before one is selected
+    exports: Arc<Vec<String>>,
 }
 
 /// The UFOs of the designspace, keyed by `source.filename`
@@ -248,19 +252,20 @@ fn load_designspace(
 }
 
 impl DesignSpaceIrSource {
-    /// Load a .designspace, or a single .ufo, .ufoz or .ufo.json, building the
-    /// static instance named `export`, if any.
+    /// Load a .designspace, or a single .ufo, .ufoz or .ufo.json.
     ///
-    /// The name matches an instance's `name` attribute, else its
-    /// `"{family} {style}"`, as gftools resolves the instances it builds. The
-    /// instance must sit on a source, or anywhere when the source is the only
-    /// one, and gets that source's outlines, metrics and kerning, and the
-    /// default source's glyph set, features and groups, with its own metadata,
-    /// like `fontmake -i`; see the `instance` module.
+    /// When `export` is given, the source builds the static instance of that
+    /// name: an instance's `name` attribute, else its `"{family} {style}"`,
+    /// the family defaulting to the default source's. The instance must sit
+    /// on a source, or anywhere when the source is the only one, and gets that
+    /// source's outlines, metrics and kerning, and the default source's glyph
+    /// set, features and groups, with its own metadata, like `fontmake -i`;
+    /// see the `instance` module.
     pub fn new(designspace_or_ufo_file: &Path, export: Option<&str>) -> Result<Self, Error> {
         let (designspace_dir, mut designspace) = load_designspace(designspace_or_ufo_file)
             .map_err(|kind| Error::BadSource(BadSource::new(designspace_or_ufo_file, kind)))?;
 
+        let exports = export_names(&designspace);
         let instance = export
             .map(|name| select_instance(&mut designspace, name))
             .transpose()?;
@@ -434,6 +439,7 @@ impl DesignSpaceIrSource {
             glyphs: Arc::new(glyphs),
             fea_files: Arc::new(fea_files),
             instance,
+            exports: Arc::new(exports),
         })
     }
 }
@@ -561,6 +567,14 @@ impl Source for DesignSpaceIrSource {
         }
         flags
     }
+
+    /// The names of the designspace instances.
+    ///
+    /// An instance's `name` attribute, else its `"{family} {style}"`, the
+    /// family defaulting to the default source's.
+    fn exports(&self) -> Vec<String> {
+        self.exports.to_vec()
+    }
 }
 
 /// Update a plist Dictionary, merging in any values from the child that are not present.
@@ -647,7 +661,7 @@ struct PaintGraphWork {
     lib: plist::Dictionary,
 }
 
-fn default_master(
+pub(crate) fn default_master(
     designspace: &DesignSpaceDocument,
 ) -> Result<(usize, &designspace::Source), Error> {
     let ds_axes = to_ir_axes(&designspace.axes)?;
@@ -2675,6 +2689,17 @@ mod tests {
 
     fn load_wght_var() -> DesignSpaceIrSource {
         load_designspace("wght_var.designspace")
+    }
+
+    #[test]
+    fn exports_are_all_the_instances() {
+        let expected = ["Wght Var Regular", "Wght Var Bold"];
+        assert_eq!(load_wght_var().exports(), expected);
+        // selecting one, which cuts the designspace down to it, doesn't
+        // change what's available
+        let path = testdata_dir().join("wght_var.designspace");
+        let source = DesignSpaceIrSource::new(&path, Some("Wght Var Bold")).unwrap();
+        assert_eq!(source.exports(), expected);
     }
 
     fn add_design_location(
@@ -4793,6 +4818,31 @@ mod tests {
         }
 
         #[test]
+        fn unnamed_instance_family_defaults_to_the_default_source() {
+            // like fontTools' splitInterpolable, which names the instances
+            // fontmake -i matches
+            let dir = tempfile::tempdir().unwrap();
+            // an off-default source with another family comes first
+            let sources = format!(
+                "<source filename=\"Src.ufo\" name=\"Bold\" familyname=\"Other\"><location><dimension name=\"Weight\" xvalue=\"53.9\"/><dimension name=\"Width\" xvalue=\"100\"/><dimension name=\"Slant\" xvalue=\"0\"/></location></source>{}",
+                SOURCE.replace(
+                    "name=\"Regular\"",
+                    "name=\"Regular\" familyname=\"DS Family\"",
+                )
+            );
+            let instances = r#"
+    <instance stylename="Light"><location><dimension name="Weight" uservalue="400"/></location></instance>
+    <instance familyname="Own" stylename="Bold"><location><dimension name="Weight" uservalue="400"/></location></instance>"#;
+            let path = write(dir.path(), &sources, instances, "");
+            let source = DesignSpaceIrSource::new(&path, Some("DS Family Light")).unwrap();
+            assert_eq!(source.exports(), ["DS Family Light", "Own Bold"]);
+            assert_eq!(
+                source.designspace.instances[0].name.as_deref(),
+                Some("DS Family Light")
+            );
+        }
+
+        #[test]
         fn selection_errors() {
             let dir = tempfile::tempdir().unwrap();
             // Bold's user 539 maps to 53.900000000000006, which is still on the
@@ -4832,10 +4882,10 @@ mod tests {
                 error("Medium")
             );
             assert!(error("Nope").contains("\"Medium\""), "{}", error("Nope"));
-            // no instance is named "F Regular", so "{family} {style}" is
-            // matched, and both Regular and Dup answer to it
+            // like gftools, "{family} {style}" names only an instance that
+            // has no name
             assert!(
-                error("F Regular").contains("2 instances"),
+                error("F Regular").contains("no export has that name"),
                 "{}",
                 error("F Regular")
             );

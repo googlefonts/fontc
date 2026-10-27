@@ -24,11 +24,16 @@ use fontdrasil::{
     coords::{CoordConverter, DesignCoord, UserCoord},
     types::WidthClass,
 };
-use fontir::error::{BadSource, Error};
+use fontir::{
+    error::{BadSource, Error},
+    source::find_export,
+};
 use log::warn;
 use norad::designspace::{self, DesignSpaceDocument};
 use plist::{Dictionary, Value};
 use write_fonts::types::{Fixed, Tag};
+
+use crate::source::default_master;
 
 /// The instance a static build applies, chosen with `--export`.
 #[derive(Debug, Clone, PartialEq)]
@@ -132,9 +137,8 @@ fn fixed(location: &[f64]) -> Vec<Fixed> {
     location.iter().copied().map(Fixed::from_f64).collect()
 }
 
-/// What an instance is called when selecting one: its name, else
-/// `"{family} {style}"`, the two names gftools matches.
-fn display_name(instance: &designspace::Instance) -> String {
+/// What to call an instance in messages: its name, else `"{family} {style}"`.
+pub(crate) fn display_name(instance: &designspace::Instance) -> String {
     instance
         .name
         .clone()
@@ -149,18 +153,18 @@ fn family_style(instance: &designspace::Instance) -> String {
     )
 }
 
-/// Find the instance named `requested` and the source to build it from, and
-/// cut the designspace down to the two: every axis becomes a point at the
-/// source, so the font is static.
+/// Cut the designspace down to the instance named `requested`.
+///
+/// Finds the instance and the source to build it from, and keeps just the
+/// two: every axis becomes a point at the source, so the font is static.
 ///
 /// The name matches an instance's `name` attribute exactly, else its
-/// `"{family} {style}"`, as gftools resolves instance names, though it matches
-/// the name attribute across all instances first; fontmake's `-i` matches a
-/// regex against the same names. The designspace needs a source at the default
-/// location, as for fontmake. The instance must sit on a source, or anywhere
-/// when the source is the only one; fontc doesn't interpolate. When the
-/// instance sits on a source other than the default, the default one gives what
-/// the instance doesn't interpolate.
+/// `"{family} {style}"` (see [`export_names`]); fontmake's `-i` matches a
+/// regex against the same names. The designspace needs a source at the
+/// default location, as for fontmake. The instance must sit on a source, or
+/// anywhere when the source is the only one; fontc doesn't interpolate. When
+/// the instance sits on a source other than the default, the default one
+/// gives what the instance doesn't interpolate.
 pub(crate) fn select_instance(
     designspace: &mut DesignSpaceDocument,
     requested: &str,
@@ -280,7 +284,7 @@ pub(crate) fn select_instance(
     // Named as selected, so messages don't call a nameless instance by the
     // placeholder name the source gives it later
     let mut instance = designspace.instances[index].clone();
-    instance.name = Some(display_name(&instance));
+    instance.name = Some(requested.to_string());
     designspace.instances = vec![instance];
 
     Ok(Arc::new(SelectedInstance {
@@ -291,52 +295,35 @@ pub(crate) fn select_instance(
     }))
 }
 
-/// The index of the instance named `requested`: by its name attribute, else
-/// by its `"{family} {style}"`, which must match exactly one instance.
-fn find_instance(designspace: &DesignSpaceDocument, requested: &str) -> Result<usize, Error> {
-    let invalid = |reason: String| {
-        Err(Error::InvalidExport {
-            name: requested.to_string(),
-            reason,
-        })
-    };
-    let by_name: Vec<_> = designspace
+/// The name of each instance as an export.
+///
+/// It is the instance's name attribute, else `"{family} {style}"`, the family
+/// defaulting to the default source's `familyname`, as fontTools names the
+/// instances fontmake builds. Unlike fontTools, a missing style isn't taken
+/// from the STAT labels.
+pub(crate) fn export_names(designspace: &DesignSpaceDocument) -> Vec<String> {
+    let default_family = default_master(designspace)
+        .ok()
+        .and_then(|(_, source)| source.familyname.as_deref())
+        .unwrap_or_default();
+    designspace
         .instances
         .iter()
-        .enumerate()
-        .filter(|(_, instance)| instance.name.as_deref() == Some(requested))
-        .map(|(i, _)| i)
-        .collect();
-    let matches = if by_name.is_empty() {
-        designspace
-            .instances
-            .iter()
-            .enumerate()
-            .filter(|(_, instance)| family_style(instance) == requested)
-            .map(|(i, _)| i)
-            .collect()
-    } else {
-        by_name
-    };
-    match matches.as_slice() {
-        [index] => Ok(*index),
-        [] if designspace.instances.is_empty() => {
-            invalid("the designspace has no instances".to_string())
-        }
-        [] => invalid(format!(
-            "no instance has that name; available: {}",
-            designspace
-                .instances
-                .iter()
-                .map(|instance| format!("\"{}\"", display_name(instance)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
-        _ => invalid(format!(
-            "{} instances have that name; rename all but one",
-            matches.len()
-        )),
-    }
+        .map(|instance| {
+            instance.name.clone().unwrap_or_else(|| {
+                format!(
+                    "{} {}",
+                    instance.familyname.as_deref().unwrap_or(default_family),
+                    instance.stylename.as_deref().unwrap_or_default()
+                )
+            })
+        })
+        .collect()
+}
+
+/// The index of the instance named `requested`, see [`export_names`].
+fn find_instance(designspace: &DesignSpaceDocument, requested: &str) -> Result<usize, Error> {
+    find_export(requested, &export_names(designspace))
 }
 
 /// fontinfo attributes an instance doesn't inherit unless it is the one

@@ -109,7 +109,8 @@ pub struct Args {
     /// source it is the full name ("{family} {style}"); in a multi-master source
     /// the instance must be on a master, which is built alone, as instances
     /// between masters aren't interpolated. For a designspace it is the
-    /// instance's name attribute, else its "{family} {style}".
+    /// instance's name attribute, else its "{family} {style}", the family
+    /// defaulting to the default source's, as fontmake names it.
     #[arg(long, value_name = "NAME")]
     pub export: Option<String>,
 
