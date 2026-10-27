@@ -229,7 +229,8 @@ fn apply_custom_data(
     };
     misc.us_weight_class = as_u16("openTypeOS2WeightClass").or(misc.us_weight_class);
     misc.us_width_class = as_u16("openTypeOS2WidthClass").or(misc.us_width_class);
-    // ufo2ft defaults fsType to the installable-embedding bit when unset
+    // ufo2ft defaults fsType to the preview & print embedding bit when unset:
+    // https://github.com/googlefonts/ufo2ft/blob/2f11b0ff84ef1f2494e54d1a7a15d92806d8337b/Lib/ufo2ft/fontInfoData.py#L383
     misc.fs_type = Some(as_bits("openTypeOS2Type").unwrap_or(1 << 2));
     // ufo2ft sets the style bit of the style map style name, which falls
     // back to the preferred subfamily name and then to the style name:
