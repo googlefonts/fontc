@@ -692,6 +692,11 @@ impl GlyphData {
         }
     }
 
+    /// Look up the bundled data by glyph name only.
+    pub fn query_name(name: &str) -> Option<QueryResult> {
+        bundled::find_pos_by_name(name).and_then(bundled::get)
+    }
+
     /// Look up the bundled data by name, production name or codepoint, without synthesis.
     fn query_bundled(name: &str, codepoints: Option<&[u32]>) -> Option<QueryResult> {
         bundled::find_pos_by_name(name)

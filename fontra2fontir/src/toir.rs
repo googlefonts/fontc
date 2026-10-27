@@ -21,6 +21,7 @@ use fontir::{
         StaticMetadata, Substitution, VariableFeature,
     },
 };
+use glyphs_reader::glyphdata::{Category, GlyphData, Subcategory};
 use kurbo::BezPath;
 use log::{debug, trace, warn};
 use smol_str::SmolStr;
@@ -30,8 +31,8 @@ use write_fonts::{
 };
 
 use crate::fontra::{
-    self, AxisName, Contour, Font, FontSource, GlyphAxis, GlyphInfos, GlyphSource, Kerning,
-    Location, Point, PointType, VariableGlyph,
+    self, AxisName, Contour, Font, FontSource, GlyphAxis, GlyphSource, Kerning, Location, Point,
+    PointType, VariableGlyph,
 };
 
 /// A hidden axis with a synthetic tag for each glyph-local axis that does not
@@ -1278,18 +1279,23 @@ fn to_ir_path(glyph_name: GlyphName, contour: &Contour) -> Result<BezPath, BadGl
     Ok(path)
 }
 
-pub(crate) fn to_ir_gdef_categories(glyph_infos: &GlyphInfos) -> PreliminaryGdefCategories {
-    let mark_category_glyphs = glyph_infos
-        .iter()
-        .filter(|(_, info)| info.category.as_deref() == Some("Mark"))
-        .map(|(name, _)| name.clone())
+pub(crate) fn to_ir_gdef_categories(font_data: &Font) -> PreliminaryGdefCategories {
+    let mark_category_glyphs: BTreeSet<GlyphName> = font_data
+        .glyph_infos
+        .keys()
+        .filter(|name| is_mark(font_data, name))
+        .cloned()
         .collect();
 
-    let categories = glyph_infos
+    let categories = font_data
+        .glyph_infos
         .iter()
         .filter_map(|(name, info)| {
-            gdef_class(info.category.as_deref(), info.sub_category.as_deref())
-                .map(|class| (name.clone(), class))
+            gdef_class(
+                mark_category_glyphs.contains(name),
+                info.sub_category.as_deref(),
+            )
+            .map(|class| (name.clone(), class))
         })
         .collect();
 
@@ -1301,12 +1307,40 @@ pub(crate) fn to_ir_gdef_categories(glyph_infos: &GlyphInfos) -> PreliminaryGdef
     }
 }
 
-fn gdef_class(category: Option<&str>, subcategory: Option<&str>) -> Option<GlyphClassDef> {
-    match (category, subcategory) {
-        (Some("Mark"), Some("Nonspacing" | "Spacing Combining")) => Some(GlyphClassDef::Mark),
+fn gdef_class(is_mark: bool, subcategory: Option<&str>) -> Option<GlyphClassDef> {
+    match (is_mark, subcategory) {
+        (true, _) => Some(GlyphClassDef::Mark),
         (_, Some("Ligature")) => Some(GlyphClassDef::Ligature),
         _ => None,
     }
+}
+
+/// Port of Fontra's
+/// [`isMark`](https://github.com/fontra/fontra/blob/2a19b8bd1/src-js/fontra-core/src/shaper-controller.js#L265-L298).
+fn is_mark(font_data: &Font, name: &GlyphName) -> bool {
+    if let Some(info) = font_data.glyph_infos.get(name)
+        && let Some(category) = info.category.as_deref()
+    {
+        return category == "Mark" && info.sub_category.as_deref() == Some("Nonspacing");
+    }
+    if let Some(result) = GlyphData::query_name(name.as_str()) {
+        return result.category == Category::Mark
+            && result.subcategory == Some(Subcategory::Nonspacing);
+    }
+    has_mark_anchor(font_data, name)
+}
+
+/// Whether an active source of the glyph has an anchor that starts with "_".
+fn has_mark_anchor(font_data: &Font, name: &GlyphName) -> bool {
+    font_data.glyphs.get(name).is_some_and(|glyph| {
+        glyph
+            .sources
+            .iter()
+            .filter(|source| !source.inactive)
+            .filter_map(|source| glyph.layers.get(&source.layer_name))
+            .flat_map(|layer| layer.glyph.anchors.iter())
+            .any(|anchor| anchor.name.as_deref().is_some_and(|n| n.starts_with('_')))
+    })
 }
 
 #[cfg(test)]
@@ -1320,7 +1354,7 @@ mod tests {
     use fontir::ir::{AnchorBuilder, Glyph, GlyphOrder, KernGroup, KernSide};
     use kurbo::{BezPath, PathEl};
     use write_fonts::{
-        tables::os2::SelectionFlags,
+        tables::{gdef::GlyphClassDef, os2::SelectionFlags},
         types::{NameId, Tag},
     };
 
@@ -1334,8 +1368,8 @@ mod tests {
     use super::{
         AxisMapping, Condition, Error, NameKey, Rule, StaticMetadata, Substitution,
         normalize_axis_value, normalize_glyph_axis_value, responds_to_global_axes,
-        to_ir_global_metrics, to_ir_glyph, to_ir_kerning_instance, to_ir_kerning_locations,
-        to_ir_names, to_ir_path,
+        to_ir_gdef_categories, to_ir_global_metrics, to_ir_glyph, to_ir_kerning_instance,
+        to_ir_kerning_locations, to_ir_names, to_ir_path,
     };
 
     fn axis_tuples(axes: &Axes) -> Vec<(&str, Tag, f64, f64, f64)> {
@@ -2252,6 +2286,20 @@ mod tests {
             &font_data,
             &mut responds_to_global_axes_cache
         ));
+    }
+
+    #[test]
+    fn marks_from_glyph_data_and_anchors() {
+        // GlyphsUnitTestSans3 has no category column. dieresis is a spacing
+        // mark in GlyphData, and _part.shoulder has a _connect anchor.
+        let font_data = Font::load(&testdata_dir().join("GlyphsUnitTestSans3.fontra")).unwrap();
+        let marks: Vec<_> = to_ir_gdef_categories(&font_data)
+            .categories
+            .into_iter()
+            .filter(|(_, class)| *class == GlyphClassDef::Mark)
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(vec![GlyphName::new("_part.shoulder")], marks);
     }
 
     fn glyph_to_ir(font_data: &Font, name: &str) -> Glyph {

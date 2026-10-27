@@ -889,6 +889,7 @@ dependencies = [
  "fea-rs",
  "fontdrasil",
  "fontir",
+ "glyphs-reader",
  "icu_properties",
  "indexmap",
  "kurbo",

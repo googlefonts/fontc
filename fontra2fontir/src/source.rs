@@ -67,7 +67,7 @@ impl FontraIrSource {
                 .kerning
                 .insert(HORIZONTAL_KERNING_TYPE.to_string(), kerning);
         }
-        let gdef_categories = to_ir_gdef_categories(&font_data.glyph_infos);
+        let gdef_categories = to_ir_gdef_categories(&font_data);
 
         Ok(FontraIrSource {
             font_data: Arc::new(font_data),
