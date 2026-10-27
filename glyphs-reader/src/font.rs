@@ -7177,6 +7177,21 @@ unitsPerEm = 1000;
     }
 
     #[test]
+    fn reads_version_defaults_and_explicit_zero() {
+        for (version, major, minor) in [
+            ("", 1, 0),
+            ("versionMajor = 0;", 0, 0),
+            ("versionMajor = 2; versionMinor = 15;", 2, 15),
+        ] {
+            let source = format!(
+                "{{ .formatVersion = 3; fontMaster = ({{ id = m01; }}); unitsPerEm = 1000; {version} }}"
+            );
+            let font = Font::load_from_string(&source).unwrap();
+            assert_eq!((font.version_major, font.version_minor), (major, minor));
+        }
+    }
+
+    #[test]
     fn reads_instance_export_metadata() {
         let font = Font::load_from_string(
             r#"{
