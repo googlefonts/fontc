@@ -368,7 +368,8 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
                 continue;
             }
         };
-        let has_instances = config_has_instances(&config_path);
+        let raw_config = load_raw_config(&config_path);
+        let has_instances = raw_config.as_ref().is_some_and(config_has_instances);
         let repo_dir = repo.repo_path(Path::new(""));
         // we store a map of repo_dir -> repo URL in sources.json
         result
@@ -413,7 +414,7 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
                 if has_instances {
                     result.targets.push(gftools);
                 } else {
-                    to_split.push((gftools, src_path, config.build_variable));
+                    to_split.push((gftools, src_path, config.build_variable, raw_config.clone()));
                 }
             }
             result.targets.push(default);
@@ -422,24 +423,53 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
 
     let split = to_split
         .into_par_iter()
-        .flat_map_iter(|(target, src_path, build_variable)| {
+        .flat_map_iter(|(target, src_path, build_variable, raw_config)| {
             split_static_exports(target, &src_path, build_variable)
+                .into_iter()
+                .map(move |target| (target, raw_config.clone()))
         })
         .collect::<Vec<_>>();
-    result.targets.extend(split);
+    result.targets.extend(dedupe_static_exports(split));
     result.remove_duplicate_default_targets();
     result
+}
+
+/// The config as YAML, for the keys [`Config`] doesn't have.
+fn load_raw_config(config_path: &Path) -> Option<serde_yaml::Value> {
+    let text = std::fs::read_to_string(config_path).ok()?;
+    serde_yaml::from_str(&text).ok()
 }
 
 /// Whether the config lists `instances:` to cut from its variable fonts.
 ///
 /// gftools then builds those instead of the source's own, and can't build
 /// just one of them.
-fn config_has_instances(config_path: &Path) -> bool {
-    std::fs::read_to_string(config_path)
-        .ok()
-        .and_then(|text| serde_yaml::from_str::<serde_yaml::Value>(&text).ok())
-        .is_some_and(|config| config.get("instances").is_some())
+fn config_has_instances(config: &serde_yaml::Value) -> bool {
+    config.get("instances").is_some()
+}
+
+/// Drop the static export targets that build the same font as another.
+///
+/// gftools only uses a config's `familyName` to name variable fonts, so
+/// configs that differ only there build the same statics (e.g. Barlow, Barlow
+/// Condensed and Barlow Semi Condensed, which all build every instance of
+/// `Barlow.glyphs`). We keep the first in sorted order, so the choice doesn't
+/// depend on the order of the inputs.
+fn dedupe_static_exports(mut targets: Vec<(Target, Option<serde_yaml::Value>)>) -> Vec<Target> {
+    targets.sort_by(|(a, _), (b, _)| a.cmp(b));
+    let mut seen = HashSet::new();
+    targets
+        .into_iter()
+        .filter_map(|(target, config)| {
+            let key = target.export().zip(config).map(|(export, mut config)| {
+                if let Some(config) = config.as_mapping_mut() {
+                    config.remove("familyName");
+                }
+                (target.source_path(Path::new("")), export.to_owned(), config)
+            });
+            key.is_none_or(|key| seen.insert(key)).then_some(target)
+        })
+        .collect()
 }
 
 /// If a gftools target builds multiple static exports, split them into separate targets.
@@ -675,5 +705,57 @@ mod tests {
             }
         }));
         assert!(!same_outcomes(&fontc_failure("oh no"), &fontmake_failure));
+    }
+
+    #[test]
+    fn configs_differing_in_family_name_share_static_exports() {
+        let target = |config: &str, export: Option<&str>| {
+            let target = Target::new(
+                "org/barlow",
+                "deadbeef",
+                format!("ofl/{config}/config.yaml"),
+                true,
+                "sources/Barlow.glyphs",
+            )
+            .to_gftools_target();
+            match export {
+                Some(export) => target.with_export(export),
+                None => target,
+            }
+        };
+        let config = |yaml: &str| Some(serde_yaml::from_str(yaml).unwrap());
+        let barlow = "familyName: Barlow\nsources: [sources/Barlow.glyphs]\nbuildVariable: false";
+        let condensed =
+            "buildVariable: false\nsources: [sources/Barlow.glyphs]\nfamilyName: Barlow Condensed";
+        let otf = "sources: [sources/Barlow.glyphs]\nbuildVariable: false\nbuildOTF: true";
+        let targets = vec![
+            (
+                target("barlowcondensed", Some("Barlow Bold")),
+                config(condensed),
+            ),
+            (
+                target("barlowcondensed", Some("Barlow Condensed Bold")),
+                config(condensed),
+            ),
+            (target("barlow", Some("Barlow Bold")), config(barlow)),
+            (target("barlowotf", Some("Barlow Bold")), config(otf)),
+            (target("barlowcondensed", None), config(condensed)),
+            (target("barlow", None), config(barlow)),
+        ];
+
+        let kept = dedupe_static_exports(targets)
+            .iter()
+            .map(|target| target.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kept,
+            [
+                "org/barlow/$VIRTUAL/ofl/barlow/config.yaml sources/Barlow.glyphs?deadbeef (gftools)",
+                "org/barlow/$VIRTUAL/ofl/barlow/config.yaml sources/Barlow.glyphs?deadbeef (gftools: Barlow Bold)",
+                "org/barlow/$VIRTUAL/ofl/barlowcondensed/config.yaml sources/Barlow.glyphs?deadbeef (gftools)",
+                "org/barlow/$VIRTUAL/ofl/barlowcondensed/config.yaml sources/Barlow.glyphs?deadbeef (gftools: Barlow Condensed Bold)",
+                "org/barlow/$VIRTUAL/ofl/barlowotf/config.yaml sources/Barlow.glyphs?deadbeef (gftools: Barlow Bold)",
+            ]
+        );
     }
 }
