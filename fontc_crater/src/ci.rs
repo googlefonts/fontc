@@ -7,13 +7,16 @@
 
 use std::{
     collections::{BTreeMap, HashSet},
+    ffi::OsStr,
     path::{Path, PathBuf},
     process::Command,
 };
 
 use chrono::{DateTime, Utc};
+use glyphs_reader::Plist;
 use google_fonts_sources::{Config, FontSource, SourceSet};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use norad::designspace::DesignSpaceDocument;
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -343,6 +346,8 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
     // first instantiate every repo in parallel:
     preflight_all_repos(cache_dir, repos);
     let mut result = ResolvedTargets::default();
+    // gftools targets that may build several statics, and so need splitting
+    let mut to_split = Vec::new();
     for repo in repos {
         let config_path = match repo.config_path(cache_dir) {
             Ok(config) => config,
@@ -363,6 +368,7 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
                 continue;
             }
         };
+        let has_instances = config_has_instances(&config_path);
         let repo_dir = repo.repo_path(Path::new(""));
         // we store a map of repo_dir -> repo URL in sources.json
         result
@@ -402,15 +408,112 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
                 repo.config_is_external(),
                 source,
             );
-            let gftools = should_build_in_gftools_mode(&src_path, &config)
-                .then(|| default.to_gftools_target());
+            if should_build_in_gftools_mode(&src_path, &config) {
+                let gftools = default.to_gftools_target();
+                if has_instances {
+                    result.targets.push(gftools);
+                } else {
+                    to_split.push((gftools, src_path, config.build_variable));
+                }
+            }
             result.targets.push(default);
-            result.targets.extend(gftools);
         }
     }
 
+    let split = to_split
+        .into_par_iter()
+        .flat_map_iter(|(target, src_path, build_variable)| {
+            split_static_exports(target, &src_path, build_variable)
+        })
+        .collect::<Vec<_>>();
+    result.targets.extend(split);
     result.remove_duplicate_default_targets();
     result
+}
+
+/// Whether the config lists `instances:` to cut from its variable fonts.
+///
+/// gftools then builds those instead of the source's own, and can't build
+/// just one of them.
+fn config_has_instances(config_path: &Path) -> bool {
+    std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|text| serde_yaml::from_str::<serde_yaml::Value>(&text).ok())
+        .is_some_and(|config| config.get("instances").is_some())
+}
+
+/// If a gftools target builds multiple static exports, split them into separate targets.
+///
+/// ttx_diff compares a single font, so these fail with "gftools produced
+/// multiple outputs" otherwise. A source with one export keeps its target.
+fn split_static_exports(target: Target, src_path: &Path, build_variable: bool) -> Vec<Target> {
+    // in ttx_diff a fontc panic is just a failure; here it would end the run
+    let exports = std::panic::catch_unwind(|| static_exports(src_path, build_variable))
+        .unwrap_or_else(|_| {
+            log::warn!("panicked reading {}", src_path.display());
+            Vec::new()
+        });
+    if exports.len() > 1 {
+        exports
+            .into_iter()
+            .map(|export| target.with_export(export))
+            .collect()
+    } else {
+        vec![target]
+    }
+}
+
+/// The names of the static fonts gftools builds from this source.
+///
+/// Empty if it builds a variable font, or if we can't tell.
+fn static_exports(src_path: &Path, build_variable: bool) -> Vec<String> {
+    // fontc can't build an unrecognized source either
+    let Ok(input) = fontc::Input::new(src_path) else {
+        return Vec::new();
+    };
+    if build_variable && is_variable(src_path) {
+        return Vec::new();
+    }
+    input.exports().unwrap_or_else(|e| {
+        log::warn!("failed to list exports of {}: '{e}'", src_path.display());
+        Vec::new()
+    })
+}
+
+/// Whether gftools would build a variable font from this source.
+///
+/// This matches gftools' `File.is_variable`. If we can't tell, we say it is.
+fn is_variable(src_path: &Path) -> bool {
+    let result = match src_path.extension().and_then(OsStr::to_str) {
+        Some("designspace") => DesignSpaceDocument::load(src_path)
+            .map(|doc| doc.sources.len() > 1)
+            .map_err(|e| e.to_string()),
+        Some("glyphs") => glyphs_is_variable(src_path),
+        Some("glyphspackage") => glyphs_is_variable(&src_path.join("fontinfo.plist")),
+        // a UFO is a single master
+        _ => Ok(false),
+    };
+    result.unwrap_or_else(|e| {
+        log::warn!("can't tell if {} is variable: '{e}'", src_path.display());
+        true
+    })
+}
+
+// like gftools, read the raw plist: we only need the masters
+fn glyphs_is_variable(fontinfo_path: &Path) -> Result<bool, String> {
+    let text = std::fs::read_to_string(fontinfo_path).map_err(|e| e.to_string())?;
+    let fontinfo = Plist::parse(&text).map_err(|e| e.to_string())?;
+    let n_masters = fontinfo
+        .get("fontMaster")
+        .and_then(Plist::as_array)
+        .map_or(0, <[_]>::len);
+    let has_virtual_master = fontinfo
+        .get("customParameters")
+        .and_then(Plist::as_array)
+        .unwrap_or_default()
+        .iter()
+        .any(|param| param.get("name").and_then(Plist::as_str) == Some("Virtual Master"));
+    Ok(n_masters > 1 || has_virtual_master)
 }
 
 // make sure all repos are fetched and up to date; do this in parallel

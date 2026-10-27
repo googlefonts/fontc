@@ -71,6 +71,10 @@ fn result_args(target: &Target, source_cache: &Path) -> Vec<OsString> {
         args.push("--config".into());
         args.push(target.config_path(source_cache).into());
     }
+    if let Some(export) = target.export() {
+        args.push("--export".into());
+        args.push(export.into());
+    }
     args.push(target.source_path(source_cache).into());
     args
 }

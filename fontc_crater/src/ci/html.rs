@@ -818,13 +818,17 @@ fn make_target_description(target: &Target, ambiguous_sources: &HashSet<String>)
     } else {
         short
     };
-    let annotation = match target.build() {
+    let mut annotation = match target.build() {
         BuildType::Default => "default".to_string(),
         BuildType::GfTools if target.config().file_stem() != Some(OsStr::new("config")) => {
             format!("gftools, {}", target.config().display())
         }
         _ => "gftools".to_string(),
     };
+    if let Some(export) = target.export() {
+        annotation.push_str(", ");
+        annotation.push_str(export);
+    }
     html! {
         (source)
             " "

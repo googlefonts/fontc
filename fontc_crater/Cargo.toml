@@ -9,6 +9,7 @@ readme = "README.md"
 
 [dependencies]
 fontc = { version = "1.0.0", path = "../fontc" }
+glyphs-reader = { version = "1.0.0", path = "../glyphs-reader" }
 
 google-fonts-sources = "0.11.1"
 maud = "0.27.0"
@@ -26,4 +27,5 @@ serde_json.workspace = true
 tempfile.workspace = true
 tracing-subscriber.workspace = true
 log.workspace = true
+norad.workspace = true
 

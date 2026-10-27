@@ -117,6 +117,9 @@ separately from other failures.
 
 - `targets` are written as they appear in the report. The `?sha` is optional
   and ignored, so an entry keeps applying when a source repo is updated.
+  When gftools builds several static fonts from a source, there is one target
+  per export, written like `org/repo/sources/config.yaml Font.glyphs?0123456789
+  (gftools: Font Bold)`.
 - `fails` is the compiler whose failure is accepted: `fontc`, `fontmake` or
   `both`.
 - `link` and `stderr_contains` are optional. If `stderr_contains` is set, the
