@@ -398,6 +398,26 @@ fn static_export(font: &Font, requested: Option<&str>) -> Result<Option<usize>, 
     Ok(exports.first().map(|(index, _)| *index))
 }
 
+/// Whether each axis varies across the masters.
+///
+/// An axis varies when the masters, virtual ones included, don't all sit at
+/// the same location along it.
+fn varying_axes(font: &Font) -> Vec<bool> {
+    font.axes
+        .iter()
+        .enumerate()
+        .map(|(idx, axis)| {
+            let first = font.masters[0].axes_values[idx];
+            font.masters.iter().any(|m| m.axes_values[idx] != first)
+                || font
+                    .virtual_masters
+                    .iter()
+                    .filter_map(|vm| vm.get(&axis.name))
+                    .any(|value| *value != first)
+        })
+        .collect()
+}
+
 /// Instantiate `font` at the location of its active static export named
 /// `full_name`, in the one case that needs no interpolation: the instance is
 /// on a master, so that master is kept alone (see [`Font::retain_master`]).
@@ -440,20 +460,7 @@ fn instantiate_on_master(font: &mut Font, full_name: &str) -> Result<(), Error> 
             font.axes.len()
         ));
     }
-    let varies: Vec<bool> = font
-        .axes
-        .iter()
-        .enumerate()
-        .map(|(idx, axis)| {
-            let first = font.masters[0].axes_values[idx];
-            font.masters.iter().any(|m| m.axes_values[idx] != first)
-                || font
-                    .virtual_masters
-                    .iter()
-                    .filter_map(|vm| vm.get(&axis.name))
-                    .any(|value| *value != first)
-        })
-        .collect();
+    let varies = varying_axes(font);
     let matches: Vec<_> = font
         .masters
         .iter()
@@ -558,15 +565,18 @@ impl FontInfo {
     /// (see [`Font::retain_master`]), so the rest of the pipeline sees a
     /// single-master static source.
     pub(crate) fn new(mut font: Font, export: Option<&str>) -> Result<Self, Error> {
-        let mut axes = ir_axes(&font)?;
+        // before ir_axes, which needs mappings for the locations the export drops
         if let Some(name) = export
-            && !axes.iter().all(|axis| axis.is_point())
+            && varying_axes(&font).contains(&true)
         {
             instantiate_on_master(&mut font, name)?;
-            // one master, no virtual masters: every axis is a point
-            axes = ir_axes(&font)?;
-            debug_assert!(axes.iter().all(|axis| axis.is_point()), "{axes:?}");
         }
+        let axes = ir_axes(&font)?;
+        // one master, no virtual masters: every axis is a point
+        debug_assert!(
+            export.is_none() || axes.iter().all(|axis| axis.is_point()),
+            "{axes:?}"
+        );
         // Like StaticMetadata, a font whose axes are all points is static.
         let export_index = if axes.iter().all(|axis| axis.is_point()) {
             let export_index = static_export(&font, export)?;
