@@ -940,8 +940,12 @@ fn responds_to_global_axes(
         return false;
     };
     let local: HashSet<&str> = glyph.axes.iter().map(|a| a.name.as_str()).collect();
-    let resolved: Vec<Location> = glyph
+    let sources: Vec<&GlyphSource> = glyph
         .sources
+        .iter()
+        .filter(|source| !source.inactive)
+        .collect();
+    let resolved: Vec<Location> = sources
         .iter()
         .map(|source| glyph_source_location(font_data, glyph, source))
         .collect();
@@ -958,7 +962,10 @@ fn responds_to_global_axes(
         values.any(|value| value != first)
     });
     if !responds {
-        'outer: for layer in glyph.layers.values() {
+        'outer: for layer in sources
+            .iter()
+            .filter_map(|source| glyph.layers.get(&source.layer_name))
+        {
             for component in &layer.glyph.components {
                 if responds_to_global_axes(&component.name, font_data, cache) {
                     responds = true;
@@ -2299,6 +2306,34 @@ mod tests {
             &font_data,
             &mut responds_to_global_axes_cache
         ));
+    }
+
+    #[test]
+    fn responds_to_global_axes_ignores_non_active_sources() {
+        // _ayah.005 has one source. alef-ar varies on Mashq.
+        let mut font_data = Font::load(&testdata_dir().join("Raqq.fontra")).unwrap();
+        let name = GlyphName::new("_ayah.005");
+        let responds =
+            |font_data: &Font| responds_to_global_axes(&name, font_data, &mut HashMap::new());
+        let glyph = font_data.glyphs.get_mut(&name).unwrap();
+        let mut background = glyph.layers["m01"].clone();
+        background.glyph.components.push(fontra::Component {
+            name: GlyphName::new("alef-ar"),
+            transformation: Default::default(),
+            location: Default::default(),
+        });
+        glyph.layers.insert("background".into(), background);
+        assert!(!responds(&font_data));
+
+        let glyph = font_data.glyphs.get_mut(&name).unwrap();
+        glyph.sources.push(GlyphSource {
+            name: "inactive".into(),
+            layer_name: "m01".into(),
+            location: [("Mashq".into(), 100.0)].into(),
+            location_base: None,
+            inactive: true,
+        });
+        assert!(!responds(&font_data));
     }
 
     #[test]
