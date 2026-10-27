@@ -1,0 +1,51 @@
+{
+.formatVersion = 3;
+familyName = "Master Family";
+properties = (
+{ key = preferredFamilyNames; value = "Inherited Preferred Family"; },
+{ key = preferredSubfamilyNames; value = "Inherited Preferred Style"; },
+{ key = vendorID; value = DUCK; }
+);
+fontMaster = (
+{
+id = m01;
+name = "Regular";
+customParameters = (
+{ name = strikeoutSize; value = 40; },
+{ name = underlinePosition; value = -90; }
+);
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{ layerId = m01; width = 200; }
+);
+unicode = 32;
+}
+);
+instances = (
+{
+name = "Heavy Condensed";
+weightClass = 800;
+widthClass = 3;
+isBold = 0;
+isItalic = 1;
+properties = (
+{ key = familyNames; values = ({ language = dflt; value = "Export Family"; }); },
+{ key = postscriptFontName; value = "ExportFamily-HeavyCondensed"; }
+);
+customParameters = (
+{ name = vendorID; value = "    "; },
+{ name = panose; value = (2, 11, 8, 3, 2, 2, 3, 2, 2, 4); },
+{ name = strikeoutSize; value = 67; },
+{ name = strikeoutPosition; value = 345; },
+{ name = underlinePosition; value = -123; },
+{ name = underlineThickness; value = 89; }
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+}

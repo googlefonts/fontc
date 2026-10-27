@@ -1,0 +1,12 @@
+FILE@[0; 89)
+  #@0 "### the root file and the included file both start with a BOM"
+  WS@61 "\n"
+    LanguageSystemNode@[62; 87)
+      LanguagesystemKw@62 "languagesystem"
+      WS@76 " "
+      Tag@77 "DFLT"
+      WS@81 " "
+      Tag@82 "dflt"
+      ;@86 ";"
+  WS@87 "\n"
+  WS@88 "\n"

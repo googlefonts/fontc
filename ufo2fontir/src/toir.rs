@@ -5,7 +5,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadGlyph, BadSource, Error},
+    error::{BadGlyph, Error},
     ir::{self, AnchorBuilder, GlyphPathBuilder},
 };
 use kurbo::{Affine, BezPath};
@@ -14,7 +14,7 @@ use norad::designspace::{self, Dimension};
 use smol_str::SmolStr;
 use write_fonts::types::Tag;
 
-use crate::source::vertical_origin;
+use crate::source::{Glif, vertical_origin};
 
 /// Key for glyphsLib's component info storage in UFO glyph lib.
 ///
@@ -38,7 +38,7 @@ pub(crate) fn to_design_location(
                 return None;
             };
             Some(match d.xvalue {
-                Some(x) => Ok((*tag, DesignCoord::new(x as f64))),
+                Some(x) => Ok((*tag, DesignCoord::new(x))),
                 None => Err(Error::InvalidEntry(
                     "source location",
                     format!(
@@ -81,12 +81,12 @@ pub(crate) fn to_instance_design_location(
             continue;
         };
         let coord = match (d.xvalue, d.uservalue) {
-            (Some(x), _) => DesignCoord::new(x as f64),
+            (Some(x), _) => DesignCoord::new(x),
             (None, Some(u)) => {
                 let axis = axes
                     .get(tag)
                     .ok_or_else(|| Error::NoEntryInAxes(tag.to_string()))?;
-                UserCoord::new(u as f64).convert(&axis.converter)
+                UserCoord::new(u).convert(&axis.converter)
             }
             (None, None) => {
                 return Err(Error::InvalidEntry(
@@ -266,20 +266,15 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
     })?;
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
-    let min = UserCoord::new(axis.minimum.unwrap() as f64);
-    let default = UserCoord::new(axis.default as f64);
-    let max = UserCoord::new(axis.maximum.unwrap() as f64);
+    let min = UserCoord::new(axis.minimum.unwrap());
+    let default = UserCoord::new(axis.default);
+    let max = UserCoord::new(axis.maximum.unwrap());
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#map-element>
     let converter = if let Some(mappings) = &axis.map {
         let examples: Vec<_> = mappings
             .iter()
-            .map(|map| {
-                (
-                    UserCoord::new(map.input as f64),
-                    DesignCoord::new(map.output as f64),
-                )
-            })
+            .map(|map| (UserCoord::new(map.input), DesignCoord::new(map.output)))
             .collect();
 
         // make sure we have min/max/default mappings:
@@ -315,12 +310,12 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, E
     })
 }
 
-/// Invariant: the default location is always first in the glif_files list.
-pub fn to_ir_glyph(
+/// Invariant: the default location is always first in the glifs list.
+pub(crate) fn to_ir_glyph(
     glyph_name: GlyphName,
     emit_to_binary: bool,
     erase_open_corners: bool,
-    glif_files: &[(Vec<NormalizedLocation>, &PathBuf)],
+    glifs: &[(Vec<NormalizedLocation>, Glif<'_>)],
     anchors: &mut AnchorBuilder,
 ) -> Result<ir::Glyph, Error> {
     let mut glyph = ir::GlyphBuilder::new(glyph_name.clone());
@@ -329,14 +324,13 @@ pub fn to_ir_glyph(
     // We stash the codepoints from the default location so we can warn
     // if any other instances have different codepoints
     let mut default_loc_codepoints = None;
-    for (locations, glif_file) in glif_files.iter() {
-        let mut norad_glyph =
-            norad::Glyph::load(glif_file).map_err(|e| BadSource::custom(glif_file, e))?;
+    for (locations, glif) in glifs.iter() {
+        let (mut norad_glyph, glif_file) = glif.load(&glyph_name)?;
 
         for location in locations {
             glyph.try_add_source(
                 location,
-                to_ir_glyph_instance(&norad_glyph, glif_file, erase_open_corners)?,
+                to_ir_glyph_instance(&norad_glyph, &glif_file, erase_open_corners)?,
             )?;
 
             // we only care about anchors from exportable glyphs
@@ -430,12 +424,17 @@ mod tests {
         let mut norm_loc = NormalizedLocation::new();
         norm_loc.insert(Tag::new(b"wght"), NormalizedCoord::new(0.0));
         let mut anchors = AnchorBuilder::new("bar".into());
-        let glif_path = testdata_dir().join("WghtVar-Regular.ufo/glyphs/bar.glif");
+        let ufo_dir = testdata_dir().join("WghtVar-Regular.ufo");
+        let reader = norad::FontReader::open(&ufo_dir).unwrap();
+        let glif = Glif {
+            layer: reader.default_layer().unwrap(),
+            layer_dir: ufo_dir.join("glyphs"),
+        };
         let glyph = to_ir_glyph(
             "bar".into(),
             true,
             false,
-            &[(vec![norm_loc], &glif_path)],
+            &[(vec![norm_loc], glif)],
             &mut anchors,
         )
         .unwrap();
@@ -575,7 +574,7 @@ mod tests {
         }])
     }
 
-    fn dim(name: &str, xvalue: Option<f32>, uservalue: Option<f32>) -> Dimension {
+    fn dim(name: &str, xvalue: Option<f64>, uservalue: Option<f64>) -> Dimension {
         Dimension {
             name: name.into(),
             xvalue,

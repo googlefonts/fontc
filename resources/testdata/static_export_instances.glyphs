@@ -1,0 +1,15 @@
+{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; name = Master; });
+glyphs = ({ glyphname = space; unicode = 32; layers = ({ layerId = m01; width = 200; }); });
+instances = (
+{ name = Regular; },
+{ name = Bold; isBold = 1; weightClass = 700; },
+{ name = Regular; properties = ({ key = familyNames; values = ({ language = dflt; value = "Example B1"; }); }); },
+{ name = Black; active = 0; weightClass = 900; },
+{ name = "Example Variable"; type = variable; }
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+}

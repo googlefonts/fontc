@@ -1,0 +1,38 @@
+{
+familyName = "Master Family";
+fontMaster = (
+{
+id = m01;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+customParameters = (
+{
+name = styleMapFamilyName;
+value = "Style Map Family";
+}
+);
+instanceInterpolations = {
+m01 = 1;
+};
+linkStyle = Display;
+name = Display;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

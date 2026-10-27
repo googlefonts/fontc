@@ -7,7 +7,7 @@ use std::{
 
 use indexmap::IndexMap;
 use kurbo::{BezPath, Point};
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use ordered_float::OrderedFloat;
 
 use smol_str::SmolStr;
@@ -18,14 +18,15 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
+    error::{BadGlyph, BadGlyphKind, BadSource, Error, PathConversionError},
     ir::{
         self, Color, ColorStop, GlyphPathBuilder, Paint, PaintLinearGradient, PaintRadialGradient,
         PaintSolid,
     },
 };
 use glyphs_reader::{
-    Component, FeatureSnippet, Font, Glyph, Layer, NodeType, Path, Shape, ShapeAttributes,
+    Component, FeatureSnippet, Font, Glyph, Instance, InstanceType, Layer, NodeType, Path, Shape,
+    ShapeAttributes,
 };
 
 pub(crate) fn to_ir_contours_and_components(
@@ -139,6 +140,7 @@ fn to_ir_path(
 
 pub(crate) fn to_ir_features(
     features: &[FeatureSnippet],
+    path: Option<PathBuf>,
     include_dir: Option<PathBuf>,
 ) -> Result<ir::FeatureSources, Error> {
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L74
@@ -148,6 +150,7 @@ pub(crate) fn to_ir_features(
     // a .glyphs file has one set of features, shared by every master
     Ok(ir::FeatureSources::single(ir::FeaturesSource::Memory {
         fea_content: fea_snippets.join("\n\n"),
+        path,
         include_dir,
     }))
 }
@@ -214,13 +217,17 @@ fn to_ir_axis(
             .map(|(u, d)| (UserCoord::new(*u), DesignCoord::new(*d)))
             .collect();
         let default_idx = find_by_design_coord(&mappings, default, axis.name.as_str(), "default")?;
-        let min_idx = find_by_design_coord(&mappings, min, axis.name.as_str(), "min")?;
-        let max_idx = find_by_design_coord(&mappings, max, axis.name.as_str(), "max")?;
+        // the min and max masters must be mapped too
+        find_by_design_coord(&mappings, min, axis.name.as_str(), "min")?;
+        find_by_design_coord(&mappings, max, axis.name.as_str(), "max")?;
         // Use user-space values directly from the mapping, matching glyphsLib.
         // Don't round-trip via design_to_user which is lossy for many-to-one maps.
-        let user_min = mappings[min_idx].0;
+        // The axis spans the whole mapping, like in glyphsLib: an explicit Axis
+        // Mappings may go beyond the masters, while the mappings we derive from
+        // Axis Location or the instances only span them.
+        let user_min = mappings.iter().map(|(u, _)| *u).min().unwrap();
         let user_default = mappings[default_idx].0;
-        let user_max = mappings[max_idx].0;
+        let user_max = mappings.iter().map(|(u, _)| *u).max().unwrap();
         (
             CoordConverter::new(mappings, default_idx)?,
             user_min,
@@ -293,10 +300,253 @@ fn ir_axes(font: &Font) -> Result<fontdrasil::types::Axes, Error> {
         .collect()
 }
 
+/// The family name of an instance: its own, else the font's, like glyphsLib's
+/// `GSInstance.familyName`.
+fn instance_family_name<'a>(font: &'a Font, instance: &'a Instance) -> &'a str {
+    instance
+        .family_name()
+        .or_else(|| font.get_default_name("familyNames"))
+        .unwrap_or_default()
+}
+
+/// The full name of an instance, `"{family} {name}"`.
+///
+/// glyphsLib gives the designspace instance this name, so it is also what
+/// fontmake's `-i` matches.
+fn instance_full_name(font: &Font, instance: &Instance) -> String {
+    format!("{} {}", instance_family_name(font, instance), instance.name)
+}
+
+fn invalid_export<T>(name: &str, reason: String) -> Result<T, Error> {
+    Err(Error::InvalidExport {
+        name: name.to_string(),
+        reason,
+    })
+}
+
+fn bad_source<T>(message: String) -> Result<T, Error> {
+    Err(BadSource::custom("<Glyphs source>", message).into())
+}
+
+/// The active static instances, with their full names.
+fn static_exports(font: &Font) -> Vec<(usize, String)> {
+    font.instances
+        .iter()
+        .enumerate()
+        .filter(|(_, instance)| instance.active && instance.type_ == InstanceType::Single)
+        .map(|(index, instance)| (index, instance_full_name(font, instance)))
+        .collect()
+}
+
+fn list_exports(exports: &[(usize, String)]) -> String {
+    exports
+        .iter()
+        .map(|(_, name)| format!("\"{name}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The index of the one active static export with the requested full name.
+fn find_static_export(font: &Font, requested: &str) -> Result<usize, Error> {
+    let exports = static_exports(font);
+    let matches: Vec<_> = exports
+        .iter()
+        .filter(|(_, name)| name == requested)
+        .collect();
+    match matches.as_slice() {
+        [(index, _)] => Ok(*index),
+        [] => {
+            // Say why an instance with that name doesn't count.
+            let reason = font
+                .instances
+                .iter()
+                .find(|instance| instance_full_name(font, instance) == requested)
+                .map(|instance| {
+                    if instance.type_ == InstanceType::Variable {
+                        " (that is a variable font setting)"
+                    } else {
+                        " (that export is inactive)"
+                    }
+                })
+                .unwrap_or_default();
+            let available = if exports.is_empty() {
+                "there are none".to_string()
+            } else {
+                format!("available: {}", list_exports(&exports))
+            };
+            invalid_export(
+                requested,
+                format!("no active static export has that name{reason}; {available}"),
+            )
+        }
+        _ => invalid_export(
+            requested,
+            format!(
+                "{} active static exports have that name; rename or disable all but one",
+                matches.len()
+            ),
+        ),
+    }
+}
+
+/// Choose the export whose metadata a static build uses: the one active
+/// static export, or the one with the requested full name.
+///
+/// `font` must build a static font, i.e. its axes are all points.
+fn static_export(font: &Font, requested: Option<&str>) -> Result<Option<usize>, Error> {
+    if let Some(requested) = requested {
+        return find_static_export(font, requested).map(Some);
+    }
+    let exports = static_exports(font);
+    if exports.len() > 1 {
+        // Without a selection, build the master as before.
+        warn!(
+            "Several active static exports ({}), building the master without \
+             their metadata; select one by its full name with --export, or \
+             disable all but one",
+            list_exports(&exports)
+        );
+        return Ok(None);
+    }
+    Ok(exports.first().map(|(index, _)| *index))
+}
+
+/// Instantiate `font` at the location of its active static export named
+/// `full_name`, in the one case that needs no interpolation: the instance is
+/// on a master, so that master is kept alone (see [`Font::retain_master`]).
+///
+/// Locations are compared exactly, in design coordinates. Masters that aren't
+/// meant to interpolate ("bag of statics" sources, see
+/// <https://github.com/googlefonts/fontc/issues/1288>) can't make an instance
+/// anywhere else. Along an axis where all masters, virtual ones included, sit
+/// at the same location there is nothing to interpolate, so the instance is
+/// built from the master whatever its own location there. The instance keeps
+/// its location, at which its alternate layers then apply, as Glyphs 3.5
+/// exports it, and its classes. This is fontc's choice:
+/// glyphsLib only moves such an instance onto the masters when the axis has
+/// no mapping (<https://github.com/googlefonts/glyphsLib/pull/1197>), and
+/// otherwise fontmake silently builds nothing for it (e.g. Fuzzy Bubbles
+/// Regular, which Google Fonts ships).
+///
+/// Every glyph must have a layer for the kept master. Where fontmake would
+/// take a missing one from the other masters, this is an error.
+///
+/// The kept master's own data replaces the default master's, e.g. glyph
+/// categories are inferred from its anchors. fontmake instead gives every
+/// instance the default master's (ufo2ft's instantiator copies the default
+/// source's lib), so the GDEF classes of an instance on another master can
+/// differ.
+fn instantiate_on_master(font: &mut Font, full_name: &str) -> Result<(), Error> {
+    let instance_index = find_static_export(font, full_name)?;
+    let instance = &font.instances[instance_index];
+    let fmt_location = |values: &[OrderedFloat<f64>]| {
+        values
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if instance.axes_values.len() != font.axes.len() {
+        return bad_source(format!(
+            "Instance \"{full_name}\" has location ({}) but the font has {} axes",
+            fmt_location(&instance.axes_values),
+            font.axes.len()
+        ));
+    }
+    let varies: Vec<bool> = font
+        .axes
+        .iter()
+        .enumerate()
+        .map(|(idx, axis)| {
+            let first = font.masters[0].axes_values[idx];
+            font.masters.iter().any(|m| m.axes_values[idx] != first)
+                || font
+                    .virtual_masters
+                    .iter()
+                    .filter_map(|vm| vm.get(&axis.name))
+                    .any(|value| *value != first)
+        })
+        .collect();
+    let matches: Vec<_> = font
+        .masters
+        .iter()
+        .filter(|master| {
+            master
+                .axes_values
+                .iter()
+                .zip(&instance.axes_values)
+                .zip(&varies)
+                .all(|((master, instance), varies)| !varies || master == instance)
+        })
+        .collect();
+    let master_id = match matches.as_slice() {
+        [master] => master.id.clone(),
+        [] => {
+            return invalid_export(
+                full_name,
+                format!(
+                    "its location ({}) is not at the location of a master ({}), and fontc \
+                 can't interpolate static instances",
+                    fmt_location(&instance.axes_values),
+                    font.masters
+                        .iter()
+                        .map(|m| format!("\"{}\" at ({})", m.name, fmt_location(&m.axes_values)))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
+        }
+        _ => {
+            return invalid_export(
+                full_name,
+                format!(
+                    "masters {} are all at its location",
+                    matches
+                        .iter()
+                        .map(|m| format!("\"{}\"", m.name))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
+        }
+    };
+    let missing: Vec<_> = font
+        .glyphs
+        .values()
+        .filter(|glyph| {
+            !glyph.layers.is_empty()
+                && !glyph.layers.iter().any(|layer| layer.layer_id == master_id)
+        })
+        .map(|glyph| format!("'{}'", glyph.name))
+        .collect();
+    if !missing.is_empty() {
+        let master_name = &font
+            .masters
+            .iter()
+            .find(|m| m.id == master_id)
+            .unwrap()
+            .name;
+        return invalid_export(
+            full_name,
+            format!(
+                "glyphs {} have no layer for its master \"{master_name}\"",
+                missing.join(", ")
+            ),
+        );
+    }
+    let retained = font.retain_master(&master_id);
+    debug_assert!(retained, "{master_id} is one of the font's masters");
+    Ok(())
+}
+
 /// A [Font] with some prework to convert to IR predone.
 #[derive(Debug)]
 pub(crate) struct FontInfo {
     pub font: Font,
+    /// Index into `font.instances` of the export whose metadata the build
+    /// applies: for now, the active static instance when the font is static.
+    // TODO(anthrotype): the Variable Font Settings being built, for variable fonts.
+    pub export_index: Option<usize>,
     /// Index by master id
     pub master_indices: HashMap<String, usize>,
     // Master id => location
@@ -312,18 +562,46 @@ pub(crate) struct FontInfo {
     pub kern_groups: OnceLock<BTreeMap<ir::KernGroup, BTreeSet<GlyphName>>>,
 }
 
-impl TryFrom<Font> for FontInfo {
-    type Error = Error;
+impl FontInfo {
+    /// Prepare `font` for IR, building the static export whose full name is
+    /// `export`, if given.
+    ///
+    /// When the font would otherwise build a variable font, the export must
+    /// be at the location of a master, and the font is reduced to that master
+    /// (see [`Font::retain_master`]), so the rest of the pipeline sees a
+    /// single-master static source.
+    pub(crate) fn new(mut font: Font, export: Option<&str>) -> Result<Self, Error> {
+        let mut axes = ir_axes(&font)?;
+        if let Some(name) = export
+            && !axes.iter().all(|axis| axis.is_point())
+        {
+            instantiate_on_master(&mut font, name)?;
+            // one master, no virtual masters: every axis is a point
+            axes = ir_axes(&font)?;
+            debug_assert!(axes.iter().all(|axis| axis.is_point()), "{axes:?}");
+        }
+        // Like StaticMetadata, a font whose axes are all points is static.
+        let export_index = if axes.iter().all(|axis| axis.is_point()) {
+            let export_index = static_export(&font, export)?;
+            // built at the export's location, else at the master's
+            let location = match export_index {
+                Some(index) => font.instances[index].axes_values.clone(),
+                None => font.default_master().axes_values.clone(),
+            };
+            font.apply_alternate_layers(&location);
+            export_index
+        } else {
+            // so that the alternate layers of components are swapped in composites
+            font.align_bracket_layers();
+            None
+        };
 
-    fn try_from(font: Font) -> Result<Self, Self::Error> {
         let master_indices: HashMap<_, _> = font
             .masters
             .iter()
             .enumerate()
             .map(|(idx, m)| (m.id.clone(), idx))
             .collect();
-
-        let axes = ir_axes(&font)?;
 
         let locations: HashMap<_, _> = font
             .masters
@@ -366,6 +644,7 @@ impl TryFrom<Font> for FontInfo {
 
         Ok(FontInfo {
             font,
+            export_index,
             master_indices,
             master_positions,
             locations,
@@ -445,45 +724,262 @@ fn new_color_glyph(original: &Glyph, nth: &mut usize) -> Glyph {
         name: new_glyph_name.clone(),
         production_name: new_production_name,
         export: original.export,
+        category: original.category,
+        sub_category: original.sub_category,
         ..Default::default()
     };
     *nth += 1;
     new_glyph
 }
 
+/// A master's brace color layers, grouped by location and palette index.
+/// Layers with the same location and palette index keep their document order.
+#[derive(Default)]
+struct BraceLayers<'a>(IndexMap<&'a [OrderedFloat<f64>], IndexMap<i64, Vec<&'a Layer>>>);
+
+impl<'a> BraceLayers<'a> {
+    fn insert(&mut self, layer: &'a Layer, palette_idx: i64) {
+        self.0
+            .entry(layer.attributes.coordinates.as_slice())
+            .or_default()
+            .entry(palette_idx)
+            .or_default()
+            .push(layer);
+    }
+
+    fn matching(
+        &self,
+        palette_idx: i64,
+        occurrence: usize,
+    ) -> impl Iterator<Item = &'a Layer> + '_ {
+        self.0.values().filter_map(move |by_palette| {
+            by_palette
+                .get(&palette_idx)
+                .and_then(|layers| layers.get(occurrence))
+                .copied()
+        })
+    }
+
+    fn unmatched<'s>(
+        &'s self,
+        seen: &'s IndexMap<i64, usize>,
+    ) -> impl Iterator<Item = &'a Layer> + 's {
+        self.0.values().flat_map(move |by_palette| {
+            by_palette.iter().flat_map(move |(palette_idx, layers)| {
+                let consumed = seen.get(palette_idx).copied().unwrap_or_default();
+                layers.iter().skip(consumed).copied()
+            })
+        })
+    }
+}
+
+/// Build the split color glyphs for a COLRv0 glyph.
+///
+/// As in glyphsLib, color layers are matched across masters by position:
+/// the i-th color layer of each master contributes that master's geometry
+/// to `[original].color[i]`, so the color glyphs interpolate. The default
+/// master determines how many color glyphs are created; a master with fewer
+/// color layers simply contributes no source. An intermediate (brace) color
+/// layer becomes a sparse intermediate source of the color glyph whose n-th
+/// color layer shares its palette index (n counted in document order per
+/// location), matching glyphsLib >= 6.14.0.
+/// <https://github.com/googlefonts/glyphsLib/blob/v6.14.0/Lib/glyphsLib/builder/color_layers.py#L33-L107>
+fn colrv0_color_glyphs(
+    original: &Glyph,
+    default_master_id: &str,
+    master_ids: &[String],
+) -> Vec<Glyph> {
+    let glyph_name = &original.name;
+    let mut layers_by_master: IndexMap<&str, Vec<&Layer>> = IndexMap::new();
+    // Layers grouped under an id that is not a font master are never read:
+    // consumption below is keyed by master_ids
+    let mut braces_by_master: IndexMap<&str, BraceLayers> = IndexMap::new();
+    for layer in original.layers.iter() {
+        let Some(palette_idx) = layer.attributes.color_palette else {
+            continue;
+        };
+        if layer.shapes.is_empty() {
+            continue;
+        }
+        let Some(master_id) = layer.associated_master_id.as_deref() else {
+            continue;
+        };
+        if layer.is_intermediate() {
+            braces_by_master
+                .entry(master_id)
+                .or_default()
+                .insert(layer, palette_idx);
+        } else {
+            layers_by_master.entry(master_id).or_default().push(layer);
+        }
+    }
+    let num_color_glyphs = layers_by_master
+        .get(default_master_id)
+        .map(Vec::len)
+        .unwrap_or_default();
+
+    let mut nth = 0;
+    // new_glyphs[i] is named [original].color{i}, aligned with the i-th color
+    // layer of each master below
+    let mut new_glyphs: Vec<Glyph> = (0..num_color_glyphs)
+        .map(|_| new_color_glyph(original, &mut nth))
+        .collect();
+
+    for master_id in master_ids {
+        let braces = braces_by_master.get(master_id.as_str());
+        // how many color layers of this master used each palette index so
+        // far; the n-th intermediate with an index pairs with the n-th
+        // color layer with that index (glyphsLib's seen counter)
+        let mut seen: IndexMap<i64, usize> = IndexMap::new();
+        for (i, &layer) in layers_by_master
+            .get(master_id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let palette_idx = layer.attributes.color_palette.unwrap();
+            let n = seen.entry(palette_idx).or_default();
+            let nth_with_index = *n;
+            *n += 1;
+            let Some(new_glyph) = new_glyphs.get_mut(i) else {
+                // more color layers than the default master has; no color
+                // glyph to attach to
+                continue;
+            };
+            let mut master_layer = layer.clone();
+            master_layer.layer_id = master_id.clone();
+            master_layer.associated_master_id = None;
+            new_glyph.layers.push(master_layer);
+            // attach the matching intermediate, if any, at each location;
+            // it keeps its associated master and coordinates and so
+            // becomes an intermediate source of the color glyph
+            new_glyph.layers.extend(
+                braces
+                    .into_iter()
+                    .flat_map(|braces| braces.matching(palette_idx, nth_with_index))
+                    .cloned(),
+            );
+        }
+        for brace in braces
+            .into_iter()
+            .flat_map(|braces| braces.unmatched(&seen))
+        {
+            warn!(
+                "{glyph_name}: intermediate color layer {} has no matching color layer and will be skipped",
+                brace.layer_id
+            );
+        }
+    }
+    new_glyphs
+}
+
+/// A palette layer's palette index, and the name of its color glyph, if any.
+type PaletteLayer = (i64, Option<SmolStr>);
+
+/// The palette layers of each COLRv0 glyph, keyed by (glyph name, master id).
+///
+/// Each entry lists every palette layer of that master, in document order.
+/// Empty layers, and layers the split drops, have no color glyph.
+#[derive(Default)]
+struct ColrLayerGlyphNames(HashMap<(SmolStr, String), Vec<PaletteLayer>>);
+
+impl ColrLayerGlyphNames {
+    /// Record the palette layers of a glyph that [colrv0_color_glyphs] split into `color_glyphs`.
+    ///
+    /// As in the split, the i-th non-empty palette layer of each master is in
+    /// `color_glyphs[i]`.
+    fn insert(&mut self, original: &Glyph, color_glyphs: &[Glyph]) {
+        let mut non_empty_by_master: HashMap<&str, usize> = HashMap::new();
+        for layer in original.layers.iter().filter(|l| !l.is_intermediate()) {
+            let (Some(palette_idx), Some(master_id)) = (
+                layer.attributes.color_palette,
+                layer.associated_master_id.as_deref(),
+            ) else {
+                continue;
+            };
+            let color_glyph = if layer.shapes.is_empty() {
+                None
+            } else {
+                let i = non_empty_by_master.entry(master_id).or_default();
+                *i += 1;
+                color_glyphs.get(*i - 1).map(|g| g.name.clone())
+            };
+            self.0
+                .entry((original.name.clone(), master_id.to_string()))
+                .or_default()
+                .push((palette_idx, color_glyph));
+        }
+    }
+
+    /// Point the components of a palette layer at the component glyphs' color glyphs.
+    ///
+    /// Glyphs resolves a component in a palette layer, master or intermediate,
+    /// to the component glyph's first palette layer with the same master and
+    /// palette index. If there is none, or that layer is empty, the component
+    /// keeps referencing the component glyph itself, even if a later layer with
+    /// that palette index has shapes.
+    ///
+    /// See [glyphsLib's version] of the lookup.
+    ///
+    /// [glyphsLib's version]: https://github.com/googlefonts/glyphsLib/blob/8952d1c5/Lib/glyphsLib/builder/color_layers.py#L51-L71
+    fn remap_components(&self, layer: &mut Layer) {
+        let Some(palette_idx) = layer.attributes.color_palette else {
+            return;
+        };
+        let master_id = layer.master_id().to_string();
+        for shape in layer.shapes.iter_mut() {
+            let Shape::Component(component) = shape else {
+                continue;
+            };
+            if let Some(name) = self
+                .0
+                .get(&(component.name.clone(), master_id.clone()))
+                .and_then(|layers| layers.iter().find(|(p, _)| *p == palette_idx))
+                .and_then(|(_, name)| name.clone())
+            {
+                component.name = name;
+            }
+        }
+    }
+}
+
 fn split_colrv0_glyph(
     original: &Glyph,
-    default_master_layer: &Layer,
+    default_master_id: &str,
+    master_ids: &[String],
     color_glyphs: &mut IndexMap<SmolStr, Vec<SmolStr>>,
+    layer_glyph_names: &mut ColrLayerGlyphNames,
     additions: &mut Vec<(SmolStr, Glyph)>,
 ) -> Result<(), Error> {
-    let glyph_name = &original.name;
-
     // COLRv0 runs are just consecutive shapes by palette index
     // The original glyph becomes uncolored,
     // each color run becomes a new glyph named [original].color[i]
-    let mut nth = 0;
-    for layer in original.layers.iter() {
-        if layer.shapes.is_empty()
-            || layer.attributes.color_palette.is_none()
-            || layer.associated_master_id.as_deref() != Some(default_master_layer.layer_id.as_str())
-        {
-            continue;
-        }
+    let new_glyphs = colrv0_color_glyphs(original, default_master_id, master_ids);
+    layer_glyph_names.insert(original, &new_glyphs);
 
-        // Every layer associated with the master that has a palette index becomes a new color glyph
-        let mut new_glyph = new_color_glyph(original, &mut nth);
-        let mut layer = layer.clone();
-        layer.layer_id = layer.associated_master_id.take().unwrap();
-        new_glyph.layers.push(layer);
-
+    for new_glyph in new_glyphs {
         debug!("Add COLRv0 {}", new_glyph.name);
 
         color_glyphs
-            .entry(glyph_name.clone())
+            .entry(original.name.clone())
             .or_default()
             .push(new_glyph.name.clone());
         additions.push((new_glyph.name.clone(), new_glyph));
+    }
+
+    // The color_glyphs entry drives ColorGlyphsWork::exec: absent = not in
+    // COLR, empty = paint the base glyph itself, non-empty = paint the splits.
+    // Only a color-valued master layer (which glyphsLib reuses as a color
+    // layer painting the base) may reserve an empty entry; an uncolored base
+    // with no splits stays absent
+    if let Some(default_master_layer) = original
+        .layers
+        .iter()
+        .find(|l| l.layer_id == default_master_id)
+        && default_master_layer.is_color()
+        && !default_master_layer.shapes.is_empty()
+    {
+        color_glyphs.entry(original.name.clone()).or_default();
     }
     Ok(())
 }
@@ -576,46 +1072,59 @@ fn split_color_glyphs(font: Font) -> Result<(Font, IndexMap<SmolStr, Vec<SmolStr
     let mut font = font;
     let mut color_glyphs: IndexMap<SmolStr, Vec<SmolStr>> = Default::default();
     let default_master_id = font.default_master().id.clone();
+    let master_ids: Vec<String> = font.masters.iter().map(|m| m.id.clone()).collect();
+    let mut layer_glyph_names = ColrLayerGlyphNames::default();
 
     let mut additions: Vec<(SmolStr, Glyph)> = Vec::new();
     for glyph in font.glyphs.values_mut() {
-        let Some(default_master_layer) = glyph
+        if let Some(default_master_layer) = glyph
             .layers
             .iter()
             .find(|l| l.layer_id == default_master_id)
-        else {
-            continue;
-        };
-
-        // If 1..N layers with palette indices are associated this is COLRv0
-        // See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/glyph.py#L289-L292>
-        if glyph.layers.iter().any(|l| {
-            l.attributes.color_palette.is_some()
-                && l.associated_master_id.as_deref() == Some(default_master_layer.layer_id.as_str())
-        }) {
-            split_colrv0_glyph(
-                glyph,
-                default_master_layer,
-                &mut color_glyphs,
-                &mut additions,
-            )?;
-        } else if default_master_layer.is_color() {
-            split_colrv1_glyph(
-                glyph,
-                default_master_layer,
-                &mut color_glyphs,
-                &mut additions,
-            )?;
-        } else {
-            // Not color
-            continue;
+        {
+            // If 1..N layers with palette indices are associated this is COLRv0
+            // See <https://github.com/googlefonts/glyphsLib/blob/99328059ec4799956ecef3d47ebcc13ae70dacff/Lib/glyphsLib/builder/glyph.py#L289-L292>
+            if glyph.layers.iter().any(|l| {
+                l.attributes.color_palette.is_some()
+                    && l.associated_master_id.as_deref() == Some(default_master_id.as_str())
+            }) {
+                split_colrv0_glyph(
+                    glyph,
+                    &default_master_id,
+                    &master_ids,
+                    &mut color_glyphs,
+                    &mut layer_glyph_names,
+                    &mut additions,
+                )?;
+            } else if default_master_layer.is_color() {
+                split_colrv1_glyph(
+                    glyph,
+                    default_master_layer,
+                    &mut color_glyphs,
+                    &mut additions,
+                )?;
+                // For COLRv1 single-run glyphs (i.e. no split glyphs created, shapes in default layer),
+                // reserve an entry with empty vec so it gets included in COLR (see ColorGlyphsWork::exec).
+                // For v1 multi-run, an non-empty vec already exists from split_colrv1_glyph.
+                if !default_master_layer.shapes.is_empty() {
+                    color_glyphs.entry(glyph.name.clone()).or_default();
+                }
+            }
         }
 
-        // For COLRv1 single-run glyphs (i.e. no split glyphs created, shapes in default layer),
-        // reserve an entry with empty vec so it gets included in COLR (see ColorGlyphsWork::exec).
-        // For COLRv0 and v1 multi-run, an non-empty vec already exists from the split_colr* funcs.
-        if !default_master_layer.shapes.is_empty() {
-            color_glyphs.entry(glyph.name.clone()).or_default();
+        // Palette-valued intermediates belong to split color glyphs only;
+        // left on the glyph, GlyphIrWork's is_intermediate() filter would
+        // admit them into its own variation (as glyphsLib, which excludes
+        // them from ordinary intermediate handling). Unconditional: one
+        // associated with a non-default master trips no detection above
+        glyph
+            .layers
+            .retain(|l| l.attributes.color_palette.is_none() || !l.is_intermediate());
+    }
+
+    for (_, glyph) in additions.iter_mut() {
+        for layer in glyph.layers.iter_mut() {
+            layer_glyph_names.remap_components(layer);
         }
     }
 
@@ -642,8 +1151,8 @@ pub(crate) fn to_ir_color_stops(stops: &[glyphs_reader::ColorStop]) -> Vec<Color
         .iter()
         .map(|cs| ColorStop {
             offset: (cs.stop_offset.0 as f32).into(),
-            color: to_ir_color(cs.color),
-            alpha: 255.0.into(),
+            color: ir::ColorReference::Color(to_ir_color(cs.color)),
+            alpha: 1.0.into(),
         })
         .collect()
 }
@@ -657,7 +1166,13 @@ pub(crate) fn to_ir_paint(
     if let Some(palette_idx) = layer.attributes.color_palette {
         // 0xFFFF is a special COLR palette index meaning "use the text foreground color"
         if palette_idx == 0xFFFF {
-            return Ok(Paint::Solid(PaintSolid { color: None }.into()));
+            return Ok(Paint::Solid(
+                PaintSolid {
+                    color: ir::ColorReference::PaletteIndex(0xFFFF),
+                    alpha: 1.0.into(),
+                }
+                .into(),
+            ));
         }
         let Some(palette) = palette else {
             return Err(Error::BadGlyph(BadGlyph::new(
@@ -675,7 +1190,8 @@ pub(crate) fn to_ir_paint(
         };
         return Ok(Paint::Solid(
             PaintSolid {
-                color: Some(to_ir_color(*color)),
+                color: ir::ColorReference::Color(to_ir_color(*color)),
+                alpha: 1.0.into(),
             }
             .into(),
         ));
@@ -683,7 +1199,8 @@ pub(crate) fn to_ir_paint(
     if let Some(color) = attr.fill_color {
         return Ok(Paint::Solid(
             PaintSolid {
-                color: Some(to_ir_color(color)),
+                color: ir::ColorReference::Color(to_ir_color(color)),
+                alpha: 1.0.into(),
             }
             .into(),
         ));
@@ -702,6 +1219,8 @@ pub(crate) fn to_ir_paint(
                 // with the radius calculated as % of the max distance to bbox corners.
                 Ok(Paint::RadialGradient(
                     PaintRadialGradient {
+                        coordinates: ir::GradientCoordinates::Relative,
+                        extend: write_fonts::tables::colr::Extend::Pad,
                         p0: start,
                         p1: start,
                         r0: None, // Defaults to 0
@@ -716,6 +1235,8 @@ pub(crate) fn to_ir_paint(
                 // (rotation works differently in percentage vs absolute space).
                 Ok(Paint::LinearGradient(
                     PaintLinearGradient {
+                        coordinates: ir::GradientCoordinates::Relative,
+                        extend: write_fonts::tables::colr::Extend::Pad,
                         p0: start,
                         p1: end,
                         p2: None,
@@ -742,7 +1263,10 @@ pub(crate) fn to_ir_paint(
 
 #[cfg(test)]
 mod tests {
-    use glyphs_reader::{Font, Glyph, Layer, LayerAttributes, Node, Path};
+    use glyphs_reader::{
+        Component, Font, Glyph, Layer, LayerAttributes, Node, Path, Shape,
+        glyphdata::{Category, Subcategory},
+    };
     use std::path::PathBuf;
     use std::str::FromStr;
 
@@ -857,6 +1381,450 @@ mod tests {
         );
     }
 
+    #[test]
+    fn color_layer_glyphs_inherit_parent_category() {
+        let font = Font::load(&testdata_dir().join("glyphs3/COLRv0-marks.glyphs")).unwrap();
+        let (font, _) = split_color_glyphs(font).unwrap();
+        let category = |name: &str| {
+            let glyph = &font.glyphs[name];
+            (glyph.category, glyph.sub_category)
+        };
+        let nonspacing = (Some(Category::Mark), Some(Subcategory::Nonspacing));
+        // marks by name, by codepoint, and by explicit category
+        for mark in ["circumflexcomb", "mymark", "mymark2"] {
+            assert_eq!(category(mark), nonspacing, "{mark}");
+            assert_eq!(category(&format!("{mark}.color0")), nonspacing, "{mark}");
+        }
+    }
+
+    /// Split color glyphs keep every master's geometry and matching brace layers.
+    #[test]
+    fn colrv0_split_keeps_master_and_intermediate_color_layers() {
+        let font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-2masters-brace.glyphs")).unwrap();
+        let brace_shapes = font
+            .glyphs
+            .get("A")
+            .unwrap()
+            .layers
+            .iter()
+            .find(|l| l.layer_id == "cbrace")
+            .unwrap()
+            .shapes
+            .clone();
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        assert_eq!(
+            color_glyphs.get("A").map(Vec::as_slice),
+            Some(["A.color0".into(), "A.color1".into()].as_slice())
+        );
+
+        let original = font.glyphs.get("A").unwrap();
+        // (split glyph, palette index, id of the Bold master's color layer)
+        for (split_name, palette_idx, bold_layer_id) in
+            [("A.color0", 1, "c03"), ("A.color1", 0, "c04")]
+        {
+            // A.color0 also carries the intermediate, checked below.
+            let split_glyph = font.glyphs.get(split_name).unwrap();
+            let masters: Vec<&Layer> = split_glyph
+                .layers
+                .iter()
+                .filter(|l| l.is_master())
+                .collect();
+            assert_eq!(masters.len(), 2, "{split_name}");
+            for (layer, expected_id) in masters.iter().zip(["m01", "m02"]) {
+                assert_eq!(layer.layer_id, expected_id, "{split_name}");
+                assert_eq!(
+                    layer.attributes.color_palette,
+                    Some(palette_idx),
+                    "{split_name} {expected_id}"
+                );
+            }
+            // the Bold layer must carry the Bold color layer's geometry
+            let expected_shapes = &original
+                .layers
+                .iter()
+                .find(|l| l.layer_id == bold_layer_id)
+                .unwrap()
+                .shapes;
+            assert_eq!(&masters[1].shapes, expected_shapes, "{split_name}");
+        }
+
+        // the intermediate has colorPalette = 1, so it belongs to A.color0
+        let color0 = font.glyphs.get("A.color0").unwrap();
+        let brace = color0
+            .layers
+            .iter()
+            .find(|l| l.is_intermediate())
+            .expect("A.color0 should have an intermediate layer");
+        assert_eq!(brace.associated_master_id.as_deref(), Some("m01"));
+        assert_eq!(
+            brace
+                .attributes
+                .coordinates
+                .iter()
+                .map(|c| c.0)
+                .collect::<Vec<_>>(),
+            vec![550.0]
+        );
+        assert_eq!(brace.shapes, brace_shapes);
+        assert_eq!(color0.layers.len(), 3);
+
+        // no intermediate with palette 0, so A.color1 has master layers only
+        let color1 = font.glyphs.get("A.color1").unwrap();
+        assert!(color1.layers.iter().all(|l| !l.is_intermediate()));
+        assert_eq!(color1.layers.len(), 2);
+    }
+
+    fn square_path(dx: f64) -> glyphs_reader::Shape {
+        let mut path = Path::new(true);
+        for (x, y) in [
+            (dx, 0.0),
+            (dx + 100.0, 0.0),
+            (dx + 100.0, 100.0),
+            (dx, 100.0),
+        ] {
+            path.nodes.push(Node {
+                pt: (x, y).into(),
+                node_type: glyphs_reader::NodeType::Line,
+            });
+        }
+        glyphs_reader::Shape::Path(path)
+    }
+
+    fn master_layer(master_id: &str, dx: f64) -> Layer {
+        Layer {
+            layer_id: master_id.to_string(),
+            shapes: vec![square_path(dx)],
+            ..Default::default()
+        }
+    }
+
+    /// A color layer associated with a master; non-empty `coords` makes it an
+    /// intermediate (brace) layer
+    fn palette_layer(id: &str, master_id: &str, dx: f64, palette: i64, coords: &[f64]) -> Layer {
+        Layer {
+            layer_id: id.to_string(),
+            associated_master_id: Some(master_id.to_string()),
+            shapes: vec![square_path(dx)],
+            attributes: LayerAttributes {
+                color_palette: Some(palette),
+                coordinates: coords.iter().map(|c| (*c).into()).collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn insert_glyph(font: &mut Font, name: &str, layers: Vec<Layer>) {
+        let glyph = Glyph {
+            name: name.into(),
+            export: true,
+            layers,
+            ..Default::default()
+        };
+        font.glyphs.insert(name.into(), glyph);
+        font.glyph_order.push(name.into());
+    }
+
+    /// A glyph whose only palette layer is an unmatched intermediate produces
+    /// no split glyphs and must stay out of color_glyphs: an empty entry means
+    /// "paint the (uncolored) base glyph itself" downstream. Palette
+    /// intermediates are stripped from the base glyph either way, including
+    /// when they never trip COLRv0 detection (glyph "B2": associated with a
+    /// non-default master only).
+    #[test]
+    fn colrv0_unmatched_intermediate_does_not_make_base_a_color_glyph() {
+        let mut font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-2masters-brace.glyphs")).unwrap();
+        let master_id = font.default_master().id.clone();
+        insert_glyph(
+            &mut font,
+            "B",
+            vec![
+                master_layer(&master_id, 0.0),
+                palette_layer("bbrace", &master_id, 10.0, 0, &[550.0]),
+            ],
+        );
+        insert_glyph(
+            &mut font,
+            "B2",
+            vec![
+                master_layer(&master_id, 0.0),
+                palette_layer("b2brace", "m02", 10.0, 0, &[550.0]),
+            ],
+        );
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        assert!(!color_glyphs.contains_key("B"));
+        assert!(!font.glyphs.contains_key("B.color0"));
+        for name in ["B", "B2"] {
+            assert!(
+                font.glyphs
+                    .get(name)
+                    .unwrap()
+                    .layers
+                    .iter()
+                    .all(|l| !l.is_intermediate()),
+                "{name} still carries an intermediate color layer"
+            );
+        }
+    }
+
+    /// A master layer that is itself a palette layer (glyphsLib reuses it as a
+    /// color layer painting the base glyph) must keep its COLR entry even when
+    /// the COLRv0 split produces no color glyphs.
+    #[test]
+    fn colrv0_unmatched_intermediate_keeps_colored_master_base() {
+        let mut font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-2masters-brace.glyphs")).unwrap();
+        let master_id = font.default_master().id.clone();
+        insert_glyph(
+            &mut font,
+            "D",
+            vec![
+                Layer {
+                    attributes: LayerAttributes {
+                        color_palette: Some(0),
+                        ..Default::default()
+                    },
+                    ..master_layer(&master_id, 0.0)
+                },
+                palette_layer("dbrace", &master_id, 10.0, 0, &[550.0]),
+            ],
+        );
+
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        // an empty entry means "paint the base glyph itself", correct here
+        // because the base is color-valued
+        assert_eq!(color_glyphs.get("D"), Some(&vec![]));
+        assert!(!font.glyphs.contains_key("D.color0"));
+    }
+
+    /// When several color layers share a palette index, the n-th intermediate
+    /// with that index pairs with the n-th color layer with that index, in
+    /// document order (glyphsLib's seen counter) -- not by index alone.
+    #[test]
+    fn colrv0_duplicate_palette_indices_pair_intermediates_by_occurrence() {
+        let mut font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-2masters-brace.glyphs")).unwrap();
+        let master_id = font.default_master().id.clone();
+        insert_glyph(
+            &mut font,
+            "C",
+            vec![
+                master_layer(&master_id, 0.0),
+                // intermediates listed before the color layers: document order
+                // within each group drives the pairing, not adjacency
+                palette_layer("brace0", &master_id, 10.0, 1, &[550.0]),
+                palette_layer("brace1", &master_id, 20.0, 1, &[550.0]),
+                // Global layer position differs from occurrence within palette 1.
+                palette_layer("c_", &master_id, 50.0, 0, &[]),
+                palette_layer("c0", &master_id, 30.0, 1, &[]),
+                palette_layer("c1", &master_id, 40.0, 1, &[]),
+            ],
+        );
+
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        assert_eq!(
+            color_glyphs.get("C").map(Vec::as_slice),
+            Some(["C.color0".into(), "C.color1".into(), "C.color2".into()].as_slice())
+        );
+        for (split_name, color_dx, brace_dx) in [("C.color1", 30.0, 10.0), ("C.color2", 40.0, 20.0)]
+        {
+            let layers = &font.glyphs.get(split_name).unwrap().layers;
+            assert_eq!(layers.len(), 2, "{split_name}");
+            assert_eq!(
+                layers[0].shapes,
+                vec![square_path(color_dx)],
+                "{split_name}"
+            );
+            assert!(layers[1].is_intermediate(), "{split_name}");
+            assert_eq!(
+                layers[1].shapes,
+                vec![square_path(brace_dx)],
+                "{split_name}"
+            );
+        }
+    }
+
+    fn component_names(layer: &Layer) -> Vec<&str> {
+        layer
+            .shapes
+            .iter()
+            .map(|shape| match shape {
+                Shape::Component(c) => c.name.as_str(),
+                Shape::Path(_) => panic!("{} should only have components", layer.layer_id),
+            })
+            .collect()
+    }
+
+    /// A component in a palette layer references the component glyph's color
+    /// glyph for the same master and palette index, in every master and in
+    /// intermediate layers.
+    ///
+    /// A component of a glyph with no palette layer for that index, or whose
+    /// palette layer for that index is empty, keeps referencing that glyph.
+    #[test]
+    fn colrv0_components_reference_matching_palette_layer() {
+        let font = Font::load(&testdata_dir().join("glyphs3/COLRv0-components.glyphs")).unwrap();
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        assert_eq!(
+            color_glyphs.get("Aacute").unwrap(),
+            &["Aacute.color0", "Aacute.color1", "Aacute.color2"]
+        );
+        assert!(!color_glyphs.contains_key("cedilla"));
+        for (name, layer_ids, components) in [
+            (
+                "Aacute.color0",
+                ["m01", "m02"].as_slice(),
+                ["A.color1", "acute", "dot", "cedilla"].as_slice(),
+            ),
+            (
+                "Aacute.color1",
+                &["m01", "cbrace", "m02"],
+                &["A.color0", "acute.color0"],
+            ),
+            ("Aacute.color2", &["m01", "m02"], &["A"]),
+        ] {
+            let layers = &font.glyphs[name].layers;
+            assert_eq!(
+                layers
+                    .iter()
+                    .map(|l| l.layer_id.as_str())
+                    .collect::<Vec<_>>(),
+                layer_ids,
+                "{name}"
+            );
+            for layer in layers {
+                assert_eq!(
+                    component_names(layer),
+                    components,
+                    "{name} {}",
+                    layer.layer_id
+                );
+            }
+        }
+    }
+
+    /// Each master's components are looked up among the component glyph's
+    /// palette layers for that master, not the default master's.
+    #[test]
+    fn colrv0_components_reference_their_own_masters_palette_layers() {
+        let mut font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-components.glyphs")).unwrap();
+        // In Bold only, move A's palette 0 layer ahead of its palette 1 layer
+        let a = font.glyphs.get_mut("A").unwrap();
+        let bold_palette_1 = a.layers.iter().position(|l| l.layer_id == "c03").unwrap();
+        a.layers.swap(bold_palette_1, bold_palette_1 + 1);
+
+        let (font, _) = split_color_glyphs(font).unwrap();
+
+        let components = |name: &str, layer_id: &str| {
+            let layer = font.glyphs[name]
+                .layers
+                .iter()
+                .find(|l| l.layer_id == layer_id)
+                .unwrap();
+            component_names(layer)
+        };
+        assert_eq!(
+            components("Aacute.color0", "m01"),
+            ["A.color1", "acute", "dot", "cedilla"]
+        );
+        assert_eq!(
+            components("Aacute.color0", "m02"),
+            ["A.color0", "acute", "dot", "cedilla"]
+        );
+        assert_eq!(
+            components("Aacute.color1", "m01"),
+            ["A.color0", "acute.color0"]
+        );
+        assert_eq!(
+            components("Aacute.color1", "cbrace"),
+            ["A.color0", "acute.color0"]
+        );
+        assert_eq!(
+            components("Aacute.color1", "m02"),
+            ["A.color1", "acute.color0"]
+        );
+    }
+
+    /// A component uses the component glyph's first palette layer with the
+    /// same palette index, and the component glyph itself if that layer is
+    /// empty, even when a later layer with that index has shapes.
+    ///
+    /// Ported from glyphsLib's
+    /// test_glyph_color_palette_layers_skip_empty_components_repeated_index.
+    #[test]
+    fn colrv0_components_use_first_palette_layer_with_index() {
+        let mut font =
+            Font::load(&testdata_dir().join("glyphs3/COLRv0-components.glyphs")).unwrap();
+        let master_id = font.default_master().id.clone();
+        let color_glyph_layers = |name: &str, palette_layers: &[(i64, bool)]| {
+            let mut layers = vec![master_layer(&master_id, 0.0)];
+            for (i, &(palette, has_shape)) in palette_layers.iter().enumerate() {
+                let mut layer = palette_layer(&format!("{name}{i}"), &master_id, 0.0, palette, &[]);
+                if !has_shape {
+                    layer.shapes.clear();
+                }
+                layers.push(layer);
+            }
+            layers
+        };
+        let component_layer = |id: &str, palette: i64, components: &[&str]| Layer {
+            shapes: components
+                .iter()
+                .map(|name| {
+                    Shape::Component(Component {
+                        name: (*name).into(),
+                        ..Default::default()
+                    })
+                })
+                .collect(),
+            ..palette_layer(id, &master_id, 0.0, palette, &[])
+        };
+        let n = color_glyph_layers("n", &[(0, false), (0, true)]);
+        let t = color_glyph_layers("t", &[(1, false), (0, true), (1, true)]);
+        let r = color_glyph_layers("r", &[(0, true), (0, false), (0, true)]);
+        let a = vec![
+            master_layer(&master_id, 0.0),
+            component_layer("a0", 0, &["n", "r"]),
+            component_layer("a1", 1, &["t"]),
+        ];
+        insert_glyph(&mut font, "n", n);
+        insert_glyph(&mut font, "t", t);
+        insert_glyph(&mut font, "r", r);
+        insert_glyph(&mut font, "a", a);
+
+        let (font, color_glyphs) = split_color_glyphs(font).unwrap();
+
+        for (name, palettes) in [
+            ("a", [0, 1].as_slice()),
+            ("n", &[0]),
+            ("t", &[0, 1]),
+            ("r", &[0, 0]),
+        ] {
+            let color_glyph_palettes = color_glyphs[name]
+                .iter()
+                .map(|color_glyph| font.glyphs[color_glyph].layers[0].attributes.color_palette)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                color_glyph_palettes,
+                palettes.iter().copied().map(Some).collect::<Vec<_>>(),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            component_names(&font.glyphs["a.color0"].layers[0]),
+            ["n", "r.color0"]
+        );
+        assert_eq!(component_names(&font.glyphs["a.color1"].layers[0]), ["t"]);
+    }
+
     /// Test that COLRv1 glyphs with empty color layers are not added to color_glyphs.
     ///
     /// This is similar to the COLRv0 test but for the COLRv1 code path.
@@ -907,7 +1875,7 @@ mod tests {
     #[test]
     fn many_to_one_axis_map_preserves_max() {
         let font = Font::load(&testdata_dir().join("glyphs3/ManyToOneAxisMap.glyphs")).unwrap();
-        let font_info = FontInfo::try_from(font).unwrap();
+        let font_info = FontInfo::new(font, None).unwrap();
         let wght_tag = write_fonts::types::Tag::from_str("wght").unwrap();
         let wght = font_info.axes.get(&wght_tag).unwrap();
         // user=900 and user=1000 both map to design=1000;
@@ -915,7 +1883,7 @@ mod tests {
         assert_eq!(wght.max, fontdrasil::coords::UserCoord::new(1000.0));
     }
 
-    /// Test that a layer with palette index 0xFFFF produces a PaintSolid with color `None`.
+    /// Palette index 0xFFFF uses the text foreground color.
     #[test]
     fn palette_index_0xffff() {
         use super::to_ir_paint;
@@ -933,7 +1901,10 @@ mod tests {
         let paint = to_ir_paint(None, "test", &layer, &attr).unwrap();
         match paint {
             Paint::Solid(solid) => {
-                assert_eq!(solid.color, None, "expected foreground paint (color: None)");
+                assert_eq!(
+                    solid.color,
+                    fontir::ir::ColorReference::PaletteIndex(0xFFFF)
+                );
             }
             other => panic!("expected Paint::Solid, got {other:?}"),
         }

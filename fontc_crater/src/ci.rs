@@ -23,10 +23,13 @@ use crate::{
     ttx_diff_runner::{DiffError, DiffOutput},
 };
 
+mod accepted;
 mod html;
+mod progress;
 mod results_cache;
 
-pub(crate) use results_cache::{FontmakeOutput, ResultsCache};
+pub(crate) use accepted::AcceptedFailures;
+pub(crate) use results_cache::{FontmakeOutput, ResultKey, ResultsCache, sha256_file};
 
 static SUMMARY_FILE: &str = "summary.json";
 static SOURCES_FILE: &str = "sources.json";
@@ -48,6 +51,10 @@ struct RunSummary {
     #[serde(alias = "input_file")]
     input_file_sha: String,
     stats: super::ttx_diff_runner::Summary,
+    /// How many targets reused their result without running ttx_diff, because
+    /// the fontc binary and ttx_diff's inputs were unchanged.
+    #[serde(default)]
+    reused_unchanged_results: usize,
     /// How many targets skipped the comparison because fontc's output was unchanged.
     #[serde(default)]
     reused_cached_results: usize,
@@ -74,7 +81,7 @@ pub(super) fn run_ci(args: &CiArgs) -> Result<(), Error> {
         super::ttx_diff_runner::assert_can_run_script();
         run_crater_and_save_results(args)?;
     }
-    html::generate(&args.out_dir)?;
+    html::generate(&args.out_dir, args.status_url.as_deref())?;
     // now we want to generate an html report, based on this info.
     Ok(())
 }
@@ -121,25 +128,36 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     log_if_auth_or_not();
     // do this now so we error if the input file doesn't exist
     let inputs = get_inputs_applying_denylist(&args.to_run)?;
+    let accepted = AcceptedFailures::load(&args.out_dir)?;
 
     let summary_file = args.out_dir.join(SUMMARY_FILE);
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
     // todo: fontc_repo should be checked out by us, and have a known path
     let fontc_rev = super::get_git_rev(None).unwrap();
+    let progress_file = args.progress_file.as_deref().map(|path| {
+        let prev_rev = prev_runs.last().map(|run| run.fontc_rev.as_str());
+        let compare_url = html::fontc_compare_url(prev_rev, &fontc_rev);
+        progress::ProgressFile::new(path, &fontc_rev, compare_url)
+    });
     let pip_freeze_sha = super::pip_freeze_sha();
     let input_file_sha = super::get_input_sha(&args.to_run);
 
     let cache_dir = args.cache_dir();
     inputs.update_fonts_repo(&cache_dir)?;
     log::info!("using cache dir {}", cache_dir.display());
-    let results_cache = ResultsCache::in_dir(&cache_dir);
+    let results_cache = (!args.no_results_cache).then(|| ResultsCache::in_dir(&cache_dir));
 
-    if let Some(last_run) = prev_runs.last() {
+    if let Some(last_run) = prev_runs.last()
+        && let Some(results_cache) = &results_cache
+    {
         if last_run.fontc_rev == fontc_rev
             && input_file_sha == last_run.input_file_sha
             && pip_freeze_sha == last_run.pip_freeze_sha
         {
             log::info!("no changes since last run, skipping");
+            if let Some(progress_file) = &progress_file {
+                progress_file.write_skipped();
+            }
             return Ok(());
         }
         if pip_freeze_sha != last_run.pip_freeze_sha || ttx_diff_has_changes(&last_run.fontc_rev) {
@@ -156,8 +174,14 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let temp_bin_dir = tempfile::tempdir().expect("couldn't create tempdir");
     let (fontc_path, normalizer_path) = precompile_rust_binaries(temp_bin_dir.path());
 
-    log::info!("compiled fontc to {}", fontc_path.display());
-    log::info!("compiled otl-normalizeer to {}", normalizer_path.display());
+    let fontc_hash = sha256_file(&fontc_path).expect("failed to hash fontc");
+    let normalizer_hash = sha256_file(&normalizer_path).expect("failed to hash otl-normalizer");
+
+    log::info!("compiled fontc to {} ({fontc_hash})", fontc_path.display());
+    log::info!(
+        "compiled otl-normalizer to {} ({normalizer_hash})",
+        normalizer_path.display()
+    );
 
     let ResolvedTargets {
         mut targets,
@@ -166,30 +190,43 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     } = make_targets(&cache_dir, &inputs.sources);
 
     if !args.gftools {
-        targets.retain(|t| t.build == BuildType::Default);
+        targets.retain(|t| t.build() == BuildType::Default);
     }
 
     let n_targets = targets.len();
 
     let context = super::ttx_diff_runner::TtxContext {
         fontc_path,
+        fontc_hash,
         normalizer_path,
+        normalizer_hash,
         source_cache: cache_dir,
         results_cache,
+        reused_unchanged_results: Default::default(),
         reused_cached_results: Default::default(),
         reused_fontmake_failures: Default::default(),
     };
 
+    let progress = progress_file.map(|file| progress::Progress::start(file, n_targets));
     let began = Utc::now();
-    let results = super::run_all(targets, &context, super::ttx_diff_runner::run_ttx_diff)?
-        .into_iter()
-        .collect();
+    let results = super::run_all(targets, &context, |cx, target| {
+        let result = super::ttx_diff_runner::run_ttx_diff(cx, target);
+        if let Some(progress) = &progress {
+            progress.target_finished();
+        }
+        result
+    })?
+    .into_iter()
+    .collect();
     let finished = Utc::now();
 
     let elapsed = finished.signed_duration_since(began);
     let elapsed = elapsed.to_std().unwrap_or_default();
     let elapsed = super::human_readable_duration(elapsed);
 
+    let reused_unchanged_results = context
+        .reused_unchanged_results
+        .load(std::sync::atomic::Ordering::Relaxed);
     let reused_cached_results = context
         .reused_cached_results
         .load(std::sync::atomic::Ordering::Relaxed);
@@ -197,10 +234,14 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         .reused_fontmake_failures
         .load(std::sync::atomic::Ordering::Relaxed);
     log::info!(
-        "completed {n_targets} targets in {elapsed} ({reused_cached_results}/{n_targets} results reused from cache, {reused_fontmake_failures} fontmake failures reused)"
+        "completed {n_targets} targets in {elapsed} ({reused_unchanged_results}/{n_targets} reused without running ttx_diff, {reused_cached_results}/{n_targets} reused after building fontc, {reused_fontmake_failures} fontmake failures reused)"
     );
 
-    let summary = super::ttx_diff_runner::Summary::new(&results);
+    let summary = super::ttx_diff_runner::Summary::new(&results, &accepted);
+    let n_surprises = accepted.surprises(&results).len();
+    if n_surprises > 0 {
+        log::warn!("{n_surprises} accepted failures have changed");
+    }
     // if nothing has changed we still want to report it, but we don't need to
     // write a new big results file; we can reuse the previous one
     let (results_file, reuse_last_result) = match prev_runs.last() {
@@ -222,6 +263,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         results_file,
         input_file_sha,
         stats: summary,
+        reused_unchanged_results,
         reused_cached_results,
         reused_fontmake_failures,
     };
@@ -292,7 +334,7 @@ impl ResolvedTargets {
         let mut seen = HashSet::new();
         let empty = Path::new("");
         self.targets.retain(|targ| {
-            targ.build != BuildType::Default || seen.insert(targ.source_path(empty))
+            targ.build() != BuildType::Default || seen.insert(targ.source_path(empty))
         });
     }
 }
@@ -354,7 +396,7 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
                 continue;
             }
             let default = Target::new(
-                &repo_dir,
+                Path::new(repo.repo_org()).join(repo.repo_name()),
                 repo.git_rev(),
                 config_path,
                 repo.config_is_external(),
@@ -431,9 +473,10 @@ fn copy_file_into_dir(file_path: &Path, dir_path: &Path) -> PathBuf {
 fn compile_crate_or_die(name: &str) -> PathBuf {
     let status = Command::new("cargo")
         .args(["build", "-p", name, "--release"])
-        // prevent fontc from including a git sha in its version in the name table
-        // this lets us skip work when two fontc builds produce identical output
+        // keep the git sha out of fontc's name table and `--vv`, so that
+        // commits that don't change fontc build the same binary
         .env("VERGEN_GIT_DESCRIBE", "VERGEN_IDEMPOTENT_OUTPUT")
+        .env("VERGEN_GIT_SHA", "VERGEN_IDEMPOTENT_OUTPUT")
         .status()
         .expect("failed to run cargo build");
     if !status.success() {

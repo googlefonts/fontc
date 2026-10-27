@@ -801,7 +801,10 @@ impl Workload {
                         self.error = Some(e);
                     } else {
                         // the first error will be reported on exit, log the rest:
-                        log::error!("task '{completed_id:?}' failed: '{e}'");
+                        log::error!(
+                            "task '{completed_id:?}' failed: '{}'",
+                            e.display_with_causes()
+                        );
                     }
                     true
                 }

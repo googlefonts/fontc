@@ -3,7 +3,11 @@
 import subprocess
 import sys
 
-from ttx_diff.core import source_is_variable
+import pytest
+from glyphsLib import GSFont
+from glyphsLib.classes import GSInstance, InstanceType
+
+from ttx_diff.core import builds_static_export, source_is_variable
 
 
 def _write_designspace(tmp_path, axes, sources):
@@ -96,6 +100,11 @@ class TestSourceIsVariable:
         (ufo / "metainfo.plist").write_text("")
         assert not source_is_variable(ufo)
 
+    def test_ufoz_is_static(self, tmp_path):
+        ufoz = tmp_path / "test.ufoz"
+        ufoz.write_bytes(b"")
+        assert not source_is_variable(ufoz)
+
     def test_designspace_multiple_sources(self, tmp_path):
         path = _write_designspace(
             tmp_path,
@@ -146,5 +155,83 @@ class TestSourceIsVariable:
 
     def test_glyphs_virtual_masters_extend_axis_range(self, tmp_path):
         # 1 master at wght=400, virtual master at wght=700
-        path = _write_glyphs(tmp_path, masters=[400], virtual_masters=[700])
+        path = _write_glyphs(tmp_path, masters=[400], virtual_masters=["700"])
         assert source_is_variable(path)
+
+
+def _instance(name, active=True, type=InstanceType.SINGLE):
+    instance = GSInstance()
+    instance.name = name
+    instance.active = active
+    instance.type = type
+    return instance
+
+
+@pytest.mark.parametrize(
+    "instances, expected",
+    [
+        ([_instance("Heavy")], True),
+        ([_instance("Heavy", active=False)], False),
+        (
+            [
+                _instance("Heavy"),
+                _instance("Other", active=False),
+                _instance("Variable Font Settings", type=InstanceType.VARIABLE),
+            ],
+            True,
+        ),
+        ([_instance("Heavy"), _instance("Other")], False),
+        ([], False),
+    ],
+)
+def test_builds_static_export(instances, expected):
+    """Only one active static instance is built with fontmake -i."""
+    font = GSFont()
+    font.instances = instances
+    assert builds_static_export(font) == expected
+
+
+def test_cli_export_requires_default_compare(tmp_path):
+    path = _write_glyphs(tmp_path, masters=[400])
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ttx_diff",
+            "--compare",
+            "gftools",
+            "--export",
+            "Test Regular",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "--export is only supported with --compare default" in result.stderr
+
+
+def test_export_passed_to_both_compilers(tmp_path, monkeypatch):
+    """fontc gets the name verbatim, fontmake as an escaped regex, both static."""
+    from absl.testing import flagsaver
+
+    from ttx_diff import (
+        __main__,  # noqa: F401 -- defines the CLI flags
+        core,
+    )
+
+    # a variable source, so the explicit export also makes fontmake build static
+    path = _write_glyphs(tmp_path, masters=[400, 700])
+    commands = []
+    monkeypatch.setattr(core, "build", lambda cmd, build_dir: commands.append(cmd))
+    name = "Test B1 Heavy (Alt)"
+    with flagsaver.flagsaver(export=name, keep_overlaps=True):
+        core.FLAGS.mark_as_parsed()
+        core.build_fontc(path, tmp_path / "fontc", tmp_path)
+        core.build_fontmake(path, tmp_path)
+    fontc_cmd, fontmake_cmd = commands
+    assert fontc_cmd[fontc_cmd.index("--export") + 1] == name
+    assert fontmake_cmd.count("-i") == 1
+    assert fontmake_cmd[fontmake_cmd.index("-i") + 1] == r"Test\ B1\ Heavy\ \(Alt\)"
+    assert fontmake_cmd[fontmake_cmd.index("-o") + 1] == "ttf"
+    assert "--keep-overlaps" in fontmake_cmd

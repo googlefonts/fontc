@@ -28,6 +28,8 @@ pub enum Error {
     InvalidCodePage(u32),
     #[error("Invalid value: {0}")]
     BadValue(String),
+    #[error("Duplicate glyph name '{0}'")]
+    DuplicateGlyphName(SmolStr),
     #[error("Bad smart component '{component}' in glyph '{glyph}': {issue}")]
     BadSmartComponent {
         glyph: SmolStr,

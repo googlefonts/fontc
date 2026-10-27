@@ -30,13 +30,13 @@ flags.DEFINE_enum(
     "compare",
     "default",
     [_COMPARE_DEFAULTS, _COMPARE_GFTOOLS],
-    "Compare results using either a default build or a build managed by gftools. Note that as of 5/21/2023 defaults still sets flags for fontmake to match fontc behavior.",
+    "Compare results using either a default build or a build managed by gftools. Note that the default build sets flags for fontmake to match fontc behavior.",
 )
 flags.DEFINE_enum(
     "rebuild",
     "both",
     ["both", "fontc", "fontmake", "none"],
-    "Which compilers to rebuild with if the output appears to already exist. None is handy when playing with ttx_diff.py itself.",
+    "Which compilers to rebuild with if the output appears to already exist. None is handy when working on ttx_diff itself.",
 )
 flags.DEFINE_float(
     "off_by_one_budget",
@@ -72,6 +72,19 @@ flags.DEFINE_bool(
 )
 flags.DEFINE_bool(
     "keep_direction", False, "Preserve contour winding direction from source."
+)
+flags.DEFINE_string(
+    "export",
+    default=None,
+    help="Full name of the static export to build, passed to fontc --export "
+    "and, escaped as a regex, to fontmake -i. Only with --compare default.",
+)
+flags.DEFINE_multi_string(
+    "glyph_data",
+    [],
+    "Custom GlyphData XML file, passed to both fontc and fontmake as --glyph-data "
+    "(Glyphs sources only). Can be repeated; later files take precedence. Only for "
+    "--compare default: with gftools, the config's glyphData is used.",
 )
 flags.DEFINE_bool("timings", False, "Print timing for each step to stderr.")
 flags.DEFINE_bool(

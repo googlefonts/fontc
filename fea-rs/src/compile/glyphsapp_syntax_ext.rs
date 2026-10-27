@@ -49,13 +49,7 @@ impl Value {
     ///
     /// If the two sides are the same variant, the result is the same variant.
     /// If the two sides differ, the result is always a map (the 'Named' variant)
-    fn apply(&mut self, mut rhs: Self, op: Operator) {
-        // to simplify op logic, if two types are different ensure Named
-        // is always the lhs
-        if matches!((&self, &rhs), (Value::Lit(_), Value::Named(_))) {
-            std::mem::swap(self, &mut rhs);
-        }
-
+    fn apply(&mut self, rhs: Self, op: Operator) {
         match op {
             Operator::Plus => self.do_op(rhs, f64::add_assign),
             Operator::Minus => self.do_op(rhs, f64::sub_assign),
@@ -65,7 +59,7 @@ impl Value {
     }
 
     fn do_op(&mut self, rhs: Self, op: impl Fn(&mut f64, f64)) {
-        match (self, rhs) {
+        match (&mut *self, rhs) {
             (Value::Lit(v1), Value::Lit(v2)) => op(v1, v2),
             (Value::Named(v1), Value::Named(v2)) => {
                 for (k, v) in v1.iter_mut() {
@@ -75,7 +69,14 @@ impl Value {
             (Value::Named(v1), Value::Lit(v2)) => {
                 v1.values_mut().for_each(|v| op(v, v2));
             }
-            _ => unreachable!("normalized in apply"),
+            (Value::Lit(v1), Value::Named(mut v2)) => {
+                for v in v2.values_mut() {
+                    let mut result = *v1;
+                    op(&mut result, *v);
+                    *v = result;
+                }
+                *self = Value::Named(v2);
+            }
         }
     }
 }
@@ -119,9 +120,9 @@ pub(crate) fn resolve_glyphs_app_expr(
     let result = match val_stack.pop() {
         // convert back to i16
         Some(Value::Named(val)) => {
-            ResolvedValue::Variable(val.into_iter().map(|(k, v)| (k, v.round() as _)).collect())
+            ResolvedValue::Variable(val.into_iter().map(|(k, v)| (k, v.trunc() as _)).collect())
         }
-        Some(Value::Lit(val)) => ResolvedValue::Scalar(val.round() as _),
+        Some(Value::Lit(val)) => ResolvedValue::Scalar(val.trunc() as _),
         _ => ResolvedValue::Scalar(0),
     };
     assert!(val_stack.is_empty());
@@ -180,8 +181,7 @@ mod tests {
 
         let expr = parse_expr(text);
         let val = resolve_glyphs_app_expr(&expr, |_| Default::default());
-        let expected = (2f64 + 4. * 5. / 7. - 3.).round() as i16;
-        assert_eq!(val, ResolvedValue::Scalar(expected));
+        assert_eq!(val, ResolvedValue::Scalar(1));
     }
 
     #[test]
@@ -198,6 +198,27 @@ mod tests {
         let expr = parse_expr(text);
         let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
         assert!(ordered_eq(&val, [20i16, 46]));
+    }
+
+    #[test]
+    fn literal_minus_number_value() {
+        let expr = parse_expr("${100 - padding}");
+        let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
+        assert!(ordered_eq(&val, [90i16, 77]));
+    }
+
+    #[test]
+    fn literal_div_number_value() {
+        let expr = parse_expr("${100 / padding}");
+        let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
+        assert!(ordered_eq(&val, [10i16, 4]));
+    }
+
+    #[test]
+    fn literal_minus_number_value_product() {
+        let expr = parse_expr("${50 - padding * 2}");
+        let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
+        assert!(ordered_eq(&val, [30i16, 4]));
     }
 
     #[test]
@@ -221,7 +242,15 @@ mod tests {
         let text = "${padding/2.4}";
         let expr = parse_expr(text);
         let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
-        assert!(ordered_eq(&val, [4i16, 10]));
+        assert!(ordered_eq(&val, [4i16, 9]));
+    }
+
+    #[test]
+    fn truncate_negative_toward_zero() {
+        let text = "${padding / -4}";
+        let expr = parse_expr(text);
+        let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
+        assert!(ordered_eq(&val, [-2i16, -5]));
     }
 
     #[test]

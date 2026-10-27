@@ -23,7 +23,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use args::{Args, Commands};
 use error::Error;
-use target::{BuildType, Target};
+use target::{BuildType, Target, TargetId};
 
 fn main() {
     tracing_subscriber::fmt()

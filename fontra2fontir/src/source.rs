@@ -32,8 +32,9 @@ pub struct FontraIrSource {
     gdef_categories: Arc<PreliminaryGdefCategories>,
 }
 
-impl Source for FontraIrSource {
-    fn new(fontra_dir: &Path) -> Result<Self, Error> {
+impl FontraIrSource {
+    /// Load a .fontra directory.
+    pub fn new(fontra_dir: &Path) -> Result<Self, Error> {
         let mut font_data = Font::load(fontra_dir)?;
         pin_discrete_axes(&mut font_data)?;
         if let Some(kerning) = font_data
@@ -73,7 +74,9 @@ impl Source for FontraIrSource {
             gdef_categories: Arc::new(gdef_categories),
         })
     }
+}
 
+impl Source for FontraIrSource {
     fn create_static_metadata_work(&self) -> Result<Box<IrWork>, Error> {
         Ok(Box::new(StaticMetadataWork {
             font_data: self.font_data.clone(),
@@ -844,7 +847,7 @@ mod tests {
         let name = |id: NameId| {
             static_metadata
                 .names
-                .get(&NameKey::new_bmp_only(id))
+                .get(&NameKey::new(id))
                 .map(String::as_str)
         };
         assert_eq!(Some("Raqq"), name(NameId::FAMILY_NAME));

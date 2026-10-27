@@ -4,16 +4,19 @@ import hashlib
 import json
 
 import pytest
+from fontTools.ttLib import TTFont, newTable
 from lxml import etree
 
 from ttx_diff.core import (
     FONTC_TTF_HASH_FILE,
     UNCHANGED_EXIT_CODE,
+    check_sizes,
     delete_things_we_must_rebuild,
     failure_file,
     hash_file,
     jsonify_output,
     load_fontmake_failure,
+    normalize_null_vendor_in_unique_id,
     save_fontmake_failure,
     strip_fontc_version_tag,
     unwrap_extension_lookups,
@@ -162,6 +165,34 @@ def test_strip_keeps_non_stamp_fontc_note():
     assert etree.tostring(got) == etree.tostring(want)
 
 
+def _unique_id_tree(unique_id):
+    return _make_tree(
+        f"""\
+<ttFont>
+  <name>
+    <namerecord nameID="3" platformID="3" platEncID="1" langID="0x409">
+      {unique_id}
+    </namerecord>
+  </name>
+</ttFont>"""
+    )
+
+
+@pytest.mark.parametrize("vendor", ["NONE", "", "    "])
+def test_null_vendor_in_unique_id_is_blank(vendor):
+    got = _unique_id_tree(f"1.000;{vendor};Font-Regular")
+    want = _unique_id_tree("1.000;    ;Font-Regular")
+    normalize_null_vendor_in_unique_id(got)
+    assert etree.tostring(got) == etree.tostring(want)
+
+
+def test_real_vendor_in_unique_id_is_kept():
+    tree = _unique_id_tree("1.000;GOOG;Font-Regular")
+    before = etree.tostring(tree)
+    normalize_null_vendor_in_unique_id(tree)
+    assert etree.tostring(tree) == before
+
+
 def test_hash_file_matches_hashlib(tmp_path):
     font = tmp_path / "fontc.ttf"
     font.write_bytes(b"not really a font" * 1000)
@@ -254,3 +285,31 @@ def test_jsonify_output_missing_table_counts_lines():
     out = jsonify_output({"fontc": fontc, "fontmake": fontmake})["success"]
     assert out["extra"] == "fontmake"
     assert out["total"] == pytest.approx(0.5)
+
+
+def _font_with_names(path, names):
+    font = TTFont()
+    font["name"] = newTable("name")
+    font["name"].names = []
+    for name_id, string in names:
+        for platform_id, enc_id, lang_id in ((3, 1, 0x409), (1, 0, 0)):
+            font["name"].setName(string, name_id, platform_id, enc_id, lang_id)
+    font.save(path)
+    return path
+
+
+def test_check_sizes_ignores_fontc_version_tag(tmp_path):
+    fontmake = _font_with_names(tmp_path / "fontmake.ttf", [(5, "Version 1.000")])
+    fontc = _font_with_names(
+        tmp_path / "fontc.ttf", [(5, "Version 1.000;fontc 1.0.1-dev.320+g0434ff6b")]
+    )
+    assert check_sizes(fontmake, fontc) == {}
+
+
+def test_check_sizes_reports_extra_name_record(tmp_path):
+    fontmake = _font_with_names(tmp_path / "fontmake.ttf", [(5, "Version 1.000")])
+    fontc = _font_with_names(
+        tmp_path / "fontc.ttf", [(5, "Version 1.000;fontc 1.0.1"), (25, "Foo")]
+    )
+    # two 12-byte records, plus "Foo" in UTF-16 and in Mac Roman
+    assert check_sizes(fontmake, fontc) == {"name": 2 * 12 + 6 + 3}

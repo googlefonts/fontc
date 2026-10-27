@@ -47,6 +47,24 @@ pub(super) struct CiArgs {
     /// only generate html (for the provided out_dir)
     #[arg(long)]
     pub(super) html_only: bool,
+    /// Rebuild every target without reading or writing cached results.
+    ///
+    /// Source checkouts in the cache dir are still used. This is for testing
+    /// changes to python dependencies without invalidating the cache; use it
+    /// with a scratch `--out` dir, since the next normal run compares against
+    /// the last run recorded there.
+    #[arg(long)]
+    pub(super) no_results_cache: bool,
+    /// File for live progress, published by the CI script.
+    ///
+    /// Crater rewrites it as targets finish.
+    #[arg(long)]
+    pub(super) progress_file: Option<PathBuf>,
+    /// Where the report reads the live status, as published by the CI script.
+    ///
+    /// Without it, the report says that status isn't configured.
+    #[arg(long)]
+    pub(super) status_url: Option<String>,
 }
 
 impl CiArgs {

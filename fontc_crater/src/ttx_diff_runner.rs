@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    ffi::OsString,
     path::{Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicUsize, Ordering},
@@ -7,7 +8,7 @@ use std::{
 
 use crate::{
     BuildType, Results, RunResult, Target,
-    ci::{FontmakeOutput, ResultsCache},
+    ci::{AcceptedFailures, FontmakeOutput, ResultKey, ResultsCache, sha256_file},
 };
 
 // Run ttx-diff via python -m to ensure we use the venv's installed version
@@ -20,52 +21,97 @@ const UNCHANGED_EXIT_CODE: i32 = 3;
 
 pub(super) struct TtxContext {
     pub fontc_path: PathBuf,
+    pub fontc_hash: String,
     pub normalizer_path: PathBuf,
+    pub normalizer_hash: String,
     pub source_cache: PathBuf,
-    pub results_cache: ResultsCache,
+    pub results_cache: Option<ResultsCache>,
+    pub reused_unchanged_results: AtomicUsize,
     pub reused_cached_results: AtomicUsize,
     pub reused_fontmake_failures: AtomicUsize,
 }
 
+impl TtxContext {
+    fn result_key(&self, target: &Target, args: &[OsString]) -> ResultKey {
+        let config = (target.build() == BuildType::GfTools)
+            .then(|| target.config_path(&self.source_cache))
+            .and_then(|path| {
+                sha256_file(&path)
+                    .inspect_err(|e| log::warn!("failed to hash {}: '{e}'", path.display()))
+                    .ok()
+            });
+        ResultKey {
+            fontc: self.fontc_hash.clone(),
+            normalizer: self.normalizer_hash.clone(),
+            config,
+            ttx_diff_args: args
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect(),
+        }
+    }
+}
+
+/// The ttx_diff arguments that decide this target's result.
+///
+/// The output dir and the paths of the binaries change every run, so they are
+/// left out. The source comes last.
+fn result_args(target: &Target, source_cache: &Path) -> Vec<OsString> {
+    let mut args = Vec::from(
+        [
+            "--json",
+            "--compare",
+            target.build().name(),
+            "--rebuild",
+            "fontc",
+        ]
+        .map(OsString::from),
+    );
+    if target.build() == BuildType::GfTools {
+        args.push("--config".into());
+        args.push(target.config_path(source_cache).into());
+    }
+    args.push(target.source_path(source_cache).into());
+    args
+}
+
 pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffOutput, DiffError> {
+    let results_cache = ctx.results_cache.as_ref();
+    let args = result_args(target, &ctx.source_cache);
+    let key = ctx.result_key(target, &args);
+    // we can only trust a cached result if fontmake's half of the comparison is
+    // the same one that produced it, which is only true if it came from the cache
+    let mut cached = results_cache
+        .filter(|cache| cache.fontmake_output(target).is_some())
+        .and_then(|cache| cache.load_result(target));
+    if let Some(unchanged) = cached.take_if(|cached| cached.has_key(&key)) {
+        ctx.reused_unchanged_results.fetch_add(1, Ordering::Relaxed);
+        log::trace!("inputs unchanged, reused cached result for {target}");
+        return unchanged.into_result();
+    }
+
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
     let outdir = tempdir.path();
-    let source_path = target.source_path(&ctx.source_cache);
-    let compare = target.build.name();
-    let build_dir = outdir.join(compare);
-    let reused_fontmake = ctx
-        .results_cache
-        .copy_cached_files_to_build_dir(target, &build_dir);
+    let build_dir = outdir.join(target.build().name());
+    let reused_fontmake =
+        results_cache.and_then(|cache| cache.copy_cached_files_to_build_dir(target, &build_dir));
     if reused_fontmake == Some(FontmakeOutput::Failure) {
         ctx.reused_fontmake_failures.fetch_add(1, Ordering::Relaxed);
     }
-    // we can only trust a cached result if fontmake's half of the comparison is
-    // the same one that produced it, which is only true if it came from the cache
-    let cached = reused_fontmake.and_then(|_| ctx.results_cache.load_result(target));
     let mut cmd = Command::new("python3");
-    cmd.args([
-        "-m",
-        TTX_DIFF_MODULE,
-        "--json",
-        "--compare",
-        compare,
-        "--outdir",
-    ])
-    .arg(outdir)
-    .arg("--fontc_path")
-    .arg(&ctx.fontc_path)
-    .arg("--normalizer_path")
-    .arg(&ctx.normalizer_path)
-    .args(["--rebuild", "fontc"]);
-    if let Some(cached) = cached.as_ref() {
-        cmd.arg("--expected_fontc_ttf_hash")
-            .arg(&cached.fontc_ttf_hash);
+    cmd.args(["-m", TTX_DIFF_MODULE, "--outdir"])
+        .arg(outdir)
+        .arg("--fontc_path")
+        .arg(&ctx.fontc_path)
+        .arg("--normalizer_path")
+        .arg(&ctx.normalizer_path);
+    if let Some(hash) = cached
+        .as_ref()
+        .and_then(|cached| cached.fontc_ttf_hash.as_ref())
+    {
+        cmd.arg("--expected_fontc_ttf_hash").arg(hash);
     }
-    if target.build == BuildType::GfTools {
-        cmd.arg("--config")
-            .arg(target.config_path(&ctx.source_cache));
-    }
-    cmd.arg(source_path)
+    cmd.args(&args)
         // set this flag so we have a stable 'modified date'
         .env("SOURCE_DATE_EPOCH", "1730302089");
     let output = match cmd.output() {
@@ -98,7 +144,7 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
             Some(cached) => {
                 ctx.reused_cached_results.fetch_add(1, Ordering::Relaxed);
                 log::trace!("reused cached result for {target}");
-                return cached.into_result();
+                cached.into_result()
             }
             // we only pass --expected_fontc_ttf_hash when we have a cached result
             None => RunResult::Fail(DiffError::Other(
@@ -130,12 +176,11 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
 
     // a runtime error says nothing about fontmake; otherwise the build dir
     // holds its font or a record of its failure, either of which we can reuse
-    if !matches!(result, RunResult::Fail(DiffError::Other(_))) {
-        ctx.results_cache
-            .save_built_files_to_cache(target, &build_dir);
-        if let Some(hash) = read_fontc_ttf_hash(&build_dir) {
-            ctx.results_cache.save_result(target, hash, &result);
-        }
+    if let Some(cache) = results_cache
+        && !matches!(result, RunResult::Fail(DiffError::Other(_)))
+    {
+        cache.save_built_files_to_cache(target, &build_dir);
+        cache.save_result(target, key, read_fontc_ttf_hash(&build_dir), &result);
     }
     result
 }
@@ -167,12 +212,18 @@ pub(crate) struct Summary {
     pub(crate) fontmake_failed: u32,
     pub(crate) both_failed: u32,
     pub(crate) other_failure: u32,
+    /// Failures listed in `accepted.json`; not counted elsewhere.
+    #[serde(default)]
+    pub(crate) accepted_failure: u32,
     pub(crate) diff_perc_including_failures: f32,
     pub(crate) diff_perc_excluding_failures: f32,
 }
 
 impl Summary {
-    pub(crate) fn new(result: &Results<DiffOutput, DiffError>) -> Self {
+    pub(crate) fn new(
+        result: &Results<DiffOutput, DiffError>,
+        accepted: &AcceptedFailures,
+    ) -> Self {
         let Results {
             success, failure, ..
         } = &result;
@@ -183,6 +234,24 @@ impl Summary {
             .filter(|x| matches!(x, DiffOutput::Identical))
             .count() as _;
         let produced_diff = success.len() as u32 - identical;
+        let (mut fontc_failed, mut fontmake_failed, mut both_failed, mut other_failure) =
+            (0, 0, 0, 0);
+        let mut accepted_failure = 0;
+        for (target, fail) in failure {
+            if accepted.is_accepted(target, fail) {
+                accepted_failure += 1;
+                continue;
+            }
+            match fail {
+                DiffError::CompileFailed(err) if err.fontc.is_some() && err.fontmake.is_some() => {
+                    both_failed += 1
+                }
+                DiffError::CompileFailed(err) if err.fontc.is_some() => fontc_failed += 1,
+                DiffError::CompileFailed(err) if err.fontmake.is_some() => fontmake_failed += 1,
+                DiffError::CompileFailed(_) => unreachable!(),
+                DiffError::Other(_) => other_failure += 1,
+            }
+        }
         let total_diff = success
             .values()
             .filter_map(|v| match v {
@@ -195,21 +264,9 @@ impl Summary {
             .sum::<f32>();
         let total_diff = total_diff + (identical as f32);
         let diff_perc_including_failures =
-            non_nan(total_diff / (n_failed + success.len()) as f32) * 100.;
+            non_nan((total_diff + accepted_failure as f32) / (n_failed + success.len()) as f32)
+                * 100.;
         let diff_perc_excluding_failures = non_nan(total_diff / success.len() as f32) * 100.;
-        let (mut fontc_failed, mut fontmake_failed, mut both_failed, mut other_failure) =
-            (0, 0, 0, 0);
-        for fail in failure.values() {
-            match fail {
-                DiffError::CompileFailed(err) if err.fontc.is_some() && err.fontmake.is_some() => {
-                    both_failed += 1
-                }
-                DiffError::CompileFailed(err) if err.fontc.is_some() => fontc_failed += 1,
-                DiffError::CompileFailed(err) if err.fontmake.is_some() => fontmake_failed += 1,
-                DiffError::CompileFailed(_) => unreachable!(),
-                DiffError::Other(_) => other_failure += 1,
-            }
-        }
 
         Summary {
             total_targets,
@@ -219,6 +276,7 @@ impl Summary {
             fontmake_failed,
             both_failed,
             other_failure,
+            accepted_failure,
             diff_perc_including_failures,
             diff_perc_excluding_failures,
         }

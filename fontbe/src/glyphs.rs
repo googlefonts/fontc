@@ -102,7 +102,7 @@ fn create_component_ref_gid(
     // to f32 that can flip rounding ties (https://github.com/googlefonts/fontc/issues/1966).
 
     let component = Component::new(
-        gid,
+        gid.into(),
         Anchor::Offset {
             x: e.ot_round(),
             y: f.ot_round(),
@@ -757,7 +757,7 @@ impl CheckedGlyph {
     }
 }
 
-fn affine_for(component: &Component) -> Affine {
+pub(crate) fn affine_for(component: &Component) -> Affine {
     let glyf::Anchor::Offset { x: dx, y: dy } = component.anchor else {
         panic!("Only offset anchor is supported");
     };
@@ -796,7 +796,7 @@ fn bbox_of_composite(
         let affine = affine * affine_for(component);
 
         let ref_glyph_name = glyph_order
-            .glyph_name(component.glyph.to_u16() as usize)
+            .glyph_name(component.glyph.to_u32() as usize)
             .unwrap();
         let Some(ref_glyph) = glyphs.get(ref_glyph_name) else {
             return Err(Error::MissingGlyphId(ref_glyph_name.clone()));

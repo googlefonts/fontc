@@ -25,6 +25,23 @@ This tool is mainly used in CI. In that case, the execution is managed by a
 script in the [`fontc_crater` repo][crater-repo] and results are posted to
 [github pages][crater-results].
 
+The report also shows the progress of the current run, or how the last one
+ended. If `FONTC_CRATER_PROGRESS_FILE` is set, `ci.sh` passes it to crater as
+`--progress-file`, and crater rewrites that file as targets finish.
+`run.sh` combines it with its own state into `status.json`, which it
+force-pushes every minute to the `status` branch of the repo it publishes
+results to. It passes that file's url as `FONTC_CRATER_STATUS_URL`, which
+`ci.sh` passes on as `--status-url`, and the report polls it. Without a url,
+the report just says that status isn't configured, so local runs don't show
+the status of some other instance.
+
+The report also reloads itself when a later run has published new results.
+It embeds when the run it shows finished, and a status that is finished,
+succeeded, wasn't skipped and started after that time means a newer report
+was pushed. Before reloading, it fetches the page again and checks that
+the copy GitHub Pages serves is newer, so a report that isn't deployed yet
+doesn't make it reload every minute.
+
 To run in CI mode locally to play with the html output:
 
 When run in CI, we want to ensure that we have complete control over the set of
@@ -67,6 +84,47 @@ $ RUST_LOG=debug cargo run --release -p fontc_crater \
 -- ci ../fontc_crater/targets.json --out ../fontc_crater/results/
 
 ```
+
+To test a change to python dependencies without invalidating the cache of
+fontmake's output, pass `--no-results-cache` and a scratch `--out` directory. To
+compare against an existing run, first copy its `summary.json` and the results
+file its last entry names into the scratch directory.
+
+```shell
+$ cargo run --release -p fontc_crater \
+-- ci ../fontc_crater/targets.json --out scratch-results/ --no-results-cache
+```
+
+### Accepted failures
+
+Failures that have been reviewed and accepted can be listed in `accepted.json`
+in the results directory. They count as matching in the summary, and are listed
+separately from other failures.
+
+```json
+[
+  {
+    "targets": [
+      "org/repo/sources/config.yaml Font.glyphs?0123456789 (default)"
+    ],
+    "fails": "both",
+    "reason": "the source has no variable masters",
+    "link": "https://github.com/googlefonts/fontc/issues/1234",
+    "stderr_contains": "no masters"
+  }
+]
+```
+
+- `targets` are written as they appear in the report. The `?sha` is optional
+  and ignored, so an entry keeps applying when a source repo is updated.
+- `fails` is the compiler whose failure is accepted: `fontc`, `fontmake` or
+  `both`.
+- `link` and `stderr_contains` are optional. If `stderr_contains` is set, the
+  output of a failing compiler must contain it; only the last 1000 characters
+  of output are kept.
+
+A listed target that compiles, fails some other way, or isn't in the run is
+shown at the top of the report, so that the list can be kept up to date.
 
 [google-fonts-sources]: https://github.com/googlefonts/google-fonts-sources
 [google/fonts]: https://github.com/google/fonts

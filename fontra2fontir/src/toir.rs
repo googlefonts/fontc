@@ -1878,7 +1878,7 @@ mod tests {
             Some(&"Version 2.005".to_string()),
             static_metadata
                 .names
-                .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
+                .get(&NameKey::new(NameId::VERSION_STRING))
         );
     }
 
@@ -1916,7 +1916,7 @@ mod tests {
 
         font_data.font_info.vendor_id = Some("  ".to_string());
         let static_metadata = to_ir_static_metadata(&font_data, false).unwrap();
-        assert_eq!(Tag::new(b"NONE"), static_metadata.misc.vendor_id);
+        assert_eq!(Tag::new(b"    "), static_metadata.misc.vendor_id);
     }
 
     #[test]

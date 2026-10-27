@@ -1,0 +1,5 @@
+warning: the high byte of lookupflag literals is not portable and will be ignored.
+in compile-tests/mini-latin/good/lookupflag_oob_literal.fea at 5:15
+  | 
+5 |     lookupflag 512;
+  |                ^^^

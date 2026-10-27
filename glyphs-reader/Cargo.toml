@@ -14,7 +14,7 @@ readme = "README.md"
 [dependencies]
 ascii_plist_derive = { version = "1.0.0", path = "ascii_plist_derive" }
 fontdrasil = { version = "1.0.0", path = "../fontdrasil" }
-quick-xml = "0.41"
+quick-xml = "0.42"
 write-fonts.workspace = true
 ordered-float.workspace = true
 kurbo.workspace = true
@@ -24,8 +24,6 @@ thiserror.workspace = true
 icu_properties.workspace = true
 
 log.workspace = true
-
-regex.workspace = true
 
 chrono.workspace = true
 smol_str.workspace = true

@@ -1,0 +1,2 @@
+﻿### the root file and the included file both start with a BOM
+include(../includes/included_with_bom.fea);

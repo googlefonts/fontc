@@ -57,6 +57,13 @@ fn main() -> Result<(), Error> {
         //writeln!(&mut write_target, "# GSUB #")?;
         //otl_normalizer::print_gsub(&mut write_target, &gsub, gdef.as_ref(), &name_map)?;
     }
+    if matches!(to_print, args::Table::Glyf) {
+        otl_normalizer::print_glyf(&mut write_target, &font, &name_map)?;
+    }
+
+    if matches!(to_print, args::Table::Gvar) {
+        otl_normalizer::print_gvar(&mut write_target, &font, &name_map)?;
+    }
     write_target.flush().unwrap();
 
     Ok(())
@@ -81,5 +88,7 @@ fn is_there_something_to_do(font: &FontRef, args: &args::Args) -> bool {
             .gdef()
             .map(|gdef| gdef.lig_caret_list().is_some())
             .unwrap_or(false),
+        args::Table::Glyf => font.glyf().is_ok() && font.loca(None).is_ok(),
+        args::Table::Gvar => font.gvar().is_ok(),
     }
 }

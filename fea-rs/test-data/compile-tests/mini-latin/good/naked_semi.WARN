@@ -1,0 +1,5 @@
+warning: ';' should only follow a statement
+in compile-tests/mini-latin/good/naked_semi.fea at 5:8
+  | 
+5 |         ;
+  |         ^

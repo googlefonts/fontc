@@ -1,0 +1,75 @@
+{
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = "Optical Size";
+Tag = opsz;
+}
+);
+}
+);
+familyName = Mapping;
+fontMaster = (
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = "Optical Size";
+Location = 16;
+}
+);
+}
+);
+id = text;
+weightValue = 1;
+},
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = "Optical Size";
+Location = 36;
+}
+);
+}
+);
+id = display;
+weightValue = 2;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = text;
+width = 200;
+},
+{
+layerId = display;
+width = 300;
+}
+);
+unicode = 0020;
+}
+);
+instances = (
+{
+interpolationWeight = 1;
+name = Text;
+},
+{
+interpolationWeight = 2;
+name = Display;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

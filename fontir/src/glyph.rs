@@ -5,7 +5,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeSet, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -98,48 +98,42 @@ impl HashableComponent {
     }
 }
 
-/// Every distinct set of components glyph names used at some position in designspace.
+/// Every distinct sequence of component glyph names used at some position in
+/// designspace, with the locations that use it.
 ///
 /// Only the glyph name is considered for uniqueness.
-///
-/// Primary use is expected to be checking if there is >1 or not.
-fn distinct_component_glyph_seqs(glyph: &Glyph) -> HashSet<Vec<GlyphName>> {
-    glyph
-        .sources()
-        .values()
-        .map(|inst| {
-            inst.components
-                .iter()
-                .map(|c| c.base.clone())
-                .collect::<Vec<_>>()
-        })
-        .collect()
+fn distinct_component_glyph_seqs(
+    glyph: &Glyph,
+) -> BTreeMap<Vec<GlyphName>, BTreeSet<NormalizedLocation>> {
+    let mut seqs: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
+    for (loc, inst) in glyph.sources() {
+        let names = inst.components.iter().map(|c| c.base.clone()).collect();
+        seqs.entry(names).or_default().insert(loc.clone());
+    }
+    seqs
 }
 
 /// Returns components transformed by the input transform
 ///
-/// Panics if the sequence of glyphs used as components (ignoring transform) is
+/// Errors if the sequence of glyphs used as components (ignoring transform) is
 /// different at any point in design space.
 fn components(
     glyph: &Glyph,
     transform: Affine,
-) -> VecDeque<(NormalizedLocation, HashableComponent)> {
+) -> Result<VecDeque<(NormalizedLocation, HashableComponent)>, BadGlyph> {
     if glyph.sources().is_empty() {
-        return Default::default();
+        return Ok(Default::default());
     }
 
-    // Kerplode if the set of unique components is inconsistent across sources
     let component_glyph_seqs = distinct_component_glyph_seqs(glyph);
     if component_glyph_seqs.len() != 1 {
-        panic!(
-            "'{}' has {} unique sets of components; must have exactly 1\n{:?}",
-            glyph.name,
-            component_glyph_seqs.len(),
-            component_glyph_seqs
-        );
+        return Err(BadGlyph::new(
+            &glyph.name,
+            BadGlyphKind::InconsistentComponents(component_glyph_seqs),
+        ));
     }
 
-    glyph
+    Ok(glyph
         .sources()
         .iter()
         .flat_map(|(loc, inst)| inst.components.iter().map(|c| (loc.clone(), c)))
@@ -160,7 +154,7 @@ fn components(
                 },
             )
         })
-        .collect()
+        .collect())
 }
 
 // Operations performed on glyphs with mixed contours/components
@@ -174,7 +168,7 @@ enum GlyphOp {
 
 /// Fix glyphs with mixed components/contours.
 ///
-/// We presume component cycles are checked elsewhere and do not check for them here
+/// Component cycles must have been rejected already, see [`check_component_cycles`]
 fn resolve_inconsistencies(
     context: &Context,
     mut todo: VecDeque<(GlyphOp, Arc<Glyph>)>,
@@ -258,6 +252,27 @@ fn prune_missing_components(context: &Context) {
         }
         context.glyphs.set(new_glyph);
     }
+}
+
+/// Fail if any glyph is part of a component cycle.
+///
+/// Everything after this point that walks the component graph assumes there
+/// are no cycles, and would otherwise loop forever or overflow the stack.
+/// fontmake also refuses to build such fonts.
+/// See <https://github.com/googlefonts/fontc/issues/1062>
+fn check_component_cycles(context: &Context) -> Result<(), Error> {
+    let glyphs = context.glyphs.all();
+    let glyphs = glyphs
+        .iter()
+        .map(|g| (g.1.name.clone().into_inner(), g.1.as_ref()))
+        .collect();
+    let cycles = fontdrasil::util::component_cycles(&glyphs);
+    if !cycles.is_empty() {
+        return Err(Error::ComponentCycle(
+            cycles.into_iter().map(GlyphName::from).collect(),
+        ));
+    }
+    Ok(())
 }
 
 /// Equivalent to 'SkipExportGlyphsFilter' in pythonland:
@@ -476,7 +491,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
     );
     let original = ensure_composite_defined_at_component_locations(context, original)?;
     // Component until you can't component no more
-    let mut frontier: VecDeque<_> = components(&original, Affine::IDENTITY);
+    let mut frontier: VecDeque<_> = components(&original, Affine::IDENTITY)?;
 
     let mut simple = GlyphBuilder::from(original.clone());
     simple.clear_components();
@@ -502,7 +517,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
         let referenced_glyph =
             ensure_component_has_consistent_layers(&original, &referenced_glyph, context)?;
         frontier.extend(
-            components(&referenced_glyph, component_affine)
+            components(&referenced_glyph, component_affine)?
                 .iter()
                 .filter(|(component_loc, _)| *component_loc == loc)
                 .cloned(),
@@ -1353,6 +1368,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         // missing component can't cause its glyph (or its siblings) to be
         // decomposed. See https://github.com/googlefonts/fontc/issues/1858
         prune_missing_components(context);
+        check_component_cycles(context)?;
 
         // Reject structurally inconsistent variable composites before any pass
         // pairs their components across sources.
@@ -2568,6 +2584,70 @@ mod tests {
         );
     }
 
+    #[test]
+    fn components_to_contours_inconsistent_components_is_error() {
+        let [loc0, loc1, loc2] = make_wght_locations([0.0, 0.5, 1.0]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone(), loc2.clone()]);
+        context.glyphs.set(static_contour_glyph("a"));
+        context.glyphs.set(static_contour_glyph("b"));
+
+        // same components, but in a different order at one location
+        let instance = |names: &[&str]| GlyphInstance {
+            components: names
+                .iter()
+                .map(|name| Component::new(*name, Affine::IDENTITY))
+                .collect(),
+            ..Default::default()
+        };
+        let glyph = Glyph::new(
+            "g".into(),
+            true,
+            Default::default(),
+            HashMap::from([
+                (loc0, instance(&["a", "b"])),
+                (loc1, instance(&["b", "a"])),
+                (loc2, instance(&["a", "b"])),
+            ]),
+        )
+        .unwrap();
+
+        let err = convert_components_to_contours(&context, &glyph).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid source glyph 'g': 'components differ between sources: \
+             [a, b] at Normalized {wght: 0.00}, Normalized {wght: 1.00}; \
+             [b, a] at Normalized {wght: 0.50}'"
+        );
+    }
+
+    #[test]
+    fn components_to_contours_inconsistent_nested_components_is_error() {
+        let [loc0, loc1] = make_wght_locations([0.0, 1.0]);
+        let context = test_context_with_locations(vec![loc0.clone(), loc1.clone()]);
+        context.glyphs.set(static_contour_glyph("slash"));
+
+        // 'backslash' is a component in one master and contours in the other
+        let mut backslash = TestGlyph::new("backslash");
+        backslash
+            .add_var_component("slash", &[(&loc0, Affine::IDENTITY)])
+            .add_var_contour(&[(&loc1, contour())]);
+        context.glyphs.set(backslash.0);
+
+        let mut glyph = TestGlyph::new("g");
+        glyph.add_var_component(
+            "backslash",
+            &[(&loc0, Affine::IDENTITY), (&loc1, Affine::IDENTITY)],
+        );
+
+        // the error names the inconsistent component, not the composite
+        let err = convert_components_to_contours(&context, &glyph.0).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid source glyph 'backslash': 'components differ between sources: \
+             [] at Normalized {wght: 1.00}; [slash] at Normalized {wght: 0.00}'"
+        );
+    }
+
     fn adjust_transform_for_each_instance(
         glyph: &Glyph,
         adjust_nth: impl Fn(usize) -> Affine,
@@ -3238,6 +3318,53 @@ mod tests {
         // A varying 2x2 is rejected.
         let rotated = glyph_with(Component::new("base", Affine::rotate(0.5)));
         assert!(validate_constant_affine_2x2(&rotated).is_err());
+    }
+
+    #[test]
+    fn component_cycles_are_an_error() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.add_component("c", (0, 0));
+        });
+        builder.add_glyph_fancy("c", |c| {
+            c.add_contour(simple_square_path());
+            c.add_component("b", (0, 0));
+        });
+        builder.add_glyph_fancy("d", |d| {
+            d.add_component("a", (0, 0));
+            d.add_component("b", (0, 0));
+        });
+        builder.add_glyph_fancy("e", |e| {
+            e.add_component("e", (10, 0));
+        });
+
+        let context = builder.into_context();
+        let Err(Error::ComponentCycle(glyphs)) = check_component_cycles(&context) else {
+            panic!("expected a component cycle error");
+        };
+        // 'd' uses a glyph in a cycle but isn't in one itself
+        assert_eq!(glyphs, ["b", "c", "e"].map(GlyphName::from));
+    }
+
+    #[test]
+    fn no_component_cycles() {
+        let mut builder = GlyphOrderBuilder::default();
+        builder.add_glyph_fancy("a", |a| {
+            a.add_contour(simple_square_path());
+        });
+        builder.add_glyph_fancy("b", |b| {
+            b.add_component("a", (0, 0));
+        });
+        builder.add_glyph_fancy("c", |c| {
+            c.add_component("b", (0, 0));
+            c.add_component("a", (0, 0));
+        });
+
+        let context = builder.into_context();
+        check_component_cycles(&context).unwrap();
     }
 
     #[test]
