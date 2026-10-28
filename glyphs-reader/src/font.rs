@@ -4916,6 +4916,45 @@ mod tests {
     }
 
     #[test]
+    fn skips_layers_without_a_matching_master() {
+        // https://github.com/googlefonts/fontc/issues/2293
+        let font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = ({ id = m01; axesValues = (400); });
+glyphs = ({ glyphname = zero; layers = (
+{ layerId = m01; width = 500; },
+{ layerId = brace; associatedMasterId = m01; attr = { coordinates = (500); }; width = 550; },
+{ layerId = bracket; associatedMasterId = m01; attr = { axisRules = ({ min = 600; }); }; width = 600; },
+{ layerId = orphan; width = 700; },
+{ layerId = orphanBrace; associatedMasterId = deleted; attr = { coordinates = (500); }; width = 750; },
+{ layerId = orphanBracket; associatedMasterId = deleted; attr = { axisRules = ({ min = 600; }); }; width = 800; }
+); });
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+        let glyph = &font.glyphs["zero"];
+        assert_eq!(
+            glyph
+                .layers
+                .iter()
+                .map(|l| l.layer_id.as_str())
+                .collect::<Vec<_>>(),
+            ["m01", "brace"]
+        );
+        assert_eq!(
+            glyph
+                .bracket_layers
+                .iter()
+                .map(|l| l.layer_id.as_str())
+                .collect::<Vec<_>>(),
+            ["bracket"]
+        );
+    }
+
+    #[test]
     fn v3_format_version() {
         let v3_font = glyphs3_dir().join("MasterNames.glyphs");
         let as_str = std::fs::read_to_string(&v3_font).unwrap();
