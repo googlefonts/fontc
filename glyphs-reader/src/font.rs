@@ -1135,19 +1135,58 @@ impl PlistParamsExt for Plist {
     }
 }
 
+/// The long (UFO) names of custom parameters that also have a short name, as
+/// registered by glyphsLib:
+///     <https://github.com/googlefonts/glyphsLib/blob/edf5ce51fdcd6f9fc8315063845da3a6899761de/Lib/glyphsLib/builder/custom_params.py#L315-L362>
+///     <https://github.com/googlefonts/glyphsLib/blob/edf5ce51fdcd6f9fc8315063845da3a6899761de/Lib/glyphsLib/builder/custom_params.py#L366-L417>
+///     <https://github.com/googlefonts/glyphsLib/blob/edf5ce51fdcd6f9fc8315063845da3a6899761de/Lib/glyphsLib/builder/custom_params.py#L535-L545>
+const LONG_PARAM_NAMES: &[&str] = &[
+    "openTypeOS2VendorID",
+    "openTypeNameVersion",
+    "postscriptIsFixedPitch",
+    "openTypeOS2TypoAscender",
+    "openTypeOS2TypoDescender",
+    "openTypeOS2TypoLineGap",
+    "openTypeOS2WinAscent",
+    "openTypeOS2WinDescent",
+    "openTypeHheaAscender",
+    "openTypeHheaDescender",
+    "openTypeHheaLineGap",
+    "openTypeVheaVertTypoAscender",
+    "openTypeVheaVertTypoDescender",
+    "openTypeVheaVertTypoLineGap",
+    "postscriptUnderlineThickness",
+    "postscriptUnderlinePosition",
+    "openTypeOS2StrikeoutPosition",
+    "openTypeOS2StrikeoutSize",
+    "openTypeOS2SubscriptXOffset",
+    "openTypeOS2SubscriptXSize",
+    "openTypeOS2SubscriptYOffset",
+    "openTypeOS2SubscriptYSize",
+    "openTypeOS2SuperscriptXOffset",
+    "openTypeOS2SuperscriptXSize",
+    "openTypeOS2SuperscriptYOffset",
+    "openTypeOS2SuperscriptYSize",
+    "openTypeOS2Type",
+    "openTypeOS2UnicodeRanges",
+    "openTypeOS2Panose",
+];
+
 impl RawCustomParameters {
     ////convert into the parsed params for a top-level font
     fn to_custom_params(&self) -> Result<CustomParameters, Error> {
         let mut params = CustomParameters::default();
         let mut virtual_masters = Vec::<BTreeMap<String, OrderedFloat<f64>>>::new();
-        // PANOSE custom parameter is accessible under a short name and a long name:
-        //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L322-L323
-        // ...with the value under the short name taking precendence:
-        //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L258-L269
-        let mut panose = None;
-        let mut panose_old = None;
+        // Many parameters have a short name and a long (UFO) name, and the short
+        // one takes precedence whatever the order, as in glyphsLib:
+        //     https://github.com/googlefonts/glyphsLib/blob/edf5ce51fdcd6f9fc8315063845da3a6899761de/Lib/glyphsLib/builder/custom_params.py#L253-L270
+        // Reading the long names last lets the first value seen win.
+        let (long, others): (Vec<_>, Vec<_>) = self
+            .0
+            .iter()
+            .partition(|param| LONG_PARAM_NAMES.contains(&param.name.as_str()));
 
-        for param in &self.0 {
+        for param in others.into_iter().chain(long) {
             // Silently skip special parameters that were handled elsewhere
             if param.taken() {
                 continue;
@@ -1343,8 +1382,9 @@ impl RawCustomParameters {
                     Some(val) => virtual_masters.push(val),
                     None => log::warn!("failed to parse virtual master '{value:?}'"),
                 },
-                "panose" => panose = value.as_vec_of_ints(),
-                "openTypeOS2Panose" => panose_old = value.as_vec_of_ints(),
+                "panose" | "openTypeOS2Panose" => {
+                    add_and_report_issues!(panose, Plist::as_vec_of_ints)
+                }
                 "glyphOrder" => add_and_report_issues!(glyph_order, Plist::as_vec_of_string),
                 // Glyphs writes this name with either case, and glyphsLib
                 // registers a handler for both:
@@ -1369,7 +1409,6 @@ impl RawCustomParameters {
                 _ => log_once_warn!("unknown custom parameter '{name}'"),
             }
         }
-        params.panose = panose.or(panose_old);
         params.virtual_masters = Some(virtual_masters).filter(|x| !x.is_empty());
         Ok(params)
     }
