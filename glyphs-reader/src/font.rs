@@ -6313,6 +6313,33 @@ etc;
     }
 
     #[test]
+    fn short_param_names_take_precedence_in_either_order() {
+        let original = std::fs::read_to_string(glyphs3_dir().join("fstype_0x0000.glyphs")).unwrap();
+        let placeholder = "{\nname = fsType;\nvalue = (\n);\n}";
+        assert!(original.contains(placeholder));
+        let short = [
+            "{name = fsType; value = ();}",
+            "{name = typoAscender; value = 800;}",
+            "{name = underlinePosition; value = -100;}",
+            "{name = panose; value = (2,0,5,3,0,0,0,0,0,0);}",
+        ];
+        let long = [
+            "{name = openTypeOS2Type; value = (2);}",
+            "{name = openTypeOS2TypoAscender; value = 900;}",
+            "{name = postscriptUnderlinePosition; value = -200;}",
+            "{name = openTypeOS2Panose; value = (2,0,8,3,0,0,0,0,0,0);}",
+        ];
+        for params in [[short, long].concat(), [long, short].concat()] {
+            let source = original.replace(placeholder, &params.join(",\n"));
+            let params = Font::load_from_string(&source).unwrap().custom_parameters;
+            assert_eq!(params.fs_type, Some(0));
+            assert_eq!(params.typo_ascender, Some(800));
+            assert_eq!(params.underline_position, Some(OrderedFloat(-100.0)));
+            assert_eq!(params.panose, Some(vec![2, 0, 5, 3, 0, 0, 0, 0, 0, 0]));
+        }
+    }
+
+    #[test]
     fn read_fstype_bits() {
         let font = Font::load(&glyphs3_dir().join("fstype_0x0104.glyphs")).unwrap();
         assert_eq!(Some(0x104), font.custom_parameters.fs_type);
