@@ -4173,8 +4173,19 @@ impl Font {
 
         let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take())?;
 
+        let master_ids: HashSet<_> = from.font_master.iter().map(|m| m.id.as_str()).collect();
         let mut glyphs = BTreeMap::new();
-        for raw_glyph in from.glyphs.into_iter() {
+        for mut raw_glyph in from.glyphs.into_iter() {
+            // Like glyphsLib, ignore dangling layers (e.g. copied from another font).
+            // Filter before processing special layers or instantiating components.
+            // https://github.com/googlefonts/fontc/issues/2293
+            raw_glyph.layers.retain(|layer| {
+                master_ids.contains(layer.layer_id.as_str())
+                    || layer
+                        .associated_master_id
+                        .as_deref()
+                        .is_some_and(|id| master_ids.contains(id))
+            });
             let mut glyph = raw_glyph.build(from.format_version, glyph_data)?;
             // v2 bracket layers can only reference a single axis position (on the
             // first axis in the font) so we add empty axis rules for any other
@@ -4913,6 +4924,45 @@ mod tests {
         let font = RawFont::load(&v2_font).unwrap();
         // falls back to default
         assert_eq!(font.format_version, FormatVersion::V2);
+    }
+
+    #[test]
+    fn skips_layers_without_a_matching_master() {
+        // https://github.com/googlefonts/fontc/issues/2293
+        let font = Font::load_from_string(
+            r#"{
+.formatVersion = 3;
+axes = ({ name = Weight; tag = wght; });
+fontMaster = ({ id = m01; axesValues = (400); });
+glyphs = ({ glyphname = zero; layers = (
+{ layerId = m01; width = 500; },
+{ layerId = brace; associatedMasterId = m01; attr = { coordinates = (500); }; width = 550; },
+{ layerId = bracket; associatedMasterId = m01; attr = { axisRules = ({ min = 600; }); }; width = 600; },
+{ layerId = orphan; width = 700; },
+{ layerId = orphanBrace; associatedMasterId = deleted; attr = { coordinates = (500); }; width = 750; },
+{ layerId = orphanBracket; associatedMasterId = deleted; attr = { axisRules = ({ min = 600; }); }; width = 800; }
+); });
+unitsPerEm = 1000;
+}"#,
+        )
+        .unwrap();
+        let glyph = &font.glyphs["zero"];
+        assert_eq!(
+            glyph
+                .layers
+                .iter()
+                .map(|l| l.layer_id.as_str())
+                .collect::<Vec<_>>(),
+            ["m01", "brace"]
+        );
+        assert_eq!(
+            glyph
+                .bracket_layers
+                .iter()
+                .map(|l| l.layer_id.as_str())
+                .collect::<Vec<_>>(),
+            ["bracket"]
+        );
     }
 
     #[test]
