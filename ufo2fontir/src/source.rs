@@ -75,6 +75,8 @@ pub struct DesignSpaceIrSource {
     fea_files: Arc<Vec<(DesignLocation, FeaturesSource)>>,
     /// The instance to build as a static font, if one was selected
     instance: Option<Arc<SelectedInstance>>,
+    /// The default source's layer, when the instance sits on another source
+    default_ufo_layer: Option<UfoLayer>,
     /// The names of all the instances, before one is selected
     exports: Arc<Vec<String>>,
 }
@@ -209,6 +211,7 @@ impl DesignSpaceIrSource {
             export,
             ufo_layers: ufo_layers.clone(),
             ufos: self.ufos.clone(),
+            default_ufo_layer: self.default_ufo_layer.clone(),
         })
     }
 }
@@ -357,12 +360,13 @@ impl DesignSpaceIrSource {
             }
         }
 
-        if let Some(base) = base {
+        let default_ufo_layer = base
+            .map(|base| UfoLayer::new(&ufos[&base.filename], base))
+            .transpose()?;
+        if let Some(base_layer) = &default_ufo_layer {
             // The glyph set is the default source's. fontc doesn't
             // interpolate, so the instance's source must have all of it.
-            let ufo = &ufos[&base.filename];
-            let base_layer = UfoLayer::new(ufo, base)?;
-            let base_names: HashSet<GlyphName> = ufo
+            let base_names: HashSet<GlyphName> = ufos[&base_layer.ufo]
                 .reader
                 .layer(&base_layer.layer)
                 .unwrap()
@@ -439,6 +443,7 @@ impl DesignSpaceIrSource {
             glyphs: Arc::new(glyphs),
             fea_files: Arc::new(fea_files),
             instance,
+            default_ufo_layer,
             exports: Arc::new(exports),
         })
     }
@@ -2241,6 +2246,7 @@ struct GlyphIrWork {
     export: bool,
     ufo_layers: HashMap<UfoLayer, Vec<DesignLocation>>,
     ufos: Ufos,
+    default_ufo_layer: Option<UfoLayer>,
 }
 
 impl Work<Context, WorkId, Error> for GlyphIrWork {
@@ -2289,13 +2295,21 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
         let erase_open_corners = context.flags.contains(Flags::ERASE_OPEN_CORNERS);
 
         let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
-        let glyph_ir = to_ir_glyph(
+        let mut glyph_ir = to_ir_glyph(
             self.glyph_name.clone(),
             self.export,
             erase_open_corners,
             &glifs,
             &mut ir_anchors,
         )?;
+        if let Some(default_layer) = &self.default_ufo_layer {
+            let (default_glyph, _) = default_layer.resolve(&self.ufos)?.load(&self.glyph_name)?;
+            glyph_ir.codepoints = default_glyph
+                .codepoints
+                .iter()
+                .map(|cp| cp as u32)
+                .collect();
+        }
 
         context.anchors.set(ir_anchors.build()?);
         context.glyphs.set(glyph_ir);
@@ -4802,6 +4816,54 @@ mod tests {
             assert_eq!(info.ascender, Some(900.0));
             // the panose of the source the instance sits on
             assert_eq!(info.open_type_os2_panose.map(|p| p.weight), Some(8));
+        }
+
+        #[test]
+        fn export_uses_default_source_codepoints() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = write_two_sources(dir.path(), &["a", "b"]);
+            for (filename, glyph_name, codepoint) in
+                [("Default.ufo", "a", 'a'), ("Bold.ufo", "b", 'b')]
+            {
+                let ufo_path = dir.path().join(filename);
+                let mut font = norad::Font::load(&ufo_path).unwrap();
+                font.get_glyph_mut(glyph_name)
+                    .unwrap()
+                    .codepoints
+                    .insert(codepoint);
+                font.save(&ufo_path).unwrap();
+            }
+
+            for export in [None, Some("Bold")] {
+                let source = DesignSpaceIrSource::new(&path, export).unwrap();
+                let context = Context::new_root(Flags::default());
+                let task_context = context.copy_for_work(Access::All, Access::All);
+                source
+                    .create_static_metadata_work()
+                    .unwrap()
+                    .exec(&task_context)
+                    .unwrap();
+                for name in ["a", "b"] {
+                    source
+                        .create_work_for_one_glyph(&name.into(), true)
+                        .unwrap()
+                        .exec(&task_context)
+                        .unwrap();
+                }
+                assert_eq!(
+                    context.glyphs.get(&WorkId::Glyph("a".into())).codepoints,
+                    HashSet::from([0x61]),
+                    "{export:?}"
+                );
+                assert!(
+                    context
+                        .glyphs
+                        .get(&WorkId::Glyph("b".into()))
+                        .codepoints
+                        .is_empty(),
+                    "{export:?}"
+                );
+            }
         }
 
         #[test]
