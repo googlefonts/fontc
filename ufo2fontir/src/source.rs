@@ -4805,6 +4805,54 @@ mod tests {
         }
 
         #[test]
+        fn export_uses_default_source_codepoints() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = write_two_sources(dir.path(), &["a", "b"]);
+            for (filename, glyph_name, codepoint) in
+                [("Default.ufo", "a", 'a'), ("Bold.ufo", "b", 'b')]
+            {
+                let ufo_path = dir.path().join(filename);
+                let mut font = norad::Font::load(&ufo_path).unwrap();
+                font.get_glyph_mut(glyph_name)
+                    .unwrap()
+                    .codepoints
+                    .insert(codepoint);
+                font.save(&ufo_path).unwrap();
+            }
+
+            for export in [None, Some("Bold")] {
+                let source = DesignSpaceIrSource::new(&path, export).unwrap();
+                let context = Context::new_root(Flags::default());
+                let task_context = context.copy_for_work(Access::All, Access::All);
+                source
+                    .create_static_metadata_work()
+                    .unwrap()
+                    .exec(&task_context)
+                    .unwrap();
+                for name in ["a", "b"] {
+                    source
+                        .create_work_for_one_glyph(&name.into(), true)
+                        .unwrap()
+                        .exec(&task_context)
+                        .unwrap();
+                }
+                assert_eq!(
+                    context.glyphs.get(&WorkId::Glyph("a".into())).codepoints,
+                    HashSet::from([0x61]),
+                    "{export:?}"
+                );
+                assert!(
+                    context
+                        .glyphs
+                        .get(&WorkId::Glyph("b".into()))
+                        .codepoints
+                        .is_empty(),
+                    "{export:?}"
+                );
+            }
+        }
+
+        #[test]
         fn another_source_must_have_the_default_glyphs() {
             let dir = tempfile::tempdir().unwrap();
             let path = write_two_sources(dir.path(), &["a"]);
