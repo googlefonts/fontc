@@ -4173,8 +4173,19 @@ impl Font {
 
         let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take())?;
 
+        let master_ids: HashSet<_> = from.font_master.iter().map(|m| m.id.as_str()).collect();
         let mut glyphs = BTreeMap::new();
-        for raw_glyph in from.glyphs.into_iter() {
+        for mut raw_glyph in from.glyphs.into_iter() {
+            // Like glyphsLib, ignore dangling layers (e.g. copied from another font).
+            // Filter before processing special layers or instantiating components.
+            // https://github.com/googlefonts/fontc/issues/2293
+            raw_glyph.layers.retain(|layer| {
+                master_ids.contains(layer.layer_id.as_str())
+                    || layer
+                        .associated_master_id
+                        .as_deref()
+                        .is_some_and(|id| master_ids.contains(id))
+            });
             let mut glyph = raw_glyph.build(from.format_version, glyph_data)?;
             // v2 bracket layers can only reference a single axis position (on the
             // first axis in the font) so we add empty axis rules for any other
