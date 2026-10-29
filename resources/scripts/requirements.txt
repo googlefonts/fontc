@@ -155,7 +155,7 @@ pillow==13.0.0
     # via
     #   gftools
     #   nanoemoji
-platformdirs==4.13.6
+platformdirs==4.14.0
     # via youseedee
 pngquant-cli==3.0.3
     # via nanoemoji
@@ -223,9 +223,9 @@ typing-extensions==4.16.0
     #   beautifulsoup4
     #   cattrs
     #   pygithub
-tzdata==2026.5
+tzdata==2026.6
     # via python-dateutil
-ufo2ft[cffsubr,compreffor]==3.9.1
+ufo2ft[cffsubr,compreffor]==3.10.0
     # via
     #   fontmake
     #   nanoemoji
