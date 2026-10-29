@@ -5598,6 +5598,51 @@ instances = ({ name = Bold; });
         assert!(select_instance(&data, "Example Bold").is_err());
     }
 
+    // As Glyphs documents the parameter, a codepoint moves from any glyph that
+    // has it, an entry can list several and an empty value clears them. As in
+    // Glyphs 3.5 and 4.1.1, a glyph the font doesn't have is skipped and the
+    // first entry for a glyph wins.
+    #[test]
+    fn instance_applies_reencode_glyphs() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+glyphs = (
+{ glyphname = a; layers = ({ layerId = m01; width = 500; }); unicode = 97; },
+{ glyphname = b; layers = ({ layerId = m01; width = 500; }); unicode = 98; },
+{ glyphname = c; layers = ({ layerId = m01; width = 500; }); unicode = 99; },
+{ glyphname = d; layers = ({ layerId = m01; width = 500; }); unicode = 100; },
+{ glyphname = e; layers = ({ layerId = m01; width = 500; }); unicode = 101; }
+);
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; customParameters = ({ name = "Reencode Glyphs"; value = (
+"a=0062", "c=", "d=E004", "d=E005", "e=E002,E003", "zzz=E001"
+); }); },
+{ name = Bold; }
+);
+}"#;
+        let codepoints = |instance| {
+            let font = &select_instance(data, instance).unwrap().font_info.font;
+            ["a", "b", "c", "d", "e"].map(|name| font.glyphs[name].unicode.clone())
+        };
+        assert_eq!(
+            codepoints("Example Regular"),
+            [
+                vec![0x62],
+                vec![],
+                vec![],
+                vec![0xE004],
+                vec![0xE002, 0xE003]
+            ]
+        );
+        assert_eq!(
+            codepoints("Example Bold"),
+            [vec![97], vec![98], vec![99], vec![100], vec![101]]
+        );
+    }
+
     #[test]
     fn instance_selection_on_a_variable_source_builds_its_master() {
         // fontc can't tell a variable source from a "bag of statics" (#1288):

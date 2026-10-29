@@ -152,6 +152,35 @@ pub struct CustomParameters {
     pub feature_for_feature_variations: Option<SmolStr>,
     pub color_palettes: Option<Vec<Vec<Color>>>,
     pub name_table_entries: Vec<NameTableEntry>,
+    pub reencode_glyphs: Option<Vec<Reencoding>>,
+}
+
+/// One entry of the 'Reencode Glyphs' instance parameter, e.g. `smiley=E100`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Reencoding {
+    pub glyph: SmolStr,
+    /// The glyph's new codepoints; none clears them.
+    pub codepoints: Vec<u32>,
+}
+
+impl FromStr for Reencoding {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((glyph, codepoints)) = s.split_once('=') else {
+            return Err(format!("expected 'glyph=codepoint', found '{s}'"));
+        };
+        let codepoints = codepoints
+            .split(',')
+            .map(str::trim)
+            .filter(|hex| !hex.is_empty())
+            .map(|hex| u32::from_str_radix(hex, 16).map_err(|e| format!("'{hex}' in '{s}': {e}")))
+            .collect::<Result<_, _>>()?;
+        Ok(Reencoding {
+            glyph: glyph.trim().into(),
+            codepoints,
+        })
+    }
 }
 
 /// Values for the 'meta Table' custom parameter
@@ -961,6 +990,7 @@ trait PlistParamsExt {
     fn as_virtual_master(&self) -> Option<BTreeMap<String, OrderedFloat<f64>>>;
     fn as_gasp_table(&self) -> Option<BTreeMap<i64, i64>>;
     fn as_color_palettes(&self) -> Option<Vec<Vec<Color>>>;
+    fn as_reencodings(&self) -> Option<Vec<Reencoding>>;
 }
 
 impl PlistParamsExt for Plist {
@@ -1132,6 +1162,28 @@ impl PlistParamsExt for Plist {
             palettes.push(palette);
         }
         Some(palettes)
+    }
+
+    fn as_reencodings(&self) -> Option<Vec<Reencoding>> {
+        let entries = self.as_array()?;
+        Some(
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    match entry
+                        .as_str()
+                        .ok_or_else(|| "should be a string".into())
+                        .and_then(Reencoding::from_str)
+                    {
+                        Ok(reencoding) => Some(reencoding),
+                        Err(e) => {
+                            warn!("bad 'Reencode Glyphs' entry, ignored: {e}");
+                            None
+                        }
+                    }
+                })
+                .collect(),
+        )
     }
 }
 
@@ -1406,6 +1458,9 @@ impl RawCustomParameters {
                     Ok(s) => params.name_table_entries.push(s),
                     Err(e) => log::warn!("bad 'Name Table Entry': {e}"),
                 },
+                "Reencode Glyphs" => {
+                    add_and_report_issues!(reencode_glyphs, Plist::as_reencodings)
+                }
                 _ => log_once_warn!("unknown custom parameter '{name}'"),
             }
         }
@@ -4709,6 +4764,35 @@ impl Font {
                     ..bracket
                 };
             }
+        }
+    }
+
+    /// Apply the parameters of the instance at `index` that edit glyphs, for a
+    /// static font built for that instance.
+    ///
+    /// For now that is 'Reencode Glyphs', as Glyphs documents it: each entry
+    /// replaces the codepoints of a glyph the font has, taking them from any
+    /// other glyph that has them, and an entry that lists none clears them.
+    /// As in Glyphs 3.5 and 4.1.1, the first entry for a glyph wins.
+    pub fn apply_instance_parameters(&mut self, index: usize) {
+        let reencodings = self.instances[index]
+            .custom_parameters
+            .reencode_glyphs
+            .clone()
+            .unwrap_or_default();
+        let mut seen = HashSet::new();
+        for Reencoding { glyph, codepoints } in reencodings {
+            if !self.glyphs.contains_key(&glyph) {
+                warn!("'Reencode Glyphs' names '{glyph}', which isn't in the font");
+                continue;
+            }
+            if !seen.insert(glyph.clone()) {
+                continue;
+            }
+            for other in self.glyphs.values_mut() {
+                other.unicode.retain(|cp| !codepoints.contains(cp));
+            }
+            self.glyphs.get_mut(&glyph).unwrap().unicode = codepoints;
         }
     }
 
