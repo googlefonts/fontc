@@ -5817,6 +5817,27 @@ instances = ({ name = Regular; axesValues = (400, 12); }, { name = Display; axes
         assert!(select_export(data, "Example Display").is_err());
     }
 
+    // An instance on the only master needs no interpolation, even when a
+    // virtual master's location has no axis mapping (DM Serif Display Italic).
+    #[test]
+    fn export_on_master_ignores_unmapped_virtual_master() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+axes = ({ name = Weight; tag = wght; });
+customParameters = (
+{ name = "Axis Mappings"; value = { wght = { 400 = 723; }; }; },
+{ name = "Virtual Master"; value = ({ Axis = Weight; Location = 150; }); }
+);
+fontMaster = ({ id = m01; axesValues = (723); });
+unitsPerEm = 1000;
+instances = ({ name = Regular; axesValues = (723); });
+}"#;
+        let font_info = select_export(data, "Example Regular").unwrap().font_info;
+        assert!(font_info.font.virtual_masters.is_empty());
+        assert!(font_info.axes.iter().all(|axis| axis.is_point()));
+    }
+
     #[test]
     fn bag_of_statics_keeps_linked_metrics() {
         // "Link Metrics With Master" takes the widths and kerning from another
