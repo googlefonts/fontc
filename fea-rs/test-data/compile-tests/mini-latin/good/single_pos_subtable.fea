@@ -1,0 +1,5 @@
+feature test {
+    pos a 10;
+    subtable;
+    pos b 10;
+} test;

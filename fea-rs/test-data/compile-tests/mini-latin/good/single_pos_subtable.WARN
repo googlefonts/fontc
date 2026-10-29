@@ -1,0 +1,5 @@
+warning: subtable breaks are ignored in single positioning lookups
+in compile-tests/mini-latin/good/single_pos_subtable.fea at 3:4
+  | 
+3 |     subtable;
+  |     ^^^^^^^^^

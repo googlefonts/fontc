@@ -433,7 +433,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .or_insert_with(|| id.try_into().unwrap())
     }
 
-    pub fn add_subtable_break(&mut self) {
+    pub fn add_subtable_break(&mut self, range: Range<usize>) {
+        if self.lookups.has_current_kind(Kind::GposType1) {
+            self.warning(
+                range,
+                "subtable breaks are ignored in single positioning lookups",
+            );
+            return;
+        }
         if !self.lookups.add_subtable_break() {
             //TODO: report that we weren't in a lookup?
         }
@@ -1927,7 +1934,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         } else if let Some(item) = typed::ValueRecordDef::cast(item) {
             self.define_named_value_record(item);
         } else if item.kind() == Kind::SubtableNode {
-            self.add_subtable_break();
+            self.add_subtable_break(item.range());
         } else if let Some(lookup) = typed::LookupRef::cast(item) {
             self.resolve_lookup_ref(lookup);
         } else if let Some(lookup) = typed::LookupBlock::cast(item) {

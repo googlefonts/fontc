@@ -81,17 +81,6 @@ mod tests {
     }
 
     #[test]
-    fn subtables_flatten_first_wins() {
-        assert_eq!(
-            merged_binary(&[
-                "feature kern { pos a 10; subtable; pos a 99; pos b 20; } kern;",
-                "feature kern { pos a 10; pos b 25; } kern;",
-            ]),
-            one_shot_binary("feature kern { pos a 10; pos b (wght=400:20 wght=900:25); } kern;")
-        );
-    }
-
-    #[test]
     fn fields_set_in_different_masters_are_unioned() {
         assert_eq!(
             merged_binary(&[
