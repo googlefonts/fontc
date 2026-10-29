@@ -3794,7 +3794,7 @@ mod tests {
     fn version_default() {
         let font = Font::load(&glyphs3_dir().join("infinity.glyphs")).unwrap();
         assert_eq!(
-            "Version 0.000",
+            "Version 1.000",
             names(&font, None, SelectionFlags::empty())
                 .get(&NameKey::new(NameId::VERSION_STRING))
                 .unwrap()

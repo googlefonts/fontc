@@ -4337,7 +4337,7 @@ impl Font {
             features,
             all_names,
             instances,
-            version_major: from.versionMajor.unwrap_or_default() as i32,
+            version_major: from.versionMajor.unwrap_or(1) as i32,
             version_minor: from.versionMinor.unwrap_or_default() as u32,
             date: from.date,
             kerning_ltr: from.kerning_LTR,
@@ -7240,6 +7240,21 @@ unitsPerEm = 1000;
                 .iter()
                 .all(|l| !l.attributes.axis_rules.is_empty())
         );
+    }
+
+    #[test]
+    fn reads_version_defaults_and_explicit_zero() {
+        for (version, major, minor) in [
+            ("", 1, 0),
+            ("versionMajor = 0;", 0, 0),
+            ("versionMajor = 2; versionMinor = 15;", 2, 15),
+        ] {
+            let source = format!(
+                "{{ .formatVersion = 3; fontMaster = ({{ id = m01; }}); unitsPerEm = 1000; {version} }}"
+            );
+            let font = Font::load_from_string(&source).unwrap();
+            assert_eq!((font.version_major, font.version_minor), (major, minor));
+        }
     }
 
     #[test]
