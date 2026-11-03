@@ -6,6 +6,8 @@ license = "MIT/Apache-2.0"
 description = "A compiler for fonts."
 repository = "https://github.com/googlefonts/fontc"
 readme = "README.md"
+# internal tool, not meant for crates.io
+publish = false
 
 [dependencies]
 fontc = { version = "1.0.0", path = "../fontc" }
