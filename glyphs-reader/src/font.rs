@@ -3775,7 +3775,8 @@ impl RawFeature {
     /// See the little sidebar item here:
     /// <https://glyphsapp.com/learn/stylistic-sets#g-names-for-stylistic-sets>
     fn legacy_name_record_maybe(&self) -> Option<String> {
-        let name = self.notes.as_deref()?.strip_prefix("Name:")?.trim();
+        let first_line = self.notes.as_deref()?.lines().next()?;
+        let name = first_line.strip_prefix("Name:")?.trim();
         if name.is_empty() {
             None
         } else {
@@ -6034,6 +6035,32 @@ etc;
             raw.feature_names(),
             "featureNames {\nname 3 1 0x409 \"a\\0022b\\005cc\";\n};\n"
         );
+    }
+
+    // Alegreya's ss04 note has more lines after the name
+    #[test]
+    fn legacy_feature_name_is_first_line() {
+        let raw = RawFeature {
+            tag: Some("ss04".into()),
+            notes: Some(
+                "Name: Dynamic arrows and triangles\nSecond approximation\nArrows 2\n".into(),
+            ),
+            ..Default::default()
+        };
+        assert_eq!(
+            raw.feature_names(),
+            "featureNames {\nname 3 1 0x409 \"Dynamic arrows and triangles\";\n};\n"
+        );
+    }
+
+    #[test]
+    fn legacy_feature_name_empty_first_line() {
+        let raw = RawFeature {
+            tag: Some("ss01".into()),
+            notes: Some("Name: \nSecond line\n".into()),
+            ..Default::default()
+        };
+        assert_eq!(raw.feature_names(), "");
     }
 
     #[test]
