@@ -358,7 +358,7 @@ mod tests {
                 },
                 gsub::{SingleSubst, SubstitutionLookup},
                 hmtx::Hmtx,
-                layout::FeatureParams,
+                layout::{ChainedSequenceContext, CoverageTable, FeatureParams},
                 loca::Loca,
                 name::Name,
                 os2::SelectionFlags,
@@ -370,6 +370,7 @@ mod tests {
             gdef::GlyphClassDef,
             glyf::{Bbox, Glyph as RawGlyph},
             head,
+            layout::LookupFlag,
             loca::LocaFormat,
             meta::{DataMapRecord, Metadata, ScriptLangTag},
         },
@@ -5276,77 +5277,119 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn contextual_anchor_emits_dispatch() {
-        let result = TestCompile::compile_source("glyphs3/ContextualAnchors.glyphs");
-        use write_fonts::read::tables::layout::ChainedSequenceContext;
-        let font = result.font();
-        let gpos = font.gpos().unwrap();
-        let list = gpos.lookup_list().unwrap();
-        let gid = |name: &str| result.get_gid(name).to_u32();
-        fn read_coverages<'a>(
-            coverage: write_fonts::read::ArrayOfOffsets<
-                'a,
-                write_fonts::read::tables::layout::CoverageTable<'a>,
-                write_fonts::read::types::Offset16,
-            >,
-        ) -> Vec<Vec<u32>> {
-            coverage
+    #[derive(Debug, PartialEq, Eq)]
+    struct ContextRule {
+        // Coverage text uses glyph names and brackets for classes. Backtrack
+        // coverages retain OpenType's nearest-first order.
+        backtrack: String,
+        input: String,
+        lookahead: String,
+        // (input sequence index, referenced lookup index)
+        lookups: Vec<(u16, u16)>,
+    }
+
+    impl ContextRule {
+        fn new(backtrack: &str, input: &str, lookahead: &str, lookups: &[(u16, u16)]) -> Self {
+            Self {
+                backtrack: backtrack.into(),
+                input: input.into(),
+                lookahead: lookahead.into(),
+                lookups: lookups.into(),
+            }
+        }
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct ContextLookup {
+        index: usize,
+        flags: LookupFlag,
+        mark_filtering_set: Option<u16>,
+        rules: Vec<ContextRule>,
+    }
+
+    impl ContextLookup {
+        fn targets(&self) -> Vec<u16> {
+            self.rules
                 .iter()
-                .map(|c| c.unwrap().iter().map(|g| g.to_u32()).collect())
+                .flat_map(|rule| rule.lookups.iter().map(|(_, lookup)| *lookup))
                 .collect()
         }
-        let mut dispatches = Vec::new();
-        for index in 9..=11 {
-            let PositionLookup::ChainContextual(lookup) = list.lookups().get(index).unwrap() else {
-                panic!("expected contextual positioning");
-            };
-            let rules = lookup
-                .subtables()
-                .iter()
-                .map(|subtable| {
-                    let ChainedSequenceContext::Format3(rule) = subtable.unwrap() else {
-                        panic!("expected format 3")
-                    };
-                    (
-                        read_coverages(rule.backtrack_coverages()),
-                        read_coverages(rule.input_coverages()),
-                        read_coverages(rule.lookahead_coverages()),
-                        rule.seq_lookup_records()
-                            .iter()
-                            .map(|r| r.lookup_list_index())
-                            .collect::<Vec<_>>(),
-                    )
-                })
-                .collect::<Vec<_>>();
-            dispatches.push((
-                lookup.lookup_flag().to_bits(),
-                lookup.mark_filtering_set(),
-                rules,
-            ));
-        }
-        let ac = vec![gid("A"), gid("C")];
-        let marks = vec![gid("acutecomb"), gid("tildecomb")];
-        // These coverages, flags, and target indices come from fontmake 3.12.1.
-        #[rustfmt::skip]
-        let expected = vec![
-            (16, Some(1), vec![
-                (vec![ac.clone(), vec![gid("B")], vec![gid("B")]], vec![marks.clone()], vec![], vec![3]),
-                (vec![ac.clone(), vec![gid("B")]], vec![marks.clone()], vec![], vec![4]),
-            ]),
-            (512, None, vec![
-                (vec![ac.clone(), vec![gid("D")]], vec![marks.clone()], vec![], vec![5]),
-                (vec![ac, vec![gid("E")]], vec![marks.clone()], vec![], vec![6]),
-            ]),
-            (0, None, vec![
-                (vec![vec![gid("T")], vec![gid("B")]], vec![marks.clone()], vec![], vec![7]),
-                (vec![vec![gid("T")]], vec![marks], vec![vec![gid("B")]], vec![8]),
-            ]),
-        ];
-        assert_eq!(dispatches, expected);
+    }
 
-        let bases = mark_base_lookups(&gpos);
-        let anchors = bases
+    fn context_coverage_text<'a>(
+        result: &TestCompile,
+        coverages: impl Iterator<Item = Result<CoverageTable<'a>, write_fonts::read::ReadError>>,
+    ) -> String {
+        coverages
+            .map(|coverage| {
+                let names: Vec<_> = coverage
+                    .unwrap()
+                    .iter()
+                    .map(|gid| {
+                        result
+                            .get_glyph_name(gid.try_into().unwrap())
+                            .unwrap()
+                            .to_string()
+                    })
+                    .collect();
+                match names.as_slice() {
+                    [name] => name.clone(),
+                    _ => format!("[{}]", names.join(" ")),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn contextual_lookups(result: &TestCompile) -> Vec<ContextLookup> {
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        gpos.lookup_list()
+            .unwrap()
+            .lookups()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, lookup)| {
+                let PositionLookup::ChainContextual(lookup) = lookup.unwrap() else {
+                    return None;
+                };
+                let rules = lookup
+                    .subtables()
+                    .iter()
+                    .map(|subtable| {
+                        let ChainedSequenceContext::Format3(rule) = subtable.unwrap() else {
+                            panic!("expected format 3")
+                        };
+                        ContextRule {
+                            backtrack: context_coverage_text(
+                                result,
+                                rule.backtrack_coverages().iter(),
+                            ),
+                            input: context_coverage_text(result, rule.input_coverages().iter()),
+                            lookahead: context_coverage_text(
+                                result,
+                                rule.lookahead_coverages().iter(),
+                            ),
+                            lookups: rule
+                                .seq_lookup_records()
+                                .iter()
+                                .map(|r| (r.sequence_index(), r.lookup_list_index()))
+                                .collect(),
+                        }
+                    })
+                    .collect();
+                Some(ContextLookup {
+                    index,
+                    flags: lookup.lookup_flag(),
+                    mark_filtering_set: lookup.mark_filtering_set(),
+                    rules,
+                })
+            })
+            .collect()
+    }
+
+    fn mark_base_anchor_positions(gpos: &Gpos) -> Vec<(i32, i32)> {
+        mark_base_lookups(gpos)
             .iter()
             .flat_map(|base| {
                 let array = base.base_array().unwrap();
@@ -5359,9 +5402,104 @@ mod tests {
                         .collect::<Vec<_>>()
                 })
             })
-            .collect::<Vec<_>>();
+            .collect()
+    }
+
+    fn feature_lookup_indices(gpos: &Gpos) -> Vec<(Tag, Vec<u16>)> {
+        let features = gpos.feature_list().unwrap();
+        features
+            .feature_records()
+            .iter()
+            .map(|record| {
+                let indices = record
+                    .feature(features.offset_data())
+                    .unwrap()
+                    .lookup_list_indices()
+                    .iter()
+                    .map(|index| index.get())
+                    .collect();
+                (record.feature_tag(), indices)
+            })
+            .collect()
+    }
+
+    fn ligature_component_anchors(
+        gpos: &Gpos,
+        lookup_index: usize,
+    ) -> Vec<Vec<Option<(i32, i32)>>> {
+        let lookups = gpos.lookup_list().unwrap();
+        let PositionLookup::MarkToLig(lookup) = lookups.lookups().get(lookup_index).unwrap() else {
+            panic!("expected ligature attachment lookup {lookup_index}")
+        };
+        let write_fonts::read::tables::gpos::MarkLigPos::Format1(ligature) =
+            lookup.subtables().get(0).unwrap()
+        else {
+            panic!("expected format 1")
+        };
+        let attachment = ligature
+            .ligature_array()
+            .unwrap()
+            .ligature_attaches()
+            .get(0)
+            .unwrap();
+        attachment
+            .component_records()
+            .iter()
+            .map(|component| {
+                component
+                    .unwrap()
+                    .ligature_anchors(attachment.offset_data())
+                    .iter()
+                    .map(|anchor| anchor.map(|a| anchor_coords(a.unwrap())))
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn contextual_anchor_emits_dispatch() {
+        let result = TestCompile::compile_source("glyphs3/ContextualAnchors.glyphs");
+        let marks = "[acutecomb tildecomb]";
+        let mut attach_flags = LookupFlag::empty();
+        attach_flags.set_mark_attachment_class(2);
+        // These contexts, flags, and target indices come from fontmake 3.12.1.
         assert_eq!(
-            anchors,
+            contextual_lookups(&result),
+            [
+                ContextLookup {
+                    index: 9,
+                    flags: LookupFlag::USE_MARK_FILTERING_SET,
+                    mark_filtering_set: Some(1),
+                    rules: vec![
+                        ContextRule::new("[A C] B B", marks, "", &[(0, 3)]),
+                        ContextRule::new("[A C] B", marks, "", &[(0, 4)]),
+                    ],
+                },
+                ContextLookup {
+                    index: 10,
+                    flags: attach_flags,
+                    mark_filtering_set: None,
+                    rules: vec![
+                        ContextRule::new("[A C] D", marks, "", &[(0, 5)]),
+                        ContextRule::new("[A C] E", marks, "", &[(0, 6)]),
+                    ],
+                },
+                ContextLookup {
+                    index: 11,
+                    flags: LookupFlag::empty(),
+                    mark_filtering_set: None,
+                    rules: vec![
+                        ContextRule::new("T B", marks, "", &[(0, 7)]),
+                        ContextRule::new("T", marks, "B", &[(0, 8)]),
+                    ],
+                },
+            ]
+        );
+
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        assert_eq!(
+            mark_base_anchor_positions(&gpos),
             [
                 (250, 700),
                 (250, 700),
@@ -5378,6 +5516,7 @@ mod tests {
                 (420, 900),
             ]
         );
+        let bases = mark_base_lookups(&gpos);
         let target = bases[1].base_array().unwrap();
         let anchor = target
             .base_records()
@@ -5419,7 +5558,7 @@ mod tests {
                 .iter()
                 .map(|g| g.to_u32())
                 .collect::<Vec<_>>(),
-            [gid("acutecomb")]
+            [result.get_gid("acutecomb").to_u32()]
         );
         let attachment = gdef.mark_attach_class_def().unwrap().unwrap();
         assert_eq!(attachment.get(result.get_gid("acutecomb")), 2);
@@ -5429,22 +5568,15 @@ mod tests {
     #[test]
     fn contextual_ligature_and_mark_to_mark_attachments() {
         use write_fonts::read::tables::gpos::{MarkLigPos, MarkMarkPos};
-        use write_fonts::read::tables::layout::ChainedSequenceContext;
         let result = TestCompile::compile_source("glyphs3/ContextualAttachments.glyphs");
         let font = result.font();
         let gpos = font.gpos().unwrap();
         let lookups = gpos.lookup_list().unwrap();
-        for (dispatcher, target) in [(3, 2), (6, 5)] {
-            let PositionLookup::ChainContextual(lookup) =
-                lookups.lookups().get(dispatcher).unwrap()
-            else {
-                panic!("expected dispatcher")
-            };
-            let ChainedSequenceContext::Format3(rule) = lookup.subtables().get(0).unwrap() else {
-                panic!("expected format 3")
-            };
-            assert_eq!(rule.seq_lookup_records()[0].lookup_list_index(), target);
-        }
+        let references: Vec<_> = contextual_lookups(&result)
+            .iter()
+            .map(|lookup| (lookup.index, lookup.targets()))
+            .collect();
+        assert_eq!(references, [(3, vec![2]), (6, vec![5])]);
         let lig = match lookups.lookups().get(2).unwrap() {
             PositionLookup::MarkToLig(lookup) => lookup.subtables().get(0).unwrap(),
             _ => panic!("expected contextual ligature target"),
@@ -5458,24 +5590,10 @@ mod tests {
                 .iter()
                 .any(|g| g == result.get_gid("f_i"))
         );
-        let attach = lig
-            .ligature_array()
-            .unwrap()
-            .ligature_attaches()
-            .get(0)
-            .unwrap();
-        let components = attach
-            .component_records()
-            .iter()
-            .map(|c| {
-                c.unwrap()
-                    .ligature_anchors(attach.offset_data())
-                    .iter()
-                    .map(|a| a.map(|a| anchor_coords(a.unwrap())))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(components, [vec![None], vec![Some((500, 900))]]);
+        assert_eq!(
+            ligature_component_anchors(&gpos, 2),
+            [vec![None], vec![Some((500, 900))]]
+        );
         let mark = match lookups.lookups().get(5).unwrap() {
             PositionLookup::MarkToMark(lookup) => lookup.subtables().get(0).unwrap(),
             _ => panic!("expected contextual mark target"),
@@ -5511,39 +5629,26 @@ mod tests {
     }
 
     fn assert_contextual_mark_filter(result: &TestCompile, expected: &[&str]) {
-        use write_fonts::read::tables::layout::ChainedSequenceContext;
         let font = result.font();
         let gdef = font.gdef().unwrap();
         let sets = gdef.mark_glyph_sets_def().unwrap().unwrap();
-        let gpos = font.gpos().unwrap();
-        let list = gpos.lookup_list().unwrap();
         let expected: Vec<_> = expected
             .iter()
             .map(|name| result.get_gid(name).to_u32())
             .collect();
-        let dispatches: Vec<_> = list
-            .lookups()
-            .iter()
-            .filter_map(|lookup| match lookup.unwrap() {
-                PositionLookup::ChainContextual(lookup) => Some(lookup),
-                _ => None,
-            })
-            .collect();
+        let dispatches = contextual_lookups(result);
         assert_eq!(dispatches.len(), 2);
         for (lookup, target) in dispatches.into_iter().zip([2, 5]) {
-            assert_eq!(lookup.lookup_flag().to_bits() & 16, 16);
+            assert!(lookup.flags.contains(LookupFlag::USE_MARK_FILTERING_SET));
             let coverage = sets
                 .coverages()
-                .get(lookup.mark_filtering_set().unwrap() as usize)
+                .get(lookup.mark_filtering_set.unwrap() as usize)
                 .unwrap();
             assert_eq!(
                 coverage.iter().map(|gid| gid.to_u32()).collect::<Vec<_>>(),
                 expected
             );
-            let ChainedSequenceContext::Format3(rule) = lookup.subtables().get(0).unwrap() else {
-                panic!("expected format 3")
-            };
-            assert_eq!(rule.seq_lookup_records()[0].lookup_list_index(), target);
+            assert_eq!(lookup.rules[0].lookups, [(0, target)]);
         }
     }
 
@@ -5574,30 +5679,18 @@ mod tests {
                     .replace("GPOS_Context = \"B *\"", &format!("GPOS_Context = \"{pattern}\""))
             });
             let result = TestCompile::compile_source(&source);
-            use write_fonts::read::tables::layout::ChainedSequenceContext;
-            let font = result.font();
-            let gpos = font.gpos().unwrap();
-            let list = gpos.lookup_list().unwrap();
-            for (index, attachment) in [(5, 4), (8, 7)] {
-                let PositionLookup::ChainContextual(dispatch) = list.lookups().get(index).unwrap()
-                else {
-                    panic!("expected contextual lookup")
-                };
-                let ChainedSequenceContext::Format3(rule) = dispatch.subtables().get(0).unwrap()
-                else {
-                    panic!("expected format 3")
-                };
-                let references: Vec<_> = rule
-                    .seq_lookup_records()
-                    .iter()
-                    .map(|r| (r.sequence_index(), r.lookup_list_index()))
-                    .collect();
-                assert_eq!(
-                    references,
-                    [(0, expected_lookup), (2, attachment)],
-                    "{pattern}"
-                );
-            }
+            let references: Vec<_> = contextual_lookups(&result)
+                .into_iter()
+                .map(|lookup| (lookup.index, lookup.rules[0].lookups.clone()))
+                .collect();
+            assert_eq!(
+                references,
+                [
+                    (5, vec![(0, expected_lookup), (2, 4)]),
+                    (8, vec![(0, expected_lookup), (2, 7)])
+                ],
+                "{pattern}"
+            );
         }
     }
 
@@ -5725,8 +5818,6 @@ mod tests {
 
     #[test]
     fn contextual_targets_follow_global_rule_creation_order() {
-        use write_fonts::read::tables::layout::ChainedSequenceContext;
-
         let temp = tempdir().unwrap();
         let source = modified_contextual_attachments(temp.path(), |source| {
             source
@@ -5734,29 +5825,9 @@ mod tests {
                 .replacen("GPOS_Context = \"B *\"", "GPOS_Context = \"lookupflag IgnoreLigatures; B *\"", 1)
         });
         let result = TestCompile::compile_source(&source);
-        let font = result.font();
-        let gpos = font.gpos().unwrap();
-        let lookup_list = gpos.lookup_list().unwrap();
-        let dispatch_targets: Vec<Vec<u16>> = lookup_list
-            .lookups()
+        let dispatch_targets: Vec<_> = contextual_lookups(&result)
             .iter()
-            .filter_map(|lookup| match lookup.unwrap() {
-                PositionLookup::ChainContextual(dispatch) => Some(
-                    dispatch
-                        .subtables()
-                        .iter()
-                        .flat_map(|subtable| match subtable.unwrap() {
-                            ChainedSequenceContext::Format3(rule) => rule
-                                .seq_lookup_records()
-                                .iter()
-                                .map(|record| record.lookup_list_index())
-                                .collect::<Vec<_>>(),
-                            _ => panic!("unexpected context format"),
-                        })
-                        .collect(),
-                ),
-                _ => None,
-            })
+            .map(ContextLookup::targets)
             .collect();
         // fontmake 3.12.1 builds the three base targets by descending context
         // length, then the ligature target, across both dispatcher groups.
@@ -5768,11 +5839,29 @@ mod tests {
         // fontmake 3.12.1 / HarfBuzz: contextual mark and mkmk lookup
         // definitions share the earliest insertion point, while a plain
         // mkmk lookup remains inside its feature. Append ignores markers.
-        let mark = "{ tag = mark; code = \"lookup Before { pos B 10; } Before;\\n# Automatic Code\\nlookup After { pos mark tildecomb <anchor 100 1000> mark @AfterMarks; } After;\"; }";
-        let mkmk = "{ tag = mkmk; code = \"lookup MBefore { pos B 30; } MBefore;\\n# Automatic Code\\nlookup MAfter { pos B 40; } MAfter;\"; }";
-        for (features, append, plain_mkmk, mark_indices, mkmk_indices) in [
-            (vec![mark], false, false, vec![0, 1, 2, 4, 8], vec![5, 7]),
+        let mark = r#"{ tag = mark; code = "
+            lookup Before { pos B 10; } Before;
+            # Automatic Code
+            lookup After {
+                pos mark tildecomb <anchor 100 1000> mark @AfterMarks;
+            } After;
+        "; }"#;
+        let mkmk = r#"{ tag = mkmk; code = "
+            lookup MBefore { pos B 30; } MBefore;
+            # Automatic Code
+            lookup MAfter { pos B 40; } MAfter;
+        "; }"#;
+        for (case, features, append, plain_mkmk, mark_indices, mkmk_indices) in [
             (
+                "mark marker",
+                vec![mark],
+                false,
+                false,
+                vec![0, 1, 2, 4, 8],
+                vec![5, 7],
+            ),
+            (
+                "mark then mkmk markers",
                 vec![mark, mkmk],
                 false,
                 false,
@@ -5780,21 +5869,37 @@ mod tests {
                 vec![5, 7, 9, 10],
             ),
             (
+                "mkmk then mark markers",
                 vec![mkmk, mark],
                 false,
                 false,
                 vec![1, 2, 4, 9, 10],
                 vec![0, 5, 7, 8],
             ),
-            (vec![mark], true, false, vec![0, 1, 2, 3, 5], vec![6, 8]),
             (
+                "append with mark marker",
+                vec![mark],
+                true,
+                false,
+                vec![0, 1, 2, 3, 5],
+                vec![6, 8],
+            ),
+            (
+                "append with both markers",
                 vec![mark, mkmk],
                 true,
                 false,
                 vec![0, 1, 4, 5, 7],
                 vec![2, 3, 8, 10],
             ),
-            (vec![mark], false, true, vec![0, 1, 2, 4, 5], vec![6]),
+            (
+                "plain mkmk with mark marker",
+                vec![mark],
+                false,
+                true,
+                vec![0, 1, 2, 4, 5],
+                vec![6],
+            ),
         ] {
             let temp = tempdir().unwrap();
             let source = modified_contextual_attachments(temp.path(), |mut source| {
@@ -5811,30 +5916,13 @@ mod tests {
             let result = TestCompile::compile_source(&source);
             let font = result.font();
             let gpos = font.gpos().unwrap();
-            let list = gpos.feature_list().unwrap();
-            let actual: Vec<_> = list
-                .feature_records()
-                .iter()
-                .map(|record| {
-                    (
-                        record.feature_tag(),
-                        record
-                            .feature(list.offset_data())
-                            .unwrap()
-                            .lookup_list_indices()
-                            .iter()
-                            .map(|id| id.get())
-                            .collect::<Vec<_>>(),
-                    )
-                })
-                .collect();
             assert_eq!(
-                actual,
+                feature_lookup_indices(&gpos),
                 [
                     (Tag::new(b"mark"), mark_indices),
                     (Tag::new(b"mkmk"), mkmk_indices)
                 ],
-                "features={features:?}, append={append}, plain_mkmk={plain_mkmk}"
+                "{case}"
             );
         }
     }
@@ -5850,35 +5938,11 @@ mod tests {
         let result = TestCompile::compile_source(&source);
         let font = result.font();
         let gpos = font.gpos().unwrap();
-        let list = gpos.lookup_list().unwrap();
-        let PositionLookup::MarkToLig(lookup) = list.lookups().get(2).unwrap() else {
-            panic!("expected ligature target")
-        };
-        let write_fonts::read::tables::gpos::MarkLigPos::Format1(lig) =
-            lookup.subtables().get(0).unwrap()
-        else {
-            panic!("expected format 1")
-        };
-        let attach = lig
-            .ligature_array()
-            .unwrap()
-            .ligature_attaches()
-            .get(0)
-            .unwrap();
-        let components: Vec<_> = attach
-            .component_records()
-            .iter()
-            .map(|record| {
-                record
-                    .unwrap()
-                    .ligature_anchors(attach.offset_data())
-                    .iter()
-                    .map(|anchor| anchor.map(|a| anchor_coords(a.unwrap())))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
         // fontmake overwrites the entire array for the later component.
-        assert_eq!(components, [vec![None], vec![Some((500, 900))]]);
+        assert_eq!(
+            ligature_component_anchors(&gpos, 2),
+            [vec![None], vec![Some((500, 900))]]
+        );
     }
 
     #[test]
@@ -5888,46 +5952,16 @@ mod tests {
         assert!(gpos_feature_tags(&font).contains(&Tag::new(b"abvm")));
         assert!(gpos_feature_tags(&font).contains(&Tag::new(b"blwm")));
         let gpos = font.gpos().unwrap();
-        let features = gpos.feature_list().unwrap();
-        let indices: Vec<_> = features
-            .feature_records()
-            .iter()
-            .map(|record| {
-                (
-                    record.feature_tag(),
-                    record
-                        .feature(features.offset_data())
-                        .unwrap()
-                        .lookup_list_indices()
-                        .iter()
-                        .map(|index| index.get())
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .collect();
         assert_eq!(
-            indices,
+            feature_lookup_indices(&gpos),
             [
                 (Tag::new(b"abvm"), vec![0, 3]),
                 (Tag::new(b"blwm"), vec![4, 7])
             ]
         );
-        let anchors: Vec<_> = mark_base_lookups(&gpos)
-            .iter()
-            .flat_map(|base| {
-                let array = base.base_array().unwrap();
-                array.base_records().iter().flat_map(move |r| {
-                    r.unwrap()
-                        .base_anchors(array.offset_data())
-                        .iter()
-                        .map(|a| anchor_coords(a.unwrap().unwrap()))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
         // The reference emits the mixed above/below contextual anchors in both features.
         assert_eq!(
-            anchors,
+            mark_base_anchor_positions(&gpos),
             [
                 (250, 700),
                 (350, 850),
