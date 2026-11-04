@@ -34,8 +34,8 @@ pub(crate) struct TargetId {
     /// Path to source file, relative to the source_dir
     source: PathBuf,
     build: BuildType,
-    /// The one static export to build, if the source has several.
-    export: Option<String>,
+    /// The one static instance to build, if the source has several.
+    instance: Option<String>,
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -66,10 +66,10 @@ impl Target {
         target
     }
 
-    /// This target, building only the static export with this name.
-    pub(crate) fn with_export(&self, export: impl Into<String>) -> Self {
+    /// This target, building only the static instance with this name.
+    pub(crate) fn with_instance(&self, instance: impl Into<String>) -> Self {
         let mut target = self.clone();
-        target.id.export = Some(export.into());
+        target.id.instance = Some(instance.into());
         target
     }
 
@@ -89,8 +89,8 @@ impl Target {
         &self.id.config
     }
 
-    pub(crate) fn export(&self) -> Option<&str> {
-        self.id.export.as_deref()
+    pub(crate) fn instance(&self) -> Option<&str> {
+        self.id.instance.as_deref()
     }
 
     /// The repo's checkout directory, relative to the cache dir root.
@@ -153,8 +153,8 @@ impl Target {
     /// {BASE}{source_dir}/{config_stem}/{file_stem}/{build}
     ///
     /// where {source_dir} is the path to the sources/Sources directory of this
-    /// target, relative to the root git cache. A target for one export ends
-    /// in `{build}-{export}` instead.
+    /// target, relative to the root git cache. A target for one instance ends
+    /// in `{build}-{instance}` instead.
     pub(crate) fn cache_dir(&self, in_dir: &Path) -> PathBuf {
         let config = self.id.config.file_stem().unwrap_or(OsStr::new("config"));
         let mut result = in_dir.join(self.source_dir());
@@ -171,11 +171,11 @@ impl Target {
             .to_string()
             .replace('/', "_");
         result.push(source_no_ext);
-        match &self.id.export {
-            Some(export) => result.push(format!(
+        match &self.id.instance {
+            Some(instance) => result.push(format!(
                 "{}-{}",
                 self.id.build.name(),
-                export.replace('/', "_")
+                instance.replace('/', "_")
             )),
             None => result.push(self.id.build.name()),
         }
@@ -201,8 +201,8 @@ impl Target {
             // cache location. Not quoted, so that the shell expands the `~`.
             write!(&mut cmd, " --config {}", self.repro_config_path().display()).unwrap();
         }
-        if let Some(export) = &self.id.export {
-            write!(&mut cmd, " --export {}", shell_quote(export)).unwrap();
+        if let Some(instance) = &self.id.instance {
+            write!(&mut cmd, " --instance {}", shell_quote(instance)).unwrap();
         }
         cmd
     }
@@ -236,7 +236,7 @@ impl TargetId {
             is_virtual,
             source,
             build,
-            export: None,
+            instance: None,
         }
     }
 
@@ -263,8 +263,8 @@ impl TargetId {
         if let Some(sha) = sha {
             write!(f, "?{sha}")?;
         }
-        match &self.export {
-            Some(export) => write!(f, " ({}: {export})", self.build),
+        match &self.instance {
+            Some(instance) => write!(f, " ({}: {instance})", self.build),
             None => write!(f, " ({})", self.build),
         }
     }
@@ -277,8 +277,8 @@ impl TargetId {
         let inner = s
             .strip_suffix(')')
             .ok_or_else(|| "missing closing paren".to_string())?;
-        // an export's name can contain parens, so look for the build type by name
-        let (head, build, export) = [BuildType::Default, BuildType::GfTools]
+        // an instance's name can contain parens, so look for the build type by name
+        let (head, build, instance) = [BuildType::Default, BuildType::GfTools]
             .into_iter()
             .find_map(|build| {
                 let (head, rest) = inner.rsplit_once(&format!("({}", build.name()))?;
@@ -314,7 +314,7 @@ impl TargetId {
         };
 
         let mut id = Self::new(org_repo, config_path, is_virtual, source, build);
-        id.export = export.map(str::to_owned);
+        id.instance = instance.map(str::to_owned);
         Ok((id, sha))
     }
 }
@@ -351,7 +351,7 @@ impl Display for TargetId {
 /// $ORG/$REPO/$CONFIG_PATH $SRC_PATH?$SHA ($BUILD_TYPE)
 ///
 /// where a virtual config's $CONFIG_PATH starts with the literal path element
-/// '$VIRTUAL'. A target for one static export ends in `($BUILD_TYPE: $EXPORT)`.
+/// '$VIRTUAL'. A target for one static instance ends in `($BUILD_TYPE: $INSTANCE)`.
 impl FromStr for Target {
     type Err = String;
 
@@ -506,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn string_repr_export() {
+    fn string_repr_instance() {
         let gftools = Target::new(
             "org/repo",
             "deadbeef",
@@ -515,25 +515,25 @@ mod tests {
             "sources/Glyphs Files/Hi.glyphs",
         )
         .to_gftools_target();
-        let export = gftools.with_export("Hi Sans (Old) Bold");
+        let instance = gftools.with_instance("Hi Sans (Old) Bold");
 
-        let asstr = export.to_string();
+        let asstr = instance.to_string();
         assert_eq!(
             asstr,
             "org/repo/sources/config.yaml Glyphs Files/Hi.glyphs?deadbeef (gftools: Hi Sans (Old) Bold)"
         );
         let der = Target::from_str(&asstr).unwrap();
-        assert_eq!(der, export);
-        assert_eq!(der.export(), Some("Hi Sans (Old) Bold"));
+        assert_eq!(der, instance);
+        assert_eq!(der.instance(), Some("Hi Sans (Old) Bold"));
         assert_ne!(der.id(), gftools.id());
         assert_eq!(
-            Target::from_str(&gftools.to_string()).unwrap().export(),
+            Target::from_str(&gftools.to_string()).unwrap().instance(),
             None
         );
     }
 
     #[test]
-    fn export_has_its_own_cache_dir_and_repro() {
+    fn instance_has_its_own_cache_dir_and_repro() {
         let target = Target::new(
             "org/repo",
             "123456789a",
@@ -542,7 +542,7 @@ mod tests {
             "sources/hi.glyphs",
         )
         .to_gftools_target()
-        .with_export("Hi Bold");
+        .with_instance("Hi Bold");
         assert_eq!(
             target.cache_dir(Path::new("cache")),
             Path::new("cache/org/repo_123456789a/sources/config/hi/gftools-Hi Bold")
@@ -550,7 +550,7 @@ mod tests {
         assert_eq!(
             target.repro_command("example.com"),
             "python3 -m ttx_diff 'example.com?123456789a#sources/hi.glyphs' --compare gftools \
-             --config ~/.fontc_crater_cache/org/repo/sources/config.yaml --export 'Hi Bold'"
+             --config ~/.fontc_crater_cache/org/repo/sources/config.yaml --instance 'Hi Bold'"
         );
     }
 
@@ -564,7 +564,7 @@ mod tests {
             "sources/Glyphs Files/Hi's.glyphs",
         )
         .to_gftools_target()
-        .with_export("Hi's \"Bold\"");
+        .with_instance("Hi's \"Bold\"");
         let cmd = target.repro_command("example.com");
         let args = shlex::split(&cmd).unwrap();
         assert_eq!(

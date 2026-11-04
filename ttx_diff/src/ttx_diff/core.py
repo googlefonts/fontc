@@ -250,8 +250,8 @@ def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
         cmd.append("--keep-direction")
     if not FLAGS.production_names:
         cmd.append("--no-production-names")
-    if FLAGS.export is not None:
-        cmd += ["--export", FLAGS.export]
+    if FLAGS.instance is not None:
+        cmd += ["--instance", FLAGS.instance]
     cmd += glyph_data_args()
     build(cmd, build_dir)
 
@@ -310,8 +310,8 @@ def build_fontmake(source: Path, build_dir: Path):
         eprint(f"reusing {rel_user(out_file)}")
         return
     font = GSFont(source) if source.suffix in (".glyphs", ".glyphspackage") else None
-    # An explicit export is always a static build, for now.
-    variable = FLAGS.export is None and source_is_variable(source, font)
+    # An explicit instance is always a static build.
+    variable = FLAGS.instance is None and source_is_variable(source, font)
     buildtype = "variable"
     if not variable:
         buildtype = "ttf"
@@ -326,14 +326,14 @@ def build_fontmake(source: Path, build_dir: Path):
         "--debug-feature-file",
         "debug.fea",
     ]
-    # fontmake -i matches the instance name as a regex, fontc --export exactly.
+    # fontmake -i matches the instance name as a regex, fontc --instance exactly.
     # Without one, static Glyphs compilation uses the one static export's metadata.
     # Other sources still use the master/VF reference, including one-master
     # variable sources.
     # fontc never autohints. --no-autohint keeps the instance's 'TTFAutohint options'
     # from hinting fontmake's output.
-    if FLAGS.export is not None:
-        cmd += ["-i", re.escape(FLAGS.export), "--no-autohint"]
+    if FLAGS.instance is not None:
+        cmd += ["-i", re.escape(FLAGS.instance), "--no-autohint"]
     elif not variable and builds_static_export(font):
         cmd.extend(["-i", "--no-autohint"])
     if FLAGS.keep_direction:
@@ -439,11 +439,11 @@ def run_gftools(
     ]
     if fontc_bin is not None:
         cmd += ["--experimental-fontc", fontc_bin]
-    if FLAGS.export is not None:
-        # gftools builds just this static instance. Strict makes fontc build it
-        # with --export even between masters, where fontc fails as it doesn't
+    if FLAGS.instance is not None:
+        # gftools builds just this static instance. Strict makes gftools build it
+        # with fontc even between masters, where fontc fails as it doesn't
         # interpolate, rather than compiling the UFO fontmake cut for it.
-        cmd += ["--experimental-single-instance", FLAGS.export]
+        cmd += ["--experimental-single-instance", FLAGS.instance]
         if fontc_bin is not None:
             cmd.append("--experimental-fontc-strict")
 

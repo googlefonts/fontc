@@ -50,7 +50,7 @@ use crate::color::{
     parse_color_palettes,
 };
 use crate::instance::{
-    SelectedInstance, apply_instance_info, export_names, layer_font_info, select_instance,
+    SelectedInstance, apply_instance_info, instance_names, layer_font_info, select_instance,
 };
 use crate::toir::{
     master_locations, to_design_location, to_instance_design_location, to_ir_axes, to_ir_glyph,
@@ -78,7 +78,7 @@ pub struct DesignSpaceIrSource {
     /// The default source's layer, when the instance sits on another source
     default_ufo_layer: Option<UfoLayer>,
     /// The names of all the instances, before one is selected
-    exports: Arc<Vec<String>>,
+    instance_names: Arc<Vec<String>>,
 }
 
 /// The UFOs of the designspace, keyed by `source.filename`
@@ -257,19 +257,19 @@ fn load_designspace(
 impl DesignSpaceIrSource {
     /// Load a .designspace, or a single .ufo, .ufoz or .ufo.json.
     ///
-    /// When `export` is given, the source builds the static instance of that
+    /// When `requested` is given, the source builds the static instance of that
     /// name: an instance's `name` attribute, else its `"{family} {style}"`,
     /// the family defaulting to the default source's. The instance must sit
     /// on a source, or anywhere when the source is the only one, and gets that
     /// source's outlines, metrics and kerning, and the default source's glyph
     /// set, features and groups, with its own metadata, like `fontmake -i`;
     /// see the `instance` module.
-    pub fn new(designspace_or_ufo_file: &Path, export: Option<&str>) -> Result<Self, Error> {
+    pub fn new(designspace_or_ufo_file: &Path, requested: Option<&str>) -> Result<Self, Error> {
         let (designspace_dir, mut designspace) = load_designspace(designspace_or_ufo_file)
             .map_err(|kind| Error::BadSource(BadSource::new(designspace_or_ufo_file, kind)))?;
 
-        let exports = export_names(&designspace);
-        let instance = export
+        let instance_names = instance_names(&designspace);
+        let instance = requested
             .map(|name| select_instance(&mut designspace, name))
             .transpose()?;
 
@@ -381,8 +381,8 @@ impl DesignSpaceIrSource {
             if !missing.is_empty() {
                 missing.sort_unstable();
                 let source = &designspace.sources[0];
-                return Err(Error::InvalidExport {
-                    name: export.unwrap_or_default().to_string(),
+                return Err(Error::InvalidInstance {
+                    name: requested.unwrap_or_default().to_string(),
                     reason: format!(
                         "its source \"{}\" lacks {} of the default source's glyphs \
                          ({}) and fontc doesn't interpolate",
@@ -444,7 +444,7 @@ impl DesignSpaceIrSource {
             fea_files: Arc::new(fea_files),
             instance,
             default_ufo_layer,
-            exports: Arc::new(exports),
+            instance_names: Arc::new(instance_names),
         })
     }
 }
@@ -577,8 +577,8 @@ impl Source for DesignSpaceIrSource {
     ///
     /// An instance's `name` attribute, else its `"{family} {style}"`, the
     /// family defaulting to the default source's.
-    fn exports(&self) -> Vec<String> {
-        self.exports.to_vec()
+    fn instances(&self) -> Vec<String> {
+        self.instance_names.to_vec()
     }
 }
 
@@ -2706,14 +2706,14 @@ mod tests {
     }
 
     #[test]
-    fn exports_are_all_the_instances() {
+    fn instances_are_all_the_instances() {
         let expected = ["Wght Var Regular", "Wght Var Bold"];
-        assert_eq!(load_wght_var().exports(), expected);
+        assert_eq!(load_wght_var().instances(), expected);
         // selecting one, which cuts the designspace down to it, doesn't
         // change what's available
         let path = testdata_dir().join("wght_var.designspace");
         let source = DesignSpaceIrSource::new(&path, Some("Wght Var Bold")).unwrap();
-        assert_eq!(source.exports(), expected);
+        assert_eq!(source.instances(), expected);
     }
 
     fn add_design_location(
@@ -4549,7 +4549,7 @@ mod tests {
         );
     }
 
-    // --export: fontinfo layering and instance selection, checked against
+    // --instance: fontinfo layering and instance selection, checked against
     // `fontmake -i -o ufo` (ufo2ft's instantiator plus glyphsLib's
     // apply_instance_data_to_ufo) on the same inputs; in their own module for
     // the fixtures they share
@@ -4819,7 +4819,7 @@ mod tests {
         }
 
         #[test]
-        fn export_uses_default_source_codepoints() {
+        fn instance_uses_default_source_codepoints() {
             let dir = tempfile::tempdir().unwrap();
             let path = write_two_sources(dir.path(), &["a", "b"]);
             for (filename, glyph_name, codepoint) in
@@ -4834,8 +4834,8 @@ mod tests {
                 font.save(&ufo_path).unwrap();
             }
 
-            for export in [None, Some("Bold")] {
-                let source = DesignSpaceIrSource::new(&path, export).unwrap();
+            for requested in [None, Some("Bold")] {
+                let source = DesignSpaceIrSource::new(&path, requested).unwrap();
                 let context = Context::new_root(Flags::default());
                 let task_context = context.copy_for_work(Access::All, Access::All);
                 source
@@ -4853,7 +4853,7 @@ mod tests {
                 assert_eq!(
                     context.glyphs.get(&WorkId::Glyph("a".into())).codepoints,
                     HashSet::from([0x61]),
-                    "{export:?}"
+                    "{requested:?}"
                 );
                 assert!(
                     context
@@ -4861,7 +4861,7 @@ mod tests {
                         .get(&WorkId::Glyph("b".into()))
                         .codepoints
                         .is_empty(),
-                    "{export:?}"
+                    "{requested:?}"
                 );
             }
         }
@@ -4897,7 +4897,7 @@ mod tests {
     <instance familyname="Own" stylename="Bold"><location><dimension name="Weight" uservalue="400"/></location></instance>"#;
             let path = write(dir.path(), &sources, instances, "");
             let source = DesignSpaceIrSource::new(&path, Some("DS Family Light")).unwrap();
-            assert_eq!(source.exports(), ["DS Family Light", "Own Bold"]);
+            assert_eq!(source.instances(), ["DS Family Light", "Own Bold"]);
             assert_eq!(
                 source.designspace.instances[0].name.as_deref(),
                 Some("DS Family Light")
@@ -4947,7 +4947,7 @@ mod tests {
             // like gftools, "{family} {style}" names only an instance that
             // has no name
             assert!(
-                error("F Regular").contains("no export has that name"),
+                error("F Regular").contains("no instance has that name"),
                 "{}",
                 error("F Regular")
             );

@@ -66,46 +66,46 @@ impl Input {
 
     /// Creates the implementation of [`Source`] to feed to fontir.
     ///
-    /// For a designspace the export name is the instance's `name` attribute,
+    /// For a designspace the instance name is the instance's `name` attribute,
     /// else its `"{family} {style}"`, the family defaulting to the default
     /// source's; the instance must sit on a source.
-    /// Selecting an export of any other source is an error, and so is custom
+    /// Selecting an instance of any other source is an error, and so is custom
     /// glyph data (like fontmake's `--glyph-data`) for anything but a Glyphs
     /// source on disk.
     #[tracing::instrument(skip_all)]
     pub fn create_source(&self, options: &SourceOptions) -> Result<Box<dyn Source>, Error> {
-        let export = options.export.as_deref();
-        if export.is_some()
+        let instance = options.instance.as_deref();
+        if instance.is_some()
             && !matches!(
                 self,
                 Input::DesignSpacePath(_) | Input::GlyphsPath(_) | Input::GlyphsMemory(_)
             )
         {
-            return Err(Error::ExportUnsupported);
+            return Err(Error::InstanceUnsupported);
         }
         if !options.glyph_data.is_empty() && !matches!(self, Input::GlyphsPath(_)) {
             return Err(Error::GlyphDataRequiresGlyphsSource);
         }
         match self {
-            Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path, export)?)),
+            Input::DesignSpacePath(path) => Ok(Box::new(DesignSpaceIrSource::new(path, instance)?)),
             Input::GlyphsPath(path) => Ok(Box::new(GlyphsIrSource::new(
                 path,
-                export,
+                instance,
                 &options.glyph_data,
             )?)),
             Input::FontraPath(path) => Ok(Box::new(FontraIrSource::new(path)?)),
             Input::GlyphsMemory(source) => {
-                Ok(Box::new(GlyphsIrSource::new_from_memory(source, export)?))
+                Ok(Box::new(GlyphsIrSource::new_from_memory(source, instance)?))
             }
         }
     }
 
-    /// The names of the static exports the source offers.
+    /// The names of the static instances the source offers.
     ///
-    /// They are what [`SourceOptions::export`] can request, see
-    /// [`Source::exports`].
-    pub fn exports(&self) -> Result<Vec<String>, Error> {
-        Ok(self.create_source(&SourceOptions::default())?.exports())
+    /// They are what [`SourceOptions::instance`] can request, see
+    /// [`Source::instances`].
+    pub fn instances(&self) -> Result<Vec<String>, Error> {
+        Ok(self.create_source(&SourceOptions::default())?.instances())
     }
 }
 
@@ -167,11 +167,12 @@ pub fn version() -> String {
 /// compiling it, which is [`Options`].
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SourceOptions {
-    /// Build the export with this name, for now a static instance, like
-    /// fontmake's `-i` but matched exactly, not as a regex: for a Glyphs source
-    /// the export's full name, `"{family} {name}"`; for a designspace the
-    /// instance's `name` attribute, else its `"{family} {style}"`.
-    pub export: Option<String>,
+    /// Build the static instance with this name.
+    ///
+    /// Like fontmake's `-i`, but matched exactly, not as a regex: for a Glyphs
+    /// source the instance's full name, `"{family} {name}"`; for a designspace
+    /// the instance's `name` attribute, else its `"{family} {style}"`.
+    pub instance: Option<String>,
     /// User-provided GlyphData XML files, applied in order, later ones taking
     /// precedence (Glyphs sources only).
     pub glyph_data: Vec<PathBuf>,
@@ -2612,7 +2613,7 @@ mod tests {
 
     #[test]
     fn static_export_metadata_reaches_font_tables() {
-        // #1874: the one static export supplies metadata, while the master
+        // #1874: the one static instance supplies metadata, while the master
         // supplies glyphs. Expected values also match fontmake -i -o ttf.
         // The fixture's font has preferred family/subfamily names and vendor
         // DUCK, its master strikeout size and underline position parameters.
@@ -2720,18 +2721,18 @@ mod tests {
     #[case("Example Regular", "Example", "Regular", 400)]
     #[case("Example Bold", "Example", "Bold", 700)]
     #[case("Example B1 Regular", "Example B1", "Regular", 400)]
-    fn static_export_selected_by_full_name(
-        #[case] export: &str,
+    fn static_instance_selected_by_full_name(
+        #[case] instance: &str,
         #[case] family: &str,
         #[case] subfamily: &str,
         #[case] weight: u16,
     ) {
-        // Several active static exports: --export picks one by
+        // Several active static instances: --instance picks one by
         // "{family} {name}", as fontmake -i matches glyphsLib's instance names.
         let mut result = TestCompile::new_with_source_options(
             "static_export_instances.glyphs",
             &SourceOptions {
-                export: Some(export.to_string()),
+                instance: Some(instance.to_string()),
                 ..Default::default()
             },
             |options| options,
@@ -2751,14 +2752,14 @@ mod tests {
     }
 
     #[test]
-    fn export_unsupported_for_other_sources() {
+    fn instance_unsupported_for_other_sources() {
         let input = Input::new(&testdata_dir().join("fontra/2glyphs.fontra")).unwrap();
         let result = input.create_source(&SourceOptions {
-            export: Some("2glyphs Regular".to_string()),
+            instance: Some("2glyphs Regular".to_string()),
             ..Default::default()
         });
         assert!(
-            matches!(result, Err(Error::ExportUnsupported)),
+            matches!(result, Err(Error::InstanceUnsupported)),
             "{:?}",
             result.err()
         );
@@ -2837,7 +2838,7 @@ mod tests {
         let mut result = TestCompile::new_with_source_options(
             "glyphs3/BagOfStatics.glyphs",
             &SourceOptions {
-                export: Some(instance.to_string()),
+                instance: Some(instance.to_string()),
                 ..Default::default()
             },
             |options| options,
@@ -2869,7 +2870,7 @@ mod tests {
 
     #[test]
     fn bag_of_statics_without_instance_is_unchanged() {
-        // Without --export the incompatible masters still fail as before.
+        // Without --instance the incompatible masters still fail as before.
         let mut result = TestCompile::new("glyphs3/BagOfStatics.glyphs", |options| options);
         let error = result.run_expect_err().to_string();
         assert!(error.contains("'a'"), "{error}");
@@ -2931,7 +2932,7 @@ mod tests {
         let mut result = TestCompile::new_with_source_options(
             source,
             &SourceOptions {
-                export: Some(instance.to_string()),
+                instance: Some(instance.to_string()),
                 ..Default::default()
             },
             |options| options,
@@ -2960,7 +2961,7 @@ mod tests {
 
     #[rstest]
     // The lone source isn't at the declared default: no default master, as
-    // without --export
+    // without --instance
     #[case(
         "single_source_off_default.designspace",
         "Single Source Bold",
@@ -2980,7 +2981,7 @@ mod tests {
         let input = Input::new(&testdata_dir().join(source)).unwrap();
         let error = input
             .create_source(&SourceOptions {
-                export: Some(instance.to_string()),
+                instance: Some(instance.to_string()),
                 ..Default::default()
             })
             .err()
@@ -2990,10 +2991,10 @@ mod tests {
     }
 
     #[test]
-    fn input_lists_exports() {
+    fn input_lists_instances() {
         let input = Input::new(&testdata_dir().join("wght_var.designspace")).unwrap();
         assert_eq!(
-            input.exports().unwrap(),
+            input.instances().unwrap(),
             ["Wght Var Regular", "Wght Var Bold"]
         );
     }
@@ -3005,7 +3006,7 @@ mod tests {
         let mut result = TestCompile::new_with_source_options(
             "wght_var.designspace",
             &SourceOptions {
-                export: Some("Wght Var Bold".to_string()),
+                instance: Some("Wght Var Bold".to_string()),
                 ..Default::default()
             },
             |options| options,

@@ -65,29 +65,29 @@ pub trait Source {
         Flags::empty() // default: no flags from source
     }
 
-    /// The names of the static exports, in source order.
+    /// The names of the static instances, in source order.
     ///
-    /// These are the names one can request, e.g. with fontc's `--export`.
-    /// Building one can still fail: fontc doesn't interpolate, so an export
+    /// These are the names one can request, e.g. with fontc's `--instance`.
+    /// Building one can still fail: fontc doesn't interpolate, so an instance
     /// between masters can't be built.
-    fn exports(&self) -> Vec<String> {
+    fn instances(&self) -> Vec<String> {
         Vec::new()
     }
 }
 
-/// Find the export named `requested` among `exports`.
+/// Find the instance named `requested` among `instances`.
 ///
-/// Returns its index in `exports`, as [`Source::exports`] lists them; the
-/// name must match exactly. The error says why there is no such export: none
+/// Returns its index in `instances`, as [`Source::instances`] lists them; the
+/// name must match exactly. The error says why there is no such instance: none
 /// has that name, listing the ones there are, or several do.
-pub fn find_export(requested: &str, exports: &[String]) -> Result<usize, Error> {
+pub fn find_instance(requested: &str, instances: &[String]) -> Result<usize, Error> {
     let invalid = |reason: String| {
-        Err(Error::InvalidExport {
+        Err(Error::InvalidInstance {
             name: requested.to_string(),
             reason,
         })
     };
-    let matches: Vec<_> = exports
+    let matches: Vec<_> = instances
         .iter()
         .enumerate()
         .filter(|(_, name)| *name == requested)
@@ -95,17 +95,17 @@ pub fn find_export(requested: &str, exports: &[String]) -> Result<usize, Error> 
         .collect();
     match matches.as_slice() {
         [index] => Ok(*index),
-        [] if exports.is_empty() => invalid("the source has no static exports".to_string()),
+        [] if instances.is_empty() => invalid("the source has no static instances".to_string()),
         [] => invalid(format!(
-            "no export has that name; available: {}",
-            exports
+            "no instance has that name; available: {}",
+            instances
                 .iter()
                 .map(|name| format!("\"{name}\""))
                 .collect::<Vec<_>>()
                 .join(", ")
         )),
         _ => invalid(format!(
-            "{} exports have that name; rename or disable all but one",
+            "{} instances have that name; rename or disable all but one",
             matches.len()
         )),
     }
@@ -115,41 +115,43 @@ pub fn find_export(requested: &str, exports: &[String]) -> Result<usize, Error> 
 mod tests {
     use super::*;
 
-    fn exports(names: &[&str]) -> Vec<String> {
+    fn instances(names: &[&str]) -> Vec<String> {
         names.iter().map(|name| name.to_string()).collect()
     }
 
     #[test]
-    fn finds_export_by_exact_name() {
-        let exports = exports(&["Example Regular", "Example Bold"]);
-        assert_eq!(find_export("Example Bold", &exports).unwrap(), 1);
+    fn finds_instance_by_exact_name() {
+        let instances = instances(&["Example Regular", "Example Bold"]);
+        assert_eq!(find_instance("Example Bold", &instances).unwrap(), 1);
         for (requested, reason) in [
             (
                 "example bold",
-                "no export has that name; available: \"Example Regular\", \"Example Bold\"",
+                "no instance has that name; available: \"Example Regular\", \"Example Bold\"",
             ),
             (
                 "Example",
-                "no export has that name; available: \"Example Regular\", \"Example Bold\"",
+                "no instance has that name; available: \"Example Regular\", \"Example Bold\"",
             ),
         ] {
-            let error = find_export(requested, &exports).unwrap_err().to_string();
+            let error = find_instance(requested, &instances)
+                .unwrap_err()
+                .to_string();
             assert!(error.ends_with(reason), "{error}");
         }
     }
 
     #[test]
-    fn no_or_several_exports_by_that_name() {
-        let error = find_export("A", &[]).unwrap_err().to_string();
+    fn no_or_several_instances_by_that_name() {
+        let error = find_instance("A", &[]).unwrap_err().to_string();
         assert!(
-            error.ends_with("the source has no static exports"),
+            error.ends_with("the source has no static instances"),
             "{error}"
         );
-        let error = find_export("A", &exports(&["A", "B", "A"]))
+        let error = find_instance("A", &instances(&["A", "B", "A"]))
             .unwrap_err()
             .to_string();
         assert!(
-            error.ends_with("2 exports have that name; rename or disable all but one"),
+            error.ends_with("2 instances have that name; rename or disable all but one"),
             "{error}"
         );
     }
