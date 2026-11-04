@@ -74,9 +74,9 @@ flags.DEFINE_bool(
     "keep_direction", False, "Preserve contour winding direction from source."
 )
 flags.DEFINE_string(
-    "export",
+    "instance",
     default=None,
-    help="Full name of the static export to build. fontc doesn't interpolate, so "
+    help="Full name of the static instance to build. fontc doesn't interpolate, so "
     "an instance between masters fails on the fontc side.",
 )
 flags.DEFINE_multi_string(

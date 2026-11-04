@@ -199,8 +199,8 @@ def test_builds_static_export(instances, expected):
 
 
 @pytest.mark.parametrize("fontc", [True, False])
-def test_export_selects_gftools_instance(tmp_path, monkeypatch, cli_flags, fontc):
-    """gftools builds just the export; strict only for the fontc build."""
+def test_instance_selects_gftools_instance(tmp_path, monkeypatch, cli_flags, fontc):
+    """gftools builds just the instance; strict only for the fontc build."""
     (tmp_path / ".git").mkdir()
     path = _write_glyphs(tmp_path, masters=[400, 700])
     config = tmp_path / "config.yaml"
@@ -216,7 +216,7 @@ def test_export_selects_gftools_instance(tmp_path, monkeypatch, cli_flags, fontc
     monkeypatch.setattr("ttx_diff.core.build", fake_build)
     name = "Test B1 Heavy (Alt)"
     fontc_bin = tmp_path / "fontc" if fontc else None
-    cli_flags.export = name
+    cli_flags.instance = name
     cli_flags.production_names = True
     run_gftools(path, str(config), tmp_path, fontc_bin=fontc_bin)
     (cmd,) = commands
@@ -224,21 +224,21 @@ def test_export_selects_gftools_instance(tmp_path, monkeypatch, cli_flags, fontc
     assert ("--experimental-fontc-strict" in cmd) == fontc
 
 
-def test_export_passed_to_both_compilers(tmp_path, monkeypatch, cli_flags):
+def test_instance_passed_to_both_compilers(tmp_path, monkeypatch, cli_flags):
     """fontc gets the name verbatim, fontmake as an escaped regex, both static."""
-    # a variable source, so the explicit export also makes fontmake build static
+    # a variable source, so the explicit instance also makes fontmake build static
     path = _write_glyphs(tmp_path, masters=[400, 700])
     commands = []
     monkeypatch.setattr(
         "ttx_diff.core.build", lambda cmd, build_dir: commands.append(cmd)
     )
     name = "Test B1 Heavy (Alt)"
-    cli_flags.export = name
+    cli_flags.instance = name
     cli_flags.keep_overlaps = True
     build_fontc(path, tmp_path / "fontc", tmp_path)
     build_fontmake(path, tmp_path)
     fontc_cmd, fontmake_cmd = commands
-    assert fontc_cmd[fontc_cmd.index("--export") + 1] == name
+    assert fontc_cmd[fontc_cmd.index("--instance") + 1] == name
     assert fontmake_cmd.count("-i") == 1
     assert fontmake_cmd[fontmake_cmd.index("-i") + 1] == r"Test\ B1\ Heavy\ \(Alt\)"
     assert fontmake_cmd[fontmake_cmd.index("-o") + 1] == "ttf"

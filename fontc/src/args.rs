@@ -103,7 +103,7 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub keep_direction: bool,
 
-    /// Build the export with this name, for now a static instance
+    /// Build the static instance with this name
     ///
     /// Like fontmake's -i, but matched exactly, not as a regex. For a Glyphs
     /// source it is the full name ("{family} {style}"); in a multi-master source
@@ -111,8 +111,9 @@ pub struct Args {
     /// between masters aren't interpolated. For a designspace it is the
     /// instance's name attribute, else its "{family} {style}", the family
     /// defaulting to the default source's, as fontmake names it.
-    #[arg(long, value_name = "NAME")]
-    pub export: Option<String>,
+    // TODO: drop the --export alias once gftools passes --instance (#2320)
+    #[arg(long, value_name = "NAME", alias = "export")]
+    pub instance: Option<String>,
 
     /// Custom GlyphData XML file with glyph info (production name, category,
     /// subCategory, etc.). Can be used more than once, later files taking
@@ -211,7 +212,7 @@ impl Args {
 
     pub fn source_options(&self) -> SourceOptions {
         SourceOptions {
-            export: self.export.clone(),
+            instance: self.instance.clone(),
             glyph_data: self.glyph_data.clone(),
         }
     }

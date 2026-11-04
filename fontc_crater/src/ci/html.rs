@@ -831,9 +831,9 @@ fn make_target_description(target: &Target, ambiguous_sources: &HashSet<String>)
         }
         _ => "gftools".to_string(),
     };
-    if let Some(export) = target.export() {
+    if let Some(instance) = target.instance() {
         annotation.push_str(", ");
-        annotation.push_str(export);
+        annotation.push_str(instance);
     }
     html! {
         (source)

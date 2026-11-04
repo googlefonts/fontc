@@ -48,7 +48,7 @@ use write_fonts::{
 
 use crate::stat::to_stat_axes;
 use crate::toir::{
-    FontInfo, design_location, static_exports, to_ir_color, to_ir_contours_and_components,
+    FontInfo, design_location, static_instances, to_ir_color, to_ir_contours_and_components,
     to_ir_features, to_ir_paint,
 };
 
@@ -75,23 +75,24 @@ impl GlyphsIrSource {
 }
 
 impl GlyphsIrSource {
-    /// Load a .glyphs file or .glyphspackage, building the static export with
-    /// the given full name, if any, and applying the user-provided GlyphData
-    /// files in `glyph_data` on top of the bundled data, later ones taking
-    /// precedence.
+    /// Load a .glyphs file or .glyphspackage.
+    ///
+    /// Builds the static instance with the given full name, if any, and
+    /// applies the user-provided GlyphData files in `glyph_data` on top of the
+    /// bundled data, later ones taking precedence.
     ///
     /// The full name is the instance's family name (else the font's) and its
     /// name, joined by a space, as glyphsLib names the instances fontmake `-i`
-    /// matches. It must equal exactly one active static export.
+    /// matches. It must equal exactly one active static instance.
     ///
-    /// If the source would build a variable font, the export must be at the
+    /// If the source would build a variable font, the instance must be at the
     /// location of one of its masters, and only that master is built: fontc
     /// doesn't interpolate static instances. That also builds the static
     /// fonts of sources whose masters aren't compatible ("bag of statics",
     /// <https://github.com/googlefonts/fontc/issues/1288>).
     pub fn new(
         glyphs_file: &Path,
-        export: Option<&str>,
+        instance: Option<&str>,
         glyph_data: &[PathBuf],
     ) -> Result<Self, Error> {
         let glyph_data = if glyph_data.is_empty() {
@@ -112,9 +113,9 @@ impl GlyphsIrSource {
                     format!("Unable to read glyphs file: {e}"),
                 )
             })?,
-            export,
+            instance,
         )
-        // FontInfo doesn't know the path; put it on the --export errors,
+        // FontInfo doesn't know the path; put it on the --instance errors,
         // keeping their kind (and so the error chain)
         .map_err(|error| match error {
             Error::BadSource(error) => BadSource::new(glyphs_file, error.kind).into(),
@@ -240,8 +241,8 @@ impl Source for GlyphsIrSource {
     }
 
     /// The full names (`"{family} {name}"`) of the active static instances.
-    fn exports(&self) -> Vec<String> {
-        static_exports(&self.font_info.font)
+    fn instances(&self) -> Vec<String> {
+        static_instances(&self.font_info.font)
             .into_iter()
             .map(|(_, name)| name)
             .collect()
@@ -249,11 +250,11 @@ impl Source for GlyphsIrSource {
 }
 
 impl GlyphsIrSource {
-    /// Load a Glyphs source from memory, building the static export with the
-    /// given full name, if any.
+    /// Load a Glyphs source from memory.
     ///
-    /// See [`Self::new`] for how the export is chosen.
-    pub fn new_from_memory(data: &str, export: Option<&str>) -> Result<Self, Error> {
+    /// Builds the static instance with the given full name, if any; see
+    /// [`Self::new`] for how it is chosen.
+    pub fn new_from_memory(data: &str, instance: Option<&str>) -> Result<Self, Error> {
         let font = Font::load_from_string(data).map_err(|e| {
             BadSource::custom(
                 "<memory>".to_string(),
@@ -261,7 +262,7 @@ impl GlyphsIrSource {
             )
         })?;
         Ok(Self {
-            font_info: Arc::new(FontInfo::new(font, export)?),
+            font_info: Arc::new(FontInfo::new(font, instance)?),
             source_path: None,
         })
     }
@@ -5457,7 +5458,7 @@ unitsPerEm = 1000;
         }
     }
 
-    const MULTIPLE_STATIC_EXPORTS: &str = r#"{
+    const MULTIPLE_STATIC_INSTANCES: &str = r#"{
 .formatVersion = 3;
 familyName = Example;
 fontMaster = ({ id = m01; });
@@ -5471,19 +5472,19 @@ instances = (
 );
 }"#;
 
-    fn select_export(data: &str, export: &str) -> Result<GlyphsIrSource, Error> {
-        GlyphsIrSource::new_from_memory(data, Some(export))
+    fn select_instance(data: &str, instance: &str) -> Result<GlyphsIrSource, Error> {
+        GlyphsIrSource::new_from_memory(data, Some(instance))
     }
 
-    fn selected_index(data: &str, export: &str) -> Option<usize> {
-        select_export(data, export)
-            .unwrap_or_else(|error| panic!("{export}: {error}"))
+    fn selected_index(data: &str, instance: &str) -> Option<usize> {
+        select_instance(data, instance)
+            .unwrap_or_else(|error| panic!("{instance}: {error}"))
             .font_info
             .export_index
     }
 
     #[test]
-    fn export_selected_by_full_name() {
+    fn instance_selected_by_full_name() {
         // The family is the instance's familyNames property (a Glyphs 2
         // familyName parameter becomes one), else the font's.
         for (name, index) in [
@@ -5492,7 +5493,7 @@ instances = (
             ("Example B1 Regular", 2),
         ] {
             assert_eq!(
-                selected_index(MULTIPLE_STATIC_EXPORTS, name),
+                selected_index(MULTIPLE_STATIC_INSTANCES, name),
                 Some(index),
                 "{name}"
             );
@@ -5500,21 +5501,21 @@ instances = (
     }
 
     #[test]
-    fn exports_are_the_active_static_instances() {
+    fn instances_are_the_active_static_instances() {
         let expected = ["Example Regular", "Example Bold", "Example B1 Regular"];
-        let source = GlyphsIrSource::new_from_memory(MULTIPLE_STATIC_EXPORTS, None).unwrap();
-        assert_eq!(source.exports(), expected);
+        let source = GlyphsIrSource::new_from_memory(MULTIPLE_STATIC_INSTANCES, None).unwrap();
+        assert_eq!(source.instances(), expected);
         // selecting one doesn't change what's available
         assert_eq!(
-            select_export(MULTIPLE_STATIC_EXPORTS, "Example Bold")
+            select_instance(MULTIPLE_STATIC_INSTANCES, "Example Bold")
                 .unwrap()
-                .exports(),
+                .instances(),
             expected
         );
     }
 
     #[test]
-    fn export_selection_is_exact() {
+    fn instance_selection_is_exact() {
         for name in [
             "Regular",
             "Bold",
@@ -5522,7 +5523,7 @@ instances = (
             "Example Bold ",
             "Example.*",
         ] {
-            let message = select_export(MULTIPLE_STATIC_EXPORTS, name)
+            let message = select_instance(MULTIPLE_STATIC_INSTANCES, name)
                 .err()
                 .unwrap_or_else(|| panic!("{name:?} must not match"))
                 .to_string();
@@ -5534,9 +5535,9 @@ instances = (
     }
 
     #[test]
-    fn export_selection_skips_inactive_and_variable_instances() {
+    fn instance_selection_skips_inactive_and_variable_instances() {
         for (name, reason) in [("Example Black", "inactive"), ("Example Light", "variable")] {
-            let message = select_export(MULTIPLE_STATIC_EXPORTS, name)
+            let message = select_instance(MULTIPLE_STATIC_INSTANCES, name)
                 .err()
                 .unwrap_or_else(|| panic!("{name:?} must not match"))
                 .to_string();
@@ -5559,7 +5560,7 @@ instances = ({ name = Regular; active = 0; }, { name = Regular; });
     }
 
     #[test]
-    fn export_selection_rejects_duplicate_full_names() {
+    fn instance_selection_rejects_duplicate_full_names() {
         // Two instances can share a full name when one names its family
         // explicitly; there would be no way to pick either.
         let data = r#"{
@@ -5573,7 +5574,7 @@ instances = (
 { name = Bold; }
 );
 }"#;
-        let message = select_export(data, "Example Regular")
+        let message = select_instance(data, "Example Regular")
             .expect_err("duplicate full names must not silently select one")
             .to_string();
         assert!(message.contains("Example Regular"), "{message}");
@@ -5582,7 +5583,7 @@ instances = (
     }
 
     #[test]
-    fn export_selection_with_one_static_export() {
+    fn instance_selection_with_one_static_instance() {
         let data = r#"{
 .formatVersion = 3;
 familyName = Example;
@@ -5591,14 +5592,14 @@ unitsPerEm = 1000;
 instances = ({ name = Bold; });
 }"#;
         assert_eq!(selected_index(data, "Example Bold"), Some(0));
-        assert!(select_export(data, "Example Regular").is_err());
-        // no static exports at all
+        assert!(select_instance(data, "Example Regular").is_err());
+        // no static instances at all
         let data = data.replace("instances = ({ name = Bold; });", "");
-        assert!(select_export(&data, "Example Bold").is_err());
+        assert!(select_instance(&data, "Example Bold").is_err());
     }
 
     #[test]
-    fn export_selection_on_a_variable_source_builds_its_master() {
+    fn instance_selection_on_a_variable_source_builds_its_master() {
         // fontc can't tell a variable source from a "bag of statics" (#1288):
         // gftools' buildVariable isn't in the source. An instance on a master
         // builds that master as a static font; one between masters would need
@@ -5615,7 +5616,7 @@ instances = (
 { name = Bold; axesValues = (700); }
 );
 }"#;
-        let source = select_export(data, "Example Bold").unwrap();
+        let source = select_instance(data, "Example Bold").unwrap();
         let font_info = &source.font_info;
         assert_eq!(font_info.export_index, Some(2));
         assert_eq!(
@@ -5629,20 +5630,20 @@ instances = (
         );
         assert!(font_info.axes.iter().all(|axis| axis.is_point()));
 
-        let message = select_export(data, "Example Medium")
+        let message = select_instance(data, "Example Medium")
             .expect_err("an instance between masters can't be built from one")
             .to_string();
         assert!(message.contains("Example Medium"), "{message}");
-        // without --export it still builds a variable font
+        // without --instance it still builds a variable font
         let source = GlyphsIrSource::new_from_memory(data, None).unwrap();
         assert_eq!(source.font_info.export_index, None);
         assert_eq!(source.font_info.font.masters.len(), 2);
     }
 
-    fn bag_of_statics(export: &str) -> Result<GlyphsIrSource, Error> {
+    fn bag_of_statics(instance: &str) -> Result<GlyphsIrSource, Error> {
         GlyphsIrSource::new(
             &glyphs3_dir().join("BagOfStatics.glyphs"),
-            Some(export),
+            Some(instance),
             &[],
         )
     }
@@ -5709,9 +5710,9 @@ fontMaster = ({ id = m01; axesValues = (400, 5); }, { id = m02; axesValues = (70
 unitsPerEm = 1000;
 instances = ({ name = Regular; axesValues = (400, 100); }, { name = Bold; axesValues = (700, 10); });
 }"#;
-        assert!(select_export(data, "Example Regular").is_err());
+        assert!(select_instance(data, "Example Regular").is_err());
         assert_eq!(
-            select_export(data, "Example Bold")
+            select_instance(data, "Example Bold")
                 .unwrap()
                 .font_info
                 .font
@@ -5739,7 +5740,11 @@ instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues 
 }"#;
         // each instance gets the alternate layer of its own master
         for (instance, width) in [("Example Regular", 510.0), ("Example Bold", 610.0)] {
-            let glyph = &select_export(data, instance).unwrap().font_info.font.glyphs["a"];
+            let glyph = &select_instance(data, instance)
+                .unwrap()
+                .font_info
+                .font
+                .glyphs["a"];
             assert!(glyph.bracket_layers.is_empty(), "{instance}");
             assert_eq!(glyph.layers.len(), 1, "{instance}");
             assert_eq!(glyph.layers[0].width, width, "{instance}");
@@ -5763,7 +5768,7 @@ glyphs = ({ glyphname = a; layers = (
 unitsPerEm = 1000;
 instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues = (700); });
 }"#;
-        let glyph = &select_export(data, "Example Bold")
+        let glyph = &select_instance(data, "Example Bold")
             .unwrap()
             .font_info
             .font
@@ -5791,7 +5796,7 @@ glyphs = ({ glyphname = a; layers = (
 unitsPerEm = 1000;
 instances = ({ name = Regular; axesValues = (400, 100); }, { name = Bold; axesValues = (700, 5); });
 }"#;
-        let glyph = &select_export(data, "Example Regular")
+        let glyph = &select_instance(data, "Example Regular")
             .unwrap()
             .font_info
             .font
@@ -5810,17 +5815,17 @@ fontMaster = ({ id = m01; axesValues = (400, 12); }, { id = m02; axesValues = (7
 unitsPerEm = 1000;
 instances = ({ name = Regular; axesValues = (400, 12); }, { name = Display; axesValues = (400, 72); });
 }"#;
-        let font_info = select_export(data, "Example Regular").unwrap().font_info;
+        let font_info = select_instance(data, "Example Regular").unwrap().font_info;
         assert!(font_info.font.virtual_masters.is_empty());
         assert!(font_info.axes.iter().all(|axis| axis.is_point()));
         // the virtual master makes Optical vary, so it must match exactly
-        assert!(select_export(data, "Example Display").is_err());
+        assert!(select_instance(data, "Example Display").is_err());
     }
 
     // An instance on the only master needs no interpolation, even when a
     // virtual master's location has no axis mapping (DM Serif Display Italic).
     #[test]
-    fn export_on_master_ignores_unmapped_virtual_master() {
+    fn instance_on_master_ignores_unmapped_virtual_master() {
         let data = r#"{
 .formatVersion = 3;
 familyName = Example;
@@ -5833,7 +5838,7 @@ fontMaster = ({ id = m01; axesValues = (723); });
 unitsPerEm = 1000;
 instances = ({ name = Regular; axesValues = (723); });
 }"#;
-        let font_info = select_export(data, "Example Regular").unwrap().font_info;
+        let font_info = select_instance(data, "Example Regular").unwrap().font_info;
         assert!(font_info.font.virtual_masters.is_empty());
         assert!(font_info.axes.iter().all(|axis| axis.is_point()));
     }
@@ -5855,7 +5860,7 @@ kerningLTR = { m01 = { a = { a = -10; }; }; };
 unitsPerEm = 1000;
 instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues = (700); });
 }"#;
-        let source = select_export(data, "Example Bold").unwrap();
+        let source = select_instance(data, "Example Bold").unwrap();
         let font = &source.font_info.font;
         assert_eq!(
             font.kerning_ltr
@@ -5883,8 +5888,8 @@ glyphs = (
 unitsPerEm = 1000;
 instances = ({ name = Regular; axesValues = (400); }, { name = Bold; axesValues = (700); });
 }"#;
-        assert!(select_export(data, "Example Regular").is_ok());
-        let message = select_export(data, "Example Bold")
+        assert!(select_instance(data, "Example Regular").is_ok());
+        let message = select_instance(data, "Example Bold")
             .expect_err("'b' has nothing to build Bold from")
             .to_string();
         for expected in ["Example Bold", "\"Bold\"", "'b'"] {

@@ -424,12 +424,12 @@ fn make_targets(cache_dir: &Path, repos: &[FontSource]) -> ResolvedTargets {
     let split = to_split
         .into_par_iter()
         .flat_map_iter(|(target, src_path, build_variable, raw_config)| {
-            split_static_exports(target, &src_path, build_variable)
+            split_static_instances(target, &src_path, build_variable)
                 .into_iter()
                 .map(move |target| (target, raw_config.clone()))
         })
         .collect::<Vec<_>>();
-    result.targets.extend(dedupe_static_exports(split));
+    result.targets.extend(dedupe_static_instances(split));
     result.remove_duplicate_default_targets();
     result
 }
@@ -448,45 +448,49 @@ fn config_has_instances(config: &serde_yaml::Value) -> bool {
     config.get("instances").is_some()
 }
 
-/// Drop the static export targets that build the same font as another.
+/// Drop the static instance targets that build the same font as another.
 ///
 /// gftools only uses a config's `familyName` to name variable fonts, so
 /// configs that differ only there build the same statics (e.g. Barlow, Barlow
 /// Condensed and Barlow Semi Condensed, which all build every instance of
 /// `Barlow.glyphs`). We keep the first in sorted order, so the choice doesn't
 /// depend on the order of the inputs.
-fn dedupe_static_exports(mut targets: Vec<(Target, Option<serde_yaml::Value>)>) -> Vec<Target> {
+fn dedupe_static_instances(mut targets: Vec<(Target, Option<serde_yaml::Value>)>) -> Vec<Target> {
     targets.sort_by(|(a, _), (b, _)| a.cmp(b));
     let mut seen = HashSet::new();
     targets
         .into_iter()
         .filter_map(|(target, config)| {
-            let key = target.export().zip(config).map(|(export, mut config)| {
+            let key = target.instance().zip(config).map(|(instance, mut config)| {
                 if let Some(config) = config.as_mapping_mut() {
                     config.remove("familyName");
                 }
-                (target.source_path(Path::new("")), export.to_owned(), config)
+                (
+                    target.source_path(Path::new("")),
+                    instance.to_owned(),
+                    config,
+                )
             });
             key.is_none_or(|key| seen.insert(key)).then_some(target)
         })
         .collect()
 }
 
-/// If a gftools target builds multiple static exports, split them into separate targets.
+/// If a gftools target builds multiple static instances, split them into separate targets.
 ///
 /// ttx_diff compares a single font, so these fail with "gftools produced
-/// multiple outputs" otherwise. A source with one export keeps its target.
-fn split_static_exports(target: Target, src_path: &Path, build_variable: bool) -> Vec<Target> {
+/// multiple outputs" otherwise. A source with one instance keeps its target.
+fn split_static_instances(target: Target, src_path: &Path, build_variable: bool) -> Vec<Target> {
     // in ttx_diff a fontc panic is just a failure; here it would end the run
-    let exports = std::panic::catch_unwind(|| static_exports(src_path, build_variable))
+    let instances = std::panic::catch_unwind(|| static_instances(src_path, build_variable))
         .unwrap_or_else(|_| {
             log::warn!("panicked reading {}", src_path.display());
             Vec::new()
         });
-    if exports.len() > 1 {
-        exports
+    if instances.len() > 1 {
+        instances
             .into_iter()
-            .map(|export| target.with_export(export))
+            .map(|instance| target.with_instance(instance))
             .collect()
     } else {
         vec![target]
@@ -496,7 +500,7 @@ fn split_static_exports(target: Target, src_path: &Path, build_variable: bool) -
 /// The names of the static fonts gftools builds from this source.
 ///
 /// Empty if it builds a variable font, or if we can't tell.
-fn static_exports(src_path: &Path, build_variable: bool) -> Vec<String> {
+fn static_instances(src_path: &Path, build_variable: bool) -> Vec<String> {
     // fontc can't build an unrecognized source either
     let Ok(input) = fontc::Input::new(src_path) else {
         return Vec::new();
@@ -504,8 +508,8 @@ fn static_exports(src_path: &Path, build_variable: bool) -> Vec<String> {
     if build_variable && is_variable(src_path) {
         return Vec::new();
     }
-    input.exports().unwrap_or_else(|e| {
-        log::warn!("failed to list exports of {}: '{e}'", src_path.display());
+    input.instances().unwrap_or_else(|e| {
+        log::warn!("failed to list instances of {}: '{e}'", src_path.display());
         Vec::new()
     })
 }
@@ -708,8 +712,8 @@ mod tests {
     }
 
     #[test]
-    fn configs_differing_in_family_name_share_static_exports() {
-        let target = |config: &str, export: Option<&str>| {
+    fn configs_differing_in_family_name_share_static_instances() {
+        let target = |config: &str, instance: Option<&str>| {
             let target = Target::new(
                 "org/barlow",
                 "deadbeef",
@@ -718,8 +722,8 @@ mod tests {
                 "sources/Barlow.glyphs",
             )
             .to_gftools_target();
-            match export {
-                Some(export) => target.with_export(export),
+            match instance {
+                Some(instance) => target.with_instance(instance),
                 None => target,
             }
         };
@@ -743,7 +747,7 @@ mod tests {
             (target("barlow", None), config(barlow)),
         ];
 
-        let kept = dedupe_static_exports(targets)
+        let kept = dedupe_static_instances(targets)
             .iter()
             .map(|target| target.to_string())
             .collect::<Vec<_>>();
