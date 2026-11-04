@@ -111,8 +111,7 @@ pub struct Args {
     /// between masters aren't interpolated. For a designspace it is the
     /// instance's name attribute, else its "{family} {style}", the family
     /// defaulting to the default source's, as fontmake names it.
-    // TODO: drop the --export alias once gftools passes --instance (#2320)
-    #[arg(long, value_name = "NAME", alias = "export")]
+    #[arg(long, value_name = "NAME")]
     pub instance: Option<String>,
 
     /// Custom GlyphData XML file with glyph info (production name, category,
