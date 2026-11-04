@@ -342,6 +342,47 @@ pub struct MarkLookups {
     pub(crate) mark_base: Vec<PendingLookup<MarkToBaseBuilder>>,
     pub(crate) mark_mark: Vec<PendingLookup<MarkToMarkBuilder>>,
     pub(crate) mark_lig: Vec<PendingLookup<MarkToLigBuilder>>,
+    pub(crate) contextual: Vec<ContextualDispatch>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ContextualTarget {
+    Base(
+        Vec<(
+            GlyphId16,
+            write_fonts::tables::gpos::builders::AnchorBuilder,
+        )>,
+    ),
+    Ligature(
+        Vec<(
+            GlyphId16,
+            Vec<BTreeMap<String, write_fonts::tables::gpos::builders::AnchorBuilder>>,
+        )>,
+    ),
+    Mark(
+        Vec<(
+            GlyphId16,
+            write_fonts::tables::gpos::builders::AnchorBuilder,
+        )>,
+    ),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ContextualRule {
+    /// Target creation order before rules are grouped into dispatchers.
+    pub(crate) order: usize,
+    pub(crate) pattern: String,
+    pub(crate) group: smol_str::SmolStr,
+    pub(crate) bases: Vec<GlyphId16>,
+    pub(crate) origins: Vec<String>,
+    pub(crate) target: ContextualTarget,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ContextualDispatch {
+    pub(crate) feature: Tag,
+    pub(crate) preamble: String,
+    pub(crate) rules: Vec<ContextualRule>,
 }
 /// Marks, ready to feed to fea-rs in the form it expects
 #[derive(Default, Clone, PartialEq)]
@@ -352,6 +393,13 @@ pub struct FeaRsMarks {
     pub(crate) blwm: MarkLookups,
     pub(crate) curs: Vec<PendingLookup<CursivePosBuilder>>,
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValueBuilder>>,
+    pub(crate) generated_mark_classes: BTreeMap<
+        smol_str::SmolStr,
+        Vec<(
+            GlyphId16,
+            write_fonts::tables::gpos::builders::AnchorBuilder,
+        )>,
+    >,
 }
 
 /// Kerns, ready to feed to fea-rs in the form it expects

@@ -5276,6 +5276,385 @@ mod tests {
             .collect()
     }
 
+    fn shaped_mark_offset(
+        result: &TestCompile,
+        text: &str,
+        mark: &str,
+        weight: Option<f32>,
+    ) -> (i32, i32) {
+        let mut font = harfrust::Font::new(result.raw_font.clone(), 0).unwrap();
+        if let Some(weight) = weight {
+            font = font
+                .instance_builder()
+                .variations([("wght", weight)])
+                .build();
+        }
+        let shaper = harfrust::ShaperFont::new(&font);
+        let mut buffer = harfrust::Buffer::new();
+        buffer.push_str(text);
+        buffer.guess_segment_properties();
+        harfrust::shape(&shaper, &mut buffer, harfrust::ShapeOptions::default()).unwrap();
+        let (_, pos) = buffer
+            .glyph_infos()
+            .iter()
+            .zip(buffer.glyph_positions())
+            .find(|(info, _)| info.glyph_id == u32::from(result.get_gid(mark).to_u16()))
+            .unwrap_or_else(|| panic!("{mark} is present"));
+        assert_eq!(pos.x_advance, 0, "{text:?}");
+        (pos.x_offset, pos.y_offset)
+    }
+
+    #[test]
+    fn contextual_anchor_emits_dispatch() {
+        let result = TestCompile::compile_source("glyphs3/ContextualAnchors.glyphs");
+        // Expected offsets are independently produced by fontmake 3.12.1 and
+        // HarfBuzz on the same fixture. The longer context has precedence;
+        // an intervening mark outside the filtering set must be ignored.
+        for (text, weight, expected) in [
+            ("AA\u{301}", 400.0, (-350, 700)),
+            ("BA\u{301}", 400.0, (-250, 800)),
+            ("BBA\u{301}", 400.0, (-200, 850)),
+            ("BA\u{303}\u{301}", 400.0, (-250, 800)),
+            ("BA\u{301}", 700.0, (-150, 900)),
+            ("BC\u{301}", 400.0, (-250, 800)),
+            ("BC\u{301}", 700.0, (-150, 900)),
+            ("DA\u{301}", 400.0, (-230, 820)),
+            ("EA\u{301}", 400.0, (-230, 820)),
+            ("DA\u{303}\u{301}", 400.0, (-230, 820)),
+            ("BT\u{301}B", 400.0, (-240, 800)),
+        ] {
+            assert_eq!(
+                shaped_mark_offset(&result, text, "acutecomb", Some(weight)),
+                expected,
+                "{text:?} at {weight}"
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_ligature_and_mark_to_mark_attachments() {
+        let result = TestCompile::compile_source("glyphs3/ContextualAttachments.glyphs");
+        // Expected values from fontmake 3.12.1 / HarfBuzz on this fixture.
+        for (text, expected) in [
+            ("\u{fb01}\u{301}", (-300, 700)),
+            ("B\u{fb01}\u{301}", (-200, 900)),
+            ("\u{fb01}\u{303}\u{301}", (-300, 900)),
+            ("B\u{303}\u{301}", (-100, 1200)),
+        ] {
+            assert_eq!(
+                shaped_mark_offset(&result, text, "acutecomb", None),
+                expected,
+                "{text:?}"
+            );
+        }
+    }
+
+    fn modified_contextual_attachments(
+        temp: &Path,
+        transform: impl FnOnce(String) -> String,
+    ) -> String {
+        let source =
+            fs::read_to_string(testdata_dir().join("glyphs3/ContextualAttachments.glyphs"))
+                .unwrap();
+        let path = temp.join("contextual.glyphs");
+        fs::write(&path, transform(source)).unwrap();
+        path.to_str().unwrap().to_owned()
+    }
+
+    #[test]
+    fn contextual_generated_mark_class_is_available() {
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source.replace(
+                "GPOS_Context = \"B *\"",
+                "GPOS_Context = \"lookupflag UseMarkFilteringSet @mark_top; B *\"",
+            )
+        });
+        let result = TestCompile::compile_source(&source);
+        for (text, expected) in [
+            ("B\u{fb01}\u{301}", (-200, 900)),
+            ("B\u{303}\u{301}", (-100, 1200)),
+        ] {
+            assert_eq!(
+                shaped_mark_offset(&result, text, "acutecomb", None),
+                expected,
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_rules_use_live_named_lookup_without_name_collision() {
+        for (name, expected_advance) in [
+            ("generatedContextTarget0", 400),
+            ("generatedContextDispatch0", 375),
+        ] {
+            let pattern = format!("B' lookup {name} *' &");
+            let temp = tempdir().unwrap();
+            let source = modified_contextual_attachments(temp.path(), |source| {
+                source
+                    .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"lookup generatedContextTarget0 { pos B -100; } generatedContextTarget0; lookup generatedContextDispatch0 { pos B -125; } generatedContextDispatch0;\"; });\nglyphs = (")
+                    .replace("GPOS_Context = \"B *\"", &format!("GPOS_Context = \"{pattern}\""))
+            });
+            let result = TestCompile::compile_source(&source);
+            let font = harfrust::Font::new(result.raw_font.clone(), 0).unwrap();
+            let shaper = harfrust::ShaperFont::new(&font);
+            let mut buffer = harfrust::Buffer::new();
+            buffer.push_str("B\u{fb01}\u{301}");
+            buffer.guess_segment_properties();
+            harfrust::shape(&shaper, &mut buffer, harfrust::ShapeOptions::default()).unwrap();
+            assert_eq!(
+                buffer.glyph_positions()[0].x_advance,
+                expected_advance,
+                "{pattern}"
+            );
+            assert_eq!(
+                shaped_mark_offset(&result, "B\u{fb01}\u{301}", "acutecomb", None),
+                (-200, 900),
+                "{pattern}"
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_generated_mark_class_collision_matches_fontmake() {
+        // A source markClass with a conflicting anchor keeps its original name;
+        // ufo2ft creates mark_top_1 for the generated class. In contrast, a
+        // source glyph class using the generated mark-class name is invalid.
+        for (class, expected) in [("@mark_top", (-300, 700)), ("@mark_top_1", (-200, 900))] {
+            let temp = tempdir().unwrap();
+            let source = modified_contextual_attachments(temp.path(), |source| {
+                source
+                .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"markClass acutecomb <anchor 500 0> @mark_top;\"; });\nglyphs = (")
+                .replace("GPOS_Context = \"B *\"", &format!("GPOS_Context = \"lookupflag UseMarkFilteringSet {class}; B *\""))
+            });
+            let result = TestCompile::compile_source(&source);
+            assert_eq!(
+                shaped_mark_offset(&result, "B\u{fb01}\u{303}", "tildecomb", None),
+                expected,
+                "{class}"
+            );
+        }
+        // Both the original name and its first suffix are occupied.
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+                .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"markClass acutecomb <anchor 500 0> @mark_top; markClass tildecomb <anchor 150 0> @mark_top_1;\"; });\nglyphs = (")
+                .replace("GPOS_Context = \"B *\"", "GPOS_Context = \"lookupflag UseMarkFilteringSet @mark_top_2; B *\"")
+        });
+        let result = TestCompile::compile_source(&source);
+        assert_eq!(
+            shaped_mark_offset(&result, "B\u{fb01}\u{303}", "tildecomb", None),
+            (-200, 900)
+        );
+        // A source markClass can also contribute a glyph with no `_top`
+        // anchor. Its source markClass anchor is used by the generated lookup.
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+            .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"markClass circumflexcomb <anchor 200 0> @mark_top;\"; });\nglyphs = (\n{ glyphname = circumflexcomb; unicode = 770; layers = ({ layerId = m01; width = 0; }); },")
+            .replace("GPOS_Context = \"B *\"", "GPOS_Context = \"lookupflag UseMarkFilteringSet @mark_top; B *\"")
+        });
+        let result = TestCompile::compile_source(&source);
+        assert_eq!(
+            shaped_mark_offset(&result, "B\u{fb01}\u{302}", "circumflexcomb", None),
+            (-300, 900)
+        );
+
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+            .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"@mark_top = [tildecomb];\"; });\nglyphs = (")
+            .replace("GPOS_Context = \"B *\"", "GPOS_Context = \"lookupflag UseMarkFilteringSet @mark_top; B *\"")
+        });
+        let mut build = TestCompile::new(&source, |options| options);
+        let _error = build.run_expect_err();
+    }
+
+    #[test]
+    fn contextual_invalid_expression_fails_compilation() {
+        for (context, diagnostic) in [
+            ("B * [", "Unclosed glyph class"),
+            (
+                "lookupflag UseMarkFilteringSet @MC_top; B *",
+                "undefined glyph class",
+            ),
+        ] {
+            let temp = tempdir().unwrap();
+            let source = modified_contextual_attachments(temp.path(), |source| {
+                source.replacen(
+                    "GPOS_Context = \"B *\"",
+                    &format!("GPOS_Context = \"{context}\""),
+                    1,
+                )
+            });
+            let mut build = TestCompile::new(&source, |options| options);
+            let error = build.run_expect_err();
+            assert!(format!("{error:?}").contains(diagnostic), "{error:?}");
+            let message = format!("{error:?}");
+            assert!(
+                message.contains("f_i") && message.contains("*top_2.afterB"),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_targets_precede_all_dispatchers() {
+        let result = TestCompile::compile_source("glyphs3/ContextualAnchors.glyphs");
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        let lookup_list = gpos.lookup_list().unwrap();
+        let lookups: Vec<_> = lookup_list.lookups().iter().map(Result::unwrap).collect();
+        let first_dispatch = lookups
+            .iter()
+            .position(|lookup| matches!(lookup, PositionLookup::ChainContextual(_)))
+            .unwrap();
+        assert!(
+            lookups[first_dispatch..]
+                .iter()
+                .all(|lookup| !matches!(lookup, PositionLookup::MarkToBase(_))),
+            "all contextual mark-to-base targets must precede the dispatchers"
+        );
+    }
+
+    #[test]
+    fn contextual_targets_follow_global_rule_creation_order() {
+        use write_fonts::read::tables::layout::ChainedSequenceContext;
+
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+                .replace("anchors = ({ name = top; pos = (200,700); });", "anchors = ({ name = top; pos = (200,700); },\n{ name = \"*top.long\"; pos = (210,710); userData = { GPOS_Context = \"lookupflag RightToLeft; B B B B *\"; }; },\n{ name = \"*top.middle\"; pos = (220,720); userData = { GPOS_Context = \"lookupflag IgnoreLigatures; B B *\"; }; },\n{ name = \"*top.short\"; pos = (230,730); userData = { GPOS_Context = \"lookupflag RightToLeft; B *\"; }; });")
+                .replacen("GPOS_Context = \"B *\"", "GPOS_Context = \"lookupflag IgnoreLigatures; B *\"", 1)
+        });
+        let result = TestCompile::compile_source(&source);
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        let lookup_list = gpos.lookup_list().unwrap();
+        let dispatch_targets: Vec<Vec<u16>> = lookup_list
+            .lookups()
+            .iter()
+            .filter_map(|lookup| match lookup.unwrap() {
+                PositionLookup::ChainContextual(dispatch) => Some(
+                    dispatch
+                        .subtables()
+                        .iter()
+                        .flat_map(|subtable| match subtable.unwrap() {
+                            ChainedSequenceContext::Format3(rule) => rule
+                                .seq_lookup_records()
+                                .iter()
+                                .map(|record| record.lookup_list_index())
+                                .collect::<Vec<_>>(),
+                            _ => panic!("unexpected context format"),
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .collect();
+        // fontmake 3.12.1 builds the three base targets by descending context
+        // length, then the ligature target, across both dispatcher groups.
+        assert_eq!(dispatch_targets, [vec![2, 4], vec![3, 5], vec![9]]);
+    }
+
+    #[test]
+    fn contextual_mark_lookups_precede_trailing_source_at_marker() {
+        // fontmake 3.12.1 / HarfBuzz: contextual mark and mkmk lookup
+        // definitions share the earliest insertion point, while a plain
+        // mkmk lookup remains inside its feature. Append ignores markers.
+        let mark = "{ tag = mark; code = \"lookup Before { pos B 10; } Before;\\n# Automatic Code\\nlookup After { pos mark tildecomb <anchor 100 1000> mark @AfterMarks; } After;\"; }";
+        let mkmk = "{ tag = mkmk; code = \"lookup MBefore { pos B 30; } MBefore;\\n# Automatic Code\\nlookup MAfter { pos B 40; } MAfter;\"; }";
+        for (features, append, plain_mkmk, expected) in [
+            (vec![mark], false, false, (-410, 1700)),
+            (vec![mark, mkmk], false, false, (-480, 1700)),
+            (vec![mkmk, mark], false, false, (-480, 1700)),
+            (vec![mark], true, false, (-110, 1200)),
+            (vec![mark, mkmk], true, false, (-180, 1200)),
+            (vec![mark], false, true, (-410, 900)),
+        ] {
+            let temp = tempdir().unwrap();
+            let source = modified_contextual_attachments(temp.path(), |mut source| {
+                if plain_mkmk {
+                    source = source.replace("{ name = \"*top.afterB\"; pos = (400,500); userData = { GPOS_Context = \"B *\"; }; }", "");
+                }
+                let config = if append {
+                    "userData = { com.github.googlei18n.ufo2ft.featureWriters = ({ class = MarkFeatureWriter; options = { mode = append; }; }); };\n"
+                } else {
+                    ""
+                };
+                source.replace("glyphs = (", &format!("featurePrefixes = ({{ name = AfterMarks; code = \"markClass acutecomb <anchor 100 0> @AfterMarks;\"; }});\nfeatures = ({});\n{config}glyphs = (", features.join(", ")))
+            });
+            let result = TestCompile::compile_source(&source);
+            assert_eq!(
+                shaped_mark_offset(&result, "B\u{303}\u{301}", "acutecomb", None),
+                expected,
+                "features={features:?}, append={append}, plain_mkmk={plain_mkmk}"
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_ligature_components_follow_reference_overwrite() {
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+            .replace("{ name = \"*top_2.afterB\";", "{ name = \"*top_1.afterB\"; pos = (250,800); userData = { GPOS_Context = \"B *\"; }; },\n  { name = \"*top_2.afterB\";")
+            .replace("glyphs = (", "features = ({ tag = liga; code = \"lookupflag IgnoreMarks; sub f i by f_i;\"; });\nglyphs = (\n{ glyphname = f; unicode = 102; layers = ({ layerId = m01; width = 300; }); },\n{ glyphname = i; unicode = 105; layers = ({ layerId = m01; width = 300; }); },")
+        });
+        let result = TestCompile::compile_source(&source);
+        for (text, expected) in [("Bf\u{301}i", (-600, 700)), ("Bfi\u{301}", (-200, 900))] {
+            assert_eq!(
+                shaped_mark_offset(&result, text, "acutecomb", None),
+                expected,
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_indic_above_and_below_attachments() {
+        let result = TestCompile::compile_source("glyphs3/ContextualIndicAnchors.glyphs");
+        // fontmake 3.12.1 / HarfBuzz reference offsets for both features.
+        for (text, mark, expected) in [
+            ("कं", "anusvaradeva", (-350, 700)),
+            ("दकं", "anusvaradeva", (-250, 850)),
+            ("क़", "nuktadeva", (-350, -100)),
+            ("दक़", "nuktadeva", (-200, -250)),
+        ] {
+            assert_eq!(
+                shaped_mark_offset(&result, text, mark, None),
+                expected,
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn disabled_mark_writer_does_not_generate_contextual_attachments() {
+        let temp = tempdir().unwrap();
+        let source = fs::read_to_string(testdata_dir().join("glyphs3/ContextualAnchors.glyphs"))
+            .unwrap()
+            .replace(
+                "familyName = ContextualAnchors;",
+                "familyName = ContextualAnchors;\nuserData = { com.github.googlei18n.ufo2ft.featureWriters = (); };",
+            );
+        let path = temp.path().join("disabled.glyphs");
+        fs::write(&path, source).unwrap();
+        let result = TestCompile::compile_source(path.to_str().unwrap());
+        let font = result.font();
+        assert!(!gpos_feature_tags(&font).contains(&Tag::new(b"mark")));
+        let gpos = font.gpos().unwrap();
+        assert!(
+            gpos.lookup_list()
+                .unwrap()
+                .lookups()
+                .iter()
+                .map(Result::unwrap)
+                .all(|lookup| !matches!(lookup, PositionLookup::ChainContextual(_)))
+        );
+    }
+
     #[test]
     fn compile_basic_gpos_mark_base() {
         let result = TestCompile::compile_source("glyphs3/WghtVar_Anchors.glyphs");
