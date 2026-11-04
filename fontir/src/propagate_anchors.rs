@@ -30,6 +30,7 @@ use crate::{
 struct RawAnchor {
     name: SmolStr,
     pos: Point,
+    context: Option<SmolStr>,
 }
 
 /// Propagate anchors for all composite glyphs.
@@ -96,6 +97,7 @@ pub fn propagate_all_anchors(context: &Context) -> Result<(), Error> {
                             anchor.positions.get(location).map(|pos| RawAnchor {
                                 name: anchor.original_name.clone(),
                                 pos: *pos,
+                                context: anchor.context.clone(),
                             })
                         })
                         .collect::<Vec<_>>()
@@ -154,7 +156,12 @@ fn build_variable_anchors(
 
     for (location, anchors) in per_location_anchors {
         for anchor in anchors {
-            builder.add(anchor.name.clone(), location.clone(), anchor.pos)?;
+            builder.add_with_context(
+                anchor.name.clone(),
+                location.clone(),
+                anchor.pos,
+                anchor.context,
+            )?;
         }
     }
 
@@ -254,6 +261,10 @@ fn interpolate_component_anchors(
             result.push(RawAnchor {
                 name: name.clone(),
                 pos: pos.to_point(),
+                context: default_anchors
+                    .iter()
+                    .find(|a| &a.name == name)
+                    .and_then(|a| a.context.clone()),
             });
         }
     }
@@ -1934,10 +1945,12 @@ mod tests {
                 RawAnchor {
                     name: "_top".into(),
                     pos: Point::new(100.0, 500.0),
+                    context: None,
                 },
                 RawAnchor {
                     name: "top".into(),
                     pos: Point::new(120.0, 700.0),
+                    context: None,
                 },
             ],
         );
@@ -1948,6 +1961,7 @@ mod tests {
                 RawAnchor {
                     name: "top".into(),
                     pos: Point::new(155.0, 738.0),
+                    context: None,
                 },
             ],
         );
@@ -1957,10 +1971,12 @@ mod tests {
                 RawAnchor {
                     name: "_top".into(),
                     pos: Point::new(140.0, 520.0),
+                    context: None,
                 },
                 RawAnchor {
                     name: "top".into(),
                     pos: Point::new(160.0, 740.0),
+                    context: None,
                 },
             ],
         );

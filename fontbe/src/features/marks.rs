@@ -1205,6 +1205,7 @@ mod tests {
             self.anchors.push(Anchor {
                 kind,
                 original_name: anchor_name.into(),
+                context: None,
                 positions,
             });
             self

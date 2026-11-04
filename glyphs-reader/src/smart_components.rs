@@ -335,6 +335,13 @@ fn interpolate_anchors(
             let point = Point::new(pos.x, pos.y);
             let transformed = transform * point;
             Anchor {
+                user_data: layers[0]
+                    .anchors
+                    .iter()
+                    .find(|a| a.name == name)
+                    .unwrap()
+                    .user_data
+                    .clone(),
                 name,
                 pos: transformed,
             }
@@ -811,10 +818,12 @@ mod tests {
                 Anchor {
                     name: "top".into(),
                     pos: (23.0, 103.0).into(),
+                    user_data: Default::default(),
                 },
                 Anchor {
                     name: "bottom".into(),
                     pos: (36.0, -51.0).into(),
+                    user_data: Default::default(),
                 },
             ],
             smart_component_positions: [(SmolStr::new("TEST"), AxisPole::Min)]
@@ -833,10 +842,12 @@ mod tests {
                 Anchor {
                     name: "top".into(),
                     pos: (33.0, 123.0).into(),
+                    user_data: Default::default(),
                 },
                 Anchor {
                     name: "bottom".into(),
                     pos: (36.0, -51.0).into(),
+                    user_data: Default::default(),
                 },
             ],
             smart_component_positions: [(SmolStr::new("TEST"), AxisPole::Max)]

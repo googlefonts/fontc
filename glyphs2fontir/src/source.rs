@@ -1975,7 +1975,16 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                     continue;
                 }
                 let pos = anchor.pos - origin;
-                if let Err(e) = ir_anchors.add(anchor.name.clone(), location.clone(), pos) {
+                let context = anchor
+                    .name
+                    .starts_with('*')
+                    .then(|| anchor.user_data.get("GPOS_Context"))
+                    .flatten()
+                    .and_then(|value| value.as_str())
+                    .map(Into::into);
+                if let Err(e) =
+                    ir_anchors.add_with_context(anchor.name.clone(), location.clone(), pos, context)
+                {
                     if glyph.export {
                         return Err(e.into());
                     }
