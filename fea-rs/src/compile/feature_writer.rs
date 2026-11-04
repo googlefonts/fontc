@@ -22,12 +22,12 @@ use crate::{
 use super::{
     CaretValue,
     features::{AllFeatures, FeatureLookups},
-    language_system::{DefaultLanguageSystems, LanguageSystem},
+    language_system::LanguageSystem,
     lookups::{
         AllLookups, FeatureKey, FilterSetId, LookupId, LookupIdMap, PositionLookup,
         SubstitutionLookup,
     },
-    tables::{GdefBuilder, Tables},
+    tables::GdefBuilder,
 };
 
 /// A trait that can be implemented by the client to do custom feature writing.
@@ -51,15 +51,38 @@ pub(crate) struct RawFeatureVariations {
 
 /// A structure that allows client code to add additional features to the compilation.
 pub struct FeatureBuilder<'a> {
-    pub(crate) language_systems: &'a DefaultLanguageSystems,
-    pub(crate) tables: &'a mut Tables,
-    pub(crate) pos_lookups: Vec<(LookupId, PositionLookup)>,
-    pub(crate) sub_lookups: Vec<(LookupId, SubstitutionLookup)>,
+    compiler: &'a mut dyn FeatureCompiler,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
     pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
-    mark_filter_sets: &'a mut HashMap<GlyphSet, FilterSetId>,
+    lookup_placements: BTreeMap<Tag, Vec<LookupId>>,
     feature_variations: Option<RawFeatureVariations>,
     append_features: HashSet<Tag>,
+}
+
+pub(crate) type MarkMembers = Vec<(
+    GlyphId16,
+    write_fonts::tables::gpos::builders::AnchorBuilder,
+)>;
+pub(crate) type GeneratedMarkClasses = BTreeMap<smol_str::SmolStr, (String, MarkMembers)>;
+
+pub(crate) trait FeatureCompiler {
+    fn language_systems(&self) -> Vec<LanguageSystem>;
+    fn gpos_enabled(&self) -> bool;
+    fn gdef(&self) -> Option<&GdefBuilder>;
+    fn filter_set_id(&mut self, cls: GlyphSet) -> FilterSetId;
+    fn add_lookup(&mut self, lookup: ExternalLookup, front: bool) -> LookupId;
+    fn add_named_target(&mut self, lookup: ExternalLookup) -> (String, LookupId);
+    fn add_mark_classes(
+        &mut self,
+        classes: &BTreeMap<smol_str::SmolStr, MarkMembers>,
+    ) -> GeneratedMarkClasses;
+    fn add_contextual(
+        &mut self,
+        preamble: &str,
+        rules: &[ContextualPositionRule],
+        origin: &str,
+    ) -> Option<(LookupId, Vec<LookupId>)>;
+    fn report_error(&mut self, message: String);
 }
 
 pub trait LookupSubtableBuilder: Sized {
@@ -84,6 +107,19 @@ pub struct PendingLookup<T> {
     ///
     /// This is required for lookups referenced by the `rvrn` feature.
     goes_to_front_of_list: bool,
+}
+
+/// One generated contextual positioning rule, before feature syntax is resolved.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContextualPositionRule {
+    /// The context expression. `*` denotes the bases and `&` the attaching marks.
+    pub pattern: String,
+    /// Glyphs to substitute for `*`.
+    pub bases: Vec<GlyphId16>,
+    /// The resolved mark class substituted for `&`.
+    pub mark_class: String,
+    /// The name of the positioning lookup applied to the selected mark.
+    pub target: String,
 }
 
 impl<T> PendingLookup<T> {
@@ -123,27 +159,20 @@ impl<T> PendingLookup<T> {
 /// An externally created lookup.
 ///
 /// This exists so that we can avoid making our internal types `pub`.
-pub struct ExternalLookup(Inner);
+pub struct ExternalLookup(pub(super) Inner);
 
 // private so as not to expose the payloads
-enum Inner {
+pub(super) enum Inner {
     Gpos(PositionLookup),
     Gsub(SubstitutionLookup),
 }
 
 impl<'a> FeatureBuilder<'a> {
-    pub(crate) fn new(
-        language_systems: &'a DefaultLanguageSystems,
-        tables: &'a mut Tables,
-        mark_filter_sets: &'a mut HashMap<GlyphSet, u16>,
-    ) -> Self {
+    pub(crate) fn new(compiler: &'a mut dyn FeatureCompiler) -> Self {
         Self {
-            language_systems,
-            tables,
-            pos_lookups: Default::default(),
-            sub_lookups: Default::default(),
+            compiler,
             features: Default::default(),
-            mark_filter_sets,
+            lookup_placements: Default::default(),
             feature_variations: Default::default(),
             lig_carets: Default::default(),
             append_features: Default::default(),
@@ -151,13 +180,18 @@ impl<'a> FeatureBuilder<'a> {
     }
 
     /// An iterator over the default language systems registered in the FEA
-    pub fn language_systems(&self) -> impl Iterator<Item = LanguageSystem> + 'a + use<'a> {
-        self.language_systems.iter()
+    pub fn language_systems(&self) -> impl Iterator<Item = LanguageSystem> + use<> {
+        self.compiler.language_systems().into_iter()
     }
 
     /// If the FEA text contained an explicit GDEF table block, return its contents
     pub fn gdef(&self) -> Option<&GdefBuilder> {
-        self.tables.gdef.as_ref()
+        self.compiler.gdef()
+    }
+
+    /// Whether positioning lookups are enabled for this compilation.
+    pub fn gpos_enabled(&self) -> bool {
+        self.compiler.gpos_enabled()
     }
 
     /// Add caret positions for the GDEF `LigCaretList` table
@@ -176,20 +210,58 @@ impl<'a> FeatureBuilder<'a> {
             mark_filter_set,
             goes_to_front_of_list,
         } = lookup;
-        let filter_set_id = mark_filter_set.map(|cls| self.get_filter_set_id(cls));
+        let filter_set_id = mark_filter_set.map(|cls| self.compiler.filter_set_id(cls));
         let lookup = T::to_pos_lookup(flags, filter_set_id, subtables);
-        let next_id = match &lookup.0 {
-            Inner::Gpos(_) => LookupId::ExternalGpos(self.pos_lookups.len()),
-            Inner::Gsub(_) if goes_to_front_of_list => {
-                LookupId::ExternalFrontOfList(self.sub_lookups.len())
-            }
-            Inner::Gsub(_) => LookupId::ExternalGsub(self.sub_lookups.len()),
-        };
-        match lookup.0 {
-            Inner::Gpos(lookup) => self.pos_lookups.push((next_id, lookup)),
-            Inner::Gsub(lookup) => self.sub_lookups.push((next_id, lookup)),
-        }
-        next_id
+        self.compiler.add_lookup(lookup, goes_to_front_of_list)
+    }
+
+    /// Register an attachment target without making it a feature lookup.
+    pub fn add_named_gpos_target<T: LookupSubtableBuilder>(
+        &mut self,
+        feature: Tag,
+        lookup: PendingLookup<T>,
+    ) -> String {
+        let PendingLookup {
+            subtables,
+            flags,
+            mark_filter_set,
+            ..
+        } = lookup;
+        let filter = mark_filter_set.map(|cls| self.compiler.filter_set_id(cls));
+        let (name, id) = self
+            .compiler
+            .add_named_target(T::to_pos_lookup(flags, filter, subtables));
+        self.lookup_placements.entry(feature).or_default().push(id);
+        name
+    }
+
+    /// Compile generated contextual positioning in the current feature environment.
+    pub fn add_contextual_positioning(
+        &mut self,
+        feature: Tag,
+        preamble: &str,
+        rules: &[ContextualPositionRule],
+        origin: &str,
+    ) -> Option<LookupId> {
+        let (id, owned) = self.compiler.add_contextual(preamble, rules, origin)?;
+        self.lookup_placements
+            .entry(feature)
+            .or_default()
+            .extend(owned);
+        Some(id)
+    }
+
+    /// Register mark classes and return their resolved names and full membership.
+    pub fn add_generated_mark_classes(
+        &mut self,
+        classes: &BTreeMap<smol_str::SmolStr, MarkMembers>,
+    ) -> GeneratedMarkClasses {
+        self.compiler.add_mark_classes(classes)
+    }
+
+    /// Report an error produced by a feature provider.
+    pub fn report_error(&mut self, error: impl Into<String>) {
+        self.compiler.report_error(error.into());
     }
 
     /// Add lookups to every default language system.
@@ -240,33 +312,15 @@ impl<'a> FeatureBuilder<'a> {
         self.append_features.insert(tag);
     }
 
-    fn get_filter_set_id(&mut self, cls: GlyphSet) -> FilterSetId {
-        let next_id = self.mark_filter_sets.len();
-        *self.mark_filter_sets.entry(cls).or_insert_with(|| {
-            next_id
-                .try_into()
-                // is this in any way an expected error condition?
-                .expect("too many filter sets?")
-        })
-    }
-
     pub(crate) fn finish(self) -> ExternalFeatures {
-        let FeatureBuilder {
-            pos_lookups,
-            sub_lookups,
-            features,
-            lig_carets,
-            feature_variations,
-            append_features,
-            ..
-        } = self;
         ExternalFeatures {
-            features,
-            pos_lookups,
-            sub_lookups,
-            feature_variations,
-            lig_carets,
-            append_features,
+            features: self.features,
+            pos_lookups: Vec::new(),
+            sub_lookups: Vec::new(),
+            feature_variations: self.feature_variations,
+            lig_carets: self.lig_carets,
+            append_features: self.append_features,
+            lookup_placements: self.lookup_placements,
         }
     }
 }
@@ -313,6 +367,7 @@ pub(crate) struct ExternalFeatures {
     /// Features whose generated lookups must ignore insertion markers and be
     /// appended after all user-defined lookups (feature writer `append` mode).
     pub(crate) append_features: HashSet<Tag>,
+    lookup_placements: BTreeMap<Tag, Vec<LookupId>>,
 }
 
 /// A position in a feature where generated code should be inserted.
@@ -379,6 +434,7 @@ struct MergeCtx<'a> {
     ext_pos_lookups: BTreeMap<LookupId, PositionLookup>,
     ext_sub_lookups: BTreeMap<LookupId, SubstitutionLookup>,
     ext_features: BTreeMap<FeatureKey, FeatureLookups>,
+    lookup_placements: BTreeMap<Tag, Vec<LookupId>>,
     feature_variations: Option<RawFeatureVariations>,
     // ready for insertion
     processed_lookups: Vec<(Placement, Vec<(LookupId, PositionLookup)>)>,
@@ -453,8 +509,12 @@ impl MergeCtx<'_> {
             // then insert the lookups into the correct position
             let insert_at = first_id + inserted_so_far;
             inserted_so_far += lookups.len();
-            self.all_lookups
-                .splice_gpos(insert_at, lookups.iter().map(|v| v.1.clone()));
+            self.all_lookups.splice_gpos(
+                insert_at,
+                std::mem::take(lookups)
+                    .into_iter()
+                    .map(|(_, lookup)| lookup),
+            );
             adjustments.push((first_id, inserted_so_far));
         }
 
@@ -479,9 +539,8 @@ impl MergeCtx<'_> {
     }
 
     fn finalize_gsub(&mut self, id_map: &mut LookupIdMap) {
-        let (start, end): (Vec<_>, Vec<_>) = self
-            .ext_sub_lookups
-            .iter()
+        let (start, end): (Vec<_>, Vec<_>) = std::mem::take(&mut self.ext_sub_lookups)
+            .into_iter()
             .partition(|(id, _)| matches!(id, LookupId::ExternalFrontOfList(_)));
 
         if !start.is_empty() {
@@ -491,20 +550,18 @@ impl MergeCtx<'_> {
             }
         }
 
-        self.all_lookups
-            .splice_gsub(0, start.iter().map(|(_, lk)| (*lk).clone()));
-
-        let last_id = self.all_lookups.next_gsub_id().to_raw();
-        self.all_lookups
-            .splice_gsub(last_id, end.iter().map(|(_, lk)| (*lk).clone()));
-
         for (i, (temp_id, _)) in start.iter().enumerate() {
-            id_map.insert(**temp_id, LookupId::Gsub(i));
+            id_map.insert(*temp_id, LookupId::Gsub(i));
         }
 
+        let last_id = self.all_lookups.next_gsub_id().to_raw() + start.len();
         for (i, (temp_id, _)) in end.iter().enumerate() {
-            id_map.insert(**temp_id, LookupId::Gsub(last_id + i));
+            id_map.insert(*temp_id, LookupId::Gsub(last_id + i));
         }
+        self.all_lookups
+            .splice_gsub(0, start.into_iter().map(|(_, lookup)| lookup));
+        self.all_lookups
+            .splice_gsub(last_id, end.into_iter().map(|(_, lookup)| lookup));
         self.add_feature_variations();
     }
 
@@ -667,6 +724,25 @@ impl MergeCtx<'_> {
             }
         }
 
+        // Contextual mark/mkmk lookups are defined outside their feature blocks.
+        // The mark writer inserts those definitions before the first generated
+        // feature, even when the features themselves have different markers.
+        // Plain lookups stay at their feature's placement, and forced-append
+        // features must not be pulled forward by another feature's marker.
+        let definitions_placement = ORDER
+            .iter()
+            .enumerate()
+            .filter(|(i, tag)| !is_append[*i] && features_we_write.contains(*tag))
+            .filter_map(|(i, _)| inserts[i])
+            .min_by_key(|placement| placement.sort_key());
+        if let Some(placement) = definitions_placement {
+            for (i, tag) in [(2, MARK), (3, MKMK)] {
+                if !is_append[i] && self.lookup_placements.contains_key(&tag) {
+                    self.finalize_lookups_for_feature(tag, placement);
+                }
+            }
+        }
+
         // and finally lets put the lookups in our processed list:
         self.finalize_lookups_for_feature(ABVM, inserts[0].unwrap());
         self.finalize_lookups_for_feature(BLWM, inserts[1].unwrap());
@@ -682,17 +758,29 @@ impl MergeCtx<'_> {
     }
 
     fn lookup_ids_for_features(&self, features: &[Tag]) -> BTreeSet<LookupId> {
-        self.ext_features
+        let mut ids: BTreeSet<_> = self
+            .ext_features
             .iter()
             .filter(|(feat, _)| features.contains(&feat.feature))
             .flat_map(|(_, lookups)| lookups.iter_ids())
-            .collect()
+            .collect();
+        ids.extend(features.iter().flat_map(|feature| {
+            self.lookup_placements
+                .get(feature)
+                .into_iter()
+                .flatten()
+                .copied()
+        }));
+
+        ids
     }
 
     fn take_lookups_for_features(&mut self, features: &[Tag]) -> Vec<(LookupId, PositionLookup)> {
         self.lookup_ids_for_features(features)
             .into_iter()
-            .map(|id| (id, self.ext_pos_lookups.remove(&id).unwrap()))
+            // A target can be shared by dispatchers in more than one feature.
+            // Its first feature places it; the others keep the same remapped ID.
+            .filter_map(|id| self.ext_pos_lookups.remove(&id).map(|lookup| (id, lookup)))
             .collect()
     }
 
@@ -716,12 +804,13 @@ impl ExternalFeatures {
         let ctx = MergeCtx {
             all_lookups,
             all_feats,
-            ext_pos_lookups: self.pos_lookups.iter().cloned().collect(),
-            ext_sub_lookups: self.sub_lookups.iter().cloned().collect(),
-            ext_features: self.features.clone(),
-            feature_variations: self.feature_variations.clone(),
+            ext_pos_lookups: std::mem::take(&mut self.pos_lookups).into_iter().collect(),
+            ext_sub_lookups: std::mem::take(&mut self.sub_lookups).into_iter().collect(),
+            ext_features: std::mem::take(&mut self.features),
+            lookup_placements: std::mem::take(&mut self.lookup_placements),
+            feature_variations: self.feature_variations.take(),
             insert_markers: markers,
-            append_features: self.append_features.clone(),
+            append_features: std::mem::take(&mut self.append_features),
             processed_lookups: Default::default(),
             n_appended: 0,
         };
@@ -736,6 +825,96 @@ mod tests {
     use super::*;
 
     use crate::compile::tags::{LANG_DFLT, SCRIPT_DFLT};
+
+    #[test]
+    fn generated_errors_keep_fragment_and_included_source_locations() {
+        use crate::compile::{self, NopVariationInfo, Opts};
+        use std::{path::Path, sync::Arc};
+        use write_fonts::tables::gpos::builders::AnchorBuilder;
+
+        fn glyph_map() -> crate::GlyphMap {
+            crate::GlyphMap::new(
+                [".notdef", "a", "b", "acute"]
+                    .into_iter()
+                    .map(fontdrasil::types::GlyphName::new),
+            )
+            .unwrap()
+        }
+        struct InvalidProvider(&'static str);
+        impl FeatureProvider for InvalidProvider {
+            fn add_features(&self, builder: &mut FeatureBuilder) {
+                let glyphs = glyph_map();
+                let acute = glyphs.get("acute").unwrap();
+                let base = glyphs.get("a").unwrap();
+                let classes =
+                    BTreeMap::from([("top".into(), vec![(acute, AnchorBuilder::new(0, 0))])]);
+                let classes = builder.add_generated_mark_classes(&classes);
+                let mut target = MarkToBaseBuilder::default();
+                target
+                    .insert_mark(acute, "top", AnchorBuilder::new(0, 0))
+                    .unwrap();
+                target.insert_base(base, "top", AnchorBuilder::new(0, 700));
+                let tag = Tag::new(b"mark");
+                let target = builder.add_named_gpos_target(
+                    tag,
+                    PendingLookup::new(vec![target], LookupFlag::empty(), None),
+                );
+                let rule = ContextualPositionRule {
+                    pattern: self.0.into(),
+                    bases: vec![base],
+                    mark_class: classes["top"].0.clone(),
+                    target,
+                };
+                builder.add_contextual_positioning(
+                    tag,
+                    "",
+                    &[rule],
+                    "origins: a / *top.left, b / *top.right",
+                );
+            }
+        }
+
+        let glyphs = glyph_map();
+        let (tree, parse_errors) = crate::parse::parse_root(
+            "main.fea".into(),
+            Some(&glyphs),
+            Box::new(|path: &Path| {
+                let text = if path.ends_with("main.fea") {
+                    "include(part.fea);"
+                } else {
+                    "lookup L { pos a 10; subtable; } L;"
+                };
+                Ok(Arc::from(text))
+            }),
+        )
+        .unwrap();
+        assert!(!parse_errors.has_errors());
+        for (pattern, expected) in [
+            ("@MISSING *", "undefined glyph class"),
+            ("a * [", "Unclosed glyph class"),
+        ] {
+            let errors = compile::compile(
+                &tree,
+                &glyphs,
+                None::<&NopVariationInfo>,
+                Some(&InvalidProvider(pattern)),
+                Opts::new(),
+            )
+            .err()
+            .unwrap();
+            let text = errors.display().to_string();
+            for expected in [
+                expected,
+                "generated-context",
+                "part.fea",
+                "subtable breaks are ignored",
+                "a / *top.left",
+                "b / *top.right",
+            ] {
+                assert!(text.contains(expected), "missing {expected:?} in {text}");
+            }
+        }
+    }
 
     impl AllFeatures {
         // after remapping, return the order of features, based on the final
@@ -809,6 +988,7 @@ mod tests {
             lig_carets: Default::default(),
             feature_variations: Default::default(),
             append_features: Default::default(),
+            lookup_placements: Default::default(),
         };
 
         let mut all_features = AllFeatures::default();
@@ -859,6 +1039,7 @@ mod tests {
             lig_carets: Default::default(),
             feature_variations: Default::default(),
             append_features: Default::default(),
+            lookup_placements: Default::default(),
         };
 
         let markers = make_markers_with_order([]);
@@ -915,6 +1096,7 @@ mod tests {
             lig_carets: Default::default(),
             feature_variations: Default::default(),
             append_features: Default::default(),
+            lookup_placements: Default::default(),
         }
     }
 

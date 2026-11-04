@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    Diagnostic, DiagnosticSet, GlyphMap,
+    DiagnosticSet, GlyphMap,
     parse::{FileSystemResolver, SourceResolver},
 };
 
@@ -137,7 +137,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
             Box::new(FileSystemResolver::new(project_root))
         });
 
-        let mut warnings = Vec::new();
+        let mut warnings = None;
         let (tree, diagnostics) =
             crate::parse::ParseContext::parse(self.root_path, Some(self.glyph_map), resolver)?
                 .generate_parse_tree();
@@ -168,10 +168,9 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
         // diagnostics are handled in one place, after build: the feature
         // provider and the finalizers run during build, so they can contribute
         // messages of their own.
-        let (compilation, messages) = ctx.build().map_err(|errors| {
-            CompilerError::CompilationFail(DiagnosticSet::new(errors, &tree, self.max_n_errors))
+        let (compilation, diagnostics) = ctx.build().map_err(|errors| {
+            CompilerError::CompilationFail(errors.with_max_to_print(self.max_n_errors))
         })?;
-        let diagnostics = DiagnosticSet::new(messages, &tree, self.max_n_errors);
         take_warnings(
             diagnostics,
             &mut warnings,
@@ -179,7 +178,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
             self.max_n_errors,
         )
         .map_err(CompilerError::CompilationFail)?;
-        let warnings = DiagnosticSet::new(warnings, &tree, self.max_n_errors);
+        let warnings =
+            warnings.unwrap_or_else(|| DiagnosticSet::new(Vec::new(), &tree, self.max_n_errors));
         Ok((compilation, warnings))
     }
 
@@ -195,7 +195,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
 /// Warnings are printed as they are moved, if `print_warnings` is set.
 fn take_warnings(
     mut diagnostics: DiagnosticSet,
-    warnings: &mut Vec<Diagnostic>,
+    warnings: &mut Option<DiagnosticSet>,
     print_warnings: bool,
     max_to_print: usize,
 ) -> Result<(), DiagnosticSet> {
@@ -205,7 +205,10 @@ fn take_warnings(
             // get around a CI check denying eprintln
             let _ = writeln!(std::io::stderr(), "{}", taken.display());
         }
-        warnings.extend(taken.messages);
+        match warnings {
+            Some(existing) => existing.extend(taken),
+            None => *warnings = Some(taken),
+        }
     }
 
     if diagnostics.is_empty() {

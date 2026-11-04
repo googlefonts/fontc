@@ -25,9 +25,9 @@ use super::tables::DEBG_TAG;
 
 use crate::{
     Diagnostic, DiagnosticSet, GlyphMap, GlyphSet, ParseTree,
-    common::MarkClass,
+    common::{GlyphClass, MarkClass},
     compile::{
-        FeatureBuilder, FeatureProvider,
+        FeatureProvider,
         features::{AllFeatures, ConditionSetMap},
         language_system::DefaultLanguageSystems,
         lookups::{AllLookups, FilterSetId},
@@ -43,6 +43,10 @@ use crate::{
 #[derive(Debug)]
 pub struct PendingCompilation {
     pub(super) tree: ParseTree,
+    pub(super) glyph_map: GlyphMap,
+    pub(super) glyph_class_defs: HashMap<SmolStr, GlyphClass>,
+    pub(super) anchor_defs: HashMap<SmolStr, (wtables::gpos::builders::AnchorBuilder, usize)>,
+    pub(super) value_record_defs: HashMap<SmolStr, wtables::gpos::builders::ValueRecordBuilder>,
     pub(super) features: AllFeatures,
     pub(super) lookups: AllLookups,
     pub(super) tables: Tables,
@@ -128,40 +132,14 @@ impl PendingCompilation {
     ///
     /// [`compile_for_merge`]: crate::compile::compile_for_merge
     pub fn finish<F: FeatureProvider>(
-        mut self,
+        self,
         writer: Option<&F>,
     ) -> Result<(Compilation, DiagnosticSet), DiagnosticSet> {
-        let tree = self.tree.clone();
-        if let Some(writer) = writer {
-            self.run_feature_provider(writer);
-        }
-        match self.build() {
-            Ok((compilation, warnings)) => {
-                Ok((compilation, DiagnosticSet::new(warnings, &tree, usize::MAX)))
-            }
-            Err(errors) => Err(DiagnosticSet::new(errors, &tree, usize::MAX)),
-        }
-    }
-
-    pub(crate) fn run_feature_provider<T: FeatureProvider>(&mut self, provider: &T) {
-        let mut builder = FeatureBuilder::new(
-            &self.default_lang_systems,
-            &mut self.tables,
-            &mut self.mark_filter_sets,
-        );
-        provider.add_features(&mut builder);
-        let mut external_features = builder.finish();
-
-        // we need to register any ConditionSets here, because we want a
-        // stable sort order when we compile
-        if let Some(conditions) = external_features.feature_variations.as_ref() {
-            for conditionset in conditions.conditions.iter().map(|(cs, _)| cs) {
-                self.conditionset_defs.register_use(conditionset);
-            }
-        }
-        external_features.merge_into(&mut self.lookups, &mut self.features, &self.insert_markers);
-        //we need these for build()
-        self.lig_carets_from_feature_writer = external_features.lig_carets;
+        let glyph_map = self.glyph_map.clone();
+        super::compile_ctx::CompilationCtx::<F, super::NopVariationInfo>::from_pending(
+            &glyph_map, self, writer,
+        )
+        .build()
     }
 
     /// Infer/update GDEF table as required.

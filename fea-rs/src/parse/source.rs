@@ -340,6 +340,16 @@ impl SourceLoader {
 }
 
 impl SourceList {
+    // Diagnostics resolve by globally unique FileId. Paths may coincide between
+    // independently parsed fragments, so their loader indexes cannot be merged.
+    pub(crate) fn extend(&mut self, other: &SourceList) {
+        self.sources.extend(
+            other
+                .sources
+                .iter()
+                .map(|(id, source)| (*id, source.clone())),
+        );
+    }
     pub(crate) fn id_for_path(&self, path: impl AsRef<Path>) -> Option<FileId> {
         self.ids.get(path.as_ref()).copied()
     }
