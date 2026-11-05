@@ -6084,6 +6084,19 @@ mod tests {
     }
 
     #[test]
+    fn contextual_preamble_resolves_named_values() {
+        let (definition, preamble) = ("valueRecordDef -50 myShift;", "pos B' <myShift> f_i;");
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+                .replace("glyphs = (", &format!("featurePrefixes = ({{ name = Named; code = \"{definition}\"; }});\nglyphs = ("))
+                .replace("GPOS_Context = \"B *\"", &format!("GPOS_Context = \"{preamble} B *\""))
+        });
+        let result = TestCompile::compile_source(&source);
+        assert!(!contextual_lookups(&result).is_empty());
+    }
+
+    #[test]
     fn compile_basic_gpos_mark_base() {
         let result = TestCompile::compile_source("glyphs3/WghtVar_Anchors.glyphs");
         let font = result.font();

@@ -2637,6 +2637,8 @@ impl<F: FeatureProvider, V: VariationInfo> super::feature_writer::FeatureCompile
             glyph_classes: &self.glyph_class_defs,
             mark_classes: &self.mark_classes,
             lookups: self.lookups.named(),
+            anchor_defs: &self.anchor_defs,
+            value_record_defs: &self.value_record_defs,
         });
         validation.validate_root(&tree.typed_root());
         let validation = crate::DiagnosticSet::new(validation.errors, &tree, usize::MAX);
