@@ -215,6 +215,14 @@ impl<'a> FeatureBuilder<'a> {
         self.compiler.add_lookup(lookup, goes_to_front_of_list)
     }
 
+    /// Place these attachment definitions before the first automatic mark marker.
+    pub fn place_before_mark_marker(&mut self, feature: Tag, lookups: &[LookupId]) {
+        self.lookup_placements
+            .entry(feature)
+            .or_default()
+            .extend_from_slice(lookups);
+    }
+
     /// Register an attachment target without making it a feature lookup.
     pub fn add_named_gpos_target<T: LookupSubtableBuilder>(
         &mut self,
@@ -736,9 +744,26 @@ impl MergeCtx<'_> {
             .filter_map(|(i, _)| inserts[i])
             .min_by_key(|placement| placement.sort_key());
         if let Some(placement) = definitions_placement {
-            for (i, tag) in [(2, MARK), (3, MKMK)] {
+            for (i, tag) in ORDER.iter().copied().enumerate() {
                 if !is_append[i] && self.lookup_placements.contains_key(&tag) {
-                    self.finalize_lookups_for_feature(tag, placement);
+                    // Indic mark-to-mark lookups stay at their feature marker.
+                    let ids = if tag == ABVM || tag == BLWM {
+                        self.lookup_placements
+                            .get(&tag)
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        self.lookup_ids_for_features(&[tag]).into_iter().collect()
+                    };
+                    let lookups = ids
+                        .into_iter()
+                        .filter_map(|id| {
+                            self.ext_pos_lookups.remove(&id).map(|lookup| (id, lookup))
+                        })
+                        .collect::<Vec<_>>();
+                    if !lookups.is_empty() {
+                        self.processed_lookups.push((placement, lookups));
+                    }
                 }
             }
         }

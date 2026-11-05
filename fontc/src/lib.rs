@@ -6021,6 +6021,46 @@ mod tests {
     }
 
     #[test]
+    fn contextual_indic_marks_follow_dispatch_and_hoist_definitions() {
+        for markers in [false, true] {
+            let temp = tempdir().unwrap();
+            let mut source =
+                fs::read_to_string(testdata_dir().join("glyphs3/ContextualIndicAnchors.glyphs"))
+                    .unwrap()
+                    .replace(
+                        "glyphs = (",
+                        r#"glyphs = (
+ { glyphname = candrabindudeva; unicode = 2305; layers = ({ layerId = m01; width = 0;
+ anchors = ({ name = _top; pos = (100,0); }, { name = top; pos = (100,200); }); }); },"#,
+                    );
+            if markers {
+                source = source.replace("glyphs = (", "features = ({ tag = abvm; code = \"# Automatic Code\\nlookup AAfter { pos kadeva 10; } AAfter;\"; }, { tag = blwm; code = \"# Automatic Code\\nlookup BAfter { pos kadeva 20; } BAfter;\"; });\nglyphs = (");
+            }
+            let path = temp.path().join("indic.glyphs");
+            fs::write(&path, source).unwrap();
+            let result = TestCompile::compile_source(path.to_str().unwrap());
+            let font = result.font();
+            let gpos = font.gpos().unwrap();
+            // fontmake 3.12.1 / ufo2ft 3.11.0: contextual first, stacking last;
+            // both features' attachment definitions precede the first marker.
+            assert_eq!(
+                feature_lookup_indices(&gpos),
+                if markers {
+                    vec![
+                        (Tag::new(b"abvm"), vec![0, 3, 8, 9]),
+                        (Tag::new(b"blwm"), vec![4, 7, 10]),
+                    ]
+                } else {
+                    vec![
+                        (Tag::new(b"abvm"), vec![0, 3, 8]),
+                        (Tag::new(b"blwm"), vec![4, 7]),
+                    ]
+                }
+            );
+        }
+    }
+
+    #[test]
     fn compile_basic_gpos_mark_base() {
         let result = TestCompile::compile_source("glyphs3/WghtVar_Anchors.glyphs");
         let font = result.font();

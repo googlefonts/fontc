@@ -1346,13 +1346,16 @@ impl FeatureProvider for FeaRsMarks {
                     .iter()
                     .map(|lk| builder.add_lookup(lk.clone())),
             );
+            if !lookups.contextual.is_empty() {
+                builder.place_before_mark_marker(feature, &out);
+            }
+            out.extend(add_contextual(builder, lookups, feature, mark_classes));
             out.extend(
                 lookups
                     .mark_mark
                     .iter()
                     .map(|lk| builder.add_lookup(lk.clone())),
             );
-            out.extend(add_contextual(builder, lookups, feature, mark_classes));
             out
         }
 
