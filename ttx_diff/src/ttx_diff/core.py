@@ -1532,6 +1532,8 @@ def diff_ratio(text1: str, text2: str) -> float:
 def path_for_output_item(tag_or_normalizer_name: str, compiler: str) -> str:
     if tag_or_normalizer_name == MARK_KERN_NAME:
         return f"{compiler}.markkern.txt"
+    elif tag_or_normalizer_name == LIG_CARET_NAME:
+        return f"{compiler}.{LIG_CARET_NAME}.txt"
     elif tag_or_normalizer_name in (GLYF_NAME, GVAR_NAME):
         return f"{compiler}.{tag_or_normalizer_name}.diff.txt"
     else:
