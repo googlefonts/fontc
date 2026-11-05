@@ -6061,6 +6061,29 @@ mod tests {
     }
 
     #[test]
+    fn contextual_mark_side_anchors_are_ignored() {
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source.replace(
+            "anchors = ({ name = _top; pos = (100,0); });",
+            "anchors = ({ name = _top; pos = (100,0); }, { name = \"*_top.alt\"; pos = (999,999); userData = { GPOS_Context = \"B *\"; }; });")
+        });
+        let control = TestCompile::compile_source("glyphs3/ContextualAttachments.glyphs");
+        let result = TestCompile::compile_source(&source);
+        // Ignoring this unsupported anchor must preserve every attachment table.
+        assert_eq!(
+            result
+                .font()
+                .table_data(Tag::new(b"GPOS"))
+                .map(|data| data.as_bytes()),
+            control
+                .font()
+                .table_data(Tag::new(b"GPOS"))
+                .map(|data| data.as_bytes())
+        );
+    }
+
+    #[test]
     fn compile_basic_gpos_mark_base() {
         let result = TestCompile::compile_source("glyphs3/WghtVar_Anchors.glyphs");
         let font = result.font();

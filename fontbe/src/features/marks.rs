@@ -246,6 +246,9 @@ impl<'a> MarkLookupBuilder<'a> {
                 continue;
             }
             for anchor in &anchors.anchors {
+                if anchor.context.is_some() && matches!(anchor.kind, AnchorKind::Mark(_)) {
+                    continue;
+                }
                 match &anchor.kind {
                     AnchorKind::Base(group)
                     | AnchorKind::Ligature {
