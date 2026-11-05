@@ -549,6 +549,119 @@ mod tests {
     };
 
     #[test]
+    fn singlepos_resolves_variations_in_both_formats_and_extensions() {
+        use write_fonts::{
+            tables::{
+                gdef::Gdef as WriteGdef,
+                gpos::builders::ValueRecordBuilder,
+                variations::{
+                    RegionAxisCoordinates, VariationRegion, common_builder::RemapVarStore,
+                    ivs_builder::VariationStoreBuilder,
+                },
+            },
+            types::{F2Dot14, GlyphId16, Tag},
+        };
+
+        let names = [".notdef", "A", "B"].map(Into::into).into_iter().collect();
+        let region = VariationRegion::new(vec![RegionAxisCoordinates::new(
+            F2Dot14::ZERO,
+            F2Dot14::ONE,
+            F2Dot14::ONE,
+        )]);
+        for format in [1, 2] {
+            for extension in [false, true] {
+                // No feature references also exercises lookups reached only
+                // through contextual positioning or feature variations.
+                for in_feature in [false, true] {
+                    let mut store = VariationStoreBuilder::new(1);
+                    let mut value = |x| {
+                        ValueRecordBuilder::new()
+                            .with_x_placement(x)
+                            .with_x_placement_device(vec![(region.clone(), 20)])
+                            .with_y_placement(-20)
+                            .with_y_placement_device(vec![(region.clone(), 10)])
+                            .with_x_advance(30)
+                            .with_x_advance_device(vec![(region.clone(), 40)])
+                            .with_y_advance(-40)
+                            .with_y_advance_device(vec![(region.clone(), -20)])
+                            .build(&mut store)
+                    };
+                    let coverage = [1, 2].map(GlyphId16::new).into_iter().collect();
+                    let subtable = if format == 1 {
+                        wgpos::SinglePos::format_1(coverage, value(10))
+                    } else {
+                        wgpos::SinglePos::format_2(coverage, vec![value(10), value(11)])
+                    };
+                    let shadowed = wgpos::SinglePos::format_1(
+                        [GlyphId16::new(1)].into_iter().collect(),
+                        wgpos::ValueRecord::new().with_x_advance(999),
+                    );
+                    let subtables = vec![subtable, shadowed];
+                    let lookup = if extension {
+                        wgpos::PositionLookup::Extension(wlayout::Lookup::new(
+                            LookupFlag::IGNORE_MARKS,
+                            subtables
+                                .into_iter()
+                                .map(|sub| {
+                                    wgpos::ExtensionSubtable::Single(
+                                        wgpos::ExtensionPosFormat1::new(1, sub),
+                                    )
+                                })
+                                .collect(),
+                        ))
+                    } else {
+                        wgpos::PositionLookup::Single(wlayout::Lookup::new(
+                            LookupFlag::IGNORE_MARKS,
+                            subtables,
+                        ))
+                    };
+                    let scripts = if in_feature {
+                        wlayout::ScriptList::new(vec![wlayout::ScriptRecord::new(
+                            Tag::new(b"dist"),
+                            wlayout::Script::new(Some(wlayout::LangSys::new(vec![0])), vec![]),
+                        )])
+                    } else {
+                        wlayout::ScriptList::default()
+                    };
+                    let mut gpos = wgpos::Gpos::new(
+                        scripts,
+                        wlayout::FeatureList::new(vec![wlayout::FeatureRecord::new(
+                            Tag::new(b"dist"),
+                            wlayout::Feature::new(None, vec![0]),
+                        )]),
+                        wlayout::LookupList::new(vec![lookup]),
+                    );
+                    let (store, remapping) = store.build();
+                    gpos.remap_variation_indices(&remapping);
+                    let gdef = WriteGdef {
+                        item_var_store: Some(store).into(),
+                        ..Default::default()
+                    };
+                    let gpos_bytes = write_fonts::dump_table(&gpos).unwrap();
+                    let gdef_bytes = write_fonts::dump_table(&gdef).unwrap();
+                    let gpos = Gpos::read(gpos_bytes.as_slice().into()).unwrap();
+                    let gdef = Gdef::read(gdef_bytes.as_slice().into()).unwrap();
+                    let mut output = Vec::new();
+                    print(&mut output, &gpos, Some(&gdef), &names).unwrap();
+                    let feature = if in_feature {
+                        "\n# dist: dist/dflt\n"
+                    } else {
+                        ""
+                    };
+                    let second_x = if format == 1 { "10 {30}" } else { "11 {31}" };
+                    assert_eq!(
+                        String::from_utf8(output).unwrap(),
+                        format!(
+                            "{feature}\n# lookup 0\n# 2 SinglePos rules\n# lookupflag LookupFlag(IGNORE_MARKS)\nA <10 {{30}} -20 {{-10}} 30 {{70}} -40 {{-60}}>\nB <{second_x} -20 {{-10}} 30 {{70}} -40 {{-60}}>\n"
+                        ),
+                        "format {format}, extension {extension}, in_feature {in_feature}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn merge_pairpos_lookups() {
         let mut sub1 = PairPosBuilder::default();
         sub1.add_pair(1, 4, 20);
