@@ -1,7 +1,7 @@
 //! Generating a normalized text representation for OpenType layout tables
 //!
-//! This currently supports a subset of GPOS (kerning and marks), GDEF ligature
-//! carets, and the glyf and gvar tables.
+//! This currently supports a subset of GPOS (single positioning, kerning and
+//! marks), GDEF ligature carets, and the glyf and gvar tables.
 
 pub mod args;
 mod common;

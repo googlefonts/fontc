@@ -7,8 +7,8 @@
 This crate converts OpenType layout subtables to a normalized representation,
 suitable for comparison in a text diff.
 
-This currently supports a subset of GPOS (kerning and marks) and normalizes the
-GDEF ligature caret table. GSUB is stubbed out not supported.
+This currently supports a subset of GPOS (single positioning, kerning and marks)
+and normalizes the GDEF ligature caret table. GSUB is stubbed out not supported.
 
 It also prints `glyf` and `gvar` (`--table glyf`, `--table gvar`) as
 line-oriented text: one block per glyph in glyph name order, with all-off-curve

@@ -1018,7 +1018,7 @@ def sort_gdef_mark_filter_sets(ttx: etree.ElementTree):
     etree.indent(markglyphs, level=3)
 
 
-LOOKUPS_TO_SKIP = set([2, 3, 4, 5, 6])  # pairpos, cursive, markbase, marklig, markmark
+LOOKUPS_TO_SKIP = set([1, 2, 3, 4, 5, 6])  # singlepos, pairpos, cursive, marks
 
 
 def remove_mark_and_kern_and_curs_lookups(ttx):

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Display},
     io,
 };
@@ -13,7 +13,10 @@ use write_fonts::{
                 AnchorTable, CursivePos, Gpos, MarkBasePos, MarkLigPos, MarkMarkPos,
                 PositionLookupList, PositionSubtables, ValueRecord,
             },
-            layout::DeviceOrVariationIndex,
+            layout::{
+                ChainedSequenceContext, DeviceOrVariationIndex, SequenceContext,
+                SequenceLookupRecord,
+            },
         },
     },
     tables::layout::LookupFlag,
@@ -31,11 +34,12 @@ use crate::{
 mod cursive;
 mod marks;
 mod pairpos;
+mod singlepos;
 
 #[cfg(test)]
 mod test_helpers;
 
-use self::{marks::MarkAttachmentRule, pairpos::PairPosRule};
+use self::{marks::MarkAttachmentRule, pairpos::PairPosRule, singlepos::SinglePosRule};
 
 /// Print normalized GPOS layout rules for the provided font
 pub fn print(
@@ -67,22 +71,165 @@ pub fn print(
         writeln!(f,)?;
         sys.fmt_header(f)?;
 
-        // then for each feature/language/script we iterate through
-        // all rules, split by the rule (lookup) type
-        let pairpos = lookup_rules.pairpos_rules(&sys.lookups);
-        let markmark = lookup_rules.markmark_rules(&sys.lookups);
-        let markbase = lookup_rules.markbase_rules(&sys.lookups);
-        let markliga = lookup_rules.markliga_rules(&sys.lookups);
-        let cursive = lookup_rules.cursive_rules(&sys.lookups);
+        print_lookup_rules(
+            f,
+            &lookup_rules,
+            &sys.lookups,
+            names,
+            mark_glyph_sets.as_ref(),
+        )?;
+    }
 
-        print_rules(f, "PairPos", &pairpos, names, mark_glyph_sets.as_ref())?;
-        print_rules(f, "MarkToBase", &markbase, names, mark_glyph_sets.as_ref())?;
-        print_rules(f, "MarkToMark", &markmark, names, mark_glyph_sets.as_ref())?;
-        print_rules(f, "MarkToLig", &markliga, names, mark_glyph_sets.as_ref())?;
-        print_rules(f, "CursivePos", &cursive, names, mark_glyph_sets.as_ref())?;
+    // lookups no feature reaches, plus contextual and FeatureVariations targets:
+    // print these on their own since the XML keeps their LookupListIndex references
+    for id in standalone_lookup_ids(table, &lang_systems) {
+        let mut output = Vec::new();
+        print_lookup_rules(
+            &mut output,
+            &lookup_rules,
+            &[id],
+            names,
+            mark_glyph_sets.as_ref(),
+        )?;
+        if !output.is_empty() {
+            writeln!(f, "\n# lookup {id}")?;
+            f.write_all(&output)?;
+        }
     }
 
     Ok(())
+}
+
+fn print_lookup_rules(
+    f: &mut dyn io::Write,
+    rules: &LookupRules,
+    lookups: &[u16],
+    names: &NameMap,
+    mark_glyph_sets: Option<&MarkGlyphSets>,
+) -> Result<(), Error> {
+    let singlepos = rules.singlepos_rules(lookups);
+    let pairpos = rules.pairpos_rules(lookups);
+    let markbase = rules.markbase_rules(lookups);
+    let markmark = rules.markmark_rules(lookups);
+    let markliga = rules.markliga_rules(lookups);
+    let cursive = rules.cursive_rules(lookups);
+
+    print_rules(f, "SinglePos", &singlepos, names, mark_glyph_sets)?;
+    print_rules(f, "PairPos", &pairpos, names, mark_glyph_sets)?;
+    print_rules(f, "MarkToBase", &markbase, names, mark_glyph_sets)?;
+    print_rules(f, "MarkToMark", &markmark, names, mark_glyph_sets)?;
+    print_rules(f, "MarkToLig", &markliga, names, mark_glyph_sets)?;
+    print_rules(f, "CursivePos", &cursive, names, mark_glyph_sets)?;
+    Ok(())
+}
+
+fn standalone_lookup_ids(table: &Gpos, features: &[common::Feature]) -> BTreeSet<u16> {
+    let in_features = features
+        .iter()
+        .flat_map(|feature| feature.lookups.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let lookups = table.lookup_list().unwrap();
+    let mut ids = (0..lookups.lookups().len())
+        .map(|id| u16::try_from(id).unwrap())
+        .filter(|id| !in_features.contains(id))
+        .collect::<BTreeSet<_>>();
+    let mut add_records = |records: &[SequenceLookupRecord]| {
+        ids.extend(records.iter().map(|record| record.lookup_list_index()));
+    };
+    for lookup in lookups.lookups().iter() {
+        match lookup.unwrap().subtables().unwrap() {
+            PositionSubtables::Contextual(subs) => {
+                for sub in subs.iter() {
+                    match sub.unwrap() {
+                        SequenceContext::Format1(sub) => {
+                            for rules in sub.seq_rule_sets().iter().flatten() {
+                                for rule in rules.unwrap().seq_rules().iter() {
+                                    add_records(rule.unwrap().seq_lookup_records());
+                                }
+                            }
+                        }
+                        SequenceContext::Format2(sub) => {
+                            for rules in sub.class_seq_rule_sets().iter().flatten() {
+                                for rule in rules.unwrap().class_seq_rules().iter() {
+                                    add_records(rule.unwrap().seq_lookup_records());
+                                }
+                            }
+                        }
+                        SequenceContext::Format3(sub) => add_records(sub.seq_lookup_records()),
+                        SequenceContext::Format4(sub) => {
+                            for rules in sub.seq_rule_sets().iter().flatten() {
+                                for rule in rules.unwrap().seq_rules().iter() {
+                                    add_records(rule.unwrap().seq_lookup_records());
+                                }
+                            }
+                        }
+                        SequenceContext::Format5(sub) => {
+                            for rules in sub.class_seq_rule_sets().iter().flatten() {
+                                for rule in rules.unwrap().class_seq_rules().iter() {
+                                    add_records(rule.unwrap().seq_lookup_records());
+                                }
+                            }
+                        }
+                        SequenceContext::Format6(sub) => add_records(sub.seq_lookup_records()),
+                    }
+                }
+            }
+            PositionSubtables::ChainContextual(subs) => {
+                for sub in subs.iter() {
+                    match sub.unwrap() {
+                        ChainedSequenceContext::Format1(sub) => {
+                            for rules in sub.chained_seq_rule_sets().iter().flatten() {
+                                for rule in rules.unwrap().chained_seq_rules().iter() {
+                                    add_records(rule.unwrap().seq_lookup_records());
+                                }
+                            }
+                        }
+                        ChainedSequenceContext::Format2(sub) => {
+                            for rules in sub.chained_class_seq_rule_sets().iter().flatten() {
+                                for rule in rules.unwrap().chained_class_seq_rules().iter() {
+                                    add_records(rule.unwrap().seq_lookup_records());
+                                }
+                            }
+                        }
+                        ChainedSequenceContext::Format3(sub) => {
+                            add_records(sub.seq_lookup_records())
+                        }
+                        ChainedSequenceContext::Format4(sub) => {
+                            for rules in sub.chained_seq_rule_sets().iter().flatten() {
+                                for rule in rules.unwrap().chained_seq_rules().iter() {
+                                    add_records(rule.unwrap().seq_lookup_records());
+                                }
+                            }
+                        }
+                        ChainedSequenceContext::Format5(sub) => {
+                            for rules in sub.chained_class_seq_rule_sets().iter().flatten() {
+                                for rule in rules.unwrap().chained_class_seq_rules().iter() {
+                                    add_records(rule.unwrap().seq_lookup_records());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+    if let Some(vars) = table.feature_variations().transpose().unwrap() {
+        for record in vars.feature_variation_records() {
+            let Some(subs) = record
+                .feature_table_substitution(vars.offset_data())
+                .transpose()
+                .unwrap()
+            else {
+                continue;
+            };
+            for sub in subs.substitutions() {
+                let feature = sub.alternate_feature(subs.offset_data()).unwrap();
+                ids.extend(feature.lookup_list_indices().iter().map(|id| id.get()));
+            }
+        }
+    }
+    ids
 }
 
 fn print_rules<T: PrintNames + Clone>(
@@ -228,24 +375,40 @@ impl ResolvedValue {
     }
 
     fn add_in_place(&mut self, other: &ResolvedValue) {
-        self.default += other.default;
         // note: in theory there could be Device tables here, in which case
         // we are just dropping the second one; in practice Device tables are
         // basically unused, and are completely unused in Google Fonts fonts
-        if let (Some(DeviceOrDeltas::Deltas(d1)), Some(DeviceOrDeltas::Deltas(d2))) = (
+        match (
             self.device_or_deltas.as_mut(),
             other.device_or_deltas.as_ref(),
         ) {
-            // these aren't deltas, but rather the resolved value at each
-            // defined master location, so they should always be equal.
-            assert_eq!(d1.len(), d2.len());
-            d1.iter_mut().zip(d2.iter()).for_each(|(d1, d2)| *d1 += d2)
+            (Some(DeviceOrDeltas::Deltas(d1)), Some(DeviceOrDeltas::Deltas(d2))) => {
+                // these aren't deltas, but rather the resolved value at each
+                // defined master location, so they should always be equal.
+                assert_eq!(d1.len(), d2.len());
+                d1.iter_mut().zip(d2.iter()).for_each(|(d1, d2)| *d1 += d2)
+            }
+            (Some(DeviceOrDeltas::Deltas(d1)), None) => {
+                d1.iter_mut().for_each(|d| *d += other.default as i32);
+            }
+            (None, Some(DeviceOrDeltas::Deltas(d2))) => {
+                self.device_or_deltas = Some(DeviceOrDeltas::Deltas(
+                    d2.iter().map(|d| d + self.default as i32).collect(),
+                ));
+            }
+            _ => (),
+        }
+        self.default += other.default;
+        if matches!(&self.device_or_deltas, Some(DeviceOrDeltas::Deltas(d)) if d.iter().all(|&v| v == self.default as i32))
+        {
+            self.device_or_deltas = None;
         }
     }
 }
 
 #[derive(Clone, Debug, Default)]
 struct LookupRules {
+    singlepos: Vec<Lookup<SinglePosRule>>,
     pairpos: Vec<Lookup<PairPosRule>>,
     markbase: Vec<Lookup<MarkAttachmentRule>>,
     markmark: Vec<Lookup<MarkAttachmentRule>>,
@@ -255,6 +418,32 @@ struct LookupRules {
 }
 
 impl LookupRules {
+    fn singlepos_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, SinglePosRule>> {
+        use std::collections::hash_map;
+        let mut seen = HashMap::<_, _>::new();
+        for rule in self
+            .singlepos
+            .iter()
+            .filter(|lookup| lookups.contains(&lookup.lookup_id))
+            .flat_map(|lookup| lookup.iter())
+        {
+            match seen.entry((rule.rule().glyph, rule.lookup_flags())) {
+                hash_map::Entry::Vacant(entry) => {
+                    entry.insert(rule);
+                }
+                hash_map::Entry::Occupied(mut entry) => {
+                    entry.get_mut().rule_mut().merge(rule.rule());
+                }
+            }
+        }
+        let mut result: Vec<_> = seen
+            .into_values()
+            .filter(|r| !r.rule().record.is_zero())
+            .collect();
+        result.sort_unstable();
+        result
+    }
+
     fn pairpos_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, PairPosRule>> {
         use std::collections::hash_map;
         // so these rules are currently decomposed, (each rule is for a
@@ -424,6 +613,13 @@ fn get_lookup_rules(
             .flatten();
         let subtables = lookup.subtables().unwrap();
         match subtables {
+            PositionSubtables::Single(subs) => {
+                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
+                let rules = singlepos::get_singlepos_rules(&subs, delta_computer).unwrap();
+                result
+                    .singlepos
+                    .push(Lookup::new(id, rules, flag, mark_filter_id));
+            }
             PositionSubtables::Pair(subs) => {
                 let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
                 let rules = pairpos::get_pairpos_rules(&subs, delta_computer).unwrap();
@@ -537,128 +733,315 @@ impl Display for ResolvedAnchor {
 #[cfg(test)]
 mod tests {
     use write_fonts::tables::{
-        gpos::builders::{MarkToBaseBuilder, PairPosBuilder},
+        gpos::builders::{MarkToBaseBuilder, PairPosBuilder, SinglePosBuilder, ValueRecordBuilder},
         layout::LookupFlag,
+        variations::{RegionAxisCoordinates, VariationRegion, ivs_builder::VariationStoreBuilder},
     };
+    use write_fonts::types::{F2Dot14, GlyphId16};
 
-    use super::test_helpers::{RawAnchor, SimpleMarkBaseBuilder, SimplePairPosBuilder};
+    use super::test_helpers::{
+        RawAnchor, SimpleMarkBaseBuilder, SimplePairPosBuilder, SimpleSinglePosBuilder,
+        build_gpos_and_gdef,
+    };
     use super::*;
     use write_fonts::{
+        from_obj::ToOwnedTable,
         read::FontRead,
         tables::{gpos as wgpos, layout as wlayout},
     };
 
     #[test]
-    fn singlepos_resolves_variations_in_both_formats_and_extensions() {
-        use write_fonts::{
-            tables::{
-                gdef::Gdef as WriteGdef,
-                gpos::builders::ValueRecordBuilder,
-                variations::{
-                    RegionAxisCoordinates, VariationRegion, common_builder::RemapVarStore,
-                    ivs_builder::VariationStoreBuilder,
-                },
-            },
-            types::{F2Dot14, GlyphId16, Tag},
+    fn merge_static_and_variable_values() {
+        let varied = |default, masters| ResolvedValue {
+            default,
+            device_or_deltas: Some(DeviceOrDeltas::Deltas(masters)),
         };
+        let first = ResolvedValueRecord {
+            x_advance: 5.into(),
+            y_advance: 13.into(),
+            x_placement: varied(10, vec![30, 50]),
+            y_placement: 0.into(),
+        };
+        let second = ResolvedValueRecord {
+            x_advance: varied(10, vec![30, 50]),
+            y_advance: 0.into(),
+            x_placement: 7.into(),
+            y_placement: varied(-5, vec![-15, -25]),
+        };
+        for (left, right) in [(&first, &second), (&second, &first)] {
+            let mut sum = left.clone();
+            sum.add_in_place(right);
+            assert_eq!(sum.to_string(), "<17 {37,57} -5 {-15,-25} 15 {35,55} 13>");
+        }
+    }
 
+    #[test]
+    fn merge_variations_to_constant() {
+        for (other_default, other_master, expected) in [(0, -20, 10), (-10, -30, 0)] {
+            let mut value = ResolvedValue {
+                default: 10,
+                device_or_deltas: Some(DeviceOrDeltas::Deltas(vec![30])),
+            };
+            let other = ResolvedValue {
+                default: other_default,
+                device_or_deltas: Some(DeviceOrDeltas::Deltas(vec![other_master])),
+            };
+            value.add_in_place(&other);
+            assert_eq!(value, expected.into());
+        }
+    }
+
+    #[test]
+    fn singlepos_merge_drops_zero_adjustments() {
+        let lookups = [10, -10]
+            .into_iter()
+            .map(|advance| {
+                let mut sub = SinglePosBuilder::default();
+                sub.add_pos(1, advance);
+                wgpos::PositionLookup::Single(wlayout::Lookup::new(
+                    LookupFlag::empty(),
+                    vec![sub.build_exactly_one_subtable()],
+                ))
+            })
+            .collect();
+        let bytes = write_fonts::dump_table(&wlayout::LookupList::new(lookups)).unwrap();
+        let lookups = write_fonts::read::tables::gpos::OriginalPositionLookupList::read(
+            bytes.as_slice().into(),
+        )
+        .unwrap();
+        let rules = get_lookup_rules(&lookups.into(), None);
+        assert!(rules.singlepos_rules(&[0, 1]).is_empty());
+    }
+
+    #[test]
+    fn zero_singlepos_in_earlier_subtable_shadows_later_subtable() {
+        let names = [".notdef", "A", "B"].map(Into::into).into_iter().collect();
+        let sub_zero = wgpos::SinglePos::format_1(
+            [GlyphId16::new(1)].into_iter().collect(),
+            wgpos::ValueRecord::new(),
+        );
+        let sub_later = wgpos::SinglePos::format_1(
+            [GlyphId16::new(1), GlyphId16::new(2)].into_iter().collect(),
+            wgpos::ValueRecord::new().with_x_advance(999),
+        );
+        let lookup = wgpos::PositionLookup::Single(wlayout::Lookup::new(
+            LookupFlag::empty(),
+            vec![sub_zero, sub_later],
+        ));
+        let (gpos, gdef) = build_gpos_and_gdef(lookup, VariationStoreBuilder::new(0));
+        let mut output = Vec::new();
+        print(&mut output, &gpos, Some(&gdef), &names).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "\n# dist: DFLT/dflt\n# 1 SinglePos rules\n# lookupflag LookupFlag(0)\nB 999\n",
+        );
+    }
+
+    #[test]
+    fn singlepos_resolves_variations_in_both_formats() {
         let names = [".notdef", "A", "B"].map(Into::into).into_iter().collect();
         let region = VariationRegion::new(vec![RegionAxisCoordinates::new(
             F2Dot14::ZERO,
             F2Dot14::ONE,
             F2Dot14::ONE,
         )]);
-        for format in [1, 2] {
-            for extension in [false, true] {
-                // No feature references also exercises lookups reached only
-                // through contextual positioning or feature variations.
-                for in_feature in [false, true] {
-                    let mut store = VariationStoreBuilder::new(1);
-                    let mut value = |x| {
-                        ValueRecordBuilder::new()
-                            .with_x_placement(x)
-                            .with_x_placement_device(vec![(region.clone(), 20)])
-                            .with_y_placement(-20)
-                            .with_y_placement_device(vec![(region.clone(), 10)])
-                            .with_x_advance(30)
-                            .with_x_advance_device(vec![(region.clone(), 40)])
-                            .with_y_advance(-40)
-                            .with_y_advance_device(vec![(region.clone(), -20)])
-                            .build(&mut store)
-                    };
-                    let coverage = [1, 2].map(GlyphId16::new).into_iter().collect();
-                    let subtable = if format == 1 {
-                        wgpos::SinglePos::format_1(coverage, value(10))
-                    } else {
-                        wgpos::SinglePos::format_2(coverage, vec![value(10), value(11)])
-                    };
-                    let shadowed = wgpos::SinglePos::format_1(
-                        [GlyphId16::new(1)].into_iter().collect(),
-                        wgpos::ValueRecord::new().with_x_advance(999),
-                    );
-                    let subtables = vec![subtable, shadowed];
-                    let lookup = if extension {
-                        wgpos::PositionLookup::Extension(wlayout::Lookup::new(
-                            LookupFlag::IGNORE_MARKS,
-                            subtables
-                                .into_iter()
-                                .map(|sub| {
-                                    wgpos::ExtensionSubtable::Single(
-                                        wgpos::ExtensionPosFormat1::new(1, sub),
-                                    )
-                                })
-                                .collect(),
-                        ))
-                    } else {
-                        wgpos::PositionLookup::Single(wlayout::Lookup::new(
-                            LookupFlag::IGNORE_MARKS,
-                            subtables,
-                        ))
-                    };
-                    let scripts = if in_feature {
-                        wlayout::ScriptList::new(vec![wlayout::ScriptRecord::new(
-                            Tag::new(b"dist"),
-                            wlayout::Script::new(Some(wlayout::LangSys::new(vec![0])), vec![]),
-                        )])
-                    } else {
-                        wlayout::ScriptList::default()
-                    };
-                    let mut gpos = wgpos::Gpos::new(
-                        scripts,
-                        wlayout::FeatureList::new(vec![wlayout::FeatureRecord::new(
-                            Tag::new(b"dist"),
-                            wlayout::Feature::new(None, vec![0]),
-                        )]),
-                        wlayout::LookupList::new(vec![lookup]),
-                    );
-                    let (store, remapping) = store.build();
-                    gpos.remap_variation_indices(&remapping);
-                    let gdef = WriteGdef {
-                        item_var_store: Some(store).into(),
-                        ..Default::default()
-                    };
-                    let gpos_bytes = write_fonts::dump_table(&gpos).unwrap();
-                    let gdef_bytes = write_fonts::dump_table(&gdef).unwrap();
-                    let gpos = Gpos::read(gpos_bytes.as_slice().into()).unwrap();
-                    let gdef = Gdef::read(gdef_bytes.as_slice().into()).unwrap();
-                    let mut output = Vec::new();
-                    print(&mut output, &gpos, Some(&gdef), &names).unwrap();
-                    let feature = if in_feature {
-                        "\n# dist: dist/dflt\n"
-                    } else {
-                        ""
-                    };
-                    let second_x = if format == 1 { "10 {30}" } else { "11 {31}" };
-                    assert_eq!(
-                        String::from_utf8(output).unwrap(),
-                        format!(
-                            "{feature}\n# lookup 0\n# 2 SinglePos rules\n# lookupflag LookupFlag(IGNORE_MARKS)\nA <10 {{30}} -20 {{-10}} 30 {{70}} -40 {{-60}}>\nB <{second_x} -20 {{-10}} 30 {{70}} -40 {{-60}}>\n"
-                        ),
-                        "format {format}, extension {extension}, in_feature {in_feature}",
-                    );
+        for (format, expected) in [
+            (
+                1,
+                "\n# dist: DFLT/dflt\n# 2 SinglePos rules\n# lookupflag LookupFlag(8)\nA <3 {5} -5 {-7} 10 {30} -7 {-4}>\nB <3 {5} -5 {-7} 10 {30} -7 {-4}>\n",
+            ),
+            (
+                2,
+                "\n# dist: DFLT/dflt\n# 2 SinglePos rules\n# lookupflag LookupFlag(8)\nA <3 {5} -5 {-7} 10 {30} -7 {-4}>\nB <3 {5} -5 {-7} 11 {31} -7 {-4}>\n",
+            ),
+        ] {
+            let mut store = VariationStoreBuilder::new(1);
+            let mut value = |advance| {
+                ValueRecordBuilder::new()
+                    .with_x_advance(advance)
+                    .with_x_advance_device(vec![(region.clone(), 20)])
+                    .with_x_placement(3)
+                    .with_x_placement_device(vec![(region.clone(), 2)])
+                    .with_y_placement(-5)
+                    .with_y_placement_device(vec![(region.clone(), -2)])
+                    .with_y_advance(-7)
+                    .with_y_advance_device(vec![(region.clone(), 3)])
+                    .build(&mut store)
+            };
+            let coverage = [1, 2].map(GlyphId16::new).into_iter().collect();
+            let subtable = if format == 1 {
+                wgpos::SinglePos::format_1(coverage, value(10))
+            } else {
+                wgpos::SinglePos::format_2(coverage, vec![value(10), value(11)])
+            };
+            let shadowed = wgpos::SinglePos::format_1(
+                [GlyphId16::new(1)].into_iter().collect(),
+                wgpos::ValueRecord::new().with_x_advance(999),
+            );
+            let lookup = wgpos::PositionLookup::Single(wlayout::Lookup::new(
+                LookupFlag::IGNORE_MARKS,
+                vec![subtable, shadowed],
+            ));
+            let (gpos, gdef) = build_gpos_and_gdef(lookup, store);
+            for in_feature in [false, true] {
+                let mut gpos: wgpos::Gpos = gpos.to_owned_table();
+                if !in_feature {
+                    gpos.script_list = Some(wlayout::ScriptList::default()).into();
                 }
+                let bytes = write_fonts::dump_table(&gpos).unwrap();
+                let gpos = Gpos::read(bytes.as_slice().into()).unwrap();
+                let mut output = Vec::new();
+                print(&mut output, &gpos, Some(&gdef), &names).unwrap();
+                let expected = if in_feature {
+                    expected.to_owned()
+                } else {
+                    expected.replace("# dist: DFLT/dflt", "# lookup 0")
+                };
+                assert_eq!(
+                    String::from_utf8(output).unwrap(),
+                    expected,
+                    "format {format}"
+                );
             }
         }
+    }
+
+    #[test]
+    fn contextual_pairpos_lookup_is_printed_separately() {
+        let mut pair = PairPosBuilder::default();
+        pair.add_pair(1, 2, 50);
+        let pair = wgpos::PositionLookup::Pair(wlayout::Lookup::new(
+            LookupFlag::empty(),
+            vec![pair.build_exactly_one_subtable()],
+        ));
+        let context = wgpos::PositionLookup::ChainContextual(wlayout::Lookup::new(
+            LookupFlag::empty(),
+            vec![
+                wlayout::ChainedSequenceContext::Format3(
+                    wlayout::ChainedSequenceContextFormat3::new(
+                        vec![],
+                        vec![[GlyphId16::new(1)].into_iter().collect()],
+                        vec![[GlyphId16::new(2)].into_iter().collect()],
+                        vec![wlayout::SequenceLookupRecord::new(0, 1)],
+                    ),
+                )
+                .into(),
+            ],
+        ));
+        let (gpos, gdef) = build_gpos_and_gdef(context.clone(), VariationStoreBuilder::new(0));
+        let names = [".notdef", "A", "B"].map(Into::into).into_iter().collect();
+        for shared in [false, true] {
+            let mut gpos: wgpos::Gpos = gpos.to_owned_table();
+            gpos.lookup_list = Some(wlayout::LookupList::new(vec![
+                context.clone(),
+                pair.clone(),
+            ]))
+            .into();
+            if shared {
+                gpos.feature_list.as_mut().unwrap().feature_records[0]
+                    .feature
+                    .lookup_list_indices
+                    .push(1);
+            }
+            let bytes = write_fonts::dump_table(&gpos).unwrap();
+            let gpos = Gpos::read(bytes.as_slice().into()).unwrap();
+            let mut output = Vec::new();
+            print(&mut output, &gpos, Some(&gdef), &names).unwrap();
+            let output = String::from_utf8(output).unwrap();
+            assert!(output.ends_with(
+                "\n# lookup 1\n# 1 PairPos rules\n# lookupflag LookupFlag(0)\nA 50 B\n"
+            ));
+            assert_eq!(output.matches("A 50 B").count(), if shared { 2 } else { 1 });
+        }
+    }
+
+    #[test]
+    fn feature_variation_lookup_is_printed_separately() {
+        let lookup = |advance| {
+            let mut sub = SinglePosBuilder::default();
+            sub.add_pos(1, advance);
+            wgpos::PositionLookup::Single(wlayout::Lookup::new(
+                LookupFlag::empty(),
+                vec![sub.build_exactly_one_subtable()],
+            ))
+        };
+        let (gpos, gdef) = build_gpos_and_gdef(lookup(5), VariationStoreBuilder::new(0));
+        let mut gpos: wgpos::Gpos = gpos.to_owned_table();
+        gpos.lookup_list
+            .as_mut()
+            .unwrap()
+            .lookups
+            .push(lookup(-5).into());
+        gpos.feature_list.as_mut().unwrap().feature_records[0]
+            .feature
+            .lookup_list_indices
+            .push(1);
+        gpos.feature_variations = Some(wlayout::FeatureVariations::new(vec![
+            wlayout::FeatureVariationRecord::new(
+                None,
+                Some(wlayout::FeatureTableSubstitution::new(vec![
+                    wlayout::FeatureTableSubstitutionRecord::new(
+                        0,
+                        wlayout::Feature::new(None, vec![0]),
+                    ),
+                ])),
+            ),
+        ]))
+        .into();
+        let bytes = write_fonts::dump_table(&gpos).unwrap();
+        let gpos = Gpos::read(bytes.as_slice().into()).unwrap();
+        let names = [".notdef", "A"].map(Into::into).into_iter().collect();
+        let mut output = Vec::new();
+        print(&mut output, &gpos, Some(&gdef), &names).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "\n# dist: DFLT/dflt\n\n# lookup 0\n# 1 SinglePos rules\n# lookupflag LookupFlag(0)\nA 5\n",
+        );
+    }
+
+    #[test]
+    fn merge_singlepos_lookups() {
+        let mut sub1 = SinglePosBuilder::default();
+        sub1.add_pos(1, 10);
+        sub1.add_pos(2, -20);
+        sub1.add_pos(3, 0);
+        let mut sub2 = SinglePosBuilder::default();
+        sub2.add_pos(1, 5);
+        sub2.add_pos(2, 5);
+        let mut sub3 = SinglePosBuilder::default();
+        sub3.add_pos(1, 7);
+
+        let lookups = [sub1, sub2, sub3]
+            .into_iter()
+            .zip([
+                LookupFlag::empty(),
+                LookupFlag::empty(),
+                LookupFlag::IGNORE_MARKS,
+            ])
+            .map(|(sub, flag)| {
+                wgpos::PositionLookup::Single(wlayout::Lookup::new(
+                    flag,
+                    vec![sub.build_exactly_one_subtable()],
+                ))
+            })
+            .collect();
+        let bytes = write_fonts::dump_table(&wlayout::LookupList::new(lookups)).unwrap();
+        let lookups = write_fonts::read::tables::gpos::OriginalPositionLookupList::read(
+            bytes.as_slice().into(),
+        )
+        .unwrap();
+        let rules = get_lookup_rules(&lookups.into(), None);
+        let rules = rules.singlepos_rules(&[0, 1, 2]);
+        let names = [".notdef", "A", "B", "C"]
+            .map(Into::into)
+            .into_iter()
+            .collect();
+        let mut output = Vec::new();
+        print_rules(&mut output, "SinglePos", &rules, &names, None).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "# 3 SinglePos rules\n# lookupflag LookupFlag(8)\nA 7\n# lookupflag LookupFlag(0)\nA 15\nB -15\n"
+        );
     }
 
     #[test]
