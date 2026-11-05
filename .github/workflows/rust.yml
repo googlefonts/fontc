@@ -138,6 +138,8 @@ jobs:
       - name: cargo test ufo2fontir
         run: cargo test --locked -p ufo2fontir --all-targets --all-features
 
+      - run: cargo test --locked -p otl-normalizer --all-targets --all-features
+
   check-no-std:
     name: cargo check no std
     runs-on: ubuntu-latest
