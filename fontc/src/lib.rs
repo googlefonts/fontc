@@ -6097,6 +6097,28 @@ mod tests {
     }
 
     #[test]
+    fn contextual_unused_mark_classes_do_not_affect_compilation() {
+        for prefix in ["", "@mark_top = [acutecomb];"] {
+            let temp = tempdir().unwrap();
+            let source = format!(
+                r#"{{
+.formatVersion = 3; familyName = NoMarks; unitsPerEm = 1000;
+fontMaster = ({{ id = m01; name = Regular; }});
+featurePrefixes = ({{ name = Existing; code = "{prefix}"; }});
+userData = {{ com.github.googlei18n.ufo2ft.featureWriters = ({{ class = MarkFeatureWriter; options = {{ features = (mkmk); }}; }}); }};
+glyphs = (
+{{ glyphname = A; unicode = 65; layers = ({{ layerId = m01; width = 500; anchors = ({{ name = top; pos = (250,700); }}); }}); }},
+{{ glyphname = acutecomb; unicode = 769; layers = ({{ layerId = m01; width = 0; anchors = ({{ name = _top; pos = (100,0); }}); }}); }}
+); }}"#
+            );
+            let path = temp.path().join("empty.glyphs");
+            fs::write(&path, source).unwrap();
+            let result = TestCompile::compile_source(path.to_str().unwrap());
+            assert!(result.font().gdef().is_err());
+        }
+    }
+
+    #[test]
     fn compile_basic_gpos_mark_base() {
         let result = TestCompile::compile_source("glyphs3/WghtVar_Anchors.glyphs");
         let font = result.font();

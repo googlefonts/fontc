@@ -1236,7 +1236,14 @@ impl FeatureProvider for FeaRsMarks {
         if !builder.gpos_enabled() {
             return;
         }
-        let mark_classes = builder.add_generated_mark_classes(&self.generated_mark_classes);
+        let mark_classes = if [&self.abvm, &self.blwm, &self.mark_mkmk]
+            .iter()
+            .any(|lookups| !lookups.is_empty())
+        {
+            builder.add_generated_mark_classes(&self.generated_mark_classes)
+        } else {
+            BTreeMap::new()
+        };
         fn add_contextual(
             builder: &mut fea_rs::compile::FeatureBuilder,
             lookups: &MarkLookups,

@@ -345,6 +345,15 @@ pub struct MarkLookups {
     pub(crate) contextual: Vec<ContextualDispatch>,
 }
 
+impl MarkLookups {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.mark_base.is_empty()
+            && self.mark_mark.is_empty()
+            && self.mark_lig.is_empty()
+            && self.contextual.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ContextualTarget {
     Base(
