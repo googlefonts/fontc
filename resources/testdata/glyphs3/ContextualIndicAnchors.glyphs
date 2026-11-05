@@ -1,0 +1,19 @@
+{
+.formatVersion = 3;
+familyName = ContextualIndicAnchors;
+unitsPerEm = 1000;
+fontMaster = ({ id = m01; name = Regular; });
+glyphs = (
+{ glyphname = dadeva; unicode = 2342; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = kadeva; unicode = 2325; layers = ({ layerId = m01; width = 500; anchors = (
+ { name = top; pos = (250,700); },
+ { name = bottom; pos = (250,-100); },
+ { name = "*top.afterDa"; pos = (350,850); userData = { GPOS_Context = "dadeva *"; }; },
+ { name = "*bottom.afterDa"; pos = (400,-250); userData = { GPOS_Context = "dadeva *"; }; }
+); }); },
+{ glyphname = anusvaradeva; unicode = 2306; layers = ({ layerId = m01; width = 0;
+ anchors = ({ name = _top; pos = (100,0); }); }); },
+{ glyphname = nuktadeva; unicode = 2364; layers = ({ layerId = m01; width = 0;
+ anchors = ({ name = _bottom; pos = (100,0); }); }); }
+);
+}

@@ -1344,6 +1344,12 @@ impl AnchorKind {
             }
         }
 
+        Self::new_attachment(name)
+    }
+
+    /// Parse a mark-attachment name without interpreting cursive or caret
+    /// names. Contextual anchors always describe mark attachment groups.
+    fn new_attachment(name: &str) -> Result<AnchorKind, BadAnchorReason> {
         // the '_' char is used as a prefix for marks, and as a space character
         // in ligature mark names (e.g. top_1, top_2). The funny exception is
         // names like '_4', (i.e. an underscore followed by a number) which
@@ -1424,6 +1430,9 @@ pub struct Anchor {
     pub kind: AnchorKind,
     /// The original source name, preserved for round-tripping.
     pub original_name: SmolStr,
+    /// Feature syntax describing when this alternate attachment applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<SmolStr>,
     pub positions: HashMap<NormalizedLocation, Point>,
 }
 
@@ -1473,7 +1482,13 @@ impl Anchor {
 pub struct AnchorBuilder {
     glyph_name: GlyphName,
     // IndexMap preserves insertion order, for deterministic anchor propagation
-    anchors: IndexMap<SmolStr, HashMap<NormalizedLocation, Point>>,
+    anchors: IndexMap<SmolStr, AnchorSources>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct AnchorSources {
+    positions: HashMap<NormalizedLocation, Point>,
+    contexts: HashMap<NormalizedLocation, Option<SmolStr>>,
 }
 
 impl AnchorBuilder {
@@ -1490,15 +1505,22 @@ impl AnchorBuilder {
         loc: NormalizedLocation,
         pos: Point,
     ) -> Result<(), BadGlyph> {
+        self.add_with_context(anchor_name, loc, pos, None)
+    }
+
+    /// Add a source location and optional contextual attachment expression.
+    pub fn add_with_context(
+        &mut self,
+        anchor_name: SmolStr,
+        loc: NormalizedLocation,
+        pos: Point,
+        context: Option<SmolStr>,
+    ) -> Result<(), BadGlyph> {
         // Match ufo2ft last-one-wins behavior for duplicate anchors.
         // https://github.com/googlefonts/fontc/issues/1927
-        if self
-            .anchors
-            .entry(anchor_name.clone())
-            .or_default()
-            .insert(loc, pos)
-            .is_some()
-        {
+        let sources = self.anchors.entry(anchor_name.clone()).or_default();
+        sources.contexts.insert(loc.clone(), context);
+        if sources.positions.insert(loc, pos).is_some() {
             log::warn!(
                 "duplicate anchor '{}' in glyph '{}'",
                 anchor_name,
@@ -1510,8 +1532,8 @@ impl AnchorBuilder {
 
     pub fn build(self) -> Result<GlyphAnchors, BadGlyph> {
         // It would be nice if everyone was defined at default
-        for (anchor, positions) in &self.anchors {
-            if !positions.keys().any(|loc| !loc.has_any_non_zero()) {
+        for (anchor, sources) in &self.anchors {
+            if !sources.positions.keys().any(|loc| !loc.has_any_non_zero()) {
                 return Err(BadGlyph::new(
                     self.glyph_name.clone(),
                     BadAnchor::new(anchor.clone(), BadAnchorReason::NoDefault),
@@ -1522,14 +1544,33 @@ impl AnchorBuilder {
         let anchors = self
             .anchors
             .into_iter()
-            .map(|(name, positions)| {
-                AnchorKind::new(&name)
-                    .map(|kind| Anchor {
-                        kind,
-                        original_name: name.clone(),
-                        positions,
-                    })
-                    .map_err(|reason| BadAnchor::new(name, reason))
+            .map(|(name, sources)| {
+                // ufo2ft reads the anchor lib from the default source; alternate
+                // masters provide positions, not competing context conditions.
+                let context = sources
+                    .contexts
+                    .into_iter()
+                    .find_map(|(loc, context)| loc.is_default().then_some(context))
+                    .flatten();
+                let kind_name = if context.is_some() {
+                    name.strip_prefix('*')
+                        .map(|name| name.split('.').next().unwrap_or(name))
+                        .unwrap_or(&name)
+                } else {
+                    &name
+                };
+                (if context.is_some() && name.starts_with('*') {
+                    AnchorKind::new_attachment(kind_name)
+                } else {
+                    AnchorKind::new(kind_name)
+                })
+                .map(|kind| Anchor {
+                    kind,
+                    original_name: name.clone(),
+                    context,
+                    positions: sources.positions,
+                })
+                .map_err(|reason| BadAnchor::new(name, reason))
             })
             .collect::<Result<_, _>>()
             .map_err(|e| BadGlyph::new(self.glyph_name.clone(), e))?;

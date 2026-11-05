@@ -1976,7 +1976,12 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                     continue;
                 }
                 let pos = anchor.pos - origin;
-                if let Err(e) = ir_anchors.add(anchor.name.clone(), location.clone(), pos) {
+                if let Err(e) = ir_anchors.add_with_context(
+                    anchor.name.clone(),
+                    location.clone(),
+                    pos,
+                    anchor_context(anchor),
+                ) {
                     if glyph.export {
                         return Err(e.into());
                     }
@@ -2030,7 +2035,12 @@ impl Work<Context, WorkId, Error> for GlyphIrWork {
                             continue;
                         }
                         let pos = anchor.pos - origin;
-                        if let Err(e) = ir_anchors.add(anchor.name.clone(), loc.clone(), pos) {
+                        if let Err(e) = ir_anchors.add_with_context(
+                            anchor.name.clone(),
+                            loc.clone(),
+                            pos,
+                            anchor_context(anchor),
+                        ) {
                             if glyph.export {
                                 return Err(e.into());
                             }
@@ -2480,6 +2490,16 @@ fn warn_master_font_custom_param_mismatch(font: &Font) {
     check!(dont_use_production_names, "Don't use Production Names");
     check!(gasp_table, "GASP Table");
     check!(panose, "panose");
+}
+
+fn anchor_context(anchor: &glyphs_reader::Anchor) -> Option<smol_str::SmolStr> {
+    anchor
+        .name
+        .starts_with('*')
+        .then(|| anchor.user_data.get("GPOS_Context"))
+        .flatten()
+        .and_then(|value| value.as_str())
+        .map(Into::into)
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
     GlyphMap, GlyphSet,
-    compile::{FeatureProvider, LookupId, PendingLookup},
+    compile::{ContextualPositionRule, FeatureProvider, LookupId, PendingLookup},
 };
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
@@ -31,7 +31,8 @@ use crate::{
     error::Error,
     features::properties::{ExtraSubstitutions, ScriptDirection},
     orchestration::{
-        AnyWorkId, BeWork, Context, FeaFirstPassOutput, FeaRsMarks, MarkLookups, WorkId,
+        AnyWorkId, BeWork, Context, ContextualDispatch, ContextualRule, ContextualTarget,
+        FeaFirstPassOutput, FeaRsMarks, MarkLookups, WorkId,
     },
 };
 use fontir::{
@@ -245,6 +246,9 @@ impl<'a> MarkLookupBuilder<'a> {
                 continue;
             }
             for anchor in &anchors.anchors {
+                if anchor.context.is_some() && matches!(anchor.kind, AnchorKind::Mark(_)) {
+                    continue;
+                }
                 match &anchor.kind {
                     AnchorKind::Base(group)
                     | AnchorKind::Ligature {
@@ -339,7 +343,7 @@ impl<'a> MarkLookupBuilder<'a> {
             .then(|| self.make_cursive_lookups())
             .transpose()?
             .unwrap_or_default();
-        let (abvm, blwm) = if !abvm_glyphs.is_empty() {
+        let (mut abvm, mut blwm) = if !abvm_glyphs.is_empty() {
             let abvm = mark_todo
                 .contains_key(&ABVM)
                 .then(|| {
@@ -369,6 +373,34 @@ impl<'a> MarkLookupBuilder<'a> {
             Default::default()
         };
 
+        for dispatch in self.make_contextual_dispatches(&abvm_glyphs, &mark_todo)? {
+            match dispatch.feature {
+                ABVM => abvm.contextual.push(dispatch),
+                BLWM => blwm.contextual.push(dispatch),
+                _ => mark_mkmk.contextual.push(dispatch),
+            }
+        }
+
+        let mut generated_mark_classes = BTreeMap::<GroupName, Vec<_>>::new();
+        if !mark_todo.is_empty() {
+            for (gid, anchors) in &self.anchor_lists {
+                if self.mark_glyphs.contains(gid) {
+                    for anchor in anchors {
+                        if anchor.context.is_none()
+                            && let AnchorKind::Mark(group) = &anchor.kind
+                        {
+                            let resolved = resolve_anchor_once(anchor, self.static_metadata)
+                                .map_err(|e| self.convert_delta_error(e, *gid))?;
+                            generated_mark_classes
+                                .entry(group.clone())
+                                .or_default()
+                                .push((*gid, resolved));
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(FeaRsMarks {
             glyphmap: GlyphMap::new(self.glyph_order.names().cloned())?,
             mark_mkmk,
@@ -376,7 +408,189 @@ impl<'a> MarkLookupBuilder<'a> {
             blwm,
             curs,
             lig_carets: self.lig_carets.clone(),
+            generated_mark_classes,
         })
+    }
+
+    fn make_contextual_dispatches(
+        &self,
+        abvm_glyphs: &IntSet<GlyphId16>,
+        todo: &BTreeMap<Tag, bool>,
+    ) -> Result<Vec<ContextualDispatch>, Error> {
+        type Entries<'a> = Vec<(GlyphId16, &'a Anchor)>;
+        let mut marks: BTreeMap<GroupName, Entries<'_>> = BTreeMap::new();
+        for (gid, anchors) in &self.anchor_lists {
+            if self.mark_glyphs.contains(gid) {
+                for anchor in anchors {
+                    if anchor.context.is_none()
+                        && let AnchorKind::Mark(group) = &anchor.kind
+                    {
+                        marks.entry(group.clone()).or_default().push((*gid, anchor));
+                    }
+                }
+            }
+        }
+
+        // kind 0: base, 1: ligature, 2: mark. Keep distinct contexts and
+        // alternate names until after their variable positions are resolved.
+        let mut groups: indexmap::IndexMap<(Tag, String, u8, GroupName), Entries<'_>> =
+            indexmap::IndexMap::new();
+        let mut sorted_glyphs: Vec<_> = self.anchor_lists.iter().collect();
+        sorted_glyphs.sort_by_key(|(gid, _)| self.glyph_order.glyph_name(gid.to_u32() as usize));
+        for (gid, anchors) in sorted_glyphs {
+            for anchor in anchors {
+                let Some(context) = &anchor.context else {
+                    continue;
+                };
+                let (group, kind) = match &anchor.kind {
+                    AnchorKind::Base(group) if self.mark_glyphs.contains(gid) => (group, 2),
+                    AnchorKind::Base(group) => (group, 0),
+                    AnchorKind::Ligature { group_name, .. } if !self.mark_glyphs.contains(gid) => {
+                        (group_name, 1)
+                    }
+                    _ => continue,
+                };
+                if !marks.contains_key(group) {
+                    continue;
+                }
+                let category = self.gdef_classes.get(gid);
+                if !self.gdef_classes.is_empty()
+                    && match kind {
+                        0 => !matches!(
+                            category,
+                            Some(GlyphClassDef::Base | GlyphClassDef::Ligature)
+                        ),
+                        1 => category != Some(&GlyphClassDef::Ligature),
+                        _ => category != Some(&GlyphClassDef::Mark),
+                    }
+                {
+                    continue;
+                }
+                let feature = if kind == 2 {
+                    MKMK
+                } else if kind == 0 && abvm_glyphs.contains(*gid) {
+                    if is_above_mark(group) { ABVM } else { BLWM }
+                } else {
+                    MARK
+                };
+                for line in context
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                {
+                    groups
+                        .entry((
+                            feature,
+                            line.trim_end_matches(';').into(),
+                            kind,
+                            group.clone(),
+                        ))
+                        .or_default()
+                        .push((*gid, anchor));
+                }
+            }
+        }
+
+        // ufo2ft selects abvm/blwm contexts by whether any anchor in that
+        // context is above/below, then emits all anchors for the context in
+        // each selected feature. Preserve that behavior when a context mixes
+        // above and below anchors.
+        let mut indic_contexts: HashMap<&str, (bool, bool)> = HashMap::new();
+        for ((tag, context, _, _), _) in &groups {
+            if *tag == ABVM || *tag == BLWM {
+                let flags = indic_contexts.entry(context.as_str()).or_default();
+                flags.0 |= *tag == ABVM;
+                flags.1 |= *tag == BLWM;
+            }
+        }
+        let mut expanded = Vec::new();
+        for ((feature, context, kind, group), entries) in &groups {
+            let features = if *feature == ABVM || *feature == BLWM {
+                let (above, below) = indic_contexts[context.as_str()];
+                [above.then_some(ABVM), below.then_some(BLWM)]
+            } else {
+                [Some(*feature), None]
+            };
+            for feature in features
+                .into_iter()
+                .flatten()
+                .filter(|tag| todo.contains_key(tag))
+            {
+                expanded.push((
+                    (feature, context.clone(), *kind, group.clone()),
+                    entries.clone(),
+                ));
+            }
+        }
+        let mut groups = expanded;
+        // ufo2ft emits base rules before ligature rules and sorts each set by
+        // descending full-context length, preserving the order for ties.
+        groups.sort_by_key(|((tag, context, kind, _), _)| {
+            (*tag, *kind, std::cmp::Reverse(context.len()))
+        });
+        let mut dispatches: Vec<ContextualDispatch> = Vec::new();
+        for (order, ((feature, context, kind, group), bases)) in groups.into_iter().enumerate() {
+            let (preamble, pattern) = context.split_once(';').unwrap_or(("", &context));
+            let mut attachments = Vec::new();
+            let mut ligatures = indexmap::IndexMap::new();
+            for (gid, anchor) in &bases {
+                let resolved = resolve_anchor_once(anchor, self.static_metadata)
+                    .map_err(|e| self.convert_delta_error(e, *gid))?;
+                match kind {
+                    0 | 2 => attachments.push((*gid, resolved)),
+                    1 => {
+                        let index = anchor.ligature_index().unwrap();
+                        let count = self.anchor_lists[gid]
+                            .iter()
+                            .filter_map(|a| a.ligature_index())
+                            .max()
+                            .unwrap_or(index);
+                        let mut components = vec![BTreeMap::new(); count];
+                        components[index - 1].insert(group.to_string(), resolved);
+                        // Each FEA `pos ligature` replaces the whole component
+                        // array for this glyph. The reference emits one such
+                        // statement per contextual anchor, in source order.
+                        ligatures.insert(*gid, components);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            let target = match kind {
+                0 => ContextualTarget::Base(attachments),
+                1 => ContextualTarget::Ligature(ligatures.into_iter().collect()),
+                _ => ContextualTarget::Mark(attachments),
+            };
+            let rule = ContextualRule {
+                order,
+                pattern: pattern.trim().into(),
+                group,
+                bases: bases.iter().map(|(gid, _)| *gid).collect(),
+                origins: bases
+                    .iter()
+                    .map(|(gid, anchor)| {
+                        format!(
+                            "{} / {}",
+                            self.glyph_order.glyph_name(gid.to_u32() as usize).unwrap(),
+                            anchor.original_name
+                        )
+                    })
+                    .collect(),
+                target,
+            };
+            if let Some(dispatch) = dispatches
+                .iter_mut()
+                .find(|d| d.feature == feature && d.preamble == preamble)
+            {
+                dispatch.rules.push(rule);
+            } else {
+                dispatches.push(ContextualDispatch {
+                    feature,
+                    preamble: preamble.into(),
+                    rules: vec![rule],
+                });
+            }
+        }
+        Ok(dispatches)
     }
 
     fn make_lookups(
@@ -406,6 +620,7 @@ impl<'a> MarkLookupBuilder<'a> {
             mark_base,
             mark_mark,
             mark_lig,
+            contextual: Vec::new(),
         })
     }
 
@@ -463,6 +678,9 @@ impl<'a> MarkLookupBuilder<'a> {
 
             let treat_as_base = !(is_mark | is_not_base);
             for anchor in anchors {
+                if anchor.context.is_some() {
+                    continue;
+                }
                 match &anchor.kind {
                     ir::AnchorKind::Base(group) if treat_as_base => groups
                         .entry(group.clone())
@@ -507,6 +725,9 @@ impl<'a> MarkLookupBuilder<'a> {
             }
 
             for anchor in glyph_anchors {
+                if anchor.context.is_some() {
+                    continue;
+                }
                 if let AnchorKind::Base(group_name) = &anchor.kind {
                     // only if this anchor is a base, AND we have a mark in the same group
                     if mark_anchors.contains(group_name) {
@@ -557,6 +778,9 @@ impl<'a> MarkLookupBuilder<'a> {
             };
 
             for anchor in anchors {
+                if anchor.context.is_some() {
+                    continue;
+                }
                 let AnchorKind::Ligature { group_name, index } = &anchor.kind else {
                     continue;
                 };
@@ -997,12 +1221,127 @@ fn make_caret_value(
     }))
 }
 
+type ResolvedMarkClasses = BTreeMap<GroupName, (String, Vec<(GlyphId16, AnchorBuilder)>)>;
+
 impl FeatureProvider for FeaRsMarks {
     fn add_features(&self, builder: &mut fea_rs::compile::FeatureBuilder) {
+        if !self.lig_carets.is_empty()
+            && builder
+                .gdef()
+                .map(|gdef| gdef.ligature_pos.is_empty())
+                .unwrap_or(true)
+        {
+            builder.add_lig_carets(self.lig_carets.clone());
+        }
+        if !builder.gpos_enabled() {
+            return;
+        }
+        let mark_classes = if [&self.abvm, &self.blwm, &self.mark_mkmk]
+            .iter()
+            .any(|lookups| !lookups.is_empty())
+        {
+            builder.add_generated_mark_classes(&self.generated_mark_classes)
+        } else {
+            BTreeMap::new()
+        };
+        fn add_contextual(
+            builder: &mut fea_rs::compile::FeatureBuilder,
+            lookups: &MarkLookups,
+            feature: Tag,
+            mark_classes: &ResolvedMarkClasses,
+        ) -> Vec<LookupId> {
+            let mut result = Vec::new();
+            let dispatches: Vec<_> = lookups
+                .contextual
+                .iter()
+                .filter(|d| d.feature == feature)
+                .collect();
+            // ufo2ft appends targets while visiting contexts, before it groups
+            // dispatcher rules by lookup flags. Restore that order here.
+            let mut ordered_rules: Vec<_> = dispatches.iter().flat_map(|d| &d.rules).collect();
+            ordered_rules.sort_by_key(|rule| rule.order);
+            let mut targets = HashMap::new();
+            for rule in ordered_rules {
+                let (_, marks) = &mark_classes[&rule.group];
+                let target = match &rule.target {
+                    ContextualTarget::Base(bases) => {
+                        let mut target = MarkToBaseBuilder::default();
+                        for (gid, anchor) in marks {
+                            target.add_mark(*gid, &rule.group, anchor.clone());
+                        }
+                        for (gid, anchor) in bases {
+                            target.insert_base(*gid, &rule.group, anchor.clone());
+                        }
+                        builder.add_named_gpos_target(
+                            feature,
+                            PendingLookup::new(vec![target], LookupFlag::empty(), None),
+                        )
+                    }
+                    ContextualTarget::Ligature(ligatures) => {
+                        let mut target = MarkToLigBuilder::default();
+                        for (gid, anchor) in marks {
+                            target.add_mark(*gid, &rule.group, anchor.clone());
+                        }
+                        for (gid, components) in ligatures {
+                            target.add_ligature_components_directly(*gid, components.clone());
+                        }
+                        builder.add_named_gpos_target(
+                            feature,
+                            PendingLookup::new(vec![target], LookupFlag::empty(), None),
+                        )
+                    }
+                    ContextualTarget::Mark(bases) => {
+                        let mut target = MarkToMarkBuilder::default();
+                        for (gid, anchor) in marks {
+                            target.add_mark(*gid, &rule.group, anchor.clone());
+                        }
+                        for (gid, anchor) in bases {
+                            target.insert_mark2(*gid, &rule.group, anchor.clone());
+                        }
+                        builder.add_named_gpos_target(
+                            feature,
+                            PendingLookup::new(vec![target], LookupFlag::empty(), None),
+                        )
+                    }
+                };
+                targets.insert(rule.order, target);
+            }
+            for dispatch in dispatches {
+                let rules: Vec<_> = dispatch
+                    .rules
+                    .iter()
+                    .map(|rule| ContextualPositionRule {
+                        pattern: rule.pattern.clone(),
+                        bases: rule.bases.clone(),
+                        mark_class: mark_classes[&rule.group].0.clone(),
+                        target: targets.remove(&rule.order).expect("registered target"),
+                    })
+                    .collect();
+                let origin = format!(
+                    "{}; origins: {}",
+                    dispatch.preamble,
+                    dispatch
+                        .rules
+                        .iter()
+                        .flat_map(|rule| rule.origins.iter())
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                if let Some(id) =
+                    builder.add_contextual_positioning(feature, &dispatch.preamble, &rules, &origin)
+                {
+                    result.push(id);
+                }
+            }
+            result
+        }
         // a little helper reused for abvm/blwm
         fn add_all_lookups(
             builder: &mut fea_rs::compile::FeatureBuilder,
             lookups: &MarkLookups,
+            feature: Tag,
+            mark_classes: &ResolvedMarkClasses,
         ) -> Vec<LookupId> {
             let mut out = Vec::new();
             out.extend(
@@ -1017,6 +1356,10 @@ impl FeatureProvider for FeaRsMarks {
                     .iter()
                     .map(|lk| builder.add_lookup(lk.clone())),
             );
+            if !lookups.contextual.is_empty() {
+                builder.place_before_mark_marker(feature, &out);
+            }
+            out.extend(add_contextual(builder, lookups, feature, mark_classes));
             out.extend(
                 lookups
                     .mark_mark
@@ -1027,8 +1370,8 @@ impl FeatureProvider for FeaRsMarks {
         }
 
         // add these first, matching fontmake
-        let abvm_lookups = add_all_lookups(builder, &self.abvm);
-        let blwm_lookups = add_all_lookups(builder, &self.blwm);
+        let abvm_lookups = add_all_lookups(builder, &self.abvm, ABVM, &mark_classes);
+        let blwm_lookups = add_all_lookups(builder, &self.blwm, BLWM, &mark_classes);
 
         let mut mark_lookups = Vec::new();
         let mut mkmk_lookups = Vec::new();
@@ -1047,6 +1390,19 @@ impl FeatureProvider for FeaRsMarks {
             mkmk_lookups.push(builder.add_lookup(mark_mark.clone()));
         }
 
+        mark_lookups.extend(add_contextual(
+            builder,
+            &self.mark_mkmk,
+            MARK,
+            &mark_classes,
+        ));
+        mkmk_lookups.extend(add_contextual(
+            builder,
+            &self.mark_mkmk,
+            MKMK,
+            &mark_classes,
+        ));
+
         for curs in self.curs.iter() {
             curs_lookups.push(builder.add_lookup(curs.clone()));
         }
@@ -1061,15 +1417,6 @@ impl FeatureProvider for FeaRsMarks {
             if !lookups.is_empty() {
                 builder.add_to_default_language_systems(tag, &lookups);
             }
-        }
-
-        if !self.lig_carets.is_empty()
-            && builder
-                .gdef()
-                .map(|gdef| gdef.ligature_pos.is_empty())
-                .unwrap_or(true)
-        {
-            builder.add_lig_carets(self.lig_carets.clone());
         }
     }
 }
@@ -1205,6 +1552,7 @@ mod tests {
             self.anchors.push(Anchor {
                 kind,
                 original_name: anchor_name.into(),
+                context: None,
                 positions,
             });
             self
