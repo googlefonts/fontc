@@ -45,7 +45,7 @@ pub struct PendingCompilation {
     pub(super) tree: ParseTree,
     pub(super) glyph_map: GlyphMap,
     pub(super) glyph_class_defs: HashMap<SmolStr, GlyphClass>,
-    pub(super) anchor_defs: HashMap<SmolStr, (wtables::gpos::builders::AnchorBuilder, usize)>,
+    pub(super) anchor_defs: HashMap<SmolStr, wtables::gpos::builders::AnchorBuilder>,
     pub(super) value_record_defs: HashMap<SmolStr, wtables::gpos::builders::ValueRecordBuilder>,
     pub(super) features: AllFeatures,
     pub(super) lookups: AllLookups,

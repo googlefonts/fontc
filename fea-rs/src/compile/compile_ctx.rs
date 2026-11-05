@@ -96,7 +96,7 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     vertical_feature: SpecialVerticalFeatureState,
     glyph_class_defs: HashMap<SmolStr, GlyphClass>,
     mark_classes: HashMap<SmolStr, MarkClass>,
-    anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
+    anchor_defs: HashMap<SmolStr, Anchor>,
     value_record_defs: HashMap<SmolStr, ValueRecord>,
     conditionset_defs: ConditionSetMap,
     mark_attach_class_id: HashMap<GlyphSet, u16>,
@@ -2137,10 +2137,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             }
         };
 
-        if let Some(_prev) = self
-            .anchor_defs
-            .insert(name.text.clone(), (anchor, anchor_def.range().start))
-        {
+        if let Some(_prev) = self.anchor_defs.insert(name.text.clone(), anchor) {
             self.error(name.range(), "duplicate anchor definition");
         }
     }
@@ -2152,7 +2149,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
         if let Some(name) = item.name() {
             match self.anchor_defs.get(&name.text) {
-                Some((anchor, pos)) if *pos < item.range().start => return Some(anchor.clone()),
+                Some(anchor) => return Some(anchor.clone()),
                 _ => {
                     self.error(name.range(), "anchor is not defined");
                     return None;

@@ -56,8 +56,7 @@ pub(crate) struct ExistingSymbols<'a> {
     pub glyph_classes: &'a HashMap<SmolStr, crate::common::GlyphClass>,
     pub mark_classes: &'a HashMap<SmolStr, crate::common::MarkClass>,
     pub lookups: &'a HashMap<SmolStr, super::lookups::LookupId>,
-    pub anchor_defs:
-        &'a HashMap<SmolStr, (write_fonts::tables::gpos::builders::AnchorBuilder, usize)>,
+    pub anchor_defs: &'a HashMap<SmolStr, write_fonts::tables::gpos::builders::AnchorBuilder>,
     pub value_record_defs:
         &'a HashMap<SmolStr, write_fonts::tables::gpos::builders::ValueRecordBuilder>,
 }

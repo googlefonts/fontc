@@ -852,6 +852,61 @@ mod tests {
     use crate::compile::tags::{LANG_DFLT, SCRIPT_DFLT};
 
     #[test]
+    fn generated_positioning_resolves_source_anchor_definitions() {
+        use crate::compile::{self, NopVariationInfo, Opts};
+        struct Provider;
+        impl FeatureProvider for Provider {
+            fn add_features(&self, builder: &mut FeatureBuilder) {
+                let feature = Tag::new(b"mark");
+                if let Some(id) = builder.add_contextual_positioning(
+                    feature,
+                    "pos base a <anchor TOP> mark @MARKS",
+                    &[],
+                    "source anchor",
+                ) {
+                    builder.add_to_default_language_systems(feature, &[id]);
+                }
+            }
+        }
+        let glyphs = crate::GlyphMap::new(
+            [".notdef", "a", "acute"]
+                .into_iter()
+                .map(fontdrasil::types::GlyphName::new),
+        )
+        .unwrap();
+        let definitions = "anchorDef 250 700 TOP; markClass acute <anchor 100 0> @MARKS;";
+        let (expected, _) = crate::parse::parse_string(format!(
+            "{definitions} feature mark {{ pos base a <anchor TOP> mark @MARKS; }} mark;"
+        ));
+        let expected = compile::compile(
+            &expected,
+            &glyphs,
+            None::<&NopVariationInfo>,
+            None::<&NopFeatureProvider>,
+            Opts::new(),
+        )
+        .unwrap()
+        .0
+        .to_binary(&glyphs)
+        .unwrap();
+        // Source and generated fragments have independent byte offsets.
+        for padding in [0, 512] {
+            let (tree, _) =
+                crate::parse::parse_string(format!("{}{definitions}", " ".repeat(padding)));
+            let result = compile::compile(
+                &tree,
+                &glyphs,
+                None::<&NopVariationInfo>,
+                Some(&Provider),
+                Opts::new(),
+            )
+            .unwrap()
+            .0;
+            assert_eq!(result.to_binary(&glyphs).unwrap(), expected);
+        }
+    }
+
+    #[test]
     fn generated_errors_keep_fragment_and_included_source_locations() {
         use crate::compile::{self, NopVariationInfo, Opts};
         use std::{path::Path, sync::Arc};
