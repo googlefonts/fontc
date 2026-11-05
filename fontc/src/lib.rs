@@ -5999,6 +5999,28 @@ mod tests {
     }
 
     #[test]
+    fn contextual_bracket_fallback_preserves_context() {
+        let temp = tempdir().unwrap();
+        let mut source =
+            fs::read_to_string(testdata_dir().join("glyphs3/ContextualAnchors.glyphs")).unwrap();
+        source = source.replacen("{ glyphname = A; unicode = 65; layers = (", r#"{ glyphname = A; unicode = 65; layers = (
+ { layerId = bracket; associatedMasterId = m02; attributes = { axisRules = ({ min = 600; }); }; width = 520; anchors = (
+ { name = top; pos = (310,760); },
+ { name = "*top.afterB"; pos = (480,950); userData = { GPOS_Context = "B *"; }; }
+ ); },"#, 1);
+        let path = temp.path().join("bracket.glyphs");
+        fs::write(&path, source).unwrap();
+        let result = TestCompile::compile_source(path.to_str().unwrap());
+        let alternate = "A.BRACKET.varAlt01";
+        assert!(
+            contextual_lookups(&result)
+                .iter()
+                .flat_map(|l| &l.rules)
+                .any(|rule| rule.backtrack.contains(alternate))
+        );
+    }
+
+    #[test]
     fn compile_basic_gpos_mark_base() {
         let result = TestCompile::compile_source("glyphs3/WghtVar_Anchors.glyphs");
         let font = result.font();
