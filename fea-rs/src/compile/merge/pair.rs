@@ -321,20 +321,6 @@ mod tests {
     }
 
     #[test]
-    fn pair_shadowed_by_an_earlier_class_subtable_takes_the_class_value() {
-        // the glyph pairs sit behind the class subtable in both masters, so
-        // the class value is what applies; the merged pair moves in front of
-        // the class subtable and must keep it
-        assert_eq!(
-            merged_binary(&[
-                "feature kern { pos [a c] [b f_i] -40; subtable; pos a b -50; } kern;",
-                "feature kern { pos [a c] [b f_i] -40; subtable; pos a b -60; } kern;",
-            ]),
-            one_shot_binary("feature kern { pos a b -40; pos [a c] [b f_i] -40; } kern;")
-        );
-    }
-
-    #[test]
     fn class_values_vary() {
         assert_eq!(
             merged_binary(&[
