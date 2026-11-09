@@ -774,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "fontc"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "bitflags 2.13.2",
  "chrono",

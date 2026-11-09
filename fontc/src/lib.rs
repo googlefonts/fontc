@@ -160,7 +160,10 @@ impl std::ops::Not for DisableFlags {
 /// font fontc builds. See the `version` module and
 /// <https://github.com/googlefonts/fontc/issues/2048>.
 pub fn version() -> String {
-    crate::version::version_string(env!("VERGEN_GIT_DESCRIBE"), env!("CARGO_PKG_VERSION"))
+    crate::version::version_string(
+        option_env!("VERGEN_GIT_DESCRIBE").unwrap_or_default(),
+        env!("CARGO_PKG_VERSION"),
+    )
 }
 
 /// Options for reading the source, used when it's created, as opposed to

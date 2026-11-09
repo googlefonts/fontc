@@ -12,9 +12,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         // `short = false` -> full commit SHA in VERGEN_GIT_SHA, shown by `--vv`.
         .sha(false)
         .build();
-    // On a git-less build (e.g. a published crate) the git lookups fail and,
-    // because `fail_on_error` is off by default, vergen emits the
-    // VERGEN_IDEMPOTENT_OUTPUT sentinel instead; fontbe::version detects it and
+    // On a git-less build (e.g. a published crate or a maturin sdist) the git
+    // lookups fail and, without `.idempotent()`, vergen emits no VERGEN_GIT_*
+    // variables at all, so fontc::version reads them with option_env! and
     // falls back to the crate version.
     //
     // Don't enable `.idempotent()` here: for vergen-gitcl its only effect is to
