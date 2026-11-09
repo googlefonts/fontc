@@ -10,8 +10,8 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-fontc = { version = "1.0.0", path = "../fontc" }
-glyphs-reader = { version = "1.0.0", path = "../glyphs-reader" }
+fontc = { version = "2.0.0", path = "../fontc" }
+glyphs-reader = { version = "2.0.0", path = "../glyphs-reader" }
 
 google-fonts-sources = "0.11.1"
 maud = "0.27.0"
