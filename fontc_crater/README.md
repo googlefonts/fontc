@@ -129,6 +129,34 @@ separately from other failures.
 A listed target that compiles, fails some other way, or isn't in the run is
 shown at the top of the report, so that the list can be kept up to date.
 
+### Skipped configs
+
+Configs that crater shouldn't build at all, because their targets can't tell
+us anything about fontc, can be listed in `skipped.json` in the results
+directory. A skipped config makes no targets, so it isn't in the results or
+the summary, and its repo isn't fetched unless another config needs it.
+
+```json
+[
+  {
+    "configs": {
+      "silnrsi/font-akatab/$VIRTUAL/google/fonts/ofl/akatab/config.yaml": "54e989b80b",
+      "silnrsi/font-akatab/$VIRTUAL/google/fonts/ofl/tirra/config.yaml": "faaa0ba74f"
+    },
+    "reason": "built by SIL's smith; neither SIL nor Google Fonts uses fontmake, gftools or fontc",
+    "link": "https://github.com/silnrsi/smith"
+  }
+]
+```
+
+- `configs` maps each config, written as it starts the report's targets, to
+  the rev it was reviewed at. A config is skipped at any rev.
+- `reason` is required, and `link` is optional.
+
+The report lists the skipped configs under each entry's reason, and warns if
+a skipped config is at a rev other than the one listed, or if a listed config
+isn't in the inputs any more.
+
 [google-fonts-sources]: https://github.com/googlefonts/google-fonts-sources
 [google/fonts]: https://github.com/google/fonts
 [rust-lang/crater]: https://github.com/rust-lang/crater

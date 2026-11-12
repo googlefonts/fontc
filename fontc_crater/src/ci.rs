@@ -30,9 +30,11 @@ mod accepted;
 mod html;
 mod progress;
 mod results_cache;
+mod skipped;
 
 pub(crate) use accepted::AcceptedFailures;
 pub(crate) use results_cache::{FontmakeOutput, ResultKey, ResultsCache, sha256_file};
+use skipped::SkippedConfigs;
 
 static SUMMARY_FILE: &str = "summary.json";
 static SOURCES_FILE: &str = "sources.json";
@@ -84,7 +86,7 @@ pub(super) fn run_ci(args: &CiArgs) -> Result<(), Error> {
         super::ttx_diff_runner::assert_can_run_script();
         run_crater_and_save_results(args)?;
     }
-    html::generate(&args.out_dir, args.status_url.as_deref())?;
+    html::generate(&args.out_dir, &args.to_run, args.status_url.as_deref())?;
     // now we want to generate an html report, based on this info.
     Ok(())
 }
@@ -99,30 +101,6 @@ fn load_json_if_exists_else_default<T: DeserializeOwned + Default>(
     }
 }
 
-fn get_inputs_applying_denylist(input_path: &Path) -> Result<SourceSet, Error> {
-    // we can move this to a file and/or make it fancier at some point, if needed
-    fn deny(url: &str) -> bool {
-        static DENY_REPOS: &[&str] = &[
-            "chiron-fonts/chiron-hei-hk", // these repos are huge and we can't build them anyway
-            "chiron-fonts/chiron-go-round-tc",
-            "chiron-fonts/chiron-sung-hk",
-            "EbenSorkin/Merriweather4",
-        ];
-
-        // this is quadratic. I'm sorry.
-        for deny in DENY_REPOS {
-            if url.contains(deny) {
-                log::debug!("'{url}' is on denylist, skipping");
-                return true;
-            }
-        }
-        false
-    }
-    let mut inputs: SourceSet = super::try_read_json(input_path)?;
-    inputs.sources.retain(|src| !deny(&src.repo_url));
-    Ok(inputs)
-}
-
 fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     if !args.out_dir.exists() {
         super::try_create_dir(&args.out_dir)?;
@@ -130,7 +108,9 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
 
     log_if_auth_or_not();
     // do this now so we error if the input file doesn't exist
-    let inputs = get_inputs_applying_denylist(&args.to_run)?;
+    let mut inputs: SourceSet = super::try_read_json(&args.to_run)?;
+    let skipped = SkippedConfigs::load(&args.out_dir)?;
+    inputs.sources.retain(|src| !skipped.skips(src));
     let accepted = AcceptedFailures::load(&args.out_dir)?;
 
     let summary_file = args.out_dir.join(SUMMARY_FILE);

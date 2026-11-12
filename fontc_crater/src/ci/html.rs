@@ -14,11 +14,13 @@ use crate::{
     ttx_diff_runner::{CompileFailed, CompilerFailure, DiffError, DiffOutput, DiffValue},
 };
 use chrono::SecondsFormat;
+use google_fonts_sources::SourceSet;
 use maud::{Markup, PreEscaped, html};
 
 use super::{
     DiffResults, RunSummary,
     accepted::{AcceptedFailure, AcceptedFailures, FailingCompiler, Surprise},
+    skipped::{SkipReport, SkippedConfigs, config_key},
 };
 
 static HTML_FILE: &str = "index.html";
@@ -118,7 +120,11 @@ fn match_revisions(prev: DiffResults, current: &DiffResults) -> PreviousRun {
     }
 }
 
-pub(super) fn generate(target_dir: &Path, status_url: Option<&str>) -> Result<(), Error> {
+pub(super) fn generate(
+    target_dir: &Path,
+    to_run: &Path,
+    status_url: Option<&str>,
+) -> Result<(), Error> {
     let summary_path = target_dir.join(super::SUMMARY_FILE);
     let summary: Vec<RunSummary> = crate::try_read_json(&summary_path)?;
     let sources_path = target_dir.join(super::SOURCES_FILE);
@@ -130,6 +136,9 @@ pub(super) fn generate(target_dir: &Path, status_url: Option<&str>) -> Result<()
         super::load_json_if_exists_else_default(&failures_path)?;
     let annotations = load_annotations(&annotations_path)?;
     let accepted = AcceptedFailures::load(target_dir)?;
+    let inputs: SourceSet = crate::try_read_json(to_run)?;
+    let skipped = SkippedConfigs::load(target_dir)?;
+    let skipped = skipped.report(&inputs.sources);
 
     let (current, prev) = match summary.as_slice() {
         [.., prev, current] => {
@@ -156,6 +165,7 @@ pub(super) fn generate(target_dir: &Path, status_url: Option<&str>) -> Result<()
         &failures,
         &annotations,
         &accepted,
+        &skipped,
         status_url,
     )?;
     let outpath = target_dir.join(HTML_FILE);
@@ -171,6 +181,7 @@ fn make_html(
     repo_failures: &BTreeMap<String, String>,
     annotations: &BTreeMap<TargetId, Vec<Annotation>>,
     accepted: &AcceptedFailures,
+    skipped: &SkipReport,
     status_url: Option<&str>,
 ) -> Result<String, Error> {
     let table_body = make_table_body(summary);
@@ -226,6 +237,7 @@ fn make_html(
 
     let weird_failures = format_repo_failures(repo_failures);
     let surprises = format_surprises(&accepted.surprises(current));
+    let skipped = format_skipped(skipped);
     let added_and_removed = prev
         .map(|prev| format_added_and_removed(prev, current))
         .unwrap_or_default();
@@ -348,6 +360,7 @@ fn make_html(
                 }
                 (weird_failures)
                 (surprises)
+                (skipped)
                 (added_and_removed)
                 (detailed_report)
             }
@@ -1249,6 +1262,53 @@ fn format_repo_failures(failures: &BTreeMap<String, String>) -> Markup {
                 @for (repo, reason) in failures {
                     li {
                         (repo) ": '" (reason) "'"
+                    }
+                }
+            }
+        }
+    }
+}
+
+// configs in skipped.json, and what changed since they were reviewed
+fn format_skipped(report: &SkipReport) -> Markup {
+    if report.skipped.is_empty() {
+        return Default::default();
+    }
+    let n_inputs: usize = report.skipped.iter().map(|(_, inputs)| inputs.len()).sum();
+    html! {
+        div.skipped {
+            h4 id="skipped" { "Skipped " (n_inputs) " configs" }
+            ul {
+                @for (skip, inputs) in &report.skipped {
+                    li {
+                        (skip.reason)
+                        @if let Some(link) = &skip.link {
+                            " (" a href = (link) { (link) } ")"
+                        }
+                        details {
+                            summary { (inputs.len()) " configs" }
+                            ul {
+                                @for input in inputs {
+                                    li { (config_key(input)) "?" (input.git_rev().get(..10).unwrap_or(input.git_rev())) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            @if !report.rev_changed.is_empty() {
+                h4 { (report.rev_changed.len()) " skipped configs are at a rev that wasn't reviewed" }
+                ul {
+                    @for (key, rev, reviewed) in &report.rev_changed {
+                        li { (key) " is at " (rev) ", reviewed at " (reviewed) }
+                    }
+                }
+            }
+            @if !report.unused.is_empty() {
+                h4 { (report.unused.len()) " skipped configs are not in the inputs" }
+                ul {
+                    @for key in &report.unused {
+                        li { (key) }
                     }
                 }
             }
