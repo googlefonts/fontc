@@ -981,7 +981,6 @@ name = "glyphs-reader"
 version = "2.0.0"
 dependencies = [
  "ascii_plist_derive",
- "chrono",
  "fontdrasil",
  "icu_properties",
  "indexmap",

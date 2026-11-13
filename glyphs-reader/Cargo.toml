@@ -25,7 +25,6 @@ icu_properties.workspace = true
 
 log.workspace = true
 
-chrono.workspace = true
 smol_str.workspace = true
 serde.workspace = true
 
