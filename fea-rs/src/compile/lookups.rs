@@ -1228,7 +1228,7 @@ impl SomeLookup {
         val_two: ValueRecord,
     ) {
         if let SomeLookup::GposLookup(PositionLookup::Pair(table)) = self {
-            let subtable = table.last_mut().unwrap();
+            let subtable = table.subtables.first_mut().unwrap();
             subtable.insert_pair(one, val_one, two, val_two)
         } else {
             panic!("lookup mismatch");

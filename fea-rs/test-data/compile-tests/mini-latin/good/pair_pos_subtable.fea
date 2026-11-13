@@ -1,0 +1,14 @@
+# like feaLib, glyph pairs ignore subtable breaks: they all go into one
+# format 1 subtable at the front of the lookup, the first value for a pair
+# wins, and breaks only split the class pairs.
+feature kern {
+    pos A V -50;
+    pos T o -30;
+    subtable;
+    pos A V -10;
+    pos V a -20;
+    pos [b o] [c d] -12;
+    subtable;
+    pos [b o] [v w] -10;
+    pos A Y -40;
+} kern;
