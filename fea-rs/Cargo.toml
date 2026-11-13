@@ -27,11 +27,11 @@ indexmap.workspace = true
 thiserror.workspace = true
 ordered-float.workspace = true
 log.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, optional = true }
 
 [features]
-test = ["diff", "rayon", "serde", "serde_json", "clap"]
-cli = ["norad", "clap"]
+test = ["diff", "rayon", "serde", "serde_json", "clap", "tracing-subscriber"]
+cli = ["norad", "clap", "tracing-subscriber"]
 
 [dev-dependencies]
 criterion.workspace = true
@@ -39,6 +39,7 @@ diff = "0.1.12"
 rayon = "1.5"
 serde = { version = "1.0.147", features = ["derive"] }
 serde_json = "1.0.87"
+tracing-subscriber.workspace = true
 
 [[bench]]
 name = "parsing"
