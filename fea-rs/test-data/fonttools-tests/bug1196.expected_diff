@@ -1,0 +1,14 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# Note: we do not (yet) support Mac Japanese (platform 1, encoding 1),
+# so these records are dropped with a warning.
+
+L10
+>      <namerecord nameID="0" platformID="1" platEncID="1" langID="0xb" unicode="True">
+>        Copyright © 2001-2010 Adobe Systems Incorporated. All Rights Reserved.
+>      </namerecord>
+>      <namerecord nameID="9" platformID="1" platEncID="1" langID="0xb" unicode="True">
+>        Masahiko Kozuka 小塚昌彦
+>      </namerecord>

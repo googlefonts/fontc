@@ -1,0 +1,13 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# We sort the lookups within a feature and fonttools does not; see
+# GPOS_2.expected_diff.
+
+L36
+>            <LookupListIndex index="0" value="1"/>
+>            <LookupListIndex index="1" value="0"/>
+L36
+<            <LookupListIndex index="0" value="0"/>
+<            <LookupListIndex index="1" value="1"/>
