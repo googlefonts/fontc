@@ -1,0 +1,11 @@
+warning: duplicate language statement: this is handled differently by different tools, and is probably a mistake
+in fonttools-tests/duplicate_language_stmt_include_dflt.fea at 29:8
+   | 
+29 |         language TRK;
+   |         ^^^^^^^^^^^^^
+
+warning: duplicate language statement: this is handled differently by different tools, and is probably a mistake
+in fonttools-tests/duplicate_language_stmt_include_dflt.fea at 49:4
+   | 
+49 |     language TRK;
+   |     ^^^^^^^^^^^^^

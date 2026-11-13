@@ -1,0 +1,11 @@
+warning: character encoding unsupported
+in fonttools-tests/bug1196.fea at 4:10
+  | 
+4 | 	nameid 0 1 1 11 "Copyright \fd 2001-2010 Adobe Systems Incorporated. All Rights Reserved.";
+  | 	         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: character encoding unsupported
+in fonttools-tests/bug1196.fea at 7:10
+  | 
+7 | 	nameid 9 1 1 11 "Masahiko Kozuka \8f\ac\92\cb\8f\b9\95F"; # Macintosh (Japanese)
+  | 	         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

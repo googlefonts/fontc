@@ -38,12 +38,9 @@ static IGNORED_TESTS: &[&str] = &[
     //
     // includes syntax that is (i think) useless, and should at least be a warning
     "GSUB_8.fea",
-    // ## new in fonttools 4.62.1, not yet supported or compare failures ##
+    // ## new in fonttools 4.62.1, not yet supported ##
     // inline alternate subst in contextual rules (see #1925)
     "contextual_merge_alternate.fea",
-    // compare failures to investigate
-    "identical_feature_lookups.fea",
-    "spec8a_2.fea",
 ];
 
 /// An environment variable that can be set to specify where to write generated files.

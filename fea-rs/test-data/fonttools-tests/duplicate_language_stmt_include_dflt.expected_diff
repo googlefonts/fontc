@@ -1,0 +1,18 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# fea-rs lets the first language statement for a language system decide
+# its default lookups; feaLib also adds the script defaults registered
+# since then (here, lookup 6) on a repeat. Repeated language statements are
+# a source error, and we warn on them.
+
+L45
+>            <!-- LookupCount=4 -->
+L45
+<            <!-- LookupCount=3 -->
+L49
+>            <LookupListIndex index="2" value="6"/>
+>            <LookupListIndex index="3" value="7"/>
+L49
+<            <LookupListIndex index="2" value="7"/>
