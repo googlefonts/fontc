@@ -362,7 +362,7 @@ mod tests {
                 },
                 gsub::{SingleSubst, SubstitutionLookup},
                 hmtx::Hmtx,
-                layout::FeatureParams,
+                layout::{ChainedSequenceContext, CoverageTable, FeatureParams},
                 loca::Loca,
                 name::Name,
                 os2::SelectionFlags,
@@ -374,6 +374,7 @@ mod tests {
             gdef::GlyphClassDef,
             glyf::{Bbox, Glyph as RawGlyph},
             head,
+            layout::LookupFlag,
             loca::LocaFormat,
             meta::{DataMapRecord, Metadata, ScriptLangTag},
         },
@@ -5278,6 +5279,847 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct ContextRule {
+        // Coverage text uses glyph names and brackets for classes. Backtrack
+        // coverages retain OpenType's nearest-first order.
+        backtrack: String,
+        input: String,
+        lookahead: String,
+        // (input sequence index, referenced lookup index)
+        lookups: Vec<(u16, u16)>,
+    }
+
+    impl ContextRule {
+        fn new(backtrack: &str, input: &str, lookahead: &str, lookups: &[(u16, u16)]) -> Self {
+            Self {
+                backtrack: backtrack.into(),
+                input: input.into(),
+                lookahead: lookahead.into(),
+                lookups: lookups.into(),
+            }
+        }
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct ContextLookup {
+        index: usize,
+        flags: LookupFlag,
+        mark_filtering_set: Option<u16>,
+        rules: Vec<ContextRule>,
+    }
+
+    impl ContextLookup {
+        fn targets(&self) -> Vec<u16> {
+            self.rules
+                .iter()
+                .flat_map(|rule| rule.lookups.iter().map(|(_, lookup)| *lookup))
+                .collect()
+        }
+    }
+
+    fn context_coverage_text<'a>(
+        result: &TestCompile,
+        coverages: impl Iterator<Item = Result<CoverageTable<'a>, write_fonts::read::ReadError>>,
+    ) -> String {
+        coverages
+            .map(|coverage| {
+                let names: Vec<_> = coverage
+                    .unwrap()
+                    .iter()
+                    .map(|gid| {
+                        result
+                            .get_glyph_name(gid.try_into().unwrap())
+                            .unwrap()
+                            .to_string()
+                    })
+                    .collect();
+                match names.as_slice() {
+                    [name] => name.clone(),
+                    _ => format!("[{}]", names.join(" ")),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn contextual_lookups(result: &TestCompile) -> Vec<ContextLookup> {
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        gpos.lookup_list()
+            .unwrap()
+            .lookups()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, lookup)| {
+                let PositionLookup::ChainContextual(lookup) = lookup.unwrap() else {
+                    return None;
+                };
+                let rules = lookup
+                    .subtables()
+                    .iter()
+                    .map(|subtable| {
+                        let ChainedSequenceContext::Format3(rule) = subtable.unwrap() else {
+                            panic!("expected format 3")
+                        };
+                        ContextRule {
+                            backtrack: context_coverage_text(
+                                result,
+                                rule.backtrack_coverages().iter(),
+                            ),
+                            input: context_coverage_text(result, rule.input_coverages().iter()),
+                            lookahead: context_coverage_text(
+                                result,
+                                rule.lookahead_coverages().iter(),
+                            ),
+                            lookups: rule
+                                .seq_lookup_records()
+                                .iter()
+                                .map(|r| (r.sequence_index(), r.lookup_list_index()))
+                                .collect(),
+                        }
+                    })
+                    .collect();
+                Some(ContextLookup {
+                    index,
+                    flags: lookup.lookup_flag(),
+                    mark_filtering_set: lookup.mark_filtering_set(),
+                    rules,
+                })
+            })
+            .collect()
+    }
+
+    fn mark_base_anchor_positions(gpos: &Gpos) -> Vec<(i32, i32)> {
+        mark_base_lookups(gpos)
+            .iter()
+            .flat_map(|base| {
+                let array = base.base_array().unwrap();
+                array.base_records().iter().flat_map(move |record| {
+                    record
+                        .unwrap()
+                        .base_anchors(array.offset_data())
+                        .iter()
+                        .map(|a| anchor_coords(a.unwrap().unwrap()))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect()
+    }
+
+    fn feature_lookup_indices(gpos: &Gpos) -> Vec<(Tag, Vec<u16>)> {
+        let features = gpos.feature_list().unwrap();
+        features
+            .feature_records()
+            .iter()
+            .map(|record| {
+                let indices = record
+                    .feature(features.offset_data())
+                    .unwrap()
+                    .lookup_list_indices()
+                    .iter()
+                    .map(|index| index.get())
+                    .collect();
+                (record.feature_tag(), indices)
+            })
+            .collect()
+    }
+
+    fn ligature_component_anchors(
+        gpos: &Gpos,
+        lookup_index: usize,
+    ) -> Vec<Vec<Option<(i32, i32)>>> {
+        let lookups = gpos.lookup_list().unwrap();
+        let PositionLookup::MarkToLig(lookup) = lookups.lookups().get(lookup_index).unwrap() else {
+            panic!("expected ligature attachment lookup {lookup_index}")
+        };
+        let write_fonts::read::tables::gpos::MarkLigPos::Format1(ligature) =
+            lookup.subtables().get(0).unwrap()
+        else {
+            panic!("expected format 1")
+        };
+        let attachment = ligature
+            .ligature_array()
+            .unwrap()
+            .ligature_attaches()
+            .get(0)
+            .unwrap();
+        attachment
+            .component_records()
+            .iter()
+            .map(|component| {
+                component
+                    .unwrap()
+                    .ligature_anchors(attachment.offset_data())
+                    .iter()
+                    .map(|anchor| anchor.map(|a| anchor_coords(a.unwrap())))
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn contextual_anchor_emits_dispatch() {
+        let result = TestCompile::compile_source("glyphs3/ContextualAnchors.glyphs");
+        let marks = "[acutecomb tildecomb]";
+        let mut attach_flags = LookupFlag::empty();
+        attach_flags.set_mark_attachment_class(2);
+        // These contexts, flags, and target indices come from fontmake 3.12.1.
+        assert_eq!(
+            contextual_lookups(&result),
+            [
+                ContextLookup {
+                    index: 9,
+                    flags: LookupFlag::USE_MARK_FILTERING_SET,
+                    mark_filtering_set: Some(1),
+                    rules: vec![
+                        ContextRule::new("[A C] B B", marks, "", &[(0, 3)]),
+                        ContextRule::new("[A C] B", marks, "", &[(0, 4)]),
+                    ],
+                },
+                ContextLookup {
+                    index: 10,
+                    flags: attach_flags,
+                    mark_filtering_set: None,
+                    rules: vec![
+                        ContextRule::new("[A C] D", marks, "", &[(0, 5)]),
+                        ContextRule::new("[A C] E", marks, "", &[(0, 6)]),
+                    ],
+                },
+                ContextLookup {
+                    index: 11,
+                    flags: LookupFlag::empty(),
+                    mark_filtering_set: None,
+                    rules: vec![
+                        ContextRule::new("T B", marks, "", &[(0, 7)]),
+                        ContextRule::new("T", marks, "B", &[(0, 8)]),
+                    ],
+                },
+            ]
+        );
+
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        assert_eq!(
+            mark_base_anchor_positions(&gpos),
+            [
+                (250, 700),
+                (250, 700),
+                (250, 700),
+                (400, 850),
+                (400, 850),
+                (350, 800),
+                (350, 800),
+                (370, 820),
+                (370, 820),
+                (370, 820),
+                (370, 820),
+                (360, 800),
+                (420, 900),
+            ]
+        );
+        let bases = mark_base_lookups(&gpos);
+        let target = bases[1].base_array().unwrap();
+        let anchor = target
+            .base_records()
+            .get(0)
+            .unwrap()
+            .base_anchors(target.offset_data())
+            .get(0)
+            .unwrap()
+            .unwrap();
+        let AnchorTable::Format3(anchor) = anchor else {
+            panic!("expected variable anchor")
+        };
+        for device in [anchor.x_device(), anchor.y_device()] {
+            let write_fonts::read::tables::layout::DeviceOrVariationIndex::VariationIndex(index) =
+                device.unwrap().unwrap()
+            else {
+                panic!("expected variation index")
+            };
+            assert_eq!(
+                (index.delta_set_outer_index(), index.delta_set_inner_index()),
+                (0, 1)
+            );
+        }
+        let ivs = font.gdef().unwrap().item_var_store().unwrap().unwrap();
+        assert_eq!(
+            ivs.item_variation_data()
+                .iter()
+                .flat_map(|data| delta_sets(&data.unwrap().unwrap()))
+                .collect::<Vec<_>>(),
+            vec![vec![50], vec![100]]
+        );
+        let gdef = font.gdef().unwrap();
+        let filter = gdef.mark_glyph_sets_def().unwrap().unwrap();
+        assert_eq!(
+            filter
+                .coverages()
+                .get(1)
+                .unwrap()
+                .iter()
+                .map(|g| g.to_u32())
+                .collect::<Vec<_>>(),
+            [result.get_gid("acutecomb").to_u32()]
+        );
+        let attachment = gdef.mark_attach_class_def().unwrap().unwrap();
+        assert_eq!(attachment.get(result.get_gid("acutecomb")), 2);
+        assert_eq!(attachment.get(result.get_gid("tildecomb")), 1);
+    }
+
+    #[test]
+    fn contextual_ligature_and_mark_to_mark_attachments() {
+        use write_fonts::read::tables::gpos::{MarkLigPos, MarkMarkPos};
+        let result = TestCompile::compile_source("glyphs3/ContextualAttachments.glyphs");
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        let lookups = gpos.lookup_list().unwrap();
+        let references: Vec<_> = contextual_lookups(&result)
+            .iter()
+            .map(|lookup| (lookup.index, lookup.targets()))
+            .collect();
+        assert_eq!(references, [(3, vec![2]), (6, vec![5])]);
+        let lig = match lookups.lookups().get(2).unwrap() {
+            PositionLookup::MarkToLig(lookup) => lookup.subtables().get(0).unwrap(),
+            _ => panic!("expected contextual ligature target"),
+        };
+        let MarkLigPos::Format1(lig) = lig else {
+            panic!("expected format 1")
+        };
+        assert!(
+            lig.ligature_coverage()
+                .unwrap()
+                .iter()
+                .any(|g| g == result.get_gid("f_i"))
+        );
+        assert_eq!(
+            ligature_component_anchors(&gpos, 2),
+            [vec![None], vec![Some((500, 900))]]
+        );
+        let mark = match lookups.lookups().get(5).unwrap() {
+            PositionLookup::MarkToMark(lookup) => lookup.subtables().get(0).unwrap(),
+            _ => panic!("expected contextual mark target"),
+        };
+        let MarkMarkPos::Format1(mark) = mark else {
+            panic!("expected format 1")
+        };
+        assert!(
+            mark.mark2_coverage()
+                .unwrap()
+                .iter()
+                .any(|g| g == result.get_gid("tildecomb"))
+        );
+        let marks = mark.mark2_array().unwrap();
+        let anchors = marks
+            .mark2_records()
+            .get(0)
+            .unwrap()
+            .mark2_anchors(marks.offset_data());
+        assert_eq!(anchor_coords(anchors.get(0).unwrap().unwrap()), (400, 500));
+    }
+
+    fn modified_contextual_attachments(
+        temp: &Path,
+        transform: impl FnOnce(String) -> String,
+    ) -> String {
+        let source =
+            fs::read_to_string(testdata_dir().join("glyphs3/ContextualAttachments.glyphs"))
+                .unwrap();
+        let path = temp.join("contextual.glyphs");
+        fs::write(&path, transform(source)).unwrap();
+        path.to_str().unwrap().to_owned()
+    }
+
+    fn assert_contextual_mark_filter(result: &TestCompile, expected: &[&str]) {
+        let font = result.font();
+        let gdef = font.gdef().unwrap();
+        let sets = gdef.mark_glyph_sets_def().unwrap().unwrap();
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|name| result.get_gid(name).to_u32())
+            .collect();
+        let dispatches = contextual_lookups(result);
+        assert_eq!(dispatches.len(), 2);
+        for (lookup, target) in dispatches.into_iter().zip([2, 5]) {
+            assert!(lookup.flags.contains(LookupFlag::USE_MARK_FILTERING_SET));
+            let coverage = sets
+                .coverages()
+                .get(lookup.mark_filtering_set.unwrap() as usize)
+                .unwrap();
+            assert_eq!(
+                coverage.iter().map(|gid| gid.to_u32()).collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(lookup.rules[0].lookups, [(0, target)]);
+        }
+    }
+
+    #[test]
+    fn contextual_generated_mark_class_is_available() {
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source.replace(
+                "GPOS_Context = \"B *\"",
+                "GPOS_Context = \"lookupflag UseMarkFilteringSet @mark_top; B *\"",
+            )
+        });
+        let result = TestCompile::compile_source(&source);
+        assert_contextual_mark_filter(&result, &["acutecomb", "tildecomb"]);
+    }
+
+    #[test]
+    fn contextual_rules_use_live_named_lookup_without_name_collision() {
+        for (name, expected_lookup) in [
+            ("generatedContextTarget0", 0),
+            ("generatedContextDispatch0", 1),
+        ] {
+            let pattern = format!("B' lookup {name} *' &");
+            let temp = tempdir().unwrap();
+            let source = modified_contextual_attachments(temp.path(), |source| {
+                source
+                    .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"lookup generatedContextTarget0 { pos B -100; } generatedContextTarget0; lookup generatedContextDispatch0 { pos B -125; } generatedContextDispatch0;\"; });\nglyphs = (")
+                    .replace("GPOS_Context = \"B *\"", &format!("GPOS_Context = \"{pattern}\""))
+            });
+            let result = TestCompile::compile_source(&source);
+            let references: Vec<_> = contextual_lookups(&result)
+                .into_iter()
+                .map(|lookup| (lookup.index, lookup.rules[0].lookups.clone()))
+                .collect();
+            assert_eq!(
+                references,
+                [
+                    (5, vec![(0, expected_lookup), (2, 4)]),
+                    (8, vec![(0, expected_lookup), (2, 7)])
+                ],
+                "{pattern}"
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_generated_mark_class_collision_matches_fontmake() {
+        // A source markClass with a conflicting anchor keeps its original name;
+        // ufo2ft creates mark_top_1 for the generated class. In contrast, a
+        // source glyph class using the generated mark-class name is invalid.
+        for (class, expected) in [
+            ("@mark_top", vec!["acutecomb"]),
+            ("@mark_top_1", vec!["acutecomb", "tildecomb"]),
+        ] {
+            let temp = tempdir().unwrap();
+            let source = modified_contextual_attachments(temp.path(), |source| {
+                source
+                .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"markClass acutecomb <anchor 500 0> @mark_top;\"; });\nglyphs = (")
+                .replace("GPOS_Context = \"B *\"", &format!("GPOS_Context = \"lookupflag UseMarkFilteringSet {class}; B *\""))
+            });
+            let result = TestCompile::compile_source(&source);
+            assert_contextual_mark_filter(&result, &expected);
+        }
+        // Both the original name and its first suffix are occupied.
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+                .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"markClass acutecomb <anchor 500 0> @mark_top; markClass tildecomb <anchor 150 0> @mark_top_1;\"; });\nglyphs = (")
+                .replace("GPOS_Context = \"B *\"", "GPOS_Context = \"lookupflag UseMarkFilteringSet @mark_top_2; B *\"")
+        });
+        let result = TestCompile::compile_source(&source);
+        assert_contextual_mark_filter(&result, &["acutecomb", "tildecomb"]);
+
+        // A source markClass can also contribute a glyph with no `_top`
+        // anchor. Its source markClass anchor is used by the generated lookup.
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+            .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"markClass circumflexcomb <anchor 200 0> @mark_top;\"; });\nglyphs = (\n{ glyphname = circumflexcomb; unicode = 770; layers = ({ layerId = m01; width = 0; }); },")
+            .replace("GPOS_Context = \"B *\"", "GPOS_Context = \"lookupflag UseMarkFilteringSet @mark_top; B *\"")
+        });
+        let result = TestCompile::compile_source(&source);
+        assert_contextual_mark_filter(&result, &["circumflexcomb", "acutecomb", "tildecomb"]);
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        let lookup_list = gpos.lookup_list().unwrap();
+        let PositionLookup::MarkToLig(lookup) = lookup_list.lookups().get(2).unwrap() else {
+            panic!("expected ligature target")
+        };
+        let write_fonts::read::tables::gpos::MarkLigPos::Format1(lig) =
+            lookup.subtables().get(0).unwrap()
+        else {
+            panic!("expected format 1")
+        };
+        let mark_index = lig
+            .mark_coverage()
+            .unwrap()
+            .iter()
+            .position(|gid| gid == result.get_gid("circumflexcomb"))
+            .unwrap();
+        let array = lig.mark_array().unwrap();
+        assert_eq!(
+            anchor_coords(
+                array.mark_records()[mark_index]
+                    .mark_anchor(array.offset_data())
+                    .unwrap()
+            ),
+            (200, 0)
+        );
+
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+            .replace("glyphs = (", "featurePrefixes = ({ name = Existing; code = \"@mark_top = [tildecomb];\"; });\nglyphs = (")
+            .replace("GPOS_Context = \"B *\"", "GPOS_Context = \"lookupflag UseMarkFilteringSet @mark_top; B *\"")
+        });
+        let mut build = TestCompile::new(&source, |options| options);
+        let _error = build.run_expect_err();
+    }
+
+    #[test]
+    fn contextual_invalid_expression_fails_compilation() {
+        for (context, diagnostic) in [
+            ("B * [", "Unclosed glyph class"),
+            (
+                "lookupflag UseMarkFilteringSet @MC_top; B *",
+                "undefined glyph class",
+            ),
+        ] {
+            let temp = tempdir().unwrap();
+            let source = modified_contextual_attachments(temp.path(), |source| {
+                source.replacen(
+                    "GPOS_Context = \"B *\"",
+                    &format!("GPOS_Context = \"{context}\""),
+                    1,
+                )
+            });
+            let mut build = TestCompile::new(&source, |options| options);
+            let error = build.run_expect_err();
+            assert!(format!("{error:?}").contains(diagnostic), "{error:?}");
+            let message = format!("{error:?}");
+            assert!(
+                message.contains("f_i") && message.contains("*top_2.afterB"),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_targets_precede_all_dispatchers() {
+        let result = TestCompile::compile_source("glyphs3/ContextualAnchors.glyphs");
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        let lookup_list = gpos.lookup_list().unwrap();
+        let lookups: Vec<_> = lookup_list.lookups().iter().map(Result::unwrap).collect();
+        let first_dispatch = lookups
+            .iter()
+            .position(|lookup| matches!(lookup, PositionLookup::ChainContextual(_)))
+            .unwrap();
+        assert!(
+            lookups[first_dispatch..]
+                .iter()
+                .all(|lookup| !matches!(lookup, PositionLookup::MarkToBase(_))),
+            "all contextual mark-to-base targets must precede the dispatchers"
+        );
+    }
+
+    #[test]
+    fn contextual_targets_follow_global_rule_creation_order() {
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+                .replace("anchors = ({ name = top; pos = (200,700); });", "anchors = ({ name = top; pos = (200,700); },\n{ name = \"*top.long\"; pos = (210,710); userData = { GPOS_Context = \"lookupflag RightToLeft; B B B B *\"; }; },\n{ name = \"*top.middle\"; pos = (220,720); userData = { GPOS_Context = \"lookupflag IgnoreLigatures; B B *\"; }; },\n{ name = \"*top.short\"; pos = (230,730); userData = { GPOS_Context = \"lookupflag RightToLeft; B *\"; }; });")
+                .replacen("GPOS_Context = \"B *\"", "GPOS_Context = \"lookupflag IgnoreLigatures; B *\"", 1)
+        });
+        let result = TestCompile::compile_source(&source);
+        let dispatch_targets: Vec<_> = contextual_lookups(&result)
+            .iter()
+            .map(ContextLookup::targets)
+            .collect();
+        // fontmake 3.12.1 builds the three base targets by descending context
+        // length, then the ligature target, across both dispatcher groups.
+        assert_eq!(dispatch_targets, [vec![2, 4], vec![3, 5], vec![9]]);
+    }
+
+    #[test]
+    fn contextual_mark_lookups_precede_trailing_source_at_marker() {
+        // fontmake 3.12.1 / HarfBuzz: contextual mark and mkmk lookup
+        // definitions share the earliest insertion point, while a plain
+        // mkmk lookup remains inside its feature. Append ignores markers.
+        let mark = r#"{ tag = mark; code = "
+            lookup Before { pos B 10; } Before;
+            # Automatic Code
+            lookup After {
+                pos mark tildecomb <anchor 100 1000> mark @AfterMarks;
+            } After;
+        "; }"#;
+        let mkmk = r#"{ tag = mkmk; code = "
+            lookup MBefore { pos B 30; } MBefore;
+            # Automatic Code
+            lookup MAfter { pos B 40; } MAfter;
+        "; }"#;
+        for (case, features, append, plain_mkmk, mark_indices, mkmk_indices) in [
+            (
+                "mark marker",
+                vec![mark],
+                false,
+                false,
+                vec![0, 1, 2, 4, 8],
+                vec![5, 7],
+            ),
+            (
+                "mark then mkmk markers",
+                vec![mark, mkmk],
+                false,
+                false,
+                vec![0, 1, 2, 4, 8],
+                vec![5, 7, 9, 10],
+            ),
+            (
+                "mkmk then mark markers",
+                vec![mkmk, mark],
+                false,
+                false,
+                vec![1, 2, 4, 9, 10],
+                vec![0, 5, 7, 8],
+            ),
+            (
+                "append with mark marker",
+                vec![mark],
+                true,
+                false,
+                vec![0, 1, 2, 3, 5],
+                vec![6, 8],
+            ),
+            (
+                "append with both markers",
+                vec![mark, mkmk],
+                true,
+                false,
+                vec![0, 1, 4, 5, 7],
+                vec![2, 3, 8, 10],
+            ),
+            (
+                "plain mkmk with mark marker",
+                vec![mark],
+                false,
+                true,
+                vec![0, 1, 2, 4, 5],
+                vec![6],
+            ),
+        ] {
+            let temp = tempdir().unwrap();
+            let source = modified_contextual_attachments(temp.path(), |mut source| {
+                if plain_mkmk {
+                    source = source.replace("{ name = \"*top.afterB\"; pos = (400,500); userData = { GPOS_Context = \"B *\"; }; }", "");
+                }
+                let config = if append {
+                    "userData = { com.github.googlei18n.ufo2ft.featureWriters = ({ class = MarkFeatureWriter; options = { mode = append; }; }); };\n"
+                } else {
+                    ""
+                };
+                source.replace("glyphs = (", &format!("featurePrefixes = ({{ name = AfterMarks; code = \"markClass acutecomb <anchor 100 0> @AfterMarks;\"; }});\nfeatures = ({});\n{config}glyphs = (", features.join(", ")))
+            });
+            let result = TestCompile::compile_source(&source);
+            let font = result.font();
+            let gpos = font.gpos().unwrap();
+            assert_eq!(
+                feature_lookup_indices(&gpos),
+                [
+                    (Tag::new(b"mark"), mark_indices),
+                    (Tag::new(b"mkmk"), mkmk_indices)
+                ],
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_ligature_components_follow_reference_overwrite() {
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+            .replace("{ name = \"*top_2.afterB\";", "{ name = \"*top_1.afterB\"; pos = (250,800); userData = { GPOS_Context = \"B *\"; }; },\n  { name = \"*top_2.afterB\";")
+            .replace("glyphs = (", "features = ({ tag = liga; code = \"lookupflag IgnoreMarks; sub f i by f_i;\"; });\nglyphs = (\n{ glyphname = f; unicode = 102; layers = ({ layerId = m01; width = 300; }); },\n{ glyphname = i; unicode = 105; layers = ({ layerId = m01; width = 300; }); },")
+        });
+        let result = TestCompile::compile_source(&source);
+        let font = result.font();
+        let gpos = font.gpos().unwrap();
+        // fontmake overwrites the entire array for the later component.
+        assert_eq!(
+            ligature_component_anchors(&gpos, 2),
+            [vec![None], vec![Some((500, 900))]]
+        );
+    }
+
+    #[test]
+    fn contextual_indic_above_and_below_attachments() {
+        let result = TestCompile::compile_source("glyphs3/ContextualIndicAnchors.glyphs");
+        let font = result.font();
+        assert!(gpos_feature_tags(&font).contains(&Tag::new(b"abvm")));
+        assert!(gpos_feature_tags(&font).contains(&Tag::new(b"blwm")));
+        let gpos = font.gpos().unwrap();
+        assert_eq!(
+            feature_lookup_indices(&gpos),
+            [
+                (Tag::new(b"abvm"), vec![0, 3]),
+                (Tag::new(b"blwm"), vec![4, 7])
+            ]
+        );
+        // The reference emits the mixed above/below contextual anchors in both features.
+        assert_eq!(
+            mark_base_anchor_positions(&gpos),
+            [
+                (250, 700),
+                (350, 850),
+                (400, -250),
+                (250, -100),
+                (350, 850),
+                (400, -250)
+            ]
+        );
+    }
+
+    #[test]
+    fn disabled_mark_writer_does_not_generate_contextual_attachments() {
+        let temp = tempdir().unwrap();
+        let source = fs::read_to_string(testdata_dir().join("glyphs3/ContextualAnchors.glyphs"))
+            .unwrap()
+            .replace(
+                "familyName = ContextualAnchors;",
+                "familyName = ContextualAnchors;\nuserData = { com.github.googlei18n.ufo2ft.featureWriters = (); };",
+            );
+        let path = temp.path().join("disabled.glyphs");
+        fs::write(&path, source).unwrap();
+        let result = TestCompile::compile_source(path.to_str().unwrap());
+        let font = result.font();
+        assert!(!gpos_feature_tags(&font).contains(&Tag::new(b"mark")));
+        let gpos = font.gpos().unwrap();
+        assert!(
+            gpos.lookup_list()
+                .unwrap()
+                .lookups()
+                .iter()
+                .map(Result::unwrap)
+                .all(|lookup| !matches!(lookup, PositionLookup::ChainContextual(_)))
+        );
+    }
+
+    #[test]
+    fn contextual_bracket_fallback_preserves_context() {
+        let temp = tempdir().unwrap();
+        let mut source =
+            fs::read_to_string(testdata_dir().join("glyphs3/ContextualAnchors.glyphs")).unwrap();
+        source = source.replacen("{ glyphname = A; unicode = 65; layers = (", r#"{ glyphname = A; unicode = 65; layers = (
+ { layerId = bracket; associatedMasterId = m02; attributes = { axisRules = ({ min = 600; }); }; width = 520; anchors = (
+ { name = top; pos = (310,760); },
+ { name = "*top.afterB"; pos = (480,950); userData = { GPOS_Context = "B *"; }; }
+ ); },"#, 1);
+        let path = temp.path().join("bracket.glyphs");
+        fs::write(&path, source).unwrap();
+        let result = TestCompile::compile_source(path.to_str().unwrap());
+        let alternate = "A.BRACKET.varAlt01";
+        assert!(
+            contextual_lookups(&result)
+                .iter()
+                .flat_map(|l| &l.rules)
+                .any(|rule| rule.backtrack.contains(alternate))
+        );
+    }
+
+    #[test]
+    fn contextual_indic_marks_follow_dispatch_and_hoist_definitions() {
+        for markers in [false, true] {
+            let temp = tempdir().unwrap();
+            let mut source =
+                fs::read_to_string(testdata_dir().join("glyphs3/ContextualIndicAnchors.glyphs"))
+                    .unwrap()
+                    .replace(
+                        "glyphs = (",
+                        r#"glyphs = (
+ { glyphname = candrabindudeva; unicode = 2305; layers = ({ layerId = m01; width = 0;
+ anchors = ({ name = _top; pos = (100,0); }, { name = top; pos = (100,200); }); }); },"#,
+                    );
+            if markers {
+                source = source.replace("glyphs = (", "features = ({ tag = abvm; code = \"# Automatic Code\\nlookup AAfter { pos kadeva 10; } AAfter;\"; }, { tag = blwm; code = \"# Automatic Code\\nlookup BAfter { pos kadeva 20; } BAfter;\"; });\nglyphs = (");
+            }
+            let path = temp.path().join("indic.glyphs");
+            fs::write(&path, source).unwrap();
+            let result = TestCompile::compile_source(path.to_str().unwrap());
+            let font = result.font();
+            let gpos = font.gpos().unwrap();
+            // fontmake 3.12.1 / ufo2ft 3.11.0: contextual first, stacking last;
+            // both features' attachment definitions precede the first marker.
+            assert_eq!(
+                feature_lookup_indices(&gpos),
+                if markers {
+                    vec![
+                        (Tag::new(b"abvm"), vec![0, 3, 8, 9]),
+                        (Tag::new(b"blwm"), vec![4, 7, 10]),
+                    ]
+                } else {
+                    vec![
+                        (Tag::new(b"abvm"), vec![0, 3, 8]),
+                        (Tag::new(b"blwm"), vec![4, 7]),
+                    ]
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn contextual_mark_side_anchors_are_ignored() {
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source.replace(
+            "anchors = ({ name = _top; pos = (100,0); });",
+            "anchors = ({ name = _top; pos = (100,0); }, { name = \"*_top.alt\"; pos = (999,999); userData = { GPOS_Context = \"B *\"; }; });")
+        });
+        let control = TestCompile::compile_source("glyphs3/ContextualAttachments.glyphs");
+        let result = TestCompile::compile_source(&source);
+        // Ignoring this unsupported anchor must preserve every attachment table.
+        assert_eq!(
+            result
+                .font()
+                .table_data(Tag::new(b"GPOS"))
+                .map(|data| data.as_bytes()),
+            control
+                .font()
+                .table_data(Tag::new(b"GPOS"))
+                .map(|data| data.as_bytes())
+        );
+    }
+
+    #[test]
+    fn contextual_preamble_resolves_named_values() {
+        let (definition, preamble) = ("valueRecordDef -50 myShift;", "pos B' <myShift> f_i;");
+        let temp = tempdir().unwrap();
+        let source = modified_contextual_attachments(temp.path(), |source| {
+            source
+                .replace("glyphs = (", &format!("featurePrefixes = ({{ name = Named; code = \"{definition}\"; }});\nglyphs = ("))
+                .replace("GPOS_Context = \"B *\"", &format!("GPOS_Context = \"{preamble} B *\""))
+        });
+        let result = TestCompile::compile_source(&source);
+        assert!(!contextual_lookups(&result).is_empty());
+    }
+
+    #[test]
+    fn contextual_unused_mark_classes_do_not_affect_compilation() {
+        for prefix in ["", "@mark_top = [acutecomb];"] {
+            let temp = tempdir().unwrap();
+            let source = format!(
+                r#"{{
+.formatVersion = 3; familyName = NoMarks; unitsPerEm = 1000;
+fontMaster = ({{ id = m01; name = Regular; }});
+featurePrefixes = ({{ name = Existing; code = "{prefix}"; }});
+userData = {{ com.github.googlei18n.ufo2ft.featureWriters = ({{ class = MarkFeatureWriter; options = {{ features = (mkmk); }}; }}); }};
+glyphs = (
+{{ glyphname = A; unicode = 65; layers = ({{ layerId = m01; width = 500; anchors = ({{ name = top; pos = (250,700); }}); }}); }},
+{{ glyphname = acutecomb; unicode = 769; layers = ({{ layerId = m01; width = 0; anchors = ({{ name = _top; pos = (100,0); }}); }}); }}
+); }}"#
+            );
+            let path = temp.path().join("empty.glyphs");
+            fs::write(&path, source).unwrap();
+            let result = TestCompile::compile_source(path.to_str().unwrap());
+            assert!(result.font().gdef().is_err());
+        }
     }
 
     #[test]

@@ -14,7 +14,8 @@ use self::error::UfoGlyphOrderError;
 
 pub use compiler::Compiler;
 pub use feature_writer::{
-    FeatureBuilder, FeatureProvider, InsertionPoint, NopFeatureProvider, PendingLookup,
+    ContextualPositionRule, FeatureBuilder, FeatureProvider, InsertionPoint, NopFeatureProvider,
+    PendingLookup,
 };
 pub use language_system::LanguageSystem;
 pub use lookups::{FeatureKey, LookupId};
@@ -67,16 +68,7 @@ pub fn compile<V: VariationInfo, T: FeatureProvider>(
 ) -> Result<(Compilation, DiagnosticSet), DiagnosticSet> {
     let mut ctx = CompilationCtx::new(glyph_map, tree, var_info, extra_features, opts);
     ctx.compile(&tree.typed_root());
-    match ctx.build() {
-        Ok((compilation, warnings)) => {
-            let warnings = DiagnosticSet::new(warnings, tree, usize::MAX);
-            Ok((compilation, warnings))
-        }
-        Err(errors) => {
-            let errors = DiagnosticSet::new(errors, tree, usize::MAX);
-            Err(errors)
-        }
-    }
+    ctx.build()
 }
 
 /// Compile one master's (non-variable) FEA into the intermediate state used for merging.

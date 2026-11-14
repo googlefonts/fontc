@@ -72,9 +72,12 @@ use super::{
 pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     glyph_map: &'a GlyphMap,
     reverse_glyph_map: BTreeMap<GlyphId16, GlyphIdent>,
-    tree: &'a ParseTree,
+    tree: ParseTree,
     variation_info: Option<&'a V>,
     feature_writer: Option<&'a F>,
+    axis_count: u16,
+    provider_diagnostics: Option<crate::DiagnosticSet>,
+    lig_carets_from_feature_writer: BTreeMap<GlyphId16, Vec<CaretValue>>,
     opts: Opts,
     /// Any errors or warnings generated during compilation.
     pub errors: Vec<Diagnostic>,
@@ -93,7 +96,7 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     vertical_feature: SpecialVerticalFeatureState,
     glyph_class_defs: HashMap<SmolStr, GlyphClass>,
     mark_classes: HashMap<SmolStr, MarkClass>,
-    anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
+    anchor_defs: HashMap<SmolStr, Anchor>,
     value_record_defs: HashMap<SmolStr, ValueRecord>,
     conditionset_defs: ConditionSetMap,
     mark_attach_class_id: HashMap<GlyphSet, u16>,
@@ -119,7 +122,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         CompilationCtx {
             glyph_map,
             reverse_glyph_map: glyph_map.reverse_map(),
-            tree,
+            tree: tree.clone(),
+            axis_count: variation_info.map(|v| v.axis_count()).unwrap_or_default(),
+            provider_diagnostics: None,
+            lig_carets_from_feature_writer: Default::default(),
             variation_info,
             feature_writer,
             errors: Vec::new(),
@@ -141,6 +147,86 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             insert_markers: Default::default(),
             n_insert_markers_seen: 0,
         }
+    }
+
+    pub(crate) fn from_pending(
+        glyph_map: &'a GlyphMap,
+        pending: PendingCompilation,
+        feature_writer: Option<&'a F>,
+    ) -> Self {
+        Self {
+            glyph_map,
+            reverse_glyph_map: glyph_map.reverse_map(),
+            tree: pending.tree,
+            variation_info: None,
+            feature_writer,
+            axis_count: pending.axis_count,
+            provider_diagnostics: None,
+            lig_carets_from_feature_writer: pending.lig_carets_from_feature_writer,
+            opts: pending.opts,
+            errors: pending.errors,
+            tables: pending.tables,
+            features: pending.features,
+            default_lang_systems: pending.default_lang_systems,
+            lookups: pending.lookups,
+            lookup_flags: Default::default(),
+            active_feature: None,
+            vertical_feature: Default::default(),
+            glyph_class_defs: pending.glyph_class_defs,
+            mark_classes: pending.mark_classes,
+            anchor_defs: pending.anchor_defs,
+            value_record_defs: pending.value_record_defs,
+            conditionset_defs: pending.conditionset_defs,
+            mark_attach_class_id: pending.mark_attach_class_id,
+            mark_filter_sets: pending.mark_filter_sets,
+            insert_markers: pending.insert_markers,
+            n_insert_markers_seen: 0,
+        }
+    }
+
+    fn run_feature_provider(&mut self, provider: &F) {
+        assert!(self.active_feature.is_none() && !self.lookups.has_current());
+        let mut builder = super::FeatureBuilder::new(self);
+        provider.add_features(&mut builder);
+        let mut external = builder.finish();
+        if self
+            .provider_diagnostics
+            .as_ref()
+            .is_some_and(crate::DiagnosticSet::has_errors)
+        {
+            return;
+        }
+        (external.pos_lookups, external.sub_lookups) = self.lookups.take_generated();
+        if let Some(conditions) = external.feature_variations.as_ref() {
+            for conditionset in conditions.conditions.iter().map(|(cs, _)| cs) {
+                self.conditionset_defs.register_use(conditionset);
+            }
+        }
+        external.merge_into(&mut self.lookups, &mut self.features, &self.insert_markers);
+        self.lig_carets_from_feature_writer = external.lig_carets;
+    }
+
+    fn record_provider_diagnostics(&mut self, mut diagnostics: crate::DiagnosticSet, origin: &str) {
+        if diagnostics.is_empty() {
+            return;
+        }
+        for diagnostic in &mut diagnostics.messages {
+            diagnostic.message.text = format!(
+                "invalid contextual anchor positioning ({origin}): {}",
+                diagnostic.message.text
+            );
+        }
+        match &mut self.provider_diagnostics {
+            Some(existing) => existing.extend(diagnostics),
+            None => self.provider_diagnostics = Some(diagnostics),
+        }
+    }
+
+    fn unique_generated_lookup_name(&self, prefix: &str) -> String {
+        (0..)
+            .map(|index| format!("{prefix}{index}"))
+            .find(|name| self.lookups.get_named(name).is_none())
+            .unwrap()
     }
 
     /// The main entry point for compilation.
@@ -181,6 +267,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     pub(crate) fn get_pending_compilation(self) -> PendingCompilation {
         PendingCompilation {
             tree: self.tree.clone(),
+            glyph_map: self.glyph_map.clone(),
+            glyph_class_defs: self.glyph_class_defs,
+            anchor_defs: self.anchor_defs,
+            value_record_defs: self.value_record_defs,
             features: self.features,
             lookups: self.lookups,
             tables: self.tables,
@@ -192,22 +282,47 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             mark_attach_class_id: self.mark_attach_class_id,
             errors: self.errors,
             opts: self.opts,
-            lig_carets_from_feature_writer: Default::default(),
-
-            axis_count: self
-                .variation_info
-                .map(|info| info.axis_count())
-                .unwrap_or_default(),
+            lig_carets_from_feature_writer: self.lig_carets_from_feature_writer,
+            axis_count: self.axis_count,
         }
     }
 
-    pub(crate) fn build(mut self) -> Result<(Compilation, Vec<Diagnostic>), Vec<Diagnostic>> {
-        let feature_provider = self.feature_writer.take();
-        let mut pending = self.get_pending_compilation();
-        if let Some(provider) = feature_provider {
-            pending.run_feature_provider(provider);
+    pub(crate) fn build(
+        mut self,
+    ) -> Result<(Compilation, crate::DiagnosticSet), crate::DiagnosticSet> {
+        let tree = self.tree.clone();
+        if self.errors.iter().any(Diagnostic::is_error) {
+            return Err(crate::DiagnosticSet::new(self.errors, &tree, usize::MAX));
         }
-        pending.build()
+        if let Some(provider) = self.feature_writer.take() {
+            self.run_feature_provider(provider);
+        }
+        let mut diagnostics = self.provider_diagnostics.take();
+        let pending = self.get_pending_compilation();
+        if diagnostics
+            .as_ref()
+            .is_some_and(crate::DiagnosticSet::has_errors)
+        {
+            let mut result = crate::DiagnosticSet::new(pending.errors, &tree, usize::MAX);
+            result.extend(diagnostics.take().unwrap());
+            return Err(result);
+        }
+        match pending.build() {
+            Ok((compilation, warnings)) => {
+                let mut result = crate::DiagnosticSet::new(warnings, &tree, usize::MAX);
+                if let Some(extra) = diagnostics {
+                    result.extend(extra);
+                }
+                Ok((compilation, result))
+            }
+            Err(errors) => {
+                let mut result = crate::DiagnosticSet::new(errors, &tree, usize::MAX);
+                if let Some(extra) = diagnostics {
+                    result.extend(extra);
+                }
+                Err(result)
+            }
+        }
     }
 
     fn error(&mut self, range: Range<usize>, message: impl Into<String>) {
@@ -2022,10 +2137,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             }
         };
 
-        if let Some(_prev) = self
-            .anchor_defs
-            .insert(name.text.clone(), (anchor, anchor_def.range().start))
-        {
+        if let Some(_prev) = self.anchor_defs.insert(name.text.clone(), anchor) {
             self.error(name.range(), "duplicate anchor definition");
         }
     }
@@ -2037,7 +2149,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
         if let Some(name) = item.name() {
             match self.anchor_defs.get(&name.text) {
-                Some((anchor, pos)) if *pos < item.range().start => return Some(anchor.clone()),
+                Some(anchor) => return Some(anchor.clone()),
                 _ => {
                     self.error(name.range(), "anchor is not defined");
                     return None;
@@ -2340,6 +2452,242 @@ fn for_pair_pos(record: ValueRecord, in_vert_feature: bool) -> ValueRecord {
         out.x_advance = Some(0.into());
     }
     out
+}
+
+impl<F: FeatureProvider, V: VariationInfo> super::feature_writer::FeatureCompiler
+    for CompilationCtx<'_, F, V>
+{
+    fn language_systems(&self) -> Vec<LanguageSystem> {
+        self.default_lang_systems.iter().collect()
+    }
+
+    fn gpos_enabled(&self) -> bool {
+        self.opts.compile_gpos
+    }
+
+    fn gdef(&self) -> Option<&super::tables::GdefBuilder> {
+        self.tables.gdef.as_ref()
+    }
+
+    fn filter_set_id(&mut self, cls: GlyphSet) -> FilterSetId {
+        let next = self.mark_filter_sets.len();
+        *self
+            .mark_filter_sets
+            .entry(cls)
+            .or_insert_with(|| next.try_into().expect("too many filter sets"))
+    }
+
+    fn add_lookup(
+        &mut self,
+        lookup: super::feature_writer::ExternalLookup,
+        front: bool,
+    ) -> LookupId {
+        use super::feature_writer::Inner;
+        match lookup.0 {
+            Inner::Gpos(lookup) => self.lookups.push_generated_gpos(lookup),
+            Inner::Gsub(lookup) => self.lookups.push_generated_gsub(lookup, front),
+        }
+    }
+
+    fn add_named_target(
+        &mut self,
+        lookup: super::feature_writer::ExternalLookup,
+    ) -> (String, LookupId) {
+        use super::feature_writer::Inner;
+        let Inner::Gpos(lookup) = lookup.0 else {
+            panic!("contextual target must be GPOS")
+        };
+        let name = self.unique_generated_lookup_name("generatedContextTarget");
+        let id = self.lookups.push_generated_gpos(lookup);
+        self.lookups.bind_generated_name(name.as_str().into(), id);
+        (name, id)
+    }
+
+    fn add_mark_classes(
+        &mut self,
+        classes: &BTreeMap<SmolStr, super::feature_writer::MarkMembers>,
+    ) -> super::feature_writer::GeneratedMarkClasses {
+        let mut result = BTreeMap::new();
+        for (group, members) in classes {
+            let suffix: String = group
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_'))
+                .collect();
+            let original = format!("@mark_{suffix}");
+            let mut name = original.clone();
+            for (glyph, anchor) in members {
+                let existing = self.mark_classes.get(name.as_str()).and_then(|class| {
+                    class
+                        .members
+                        .iter()
+                        .find(|(glyphs, _)| glyphs.iter().any(|id| id == *glyph))
+                });
+                if let Some((_, old_anchor)) = existing {
+                    if old_anchor.as_ref() == Some(anchor) {
+                        continue;
+                    }
+                    let mut index = 1;
+                    while self
+                        .mark_classes
+                        .contains_key(format!("{original}_{index}").as_str())
+                    {
+                        index += 1;
+                    }
+                    name = format!("{original}_{index}");
+                }
+                if self.glyph_class_defs.contains_key(name.as_str()) {
+                    self.report_error(format!("generated mark class {name} conflicts with an existing glyph class; fontmake also rejects this collision"));
+                    break;
+                }
+                self.mark_classes
+                    .entry(name.as_str().into())
+                    .or_default()
+                    .members
+                    .push(((*glyph).into(), Some(anchor.clone())));
+            }
+            let full_members = self
+                .mark_classes
+                .get(name.as_str())
+                .map(|class| {
+                    class
+                        .members
+                        .iter()
+                        .flat_map(|(glyphs, anchor)| {
+                            glyphs.iter().filter_map(move |glyph| {
+                                anchor.clone().map(|anchor| (glyph, anchor))
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_else(|| members.clone());
+            result.insert(group.clone(), (name, full_members));
+        }
+        result
+    }
+
+    fn add_contextual(
+        &mut self,
+        preamble: &str,
+        rules: &[super::feature_writer::ContextualPositionRule],
+        origin: &str,
+    ) -> Option<(LookupId, Vec<LookupId>)> {
+        use std::{fmt::Write, path::Path, sync::Arc};
+        if !self.opts.compile_gpos {
+            return None;
+        }
+        let dispatch_name = self.unique_generated_lookup_name("generatedContextDispatch");
+        let mut source = format!("lookup {dispatch_name} {{\n");
+        if !preamble.trim().is_empty() {
+            writeln!(source, "{};", preamble.trim()).unwrap();
+        }
+        for rule in rules {
+            let names = rule
+                .bases
+                .iter()
+                .map(|id| {
+                    self.reverse_glyph_map
+                        .get(id)
+                        .map(ToString::to_string)
+                        .ok_or_else(|| format!("unknown glyph id {id:?}"))
+                })
+                .collect::<Result<Vec<_>, _>>();
+            let names = match names {
+                Ok(names) => names.join(" "),
+                Err(err) => {
+                    self.report_error(format!("{origin}: {err}"));
+                    return None;
+                }
+            };
+            let mut pattern = rule.pattern.clone();
+            if !pattern.contains('&') {
+                pattern = pattern.replace('*', "* &");
+            }
+            pattern = pattern.replace('*', &format!("[{names}]"));
+            pattern = pattern.replace('&', &format!("{}' lookup {}", rule.mark_class, rule.target));
+            writeln!(source, "pos {pattern};").unwrap();
+        }
+        writeln!(source, "}} {dispatch_name};").unwrap();
+        let source: Arc<str> = source.into();
+        let parsed = crate::parse::parse_root(
+            "generated-context".into(),
+            Some(self.glyph_map),
+            Box::new(move |_: &Path| Ok(source.clone())),
+        );
+        let (tree, parse_diagnostics) = match parsed {
+            Ok(result) => result,
+            Err(err) => {
+                self.report_error(format!("{origin}: {err}"));
+                return None;
+            }
+        };
+        let failed = parse_diagnostics.has_errors();
+        self.record_provider_diagnostics(parse_diagnostics, origin);
+        if failed {
+            return None;
+        }
+        let mut validation = super::validate::ValidationCtx::new(
+            tree.source_map(),
+            self.glyph_map,
+            self.variation_info,
+        )
+        .with_existing_symbols(super::validate::ExistingSymbols {
+            glyph_classes: &self.glyph_class_defs,
+            mark_classes: &self.mark_classes,
+            lookups: self.lookups.named(),
+            anchor_defs: &self.anchor_defs,
+            value_record_defs: &self.value_record_defs,
+        });
+        validation.validate_root(&tree.typed_root());
+        let validation = crate::DiagnosticSet::new(validation.errors, &tree, usize::MAX);
+        let failed = validation.has_errors();
+        self.record_provider_diagnostics(validation, origin);
+        if failed {
+            return None;
+        }
+
+        assert!(self.active_feature.is_none() && !self.lookups.has_current());
+        let first = self.lookups.generated_gpos_len();
+        let saved_tree = std::mem::replace(&mut self.tree, tree.clone());
+        let saved_flags = self.lookup_flags;
+        let prior_errors = self.errors.len();
+        self.lookups.set_generated_output(true);
+        self.compile(&tree.typed_root());
+        self.lookups.set_generated_output(false);
+        self.lookup_flags = saved_flags;
+        self.tree = saved_tree;
+        let compile_diagnostics =
+            crate::DiagnosticSet::new(self.errors.split_off(prior_errors), &tree, usize::MAX);
+        let failed = compile_diagnostics.has_errors();
+        self.record_provider_diagnostics(compile_diagnostics, origin);
+        if failed {
+            return None;
+        }
+        let Some(id @ LookupId::ExternalGpos(_)) = self.lookups.get_named(&dispatch_name) else {
+            let (file, range) = tree.source_map().resolve_range(0..1);
+            let diagnostic =
+                Diagnostic::error(file, range, "context dispatcher has no valid rules");
+            self.record_provider_diagnostics(
+                crate::DiagnosticSet::new(vec![diagnostic], &tree, usize::MAX),
+                origin,
+            );
+            return None;
+        };
+        let owned = (first..self.lookups.generated_gpos_len())
+            .map(LookupId::ExternalGpos)
+            .collect();
+        Some((id, owned))
+    }
+
+    fn report_error(&mut self, message: String) {
+        let (tree, _) = crate::parse::parse_string("# generated feature writer\n");
+        let (file, range) = tree.source_map().resolve_range(0..1);
+        let diagnostic = Diagnostic::error(file, range, message);
+        let set = crate::DiagnosticSet::new(vec![diagnostic], &tree, usize::MAX);
+        match &mut self.provider_diagnostics {
+            Some(existing) => existing.extend(set),
+            None => self.provider_diagnostics = Some(set),
+        }
+    }
 }
 
 #[cfg(test)]

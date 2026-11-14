@@ -1897,18 +1897,48 @@ struct RawAnchor {
     name: SmolStr,
     pos: Option<Point>,       // v3
     position: Option<String>, // v2
+    user_data: BTreeMap<SmolStr, Plist>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Anchor {
     pub name: SmolStr,
     pub pos: Point,
+    pub user_data: BTreeMap<SmolStr, Plist>,
 }
 
 impl Hash for Anchor {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         PointForEqAndHash::new(self.pos).hash(state);
+        self.user_data.hash(state);
+    }
+}
+
+#[cfg(test)]
+mod anchor_hash_tests {
+    use super::*;
+    use std::hash::{DefaultHasher, Hasher};
+
+    #[test]
+    fn anchor_user_data_changes_its_hash() {
+        let mut anchor = Anchor {
+            name: "*top.alt".into(),
+            pos: Point::new(10.0, 20.0),
+            user_data: [("GPOS_Context".into(), Plist::String("B *".into()))]
+                .into_iter()
+                .collect(),
+        };
+        let hash = |value: &Anchor| {
+            let mut hasher = DefaultHasher::new();
+            value.hash(&mut hasher);
+            hasher.finish()
+        };
+        let before = hash(&anchor);
+        anchor
+            .user_data
+            .insert("GPOS_Context".into(), Plist::String("C *".into()));
+        assert_ne!(before, hash(&anchor));
     }
 }
 
@@ -3514,7 +3544,11 @@ impl RawLayer {
                 } else {
                     Point::ZERO
                 };
-                Anchor { name: ra.name, pos }
+                Anchor {
+                    name: ra.name,
+                    pos,
+                    user_data: ra.user_data,
+                }
             })
             .collect();
 

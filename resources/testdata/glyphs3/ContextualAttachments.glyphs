@@ -1,0 +1,24 @@
+{
+.formatVersion = 3;
+familyName = ContextualAttachments;
+unitsPerEm = 1000;
+fontMaster = ({ id = m01; name = Regular; });
+glyphs = (
+{ glyphname = B; unicode = 66; layers = ({ layerId = m01; width = 500;
+ anchors = ({ name = top; pos = (200,700); }); }); },
+{ glyphname = f_i; unicode = 64257; category = Letter; subCategory = Ligature; layers = ({ layerId = m01; width = 600;
+ anchors = (
+  { name = top_1; pos = (100,700); },
+  { name = top_2; pos = (400,700); },
+  { name = "*top_2.afterB"; pos = (500,900); userData = { GPOS_Context = "B *"; }; }
+ ); }); },
+{ glyphname = acutecomb; unicode = 769; layers = ({ layerId = m01; width = 0;
+ anchors = ({ name = _top; pos = (100,0); }); }); },
+{ glyphname = tildecomb; unicode = 771; layers = ({ layerId = m01; width = 0;
+ anchors = (
+  { name = _top; pos = (100,0); },
+  { name = top; pos = (100,200); },
+  { name = "*top.afterB"; pos = (400,500); userData = { GPOS_Context = "B *"; }; }
+ ); }); }
+);
+}

@@ -317,14 +317,14 @@ impl<'a> FeatureWriter<'a> {
 
 impl FeatureProvider for FeatureWriter<'_> {
     fn add_features(&self, builder: &mut FeatureBuilder) {
-        self.add_kerning_features(builder);
-        self.add_marks(builder);
-        self.add_feature_variations(builder);
         // writers running in `append` mode ignore insertion markers; their
         // lookups land after all user-defined ones.
         for tag in &self.append_features {
             builder.force_append(*tag);
         }
+        self.add_kerning_features(builder);
+        self.add_marks(builder);
+        self.add_feature_variations(builder);
     }
 }
 
