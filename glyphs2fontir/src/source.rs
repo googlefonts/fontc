@@ -5702,9 +5702,10 @@ instances = (
         );
     }
 
-    // Glyphs swaps the drawings and keeps the names, codepoints and export
-    // flags. Like glyphsLib, we skip an entry for a missing glyph and apply
-    // the entries in turn, so "c=a" swaps with the drawing "a" has by then.
+    // Glyphs swaps the drawings and categories, and keeps the names,
+    // codepoints, export flags and production names. Like glyphsLib, we skip
+    // an entry for a missing glyph and apply the entries in turn, so "c=a"
+    // swaps with the drawing "a" has by then.
     #[test]
     fn instance_applies_rename_glyphs() {
         let data = r#"{
@@ -5713,7 +5714,7 @@ familyName = Example;
 fontMaster = ({ id = m01; });
 glyphs = (
 { glyphname = a; layers = ({ layerId = m01; width = 100; anchors = ({ name = top; pos = (50,500); }); }); unicode = 97; },
-{ glyphname = b; export = 0; layers = ({ layerId = m01; width = 200; }); unicode = 98; },
+{ glyphname = b; export = 0; category = Mark; production = bmark; layers = ({ layerId = m01; width = 200; }); unicode = 98; },
 { glyphname = c; layers = ({ layerId = m01; width = 300; }); unicode = 99; }
 );
 unitsPerEm = 1000;
@@ -5732,24 +5733,34 @@ instances = (
                 let glyph = &font.glyphs[name];
                 let layer = &glyph.layers[0];
                 let anchors: Vec<_> = layer.anchors.iter().map(|a| a.name.clone()).collect();
-                (layer.width.0, anchors, glyph.unicode.clone(), glyph.export)
+                let is_mark = glyph.category == Some(Category::Mark);
+                let production_name = glyph.production_name.clone();
+                (
+                    layer.width.0,
+                    anchors,
+                    is_mark,
+                    glyph.unicode.clone(),
+                    glyph.export,
+                    production_name,
+                )
             })
         };
         let top = || vec![SmolStr::new("top")];
+        let bmark = || Some(SmolStr::new("bmark"));
         assert_eq!(
             glyphs("Example Regular"),
             [
-                (300.0, vec![], vec![97], true),
-                (100.0, top(), vec![98], false),
-                (200.0, vec![], vec![99], true),
+                (300.0, vec![], false, vec![97], true, None),
+                (100.0, top(), false, vec![98], false, bmark()),
+                (200.0, vec![], true, vec![99], true, None),
             ]
         );
         assert_eq!(
             glyphs("Example Bold"),
             [
-                (100.0, top(), vec![97], true),
-                (200.0, vec![], vec![98], false),
-                (300.0, vec![], vec![99], true),
+                (100.0, top(), false, vec![97], true, None),
+                (200.0, vec![], true, vec![98], false, bmark()),
+                (300.0, vec![], false, vec![99], true, None),
             ]
         );
     }

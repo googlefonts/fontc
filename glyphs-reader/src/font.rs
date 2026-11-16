@@ -381,26 +381,28 @@ impl Glyph {
 
     /// Swap everything that belongs to the drawing with `other`.
     ///
-    /// The name, codepoints and export flag stay, as in Glyphs. So do the
-    /// categories and production name, as in glyphsLib.
+    /// The name, codepoints, export flag and production name stay, as in
+    /// Glyphs. The categories move, even where they come from the name.
     fn swap_data(&mut self, other: &mut Glyph) {
         let Glyph {
             name: _,
             export: _,
             unicode: _,
-            category: _,
-            sub_category: _,
             production_name: _,
             layers,
             bracket_layers,
             left_kern,
             right_kern,
+            category,
+            sub_category,
             smart_component_axes,
         } = self;
         std::mem::swap(layers, &mut other.layers);
         std::mem::swap(bracket_layers, &mut other.bracket_layers);
         std::mem::swap(left_kern, &mut other.left_kern);
         std::mem::swap(right_kern, &mut other.right_kern);
+        std::mem::swap(category, &mut other.category);
+        std::mem::swap(sub_category, &mut other.sub_category);
         std::mem::swap(smart_component_axes, &mut other.smart_component_axes);
     }
 }
@@ -4845,11 +4847,12 @@ impl Font {
     /// and `b`.
     ///
     /// The layers (outlines, components, widths and anchors) move, and so do
-    /// the kerning groups and kerning exceptions; see [`Glyph::swap_data`]
-    /// for what stays with the name. The components of the swapped glyphs
-    /// are renamed along with them: with `a.sc=a`, where `a.sc` is `a` moved
-    /// down, `a` becomes `a.sc` moved down, not a composite of itself. Other
-    /// glyphs keep their components by name, and so show the swapped drawing.
+    /// the categories, kerning groups and kerning exceptions; see
+    /// [`Glyph::swap_data`] for what stays with the name. The components of
+    /// the swapped glyphs are renamed along with them: with `a.sc=a`, where
+    /// `a.sc` is `a` moved down, `a` becomes `a.sc` moved down, not a
+    /// composite of itself. Other glyphs keep their components by name, and
+    /// so show the swapped drawing.
     fn rename_glyphs(&mut self, renames: &[(SmolStr, SmolStr)]) {
         // for each swapped glyph, the name its drawing had before
         let mut origin: HashMap<SmolStr, SmolStr> = HashMap::new();
