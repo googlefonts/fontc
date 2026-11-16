@@ -244,6 +244,17 @@ impl Kerning {
         self.0.retain(|master_id, _| keep(master_id));
     }
 
+    /// Rename the glyphs in kerning exceptions; groups are left alone.
+    fn rename_glyphs(&mut self, new_names: &HashMap<SmolStr, SmolStr>) {
+        let rename = |side: SmolStr| new_names.get(&side).cloned().unwrap_or(side);
+        for kerns in self.0.values_mut() {
+            *kerns = std::mem::take(kerns)
+                .into_iter()
+                .map(|((left, right), value)| ((rename(left), rename(right)), value))
+                .collect();
+        }
+    }
+
     fn insert(
         &mut self,
         master_id: String,
@@ -371,23 +382,25 @@ impl Glyph {
     /// Swap everything that belongs to the drawing with `other`.
     ///
     /// The name, codepoints and export flag stay, as in Glyphs. So do the
-    /// kerning groups, categories and production name, as in glyphsLib.
+    /// categories and production name, as in glyphsLib.
     fn swap_data(&mut self, other: &mut Glyph) {
         let Glyph {
             name: _,
             export: _,
             unicode: _,
-            left_kern: _,
-            right_kern: _,
             category: _,
             sub_category: _,
             production_name: _,
             layers,
             bracket_layers,
+            left_kern,
+            right_kern,
             smart_component_axes,
         } = self;
         std::mem::swap(layers, &mut other.layers);
         std::mem::swap(bracket_layers, &mut other.bracket_layers);
+        std::mem::swap(left_kern, &mut other.left_kern);
+        std::mem::swap(right_kern, &mut other.right_kern);
         std::mem::swap(smart_component_axes, &mut other.smart_component_axes);
     }
 }
@@ -4831,12 +4844,12 @@ impl Font {
     /// Apply 'Rename Glyphs': each entry `a=b` swaps the drawings of `a`
     /// and `b`.
     ///
-    /// The layers (outlines, components, widths and anchors) move; see
-    /// [`Glyph::swap_data`] for what stays with the name. The components of
-    /// the swapped glyphs are renamed along with them: with `a.sc=a`, where
-    /// `a.sc` is `a` moved down, `a` becomes `a.sc` moved down, not a
-    /// composite of itself. Other glyphs keep their components by name, and
-    /// so show the swapped drawing.
+    /// The layers (outlines, components, widths and anchors) move, and so do
+    /// the kerning groups and kerning exceptions; see [`Glyph::swap_data`]
+    /// for what stays with the name. The components of the swapped glyphs
+    /// are renamed along with them: with `a.sc=a`, where `a.sc` is `a` moved
+    /// down, `a` becomes `a.sc` moved down, not a composite of itself. Other
+    /// glyphs keep their components by name, and so show the swapped drawing.
     fn rename_glyphs(&mut self, renames: &[(SmolStr, SmolStr)]) {
         // for each swapped glyph, the name its drawing had before
         let mut origin: HashMap<SmolStr, SmolStr> = HashMap::new();
@@ -4878,6 +4891,8 @@ impl Font {
                 }
             }
         }
+        self.kerning_ltr.rename_glyphs(&new_names);
+        self.kerning_rtl.rename_glyphs(&new_names);
     }
 
     /// Apply 'Reencode Glyphs', as Glyphs documents it: each entry replaces

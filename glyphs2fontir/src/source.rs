@@ -5806,6 +5806,54 @@ instances = (
         assert_eq!(shapes("bb"), []);
     }
 
+    // Glyphs moves the kerning groups and kerning exceptions with the drawing.
+    #[test]
+    fn instance_rename_glyphs_kerning() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+glyphs = (
+{ glyphname = T; kernRight = T; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = V; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = a; kernLeft = a; kernRight = a; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = a.ss01; kernLeft = aalt; kernRight = aalt; layers = ({ layerId = m01; width = 500; }); }
+);
+kerningLTR = { m01 = {
+"@MMK_L_T" = { "@MMK_R_a" = -80; "@MMK_R_aalt" = -20; a = -33; };
+T = { a.ss01 = -55; };
+a.ss01 = { V = -44; };
+}; };
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; customParameters = ({ name = "Rename Glyphs"; value = ("a=a.ss01"); }); }
+);
+}"#;
+        let font = select_instance(data, "Example Regular")
+            .unwrap()
+            .font_info
+            .font
+            .clone();
+        let groups = |name: &str| {
+            let glyph = &font.glyphs[name];
+            (glyph.left_kern.clone(), glyph.right_kern.clone())
+        };
+        assert_eq!(groups("a"), (Some("aalt".into()), Some("aalt".into())));
+        assert_eq!(groups("a.ss01"), (Some("a".into()), Some("a".into())));
+        assert_eq!(groups("T"), (None, Some("T".into())));
+        let expected: BTreeMap<_, _> = [
+            ("@MMK_L_T", "@MMK_R_a", -80.0),
+            ("@MMK_L_T", "@MMK_R_aalt", -20.0),
+            ("@MMK_L_T", "a.ss01", -33.0),
+            ("T", "a", -55.0),
+            ("a", "V", -44.0),
+        ]
+        .into_iter()
+        .map(|(left, right, value)| ((left.into(), right.into()), OrderedFloat(value)))
+        .collect();
+        assert_eq!(font.kerning_ltr.get("m01"), Some(&expected));
+    }
+
     #[test]
     fn instance_selection_on_a_variable_source_builds_its_master() {
         // fontc can't tell a variable source from a "bag of statics" (#1288):
