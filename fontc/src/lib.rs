@@ -5645,6 +5645,7 @@ mod tests {
             .value_records()
             .iter()
             .map(|rec| {
+                let rec = rec.unwrap();
                 assert_eq!(rec.delta_set_outer_index(), 0);
                 (rec.value_tag(), rec.delta_set_inner_index())
             })
