@@ -210,7 +210,7 @@ mod tests {
         assert_eq!(mvar.version(), MajorMinor::VERSION_1_0);
         assert_eq!(mvar.value_records().len(), 1);
 
-        let rec = &mvar.value_records()[0];
+        let rec = mvar.value_records().get(0).unwrap();
         assert_eq!(rec.value_tag(), Tag::new(b"xhgt"));
         assert_eq!(rec.delta_set_outer_index(), 0);
         assert_eq!(rec.delta_set_inner_index(), 0);
@@ -302,8 +302,14 @@ mod tests {
         let mvar = read_mvar::Mvar::read(FontData::new(&bytes)).unwrap();
 
         assert_eq!(mvar.value_records().len(), 2);
-        assert_eq!(mvar.value_records()[0].value_tag(), Tag::new(b"strs"));
-        assert_eq!(mvar.value_records()[1].value_tag(), Tag::new(b"xhgt"));
+        assert_eq!(
+            mvar.value_records().get(0).unwrap().value_tag(),
+            Tag::new(b"strs")
+        );
+        assert_eq!(
+            mvar.value_records().get(1).unwrap().value_tag(),
+            Tag::new(b"xhgt")
+        );
 
         let mvar = MvarReader::new(mvar);
         assert_eq!(mvar.metric_delta("xhgt", &[0.0]), 0.0);
