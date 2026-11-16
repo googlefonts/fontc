@@ -1396,6 +1396,26 @@ impl AnchorKind {
         matches!(self, AnchorKind::Base(_) | AnchorKind::Ligature { .. })
     }
 
+    /// Returns `true` if this anchor is only used to align components.
+    ///
+    /// These are anchors whose group name starts with a non-letter, such as
+    /// `#exit`, `_2top` or `2top_1`, which [ufo2ft] and Glyphs.app ignore when
+    /// writing mark features. Names starting with `*` (contextual and origin
+    /// anchors in Glyphs) are not included.
+    ///
+    /// [ufo2ft]: https://github.com/googlefonts/ufo2ft/blob/541fd0e8/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L172
+    pub fn is_ignorable(&self) -> bool {
+        match self {
+            AnchorKind::Base(group_name)
+            | AnchorKind::Mark(group_name)
+            | AnchorKind::Ligature { group_name, .. } => group_name
+                .chars()
+                .next()
+                .is_some_and(|c| !c.is_alphabetic() && c != '*'),
+            _ => false,
+        }
+    }
+
     /// Convert AnchorKind back to its canonical string name representation.
     ///
     /// Note: this is lossy for non-standard names (e.g. `caret_1_` becomes `caret_1`).
@@ -1484,12 +1504,19 @@ impl AnchorBuilder {
         }
     }
 
+    /// Add a position for an anchor.
+    ///
+    /// Anchors that are only used to align components (see
+    /// [`AnchorKind::is_ignorable`]) are dropped.
     pub fn add(
         &mut self,
         anchor_name: SmolStr,
         loc: NormalizedLocation,
         pos: Point,
     ) -> Result<(), BadGlyph> {
+        if AnchorKind::new(&anchor_name).is_ok_and(|kind| kind.is_ignorable()) {
+            return Ok(());
+        }
         // Match ufo2ft last-one-wins behavior for duplicate anchors.
         // https://github.com/googlefonts/fontc/issues/1927
         if self
@@ -2718,6 +2745,24 @@ mod tests {
             .unwrap();
         // Last position wins
         assert_eq!(top.positions[&loc], Point::new(300.0, 400.0));
+    }
+
+    #[test]
+    fn ignorable_anchors_are_dropped() {
+        let loc = NormalizedLocation::new();
+        let mut builder = AnchorBuilder::new("A".into());
+        for name in [
+            "top", "2top", "_top", "_2top", "top_1", "2top_1", "#exit", "exit", "_3", "*top",
+        ] {
+            builder.add(name.into(), loc.clone(), Point::ZERO).unwrap();
+        }
+        let anchors = builder.build().unwrap();
+        let names = anchors
+            .anchors
+            .iter()
+            .map(|a| a.original_name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["top", "_top", "top_1", "exit", "_3", "*top"]);
     }
 
     fn assert_names(expected: &[(NameId, &str)], actual: HashMap<NameKey, String>) {
