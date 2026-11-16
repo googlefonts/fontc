@@ -150,27 +150,24 @@ impl Target {
     ///
     /// This is unique for each target, and is in the form,
     ///
-    /// {BASE}{source_dir}/{config_stem}/{file_stem}/{build}
+    /// {BASE}{source_dir}/{config_name}/{source}/{build}
     ///
     /// where {source_dir} is the path to the sources/Sources directory of this
-    /// target, relative to the root git cache. A target for one instance ends
-    /// in `{build}-{instance}` instead.
+    /// target, relative to the root git cache, {config_name} is the config's
+    /// file name, and {source} is the source's path relative to {source_dir}
+    /// with each `/` replaced by `_`. Both keep their extensions, so a target
+    /// that switches to a source in another format gets a new directory. A
+    /// target for one instance ends in `{build}-{instance}` instead.
     pub(crate) fn cache_dir(&self, in_dir: &Path) -> PathBuf {
-        let config = self.id.config.file_stem().unwrap_or(OsStr::new("config"));
+        let config = self.id.config.file_name().unwrap_or(OsStr::new("config"));
         let mut result = in_dir.join(self.source_dir());
         result.push(config);
-        // Flatten the full source path (minus extension) into a single directory
-        // name by replacing path separators, to avoid cache collisions when
-        // multiple sources share the same filename in different directories
-        // (e.g., styles/Light/font.ufo vs styles/Medium/font.ufo).
-        let source_no_ext = self
-            .id
-            .source
-            .with_extension("")
-            .display()
-            .to_string()
-            .replace('/', "_");
-        result.push(source_no_ext);
+        // Flatten the full source path into a single directory name by
+        // replacing path separators, to avoid cache collisions when multiple
+        // sources share the same filename in different directories (e.g.,
+        // styles/Light/font.ufo vs styles/Medium/font.ufo).
+        let source = self.id.source.display().to_string().replace('/', "_");
+        result.push(source);
         match &self.id.instance {
             Some(instance) => result.push(format!(
                 "{}-{}",
@@ -480,7 +477,7 @@ mod tests {
         assert_eq!(target.repo_name(), "repo");
         assert_eq!(
             target.cache_dir(Path::new("cache")),
-            Path::new("cache/org/repo_123456789a/Sources/hmm/hello/default")
+            Path::new("cache/org/repo_123456789a/Sources/hmm.yaml/hello.glyphs/default")
         );
         assert_eq!(
             target.repro_config_path(),
@@ -545,13 +542,25 @@ mod tests {
         .with_instance("Hi Bold");
         assert_eq!(
             target.cache_dir(Path::new("cache")),
-            Path::new("cache/org/repo_123456789a/sources/config/hi/gftools-Hi Bold")
+            Path::new("cache/org/repo_123456789a/sources/config.yaml/hi.glyphs/gftools-Hi Bold")
         );
         assert_eq!(
             target.repro_command("example.com"),
             "python3 -m ttx_diff 'example.com?123456789a#sources/hi.glyphs' --compare gftools \
              --config ~/.fontc_crater_cache/org/repo/sources/config.yaml --instance 'Hi Bold'"
         );
+    }
+
+    #[test]
+    fn cache_dir_keeps_extensions() {
+        let target = |config, source| {
+            Target::new("org/repo", "123456789a", config, true, source).cache_dir(Path::new(""))
+        };
+        let ufo = target("ofl/hi/config.yaml", "Sources/Hi/Hi-Bold.ufo");
+        let glyphs = target("ofl/hi/config.yaml", "Sources/Hi/Hi-Bold.glyphs");
+        let yml = target("ofl/hi/config.yml", "Sources/Hi/Hi-Bold.ufo");
+        assert_ne!(ufo, glyphs);
+        assert_ne!(ufo, yml);
     }
 
     #[test]
