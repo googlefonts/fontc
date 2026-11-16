@@ -2183,6 +2183,28 @@ mod tests {
         assert_eq!(None, font.cmap().unwrap().map_codepoint(0u32));
     }
 
+    // https://github.com/googlefonts/fontc/issues/2334
+    #[test]
+    fn compile_replaces_unexported_notdef() {
+        let result = TestCompile::compile_source("glyphs3/UnexportedNotdef.glyphs");
+
+        assert_eq!(
+            Some(GlyphId16::NOTDEF),
+            result
+                .fe_context
+                .glyph_order
+                .get()
+                .glyph_id(&GlyphName::NOTDEF)
+        );
+        // the source's empty .notdef isn't exported, so we generate one
+        // (8 points, 2 contours) in its place
+        let glyphs = result.glyphs();
+        let Some(glyf::Glyph::Simple(notdef)) = &glyphs.read()[0] else {
+            panic!("expected a simple .notdef");
+        };
+        assert_eq!((8, 2), (notdef.num_points(), notdef.number_of_contours()));
+    }
+
     #[test]
     fn compile_glyphs_font_with_weight_axis() {
         let result = TestCompile::compile_source("glyphs2/WghtVar.glyphs");
