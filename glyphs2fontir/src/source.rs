@@ -5702,6 +5702,110 @@ instances = (
         );
     }
 
+    // Glyphs swaps the drawings and keeps the names, codepoints and export
+    // flags. Like glyphsLib, we skip an entry for a missing glyph and apply
+    // the entries in turn, so "c=a" swaps with the drawing "a" has by then.
+    #[test]
+    fn instance_applies_rename_glyphs() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+glyphs = (
+{ glyphname = a; layers = ({ layerId = m01; width = 100; anchors = ({ name = top; pos = (50,500); }); }); unicode = 97; },
+{ glyphname = b; export = 0; layers = ({ layerId = m01; width = 200; }); unicode = 98; },
+{ glyphname = c; layers = ({ layerId = m01; width = 300; }); unicode = 99; }
+);
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; customParameters = ({ name = "Rename Glyphs"; value = ("a=b", "c=a", "b=zzz"); }); },
+{ name = Bold; }
+);
+}"#;
+        let glyphs = |instance| {
+            let font = select_instance(data, instance)
+                .unwrap()
+                .font_info
+                .font
+                .clone();
+            ["a", "b", "c"].map(|name| {
+                let glyph = &font.glyphs[name];
+                let layer = &glyph.layers[0];
+                let anchors: Vec<_> = layer.anchors.iter().map(|a| a.name.clone()).collect();
+                (layer.width.0, anchors, glyph.unicode.clone(), glyph.export)
+            })
+        };
+        let top = || vec![SmolStr::new("top")];
+        assert_eq!(
+            glyphs("Example Regular"),
+            [
+                (300.0, vec![], vec![97], true),
+                (100.0, top(), vec![98], false),
+                (200.0, vec![], vec![99], true),
+            ]
+        );
+        assert_eq!(
+            glyphs("Example Bold"),
+            [
+                (100.0, top(), vec![97], true),
+                (200.0, vec![], vec![98], false),
+                (300.0, vec![], vec![99], true),
+            ]
+        );
+    }
+
+    // The swapped glyphs' components are renamed with them, and other glyphs
+    // keep theirs, as in Glyphs.
+    #[test]
+    fn instance_rename_glyphs_components() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+glyphs = (
+{ glyphname = a; layers = ({ layerId = m01; width = 500; shapes = ({ closed = 1; nodes = ((0,0,l),(0,100,l),(100,100,l)); }); }); },
+{ glyphname = a.sc; layers = ({ layerId = m01; width = 500; shapes = ({ ref = a; pos = (0,-130); }); }); },
+{ glyphname = x; layers = ({ layerId = m01; width = 500; shapes = ({ ref = a; }); }); },
+{ glyphname = b; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = b.ss01; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = bb; layers = ({ layerId = m01; width = 500; shapes = ({ ref = b; }); }); },
+{ glyphname = c; layers = ({ layerId = m01; width = 500; }); }
+);
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; customParameters = ({ name = "Rename Glyphs"; value = ("a.sc=a", "bb=c", "b=b.ss01"); }); }
+);
+}"#;
+        let font = select_instance(data, "Example Regular")
+            .unwrap()
+            .font_info
+            .font
+            .clone();
+        let shapes = |name: &str| {
+            font.glyphs[name].layers[0]
+                .shapes
+                .iter()
+                .map(|shape| match shape {
+                    glyphs_reader::Shape::Path(_) => ("path".into(), Affine::IDENTITY),
+                    glyphs_reader::Shape::Component(c) => (c.name.clone(), c.transform),
+                })
+                .collect::<Vec<(SmolStr, _)>>()
+        };
+        let path = || vec![("path".into(), Affine::IDENTITY)];
+        // "a" has the drawing of "a.sc", whose component follows the swap to
+        // "a.sc", which has the outline: no cycle
+        assert_eq!(
+            shapes("a"),
+            [("a.sc".into(), Affine::translate((0.0, -130.0)))]
+        );
+        assert_eq!(shapes("a.sc"), path());
+        // "x" isn't swapped: it keeps "a", and so shows the drawing from "a.sc"
+        assert_eq!(shapes("x"), [("a".into(), Affine::IDENTITY)]);
+        // "c" has the drawing of "bb", whose component goes through the other swap
+        assert_eq!(shapes("c"), [("b.ss01".into(), Affine::IDENTITY)]);
+        assert_eq!(shapes("bb"), []);
+    }
+
     #[test]
     fn instance_selection_on_a_variable_source_builds_its_master() {
         // fontc can't tell a variable source from a "bag of statics" (#1288):
