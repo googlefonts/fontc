@@ -325,7 +325,10 @@ impl Workload {
             return;
         };
 
-        if !glyph.emit_to_binary {
+        // The glyph order work drops an unexported .notdef and generates a new
+        // one under the same name, so its BE work still has to run (after that).
+        let replaced_notdef = !glyph.emit_to_binary && glyph.name == GlyphName::NOTDEF;
+        if !glyph.emit_to_binary && !replaced_notdef {
             trace!("Skipping execution of {be_id:?}; it does not emit to binary");
             for counter in self.counters(&be_id) {
                 counter.fetch_sub(1, Ordering::AcqRel);
@@ -349,7 +352,7 @@ impl Workload {
 
         // We don't *have* to wait on glyph order, but if we don't it delays the critical path.
         // A glyph with local axes must wait, the glyph order work drops the axes.
-        if has_components || !glyph.axes().is_empty() {
+        if has_components || !glyph.axes().is_empty() || replaced_notdef {
             deps = deps.variant(FeWorkIdentifier::GlyphOrder);
         }
 
