@@ -155,6 +155,8 @@ pub struct CustomParameters {
     pub reencode_glyphs: Option<Vec<Reencoding>>,
     /// The pairs of glyphs swapped by 'Rename Glyphs', e.g. `a=a.sc`.
     pub rename_glyphs: Option<Vec<(SmolStr, SmolStr)>>,
+    /// The feature tag and new code of each 'Replace Feature', in order.
+    pub replace_feature: Vec<(SmolStr, String)>,
 }
 
 /// One entry of the 'Reencode Glyphs' instance parameter, e.g. `smiley=E100`.
@@ -331,11 +333,25 @@ pub struct FeatureSnippet {
     pub content: String,
     /// If `true` the content should be ignored.
     pub disabled: bool,
+    kind: FeatureKind,
+}
+
+/// The class, prefix or feature a [`FeatureSnippet`] comes from.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum FeatureKind {
+    Class,
+    Prefix,
+    /// A feature, by tag.
+    Feature(SmolStr),
 }
 
 impl FeatureSnippet {
-    pub fn new(content: String, disabled: bool) -> Self {
-        FeatureSnippet { content, disabled }
+    fn new(kind: FeatureKind, content: String, disabled: bool) -> Self {
+        FeatureSnippet {
+            content,
+            disabled,
+            kind,
+        }
     }
 
     pub fn str_if_enabled(&self) -> Option<&str> {
@@ -1248,6 +1264,12 @@ impl PlistParamsExt for Plist {
     }
 }
 
+/// Split a 'Replace Feature' value, `liga; code`, at its first semicolon.
+fn split_replacement(value: &str) -> Option<(SmolStr, String)> {
+    let (name, code) = value.split_once(';')?;
+    Some((name.trim().into(), code.trim_start().to_string()))
+}
+
 /// The long (UFO) names of custom parameters that also have a short name, as
 /// registered by glyphsLib:
 ///     <https://github.com/googlefonts/glyphsLib/blob/edf5ce51fdcd6f9fc8315063845da3a6899761de/Lib/glyphsLib/builder/custom_params.py#L315-L362>
@@ -1525,6 +1547,10 @@ impl RawCustomParameters {
                 "Rename Glyphs" => {
                     add_and_report_issues!(rename_glyphs, Plist::as_glyph_renames)
                 }
+                "Replace Feature" => match value.as_str().and_then(split_replacement) {
+                    Some(replacement) => params.replace_feature.push(replacement),
+                    None => log::warn!("bad 'Replace Feature', ignored: {value:?}"),
+                },
                 _ => log_once_warn!("unknown custom parameter '{name}'"),
             }
         }
@@ -3924,7 +3950,11 @@ impl RawFeature {
     fn prefix_to_feature(&self) -> Result<FeatureSnippet, Error> {
         let name = self.name.as_deref().unwrap_or_default();
         let code = format!("# Prefix: {}\n{}{}", name, self.autostr(), self.code);
-        Ok(FeatureSnippet::new(code, self.disabled()))
+        Ok(FeatureSnippet::new(
+            FeatureKind::Prefix,
+            code,
+            self.disabled(),
+        ))
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L101
@@ -3936,7 +3966,11 @@ impl RawFeature {
             if name.starts_with('@') { "" } else { "@" },
             self.code
         );
-        Ok(FeatureSnippet::new(code, self.disabled()))
+        Ok(FeatureSnippet::new(
+            FeatureKind::Class,
+            code,
+            self.disabled(),
+        ))
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L113
@@ -3949,7 +3983,11 @@ impl RawFeature {
             self.feature_names(),
             self.code
         );
-        Ok(FeatureSnippet::new(code, self.disabled()))
+        Ok(FeatureSnippet::new(
+            FeatureKind::Feature(name.into()),
+            code,
+            self.disabled(),
+        ))
     }
 
     //https://github.com/googlefonts/glyphsLib/blob/c4db6b981d577f4/Lib/glyphsLib/builder/features.py#L180
@@ -4834,13 +4872,39 @@ impl Font {
     /// Apply the parameters of the instance at `index` that edit glyphs, for a
     /// static font built for that instance.
     ///
-    /// For now those are 'Rename Glyphs', then 'Reencode Glyphs'.
+    /// For now those are 'Replace Feature', 'Rename Glyphs', then 'Reencode
+    /// Glyphs'.
     pub fn apply_instance_parameters(&mut self, index: usize) {
         let params = &self.instances[index].custom_parameters;
+        let feature_replacements = params.replace_feature.clone();
         let renames = params.rename_glyphs.clone().unwrap_or_default();
         let reencodings = params.reencode_glyphs.clone().unwrap_or_default();
+        self.replace_features(&feature_replacements);
         self.rename_glyphs(&renames);
         self.reencode_glyphs(reencodings);
+    }
+
+    /// Apply 'Replace Feature': each entry replaces the code of the first
+    /// feature with its tag.
+    ///
+    /// A tag the font has no feature for is ignored, as in Glyphs. As in
+    /// [glyphsLib], the new code replaces the whole body, `# automatic` line
+    /// and feature names included.
+    ///
+    /// [glyphsLib]: https://github.com/googlefonts/glyphsLib/blob/9a344416/Lib/glyphsLib/builder/features.py#L305-L315
+    fn replace_features(&mut self, replacements: &[(SmolStr, String)]) {
+        for (tag, code) in replacements {
+            let Some(feature) = self
+                .features
+                .iter_mut()
+                .find(|f| matches!(&f.kind, FeatureKind::Feature(t) if t == tag))
+            else {
+                warn!("'Replace Feature' names '{tag}', which isn't in the font; ignored");
+                continue;
+            };
+            let newline = if code.ends_with('\n') { "" } else { "\n" };
+            feature.content = format!("feature {tag} {{\n{code}{newline}}} {tag};");
+        }
     }
 
     /// Apply 'Rename Glyphs': each entry `a=b` swaps the drawings of `a`

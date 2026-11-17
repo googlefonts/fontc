@@ -5865,6 +5865,54 @@ instances = (
         assert_eq!(font.kerning_ltr.get("m01"), Some(&expected));
     }
 
+    // Only the first feature with the tag gets the new code, and a tag the
+    // font has no feature for is ignored.
+    #[test]
+    fn instance_applies_replace_feature() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+features = (
+{ automatic = 1; tag = liga; code = "sub f i by f_i;"; },
+{ tag = liga; code = "sub f l by f_l;"; },
+{ tag = smcp; code = "sub a by a.sc;"; }
+);
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; customParameters = (
+{ name = "Replace Feature"; value = "liga ; sub f f by f_f;"; },
+{ name = "Replace Feature"; value = "smcp;\012sub b by b.sc;\012"; },
+{ name = "Replace Feature"; value = "c2sc; sub B by b.sc;"; }
+); },
+{ name = Bold; }
+);
+}"#;
+        let features = |instance| {
+            let font = &select_instance(data, instance).unwrap().font_info.font;
+            font.features
+                .iter()
+                .map(|f| f.content.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            features("Example Regular"),
+            [
+                "feature liga {\nsub f f by f_f;\n} liga;",
+                "feature liga {\nsub f l by f_l;\n} liga;",
+                "feature smcp {\nsub b by b.sc;\n} smcp;",
+            ]
+        );
+        assert_eq!(
+            features("Example Bold"),
+            [
+                "feature liga {\n# automatic\nsub f i by f_i;\n} liga;",
+                "feature liga {\nsub f l by f_l;\n} liga;",
+                "feature smcp {\nsub a by a.sc;\n} smcp;",
+            ]
+        );
+    }
+
     #[test]
     fn instance_selection_on_a_variable_source_builds_its_master() {
         // fontc can't tell a variable source from a "bag of statics" (#1288):
