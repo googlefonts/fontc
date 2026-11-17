@@ -157,6 +157,8 @@ pub struct CustomParameters {
     pub rename_glyphs: Option<Vec<(SmolStr, SmolStr)>>,
     /// The feature tag and new code of each 'Replace Feature', in order.
     pub replace_feature: Vec<(SmolStr, String)>,
+    /// The prefix name and new code of each 'Replace Prefix', in order.
+    pub replace_prefix: Vec<(SmolStr, String)>,
 }
 
 /// One entry of the 'Reencode Glyphs' instance parameter, e.g. `smiley=E100`.
@@ -340,7 +342,8 @@ pub struct FeatureSnippet {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum FeatureKind {
     Class,
-    Prefix,
+    /// A prefix, by name.
+    Prefix(SmolStr),
     /// A feature, by tag.
     Feature(SmolStr),
 }
@@ -1264,10 +1267,12 @@ impl PlistParamsExt for Plist {
     }
 }
 
-/// Split a 'Replace Feature' value, `liga; code`, at its first semicolon.
+/// Split a 'Replace Feature' or 'Replace Prefix' value, `name; code`, at its
+/// first semicolon.
 fn split_replacement(value: &str) -> Option<(SmolStr, String)> {
     let (name, code) = value.split_once(';')?;
-    Some((name.trim().into(), code.trim_start().to_string()))
+    let name = name.trim();
+    (!name.is_empty()).then(|| (name.into(), code.trim_start().to_string()))
 }
 
 /// The long (UFO) names of custom parameters that also have a short name, as
@@ -1550,6 +1555,10 @@ impl RawCustomParameters {
                 "Replace Feature" => match value.as_str().and_then(split_replacement) {
                     Some(replacement) => params.replace_feature.push(replacement),
                     None => log::warn!("bad 'Replace Feature', ignored: {value:?}"),
+                },
+                "Replace Prefix" => match value.as_str().and_then(split_replacement) {
+                    Some(replacement) => params.replace_prefix.push(replacement),
+                    None => log::warn!("bad 'Replace Prefix', ignored: {value:?}"),
                 },
                 _ => log_once_warn!("unknown custom parameter '{name}'"),
             }
@@ -3951,7 +3960,7 @@ impl RawFeature {
         let name = self.name.as_deref().unwrap_or_default();
         let code = format!("# Prefix: {}\n{}{}", name, self.autostr(), self.code);
         Ok(FeatureSnippet::new(
-            FeatureKind::Prefix,
+            FeatureKind::Prefix(name.into()),
             code,
             self.disabled(),
         ))
@@ -4872,16 +4881,38 @@ impl Font {
     /// Apply the parameters of the instance at `index` that edit glyphs, for a
     /// static font built for that instance.
     ///
-    /// For now those are 'Replace Feature', 'Rename Glyphs', then 'Reencode
-    /// Glyphs'.
+    /// For now those are 'Replace Prefix', 'Replace Feature', 'Rename
+    /// Glyphs', then 'Reencode Glyphs'.
     pub fn apply_instance_parameters(&mut self, index: usize) {
         let params = &self.instances[index].custom_parameters;
+        let prefix_replacements = params.replace_prefix.clone();
         let feature_replacements = params.replace_feature.clone();
         let renames = params.rename_glyphs.clone().unwrap_or_default();
         let reencodings = params.reencode_glyphs.clone().unwrap_or_default();
+        self.replace_prefixes(&prefix_replacements);
         self.replace_features(&feature_replacements);
         self.rename_glyphs(&renames);
         self.reencode_glyphs(reencodings);
+    }
+
+    /// Apply 'Replace Prefix': each entry replaces the code of the prefixes
+    /// with its name.
+    ///
+    /// A name the font has no prefix for is ignored, as in Glyphs.
+    fn replace_prefixes(&mut self, replacements: &[(SmolStr, String)]) {
+        for (name, code) in replacements {
+            let mut prefixes = self
+                .features
+                .iter_mut()
+                .filter(|f| matches!(&f.kind, FeatureKind::Prefix(n) if n == name))
+                .peekable();
+            if prefixes.peek().is_none() {
+                warn!("'Replace Prefix' names '{name}', which isn't in the font; ignored");
+            }
+            for prefix in prefixes {
+                prefix.content = format!("# Prefix: {name}\n{code}");
+            }
+        }
     }
 
     /// Apply 'Replace Feature': each entry replaces the code of the first

@@ -5865,14 +5865,18 @@ instances = (
         assert_eq!(font.kerning_ltr.get("m01"), Some(&expected));
     }
 
-    // Only the first feature with the tag gets the new code, and a tag the
-    // font has no feature for is ignored.
+    // Only the first feature with the tag gets the new code, every prefix
+    // with the name does, and a tag or name the font doesn't have is ignored.
     #[test]
-    fn instance_applies_replace_feature() {
+    fn instance_applies_replace_feature_and_prefix() {
         let data = r#"{
 .formatVersion = 3;
 familyName = Example;
 fontMaster = ({ id = m01; });
+featurePrefixes = (
+{ name = Lookups; code = "lookup A { sub a by b; } A;"; },
+{ name = Lookups; code = "lookup B { sub b by c; } B;"; }
+);
 features = (
 { automatic = 1; tag = liga; code = "sub f i by f_i;"; },
 { tag = liga; code = "sub f l by f_l;"; },
@@ -5883,7 +5887,9 @@ instances = (
 { name = Regular; customParameters = (
 { name = "Replace Feature"; value = "liga ; sub f f by f_f;"; },
 { name = "Replace Feature"; value = "smcp;\012sub b by b.sc;\012"; },
-{ name = "Replace Feature"; value = "c2sc; sub B by b.sc;"; }
+{ name = "Replace Feature"; value = "c2sc; sub B by b.sc;"; },
+{ name = "Replace Prefix"; value = "Lookups; lookup C { sub c by d; } C;"; },
+{ name = "Replace Prefix"; value = "Other; lookup D { sub d by e; } D;"; }
 ); },
 { name = Bold; }
 );
@@ -5898,6 +5904,8 @@ instances = (
         assert_eq!(
             features("Example Regular"),
             [
+                "# Prefix: Lookups\nlookup C { sub c by d; } C;",
+                "# Prefix: Lookups\nlookup C { sub c by d; } C;",
                 "feature liga {\nsub f f by f_f;\n} liga;",
                 "feature liga {\nsub f l by f_l;\n} liga;",
                 "feature smcp {\nsub b by b.sc;\n} smcp;",
@@ -5906,6 +5914,8 @@ instances = (
         assert_eq!(
             features("Example Bold"),
             [
+                "# Prefix: Lookups\nlookup A { sub a by b; } A;",
+                "# Prefix: Lookups\nlookup B { sub b by c; } B;",
                 "feature liga {\n# automatic\nsub f i by f_i;\n} liga;",
                 "feature liga {\nsub f l by f_l;\n} liga;",
                 "feature smcp {\nsub a by a.sc;\n} smcp;",
