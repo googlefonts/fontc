@@ -330,34 +330,69 @@ impl FeatureWriterSpec {
 /// historical behavior. `Some(list)` fully replaces the defaults: only listed
 /// writers are enabled; an empty list disables all automatic features.
 ///
+/// The `removed` features are left out, as [glyphsLib] does for the 'Remove
+/// Features' instance parameter: each writer keeps its other features, and
+/// one left with none is disabled.
+///
 /// [`Skip`]: FeatureWriterMode::Skip
-pub fn resolve_feature_generation(specs: &Option<Vec<FeatureWriterSpec>>) -> FeatureGenerationPlan {
-    let Some(specs) = specs else {
-        let enabled = FeatureGenerationSettings {
-            mode: FeatureWriterMode::Skip,
-            features: None,
-        };
-        return FeatureGenerationPlan {
-            curs: Some(enabled.clone()),
-            kern: Some(enabled.clone()),
-            mark: Some(enabled),
-            gdef: true,
-        };
+/// [glyphsLib]: https://github.com/googlefonts/glyphsLib/blob/9a344416/Lib/glyphsLib/builder/features.py#L379-L401
+pub fn resolve_feature_generation(
+    specs: &Option<Vec<FeatureWriterSpec>>,
+    removed: &[Tag],
+) -> FeatureGenerationPlan {
+    let mut plan = match specs {
+        None => {
+            let enabled = FeatureGenerationSettings {
+                mode: FeatureWriterMode::Skip,
+                features: None,
+            };
+            FeatureGenerationPlan {
+                curs: Some(enabled.clone()),
+                kern: Some(enabled.clone()),
+                mark: Some(enabled),
+                gdef: true,
+            }
+        }
+        Some(specs) => {
+            let mut plan = FeatureGenerationPlan {
+                curs: None,
+                kern: None,
+                mark: None,
+                gdef: false,
+            };
+            // Duplicate writers are rejected at parse time ([`reject_duplicate_writers`]),
+            // so each slot is assigned at most once.
+            for spec in specs {
+                match spec.writer {
+                    KnownFeatureWriter::Curs => plan.curs = Some(spec.settings()),
+                    KnownFeatureWriter::Kern => plan.kern = Some(spec.settings()),
+                    KnownFeatureWriter::Mark => plan.mark = Some(spec.settings()),
+                    KnownFeatureWriter::Gdef => plan.gdef = true,
+                }
+            }
+            plan
+        }
     };
-    let mut plan = FeatureGenerationPlan {
-        curs: None,
-        kern: None,
-        mark: None,
-        gdef: false,
-    };
-    // Duplicate writers are rejected at parse time ([`reject_duplicate_writers`]),
-    // so each slot is assigned at most once.
-    for spec in specs {
-        match spec.writer {
-            KnownFeatureWriter::Curs => plan.curs = Some(spec.settings()),
-            KnownFeatureWriter::Kern => plan.kern = Some(spec.settings()),
-            KnownFeatureWriter::Mark => plan.mark = Some(spec.settings()),
-            KnownFeatureWriter::Gdef => plan.gdef = true,
+    for (settings, writer) in [
+        (&mut plan.curs, KnownFeatureWriter::Curs),
+        (&mut plan.kern, KnownFeatureWriter::Kern),
+        (&mut plan.mark, KnownFeatureWriter::Mark),
+    ] {
+        let Some(current) = settings else { continue };
+        let tags = current
+            .features
+            .clone()
+            .unwrap_or_else(|| writer.tags().to_vec());
+        if tags.iter().any(|tag| removed.contains(tag)) {
+            let mode = current.mode;
+            let remaining: Vec<_> = tags
+                .into_iter()
+                .filter(|tag| !removed.contains(tag))
+                .collect();
+            *settings = (!remaining.is_empty()).then_some(FeatureGenerationSettings {
+                mode,
+                features: Some(remaining),
+            });
         }
     }
     plan
@@ -732,7 +767,7 @@ mod tests {
 
     #[test]
     fn resolve_absent_enables_everything_in_skip() {
-        let plan = resolve_feature_generation(&None);
+        let plan = resolve_feature_generation(&None, &[]);
         assert_eq!(plan.curs.as_ref().unwrap().mode, FeatureWriterMode::Skip);
         assert_eq!(plan.kern.as_ref().unwrap().mode, FeatureWriterMode::Skip);
         assert_eq!(plan.mark.as_ref().unwrap().mode, FeatureWriterMode::Skip);
@@ -746,7 +781,7 @@ mod tests {
             mode: FeatureWriterMode::Append,
             features: None,
         }]);
-        let plan = resolve_feature_generation(&specs);
+        let plan = resolve_feature_generation(&specs, &[]);
         assert_eq!(plan.kern.as_ref().unwrap().mode, FeatureWriterMode::Append);
         assert!(plan.curs.is_none());
         assert!(plan.mark.is_none());
@@ -755,10 +790,25 @@ mod tests {
 
     #[test]
     fn resolve_empty_disables_everything() {
-        let plan = resolve_feature_generation(&Some(vec![]));
+        let plan = resolve_feature_generation(&Some(vec![]), &[]);
         assert!(plan.curs.is_none());
         assert!(plan.kern.is_none());
         assert!(plan.mark.is_none());
         assert!(!plan.gdef);
+    }
+
+    #[test]
+    fn resolve_leaves_out_removed_features() {
+        let plan = resolve_feature_generation(&None, &[CURS, KERN, MKMK, Tag::new(b"liga")]);
+        assert!(plan.curs.is_none());
+        assert_eq!(plan.kern.unwrap().features, Some(vec![DIST]));
+        assert_eq!(plan.mark.unwrap().features, Some(vec![MARK, ABVM, BLWM]));
+        assert!(plan.gdef);
+        let specs = Some(vec![FeatureWriterSpec {
+            writer: KnownFeatureWriter::Kern,
+            mode: FeatureWriterMode::Append,
+            features: Some(vec![KERN]),
+        }]);
+        assert!(resolve_feature_generation(&specs, &[KERN]).kern.is_none());
     }
 }

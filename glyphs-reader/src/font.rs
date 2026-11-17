@@ -159,6 +159,8 @@ pub struct CustomParameters {
     pub replace_feature: Vec<(SmolStr, String)>,
     /// The prefix name and new code of each 'Replace Prefix', in order.
     pub replace_prefix: Vec<(SmolStr, String)>,
+    /// The feature tags of every 'Remove Features'.
+    pub remove_features: Vec<SmolStr>,
 }
 
 /// One entry of the 'Reencode Glyphs' instance parameter, e.g. `smiley=E100`.
@@ -1559,6 +1561,13 @@ impl RawCustomParameters {
                 "Replace Prefix" => match value.as_str().and_then(split_replacement) {
                     Some(replacement) => params.replace_prefix.push(replacement),
                     None => log::warn!("bad 'Replace Prefix', ignored: {value:?}"),
+                },
+                "Remove Features" => match value
+                    .as_vec_of_string()
+                    .or_else(|| value.as_str().map(|tag| vec![tag.into()]))
+                {
+                    Some(tags) => params.remove_features.extend(tags),
+                    None => log::warn!("bad 'Remove Features', ignored: {value:?}"),
                 },
                 _ => log_once_warn!("unknown custom parameter '{name}'"),
             }
@@ -4881,16 +4890,19 @@ impl Font {
     /// Apply the parameters of the instance at `index` that edit glyphs, for a
     /// static font built for that instance.
     ///
-    /// For now those are 'Replace Prefix', 'Replace Feature', 'Rename
-    /// Glyphs', then 'Reencode Glyphs'.
+    /// For now those are 'Replace Prefix', 'Replace Feature', 'Remove
+    /// Features', 'Rename Glyphs', then 'Reencode Glyphs'. Leaving out the
+    /// generated features that 'Remove Features' names is up to the caller.
     pub fn apply_instance_parameters(&mut self, index: usize) {
         let params = &self.instances[index].custom_parameters;
         let prefix_replacements = params.replace_prefix.clone();
         let feature_replacements = params.replace_feature.clone();
+        let removed_features = params.remove_features.clone();
         let renames = params.rename_glyphs.clone().unwrap_or_default();
         let reencodings = params.reencode_glyphs.clone().unwrap_or_default();
         self.replace_prefixes(&prefix_replacements);
         self.replace_features(&feature_replacements);
+        self.remove_features(&removed_features);
         self.rename_glyphs(&renames);
         self.reencode_glyphs(reencodings);
     }
@@ -4935,6 +4947,31 @@ impl Font {
             };
             let newline = if code.ends_with('\n') { "" } else { "\n" };
             feature.content = format!("feature {tag} {{\n{code}{newline}}} {tag};");
+        }
+    }
+
+    /// Apply 'Remove Features' to the feature code: drop every feature with
+    /// one of `tags`, and the `feature tag;` lines that refer to it, as in
+    /// aalt.
+    fn remove_features(&mut self, tags: &[SmolStr]) {
+        if tags.is_empty() {
+            return;
+        }
+        self.features
+            .retain(|f| !matches!(&f.kind, FeatureKind::Feature(tag) if tags.contains(tag)));
+        let is_reference = |line: &str| {
+            line.trim_end_matches('\n')
+                .trim_start_matches([' ', '\t'])
+                .strip_prefix("feature ")
+                .and_then(|rest| rest.strip_suffix(';'))
+                .is_some_and(|tag| tags.iter().any(|t| t == tag))
+        };
+        for snippet in self.features.iter_mut() {
+            snippet.content = snippet
+                .content
+                .split_inclusive('\n')
+                .filter(|line| !is_reference(line))
+                .collect();
         }
     }
 

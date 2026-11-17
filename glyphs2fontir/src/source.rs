@@ -846,6 +846,14 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             static_metadata.set_stat(stat_axes, Some("Regular".to_string()));
         }
         static_metadata.misc.feature_generation = feature_writers_from_user_data(&font.user_data)?;
+        if let Some(export) = export {
+            static_metadata.misc.removed_features = export
+                .custom_parameters
+                .remove_features
+                .iter()
+                .filter_map(|tag| Tag::new_checked(tag.as_bytes()).ok())
+                .collect();
+        }
         static_metadata.misc.decompose_components =
             decompose_components_from_user_data(&font.default_master().user_data);
         static_metadata.variations = variations;
@@ -5867,8 +5875,10 @@ instances = (
 
     // Only the first feature with the tag gets the new code, every prefix
     // with the name does, and a tag or name the font doesn't have is ignored.
+    // Removed features go from the feature code, aalt included, and from the
+    // generated features.
     #[test]
-    fn instance_applies_replace_feature_and_prefix() {
+    fn instance_applies_feature_parameters() {
         let data = r#"{
 .formatVersion = 3;
 familyName = Example;
@@ -5878,48 +5888,72 @@ featurePrefixes = (
 { name = Lookups; code = "lookup B { sub b by c; } B;"; }
 );
 features = (
+{ automatic = 1; tag = aalt; code = "feature smcp;\012feature c2sc;\012"; },
 { automatic = 1; tag = liga; code = "sub f i by f_i;"; },
 { tag = liga; code = "sub f l by f_l;"; },
-{ tag = smcp; code = "sub a by a.sc;"; }
+{ tag = smcp; code = "sub a by a.sc;"; },
+{ tag = c2sc; code = "sub A by a.sc;"; }
 );
 unitsPerEm = 1000;
 instances = (
 { name = Regular; customParameters = (
 { name = "Replace Feature"; value = "liga ; sub f f by f_f;"; },
 { name = "Replace Feature"; value = "smcp;\012sub b by b.sc;\012"; },
-{ name = "Replace Feature"; value = "c2sc; sub B by b.sc;"; },
+{ name = "Replace Feature"; value = "salt; sub B by b.sc;"; },
 { name = "Replace Prefix"; value = "Lookups; lookup C { sub c by d; } C;"; },
-{ name = "Replace Prefix"; value = "Other; lookup D { sub d by e; } D;"; }
+{ name = "Replace Prefix"; value = "Other; lookup D { sub d by e; } D;"; },
+{ name = "Remove Features"; value = (c2sc, mark); }
 ); },
 { name = Bold; }
 );
 }"#;
         let features = |instance| {
-            let font = &select_instance(data, instance).unwrap().font_info.font;
-            font.features
+            let source = select_instance(data, instance).unwrap();
+            let static_metadata =
+                Context::new_root(Flags::default()).create_static_metadata(&source);
+            let features = source
+                .font_info
+                .font
+                .features
                 .iter()
                 .map(|f| f.content.clone())
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            (features, static_metadata.misc.removed_features.clone())
         };
         assert_eq!(
             features("Example Regular"),
-            [
-                "# Prefix: Lookups\nlookup C { sub c by d; } C;",
-                "# Prefix: Lookups\nlookup C { sub c by d; } C;",
-                "feature liga {\nsub f f by f_f;\n} liga;",
-                "feature liga {\nsub f l by f_l;\n} liga;",
-                "feature smcp {\nsub b by b.sc;\n} smcp;",
-            ]
+            (
+                vec![
+                    "# Prefix: Lookups\nlookup C { sub c by d; } C;",
+                    "# Prefix: Lookups\nlookup C { sub c by d; } C;",
+                    "feature aalt {\n# automatic\nfeature smcp;\n\n} aalt;",
+                    "feature liga {\nsub f f by f_f;\n} liga;",
+                    "feature liga {\nsub f l by f_l;\n} liga;",
+                    "feature smcp {\nsub b by b.sc;\n} smcp;",
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+                vec![Tag::new(b"c2sc"), Tag::new(b"mark")]
+            )
         );
         assert_eq!(
             features("Example Bold"),
-            [
-                "# Prefix: Lookups\nlookup A { sub a by b; } A;",
-                "# Prefix: Lookups\nlookup B { sub b by c; } B;",
-                "feature liga {\n# automatic\nsub f i by f_i;\n} liga;",
-                "feature liga {\nsub f l by f_l;\n} liga;",
-                "feature smcp {\nsub a by a.sc;\n} smcp;",
-            ]
+            (
+                vec![
+                    "# Prefix: Lookups\nlookup A { sub a by b; } A;",
+                    "# Prefix: Lookups\nlookup B { sub b by c; } B;",
+                    "feature aalt {\n# automatic\nfeature smcp;\nfeature c2sc;\n\n} aalt;",
+                    "feature liga {\n# automatic\nsub f i by f_i;\n} liga;",
+                    "feature liga {\nsub f l by f_l;\n} liga;",
+                    "feature smcp {\nsub a by a.sc;\n} smcp;",
+                    "feature c2sc {\nsub A by a.sc;\n} c2sc;",
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+                vec![]
+            )
         );
     }
 

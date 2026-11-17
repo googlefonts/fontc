@@ -211,7 +211,10 @@ impl<'a> MarkLookupBuilder<'a> {
         fea_first_pass: &'a FeaFirstPassOutput,
         char_map: HashMap<u32, GlyphId16>,
     ) -> Result<Self, Error> {
-        let plan = ir::resolve_feature_generation(&static_metadata.misc.feature_generation);
+        let plan = ir::resolve_feature_generation(
+            &static_metadata.misc.feature_generation,
+            &static_metadata.misc.removed_features,
+        );
         let gdef_classes = super::get_gdef_classes(gdef_categories, fea_first_pass, glyph_order);
         // ligature carets are part of the GDEF table, which the Gdef writer owns.
         let lig_carets = if plan.gdef {

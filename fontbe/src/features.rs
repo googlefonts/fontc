@@ -729,7 +729,10 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
 
         // Resolve the plan once for this work unit; separate work units (kern,
         // marks) resolve their own, since the work graph precludes threading one.
-        let plan = ir::resolve_feature_generation(&static_metadata.misc.feature_generation);
+        let plan = ir::resolve_feature_generation(
+            &static_metadata.misc.feature_generation,
+            &static_metadata.misc.removed_features,
+        );
         let mut result = if features.n_sources() > 1 {
             let asts = context
                 .fea_asts
@@ -1139,22 +1142,25 @@ mod tests {
     #[test]
     fn append_forced_tags_only_for_append_writers() {
         // key absent -> everything enabled in skip mode -> nothing appended.
-        let plan = ir::resolve_feature_generation(&None);
+        let plan = ir::resolve_feature_generation(&None, &[]);
         assert!(append_forced_tags(&plan).is_empty());
 
         // kern in append mode -> its tags are forced; disabled writers contribute none.
-        let plan = ir::resolve_feature_generation(&Some(vec![
-            fontir::ir::FeatureWriterSpec {
-                writer: fontir::ir::KnownFeatureWriter::Kern,
-                mode: FeatureWriterMode::Append,
-                features: None,
-            },
-            fontir::ir::FeatureWriterSpec {
-                writer: fontir::ir::KnownFeatureWriter::Curs,
-                mode: FeatureWriterMode::Skip,
-                features: None,
-            },
-        ]));
+        let plan = ir::resolve_feature_generation(
+            &Some(vec![
+                fontir::ir::FeatureWriterSpec {
+                    writer: fontir::ir::KnownFeatureWriter::Kern,
+                    mode: FeatureWriterMode::Append,
+                    features: None,
+                },
+                fontir::ir::FeatureWriterSpec {
+                    writer: fontir::ir::KnownFeatureWriter::Curs,
+                    mode: FeatureWriterMode::Skip,
+                    features: None,
+                },
+            ]),
+            &[],
+        );
         let tags = append_forced_tags(&plan)
             .into_iter()
             .collect::<HashSet<_>>();
