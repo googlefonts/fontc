@@ -5702,6 +5702,169 @@ instances = (
         );
     }
 
+    // Glyphs swaps the drawings and categories, and keeps the names,
+    // codepoints, export flags and production names. Like glyphsLib, we skip
+    // an entry for a missing glyph and apply the entries in turn, so "c=a"
+    // swaps with the drawing "a" has by then.
+    #[test]
+    fn instance_applies_rename_glyphs() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+glyphs = (
+{ glyphname = a; layers = ({ layerId = m01; width = 100; anchors = ({ name = top; pos = (50,500); }); }); unicode = 97; },
+{ glyphname = b; export = 0; category = Mark; production = bmark; layers = ({ layerId = m01; width = 200; }); unicode = 98; },
+{ glyphname = c; layers = ({ layerId = m01; width = 300; }); unicode = 99; }
+);
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; customParameters = ({ name = "Rename Glyphs"; value = ("a=b", "c=a", "b=zzz"); }); },
+{ name = Bold; }
+);
+}"#;
+        let glyphs = |instance| {
+            let font = select_instance(data, instance)
+                .unwrap()
+                .font_info
+                .font
+                .clone();
+            ["a", "b", "c"].map(|name| {
+                let glyph = &font.glyphs[name];
+                let layer = &glyph.layers[0];
+                let anchors: Vec<_> = layer.anchors.iter().map(|a| a.name.clone()).collect();
+                let is_mark = glyph.category == Some(Category::Mark);
+                let production_name = glyph.production_name.clone();
+                (
+                    layer.width.0,
+                    anchors,
+                    is_mark,
+                    glyph.unicode.clone(),
+                    glyph.export,
+                    production_name,
+                )
+            })
+        };
+        let top = || vec![SmolStr::new("top")];
+        let bmark = || Some(SmolStr::new("bmark"));
+        assert_eq!(
+            glyphs("Example Regular"),
+            [
+                (300.0, vec![], false, vec![97], true, None),
+                (100.0, top(), false, vec![98], false, bmark()),
+                (200.0, vec![], true, vec![99], true, None),
+            ]
+        );
+        assert_eq!(
+            glyphs("Example Bold"),
+            [
+                (100.0, top(), false, vec![97], true, None),
+                (200.0, vec![], true, vec![98], false, bmark()),
+                (300.0, vec![], false, vec![99], true, None),
+            ]
+        );
+    }
+
+    // The swapped glyphs' components are renamed with them, and other glyphs
+    // keep theirs, as in Glyphs.
+    #[test]
+    fn instance_rename_glyphs_components() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+glyphs = (
+{ glyphname = a; layers = ({ layerId = m01; width = 500; shapes = ({ closed = 1; nodes = ((0,0,l),(0,100,l),(100,100,l)); }); }); },
+{ glyphname = a.sc; layers = ({ layerId = m01; width = 500; shapes = ({ ref = a; pos = (0,-130); }); }); },
+{ glyphname = x; layers = ({ layerId = m01; width = 500; shapes = ({ ref = a; }); }); },
+{ glyphname = b; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = b.ss01; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = bb; layers = ({ layerId = m01; width = 500; shapes = ({ ref = b; }); }); },
+{ glyphname = c; layers = ({ layerId = m01; width = 500; }); }
+);
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; customParameters = ({ name = "Rename Glyphs"; value = ("a.sc=a", "bb=c", "b=b.ss01"); }); }
+);
+}"#;
+        let font = select_instance(data, "Example Regular")
+            .unwrap()
+            .font_info
+            .font
+            .clone();
+        let shapes = |name: &str| {
+            font.glyphs[name].layers[0]
+                .shapes
+                .iter()
+                .map(|shape| match shape {
+                    glyphs_reader::Shape::Path(_) => ("path".into(), Affine::IDENTITY),
+                    glyphs_reader::Shape::Component(c) => (c.name.clone(), c.transform),
+                })
+                .collect::<Vec<(SmolStr, _)>>()
+        };
+        let path = || vec![("path".into(), Affine::IDENTITY)];
+        // "a" has the drawing of "a.sc", whose component follows the swap to
+        // "a.sc", which has the outline: no cycle
+        assert_eq!(
+            shapes("a"),
+            [("a.sc".into(), Affine::translate((0.0, -130.0)))]
+        );
+        assert_eq!(shapes("a.sc"), path());
+        // "x" isn't swapped: it keeps "a", and so shows the drawing from "a.sc"
+        assert_eq!(shapes("x"), [("a".into(), Affine::IDENTITY)]);
+        // "c" has the drawing of "bb", whose component goes through the other swap
+        assert_eq!(shapes("c"), [("b.ss01".into(), Affine::IDENTITY)]);
+        assert_eq!(shapes("bb"), []);
+    }
+
+    // Glyphs moves the kerning groups and kerning exceptions with the drawing.
+    #[test]
+    fn instance_rename_glyphs_kerning() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+glyphs = (
+{ glyphname = T; kernRight = T; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = V; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = a; kernLeft = a; kernRight = a; layers = ({ layerId = m01; width = 500; }); },
+{ glyphname = a.ss01; kernLeft = aalt; kernRight = aalt; layers = ({ layerId = m01; width = 500; }); }
+);
+kerningLTR = { m01 = {
+"@MMK_L_T" = { "@MMK_R_a" = -80; "@MMK_R_aalt" = -20; a = -33; };
+T = { a.ss01 = -55; };
+a.ss01 = { V = -44; };
+}; };
+unitsPerEm = 1000;
+instances = (
+{ name = Regular; customParameters = ({ name = "Rename Glyphs"; value = ("a=a.ss01"); }); }
+);
+}"#;
+        let font = select_instance(data, "Example Regular")
+            .unwrap()
+            .font_info
+            .font
+            .clone();
+        let groups = |name: &str| {
+            let glyph = &font.glyphs[name];
+            (glyph.left_kern.clone(), glyph.right_kern.clone())
+        };
+        assert_eq!(groups("a"), (Some("aalt".into()), Some("aalt".into())));
+        assert_eq!(groups("a.ss01"), (Some("a".into()), Some("a".into())));
+        assert_eq!(groups("T"), (None, Some("T".into())));
+        let expected: BTreeMap<_, _> = [
+            ("@MMK_L_T", "@MMK_R_a", -80.0),
+            ("@MMK_L_T", "@MMK_R_aalt", -20.0),
+            ("@MMK_L_T", "a.ss01", -33.0),
+            ("T", "a", -55.0),
+            ("a", "V", -44.0),
+        ]
+        .into_iter()
+        .map(|(left, right, value)| ((left.into(), right.into()), OrderedFloat(value)))
+        .collect();
+        assert_eq!(font.kerning_ltr.get("m01"), Some(&expected));
+    }
+
     #[test]
     fn instance_selection_on_a_variable_source_builds_its_master() {
         // fontc can't tell a variable source from a "bag of statics" (#1288):

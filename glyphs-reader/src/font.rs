@@ -153,6 +153,8 @@ pub struct CustomParameters {
     pub color_palettes: Option<Vec<Vec<Color>>>,
     pub name_table_entries: Vec<NameTableEntry>,
     pub reencode_glyphs: Option<Vec<Reencoding>>,
+    /// The pairs of glyphs swapped by 'Rename Glyphs', e.g. `a=a.sc`.
+    pub rename_glyphs: Option<Vec<(SmolStr, SmolStr)>>,
 }
 
 /// One entry of the 'Reencode Glyphs' instance parameter, e.g. `smiley=E100`.
@@ -240,6 +242,17 @@ impl Kerning {
 
     fn retain_masters(&mut self, keep: impl Fn(&str) -> bool) {
         self.0.retain(|master_id, _| keep(master_id));
+    }
+
+    /// Rename the glyphs in kerning exceptions; groups are left alone.
+    fn rename_glyphs(&mut self, new_names: &HashMap<SmolStr, SmolStr>) {
+        let rename = |side: SmolStr| new_names.get(&side).cloned().unwrap_or(side);
+        for kerns in self.0.values_mut() {
+            *kerns = std::mem::take(kerns)
+                .into_iter()
+                .map(|((left, right), value)| ((rename(left), rename(right)), value))
+                .collect();
+        }
     }
 
     fn insert(
@@ -364,6 +377,33 @@ impl Glyph {
             .flat_map(Layer::components)
             .next()
             .is_some()
+    }
+
+    /// Swap everything that belongs to the drawing with `other`.
+    ///
+    /// The name, codepoints, export flag and production name stay, as in
+    /// Glyphs. The categories move, even where they come from the name.
+    fn swap_data(&mut self, other: &mut Glyph) {
+        let Glyph {
+            name: _,
+            export: _,
+            unicode: _,
+            production_name: _,
+            layers,
+            bracket_layers,
+            left_kern,
+            right_kern,
+            category,
+            sub_category,
+            smart_component_axes,
+        } = self;
+        std::mem::swap(layers, &mut other.layers);
+        std::mem::swap(bracket_layers, &mut other.bracket_layers);
+        std::mem::swap(left_kern, &mut other.left_kern);
+        std::mem::swap(right_kern, &mut other.right_kern);
+        std::mem::swap(category, &mut other.category);
+        std::mem::swap(sub_category, &mut other.sub_category);
+        std::mem::swap(smart_component_axes, &mut other.smart_component_axes);
     }
 }
 
@@ -991,6 +1031,7 @@ trait PlistParamsExt {
     fn as_gasp_table(&self) -> Option<BTreeMap<i64, i64>>;
     fn as_color_palettes(&self) -> Option<Vec<Vec<Color>>>;
     fn as_reencodings(&self) -> Option<Vec<Reencoding>>;
+    fn as_glyph_renames(&self) -> Option<Vec<(SmolStr, SmolStr)>>;
 }
 
 impl PlistParamsExt for Plist {
@@ -1181,6 +1222,26 @@ impl PlistParamsExt for Plist {
                             None
                         }
                     }
+                })
+                .collect(),
+        )
+    }
+
+    fn as_glyph_renames(&self) -> Option<Vec<(SmolStr, SmolStr)>> {
+        let entries = self.as_array()?;
+        Some(
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    let pair = entry
+                        .as_str()
+                        .and_then(|s| s.split_once('='))
+                        .map(|(a, b)| (a.trim(), b.trim()))
+                        .filter(|(a, b)| !a.is_empty() && !b.is_empty() && !b.contains('='));
+                    if pair.is_none() {
+                        warn!("bad 'Rename Glyphs' entry, ignored: {entry:?}");
+                    }
+                    pair.map(|(a, b)| (a.into(), b.into()))
                 })
                 .collect(),
         )
@@ -1460,6 +1521,9 @@ impl RawCustomParameters {
                 },
                 "Reencode Glyphs" => {
                     add_and_report_issues!(reencode_glyphs, Plist::as_reencodings)
+                }
+                "Rename Glyphs" => {
+                    add_and_report_issues!(rename_glyphs, Plist::as_glyph_renames)
                 }
                 _ => log_once_warn!("unknown custom parameter '{name}'"),
             }
@@ -4770,16 +4834,75 @@ impl Font {
     /// Apply the parameters of the instance at `index` that edit glyphs, for a
     /// static font built for that instance.
     ///
-    /// For now that is 'Reencode Glyphs', as Glyphs documents it: each entry
-    /// replaces the codepoints of a glyph the font has, taking them from any
-    /// other glyph that has them, and an entry that lists none clears them.
-    /// As in Glyphs 3.5 and 4.1.1, the first entry for a glyph wins.
+    /// For now those are 'Rename Glyphs', then 'Reencode Glyphs'.
     pub fn apply_instance_parameters(&mut self, index: usize) {
-        let reencodings = self.instances[index]
-            .custom_parameters
-            .reencode_glyphs
-            .clone()
-            .unwrap_or_default();
+        let params = &self.instances[index].custom_parameters;
+        let renames = params.rename_glyphs.clone().unwrap_or_default();
+        let reencodings = params.reencode_glyphs.clone().unwrap_or_default();
+        self.rename_glyphs(&renames);
+        self.reencode_glyphs(reencodings);
+    }
+
+    /// Apply 'Rename Glyphs': each entry `a=b` swaps the drawings of `a`
+    /// and `b`.
+    ///
+    /// The layers (outlines, components, widths and anchors) move, and so do
+    /// the categories, kerning groups and kerning exceptions; see
+    /// [`Glyph::swap_data`] for what stays with the name. The components of
+    /// the swapped glyphs are renamed along with them: with `a.sc=a`, where
+    /// `a.sc` is `a` moved down, `a` becomes `a.sc` moved down, not a
+    /// composite of itself. Other glyphs keep their components by name, and
+    /// so show the swapped drawing.
+    fn rename_glyphs(&mut self, renames: &[(SmolStr, SmolStr)]) {
+        // for each swapped glyph, the name its drawing had before
+        let mut origin: HashMap<SmolStr, SmolStr> = HashMap::new();
+        for (a, b) in renames {
+            if let Some(missing) = [a, b].into_iter().find(|n| !self.glyphs.contains_key(*n)) {
+                warn!(
+                    "'Rename Glyphs' names '{missing}', which isn't in the font; '{a}={b}' skipped"
+                );
+                continue;
+            }
+            if a == b {
+                continue;
+            }
+            let mut glyph = self.glyphs.remove(a).unwrap();
+            glyph.swap_data(self.glyphs.get_mut(b).unwrap());
+            self.glyphs.insert(a.clone(), glyph);
+            let from_a = origin.get(a).unwrap_or(a).clone();
+            let from_b = origin.get(b).unwrap_or(b).clone();
+            origin.insert(a.clone(), from_b);
+            origin.insert(b.clone(), from_a);
+        }
+        let new_names: HashMap<_, _> = origin
+            .into_iter()
+            .filter(|(name, from)| name != from)
+            .map(|(name, from)| (from, name))
+            .collect();
+        for name in new_names.values() {
+            let glyph = self.glyphs.get_mut(name).unwrap();
+            for shape in glyph
+                .layers
+                .iter_mut()
+                .chain(glyph.bracket_layers.iter_mut())
+                .flat_map(|layer| layer.shapes.iter_mut())
+            {
+                if let Shape::Component(component) = shape
+                    && let Some(new_name) = new_names.get(&component.name)
+                {
+                    component.name = new_name.clone();
+                }
+            }
+        }
+        self.kerning_ltr.rename_glyphs(&new_names);
+        self.kerning_rtl.rename_glyphs(&new_names);
+    }
+
+    /// Apply 'Reencode Glyphs', as Glyphs documents it: each entry replaces
+    /// the codepoints of a glyph the font has, taking them from any other
+    /// glyph that has them, and an entry that lists none clears them. As in
+    /// Glyphs 3.5 and 4.1.1, the first entry for a glyph wins.
+    fn reencode_glyphs(&mut self, reencodings: Vec<Reencoding>) {
         let mut seen = HashSet::new();
         for Reencoding { glyph, codepoints } in reencodings {
             if !self.glyphs.contains_key(&glyph) {
