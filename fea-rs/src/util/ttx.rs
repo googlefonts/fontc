@@ -122,7 +122,7 @@ struct ReasonPrinter<'a> {
 /// The requirements file used by CI to install the pinned version of fonttools.
 static FEA_CI_REQUIREMENTS: &str = "../resources/scripts/fea_ci_requirements.txt";
 
-/// Assert that we can find the `ttx` executable, and that its version matches CI's.
+/// Assert that we can find the `ttx` executable, and warn if its version differs from CI's.
 pub fn assert_has_ttx_executable() {
     let output = Command::new("ttx").arg("--version").output();
     let Some(output) = output.ok().filter(|o| o.status.success()) else {
@@ -131,8 +131,10 @@ pub fn assert_has_ttx_executable() {
     let installed = String::from_utf8_lossy(&output.stdout);
     let installed = installed.trim();
     match pinned_fonttools_version() {
-        Some(pinned) if pinned != installed => panic!(
-            "\n`ttx` version mismatch: found {installed}, but CI pins fonttools=={pinned}. \
+        // only warn: one may test against a different fonttools on purpose, and
+        // libtest prints captured stderr only when the test fails.
+        Some(pinned) if pinned != installed => eprintln!(
+            "warning: `ttx` version mismatch: found {installed}, but CI pins fonttools=={pinned}. \
             Outputs from other versions may differ. Fix with \
             `pip install -r resources/scripts/fea_ci_requirements.txt` \
             (or `uv tool install --force fonttools=={pinned}`)."
