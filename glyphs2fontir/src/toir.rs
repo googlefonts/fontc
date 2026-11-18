@@ -590,6 +590,9 @@ impl FontInfo {
                 None => font.default_master().axes_values.clone(),
             };
             font.apply_alternate_layers(&location);
+            if let Some(index) = export_index {
+                font.apply_instance_parameters(index);
+            }
             export_index
         } else {
             // so that the alternate layers of components are swapped in composites
