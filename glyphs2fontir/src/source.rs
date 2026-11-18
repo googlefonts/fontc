@@ -620,6 +620,23 @@ fn plist_to_feature_writer_option(key: &str, value: &Plist) -> FeatureWriterOpti
     }
 }
 
+/// The OS/2 `achVendID` for a vendorID, keeping at most its first four bytes.
+///
+/// Glyphs.app and fontmake truncate a longer ID the same way. Name ID 3 is
+/// built from the untruncated string.
+fn vendor_id_tag(vendor_id: &str) -> Result<Tag, Error> {
+    let bytes = vendor_id.as_bytes();
+    let tag =
+        Tag::new_checked(&bytes[..bytes.len().min(4)]).map_err(|cause| Error::InvalidTag {
+            raw_tag: vendor_id.to_owned(),
+            cause,
+        })?;
+    if bytes.len() > 4 {
+        warn!("vendorID '{vendor_id}' is longer than four bytes, truncating to '{tag}'");
+    }
+    Ok(tag)
+}
+
 #[derive(Debug)]
 struct StaticMetadataWork(GlyphsIrSource);
 
@@ -835,11 +852,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         // treat  empty string or all spaces as equivalent to no value; it means
         // 'null', per the spec
         if let Some(vendor_id) = font.vendor_id().filter(|id| !id.trim().is_empty()) {
-            static_metadata.misc.vendor_id =
-                vendor_id.parse().map_err(|cause| Error::InvalidTag {
-                    raw_tag: vendor_id.to_owned(),
-                    cause,
-                })?;
+            static_metadata.misc.vendor_id = vendor_id_tag(vendor_id)?;
         }
 
         // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
@@ -969,10 +982,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 static_metadata.misc.vendor_id = if vendor.trim().is_empty() {
                     Tag::new(b"    ")
                 } else {
-                    vendor.parse().map_err(|cause| Error::InvalidTag {
-                        raw_tag: vendor.to_owned(),
-                        cause,
-                    })?
+                    vendor_id_tag(vendor)?
                 };
             }
         }
@@ -4563,6 +4573,55 @@ mod tests {
         let (_, context) = build_static_metadata(glyphs3_dir().join("InvalidVendorID.glyphs"));
         let static_metadata = context.static_metadata.get();
         assert_eq!(Tag::new(b"    "), static_metadata.misc.vendor_id);
+    }
+
+    #[test]
+    fn vendor_id_tag_truncates_to_four_bytes() {
+        assert_eq!(vendor_id_tag("XMIND").unwrap(), Tag::new(b"XMIN"));
+        assert_eq!(vendor_id_tag("XMINDY").unwrap(), Tag::new(b"XMIN"));
+        assert_eq!(vendor_id_tag("XMI").unwrap(), Tag::new(b"XMI "));
+        assert!(vendor_id_tag(" ABCD").is_err());
+        assert!(vendor_id_tag("XMÏND").is_err());
+    }
+
+    fn vendor_id_and_unique_id(data: &str, instance: Option<&str>) -> (Tag, String) {
+        let source = GlyphsIrSource::new_from_memory(data, instance).unwrap();
+        let (_, context) = build_static_metadata_from(source, Context::new_root(Flags::default()));
+        let static_metadata = context.static_metadata.get();
+        (
+            static_metadata.misc.vendor_id,
+            static_metadata.names[&NameKey::new(NameId::UNIQUE_ID)].clone(),
+        )
+    }
+
+    #[test]
+    fn long_font_vendor_id_truncated() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+properties = ({ key = vendorID; value = XMIND; });
+unitsPerEm = 1000;
+}"#;
+        assert_eq!(
+            vendor_id_and_unique_id(data, None),
+            (Tag::new(b"XMIN"), "1.000;XMIND;Example-Regular".to_string())
+        );
+    }
+
+    #[test]
+    fn long_instance_vendor_id_truncated() {
+        let data = r#"{
+.formatVersion = 3;
+familyName = Example;
+fontMaster = ({ id = m01; });
+instances = ({ name = Regular; customParameters = ({ name = vendorID; value = XMIND; }); });
+unitsPerEm = 1000;
+}"#;
+        assert_eq!(
+            vendor_id_and_unique_id(data, Some("Example Regular")),
+            (Tag::new(b"XMIN"), "1.000;XMIND;Example-Regular".to_string())
+        );
     }
 
     #[test]
