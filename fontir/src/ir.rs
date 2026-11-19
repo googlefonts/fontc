@@ -1504,19 +1504,12 @@ impl AnchorBuilder {
         }
     }
 
-    /// Add a position for an anchor.
-    ///
-    /// Anchors that are only used to align components (see
-    /// [`AnchorKind::is_ignorable`]) are dropped.
     pub fn add(
         &mut self,
         anchor_name: SmolStr,
         loc: NormalizedLocation,
         pos: Point,
     ) -> Result<(), BadGlyph> {
-        if AnchorKind::new(&anchor_name).is_ok_and(|kind| kind.is_ignorable()) {
-            return Ok(());
-        }
         // Match ufo2ft last-one-wins behavior for duplicate anchors.
         // https://github.com/googlefonts/fontc/issues/1927
         if self
@@ -2745,24 +2738,6 @@ mod tests {
             .unwrap();
         // Last position wins
         assert_eq!(top.positions[&loc], Point::new(300.0, 400.0));
-    }
-
-    #[test]
-    fn ignorable_anchors_are_dropped() {
-        let loc = NormalizedLocation::new();
-        let mut builder = AnchorBuilder::new("A".into());
-        for name in [
-            "top", "2top", "_top", "_2top", "top_1", "2top_1", "#exit", "exit", "_3", "*top",
-        ] {
-            builder.add(name.into(), loc.clone(), Point::ZERO).unwrap();
-        }
-        let anchors = builder.build().unwrap();
-        let names = anchors
-            .anchors
-            .iter()
-            .map(|a| a.original_name.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(names, ["top", "_top", "top_1", "exit", "_3", "*top"]);
     }
 
     fn assert_names(expected: &[(NameId, &str)], actual: HashMap<NameKey, String>) {
