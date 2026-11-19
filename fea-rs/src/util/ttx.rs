@@ -5,7 +5,7 @@ use std::{
     env::temp_dir,
     fmt::{Debug, Display, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     time::SystemTime,
 };
 
@@ -119,17 +119,43 @@ struct ReasonPrinter<'a> {
     reason: &'a TestResult,
 }
 
-/// Assert that we can find the `ttx` executable
+/// The requirements file used by CI to install the pinned version of fonttools.
+static FEA_CI_REQUIREMENTS: &str = "../resources/scripts/fea_ci_requirements.txt";
+
+/// Assert that we can find the `ttx` executable, and warn if its version differs from CI's.
 pub fn assert_has_ttx_executable() {
-    assert!(
-        Command::new("ttx")
-            .arg("--version")
-            .stdout(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false),
-        "\nmissing `ttx` executable. Install it with `pip install fonttools`."
-    )
+    let output = Command::new("ttx").arg("--version").output();
+    let Some(output) = output.ok().filter(|o| o.status.success()) else {
+        panic!("\nmissing `ttx` executable. Install it with `pip install fonttools`.");
+    };
+    let installed = String::from_utf8_lossy(&output.stdout);
+    let installed = installed.trim();
+    match pinned_fonttools_version() {
+        // only warn: one may test against a different fonttools on purpose, and
+        // libtest prints captured stderr only when the test fails.
+        Some(pinned) if pinned != installed => eprintln!(
+            "warning: `ttx` version mismatch: found {installed}, but CI pins fonttools=={pinned}. \
+            Outputs from other versions may differ. Fix with \
+            `pip install -r resources/scripts/fea_ci_requirements.txt` \
+            (or `uv tool install --force fonttools=={pinned}`)."
+        ),
+        Some(_) => (),
+        None => eprintln!("warning: could not determine pinned fonttools version"),
+    }
+}
+
+/// The fonttools version pinned in the CI requirements file, if we can find it.
+fn pinned_fonttools_version() -> Option<String> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(FEA_CI_REQUIREMENTS);
+    let requirements = std::fs::read_to_string(path).ok()?;
+    requirements.lines().find_map(|line| {
+        let line = line.trim().strip_prefix("fonttools")?;
+        // skip extras, e.g. `fonttools[unicode]==4.68.0`
+        let line = line.split_once(']').map_or(line, |(_, rest)| rest);
+        let version = line.trim().strip_prefix("==")?;
+        let version = version.split([';', '#', ' ']).next()?;
+        (!version.is_empty()).then(|| version.to_owned())
+    })
 }
 
 /// Selectively filter which files to run.
