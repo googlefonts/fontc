@@ -1287,6 +1287,40 @@ mod tests {
         assert_anchor(&ctx, "IJ", "topleft", Point::new(20.0, 810.0)); // I's topleft (unique)
     }
 
+    // Anchors like `_2top` only align components, and aren't used for mark
+    // features, but Glyphs.app (3.5) still counts them when propagating: a
+    // ligature of a glyph that has one gets no numbered anchors.
+    #[test]
+    fn ignorable_underscore_anchor_counts_in_propagation() {
+        let mut builder = GlyphSetBuilder::new(test_context());
+        builder.add_glyph("B", |glyph| {
+            glyph
+                .add_anchor("top", (100.0, 700.0))
+                .add_anchor("_2top", (100.0, 600.0));
+        });
+        builder.add_glyph("C", |glyph| {
+            glyph.add_anchor("top", (100.0, 700.0));
+        });
+        for (name, base) in [("B_B", "B"), ("C_C", "C")] {
+            builder.add_glyph(name, |glyph| {
+                glyph
+                    .set_category(GlyphClassDef::Ligature)
+                    .add_component_at(base, (0.0, 0.0))
+                    .add_component_at(base, (500.0, 0.0));
+            });
+        }
+        let ctx = builder.build();
+        propagate_all_anchors(&ctx).unwrap();
+
+        let names = get_anchor_names(&ctx, "B_B");
+        assert!(
+            !names.iter().any(|n| n.starts_with("top_")),
+            "got {names:?}"
+        );
+        assert_anchor(&ctx, "C_C", "top_1", Point::new(100.0, 700.0));
+        assert_anchor(&ctx, "C_C", "top_2", Point::new(600.0, 700.0));
+    }
+
     /// Test that exit anchors are removed when subsequent component lacks entry/exit
     #[test]
     fn remove_exit_anchor_on_component() {
