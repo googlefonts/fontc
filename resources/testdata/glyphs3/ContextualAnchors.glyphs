@@ -1,0 +1,64 @@
+{
+.formatVersion = 3;
+familyName = ContextualAnchors;
+unitsPerEm = 1000;
+axes = ({ name = Weight; tag = wght; });
+classes = (
+ { name = Before; code = "B"; },
+ { name = Marks; code = "acutecomb"; }
+);
+featurePrefixes = ({ name = Seed; code = "lookup SeedFilter { lookupflag UseMarkFilteringSet [tildecomb]; pos B 0; } SeedFilter; lookup SeedAttach { lookupflag MarkAttachmentType [tildecomb]; pos B 0; } SeedAttach;"; });
+fontMaster = (
+ { id = m01; name = Regular; axesValues = (400); },
+ { id = m02; name = Bold; axesValues = (700); }
+);
+glyphs = (
+{ glyphname = A; unicode = 65; layers = (
+ { layerId = m01; width = 500; anchors = (
+   { name = top; pos = (250,700); },
+   { name = "*top.afterB"; pos = (350,800); userData = { GPOS_Context = "lookupflag UseMarkFilteringSet @Marks; @Before *"; }; },
+   { name = "*top.afterBB"; pos = (400,850); userData = { GPOS_Context = "lookupflag UseMarkFilteringSet @Marks; @Before B * &"; }; },
+   { name = "*top.afterDE"; pos = (370,820); userData = { GPOS_Context = "lookupflag MarkAttachmentType @Marks; D *\nlookupflag MarkAttachmentType @Marks; E *"; }; }
+ ); },
+ { layerId = m02; width = 500; anchors = (
+   { name = top; pos = (300,750); },
+   { name = "*top.afterB"; pos = (450,900); userData = { GPOS_Context = "lookupflag UseMarkFilteringSet @Marks; @Before *"; }; },
+   { name = "*top.afterBB"; pos = (500,950); userData = { GPOS_Context = "lookupflag UseMarkFilteringSet @Marks; @Before B * &"; }; },
+   { name = "*top.afterDE"; pos = (470,920); userData = { GPOS_Context = "lookupflag MarkAttachmentType @Marks; D *\nlookupflag MarkAttachmentType @Marks; E *"; }; }
+ ); }
+); },
+{ glyphname = B; unicode = 66; layers = (
+ { layerId = m01; width = 500; }, { layerId = m02; width = 500; }
+); },
+{ glyphname = C; unicode = 67; layers = (
+ { layerId = m01; width = 500; shapes = ({ ref = A; }); },
+ { layerId = m02; width = 500; shapes = ({ ref = A; }); }
+); },
+{ glyphname = D; unicode = 68; layers = (
+ { layerId = m01; width = 500; }, { layerId = m02; width = 500; }
+); },
+{ glyphname = E; unicode = 69; layers = (
+ { layerId = m01; width = 500; }, { layerId = m02; width = 500; }
+); },
+{ glyphname = T; unicode = 84; layers = (
+ { layerId = m01; width = 500; anchors = (
+  { name = top; pos = (250,700); },
+  { name = "*top.first"; pos = (360,800); userData = { GPOS_Context = "B * &"; }; },
+  { name = "*top.second"; pos = (420,900); userData = { GPOS_Context = "* & B"; }; }
+ ); },
+ { layerId = m02; width = 500; anchors = (
+  { name = top; pos = (300,750); },
+  { name = "*top.first"; pos = (460,900); userData = { GPOS_Context = "B * &"; }; },
+  { name = "*top.second"; pos = (520,1000); userData = { GPOS_Context = "* & B"; }; }
+ ); }
+); },
+{ glyphname = acutecomb; unicode = 769; layers = (
+ { layerId = m01; width = 0; anchors = ({ name = _top; pos = (100,0); }); },
+ { layerId = m02; width = 0; anchors = ({ name = _top; pos = (100,0); }); }
+); },
+{ glyphname = tildecomb; unicode = 771; layers = (
+ { layerId = m01; width = 0; anchors = ({ name = _top; pos = (100,0); }); },
+ { layerId = m02; width = 0; anchors = ({ name = _top; pos = (100,0); }); }
+); }
+);
+}

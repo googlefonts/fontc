@@ -193,10 +193,161 @@ impl<'a, V: VariationInfo> MergeCtx<'a, V> {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        cell::Cell,
+        collections::{BTreeMap, HashMap},
+    };
+
     use write_fonts::tables::gdef::GlyphClassDef;
+    use write_fonts::tables::{
+        gpos::builders::{AnchorBuilder, MarkToBaseBuilder},
+        layout::LookupFlag,
+    };
+    use write_fonts::types::Tag;
 
     use super::{test_helpers::*, *};
-    use crate::compile::NopFeatureProvider;
+    use crate::compile::{NopFeatureProvider, Opts};
+
+    #[test]
+    fn finish_resumes_provider_with_live_symbols_and_variable_anchors() {
+        use crate::compile::{
+            ContextualPositionRule, FeatureBuilder, FeatureProvider, PendingLookup,
+        };
+
+        struct Provider {
+            calls: Cell<usize>,
+            append: bool,
+        }
+        impl FeatureProvider for Provider {
+            fn add_features(&self, builder: &mut FeatureBuilder) {
+                self.calls.set(self.calls.get() + 1);
+                let map = glyph_map();
+                let acute = map.get("acute").unwrap();
+                let base = map.get("b").unwrap();
+                let classes =
+                    BTreeMap::from([("top".into(), vec![(acute, AnchorBuilder::new(100, 0))])]);
+                let classes = builder.add_generated_mark_classes(&classes);
+                let (name, members) = &classes["top"];
+                let values = HashMap::from([(location(0.0), 700), (location(1.0), 900)]);
+                let (_, deltas) = var_info().resolve_variable_metric(&values).unwrap();
+                let mut target = MarkToBaseBuilder::default();
+                for (glyph, anchor) in members {
+                    target.insert_mark(*glyph, "top", anchor.clone()).unwrap();
+                }
+                target.insert_base(
+                    base,
+                    "top",
+                    AnchorBuilder::new(250, 700).with_y_device(deltas),
+                );
+                let feature = Tag::new(b"mark");
+                let target = builder.add_named_gpos_target(
+                    feature,
+                    PendingLookup::new(vec![target], LookupFlag::empty(), None),
+                );
+                let rule = ContextualPositionRule {
+                    pattern: "@EXIST' lookup generatedContextTarget0 *' &".into(),
+                    bases: vec![base],
+                    mark_class: name.clone(),
+                    target,
+                };
+                if let Some(dispatch) =
+                    builder.add_contextual_positioning(feature, "", &[rule], "test origin")
+                {
+                    builder.add_to_default_language_systems(feature, &[dispatch]);
+                }
+                if self.append {
+                    builder.force_append(feature);
+                }
+            }
+        }
+
+        let source = "@EXIST = [a];\nlookup generatedContextTarget0 { pos a -100; } generatedContextTarget0;\nfeature mark {\n# Automatic Code\npos b 10;\n} mark;";
+        let map = glyph_map();
+        let (tree, _) = crate::parse::parse_string(source);
+        let opts = Opts::new().compile_debg(true);
+        for append in [false, true] {
+            let provider = Provider {
+                calls: Cell::new(0),
+                append,
+            };
+            let masters = [location(0.0), location(1.0)]
+                .into_iter()
+                .map(|loc| {
+                    let pending = crate::compile::compile_for_merge(&tree, &map, opts.clone())
+                        .unwrap()
+                        .0;
+                    (loc, pending)
+                })
+                .collect();
+            let merged = merge(masters, &var_info())
+                .unwrap()
+                .finish(Some(&provider))
+                .unwrap()
+                .0;
+            assert_eq!(provider.calls.get(), 1);
+            let direct = crate::compile::compile(
+                &tree,
+                &map,
+                Some(&var_info()),
+                Some(&provider),
+                opts.clone(),
+            )
+            .unwrap()
+            .0;
+            assert_eq!(provider.calls.get(), 2);
+            assert_eq!(
+                merged.to_binary(&map).unwrap(),
+                direct.to_binary(&map).unwrap()
+            );
+            assert!(merged.gdef.as_ref().unwrap().item_var_store.is_some());
+            let gpos = merged.gpos.as_ref().unwrap();
+            let feature = &gpos.feature_list.as_ref().unwrap().feature_records[0].feature;
+            let (target_index, dispatcher_index, expected_feature) = if append {
+                (2, 3, vec![1, 3])
+            } else {
+                (1, 2, vec![2, 3])
+            };
+            assert_eq!(feature.lookup_list_indices, expected_feature);
+            let lookups = &gpos.lookup_list.as_ref().unwrap().lookups;
+            assert!(matches!(
+                lookups[target_index].as_ref(),
+                write_fonts::tables::gpos::PositionLookup::MarkToBase(_)
+            ));
+            assert!(matches!(
+                lookups[dispatcher_index].as_ref(),
+                write_fonts::tables::gpos::PositionLookup::ChainContextual(_)
+            ));
+            let debg: serde_json::Value =
+                serde_json::from_slice(merged.debg.as_ref().unwrap()).unwrap();
+            let entries = debg["com.github.fonttools.feaLib"]["GPOS"]
+                .as_object()
+                .unwrap();
+            assert_eq!(
+                entries.len(),
+                2,
+                "generated lookups must not inherit source offsets"
+            );
+            assert!(
+                entries
+                    .values()
+                    .any(|entry| entry[1] == "generatedContextTarget0")
+            );
+        }
+        let provider = Provider {
+            calls: Cell::new(0),
+            append: false,
+        };
+        let disabled = crate::compile::compile(
+            &tree,
+            &map,
+            Some(&var_info()),
+            Some(&provider),
+            opts.compile_gpos(false),
+        )
+        .unwrap()
+        .0;
+        assert!(disabled.gpos.is_none());
+    }
 
     #[test]
     fn identical_masters_round_trip() {

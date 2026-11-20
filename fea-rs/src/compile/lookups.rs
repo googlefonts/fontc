@@ -54,6 +54,8 @@ use contextual::{
 };
 
 pub(crate) type FilterSetId = u16;
+type GeneratedGpos = Vec<(LookupId, PositionLookup)>;
+type GeneratedGsub = Vec<(LookupId, SubstitutionLookup)>;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AllLookups {
@@ -62,6 +64,9 @@ pub(crate) struct AllLookups {
     current_use_extension: bool,
     gpos: Vec<PositionLookup>,
     gsub: Vec<SubstitutionLookup>,
+    generated_gpos: GeneratedGpos,
+    generated_gsub: GeneratedGsub,
+    generated_output: bool,
     named: HashMap<SmolStr, LookupId>,
     compile_debg: bool,
     current_debug_info: Option<LookupDebugInfo>,
@@ -252,7 +257,7 @@ impl IterAaltPairs for SingleSubBuilder {
 }
 
 impl PositionLookup {
-    fn remap_ids(&mut self, id_map: &LookupIdMap) {
+    pub(crate) fn remap_ids(&mut self, id_map: &LookupIdMap) {
         match self {
             PositionLookup::Contextual(lookup) => lookup.remap_ids(id_map),
             PositionLookup::ChainedContextual(lookup) => lookup.remap_ids(id_map),
@@ -550,12 +555,15 @@ impl AllLookups {
                 } else {
                     pos
                 };
+                if self.generated_output {
+                    return self.push_generated_gpos(pos);
+                }
                 self.gpos.push(pos);
                 self.gpos_debug_info.push(debug_info);
                 LookupId::Gpos(self.gpos.len() - 1)
             }
             SomeLookup::GposContextual(lookup) => {
-                let id = LookupId::Gpos(self.gpos.len());
+                let id = self.next_output_gpos_id();
                 assert_eq!(id, lookup.root_id); // sanity check
                 let (lookup, anon_lookups) = lookup.into_lookups();
                 // NOTE: we currently force all GPOS7 into GPOS8, to match
@@ -569,7 +577,6 @@ impl AllLookups {
                 } else {
                     root
                 };
-                self.gpos.push(root);
                 // Matches fonttools: anonymous lookups inherit use_extension from the parent.
                 // https://github.com/fonttools/fonttools/blob/34be244/Lib/fontTools/feaLib/builder.py#L249-L255
                 let anon_lookups: Vec<_> = if use_extension {
@@ -584,6 +591,14 @@ impl AllLookups {
                     range: info.range.clone(),
                     name: None,
                 });
+                if self.generated_output {
+                    self.push_generated_gpos(root);
+                    for lookup in anon_lookups {
+                        self.push_generated_gpos(lookup);
+                    }
+                    return id;
+                }
+                self.gpos.push(root);
                 self.gpos_debug_info.push(debug_info);
                 self.gpos_debug_info
                     .extend(std::iter::repeat_n(anon_debug_info, anon_lookups.len()));
@@ -651,6 +666,54 @@ impl AllLookups {
 
     pub(crate) fn get_named(&self, name: &str) -> Option<LookupId> {
         self.named.get(name).copied()
+    }
+
+    pub(crate) fn bind_generated_name(&mut self, name: SmolStr, id: LookupId) {
+        assert!(self.named.insert(name, id).is_none());
+    }
+
+    pub(crate) fn push_generated_gpos(&mut self, lookup: PositionLookup) -> LookupId {
+        let id = LookupId::ExternalGpos(self.generated_gpos.len());
+        self.generated_gpos.push((id, lookup));
+        id
+    }
+
+    pub(crate) fn push_generated_gsub(
+        &mut self,
+        lookup: SubstitutionLookup,
+        front: bool,
+    ) -> LookupId {
+        let id = if front {
+            LookupId::ExternalFrontOfList(self.generated_gsub.len())
+        } else {
+            LookupId::ExternalGsub(self.generated_gsub.len())
+        };
+        self.generated_gsub.push((id, lookup));
+        id
+    }
+
+    pub(crate) fn take_generated(&mut self) -> (GeneratedGpos, GeneratedGsub) {
+        (
+            std::mem::take(&mut self.generated_gpos),
+            std::mem::take(&mut self.generated_gsub),
+        )
+    }
+
+    pub(crate) fn generated_gpos_len(&self) -> usize {
+        self.generated_gpos.len()
+    }
+
+    pub(crate) fn set_generated_output(&mut self, generated: bool) {
+        assert!(!self.has_current());
+        self.generated_output = generated;
+    }
+
+    fn next_output_gpos_id(&self) -> LookupId {
+        if self.generated_output {
+            LookupId::ExternalGpos(self.generated_gpos.len())
+        } else {
+            self.next_gpos_id()
+        }
     }
 
     pub(crate) fn current_mut(&mut self) -> Option<&mut SomeLookup> {
@@ -729,7 +792,7 @@ impl AllLookups {
 
     // doesn't start it, just stashes the name
     pub(crate) fn start_named(&mut self, name: SmolStr, range: Range<usize>, use_extension: bool) {
-        if self.compile_debg {
+        if self.compile_debg && !self.generated_output {
             self.current_debug_info = Some(LookupDebugInfo {
                 range,
                 name: Some(name.clone()),
@@ -749,7 +812,7 @@ impl AllLookups {
         let mut new_one = SomeLookup::new(kind, flags.flags, flags.mark_filter_set);
 
         let new_id = if is_gpos_rule(kind) {
-            LookupId::Gpos(self.gpos.len())
+            self.next_output_gpos_id()
         } else {
             LookupId::Gsub(self.gsub.len())
         };
@@ -761,7 +824,7 @@ impl AllLookups {
             SomeLookup::GsubLookup(_) | SomeLookup::GposLookup(_) => (),
         }
         self.current = Some(new_one);
-        if self.compile_debg && self.current_debug_info.is_none() {
+        if self.compile_debg && !self.generated_output && self.current_debug_info.is_none() {
             self.current_debug_info = Some(LookupDebugInfo { range, name: None });
         }
         finished_id
@@ -910,6 +973,7 @@ impl AllLookups {
     }
 
     pub(crate) fn remap_ids(&mut self, ids: &LookupIdMap) {
+        self.named.values_mut().for_each(|id| *id = ids.get(*id));
         self.gpos
             .iter_mut()
             .for_each(|lookup| lookup.remap_ids(ids));
@@ -1052,7 +1116,14 @@ impl AllLookups {
             }
         }
 
-        (gsub_builder.build(var_store), gpos_builder.build(var_store))
+        (
+            opts.compile_gsub
+                .then(|| gsub_builder.build(var_store))
+                .flatten(),
+            opts.compile_gpos
+                .then(|| gpos_builder.build(var_store))
+                .flatten(),
+        )
     }
 }
 

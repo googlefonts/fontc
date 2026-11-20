@@ -111,6 +111,15 @@ impl Diagnostic {
 struct DiagnosticDisplayer<'a>(&'a DiagnosticSet);
 
 impl DiagnosticSet {
+    pub(crate) fn extend(&mut self, other: DiagnosticSet) {
+        Arc::make_mut(&mut self.sources).extend(&other.sources);
+        self.messages.extend(other.messages);
+    }
+    pub(crate) fn with_max_to_print(mut self, max_to_print: usize) -> Self {
+        self.max_to_print = max_to_print;
+        self
+    }
+
     /// Create a new `DiagnosticSet`.
     pub fn new(messages: Vec<Diagnostic>, tree: &ParseTree, max_to_print: usize) -> Self {
         Self {

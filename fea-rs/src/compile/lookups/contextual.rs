@@ -146,7 +146,11 @@ impl<T> ContextualLookupBuilder<T> {
         };
         let raw_id = self.root_id.to_raw() + self.finished_anon_lookups.len() + idx + 1;
         let lookup = self.current_anon_lookups.get_mut(idx).unwrap();
-        (lookup, T::make_id(raw_id))
+        let id = match self.root_id {
+            LookupId::ExternalGpos(_) => LookupId::ExternalGpos(raw_id),
+            _ => T::make_id(raw_id),
+        };
+        (lookup, id)
     }
 }
 

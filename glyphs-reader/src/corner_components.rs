@@ -1139,6 +1139,7 @@ mod tests {
                 .map(|&(name, (x, y))| Anchor {
                     name: name.into(),
                     pos: Point::new(x as f64, y as f64),
+                    user_data: Default::default(),
                 })
                 .collect(),
             ..Default::default()

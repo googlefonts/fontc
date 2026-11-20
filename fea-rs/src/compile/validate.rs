@@ -40,6 +40,7 @@ pub struct ValidationCtx<'a, V: VariationInfo> {
     // class and position
     glyph_class_defs: HashMap<SmolStr, Token>,
     mark_class_defs: HashSet<SmolStr>,
+    existing_symbols: Option<ExistingSymbols<'a>>,
     mark_class_used: Option<Token>,
     anchor_defs: HashMap<SmolStr, Token>,
     value_record_defs: HashMap<SmolStr, Token>,
@@ -49,6 +50,15 @@ pub struct ValidationCtx<'a, V: VariationInfo> {
     // we cache these because they're reused a lot and slightly expensive to query
     // see <https://glyphsapp.com/learn/tokens#g-number-values>
     glyphs_app_number_idents: HashSet<SmolStr>,
+}
+
+pub(crate) struct ExistingSymbols<'a> {
+    pub glyph_classes: &'a HashMap<SmolStr, crate::common::GlyphClass>,
+    pub mark_classes: &'a HashMap<SmolStr, crate::common::MarkClass>,
+    pub lookups: &'a HashMap<SmolStr, super::lookups::LookupId>,
+    pub anchor_defs: &'a HashMap<SmolStr, write_fonts::tables::gpos::builders::AnchorBuilder>,
+    pub value_record_defs:
+        &'a HashMap<SmolStr, write_fonts::tables::gpos::builders::ValueRecordBuilder>,
 }
 
 impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
@@ -69,6 +79,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             glyph_class_defs: Default::default(),
             lookup_defs: Default::default(),
             mark_class_defs: Default::default(),
+            existing_symbols: None,
             mark_class_used: None,
             anchor_defs: Default::default(),
             value_record_defs: Default::default(),
@@ -77,6 +88,11 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             all_features: Default::default(),
             glyphs_app_number_idents: Default::default(),
         }
+    }
+
+    pub(crate) fn with_existing_symbols(mut self, symbols: ExistingSymbols<'a>) -> Self {
+        self.existing_symbols = Some(symbols);
+        self
     }
 
     fn error(&mut self, range: Range<usize>, message: impl Into<String>) {
@@ -286,7 +302,12 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     }
 
     fn validate_mark_class(&mut self, node: &typed::GlyphClassName) {
-        if !self.mark_class_defs.contains(node.text()) {
+        if !self.mark_class_defs.contains(node.text())
+            && !self
+                .existing_symbols
+                .as_ref()
+                .is_some_and(|s| s.mark_classes.contains_key(node.text()))
+        {
             self.error(node.range(), "undefined mark class");
         }
     }
@@ -1405,16 +1426,31 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     }
 
     fn validate_glyph_class_ref(&mut self, node: &typed::GlyphClassName) {
-        if self.mark_class_defs.contains(node.text()) {
+        if self.mark_class_defs.contains(node.text())
+            || self
+                .existing_symbols
+                .as_ref()
+                .is_some_and(|s| s.mark_classes.contains_key(node.text()))
+        {
             return;
         }
-        if !self.glyph_class_defs.contains_key(node.text()) {
+        if !self.glyph_class_defs.contains_key(node.text())
+            && !self
+                .existing_symbols
+                .as_ref()
+                .is_some_and(|s| s.glyph_classes.contains_key(node.text()))
+        {
             self.error(node.range(), "undefined glyph class");
         }
     }
 
     fn validate_lookup_ref(&mut self, node: &typed::LookupRef) {
-        if !self.lookup_defs.contains_key(&node.label().text) {
+        if !self.lookup_defs.contains_key(&node.label().text)
+            && !self
+                .existing_symbols
+                .as_ref()
+                .is_some_and(|s| s.lookups.contains_key(&node.label().text))
+        {
             self.error(node.label().range(), "lookup is not defined");
         }
     }
@@ -1456,6 +1492,10 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     fn validate_value_record(&mut self, node: &typed::ValueRecord) {
         if let Some(name) = node.named()
             && !self.value_record_defs.contains_key(&name.text)
+            && !self
+                .existing_symbols
+                .as_ref()
+                .is_some_and(|symbols| symbols.value_record_defs.contains_key(&name.text))
         {
             self.error(name.range(), "undefined value record name");
         }
@@ -1468,6 +1508,10 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     fn validate_anchor(&mut self, anchor: &typed::Anchor) {
         if let Some(name) = anchor.name()
             && !self.anchor_defs.contains_key(&name.text)
+            && !self
+                .existing_symbols
+                .as_ref()
+                .is_some_and(|symbols| symbols.anchor_defs.contains_key(&name.text))
         {
             self.error(name.range(), "undefined anchor name");
         }
