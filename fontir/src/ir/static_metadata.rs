@@ -280,6 +280,10 @@ pub struct MiscMetadata {
     /// replaces the defaults (an empty list disables all automatic features).
     pub feature_generation: Option<Vec<FeatureWriterSpec>>,
 
+    /// Features left out of what the feature writers generate, as for a
+    /// Glyphs instance's 'Remove Features'.
+    pub removed_features: Vec<Tag>,
+
     /// STAT design axes, in order, with their axis value labels.
     ///
     /// [`StaticMetadata::new`] seeds this with the fvar axes and no labels;
@@ -612,6 +616,7 @@ impl StaticMetadata {
                 us_width_class: None,
                 gasp: Vec::new(),
                 feature_generation: None,
+                removed_features: Vec::new(),
                 stat_axes,
                 elided_fallback_name: None,
                 unicode_variation_sequences: Default::default(),
@@ -809,6 +814,7 @@ mod tests {
                     mode: FeatureWriterMode::Append,
                     features: None,
                 }]),
+                removed_features: vec![Tag::new(b"kern")],
                 stat_axes: Vec::new(),
                 elided_fallback_name: None,
                 unicode_variation_sequences: Default::default(),
