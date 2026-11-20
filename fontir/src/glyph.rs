@@ -4217,7 +4217,8 @@ mod tests {
             .next()
             .unwrap()
             .clone();
-        for (name, anchor) in [("A", "top"), ("X", "2top")] {
+        // a contextual anchor counts as the anchor it wraps
+        for (name, anchor) in [("A", "top"), ("X", "2top"), ("Q", "*top")] {
             let glyph = Glyph::new(
                 name.into(),
                 true,
@@ -4249,6 +4250,10 @@ mod tests {
             Some(&GlyphClassDef::Base)
         );
         assert_eq!(categories.get(&GlyphName::from("X")), None);
+        assert_eq!(
+            categories.get(&GlyphName::from("Q")),
+            Some(&GlyphClassDef::Base)
+        );
     }
 
     /// Regression test for <https://github.com/googlefonts/fontc/issues/1873>.
