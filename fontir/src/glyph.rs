@@ -1592,10 +1592,11 @@ fn recompute_gdef_categories(context: &Context) -> Result<(), Error> {
             .anchors
             .try_get(&WorkId::Anchor(glyph_name.clone()))
             .is_some_and(|glyph_anchors| {
-                glyph_anchors
-                    .anchors
-                    .iter()
-                    .any(|anchor| !matches!(&anchor.kind, AnchorKind::Mark(_)))
+                glyph_anchors.anchors.iter().any(|anchor| {
+                    // Glyphs.app (3.5) doesn't infer Base from anchors that
+                    // only align components, such as `2top`
+                    !matches!(&anchor.kind, AnchorKind::Mark(_)) && !anchor.kind.is_ignorable()
+                })
             });
 
         // glyphsLib behavior: infer Base from anchors, require anchors for Ligature
@@ -4200,6 +4201,58 @@ mod tests {
             final_categories.categories.get(&glyph_name),
             Some(&GlyphClassDef::Base),
             "Glyph with pre-existing attaching anchor should be classified as Base"
+        );
+    }
+
+    // Anchors like `2top` only align components: Glyphs.app (3.5) doesn't
+    // classify a glyph whose only attaching anchor is one of them as Base
+    #[test]
+    fn no_base_category_from_ignorable_anchor() {
+        let ctx = test_context();
+        let loc = ctx
+            .static_metadata
+            .get()
+            .variation_model
+            .locations()
+            .next()
+            .unwrap()
+            .clone();
+        // a contextual anchor counts as the anchor it wraps
+        for (name, anchor) in [("A", "top"), ("X", "2top"), ("Q", "*top")] {
+            let glyph = Glyph::new(
+                name.into(),
+                true,
+                Default::default(),
+                [(loc.clone(), GlyphInstance::default())].into(),
+            )
+            .unwrap();
+            ctx.glyphs.set(glyph);
+            let mut anchor_builder = AnchorBuilder::new(name.into());
+            anchor_builder
+                .add(anchor.into(), loc.clone(), kurbo::Point::new(100.0, 500.0))
+                .unwrap();
+            ctx.anchors.set(anchor_builder.build().unwrap());
+        }
+        ctx.preliminary_gdef_categories
+            .set(PreliminaryGdefCategories {
+                categories: Default::default(),
+                infer_from_anchors: true,
+                mark_category_glyphs: Default::default(),
+                excluded: Default::default(),
+            });
+        ctx.gdef_categories.set(GdefCategories::default());
+
+        recompute_gdef_categories(&ctx).unwrap();
+
+        let categories = &ctx.gdef_categories.get().categories;
+        assert_eq!(
+            categories.get(&GlyphName::from("A")),
+            Some(&GlyphClassDef::Base)
+        );
+        assert_eq!(categories.get(&GlyphName::from("X")), None);
+        assert_eq!(
+            categories.get(&GlyphName::from("Q")),
+            Some(&GlyphClassDef::Base)
         );
     }
 

@@ -245,6 +245,12 @@ impl<'a> MarkLookupBuilder<'a> {
                 continue;
             }
             for anchor in &anchors.anchors {
+                // these only align components; they stay in the IR because
+                // anchor propagation still counts them, as Glyphs.app does
+                // <https://github.com/googlefonts/ufo2ft/blob/541fd0e8a1739f48f334ad95af1d74b6aaaffb56/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L395-L396>
+                if anchor.kind.is_ignorable() {
+                    continue;
+                }
                 match &anchor.kind {
                     AnchorKind::Base(group)
                     | AnchorKind::Ligature {
@@ -1425,6 +1431,36 @@ mod tests {
             anchors.add("_top", [(50, 50)]);
         });
         out
+    }
+
+    // anchors like `_2top` or `#exit` only align components: no rules for
+    // them, and a glyph whose only mark anchor is one of them isn't a mark
+    #[test]
+    fn ignorable_anchors_make_no_rules() {
+        let out = MarksInput::default()
+            .add_glyph("A", GlyphClassDef::Base, |anchors| {
+                anchors
+                    .add("top", [(100, 400)])
+                    .add("2top", [(100, 500)])
+                    .add("#exit", [(300, 0)]);
+            })
+            .add_glyph("acutecomb", GlyphClassDef::Mark, |anchors| {
+                anchors.add("_top", [(50, 50)]).add("_2top", [(50, 60)]);
+            })
+            .add_glyph("tildecomb", GlyphClassDef::Mark, |anchors| {
+                anchors.add("_2top", [(50, 60)]);
+            })
+            .get_normalized_output();
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+            # mark: DFLT/dflt
+            # 1 MarkToBase rules
+            # lookupflag LookupFlag(0)
+            A @(x: 100, y: 400)
+              @(x: 50, y: 50) acutecomb
+            "#
+        );
     }
 
     // sanity check that if we don't make empty lookups

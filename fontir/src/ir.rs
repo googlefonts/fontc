@@ -1396,6 +1396,26 @@ impl AnchorKind {
         matches!(self, AnchorKind::Base(_) | AnchorKind::Ligature { .. })
     }
 
+    /// Returns `true` if this anchor is only used to align components.
+    ///
+    /// These are anchors whose group name starts with a non-letter, such as
+    /// `#exit`, `_2top` or `2top_1`, which [ufo2ft] and Glyphs.app ignore when
+    /// writing mark features. Names starting with `*` (contextual and origin
+    /// anchors in Glyphs) are not included.
+    ///
+    /// [ufo2ft]: https://github.com/googlefonts/ufo2ft/blob/541fd0e8/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L172
+    pub fn is_ignorable(&self) -> bool {
+        match self {
+            AnchorKind::Base(group_name)
+            | AnchorKind::Mark(group_name)
+            | AnchorKind::Ligature { group_name, .. } => group_name
+                .chars()
+                .next()
+                .is_some_and(|c| !c.is_alphabetic() && c != '*'),
+            _ => false,
+        }
+    }
+
     /// Convert AnchorKind back to its canonical string name representation.
     ///
     /// Note: this is lossy for non-standard names (e.g. `caret_1_` becomes `caret_1`).
