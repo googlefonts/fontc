@@ -236,6 +236,19 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
             }
         }
 
+        if let Some(requested_filename) = context
+            .ir
+            .static_metadata
+            .get()
+            .misc
+            .requested_filename
+            .as_ref()
+        {
+            context
+                .requested_filename
+                .set(Some(requested_filename.clone().into()))
+        }
+
         debug!("Building font");
         let font = builder.build();
         debug!("Assembled {} byte font", font.len());
