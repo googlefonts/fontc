@@ -669,6 +669,8 @@ pub struct Context {
     /// The fontc version to stamp into the name table version string (name ID 5),
     /// e.g. "0.6.1-dev.394+gd62ba016", or None to not stamp. See name.rs.
     pub compiler_version: Option<Arc<str>>,
+    /// The filename requested for the output font, if any.
+    pub requested_filename: BeContextItem<Option<Arc<str>>>,
 
     pub debug_dir: Option<PathBuf>,
     pub compile_debg: bool,
@@ -724,6 +726,7 @@ impl Context {
         Context {
             flags: self.flags,
             compiler_version: self.compiler_version.clone(),
+            requested_filename: self.requested_filename.clone_with_acl(acl.clone()),
             debug_dir: self.debug_dir.clone(),
             compile_debg: self.compile_debg,
             ir: self.ir.clone(),
@@ -817,7 +820,8 @@ impl Context {
             fea_asts: ContextMap::new(acl.clone()),
             stat: ContextItem::new(WorkId::Stat.into(), acl.clone()),
             extra_fea_tables: ContextItem::new(WorkId::ExtraFeaTables.into(), acl.clone()),
-            font: ContextItem::new(WorkId::Font.into(), acl),
+            font: ContextItem::new(WorkId::Font.into(), acl.clone()),
+            requested_filename: ContextItem::new(WorkId::Font.into(), acl),
         }
     }
 
