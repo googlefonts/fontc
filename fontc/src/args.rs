@@ -274,6 +274,7 @@ impl TryInto<Options> for Args {
             output_file: self
                 .output_file
                 .or_else(|| Some(self.build_dir.join("font.ttf"))),
+            build_dir: Some(self.build_dir),
             debug_dir,
         })
     }

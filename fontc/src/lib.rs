@@ -194,22 +194,17 @@ pub struct Options {
     pub compile_debg: bool,
     pub output_file: Option<PathBuf>,
     pub debug_dir: Option<PathBuf>,
+    /// The build directory for intermediate files.
+    pub build_dir: Option<PathBuf>,
 }
 
 /// Run the compiler with the provided input, source options and options.
 ///
 /// This is the main entry point for the fontc command line utility.
 ///
-/// # Errors
-///
-/// Returns [`Error::NoOutputFile`] if `options.output_file` is `None`.
 #[cfg(feature = "cli")]
 #[tracing::instrument(skip_all)]
 pub fn run(input: Input, source_options: &SourceOptions, options: Options) -> Result<(), Error> {
-    if options.output_file.is_none() {
-        return Err(Error::NoOutputFile);
-    }
-
     let source = input.create_source(source_options)?;
 
     let (_fe_root, be_root) = generate_font_internal(source, &options)?;
@@ -295,11 +290,20 @@ pub fn init_paths(options: &Options) -> Result<(), Error> {
 
 #[tracing::instrument(skip_all)]
 pub fn write_font_file(options: &Options, be_context: &BeContext) -> Result<(), Error> {
-    // Not much to do if no output file is desired
-    let Some(output_file) = options.output_file.as_ref() else {
-        return Ok(());
+    // User's requested output file gets priority
+    let output_file = if let Some(output_file) = options.output_file.as_ref() {
+        output_file.clone()
+    } else if let Some(requested_filename) = &*be_context.requested_filename.get() {
+        // If the font has asked for a specific filename, use that
+        PathBuf::from(requested_filename.as_ref())
+    } else if let Some(build_dir) = &options.build_dir {
+        // We're the CLI, take a guess
+        build_dir.join("font.ttf")
+    } else {
+        // I guess we just don't know
+        return Err(Error::NoOutputFile);
     };
-    fs::write(output_file, &*be_context.font.get()).map_err(|source| Error::FileIo {
+    fs::write(&output_file, &*be_context.font.get()).map_err(|source| Error::FileIo {
         path: output_file.clone(),
         source,
     })
