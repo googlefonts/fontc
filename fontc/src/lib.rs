@@ -299,6 +299,7 @@ pub fn write_font_file(options: &Options, be_context: &BeContext) -> Result<(), 
         // If the font has asked for a specific filename, use that
         PathBuf::from(requested_filename.as_ref())
     } else if let Some(build_dir) = &options.build_dir {
+        require_dir(build_dir)?;
         // We're the CLI, take a guess
         build_dir.join("font.ttf")
     } else {
