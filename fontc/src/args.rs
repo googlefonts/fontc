@@ -271,9 +271,8 @@ impl TryInto<Options> for Args {
             flags_to_disable,
             skip_features: self.skip_features,
             compile_debg: self.emit_lookup_debug_info,
-            output_file: self
-                .output_file
-                .or_else(|| Some(self.build_dir.join("font.ttf"))),
+            output_file: self.output_file,
+            build_dir: Some(self.build_dir),
             debug_dir,
         })
     }

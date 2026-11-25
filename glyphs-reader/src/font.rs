@@ -159,6 +159,8 @@ pub struct CustomParameters {
     pub replace_feature: Vec<(SmolStr, String)>,
     /// The prefix name and new code of each 'Replace Prefix', in order.
     pub replace_prefix: Vec<(SmolStr, String)>,
+    /// A filename for the variable font export
+    pub variable_font_file_name: Option<String>,
 }
 
 /// One entry of the 'Reencode Glyphs' instance parameter, e.g. `smiley=E100`.
@@ -1534,6 +1536,9 @@ impl RawCustomParameters {
                 }
                 "Feature for Feature Variations" => {
                     add_and_report_issues!(feature_for_feature_variations, Plist::as_str, into)
+                }
+                "Variable Font File Name" => {
+                    add_and_report_issues!(variable_font_file_name, Plist::as_str, into)
                 }
                 "Color Palettes" => {
                     add_and_report_issues!(color_palettes, Plist::as_color_palettes)

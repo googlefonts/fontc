@@ -989,6 +989,12 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         static_metadata.misc.unicode_variation_sequences = unicode_variation_sequences(font);
 
+        // If we are exporting a variable font, try it set its filename
+        if export.is_none() && font.masters.len() > 1 {
+            static_metadata.misc.requested_filename =
+                font.custom_parameters.variable_font_file_name.clone();
+        }
+
         // Bracket and color glyphs are absent from public.glyphOrder, so ufo2ft
         // appends them together in sorted order.
         // <https://github.com/googlefonts/ufo2ft/blob/9b9ced585/Lib/ufo2ft/util.py#L32-L54>

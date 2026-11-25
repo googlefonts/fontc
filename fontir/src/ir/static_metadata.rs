@@ -298,6 +298,9 @@ pub struct MiscMetadata {
 
     /// The `decomposeComponents` ufo2ft filter, if the source lists it.
     pub decompose_components: Option<FilterScope>,
+
+    /// The font's requested file name for this output, if any.
+    pub requested_filename: Option<String>,
 }
 
 /// The glyphs a ufo2ft filter applies to: all of them, or an `include` or
@@ -616,6 +619,7 @@ impl StaticMetadata {
                 elided_fallback_name: None,
                 unicode_variation_sequences: Default::default(),
                 decompose_components: None,
+                requested_filename: None,
             },
             variations: None,
         })
@@ -813,6 +817,7 @@ mod tests {
                 elided_fallback_name: None,
                 unicode_variation_sequences: Default::default(),
                 decompose_components: None,
+                requested_filename: None,
             },
             number_values: Default::default(),
             variations: None,
