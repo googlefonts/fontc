@@ -293,15 +293,17 @@ pub fn write_font_file(options: &Options, be_context: &BeContext) -> Result<(), 
     // User's requested output file gets priority
     let output_file = if let Some(output_file) = options.output_file.as_ref() {
         output_file.clone()
-    } else if let Some(requested_filename) = &*be_context.requested_filename.get() {
+    } else if let Some(maybe_filename) = be_context.requested_filename.try_get()
+        && let Some(requested_filename) = &*maybe_filename
+    {
         // If the font has asked for a specific filename, use that
         PathBuf::from(requested_filename.as_ref())
     } else if let Some(build_dir) = &options.build_dir {
         // We're the CLI, take a guess
         build_dir.join("font.ttf")
     } else {
-        // I guess we just don't know
-        return Err(Error::NoOutputFile);
+        // No font for you
+        return Ok(());
     };
     fs::write(&output_file, &*be_context.font.get()).map_err(|source| Error::FileIo {
         path: output_file.clone(),
